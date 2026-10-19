@@ -26,6 +26,7 @@ import { SESSION_FORMAT_VERSION, Session, SessionId } from '@deepseek-ai/dsh-ses
 import { pdfFixture } from '../../../packages/client/ui-sidebar-documentpreview/tests/pdf-fixture.ts'
 import { realOfficeBytes } from './office-fixture.ts'
 import { closeElectronAcceptance } from '../../product-desktop/scripts/close-electron.mjs'
+import { prepareNativeMacUpdate, type NativeMacUpdateQualification } from '../../product-desktop/tests/native-macos-update.mjs'
 
 const packageDir = join(REPO_ROOT, 'packages/extensions/ui-deepseek-harness-product')
 const expectedDir = fileURLToPath(new URL('./expected/deepseek-harness-catalog', import.meta.url))
@@ -1659,6 +1660,7 @@ for (const { mode, installed, surface } of desktopCarriers) {
       if (address === null || typeof address === 'string') throw new Error('Fixture server has no port')
       const origin = `http://127.0.0.1:${address.port}`
       let app: ElectronApplication | undefined = undefined
+      let nativeUpdate: NativeMacUpdateQualification | undefined
       onTestFinished(async () => {
         const closing = app
         app = undefined
@@ -1687,6 +1689,11 @@ for (const { mode, installed, surface } of desktopCarriers) {
         const original = await readFile(configPath, 'utf8')
         onTestFinished(() => writeFile(configPath, original))
         await writeFile(configPath, JSON.stringify({ ...JSON.parse(original), serverUrl: origin }))
+        if (process.platform === 'darwin' && process.env.PACKAGE_SIGNING === 'internal') {
+          nativeUpdate = await prepareNativeMacUpdate({ installed, root, home, userData,
+            modelUrl: model.baseURL + '/v1', token: secret, environment: process.env })
+          onTestFinished(() => nativeUpdate!.dispose())
+        }
       }
       if (installed === undefined) {
         const manifest = JSON.parse(await readFile(join(REPO_ROOT, 'apps/desktop/package.json'), 'utf8')) as { version: unknown }
@@ -1755,7 +1762,7 @@ for (const { mode, installed, surface } of desktopCarriers) {
       expect(await app.evaluate(({ app }) => app.isPackaged)).toBe(installed !== undefined)
       const applicationVersion = await app.evaluate(({ app }) => app.getVersion())
       if (installed !== undefined) {
-        const expectedVersion = z.string().min(1).parse(process.env.PACKAGE_VERSION)
+        const expectedVersion = nativeUpdate?.initialVersion ?? z.string().min(1).parse(process.env.PACKAGE_VERSION)
         expect(applicationVersion, 'Installed application version must match PACKAGE_VERSION').toBe(expectedVersion)
         const appPath = await app.evaluate(({ app }) => app.getAppPath())
         expect(appPath).toContain('app.asar')
@@ -1854,7 +1861,7 @@ for (const { mode, installed, surface } of desktopCarriers) {
         expect(deviceReports[0]?.desktopVersion).toBe(applicationVersion)
         await page.getByRole('button', { name: /^(More menu|更多菜单)$/, exact: true }).click()
         expect(await page.getByRole('menuitem', { name: /^(Check for updates|检查更新)$/, exact: true }).count()).toBe(1)
-        const signing = z.enum(['signed', 'unsigned']).default('unsigned').parse(process.env.PACKAGE_SIGNING)
+        const signing = z.enum(['signed', 'unsigned', 'internal']).default('unsigned').parse(process.env.PACKAGE_SIGNING)
         if (installed === undefined || signing === 'unsigned') {
           const [updatePage] = await Promise.all([
             app.waitForEvent('window'),
@@ -2476,6 +2483,10 @@ for (const { mode, installed, surface } of desktopCarriers) {
         await page.keyboard.press('Escape')
       }
       expect(tripwire.pageErrors).toEqual([])
+      if (nativeUpdate !== undefined) {
+        if (app === undefined) throw new Error('Native update qualification has no application owner')
+        page = await nativeUpdate.upgrade(app, page, () => { app = undefined })
+      }
       await mkdir(screenshots, { recursive: true })
       await page.screenshot({ path: join(screenshots, `electron-${carrier}-${mode}.png`) })
     },

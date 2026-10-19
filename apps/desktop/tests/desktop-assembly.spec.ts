@@ -15,7 +15,7 @@ it('adds application resources and icons through a platform-specific assembly', 
   const manifest = join(root, 'assembly.json')
   writeFileSync(manifest, JSON.stringify({
     runtimePackages: ['example-extension'], packageDirectories: ['extension'],
-    buildSteps: [['run', 'build:extension']], icons: { windows: 'windows.png' },
+    buildSteps: [['run', 'build:extension']], icons: { windows: 'windows.png' }, builderConfig: 'builder.mjs',
     resources: [
       { from: 'extension.json', to: 'desktop-extension.json' },
       { from: 'native.exe', to: 'native/example.exe', platform: 'win32' },
@@ -27,7 +27,7 @@ it('adds application resources and icons through a platform-specific assembly', 
   const assembly = readDesktopAssembly(env, 'win32')
   expect(assembly).toMatchObject({
     runtimePackages: ['example-extension'], packageDirectories: [join(root, 'extension')],
-    buildSteps: [['run', 'build:extension']], icons: { windows: join(root, 'windows.png') },
+    buildSteps: [['run', 'build:extension']], icons: { windows: join(root, 'windows.png') }, builderConfig: join(root, 'builder.mjs'),
     resources: [{ from: join(root, 'extension.json'), to: 'desktop-extension.json' },
       { from: join(root, 'native.exe'), to: 'native/example.exe' }],
   })
@@ -36,4 +36,6 @@ it('adds application resources and icons through a platform-specific assembly', 
   expect(config.win.icon).toBe(join(root, 'windows.png'))
   writeFileSync(manifest, JSON.stringify({ runtimePackages: [], resources: [{ from: 'file', to: '../escape' }] }))
   expect(() => readDesktopAssembly(env)).toThrow('Invalid Desktop assembly resource')
+  writeFileSync(manifest, JSON.stringify({ runtimePackages: [], resources: [], builderConfig: 42 }))
+  expect(() => readDesktopAssembly(env)).toThrow('Invalid Desktop assembly builder configuration')
 })

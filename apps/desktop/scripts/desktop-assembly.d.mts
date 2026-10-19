@@ -4,4 +4,5 @@ export function readDesktopAssembly(environment?: NodeJS.ProcessEnv, platform?: 
   buildSteps: string[][]
   packageDirectories: string[]
   icons: Partial<Record<'macos' | 'windows' | 'tray' | 'development', string>>
+  builderConfig?: string
 }

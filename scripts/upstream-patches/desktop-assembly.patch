@@ -39,23 +39,24 @@ index 1d44f92b932235d8b83b9c91cbaf8ff96e39b1b5..4a60a393a7e5f91332ac77c2dbfd5470
      "@deepseek-ai/dsh-client-ui-sidebar-browser": "workspace:*",
 diff --git a/apps/desktop/scripts/desktop-assembly.d.mts b/apps/desktop/scripts/desktop-assembly.d.mts
 new file mode 100644
-index 0000000000000000000000000000000000000000..594b898207df5f3e4e19d41754ff2d84239c2e3e
+index 0000000000000000000000000000000000000000..1b3905b1e91b4d3ecc72cb617d40dff3a1a5b856
 --- /dev/null
 +++ b/apps/desktop/scripts/desktop-assembly.d.mts
-@@ -0,0 +1,7 @@
+@@ -0,0 +1,8 @@
 +export function readDesktopAssembly(environment?: NodeJS.ProcessEnv, platform?: string): {
 +  runtimePackages: string[]
 +  resources: { from: string; to: string }[]
 +  buildSteps: string[][]
 +  packageDirectories: string[]
 +  icons: Partial<Record<'macos' | 'windows' | 'tray' | 'development', string>>
++  builderConfig?: string
 +}
 diff --git a/apps/desktop/scripts/desktop-assembly.mjs b/apps/desktop/scripts/desktop-assembly.mjs
 new file mode 100644
-index 0000000000000000000000000000000000000000..a75fa56fc9127e32b159f2829921e5980b82ab0f
+index 0000000000000000000000000000000000000000..7ea01f10bdd0f58530d5fb3c0517deb044c1d6e9
 --- /dev/null
 +++ b/apps/desktop/scripts/desktop-assembly.mjs
-@@ -0,0 +1,27 @@
+@@ -0,0 +1,31 @@
 +/** Optional application-owned resources and runtime roots, shared by both build stages. */
 +import { readFileSync } from 'node:fs'
 +import { dirname, isAbsolute, resolve } from 'node:path'
@@ -80,7 +81,11 @@ index 0000000000000000000000000000000000000000..a75fa56fc9127e32b159f2829921e598
 +    if (!['macos', 'windows', 'tray', 'development'].includes(key) || typeof icon !== 'string') throw new Error('Invalid Desktop assembly icon')
 +    return [key, resolve(dirname(path), icon)]
 +  }))
++  if (value.builderConfig !== undefined && (typeof value.builderConfig !== 'string' || value.builderConfig.trim() === '')) {
++    throw new Error('Invalid Desktop assembly builder configuration')
++  }
 +  return { runtimePackages: value.runtimePackages, resources, buildSteps, icons,
++    ...(value.builderConfig === undefined ? {} : { builderConfig: resolve(dirname(path), value.builderConfig) }),
 +    packageDirectories: directories.map(directory => resolve(dirname(path), directory)) }
 +}
 diff --git a/apps/desktop/scripts/dev.ts b/apps/desktop/scripts/dev.ts
@@ -245,7 +250,7 @@ index 4b9cd27a8d5c1eee9219cfc9ca8b60b1c2562deb..b956e741cd8c64427381567958fdfc84
        signtoolOptions: {
          sign: windowsSigner,
 diff --git a/apps/desktop/scripts/package-target.ts b/apps/desktop/scripts/package-target.ts
-index be2f577e1b25a3905589d339393f7af759bfa4c7..1a94ae62dd7ed44aac76a059e71aff199a92dad8 100644
+index be2f577e1b25a3905589d339393f7af759bfa4c7..6e0ffdcf48bcaa189e64642253960c6977b2690b 100644
 --- a/apps/desktop/scripts/package-target.ts
 +++ b/apps/desktop/scripts/package-target.ts
 @@ -1,3 +1,4 @@
@@ -253,7 +258,29 @@ index be2f577e1b25a3905589d339393f7af759bfa4c7..1a94ae62dd7ed44aac76a059e71aff19
  /** Build one release target with matching Electron and dsh architecture. */
  
  import { spawn } from 'node:child_process'
-@@ -474,6 +475,8 @@ export async function packageTarget(
+@@ -261,18 +262,20 @@ export function parseDesktopPackageInvocation(
+  * @param target - Supported release target.
+  * @param directory - Whether to stop at an unpacked application directory.
+  * @param artifact - Optional single artifact built from an existing signed application.
++ * @param builderConfig - Application-owned builder configuration; omitted uses the official configuration.
+  * @returns Arguments that keep publishing under the separate validated upload command.
+  */
+ export function desktopElectronBuilderArguments(
+   target: DesktopPackageTarget,
+   directory: boolean,
+   artifact?: DesktopPrepackagedArtifact,
++  builderConfig = 'electron-builder.config.mjs',
+ ): readonly string[] {
+   return [
+     'exec',
+     'electron-builder',
+     '--config',
+-    'electron-builder.config.mjs',
++    builderConfig,
+     target.builderPlatform,
+     ...(artifact === undefined ? [] : [artifact.format]),
+     target.builderArch,
+@@ -474,6 +477,8 @@ export async function packageTarget(
      })
    }
    await execute(['run', 'build:official'], buildEnv, REPOSITORY_ROOT)
@@ -262,7 +289,7 @@ index be2f577e1b25a3905589d339393f7af759bfa4c7..1a94ae62dd7ed44aac76a059e71aff19
    await execute(['run', 'release:pack', '--family', 'dsh', '--out', buildPaths.packedDsh, ...packArguments], buildEnv, REPOSITORY_ROOT)
    await execute([
      '--dir',
-@@ -482,6 +485,9 @@ export async function packageTarget(
+@@ -482,6 +487,9 @@ export async function packageTarget(
      '--pack-destination',
      buildPaths.packedDsh,
    ], buildEnv, REPOSITORY_ROOT)
@@ -272,6 +299,35 @@ index be2f577e1b25a3905589d339393f7af759bfa4c7..1a94ae62dd7ed44aac76a059e71aff19
    await execute(['run', 'release:pack', '--family', 'vendor', '--out', buildPaths.packedVendor, ...packArguments], buildEnv, REPOSITORY_ROOT)
    rmSync(buildPaths.packedLandlock, { recursive: true, force: true })
    mkdirSync(buildPaths.packedLandlock, { recursive: true })
+@@ -501,7 +509,7 @@ export async function packageTarget(
+   if (invocation.prepareOnly) return
+   if (target.platform === 'darwin' && !invocation.unsigned && !invocation.skipNotarization && !invocation.directory) {
+     await execute([
+-      ...desktopElectronBuilderArguments(target, true),
++      ...desktopElectronBuilderArguments(target, true, undefined, assembly.builderConfig),
+       '--config.mac.notarize=false',
+     ], electronBuilderEnv)
+     await execute(['exec', 'tsx', 'scripts/smoke-packaged-runtime.ts'], targetEnv)
+@@ -511,15 +519,16 @@ export async function packageTarget(
+       version: resolveDesktopBuildVersion(environment, packageVersion(join(APP_ROOT, 'package.json'), 'desktop package')),
+       artifactsRoot: buildPaths.artifacts,
+       environment: electronBuilderEnv,
+-    }, artifact => execute(desktopElectronBuilderArguments(target, false, artifact), electronBuilderEnv)), undefined, undefined, proxyEvent)
++    }, artifact => execute(desktopElectronBuilderArguments(target, false, artifact, assembly.builderConfig), electronBuilderEnv)),
++    undefined, undefined, proxyEvent)
+   } else if (target.platform === 'darwin' && !invocation.unsigned && !invocation.skipNotarization) {
+-    await execute([...desktopElectronBuilderArguments(target, true), '--config.mac.notarize=false'], electronBuilderEnv)
++    await execute([...desktopElectronBuilderArguments(target, true, undefined, assembly.builderConfig), '--config.mac.notarize=false'], electronBuilderEnv)
+     await execute(['exec', 'tsx', 'scripts/smoke-packaged-runtime.ts'], targetEnv)
+     const appPath = join(buildPaths.artifacts, target.arch === 'arm64' ? 'mac-arm64' : 'mac', 'DeepSeek Harness.app')
+     await withMacOSNotarizationProxy(mac?.notarizationProxy,
+       () => notarizeMacOS({ appPath, ...resolveMacOSNotarizationEnvironment(environment) }), undefined, undefined, proxyEvent)
+   } else {
+-    await signedStage('artifacts', () => execute(desktopElectronBuilderArguments(target, invocation.directory), electronBuilderEnv))
++    await signedStage('artifacts', () => execute(desktopElectronBuilderArguments(target, invocation.directory, undefined, assembly.builderConfig), electronBuilderEnv))
+     await execute(['exec', 'tsx', 'scripts/smoke-packaged-runtime.ts',
+       ...(invocation.unsigned ? ['--unsigned'] : []), ...(invocation.skipNotarization ? ['--skip-notarization'] : [])], targetEnv)
+   }
 diff --git a/apps/desktop/scripts/prepare-package-set.ts b/apps/desktop/scripts/prepare-package-set.ts
 index 7e7d62eea289ae7f3beb7194a083e1aecae2a001..22f36d3f09c83ffeac45a91c3b6c2bf25d21e4c0 100644
 --- a/apps/desktop/scripts/prepare-package-set.ts
@@ -295,10 +351,10 @@ index 7e7d62eea289ae7f3beb7194a083e1aecae2a001..22f36d3f09c83ffeac45a91c3b6c2bf2
    }
 diff --git a/apps/desktop/tests/desktop-assembly.spec.ts b/apps/desktop/tests/desktop-assembly.spec.ts
 new file mode 100644
-index 0000000000000000000000000000000000000000..972b451db543807aae09450710379a86c47af1d2
+index 0000000000000000000000000000000000000000..6c6af55792f72508015915d3d602384b731ae800
 --- /dev/null
 +++ b/apps/desktop/tests/desktop-assembly.spec.ts
-@@ -0,0 +1,39 @@
+@@ -0,0 +1,41 @@
 +import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 +import { tmpdir } from 'node:os'
 +import { join } from 'node:path'
@@ -316,7 +372,7 @@ index 0000000000000000000000000000000000000000..972b451db543807aae09450710379a86
 +  const manifest = join(root, 'assembly.json')
 +  writeFileSync(manifest, JSON.stringify({
 +    runtimePackages: ['example-extension'], packageDirectories: ['extension'],
-+    buildSteps: [['run', 'build:extension']], icons: { windows: 'windows.png' },
++    buildSteps: [['run', 'build:extension']], icons: { windows: 'windows.png' }, builderConfig: 'builder.mjs',
 +    resources: [
 +      { from: 'extension.json', to: 'desktop-extension.json' },
 +      { from: 'native.exe', to: 'native/example.exe', platform: 'win32' },
@@ -328,7 +384,7 @@ index 0000000000000000000000000000000000000000..972b451db543807aae09450710379a86
 +  const assembly = readDesktopAssembly(env, 'win32')
 +  expect(assembly).toMatchObject({
 +    runtimePackages: ['example-extension'], packageDirectories: [join(root, 'extension')],
-+    buildSteps: [['run', 'build:extension']], icons: { windows: join(root, 'windows.png') },
++    buildSteps: [['run', 'build:extension']], icons: { windows: join(root, 'windows.png') }, builderConfig: join(root, 'builder.mjs'),
 +    resources: [{ from: join(root, 'extension.json'), to: 'desktop-extension.json' },
 +      { from: join(root, 'native.exe'), to: 'native/example.exe' }],
 +  })
@@ -337,6 +393,8 @@ index 0000000000000000000000000000000000000000..972b451db543807aae09450710379a86
 +  expect(config.win.icon).toBe(join(root, 'windows.png'))
 +  writeFileSync(manifest, JSON.stringify({ runtimePackages: [], resources: [{ from: 'file', to: '../escape' }] }))
 +  expect(() => readDesktopAssembly(env)).toThrow('Invalid Desktop assembly resource')
++  writeFileSync(manifest, JSON.stringify({ runtimePackages: [], resources: [], builderConfig: 42 }))
++  expect(() => readDesktopAssembly(env)).toThrow('Invalid Desktop assembly builder configuration')
 +})
 diff --git a/apps/desktop/tests/development-app.spec.ts b/apps/desktop/tests/development-app.spec.ts
 index 2f718b7bc5feaebd4e655eb9a878aae6342babbb..1eea2ed64c7d63074016448c499721aa7a1a0bfa 100644
@@ -385,6 +443,19 @@ index 1d8b067390c3e05d245a0b944369dd8e0fdfb114..856cf74e797176325865829023cd74f9
  it.each([false, true])('scopes the Apple proxy around notarization (directory=%s)', async (directory) => {
    const { run } = supervisor()
    await packageTarget(parseDesktopPackageInvocation(['mac-arm64', ...(directory ? ['--dir'] : [])], 'darwin', 'arm64'), {
+diff --git a/apps/desktop/tests/package-target.spec.ts b/apps/desktop/tests/package-target.spec.ts
+index ba647d76ac740f2aa7e40fab69cffbed44c7b9e0..f0a2accc282e43623ca42e0558897d178357a39a 100644
+--- a/apps/desktop/tests/package-target.spec.ts
++++ b/apps/desktop/tests/package-target.spec.ts
+@@ -71,6 +71,8 @@ describe('desktop package target', () => {
+       'never',
+     ])
+     expect(desktopElectronBuilderArguments(target, true)).toContain('--dir')
++    expect(desktopElectronBuilderArguments(target, false, undefined, '/application/builder.mjs'))
++      .toContain('/application/builder.mjs')
+   })
+ 
+   it('accepts unsigned supported targets and rejects preparation-only use', () => {
 diff --git a/apps/desktop/tests/prepare-package-set.spec.ts b/apps/desktop/tests/prepare-package-set.spec.ts
 index 6db1ccbd018bfba78fb6e58ff8d9968fe3220521..6d4e2d6ab67167617bb4f4e5f1f55b9f36d6aa2a 100644
 --- a/apps/desktop/tests/prepare-package-set.spec.ts

@@ -13,9 +13,9 @@ on:
         type: string
         required: false
       signing:
-        description: unsigned development package or signed native update
+        description: unsigned 开发包、internal 免费内部更新、signed 正式签名更新
         type: choice
-        options: [unsigned, signed]
+        options: [unsigned, internal, signed]
         default: unsigned
 
 permissions:
@@ -40,7 +40,10 @@ jobs:
       - name: Validate signing machine configuration
         env:
           PACKAGE_SIGNING: ${{ inputs.signing }}
-          PACKAGE_DOWNLOAD_REPOSITORY: ${{ vars.DESKTOP_GITHUB_DOWNLOAD_REPOSITORY }}
+          PACKAGE_DOWNLOAD_REPOSITORY: ${{ inputs.signing == 'internal' && vars.DESKTOP_INTERNAL_DOWNLOAD_REPOSITORY || vars.DESKTOP_GITHUB_DOWNLOAD_REPOSITORY }}
+          SIGNED_DOWNLOAD_REPOSITORY: ${{ vars.DESKTOP_GITHUB_DOWNLOAD_REPOSITORY }}
+          PACKAGE_INTERNAL_CERTIFICATE_SHA256: ${{ vars.DESKTOP_INTERNAL_MAC_CERTIFICATE_SHA256 }}
+          INTERNAL_CERTIFICATE_CONFIGURED: ${{ secrets.DESKTOP_INTERNAL_MAC_CERTIFICATE != '' && secrets.DESKTOP_INTERNAL_MAC_PASSWORD != '' }}
           SIGNING_RUNNERS: ${{ vars.DESKTOP_SIGNING_RUNNERS }}
           SIGNING_CONFIG_DIRS: ${{ vars.DESKTOP_SIGNING_CONFIG_DIRS }}
         run: node apps/product-desktop/scripts/signing-runners.mjs
@@ -71,7 +74,8 @@ jobs:
       DSH_DESKTOP_NPM_REGISTRY: https://registry.npmjs.org/
       NPM_CONFIG_FETCH_RETRIES: '4'
       PACKAGE_SIGNING: ${{ inputs.signing }}
-      PACKAGE_DOWNLOAD_REPOSITORY: ${{ vars.DESKTOP_GITHUB_DOWNLOAD_REPOSITORY }}
+      PACKAGE_DOWNLOAD_REPOSITORY: ${{ inputs.signing == 'internal' && vars.DESKTOP_INTERNAL_DOWNLOAD_REPOSITORY || vars.DESKTOP_GITHUB_DOWNLOAD_REPOSITORY }}
+      PACKAGE_INTERNAL_CERTIFICATE_SHA256: ${{ vars.DESKTOP_INTERNAL_MAC_CERTIFICATE_SHA256 }}
       PACKAGE_SIGNING_CONFIG_DIR: ${{ inputs.signing == 'signed' && fromJSON(vars.DESKTOP_SIGNING_CONFIG_DIRS || '{}')[matrix.target] || '' }}
       DSH_DESKTOP_UPDATE_CHANNEL: nightly
     steps:
@@ -112,7 +116,7 @@ jobs:
       - name: Test product source synchronization
         run: node --test apps/product-desktop/tests/github-delivery.test.mjs
       - name: Test native product update publication
-        run: node --test apps/product-desktop/tests/product-updates.test.mjs
+        run: node --test apps/product-desktop/tests/product-updates.test.mjs apps/product-desktop/tests/internal-updates.test.mjs
       - name: Test native update confirmation and configuration
         run: >-
           pnpm exec vitest run
@@ -144,6 +148,8 @@ jobs:
         if: matrix.target != 'win-x64'
         env:
           PACKAGE_TARGET: ${{ matrix.target }}
+          PACKAGE_INTERNAL_CERTIFICATE_BASE64: ${{ inputs.signing == 'internal' && secrets.DESKTOP_INTERNAL_MAC_CERTIFICATE || '' }}
+          PACKAGE_INTERNAL_CERTIFICATE_PASSWORD: ${{ inputs.signing == 'internal' && secrets.DESKTOP_INTERNAL_MAC_PASSWORD || '' }}
         run: |
           mode_args=()
           if [ "$PACKAGE_SIGNING" != signed ]; then mode_args+=(--unsigned); fi
@@ -188,6 +194,8 @@ jobs:
         if: matrix.target != 'win-x64'
         env:
           PACKAGE_TARGET: ${{ matrix.target }}
+          PACKAGE_INTERNAL_CERTIFICATE_BASE64: ${{ inputs.signing == 'internal' && secrets.DESKTOP_INTERNAL_MAC_CERTIFICATE || '' }}
+          PACKAGE_INTERNAL_CERTIFICATE_PASSWORD: ${{ inputs.signing == 'internal' && secrets.DESKTOP_INTERNAL_MAC_PASSWORD || '' }}
         run: pnpm --dir apps/product-desktop run test:installed --target "$PACKAGE_TARGET"
       - name: Test installed Windows product desktop
         if: matrix.target == 'win-x64'
@@ -203,6 +211,7 @@ jobs:
           path: |
             .artifacts/desktop-ui-${{ matrix.target }}.json
             .artifacts/desktop-installed-${{ matrix.target }}.json
+            .artifacts/native-macos-update-*.json
             .artifacts/deepseek-harness-catalog/electron-*.png
             .artifacts/deepseek-harness-catalog/electron-*-startup.txt
           if-no-files-found: warn

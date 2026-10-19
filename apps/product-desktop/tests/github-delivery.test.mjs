@@ -266,7 +266,7 @@ test('uses native hosted development runners or explicitly configured signing ma
   assert.match(steps.find(step => step.name === 'Package macOS').run, /mode_args\+=\(--unsigned\)/u)
   assert.equal(workflow.jobs.package.needs, 'preflight')
   assert.match(workflow.jobs.package['runs-on'], /DESKTOP_SIGNING_RUNNERS/u)
-  assert.deepEqual(workflow.on.workflow_dispatch.inputs.signing.options, ['unsigned', 'signed'])
+  assert.deepEqual(workflow.on.workflow_dispatch.inputs.signing.options, ['unsigned', 'internal', 'signed'])
   assert.match(steps.find(step => step.name === 'Upload installers').with.path, /\*-nightly\.yml/u)
   const archiveIndex = steps.findIndex(step => step.name === 'Test archived Host startup')
   assert.ok(archiveIndex > steps.findIndex(step => step.name === 'Package Windows'))
@@ -309,7 +309,13 @@ test('uses native hosted development runners or explicitly configured signing ma
   ])
   assert.equal(packagingEvidence.with['retention-days'], 14)
   assert.doesNotMatch(steps.find(step => step.name === 'Upload installers').with.path, /desktop-ui|electron-\*/u)
-  assert.doesNotMatch(source, /192\.168\.|secrets\.|release:publish|upload:latest|CSC_LINK|APPLE_API_KEY/u)
+  assert.doesNotMatch(source, /192\.168\.|release:publish|upload:latest|CSC_LINK|APPLE_API_KEY/u)
+  const secretNames = [...source.matchAll(/secrets\.([A-Z_]+)/gu)].map(match => match[1])
+  assert.deepEqual([...new Set(secretNames)].sort(), ['DESKTOP_INTERNAL_MAC_CERTIFICATE', 'DESKTOP_INTERNAL_MAC_PASSWORD'])
+  assert.doesNotMatch(JSON.stringify(workflow.jobs.package.env), /secrets\./u)
+  for (const step of steps.filter(step => !['Package macOS', 'Test installed product desktop'].includes(step.name))) {
+    assert.doesNotMatch(JSON.stringify(step), /secrets\./u)
+  }
 })
 
 test('internal synchronization fetches main and its own baseline without disclosing the token', () => {

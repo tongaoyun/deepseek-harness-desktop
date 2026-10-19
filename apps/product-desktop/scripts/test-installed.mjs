@@ -7,6 +7,7 @@ import { parseArgs } from 'node:util'
 import { runAcceptanceProcess } from './acceptance-process.mjs'
 import { stopInstalledProcesses } from './installed-processes.mjs'
 import { productSigningMode } from './update-release.mjs'
+import { withInternalMacIdentity } from './internal-signing.mjs'
 
 const root = resolve(import.meta.dirname, '../../..')
 
@@ -104,5 +105,13 @@ async function main() {
 }
 
 if (process.argv[1] !== undefined && resolve(process.argv[1]) === import.meta.filename) {
-  await main().catch(error => { console.error(error.message); process.exitCode = 1 })
+  const operation = process.platform === 'darwin' && process.env.PACKAGE_SIGNING === 'internal'
+    ? withInternalMacIdentity(process.env, async environment => {
+      // Only the private installation test inherits the imported keychain, never PKCS#12 inputs.
+      const original = process.env
+      process.env = environment
+      try { await main() } finally { process.env = original }
+    })
+    : main()
+  await operation.catch(error => { console.error(error.message); process.exitCode = 1 })
 }

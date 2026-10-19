@@ -8,8 +8,18 @@ import { productSigningMode, productUpdateUrl } from './update-release.mjs'
  * @returns {void} Throws before any signing job is queued when routing is incomplete.
  */
 export function validateSigningRunners(environment) {
-  if (productSigningMode(environment.PACKAGE_SIGNING) === 'unsigned') return
+  const mode = productSigningMode(environment.PACKAGE_SIGNING)
+  if (mode === 'unsigned') return
   productUpdateUrl(environment.PACKAGE_DOWNLOAD_REPOSITORY)
+  if (mode === 'internal') {
+    if (!/^[A-F0-9]{64}$/u.test(environment.PACKAGE_INTERNAL_CERTIFICATE_SHA256 ?? '') || environment.INTERNAL_CERTIFICATE_CONFIGURED !== 'true') {
+      throw new Error('Internal updates require the fixed macOS certificate secrets and public SHA-256 pin')
+    }
+    if (environment.PACKAGE_DOWNLOAD_REPOSITORY === environment.SIGNED_DOWNLOAD_REPOSITORY) {
+      throw new Error('Internal and Developer ID updates must use distinct download repositories')
+    }
+    return
+  }
   let runners
   let directories
   try {

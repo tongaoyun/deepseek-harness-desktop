@@ -71,6 +71,8 @@ describe('desktop package target', () => {
       'never',
     ])
     expect(desktopElectronBuilderArguments(target, true)).toContain('--dir')
+    expect(desktopElectronBuilderArguments(target, false, undefined, '/application/builder.mjs'))
+      .toContain('/application/builder.mjs')
   })
 
   it('accepts unsigned supported targets and rejects preparation-only use', () => {
