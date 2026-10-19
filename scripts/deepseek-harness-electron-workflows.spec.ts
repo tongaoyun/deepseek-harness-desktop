@@ -41,25 +41,10 @@ describe('DeepSeekHarness Electron workflows', () => {
     expect(command).not.toContain('pnpm run build:lib:host')
     expect(command).not.toContain('pnpm run typecheck:contracts-ready')
     const tests = command.match(/\S+\.spec\.tsx?/gu) ?? []
-    expect(tests).toContain('packages/deepseek-harness-product/runtime/tests/deepseek-harness-connector-contract.spec.ts')
-    expect(tests).toContain('packages/deepseek-harness-product/runtime/tests/deepseek-harness-runtime.spec.ts')
-    for (const path of [
-      'packages/deepseek-harness-product/expert-kit-readme/tests/loader-composition.spec.ts',
-      'packages/deepseek-harness-product/desktop/tests/extension-authoring.spec.ts',
-      'packages/deepseek-harness-product/desktop/tests/extension-archives.spec.ts',
-      'packages/deepseek-harness-product/desktop/tests/authoring-sessions.spec.ts',
-      'packages/deepseek-harness-product/desktop/tests/authoring-save-recovery.spec.ts',
-      'packages/deepseek-harness-product/desktop/tests/connector-proxy.spec.ts',
-      'packages/deepseek-harness-product/desktop/tests/deepseek-harness-product-config.spec.ts',
-      'packages/deepseek-harness-product/product/tests/employee-lifecycle.spec.ts',
-      'packages/deepseek-harness-product/runtime/tests/installed-skills.spec.ts',
-      'packages/extensions/ui-deepseek-harness-product/tests/KnowledgeEditor.client.spec.tsx',
-      'packages/deepseek-harness-product/desktop/tests/desktop-support.spec.ts',
-      'packages/extensions/ui-deepseek-harness-product/tests/DesktopFeedback.client.spec.tsx',
-      'packages/extensions/ui-deepseek-harness-product/tests/KnowledgeDirectory.client.spec.tsx',
-      'packages/deepseek-harness-product/runtime/tests/conversation-authoring-loader.spec.ts',
-      'packages/deepseek-harness-product/runtime/tests/kit-skills-loader.spec.ts',
-    ]) expect(tests).toContain(path)
+    for (const scope of ['packages/deepseek-harness-product', 'packages/extensions/ui-deepseek-harness-product']) {
+      expect(command.split(/\s+/u)).toContain(scope)
+      expect(tests.some(path => path.startsWith(`${scope}/`))).toBe(false)
+    }
     for (const path of tests) expect(existsSync(resolve(import.meta.dirname, '..', path)), path).toBe(true)
   })
 

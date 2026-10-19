@@ -58,29 +58,10 @@ jobs:
           pnpm run verify-package-dependencies
           pnpm run verify-no-unknown-casts
           pnpm exec vitest run \
+            packages/deepseek-harness-product \
+            packages/extensions/ui-deepseek-harness-product \
             scripts/upstream-boundaries.spec.ts \
             scripts/rescope-vendor.spec.ts \
-            packages/deepseek-harness-product/expert-kit-readme/tests/expert-kit-readme.spec.ts \
-            packages/deepseek-harness-product/expert-kit-readme/tests/loader-composition.spec.ts \
-            packages/deepseek-harness-product/product/tests/authoring.spec.ts \
-            packages/deepseek-harness-product/desktop/tests/extension-authoring.spec.ts \
-            packages/deepseek-harness-product/desktop/tests/extension-archives.spec.ts \
-            packages/deepseek-harness-product/desktop/tests/authoring-sessions.spec.ts \
-            packages/deepseek-harness-product/desktop/tests/authoring-save-recovery.spec.ts \
-            packages/deepseek-harness-product/desktop/tests/connector-proxy.spec.ts \
-            packages/deepseek-harness-product/desktop/tests/deepseek-harness-product-config.spec.ts \
-            packages/deepseek-harness-product/desktop/tests/desktop-support.spec.ts \
-            packages/deepseek-harness-product/desktop/tests/extension.spec.ts \
-            packages/deepseek-harness-product/desktop/tests/personal-connectors.spec.ts \
-            packages/deepseek-harness-product/runtime/tests/conversation-authoring-loader.spec.ts \
-            packages/deepseek-harness-product/runtime/tests/kit-skills-loader.spec.ts \
-            packages/deepseek-harness-product/runtime/tests/deepseek-harness-connector-contract.spec.ts \
-            packages/deepseek-harness-product/runtime/tests/deepseek-harness-runtime.spec.ts \
-            packages/deepseek-harness-product/runtime/tests/content-retention.spec.ts \
-            packages/deepseek-harness-product/runtime/tests/runtime-loader.spec.ts \
-            packages/deepseek-harness-product/runtime/tests/tasks.spec.ts \
-            packages/deepseek-harness-product/runtime/tests/installed-skills-uninstall.spec.ts \
-            packages/deepseek-harness-product/runtime/tests/installed-skills.spec.ts \
             packages/client/hmr/tests/node-half.client.spec.ts \
             packages/client/hmr/tests/transport.client.spec.ts \
             apps/desktop/tests/command-management.spec.ts \
@@ -90,21 +71,6 @@ jobs:
             apps/desktop/tests/main-startup.spec.ts \
             packages/client/ui-primitives/tests/code-file-icon.client.spec.tsx \
             packages/client/ui-settings-account/tests/apply.client.spec.ts \
-            packages/deepseek-harness-product/product/tests/bridge.spec.ts \
-            packages/deepseek-harness-product/product/tests/startup-network.spec.ts \
-            packages/deepseek-harness-product/product/tests/employee-lifecycle.spec.ts \
-            packages/deepseek-harness-product/product/tests/knowledge-bridge.spec.ts \
-            packages/extensions/ui-deepseek-harness-product/tests/KnowledgeView.client.spec.tsx \
-            packages/extensions/ui-deepseek-harness-product/tests/KnowledgeWorkspace.client.spec.tsx \
-            packages/extensions/ui-deepseek-harness-product/tests/KnowledgeDirectory.client.spec.tsx \
-            packages/extensions/ui-deepseek-harness-product/tests/KnowledgeEditor.client.spec.tsx \
-            packages/extensions/ui-deepseek-harness-product/tests/KnowledgeSaveRecovery.client.spec.tsx \
-            packages/extensions/ui-deepseek-harness-product/tests/knowledge-folders.client.spec.ts \
-            packages/extensions/ui-deepseek-harness-product/tests/DeepSeekHarnessCatalogSection.spec.tsx \
-            packages/extensions/ui-deepseek-harness-product/tests/DesktopFeedback.client.spec.tsx \
-            packages/extensions/ui-deepseek-harness-product/tests/harness-actions.client.spec.ts \
-            packages/extensions/ui-deepseek-harness-product/tests/TaskExpertKitSeat.client.spec.tsx \
-            packages/extensions/ui-deepseek-harness-product/tests/TaskKnowledgeSelector.client.spec.tsx \
             scripts/deepseek-harness-electron-workflows.spec.ts
           pnpm run verify-translation-pairing
           git diff --check
