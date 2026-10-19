@@ -95,7 +95,7 @@ export class DesktopSupport {
       desktopVersion: metadata.desktopVersion, deviceId, taskId: '' })], { type: 'application/json' }))
     const result: unknown = await api.request('/api/v1/feedback', { method: 'POST', body: form,
       headers: { 'Idempotency-Key': operationId }, signal })
-    if (typeof result !== 'object' || result === null || !('id' in result) || typeof result.id !== 'string') {
+    if (typeof result !== 'object' || result === null || !('id' in result) || typeof result.id !== 'string' || !result.id.trim()) {
       throw new ProductError('INVALID_SERVER_RESPONSE', 'Feedback receipt is missing', true)
     }
     return { id: result.id }

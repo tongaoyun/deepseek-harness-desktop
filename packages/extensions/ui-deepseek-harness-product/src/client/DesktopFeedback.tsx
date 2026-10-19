@@ -38,6 +38,7 @@ export function DesktopFeedback({ open, onClose, t }: {
     return () => {
       operation.current.live = false
       if (operation.current.request) productApi()?.cancel(operation.current.request)
+      delete operation.current.request
     }
   }, [])
   useEffect(() => {
@@ -81,12 +82,14 @@ export function DesktopFeedback({ open, onClose, t }: {
     try {
       const attachments = await Promise.all(images.map(async file => ({ name: file.name, mediaType: file.type,
         data: new Uint8Array(await file.arrayBuffer()) })))
-      if (!operation.current.live || operation.current.request !== request) return
+      if (operation.current.request !== request) return
       const value = await api.invoke('support.feedback.submit', { operationId: operationId.current,
         message, category, images: attachments }, request)
-      if (operation.current.request === request && typeof value === 'object' && value !== null && 'id' in value && typeof value.id === 'string') {
-        setReceipt(value.id); setMessage(''); setImages([]); operationId.current = randomUUID()
+      if (!operation.current.live || operation.current.request !== request) return
+      if (typeof value !== 'object' || value === null || !('id' in value) || typeof value.id !== 'string' || !value.id.trim()) {
+        throw new Error('Feedback receipt is missing')
       }
+      setReceipt(value.id); setMessage(''); setImages([]); operationId.current = randomUUID()
     } catch (reason) {
       if (operation.current.live && operation.current.request === request) setError(productErrorMessage(reason, t, 'feedbackSendFailed'))
     }

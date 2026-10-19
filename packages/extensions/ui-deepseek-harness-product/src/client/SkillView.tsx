@@ -5,7 +5,7 @@ import css from '../DeepSeekHarnessProduct.module.css'
 import { type ProductDetail, markdownLabels, withoutFrontmatter } from './catalog-shared.tsx'
 
 export function SkillDetailModal({
-  actionError, actionFailure, actionPending, managementActions, detail: product, error, installed, installationsKnown,
+  actionFailure, actionPending, managementActions, detail: product, error, installed, installationsKnown,
   loading, onClose, onUse, open, bundled = false, t,
 }: {
   readonly open: boolean
@@ -14,7 +14,6 @@ export function SkillDetailModal({
   readonly loading: boolean
   readonly error: boolean
   readonly actionPending: boolean
-  readonly actionError: boolean
   readonly actionFailure?: string | undefined
   readonly managementActions?: ReactNode
   readonly installed: boolean
@@ -37,7 +36,6 @@ export function SkillDetailModal({
       {loading && <p className={css.modalStatus} role="status">{t('loading')}</p>}
       {!loading && error && <p className={css.catalogError} role="alert">{t('detailFailed')}</p>}
       {product !== undefined && <>
-        {actionError && <p className={css.catalogError} role="alert">{t('installFailed')}</p>}
         {actionFailure && <p className={css.catalogError} role="alert">{actionFailure}</p>}
         {!product.sourceAvailable ? <p className={css.catalogStatus}>{t('sourceUnavailable')}</p>
           : guide === '' ? <p className={css.catalogStatus}>{t('noGuide')}</p>

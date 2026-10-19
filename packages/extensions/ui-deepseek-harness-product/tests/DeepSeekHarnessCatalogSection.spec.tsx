@@ -3,6 +3,7 @@ import { productFailure, ProductError } from '@deepseek-harness/product/errors'
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { StrictMode } from 'react'
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import type { CommandContribution } from '@deepseek-ai/dsh-client-ui-commands/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
@@ -54,8 +55,9 @@ const actions = () => ({
 
 function deferred<T>() {
   let resolve!: (value: T) => void
-  const promise = new Promise<T>((complete) => { resolve = complete })
-  return { promise, resolve }
+  let reject!: (reason: Error) => void
+  const promise = new Promise<T>((complete, fail) => { resolve = complete; reject = fail })
+  return { promise, resolve, reject }
 }
 
 function castClientContext(value: object): ClientContext {
@@ -902,6 +904,70 @@ describe('DeepSeekHarness capability navigation', () => {
     await waitFor(() => { expect(installSkill).toHaveBeenCalledExactlyOnceWith('writing') })
     expect((await screen.findByRole('alert')).textContent).toBe(zh.installFailed)
     expect(screen.queryByRole('dialog')).toBeNull()
+  })
+
+  it.each(['success', 'failure'] as const)('ignores an old employee card installation %s after switching accounts', async (outcome) => {
+    let employeeId = 'employee-one'
+    let listener: Parameters<ProductApi['subscribe']>[0] | undefined
+    const pending = deferred<undefined>()
+    const productActions = { ...actions(), installSkill: vi.fn(() => pending.promise) }
+    const invoke = vi.fn(async () => [{ id: 'writing', name: '文本技能', version: '1.0.0' }])
+    installProductApi({ invoke, getSession: async () => ({ authenticated: true, employeeId }),
+      subscribe: (callback) => { listener = callback; return () => {} } })
+    render(<SkillsPanel t={t} {...productActions} />)
+    fireEvent.click(await screen.findByRole('button', { name: zh.installSkill }))
+    await waitFor(() => { expect(productActions.installSkill).toHaveBeenCalledOnce() })
+    employeeId = 'employee-two'
+    await act(async () => { listener?.({ type: 'session.changed', payload: { authenticated: true, employeeId } }) })
+    await screen.findByRole('button', { name: zh.installSkill })
+    const reads = productActions.readInstalledSkills.mock.calls.length
+    await act(async () => { if (outcome === 'success') pending.resolve(undefined); else pending.reject(new Error('old installation failed')) })
+    expect(productActions.readInstalledSkills).toHaveBeenCalledTimes(reads)
+    expect(screen.queryByRole('alert')).toBeNull()
+    expect(screen.getByRole<HTMLButtonElement>('button', { name: zh.installSkill }).disabled).toBe(false)
+  })
+
+  it('does not close another connector detail when a cancelled revocation returns late', async () => {
+    const pending = deferred<unknown>()
+    const cancel = vi.fn()
+    const invoke = vi.fn(async (method: string) => {
+      if (method === 'connectors.list') return ['first', 'second'].map(id => ({ id, name: `连接器 ${id}`,
+        authMode: 'oauth', authorizationStatus: 'AUTHORIZED', tools: [] }))
+      if (method === 'connectors.authorization.revoke') return pending.promise
+      return []
+    })
+    installProductApi({ invoke, cancel })
+    render(<ConnectorsPanel t={t} {...actions()} />)
+    fireEvent.click(await screen.findByRole('button', { name: /连接器 first/ }))
+    fireEvent.click(screen.getByRole('button', { name: zh.revokeAuthorization }))
+    await waitFor(() => { expect(invoke.mock.calls.some(([method]) => method === 'connectors.authorization.revoke')).toBe(true) })
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: zh.close }))
+    expect(cancel).toHaveBeenCalledWith(expect.any(String))
+    fireEvent.click(screen.getByRole('button', { name: /连接器 second/ }))
+    await screen.findByRole('dialog', { name: zh.connectorDetails })
+    const reads = invoke.mock.calls.filter(([method]) => method === 'connectors.list').length
+    await act(async () => { pending.resolve({ status: 'REQUIRED' }) })
+    expect(screen.getByRole('dialog', { name: zh.connectorDetails }).textContent).toContain('连接器 second')
+    expect(invoke.mock.calls.filter(([method]) => method === 'connectors.list')).toHaveLength(reads)
+  })
+
+  it('allows retrying a failed connector revocation after StrictMode effect reactivation', async () => {
+    let fail = true
+    const invoke = vi.fn(async (method: string) => {
+      if (method === 'connectors.list') return [{ id: 'erp', name: 'ERP 连接器',
+        authMode: 'oauth', authorizationStatus: 'AUTHORIZED', tools: [] }]
+      if (method === 'connectors.authorization.revoke' && fail) throw new Error('network unavailable')
+      return []
+    })
+    installProductApi({ invoke })
+    render(<StrictMode><ConnectorsPanel t={t} {...actions()} /></StrictMode>)
+    fireEvent.click(await screen.findByRole('button', { name: /ERP 连接器/ }))
+    fireEvent.click(screen.getByRole('button', { name: zh.revokeAuthorization }))
+    expect((await screen.findByRole('alert')).textContent).toBe(zh.authorizationFailed)
+    expect(screen.getByRole<HTMLButtonElement>('button', { name: zh.revokeAuthorization }).disabled).toBe(false)
+    fail = false
+    fireEvent.click(screen.getByRole('button', { name: zh.revokeAuthorization }))
+    await waitFor(() => { expect(screen.queryByRole('dialog')).toBeNull() })
   })
 
   it.each(['card', 'detail'] as const)('uninstalls and reinstalls a shared skill from its %s with confirmation and retry', async (surface) => {

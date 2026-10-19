@@ -101,6 +101,14 @@ it('submits explicitly selected screenshots with main-owned identity and bounded
   } finally { await f.close() }
 })
 
+it.each(['', '   ', null, 42])('rejects an empty or invalid feedback receipt %j', async (id) => {
+  const f = fixture(async () => Response.json({ success: true, data: { id } }))
+  try {
+    await expect(f.bridge.invoke('support.feedback.submit', { operationId: '00000000-0000-4000-8000-000000000001',
+      message: '保留反馈内容', category: 'BUG' })).rejects.toMatchObject({ code: 'INVALID_SERVER_RESPONSE' })
+  } finally { await f.close() }
+})
+
 it('rejects malformed device receipts and retries rather than caching a successful report', async () => {
   vi.spyOn(console, 'warn').mockImplementation(() => undefined)
   const transport = vi.fn<typeof fetch>(async () => Response.json({ success: true, data: {} }))

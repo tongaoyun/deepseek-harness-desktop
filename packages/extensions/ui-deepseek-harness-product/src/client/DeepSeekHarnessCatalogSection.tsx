@@ -52,7 +52,6 @@ export function DeepSeekHarnessCatalogSection(props: CatalogSectionProps): React
   const [detailLoading, setDetailLoading] = useState(false)
   const [detailError, setDetailError] = useState(false)
   const [actionPending, setActionPending] = useState(false)
-  const [actionError, setActionError] = useState(false)
   const [actionFailure, setActionFailure] = useState<string>()
   const [mine, setMine] = useState(false)
   const [editor, setEditor] = useState<{ imported?: ExtensionImportPreview; connector?: { id: string; version: string } }>()
@@ -92,7 +91,7 @@ export function DeepSeekHarnessCatalogSection(props: CatalogSectionProps): React
     setSelectedId(undefined); setSelected(undefined); setReference(undefined)
     setEditor(undefined); setImporter(false); setImportMenu(false); setConfirmation(undefined)
     setManagementPending(false); setManagementError(undefined)
-    setActionPending(false); setActionError(false); setActionFailure(undefined)
+    setActionPending(false); setActionFailure(undefined)
     setDetailLoading(false); setDetailError(false)
     setInstalledSkills(new Map()); setInstalledExpertKits(new Map()); setInstallationsKnown(false)
   }
@@ -275,7 +274,7 @@ export function DeepSeekHarnessCatalogSection(props: CatalogSectionProps): React
     setSelected(undefined)
     setDetailLoading(false)
     setDetailError(false)
-    setActionError(false)
+    setActionFailure(undefined)
   }
 
   useEffect(() => {
@@ -297,7 +296,7 @@ export function DeepSeekHarnessCatalogSection(props: CatalogSectionProps): React
     setSelected(undefined)
     setDetailLoading(true)
     setDetailError(false)
-    setActionError(false)
+    setActionFailure(undefined)
     const currentGeneration = detailReads.current.generation
     if (catalog !== 'expertKits' && catalog !== 'skills') {
       const entry = entries.find(candidate => candidate.id === id)
@@ -335,10 +334,9 @@ export function DeepSeekHarnessCatalogSection(props: CatalogSectionProps): React
     }
   }
 
-  const useProduct = async (product: ProductDetail): Promise<void> => {
+  const useProduct = async (product: Pick<ProductDetail, 'id' | 'version' | 'sha256'>): Promise<void> => {
     const lifetime = managementLifetime.current
     setActionPending(true)
-    setActionError(false)
     setActionFailure(undefined)
     try {
       if (catalog === 'skills') {
@@ -350,8 +348,7 @@ export function DeepSeekHarnessCatalogSection(props: CatalogSectionProps): React
       }
     } catch (error) {
       if (lifetime !== managementLifetime.current) return
-      setActionError(true)
-      setActionFailure(productErrorMessage(error, t, 'useFailed'))
+      setActionFailure(productErrorMessage(error, t, catalog === 'skills' ? 'installFailed' : 'useFailed'))
     } finally {
       if (lifetime === managementLifetime.current) setActionPending(false)
     }
@@ -532,7 +529,7 @@ export function DeepSeekHarnessCatalogSection(props: CatalogSectionProps): React
     onClose={() => { setReference(undefined) }} onCatalogChanged={() => refresh()} t={t} />
     : reference?.kind === 'skills' ? <SkillDetailModal open bundled detail={reference.detail}
       loading={false} error={false} installed={false}
-      installationsKnown={false} actionPending={false} actionError={false}
+      installationsKnown={false} actionPending={false}
       onClose={() => { setReference(undefined) }} onUse={() => undefined} t={t} />
       : reference?.kind === 'knowledge' ? <div className={css.drawerBackdrop} onMouseDown={(event) => {
         if (event.target === event.currentTarget) setReference(undefined)
@@ -608,7 +605,8 @@ export function DeepSeekHarnessCatalogSection(props: CatalogSectionProps): React
           {[false, true].map(value => <button key={String(value)} type="button" role="tab" aria-selected={mine === value}
             onClick={() => { setMine(value) }}>{t(value ? 'mineExtensions' : 'connectorFilterAll')}</button>)}
         </div>}
-        {actionFailure && <p className={css.catalogError} role="alert">{actionFailure}</p>}
+        {actionFailure && (catalog !== 'skills' || selectedId === undefined)
+          && <p className={css.catalogError} role="alert">{actionFailure}</p>}
         {catalog === 'connectors' && !authRequired && error === undefined && <div className={css.catalogTabs}
           role="tablist" aria-label={t('connectorFilter')}>
           {(['all', 'connected', 'mine'] as const).map((id, index, tabs) => <button key={id} type="button" role="tab"
@@ -652,8 +650,6 @@ export function DeepSeekHarnessCatalogSection(props: CatalogSectionProps): React
         {!loading && error === undefined && !authRequired && <div className={css.resultSummary}>
           {t('itemCount').replace('{count}', String(filteredEntries.length))}
         </div>}
-        {catalog === 'skills' && selectedId === undefined && actionError
-          && <p className={css.catalogError} role="alert">{t('installFailed')}</p>}
         <div id="deepseek-harness-catalog-results" role={catalog === 'connectors' ? 'tabpanel' : undefined}
           aria-labelledby={catalog === 'connectors' ? `product-connectors-tab-${connectorFilter}` : undefined}>
           {loading && <p className={css.catalogStatus} role="status">{t('loading')}</p>}
@@ -680,12 +676,8 @@ export function DeepSeekHarnessCatalogSection(props: CatalogSectionProps): React
                 installedSkills={catalog === 'expertKits' ? installedExpertKits : installedSkills} installationsKnown={installationsKnown}
                 managementActions={managementActions}
                 onOpen={(id) => { void openDetail(id) }} onUseSkill={(entry) => {
-                  if (catalog === 'expertKits') { void installKit(entry); return }
-                  setActionPending(true)
-                  setActionError(false)
-                  void props.installSkill(entry.id).then(() => rememberInstallation(entry))
-                    .catch(() => { setActionError(true) })
-                    .finally(() => { setActionPending(false) })
+                  if (catalog === 'expertKits') void installKit(entry)
+                  else void useProduct(entry)
                 }} actionPending={actionPending} t={t} />
             </section>))}
         </div>
@@ -693,7 +685,7 @@ export function DeepSeekHarnessCatalogSection(props: CatalogSectionProps): React
     </div>
     {catalog === 'skills' && <SkillDetailModal open={selectedId !== undefined} detail={selected}
       installed={selected !== undefined && isInstalled(installedSkills, selected)} installationsKnown={installationsKnown}
-      loading={detailLoading} error={detailError} actionPending={actionPending} actionError={actionError}
+      loading={detailLoading} error={detailError} actionPending={actionPending}
       actionFailure={actionFailure} managementActions={selected ? managementActions(selected) : undefined}
       onClose={closeDetail} onUse={() => { if (selected !== undefined) void useProduct(selected) }} t={t} />}
     {catalog === 'connectors' && <ConnectorDetailModal open={selectedId !== undefined} detail={selected}

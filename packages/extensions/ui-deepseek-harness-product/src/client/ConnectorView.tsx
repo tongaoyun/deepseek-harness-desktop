@@ -42,17 +42,21 @@ export function ConnectorDetail({ product, onCatalogChanged, t }: {
   const [authorizationPending, setAuthorizationPending] = useState(false)
   const [authorizationError, setAuthorizationError] = useState(false)
   const [configuring, setConfiguring] = useState(false)
-  const mounted = useRef(true)
+  const lifecycle = useRef<AbortController>(new AbortController())
   const authorizationAbort = useRef<AbortController>()
   const activeRequests = useRef(new Map<string, ProductApi>())
   const managedAuthorization = product.authMode === 'oauth'
   const readTools = product.tools.filter(tool => tool.access === 'READ')
   const writeTools = product.tools.filter(tool => tool.access === 'WRITE')
-  useEffect(() => () => {
-    mounted.current = false
-    authorizationAbort.current?.abort()
-    for (const [requestId, api] of activeRequests.current) api.cancel(requestId)
-    activeRequests.current.clear()
+  useEffect(() => {
+    const controller = new AbortController()
+    lifecycle.current = controller
+    return () => {
+      controller.abort()
+      authorizationAbort.current?.abort()
+      for (const [requestId, api] of activeRequests.current) api.cancel(requestId)
+      activeRequests.current.clear()
+    }
   }, [])
   const invoke = async (api: ProductApi, method: string): Promise<unknown> => {
     const requestId = nextProductRequestId()
@@ -67,15 +71,18 @@ export function ConnectorDetail({ product, onCatalogChanged, t }: {
     const api = productApi()
     if (api === undefined || authorizationPending) return
     const controller = new AbortController()
+    const signal = AbortSignal.any([controller.signal, lifecycle.current.signal])
     authorizationAbort.current = controller
     setAuthorizationPending(true)
     setAuthorizationError(false)
     try {
       await invoke(api, 'connectors.authorization.begin')
+      signal.throwIfAborted()
       const expiresAt = Date.now() + AUTHORIZATION_TIMEOUT_MS
       while (Date.now() < expiresAt) {
-        await abortableDelay(AUTHORIZATION_POLL_INTERVAL_MS, controller.signal)
+        await abortableDelay(AUTHORIZATION_POLL_INTERVAL_MS, signal)
         const value = await invoke(api, 'connectors.authorization.status')
+        signal.throwIfAborted()
         const status = typeof value === 'object' && value !== null && !Array.isArray(value)
           ? text(value as Record<string, unknown>, 'status') : undefined
         if (status === 'AUTHORIZED') { await onCatalogChanged(); return }
@@ -83,24 +90,26 @@ export function ConnectorDetail({ product, onCatalogChanged, t }: {
       }
       throw new Error('connector authorization did not complete')
     } catch {
-      if (!controller.signal.aborted && mounted.current) setAuthorizationError(true)
+      if (!signal.aborted) setAuthorizationError(true)
     } finally {
       if (authorizationAbort.current === controller) authorizationAbort.current = undefined
-      if (mounted.current) setAuthorizationPending(false)
+      if (!signal.aborted) setAuthorizationPending(false)
     }
   }
   const revoke = async (): Promise<void> => {
     const api = productApi()
     if (api === undefined || authorizationPending) return
+    const signal = lifecycle.current.signal
     setAuthorizationPending(true)
     setAuthorizationError(false)
     try {
       await invoke(api, 'connectors.authorization.revoke')
+      signal.throwIfAborted()
       await onCatalogChanged()
     } catch {
-      if (mounted.current) setAuthorizationError(true)
+      if (!signal.aborted) setAuthorizationError(true)
     } finally {
-      if (mounted.current) setAuthorizationPending(false)
+      if (!signal.aborted) setAuthorizationPending(false)
     }
   }
   return <>
@@ -136,7 +145,7 @@ export function ConnectorDetail({ product, onCatalogChanged, t }: {
       </div>}
     </section>
     {configuring && <ConnectorDeviceConfiguration product={product} onClose={() => { setConfiguring(false) }}
-      onSaved={async () => { await onCatalogChanged(); if (mounted.current) setConfiguring(false) }} t={t} />}
+      onSaved={async () => { await onCatalogChanged(); if (!lifecycle.current.signal.aborted) setConfiguring(false) }} t={t} />}
     <section className={css.connectorSection}>
       <h2>{t('connectorTools')}</h2>
       {product.tools.length > 0 && <div className={css.toolSummary}>

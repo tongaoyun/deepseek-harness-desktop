@@ -119,6 +119,24 @@ it('keeps failed feedback and its operation ID for retries and returns only a re
   expect(document.body.textContent).not.toContain('private diagnostic')
 })
 
+it.each([{}, { id: '' }, { id: '   ' }, { id: 42 }])('retains feedback and its operation ID for a malformed receipt %j', async (receipt) => {
+  let result = receipt
+  const invoke = vi.fn(async (_namespace: string, method: string, _payload?: unknown) => ({ ok: true,
+    result: method === 'auth.getSession' ? { authenticated: true, employeeId: 'employee-1' } : result }))
+  vi.stubGlobal('dshDesktop', { extensions: { invoke, cancel: vi.fn(), subscribe: () => () => {} } })
+  render(<DesktopFeedback open onClose={() => undefined} t={key => zh[key]} />)
+  fireEvent.change(screen.getByLabelText(zh.feedbackMessage), { target: { value: '保留反馈内容' } })
+  fireEvent.click(screen.getByRole('button', { name: zh.feedbackSend }))
+  expect((await screen.findByRole('alert')).textContent).toBe(zh.feedbackSendFailed)
+  expect(screen.getByLabelText(zh.feedbackMessage)).toHaveProperty('value', '保留反馈内容')
+  const first = invoke.mock.calls.find(call => call[1] === 'support.feedback.submit')
+  result = { id: 'confirmed-receipt' }
+  fireEvent.click(screen.getByRole('button', { name: zh.feedbackSend }))
+  await screen.findByText('confirmed-receipt')
+  expect(invoke.mock.calls.filter(call => call[1] === 'support.feedback.submit')[1]?.[2]).toEqual(first?.[2])
+  expect(screen.getByLabelText(zh.feedbackMessage)).toHaveProperty('value', '')
+})
+
 it('cancels an in-flight request on close and retains the unsent draft on reopening', async () => {
   let rejectFeedback: ((reason: Error) => void) | undefined
   const cancel = vi.fn(() => { rejectFeedback?.(new Error('cancelled')) })

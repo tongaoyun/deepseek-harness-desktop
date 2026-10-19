@@ -8,6 +8,10 @@ afterEach(() => vi.unstubAllGlobals())
 const asContext = (value: object) => value as Context
 
 function fixture() {
+  const listeners = new Set<(event: { type: string; payload?: unknown }) => void>()
+  const effects: (() => unknown)[] = []
+  const release = vi.fn()
+  const refreshSkills = vi.fn()
   let active = 'original'
   let count = 0
   const capabilities = { connectorIds: [] as string[], requiredConnectorIds: [] as string[],
@@ -50,16 +54,19 @@ function fixture() {
     return { kind: 'CURRENT_SESSION', presetId: 'prepared', capabilities }
   })
   vi.stubGlobal('dshDesktop', { extensions: {
-    invoke: async (...args: Parameters<typeof invoke>) => ({ ok: true, result: await invoke(...args) }),
-    cancel: vi.fn(), subscribe: () => () => {},
+    invoke: async (...args: Parameters<typeof invoke>) => ({ ok: true, result: args[1] === 'auth.getSession'
+      ? { authenticated: true, employeeId: 'employee-one' } : await invoke(...args) }),
+    cancel: vi.fn(), subscribe: (_namespace: string, listener: (event: { type: string; payload?: unknown }) => void) => {
+      listeners.add(listener); return () => { listeners.delete(listener) }
+    },
   } })
   const ctx = asContext({
-    effect: (effect: () => unknown) => effect(),
-    uiSkills: { refresh: vi.fn() },
+    effect: (effect: () => () => unknown) => { effects.push(effect()) },
+    uiSkills: { refresh: refreshSkills },
     sessions: { list: { getSnapshot: () => ({ byId: Object.fromEntries([...drafts.keys()]
       .map(id => [id, { id, retainedBy: { mainView: id === active ? 1 : 0 },
         projectionValues: { agentPreset: selectedPresets.get(id) } }])) }) },
-    retain: (id: string) => ({ ready: Promise.resolve(), release: vi.fn(), binding: { ctx: { id } } }),
+    retain: (id: string) => ({ ready: Promise.resolve(), release, binding: { ctx: { id } } }),
     using: async (id: string, _options: unknown, action: (reference: object) => Promise<void>) => action({ binding: { ctx: { id } } }),
     create, binding: (id: string) => ({ ctx: { id } }) },
     workspaces: { list: { getSnapshot: () => ({ items: [{ workspaceId: 'workspace', sessionIds: [...drafts.keys()] }] }) } },
@@ -69,8 +76,48 @@ function fixture() {
     uiWorkspace: { openSession: (id: string) => { active = id } },
   })
   return { actions: createHarnessActions(ctx), capabilities, drafts, selectedPresets, references, setDraft, requestDraftInitialization,
-    select, selectPanel, create, invoke, active: () => active, switchTo: (id: string) => { drafts.set(id, 'other draft'); active = id } }
+    select, selectPanel, create, invoke, active: () => active, switchTo: (id: string) => { drafts.set(id, 'other draft'); active = id },
+    sessionChanged: (employeeId: string) => { for (const listener of listeners) listener({ type: 'session.changed', payload: { authenticated: true, employeeId } }) },
+    dispose: async () => { await Promise.all(effects.map(effect => effect())) }, listeners, release, refreshSkills }
 }
+
+it.each(['kit', 'knowledge', 'authoring'] as const)('cancels queued %s actions on account changes and releases its subscription', async (kind) => {
+  const f = fixture()
+  const pending = Promise.withResolvers<unknown>()
+  f.invoke.mockImplementationOnce(() => pending.promise)
+  const first = f.actions.installSkill('writing')
+  const second = kind === 'kit' ? f.actions.installExpertKit?.('orders')
+    : kind === 'knowledge' ? f.actions.setKnowledgeSelection(['orders'])
+      : f.actions.startExtensionAuthoring?.('skill', { prompt: '创建技能' })
+  const rejected = Promise.all([expect(first).rejects.toThrow(), expect(second).rejects.toThrow()])
+  await vi.waitFor(() => { expect(f.invoke).toHaveBeenCalledOnce() })
+  f.sessionChanged('employee-two')
+  pending.resolve({ id: 'writing' })
+  await rejected
+  expect(f.invoke).toHaveBeenCalledOnce()
+  expect(f.refreshSkills).not.toHaveBeenCalled()
+  expect(f.release).toHaveBeenCalledTimes(kind === 'kit' ? 0 : 1)
+  await f.actions.installExpertKit?.('new-orders')
+  expect(f.invoke).toHaveBeenLastCalledWith('product', 'expertKits.install', { id: 'new-orders' }, expect.any(String))
+  expect(f.create).not.toHaveBeenCalled()
+  expect(f.drafts.get('original')).toBe('  unfinished draft  ')
+  await f.dispose()
+  expect(f.listeners.size).toBe(0)
+})
+
+it('keeps queued actions when the same employee session refreshes', async () => {
+  const f = fixture()
+  const pending = Promise.withResolvers<unknown>()
+  f.invoke.mockImplementationOnce(() => pending.promise)
+  const first = f.actions.installSkill('writing')
+  const second = f.actions.installExpertKit?.('orders')
+  await vi.waitFor(() => { expect(f.invoke).toHaveBeenCalledOnce() })
+  f.sessionChanged('employee-one')
+  pending.resolve({ id: 'writing' })
+  await Promise.all([first, second])
+  expect(f.invoke).toHaveBeenLastCalledWith('product', 'expertKits.install', { id: 'orders' }, expect.any(String))
+  await f.dispose()
+})
 
 it('restores a started task in place without changing its pinned composition, draft, or navigation', async () => {
   const f = fixture()

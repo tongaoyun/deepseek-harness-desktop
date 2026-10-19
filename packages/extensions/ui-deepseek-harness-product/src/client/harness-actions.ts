@@ -13,7 +13,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-skill/client'
 import type { ProductTaskCapabilityRequest, ProductTaskCapabilityResult, ProductTaskCapabilities, ProductInstalledExpertKits, ProductInstalledSkills } from '@deepseek-harness/product/protocol'
 import type { DeepSeekHarnessCatalogActions } from './DeepSeekHarnessCatalogSection.tsx'
 import type { AgentPresetRow } from '@deepseek-ai/dsh-agent-preset-registry/types'
-import { productApi } from './product-api.ts'
+import { productApi, type ProductApi } from './product-api.ts'
 import { isInstalled, items, nextProductRequestId, type Catalog, type ProductItem } from './catalog-shared.tsx'
 import { CAPABILITY_PANELS } from './DeepSeekHarnessCapabilitiesNavigation.tsx'
 
@@ -24,12 +24,37 @@ import { CAPABILITY_PANELS } from './DeepSeekHarnessCapabilitiesNavigation.tsx'
 export function createHarnessActions(ctx: Context): DeepSeekHarnessCatalogActions & TaskModeActions {
   let pending: Promise<unknown> = Promise.resolve()
   const lifecycle = new AbortController()
+  let identityLifecycle = new AbortController()
+  ctx.effect(() => {
+    const api = productApi()
+    let live = true
+    let identity: string | undefined
+    const key = (session: Awaited<ReturnType<ProductApi['getSession']>>) =>
+      JSON.stringify([session.authenticated, session.employeeId])
+    const unsubscribe = api?.subscribe((event) => {
+      if (event.type !== 'session.changed') return
+      const session = event.payload
+      if (typeof session !== 'object' || session === null || !('authenticated' in session)
+        || typeof session.authenticated !== 'boolean') return
+      const next = key({ authenticated: session.authenticated,
+        ...'employeeId' in session && typeof session.employeeId === 'string' ? { employeeId: session.employeeId } : {} })
+      if (next === identity) return
+      identity = next
+      identityLifecycle.abort(new Error('Product employee identity changed'))
+      identityLifecycle = new AbortController()
+    })
+    void api?.getSession().then((session) => { if (live && identity === undefined) identity = key(session) }).catch(() => {
+      // Main still authenticates each request; identity events cancel work queued before a change.
+    })
+    return () => { live = false; unsubscribe?.() }
+  }, 'product-task.identity')
   ctx.effect(() => async () => {
     lifecycle.abort(new Error('Product task actions were released'))
     await pending
   }, 'product-task.actions')
-  const serialize = (operation: () => Promise<void>) => {
-    const result = pending.then(operation)
+  const serialize = (operation: (signal: AbortSignal) => Promise<void>) => {
+    const signal = AbortSignal.any([lifecycle.signal, identityLifecycle.signal])
+    const result = pending.then(() => operation(signal))
     pending = result.catch((error: unknown) => { console.warn('Product task preparation failed', error) })
     return result
   }
@@ -43,7 +68,10 @@ export function createHarnessActions(ctx: Context): DeepSeekHarnessCatalogAction
     const requestId = nextProductRequestId()
     const abort = () =>{  api.cancel(requestId) }
     combined.addEventListener('abort', abort, { once: true })
-    return api.invoke(method, payload, requestId).finally(() =>{  combined.removeEventListener('abort', abort) })
+    return api.invoke(method, payload, requestId).then((value) => {
+      combined.throwIfAborted()
+      return value
+    }).finally(() =>{  combined.removeEventListener('abort', abort) })
   }
   const workspace = async (sessionId?: SessionId) => {
     const items = ctx.workspaces.list.getSnapshot().items
@@ -90,24 +118,32 @@ export function createHarnessActions(ctx: Context): DeepSeekHarnessCatalogAction
     }
     return value as ProductInstalledExpertKits
   }
-  const prepare = async (request: ProductTaskCapabilityRequest, options: { navigation?: AbortSignal } = {}) => {
+  const prepare = async (request: ProductTaskCapabilityRequest, signal: AbortSignal, options: { navigation?: AbortSignal } = {}) => {
     const current = request.sessionId as SessionId | undefined
     const value = await invoke('tasks.capabilities.prepare', {
       ...request, ...current === undefined ? {} : { sessionId: current },
-    })
+    }, signal)
     if (typeof value !== 'object' || value === null || !('presetId' in value) || typeof value.presetId !== 'string'
       || !('kind' in value) || !['CURRENT_SESSION', 'NEW_SESSION'].includes(String(value.kind))) throw new Error('Invalid task preparation response')
     const result = value as ProductTaskCapabilityResult
-    const newSession = () => workspace(current).then(item => ctx.sessions.create({ workspaceId: item.workspaceId }))
+    const newSession = async () => {
+      const item = await workspace(current)
+      signal.throwIfAborted()
+      return ctx.sessions.create({ workspaceId: item.workspaceId })
+    }
     let sessionId = result.kind === 'CURRENT_SESSION' && current !== undefined
       ? current : await newSession()
+    signal.throwIfAborted()
     let selected = await ctx.remote.agentPresets.select(sessionId, result.presetId)
+    signal.throwIfAborted()
     if (!selected.ok && selected.error.code === 'agent-preset/locked') {
       sessionId = await newSession()
       selected = await ctx.remote.agentPresets.select(sessionId, result.presetId)
+      signal.throwIfAborted()
     }
     if (!selected.ok) throw new Error(selected.error.message)
     await ctx.sessions.using(sessionId, { source: 'gateway' }, (reference) => {
+      signal.throwIfAborted()
       const input = ctx.conversation.input.for(reference.binding.ctx)
       if (sessionId !== current) {
         initializeDraft(reference.binding, draft(current))
@@ -125,8 +161,8 @@ export function createHarnessActions(ctx: Context): DeepSeekHarnessCatalogAction
     try { navigation = ctx.layout.beginNavigation() }
     catch (error) { source?.release(); throw error }
     const captured = structuredClone({ ...request, ...sessionId === undefined ? {} : { sessionId } })
-    return serialize(async () => {
-      try { await source?.ready; await prepare(captured, { navigation }) }
+    return serialize(async (signal) => {
+      try { await source?.ready; await prepare(captured, signal, { navigation }) }
       finally { source?.release() }
     })
   }
@@ -138,19 +174,21 @@ export function createHarnessActions(ctx: Context): DeepSeekHarnessCatalogAction
       try { navigation = ctx.layout.beginNavigation() }
       catch (error) { source?.release(); throw error }
       const captured = structuredClone(options)
-      return serialize(async () => {
+      return serialize(async (signal) => {
         try {
           await source?.ready
+          signal.throwIfAborted()
           const location = await workspace(current)
           const sessionId = SessionId(`session-${randomUUID()}`)
           const state = ExtensionAuthoringSnapshotSchema.parse(await invoke('extensions.authoring.begin',
-            { kind, sessionId, ...captured }))
+            { kind, sessionId, ...captured }, signal))
           try { await ctx.sessions.create({ workspaceId: location.workspaceId, sessionId }) }
           catch (error) {
             await invoke('extensions.authoring.discard', { sessionId, authoringId: state.authoringId, revision: state.revision }).catch(() => undefined)
             throw error
           }
           await ctx.sessions.using(sessionId, { source: 'gateway' }, (reference) => {
+            signal.throwIfAborted()
             const input = ctx.conversation.input.for(reference.binding.ctx)
             initializeDraft(reference.binding, captured.prompt)
             if (currentSession() === current && !navigation.aborted) { ctx.uiWorkspace.openSession(sessionId); input.focus() }
@@ -193,12 +231,12 @@ export function createHarnessActions(ctx: Context): DeepSeekHarnessCatalogAction
     retryCapabilities: (sessionId = currentSession()) => {
       if (sessionId === undefined) return Promise.reject(new Error('Task retry requires a Session'))
       const source = ctx.sessions.retain(sessionId, { source: 'gateway' })
-      return serialize(async () => {
+      return serialize(async (signal) => {
         try {
           await source.ready
           const presetId = ctx.sessions.list.getSnapshot().byId[sessionId]?.projectionValues?.agentPreset
           if (typeof presetId !== 'string' || !presetId.startsWith('product-task-')) throw new Error('Task retry requires a pinned capability snapshot')
-          const value = await invoke('tasks.capabilities.prepare', { sessionId })
+          const value = await invoke('tasks.capabilities.prepare', { sessionId }, signal)
           if (typeof value !== 'object' || value === null || !('presetId' in value) || value.presetId !== presetId
             || ctx.sessions.list.getSnapshot().byId[sessionId]?.projectionValues?.agentPreset !== presetId) {
             throw new Error('Task composition changed during retry; refresh the task')
@@ -207,12 +245,12 @@ export function createHarnessActions(ctx: Context): DeepSeekHarnessCatalogAction
       })
     },
     startExpertKit: id => enqueue({ expertKitId: id }),
-    installSkill: id => serialize(async () => {
-      await invoke('skills.install', { id })
+    installSkill: id => serialize(async (signal) => {
+      await invoke('skills.install', { id }, signal)
       ctx.uiSkills.refresh()
     }),
     readInstalledSkills,
-    installExpertKit: id => serialize(async () => { await invoke('expertKits.install', { id }) }),
+    installExpertKit: id => serialize(async (signal) => { await invoke('expertKits.install', { id }, signal) }),
     readInstalledExpertKits,
     readCapabilities,
     subscribeTaskSelection: (listener) => {
