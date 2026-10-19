@@ -144,7 +144,7 @@ function KnowledgeEditorForm({ knowledgeBaseId, target, onClose, onSaved, t, res
   const readLatest = async (): Promise<void> => {
     if (!metadata || loading || pending) return
     const controller = operation.current.controller
-    setLoading(true); setError('')
+    setLoading(true); setError(''); setLatest(undefined)
     try {
       const document = knowledgeDocument(await request('knowledge.documents.get', {
         knowledgeBaseId, documentId: metadata.id,
