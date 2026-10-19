@@ -5,7 +5,12 @@ import { basename, join } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import { promisify } from 'node:util'
 
-const execute = promisify(execFile)
+async function execute(command, args, options) {
+  const operation = promisify(execFile)(command, args, { ...options, killSignal: 'SIGKILL' })
+  // execFile can reject on AbortError before its child emits close.
+  const closed = new Promise(resolve => operation.child.once('close', resolve))
+  try { return await operation } finally { await closed }
+}
 
 /**
  * Select native helpers descended from this packaging command; never inspect command arguments.

@@ -1,10 +1,12 @@
 import assert from 'node:assert/strict'
-import { spawn } from 'node:child_process'
+import { execFile, spawn } from 'node:child_process'
 import { once } from 'node:events'
 import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
+import { setTimeout as delay } from 'node:timers/promises'
+import { promisify } from 'node:util'
 import { officeHelperProcesses, observeOfficeProcesses } from '../scripts/office-process-diagnostics.mjs'
 
 test('Office diagnostics inspect only owned native helpers through transitive ancestry', () => {
@@ -110,6 +112,36 @@ test('macOS sampler captures a real private subprocess and leaves it running',
     operations.push(operation)
     await operation
     assert.match(await readFile(file, 'utf8'), /Call graph:/u)
+    assert.equal(child.exitCode, null)
+    assert.equal(child.signalCode, null)
+  })
+
+test('cancelling a real macOS sampler waits until its process has exited',
+  { skip: process.platform !== 'darwin', timeout: 15_000 }, async t => {
+    const { directory, cancellation, operations } = await fixture(t)
+    const child = spawn(process.execPath, ['-e', 'process.stdout.write("ready"); setInterval(() => {}, 1000)'], { stdio: ['ignore', 'pipe', 'ignore'] })
+    const closed = once(child, 'close')
+    t.after(async () => { child.kill('SIGKILL'); await closed })
+    await once(child.stdout, 'data')
+    const operation = observeOfficeProcesses(process.pid, directory, {
+      signal: cancellation.signal, pollMs: 1, sampleAfterMs: 1,
+      async readProcesses() { return `${child.pid} ${process.pid} /private/libreoffice-kit` },
+    })
+    operations.push(operation)
+    let sampler
+    const deadline = Date.now() + 5000
+    while (sampler === undefined && Date.now() < deadline) {
+      const { stdout } = await promisify(execFile)('/bin/ps', ['-axo', 'pid=,ppid=,comm='])
+      for (const line of stdout.split('\n')) {
+        const match = /^\s*(\d+)\s+(\d+)\s+\/usr\/bin\/sample\s*$/u.exec(line)
+        if (match && Number(match[2]) === process.pid) sampler = Number(match[1])
+      }
+      if (sampler === undefined) await delay(10)
+    }
+    assert.notEqual(sampler, undefined, 'Sampler must be running before cancellation')
+    cancellation.abort()
+    await operation
+    assert.throws(() => process.kill(sampler, 0), { code: 'ESRCH' })
     assert.equal(child.exitCode, null)
     assert.equal(child.signalCode, null)
   })
