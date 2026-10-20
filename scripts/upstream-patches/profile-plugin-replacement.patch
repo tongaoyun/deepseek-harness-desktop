@@ -1,0 +1,85 @@
+diff --git a/packages/boot/app-boot/tests/plugin-replacement.spec.ts b/packages/boot/app-boot/tests/plugin-replacement.spec.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..ebae845b925f40ffb360be162cbde4b807621ce6
+--- /dev/null
++++ b/packages/boot/app-boot/tests/plugin-replacement.spec.ts
+@@ -0,0 +1,43 @@
++/** Plugin substitution retains native profile settings and uses the Include mount semantics. */
++import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
++import { tmpdir } from 'node:os'
++import { join } from 'node:path'
++import { pathToFileURL } from 'node:url'
++import { applyEntryPatches } from '@deepseek-ai/cordis-plugin-include'
++import { expect, it, onTestFinished, vi } from 'vitest'
++import { boot } from '../src/index.ts'
++
++it('replaces only the plugin specifier and keeps the input list detached', () => {
++  const rows = [{ id: 'plugin', name: 'old-plugin', disabled: true, config: { enabled: ['mine'] } }]
++  const warn = vi.fn()
++  const patched = applyEntryPatches(rows, [{ id: 'plugin', name: 'old-plugin', replace: 'bundled-plugin' }], warn)
++  expect(patched).toEqual([{ ...rows[0], name: 'bundled-plugin' }])
++  expect(rows[0]?.name).toBe('old-plugin')
++  expect(warn).not.toHaveBeenCalled()
++  expect(applyEntryPatches(rows, [{ id: 'plugin', name: 'other-plugin', replace: 'bundled-plugin' }], warn)).toEqual(rows)
++  expect(warn).toHaveBeenCalledOnce()
++})
++
++it.each(['', '  '])('rejects an empty replacement %j before plugin activation', (replace) => {
++  expect(() => applyEntryPatches([{ id: 'plugin', name: 'original' }], [{ id: 'plugin', replace }], vi.fn())).toThrow('nonempty plugin name')
++})
++
++it('rejects replacing a group with a plugin', () => {
++  expect(() => applyEntryPatches([{ id: 'group', name: 'cordis:group', group: true, config: [] }], [{ id: 'group', replace: 'plugin' }], vi.fn())).toThrow('cannot be a group')
++})
++
++it('mounts the replacement once through the real file-backed Loader without importing the original', async () => {
++  const directory = mkdtempSync(join(tmpdir(), 'plugin-replacement-'))
++  onTestFinished(() => { rmSync(directory, { recursive: true, force: true }) })
++  const original = join(directory, 'old.mjs')
++  const replacement = join(directory, 'bundled.mjs')
++  writeFileSync(original, 'throw new Error("original plugin must not load")\n')
++  writeFileSync(replacement, 'export function apply(ctx, config) { ctx.provide("replacementValue", config.value) }\n')
++  writeFileSync(join(directory, 'cordis.yml'), JSON.stringify([{ id: 'employee-plugin', name: pathToFileURL(original).href, config: { value: 'retained' } }]))
++  const ctx = await boot('replacement-test', join(directory, 'cordis.yml'), [{ id: 'employee-plugin', name: pathToFileURL(original).href, replace: pathToFileURL(replacement).href }])
++  onTestFinished(() => ctx.fiber.dispose())
++  expect(ctx.get('replacementValue')).toBe('retained')
++  const entries = [...ctx.loader.entries()].filter(entry => entry.options.id === 'employee-plugin')
++  expect(entries).toHaveLength(1)
++  expect(entries[0]?.options.name).toBe(pathToFileURL(replacement).href)
++})
+diff --git a/vendor/include/src/index.ts b/vendor/include/src/index.ts
+index ee4dd53fb853af9197b59f4820dfe6348698f026..34d18520cdcdb4f0d2b71eddc18e0d60d7c2680b 100644
+--- a/vendor/include/src/index.ts
++++ b/vendor/include/src/index.ts
+@@ -74,7 +74,7 @@ export function applyEntryPatches(
+   buildMap(data)
+ 
+   for (const patch of patches) {
+-    const { id, insert, name, ...overrides } = patch
++    const { id, insert, name, replace, ...overrides } = patch
+ 
+     if (insert) {
+       if (id) {
+@@ -117,6 +117,13 @@ export function applyEntryPatches(
+       continue
+     }
+ 
++    if (replace !== undefined) {
++      if (typeof replace !== 'string' || !replace.trim() || target.group) {
++        throw new Error(`patch replace: entry ${id} requires a nonempty plugin name and cannot be a group`)
++      }
++      target.name = replace
++    }
++
+     for (const [key, value] of Object.entries(overrides)) {
+       if (key === 'id') continue
+       target[key] = value
+@@ -131,6 +138,8 @@ export interface PatchOptions {
+   id?: string
+   insert?: EntryOptions[]
+   name?: string
++  /** Replacement plugin specifier; keeps the entry ID, config, and disabled state. The name field remains a match guard. */
++  replace?: string
+   config?: any
+   group?: boolean | null
+   disabled?: boolean | null

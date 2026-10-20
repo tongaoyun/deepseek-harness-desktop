@@ -32,6 +32,8 @@ Intentionally **not** vendored (verified unused by this set): `reggol`, `@cordis
 
 Keep this log exhaustive — every divergence from upstream must be listed.
 
+产品通用补丁：`include/src/index.ts` 的 `PatchOptions.replace` 只替换插件模块名，保留原条目的 ID、配置和停用状态；`name` 仍作为匹配条件。空名称与分组替换报错。用于产品预装插件固定代码来源，避免已有 profile 的同名 npm 安装覆盖随软件提供的版本。覆盖测试：`packages/boot/app-boot/tests/plugin-replacement.spec.ts`、`packages/deepseek-harness-product/desktop/tests/{native-extensions,company-plugins}.spec.ts`。
+
 1. **`hmr/src/index.ts`**: removed the `./locales/en-US.yml` / `./locales/zh-CN.yml` imports, the `.i18n({...})` call on the `Config` schema, and the `src/locales/` directory. Rationale: those imports require a runtime YAML loader hook (`@cordisjs/unyaml`) that we do not vendor; the i18n texts only localize config descriptions.
 2. **All `package.json` files**: regenerated for Harness releases with scoped names, release versions, publication metadata, precise bundled-runtime and `lib/types/**/*.d.ts` / `.d.ts.map` file entries, source exports where applicable, and declaration metadata pointing at `lib/types`. References within the vendored set use `workspace:~`. HMR declares `esbuild` as a direct dev dependency for its imported `BuildFailure` type, and Loader requires `node-addon-require-builtin@^0.1.4` to match published app runtimes.
 3. **All `tsconfig.json` files**: regenerated to extend the repo-root `tsconfig.base.json`, emit TypeScript intermediates to `lib/types`, and declare project references.

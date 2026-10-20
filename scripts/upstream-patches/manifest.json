@@ -100,7 +100,7 @@
         {
           "path": "scripts/rescope-vendor.ts",
           "before": "cc64e6b550cabb1486d2ad7f04f19f86a4e55625202e08ed8f3cbc55b0c690d8",
-          "after": "7117d5938a46221c6336c4f236dd6bf34fea5cd4f7986e4de5cafe5bff300f46"
+          "after": "6fc90689b3658748e03b1bd47a4e98a33fa0e77565ef4a2d8a043523a7591fdc"
         }
       ],
       "diff": "rescope-runtime-identifiers.patch"
@@ -1583,10 +1583,53 @@
         {
           "path": "vendor/README.md",
           "before": "463f0475336df70f35805c60ea897b94d15cdd295595d8a50074dedd4555d311",
-          "after": "5c7cb2d65567df24a7529cf801416ba44a14fe8e291f97589df7c05735421400"
+          "after": "7c6be447095b9950cae23fc33f87309703ffed89e1f07c58c6e359231b21f1a6"
         }
       ],
       "diff": "company-plugin-vendor-documentation.patch"
+    },
+    {
+      "id": "profile-plugin-replacement",
+      "purpose": "通用 profile 插件替换参数 replace：name 保持匹配条件，替换模块来源同时保留原条目 ID、配置、停用及隔离设置；拒绝空名称和分组替换。产品通过该公开补丁加载随软件提供的插件，防止已有 profile 的同名 npm 安装覆盖公司分支。",
+      "tests": [
+        "packages/boot/app-boot/tests/plugin-replacement.spec.ts",
+        "packages/deepseek-harness-product/desktop/tests/native-extensions.spec.ts",
+        "packages/deepseek-harness-product/desktop/tests/company-plugins.spec.ts"
+      ],
+      "files": [
+        {
+          "path": "vendor/include/src/index.ts",
+          "before": "50005dcc3b35cb8e18e33ee157567aa14210b932fb25e22506d31aee25e59428",
+          "after": "0aad2f6790a7e503afb143878b630739c2076728b456f0e0b77f6d926ffe5b87"
+        },
+        {
+          "path": "packages/boot/app-boot/tests/plugin-replacement.spec.ts",
+          "before": null,
+          "after": "37a4df6e9d6d94c6f4412adb01dbfb0c0ba31b59366574561d65fb765b67d163"
+        }
+      ],
+      "diff": "profile-plugin-replacement.patch"
+    },
+    {
+      "id": "repository-file-list-capacity",
+      "purpose": "Git 文件清单读取容量与其他仓库门禁统一为 64 MiB，避免正常仓库文件名总量超过 Node 默认 1 MiB 时 ENOBUFS；原有检查范围及拒绝规则不变。",
+      "tests": [
+        "scripts/verify-public-repository-links.spec.ts",
+        "scripts/verify-concrete-terms.spec.ts"
+      ],
+      "files": [
+        {
+          "path": "scripts/verify-public-repository-links.ts",
+          "before": "271f05fff3950f4e97d020cbf3f34fcf918abd6b74a563ce13871f396026b239",
+          "after": "ce37f869c4d522bdf345ddbe2f3a04c4a6aecd553f15963ee386142a930f70d3"
+        },
+        {
+          "path": "scripts/verify-concrete-terms.ts",
+          "before": "07e440bbef0f3a435bc6ddc595f07dffd81529e4256b00414b27e437c8206a16",
+          "after": "a82be1fc1607e25ceee06736e0e4f793dced2a75a4a9af4c2068f465d5f8db97"
+        }
+      ],
+      "diff": "repository-file-list-capacity.patch"
     }
   ]
 }

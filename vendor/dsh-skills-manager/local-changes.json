@@ -174,7 +174,7 @@
     {
       "path": "package.json",
       "before": "ab00b723dff6c3892185779fd08b781f221f3da629ffa7def861f47e5fec7903",
-      "after": "6da4c6b4602dade19217f50a716c59b2d756bb74641739448fd8f6e019548d84"
+      "after": "f1a4c3b7869e3173cc08cdf2cb44f8bbc101a441245dc591064d0ca9a31d52e2"
     },
     {
       "path": "src/client.ts",

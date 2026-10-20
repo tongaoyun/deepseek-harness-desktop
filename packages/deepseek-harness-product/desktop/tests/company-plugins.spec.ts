@@ -1,5 +1,5 @@
 /** Company files enter the native catalogs through a real file-backed Loader profile. */
-import { mkdtempSync, writeFileSync, rmSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, writeFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { fileURLToPath } from 'node:url'
 import { join } from 'node:path'
@@ -16,8 +16,8 @@ import { contentDigest } from '@deepseek-harness/product/company-content'
 import * as Agency from '@michengai/dsh-agency-agents'
 const AGENCY_LIBRARY_SERVICE = 'agencyAgentsLibrary'
 interface AgencyExpertLibrary { catalog(): Promise<{ experts: readonly { slug: string; company?: boolean; division: string }[] }> }
-import * as Manager from '@michengai/dsh-skills-manager'
 import { installCompanyContent } from '../src/company-content.ts'
+import { nativeExtensionPatches } from '../src/native-extensions.ts'
 
 declare module '@deepseek-ai/cordis' {
   interface Context { agencyAgentsLibrary: AgencyExpertLibrary; agencyAgentsPersona: Agency.AgencyPersonaSource }
@@ -43,9 +43,20 @@ it.each([true, false])('loads company skills and experts (published=%s), then wi
     { id: 'tools', name: 'cordis:tools' }, { id: 'prompt', name: 'cordis:prompt' },
     { id: 'skills', name: 'cordis:skills' }, { id: 'sessions', name: 'cordis:sessions' },
     { id: 'web', name: 'cordis:web', config: { host: '127.0.0.1', port: 0 } },
-    { id: 'agency-agents', name: 'cordis:agency' }, { id: 'manager', name: 'cordis:manager' },
+    { id: 'agency-agents', name: '@michengai/dsh-agency-agents' },
+    { id: 'manager', name: '@michengai/dsh-skills-manager' },
   ]
+  for (const name of ['@michengai/dsh-agency-agents', '@michengai/dsh-skills-manager']) {
+    const installed = join(directory, 'node_modules', name)
+    mkdirSync(installed, { recursive: true })
+    writeFileSync(join(installed, 'package.json'), JSON.stringify({ name, version: '1.2.8', type: 'module', exports: './index.js' }))
+    writeFileSync(join(installed, 'index.js'), 'throw new Error("profile-installed community plugin must not load")\n')
+  }
   writeFileSync(join(directory, 'cordis.patch.yml'), JSON.stringify([{ insert: rows }]))
+  const bundled = nativeExtensionPatches({ directory, installAnchor: fileURLToPath(new URL('../package.json', import.meta.url)) })
+  // The remote entry is covered by desktop startup; this catalog fixture supplies no remote registry.
+  const patches = bundled.filter(patch => !('insert' in patch))
+  writeFileSync(join(directory, 'cordis.patch.yml'), JSON.stringify([{ insert: rows }, ...patches]))
   writeFileSync(join(directory, 'cordis.yml'), '[]\n')
   const profile: ProfileContext = { name: 'test', startedBundles: [], dir: directory,
     patchPath: join(directory, 'cordis.patch.yml'), installAnchor: fileURLToPath(new URL('../package.json', import.meta.url)),
@@ -55,7 +66,7 @@ it.each([true, false])('loads company skills and experts (published=%s), then wi
     // This case observes catalogs and does not execute or mock a model or a delegated task.
     ctx.provide('subagents', {})
     Object.assign(ctx.loader.builtins, { editor: ConfigEditor, settings: Settings, tools: Tools, prompt: SystemPrompt,
-      skills: Skills, sessions: Sessions, web: WebServer, agency: Agency, manager: Manager })
+      skills: Skills, sessions: Sessions, web: WebServer })
   })
   onTestFinished(() => ctx.fiber.dispose())
   const library = ctx.get(AGENCY_LIBRARY_SERVICE)

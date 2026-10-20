@@ -7,9 +7,9 @@ const plugins = [
   { id: 'skills-manager', packageName: '@michengai/dsh-skills-manager' },
 ] as const
 
-/** Add missing plugins, preserving existing configuration and disabled state.
+/** Select bundled plugin code, preserving existing configuration and disabled state.
  * @param profile - Official profile directory and application installation anchor.
- * @returns Profile patches for plugins not already present under any entry ID.
+ * @returns Profile patches that replace existing plugin specifiers or insert missing plugins.
  */
 export function nativeExtensionPatches(profile: { readonly directory: string; readonly installAnchor: string }) {
   const loaded = loadProfileDirectory('dsh', profile.directory, profile.installAnchor)
@@ -22,6 +22,7 @@ export function nativeExtensionPatches(profile: { readonly directory: string; re
     }
   }
   inspect(entries)
+  const replacements: { id: string; name: string; replace: string }[] = []
   const insert = plugins.flatMap(({ id, packageName }) => {
     const name = import.meta.resolve(packageName)
     const matches = (entry: typeof entries[number]) => entry.name === packageName || entry.name === name
@@ -30,7 +31,12 @@ export function nativeExtensionPatches(profile: { readonly directory: string; re
     }
     const existing = flattened.filter(matches)
     if (existing.length > 1) throw new Error(`Duplicate preinstalled plugin: ${packageName}`)
+    const entry = existing[0]
+    if (entry && entry.name !== name) {
+      if (!entry.id || !entry.name) throw new Error(`Preinstalled plugin has no entry ID or name: ${packageName}`)
+      replacements.push({ id: entry.id, name: entry.name, replace: name })
+    }
     return existing.length === 1 ? [] : [{ id, name }]
   })
-  return insert.length === 0 ? [] : [{ insert }]
+  return [...(insert.length === 0 ? [] : [{ insert }]), ...replacements]
 }
