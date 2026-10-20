@@ -30,6 +30,7 @@ import type {
 import type { ShortcutCommandId } from '@deepseek-ai/dsh-client-shortcuts/client'
 import { createSettingsShellStore } from './shell-store.ts'
 import { SettingsRoot } from './SettingsRoot.tsx'
+import { SettingsSectionView } from './SettingsSectionView.tsx'
 import { DesktopUpdateBadge } from './DesktopUpdateIndicator.tsx'
 import type { DesktopUpdateBridge } from '../types.ts'
 import { DesktopUpdateSource } from './desktop-update-source.ts'
@@ -199,11 +200,14 @@ export function apply(ctx: ClientContext): void {
       },
     })
 
-    const disposeNavigation = ctx.on('settings/open', (sectionId) => {
-      if (!ctx.slots.entries('settings.section').some(entry => entry.options.id === sectionId)) return
-      shellInstance.actions.openSection(sectionId)
-      return true
-    })
+    const disposeSectionView = ctx.slots.registerFactory({
+      name: 'settings.section-view', scope: 'root',
+      children: { 'settings.section': { kind: 'list', scope: 'root' } },
+      inject: () => ({ hooks: { dialogOpen: {
+        getSnapshot: () => shellInstance.getSnapshot().open,
+        subscribe: listener => shellInstance.subscribe(listener),
+      } } }),
+    }, SettingsSectionView)
     const disposeSlot = ctx.slots.register({
       name: 'sidebar.settings',
       locale: NS,
@@ -214,12 +218,11 @@ export function apply(ctx: ClientContext): void {
         'settings.header': { kind: 'single', scope: 'root' },
         'settings.action': { kind: 'list', scope: 'root' },
         'settings.close': { kind: 'single', scope: 'root' },
-        'settings.section': { kind: 'list', scope: 'root' },
         'settings.onboarding': { kind: 'list', scope: 'root' },
       },
       inject: shellInjected,
     }, SettingsRoot)
-    return () => { disposeNavigation(); disposeCommand(); disposeSlot() }
+    return () => { disposeCommand(); disposeSlot(); disposeSectionView() }
   })
 
   ctx.slots.inject('settings.trigger', () =>

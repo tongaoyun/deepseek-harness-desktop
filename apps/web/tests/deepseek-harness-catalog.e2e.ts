@@ -612,7 +612,16 @@ it('keeps native themes and responsive catalogs while using official details and
       await captureStableAria(page, selector, scaffold.workspaceCwd), webSnapshotMode())
   }
 
-  await snapshot('extension-navigation', '[data-extension-navigation]')
+  await snapshot('extension-navigation', 'nav[aria-label="Global panels"]')
+
+  for (const [label, sectionId] of [['Expert kits', 'agency-agents'], ['Skills', 'skills-manager']] as const) {
+    await page.getByRole('button', { name: label, exact: true }).click()
+    const unavailable = page.locator(`[data-extension-page="${sectionId}"]`).getByRole('alert')
+    await unavailable.getByText('This extension page is unavailable. Enable the plugin in Settings and try again.', { exact: true }).waitFor()
+    expect(await page.getByRole('dialog', { name: 'Settings', exact: true }).count()).toBe(0)
+  }
+  await page.locator(`[data-row-key="session:${originalSession}"]`).click()
+  expect(await composer.textContent()).toBe('Design an API for order review.')
 
   for (const theme of ['light', 'dark'] as const) {
     await page.emulateMedia({ colorScheme: theme })
@@ -1396,14 +1405,34 @@ for (const { mode, installed, surface } of desktopCarriers) {
         expect(await page.getByRole('button', { name: /^(Expert kits|专家套件)$/, exact: true }).count()).toBe(0)
         await expect(invoke('auth.getSession')).rejects.toThrow()
       } else {
-        for (const [label, section] of [[/^(Expert kits|专家套件)$/, /^(Experts|专家)$/], [/^(Skills|技能)$/, /^(Skills|技能)$/]] as const) {
-          await page.getByRole('button', { name: label, exact: true }).click()
+        const navigationSession = await page.locator('[data-conversation-session]').last().getAttribute('data-conversation-session')
+        await composer.fill('Keep the extension navigation draft')
+        for (const [label, sectionId] of [[/^(Expert kits|专家套件)$/, 'agency-agents'], [/^(Skills|技能)$/, 'skills-manager']] as const) {
+          const entry = page.getByRole('button', { name: label, exact: true })
+          await entry.click()
+          const embedded = page.locator(`[data-extension-page="${sectionId}"]`)
+          await embedded.waitFor()
+          expect(await entry.getAttribute('aria-current')).toBe('page')
           const settings = page.getByRole('dialog', { name: /^(Settings|设置)$/, exact: true })
-          await settings.waitFor()
-          expect(await settings.locator('[aria-current="true"]').innerText()).toMatch(section)
-          await settings.getByRole('button', { name: /^(Close|关闭)$/, exact: true }).last().click()
-          await settings.waitFor({ state: 'hidden' })
+          expect(await settings.count()).toBe(0)
+          await expect.poll(() => embedded.innerText()).toMatch(/.+/u)
+          expect(await embedded.getByRole('alert').count()).toBe(0)
+          expect(await embedded.evaluate(region => region.scrollWidth > region.clientWidth)).toBe(false)
         }
+        await page.getByRole('button', { name: /^(More menu|更多菜单)$/, exact: true }).click()
+        await page.getByRole('menuitem', { name: /^(Settings|设置)$/, exact: true }).click()
+        const sharedSettings = page.getByRole('dialog', { name: /^(Settings|设置)$/, exact: true })
+        await sharedSettings.waitFor()
+        for (const section of [/^(Experts|专家)$/, /^(Skills|技能)$/]) {
+          await sharedSettings.getByRole('button', { name: section, exact: true }).click()
+          expect(await sharedSettings.locator('[aria-current="true"]').innerText()).toMatch(section)
+        }
+        expect(await page.locator('[data-extension-page="skills-manager"]').innerText()).toBe('')
+        await sharedSettings.getByRole('button', { name: /^(Close|关闭)$/, exact: true }).last().click()
+        await sharedSettings.waitFor({ state: 'hidden' })
+        await expect.poll(() => page.locator('[data-extension-page="skills-manager"]').innerText()).toMatch(/.+/u)
+        await page.locator(`[data-row-key="session:${navigationSession}"]`).click()
+        expect(await composer.textContent()).toBe('Keep the extension navigation draft')
         await expect.poll(() => deviceReports.length).toBeGreaterThan(0)
         expect(JSON.stringify(deviceReports)).not.toContain(secret)
         expect(deviceReports[0]?.deviceId).toMatch(/^[0-9a-f-]{36}$/u)

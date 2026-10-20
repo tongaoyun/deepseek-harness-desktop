@@ -12,8 +12,10 @@ import {
   ConnectorsPanel, KnowledgePanel,
 } from '../src/client/DeepSeekHarnessCatalogSection.tsx'
 import {
-  CAPABILITY_PANELS, CapabilitiesHeading, CapabilityChildIcon,
+  CAPABILITY_PANELS, EXTENSION_PANELS, CapabilitiesHeading, CapabilityChildIcon,
 } from '../src/client/DeepSeekHarnessCapabilitiesNavigation.tsx'
+import { ExtensionPage } from '../src/client/ExtensionPage.tsx'
+import type { PropsRenderFactories } from '@deepseek-ai/dsh-client-ui-slots'
 import { apply } from '../src/client/index.ts'
 import { DeepSeekHarnessSettingsMenu } from '../src/client/DeepSeekHarnessSettingsMenu.tsx'
 import { zh, type DeepSeekHarnessProductKey } from '../src/locales.ts'
@@ -154,9 +156,7 @@ describe('DeepSeekHarness capability navigation', () => {
     const registrations: Array<{ options: Record<string, unknown>; component: unknown }> = []
     const selectPanel = vi.fn()
     const registerCommand = vi.fn((_command: CommandContribution) => () => {})
-    const bail = vi.fn(() => true)
     const ctx = {
-      bail,
       effect: (effect: () => unknown) => effect(),
       commandUi: { register: registerCommand },
       sessions: { subagentAddress: vi.fn(() => undefined) },
@@ -173,16 +173,12 @@ describe('DeepSeekHarness capability navigation', () => {
     apply(castClientContext(ctx))
 
     expect(registrations.filter(entry => entry.options.name === 'settings.section')).toEqual([])
-    const navigation = registrations.find(entry => entry.options.name === 'sidebar.panelheading')!
-    const navigationProps = (navigation.options.inject as () => { openExtension(id: string): boolean })()
-    expect(navigationProps.openExtension('agency-agents')).toBe(true)
-    expect(bail).toHaveBeenCalledWith('settings/open', 'agency-agents')
     expect(registrations.filter(entry => entry.options.name === 'sidebar.panelheading')
       .map(entry => entry.options.id)).toEqual(['deepseek-harness-capabilities'])
     expect(registrations.filter(entry => entry.options.name === 'sidebar.panellist')
-      .map(entry => entry.options.id)).toEqual(CAPABILITY_PANELS.map(panel => panel.id))
+      .map(entry => entry.options.id)).toEqual([...EXTENSION_PANELS, ...CAPABILITY_PANELS].map(panel => panel.id))
     expect(registrations.filter(entry => entry.options.name === 'main')
-      .map(entry => entry.options.key)).toEqual(CAPABILITY_PANELS.map(panel => panel.id))
+      .map(entry => entry.options.key)).toEqual([...EXTENSION_PANELS, ...CAPABILITY_PANELS].map(panel => panel.id))
     const settingsLaunchers = registrations.filter(entry => entry.options.name === 'settings.launcher')
     expect(settingsLaunchers).toHaveLength(1)
     // Let the browser slot facade allocate the shadowing rank so this product
@@ -263,25 +259,27 @@ describe('DeepSeekHarness capability navigation', () => {
   })
 
   it('renders Capability as a non-interactive group heading', () => {
-    render(<CapabilitiesHeading wide t={t} openExtension={() => true} />)
+    render(<CapabilitiesHeading wide t={t} />)
     expect(screen.getByText(zh.capabilities)).not.toBeNull()
     expect(screen.queryByRole('button', { name: zh.capabilities })).toBeNull()
   })
 
-  it('opens the shared plugin pages and reports unavailable plugins without losing the shortcuts', () => {
-    const openExtension = vi.fn(() => false)
-    const { rerender } = render(<CapabilitiesHeading wide t={t} openExtension={openExtension} />)
-    fireEvent.click(screen.getByRole('button', { name: zh.expertKits }))
-    expect(openExtension).toHaveBeenLastCalledWith('agency-agents')
+  it('embeds the exact shared page and reports an unavailable plugin without rendering another section', () => {
+    const close = vi.fn()
+    const renderFactorySlot = vi.fn((() => <div>Plugin page</div>) as PropsRenderFactories['renderFactorySlot'])
+    const props = { sectionId: 'agency-agents', close, t, renderFactorySlot, useAvailable: (<T,>(select: (value: boolean) => T): T => select(true)) }
+    const { rerender } = render(<ExtensionPage {...props} />)
+    expect(screen.getByText('Plugin page')).toBeTruthy()
+    expect(renderFactorySlot).toHaveBeenCalledWith('settings.section-view', {
+      sectionId: 'agency-agents', close, presentation: 'embedded',
+    })
+    renderFactorySlot.mockClear()
+    rerender(<ExtensionPage {...props} useAvailable={select => select(false)} />)
     expect(screen.getByRole('alert').textContent).toBe(zh.extensionUnavailable)
-    openExtension.mockReturnValue(true)
-    fireEvent.click(screen.getByRole('button', { name: zh.skills }))
-    expect(openExtension).toHaveBeenLastCalledWith('skills-manager')
-    expect(screen.queryByRole('alert')).toBeNull()
-    rerender(<CapabilitiesHeading wide={false} t={t} openExtension={openExtension} />)
+    expect(renderFactorySlot).not.toHaveBeenCalled()
+    expect(close).not.toHaveBeenCalled()
+    rerender(<CapabilitiesHeading wide={false} t={t} />)
     expect(screen.queryByText(zh.capabilities)).toBeNull()
-    fireEvent.click(screen.getByRole('button', { name: zh.expertKits }))
-    expect(openExtension).toHaveBeenLastCalledWith('agency-agents')
   })
 
   it('removes tree branches while retaining useful collapsed-rail icons', () => {

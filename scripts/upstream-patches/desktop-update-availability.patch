@@ -164,12 +164,17 @@ index 1c6e9da1c775760dd28373411620b2b8ed57f813..0b27b96d44af5d990adeb1b14acb430a
      const f = fixture()
      await f.coordinator.check()
 diff --git a/packages/client/ui-settings-general/README.i18n.yaml b/packages/client/ui-settings-general/README.i18n.yaml
-index a458bb8cf072d91ee40a90a31888440344ea75e0..70da070d149bf36289ba68bc2fda12e30d7baabe 100644
+index a458bb8cf072d91ee40a90a31888440344ea75e0..9af068f1cc2a50b0595b4c7a901ec21a21cd6adc 100644
 --- a/packages/client/ui-settings-general/README.i18n.yaml
 +++ b/packages/client/ui-settings-general/README.i18n.yaml
-@@ -15,8 +15,8 @@
-   en: 2843d46e95311bce
-   zh: ec11bdeb5d3ce818
+@@ -12,11 +12,11 @@
+   en: cd94b4a8dae32670
+   zh: 333b8603e77f92d7
+ /deepseek-ai-dsh-client-ui-settings-general/table-of-contents:
+-  en: 2843d46e95311bce
+-  zh: ec11bdeb5d3ce818
++  en: 79ddeb6f717a2b5c
++  zh: 4d676886fc67c42d
  /deepseek-ai-dsh-client-ui-settings-general/use-this-package:
 -  en: 2bc21e57fe17eab9
 -  zh: e441cd313f747b22
@@ -179,9 +184,18 @@ index a458bb8cf072d91ee40a90a31888440344ea75e0..70da070d149bf36289ba68bc2fda12e3
    en: 8b8a7c6287bb303b
    zh: 19535112531aedd5
 diff --git a/packages/client/ui-settings-general/README.md b/packages/client/ui-settings-general/README.md
-index b005515ea409486cbc1cdef525863e3bcbcb67e0..558cbe222eb7c903edb6a6205f4b81dc6bfa395e 100644
+index b005515ea409486cbc1cdef525863e3bcbcb67e0..c940af341319adff82d22eff60b5e5d913f71de6 100644
 --- a/packages/client/ui-settings-general/README.md
 +++ b/packages/client/ui-settings-general/README.md
+@@ -22,7 +22,7 @@ Use this package to give the dsh web client a Settings panel, connection-recover
+ 
+ -----
+ 
+-The Settings panel uses a shared 800 × 800 layout, bounded by the viewport. Longer sections scroll inside the content column; the Account entry uses the account icon. The panel portals beside `#root` rather than inside it, so a macOS window drag region a chrome row declares later in document order cannot swallow its controls.
++The Settings panel uses a shared 800 × 800 layout, bounded by the viewport. Sections render through the shared `settings.section-view` Factory; embedded application panels reuse the same contributions and suspend while the settings dialog is open. Longer sections scroll inside the content column; the Account entry uses the account icon. The panel portals beside `#root` rather than inside it, so a macOS window drag region a chrome row declares later in document order cannot swallow its controls.
+ 
+ <a id="use-this-package"></a>
+ ## Use this package
 @@ -35,7 +35,7 @@ When the page reconnects to a Host running another release, a **Service version
  
  When the section navigation exceeds the panel's available height, the list scrolls independently of the settings content and keeps the Settings title fixed.
@@ -192,9 +206,18 @@ index b005515ea409486cbc1cdef525863e3bcbcb67e0..558cbe222eb7c903edb6a6205f4b81dc
  Settings visibility and section selection live in the shell owner store. The shell supplies the effective Settings binding to the contributed launcher for menu keycaps and `aria-keyshortcuts`; the fallback button uses the same binding for hover and keyboard-focus hints and `aria-keyshortcuts`. The Settings command (Desktop: `Mod+,`; Windows/macOS Web: `Mod+Alt+,`) toggles the dialog when Settings is in front or no modal is open; the sidebar control opens the same dialog. The command cannot open or close Settings while the shortcut reference or another modal is in front. Held-key repeats do nothing. Initial focus lands on the selected section in the navigation, or on the title when no sections are available, without drawing a focus outline. Tab and directional navigation retain their visible focus indicators. `Mod+/` can open the shortcut reference above Settings; `Escape` closes the top dialog and restores focus to its invoking control. Return focus omits outlines after shortcut, Escape, or pointer dismissal.
  
 diff --git a/packages/client/ui-settings-general/README.zh.md b/packages/client/ui-settings-general/README.zh.md
-index 8628916c7b577df1e9ad001132ebb407ae58f7a0..41cd83c4022553451eb07f812287093a76c580d5 100644
+index 8628916c7b577df1e9ad001132ebb407ae58f7a0..9285cc92d1c5aff8361180e190e929f657e750e1 100644
 --- a/packages/client/ui-settings-general/README.zh.md
 +++ b/packages/client/ui-settings-general/README.zh.md
+@@ -22,7 +22,7 @@ kind: "package-reference"
+ 
+ -----
+ 
+-设置面板采用各页面共享的 800 × 800 布局，并受视口大小约束。较长的页面在内容栏内部滚动；账号入口使用账号图标。面板挂载在 `#root` 之外而不是其内部，这样在文档序上更靠后的 chrome 行所声明的 macOS 窗口拖拽区不会吞掉它的控件。
++设置面板采用各页面共享的 800 × 800 布局，并受视口大小约束。页面通过共享的 `settings.section-view` Factory 渲染，主内容区可复用相同的页面注册，且在设置窗口打开时暂停内嵌实例。较长的页面在内容栏内部滚动；账号入口使用账号图标。面板挂载在 `#root` 之外而不是其内部，这样在文档序上更靠后的 chrome 行所声明的 macOS 窗口拖拽区不会吞掉它的控件。
+ 
+ <a id="use-this-package"></a>
+ ## 使用本包
 @@ -35,7 +35,7 @@ kind: "package-reference"
  
  当分区导航超出面板可用高度时，列表独立于设置内容滚动，并保持「设置」标题固定。

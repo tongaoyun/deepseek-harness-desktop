@@ -1,9 +1,8 @@
-import { useState, type ReactNode } from 'react'
+import type { ReactNode } from 'react'
 import {
   IconAgentPresetOutlineRegular,
   IconApiOutlineRegular,
   IconDeliverDocRegular,
-  Tooltip,
   IconDatabaseOutlineRegular,
   IconSparkleRegular,
 } from '@deepseek-ai/dsh-client-ui-primitives'
@@ -19,30 +18,17 @@ export const CAPABILITY_PANELS = [
 
 export type CapabilityPanel = typeof CAPABILITY_PANELS[number]
 
-const EXTENSION_PAGES = [
-  { id: 'agency-agents', labelKey: 'expertKits', icon: IconAgentPresetOutlineRegular },
-  { id: 'skills-manager', labelKey: 'skills', icon: IconDeliverDocRegular },
+export const EXTENSION_PANELS = [
+  { id: 'deepseek-harness-experts' as MainPanelId, sectionId: 'agency-agents', labelKey: 'expertKits', icon: IconAgentPresetOutlineRegular },
+  { id: 'deepseek-harness-skills' as MainPanelId, sectionId: 'skills-manager', labelKey: 'skills', icon: IconDeliverDocRegular },
 ] as const
 
-/** Shortcuts share the plugin pages already contributed to Settings. */
-export function CapabilitiesHeading({ wide, t, openExtension }:
-PropsRuntime<'sidebar.panelheading'> & PropsLocale<typeof NS> & {
-  readonly openExtension: (sectionId: string) => boolean
-}): ReactNode {
-  const [unavailable, setUnavailable] = useState(false)
-  return <div className={css.extensionNavigation} data-extension-navigation>
-    {wide && <div className={css.capabilitiesHeading}>
-      <IconSparkleRegular size={16} />
-      <span>{t('capabilities')}</span>
-    </div>}
-    {EXTENSION_PAGES.map(({ id, labelKey, icon: Icon }) => <Tooltip key={id} label={t(labelKey)} disabled={wide}>
-      <button type="button" className={wide ? css.extensionShortcut : css.extensionShortcutCollapsed}
-        aria-label={t(labelKey)} onClick={() => { setUnavailable(!openExtension(id)) }}>
-        <span className={css.capabilityChildIcon}>{!wide && <Icon size={16} />}</span>
-        {wide && <span>{t(labelKey)}</span>}
-      </button>
-    </Tooltip>)}
-    {unavailable && <div role="alert" className={css.extensionNavigationError}>{t('extensionUnavailable')}</div>}
+/** Label the extension panels without adding an interactive navigation layer. */
+export function CapabilitiesHeading({ wide, t }:
+PropsRuntime<'sidebar.panelheading'> & PropsLocale<typeof NS>): ReactNode {
+  return wide && <div className={css.capabilitiesHeading}>
+    <IconSparkleRegular size={16} />
+    <span>{t('capabilities')}</span>
   </div>
 }
 

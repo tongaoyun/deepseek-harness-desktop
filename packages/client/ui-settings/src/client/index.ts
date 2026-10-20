@@ -15,6 +15,7 @@ import { SettingsDescribeMirror } from './settings-mirror.ts'
 export type {
   SettingsLauncherOwnerProps, SettingsGeneralItemOwnerProps, SettingsHeaderOwnerProps, SettingsOnboardingOwnerProps,
   SettingsPluginsTabOwnerProps, SettingsSectionOwnerProps, SettingsTriggerOwnerProps,
+  SettingsSectionViewInput, SettingsSectionViewInjected,
 } from './contract/slots.ts'
 export type { ConfigForms } from './config-form.ts'
 export type { ConfigForm, ConfigFormSnapshot } from './config-form-types.ts'
@@ -23,18 +24,6 @@ export type { SchemaNode } from './schema.ts'
 export type {
   SettingsDescribeFace, SettingsDescribeView, SettingsMirrorSnapshot,
 } from './settings-mirror.ts'
-
-declare module '@deepseek-ai/cordis' {
-  interface Events {
-    /**
-     * Open a registered section in the shared settings shell.
-     * @mode bail
-     * @param sectionId - ID of an existing settings.section contribution.
-     * @returns true when opened, or undefined when the shell or section is unavailable.
-     */
-    'settings/open'(sectionId: string): true | undefined
-  }
-}
 
 /**
  * Required services: the Remote namespace the mirror reads through and the
