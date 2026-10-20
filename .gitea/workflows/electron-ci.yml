@@ -64,6 +64,7 @@ jobs:
           pnpm exec vitest run \
             packages/deepseek-harness-product \
             packages/extensions/ui-deepseek-harness-product \
+            packages/api/gateway/tests/gateway.client.spec.ts \
             packages/client/ui-settings-general/tests/section-view.client.spec.tsx \
             packages/client/ui-settings-general/tests/settings-root.client.spec.tsx \
             packages/client/ui-settings-general/tests/shell.client.spec.ts \

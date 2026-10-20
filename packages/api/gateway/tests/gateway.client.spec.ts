@@ -1163,6 +1163,32 @@ describe('Client Typert API', () => {
     expect(ctx.get('remote.probe')).toBeUndefined()
   })
 
+  it('drains a namespace dependent that owns another Remote contribution', async () => {
+    const ctx = await bench(vi.fn<ConnectionHandle['rpc']['call']>())
+    try {
+      const { scope: _scope, ...direct } = directDescriptor()
+      const dependent = ctx.plugin({
+        inject: ['remote', 'remote.probe'],
+        apply: async (scope: Context) => scope.remote.$mount({
+          package: '@fixture/dependent-namespace',
+          descriptors: [{ ...direct, id: '@fixture/dependent-namespace#nestedProbe/create', namespace: 'nestedProbe' }],
+        }),
+      })
+      const dispose = await ctx.remote.$mount({ package: '@fixture/namespace-owner', descriptors: [direct] })
+      await dependent
+      expect(ctx.get('remote.nestedProbe')).toBeDefined()
+      await dispose()
+      expect(ctx.get('remote.probe')).toBeUndefined()
+      expect(ctx.get('remote.nestedProbe')).toBeUndefined()
+      const restored = await ctx.remote.$mount({ package: '@fixture/namespace-owner', descriptors: [direct] })
+      await dependent
+      expect(ctx.get('remote.nestedProbe')).toBeDefined()
+      await restored()
+    } finally {
+      await ctx.fiber.dispose()
+    }
+  })
+
   it('unparks a namespace dependent only after its contribution methods exist', async () => {
     const ctx = await bench(vi.fn<ConnectionHandle['rpc']['call']>())
     const { scope: _scope, ...direct } = directDescriptor()

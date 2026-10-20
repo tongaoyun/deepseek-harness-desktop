@@ -1657,6 +1657,26 @@
         }
       ],
       "diff": "repository-file-list-capacity.patch"
+    },
+    {
+      "id": "remote-contribution-disposal",
+      "purpose": "通用 Remote 贡献项释放按队列顺序启动，但等待 namespace 依赖插件卸载时释放队列，避免依赖插件撤回自己持有的 Remote 贡献项时循环等待。卸载仍等待所有依赖清理结束；不更改产品协议、模型输入或 Session 格式。",
+      "tests": [
+        "packages/api/gateway/tests/gateway.client.spec.ts"
+      ],
+      "files": [
+        {
+          "path": "packages/api/gateway/src/client/index.ts",
+          "before": "67b346bbb099b65ec37c6fcedb08e4efeae2aee291fe1809e7a2d6fea080030c",
+          "after": "7c296d15f3769c50a496343d5abaf052b6f7593359961333a1aad35bea09c57e"
+        },
+        {
+          "path": "packages/api/gateway/tests/gateway.client.spec.ts",
+          "before": "293121bb3e33a4d35515c9e69984d6f75a5be8f872e28b488aa9a17b96965c29",
+          "after": "324c1c43d6ccf4defb2645077b33bc9e245dfffdeb0f62795144749994b2682a"
+        }
+      ],
+      "diff": "remote-contribution-disposal.patch"
     }
   ]
 }

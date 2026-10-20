@@ -215,7 +215,12 @@ class ClientRemoteService extends Service implements ClientRemote {
     const callerCtx = this.ctx
     const owned = callerCtx.effect(async () => {
       const dispose = await this.enqueue(() => this.mountContribution(callerCtx, contribution))
-      return () => this.enqueue(dispose)
+      // Namespace withdrawal can stop consumers that own other Remote mounts.
+      // Start withdrawal in order, then release the queue before draining those consumers.
+      return async () => {
+        const { closing } = await this.enqueue(() => ({ closing: dispose() }))
+        await closing
+      }
     }, `api-gateway.client.$mount(${JSON.stringify(contribution.package)})`)
     await owned
     return async () => { await owned() }

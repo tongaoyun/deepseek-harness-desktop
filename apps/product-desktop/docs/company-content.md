@@ -36,3 +36,5 @@ node apps/product-desktop/scripts/publish-company-content.mjs /path/to/private-c
 ## 维护与验证
 
 第三方版本、来源提交和完整本地修改见 [vendor 清单](../../../vendor/README.md)。升级插件时对照 `upstream.json`，重新应用公司来源与 UI 修改，运行原插件测试、公司 Loader 测试、桌面构建和 `verify:upstream`。服务端必须先于新桌面部署 `/api/v1/company-content`；目录尚未发布时返回空内容，员工个人与社区内容不受影响。
+
+开发热更新沿用原生插件生命周期。Remote 贡献项按顺序开始撤回，但等待依赖插件释放时不占用挂载队列；依赖插件可以撤回自己持有的贡献项，全部释放后才完成卸载。批量重建的验收包含已有会话、插件卸载与重新激活，不能只检查启动页面是否消失。
