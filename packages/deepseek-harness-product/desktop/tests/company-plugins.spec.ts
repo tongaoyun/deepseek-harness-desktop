@@ -1,6 +1,7 @@
 /** Company files enter the native catalogs through a real file-backed Loader profile. */
 import { mkdtempSync, writeFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
+import { fileURLToPath } from 'node:url'
 import { join } from 'node:path'
 import { expect, it, onTestFinished, vi } from 'vitest'
 import { boot, initProfile, readProfilePatches, type ProfileContext } from '@deepseek-ai/dsh-app-boot'
@@ -47,7 +48,7 @@ it.each([true, false])('loads company skills and experts (published=%s), then wi
   writeFileSync(join(directory, 'cordis.patch.yml'), JSON.stringify([{ insert: rows }]))
   writeFileSync(join(directory, 'cordis.yml'), '[]\n')
   const profile: ProfileContext = { name: 'test', startedBundles: [], dir: directory,
-    patchPath: join(directory, 'cordis.patch.yml'), installAnchor: new URL('../package.json', import.meta.url).pathname,
+    patchPath: join(directory, 'cordis.patch.yml'), installAnchor: fileURLToPath(new URL('../package.json', import.meta.url)),
     cwd: home, home, overlays: [], telemetryDisabledEnv: undefined }
   const ctx = await boot('test', join(directory, 'cordis.yml'), readProfilePatches('test', profile), (ctx) => {
     ctx.provide('profileContext', profile)

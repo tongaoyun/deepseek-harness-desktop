@@ -1,9 +1,14 @@
-import { mkdtemp, readFile, rm, readdir, symlink, writeFile } from 'node:fs/promises'
+import { mkdtemp, readFile, rm, readdir, rename, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { expect, it, onTestFinished } from 'vitest'
+import { expect, it, onTestFinished, vi } from 'vitest'
 import { contentDigest } from '@deepseek-harness/product/company-content'
 import { installCompanyContent } from '../src/company-content.ts'
+
+vi.mock('node:fs/promises', async (original) => {
+  const fs = await original<typeof import('node:fs/promises')>()
+  return { ...fs, rename: vi.fn(fs.rename) }
+})
 
 async function fixture() {
   const root = await mkdtemp(join(tmpdir(), 'company-content-'))
@@ -58,4 +63,19 @@ it('joins concurrent installs and rejects unexpected files and intermediate link
   await rename(original, other)
   await symlink(other, original, 'dir')
   await expect(installCompanyContent(root, 'same', release(), signal)).rejects.toThrow('不安全')
+})
+
+it('verifies the winning directory after a Windows rename collision and cleans staging on permission failure', async () => {
+  const root = await fixture(), signal = new AbortController().signal
+  const fs = await vi.importActual<typeof import('node:fs/promises')>('node:fs/promises')
+  vi.mocked(rename).mockImplementationOnce(async (source, target) => {
+    await fs.rename(source, target)
+    throw Object.assign(new Error('Destination exists'), { code: 'EPERM' })
+  })
+  const installed = await installCompanyContent(root, 'windows-race', release(), signal)
+  expect(await readFile(join(installed.skillsRoot, 'company-orders/SKILL.md'), 'utf8')).toContain('first')
+  vi.mocked(rename).mockRejectedValueOnce(Object.assign(new Error('Permission denied'), { code: 'EPERM' }))
+  await expect(installCompanyContent(root, 'windows-race', release('new'), signal)).rejects.toThrow()
+  const [employee] = await readdir(root)
+  expect(await readdir(join(root, employee!))).toEqual([release().sha256])
 })

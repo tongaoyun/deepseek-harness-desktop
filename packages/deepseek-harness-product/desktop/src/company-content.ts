@@ -76,7 +76,8 @@ export async function installCompanyContent(root: string, employeeId: string, va
       signal.throwIfAborted()
       try { await rename(staging, directory) }
       catch (error) {
-        if (!hasCode(error, 'EEXIST') && !hasCode(error, 'ENOTEMPTY')) throw error
+        // Windows reports an existing destination directory as EPERM. Verify it before reuse.
+        if (!hasCode(error, 'EEXIST') && !hasCode(error, 'ENOTEMPTY') && !hasCode(error, 'EPERM')) throw error
         await verifyCache(directory, release, signal)
       }
     } finally { await rm(staging, { recursive: true, force: true }) }
