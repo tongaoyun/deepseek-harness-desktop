@@ -33,8 +33,6 @@
 .authEmptyCopy { display: grid; min-width: 0; flex: 1; gap: 4px; color: var(--dsw-alias-label-secondary); font-size: 13px; line-height: 20px; }
 .authEmptyCopy strong { color: var(--dsw-alias-label-primary); font-size: 14px; line-height: 20px; font-weight: 600; }
 .authEmptyCopy .catalogError { margin: 2px 0 0; }
-@keyframes authSpin { to { transform: rotate(360deg); } }
-@media (prefers-reduced-motion: reduce) { }
 .catalogError { margin: 12px 0 0; color: var(--dsw-alias-state-error-primary); font-size: 13px; line-height: 20px; }
 .catalogTabs { display: flex; min-height: 38px; align-items: stretch; gap: 24px; margin: 0 0 18px; border-bottom: 0.5px solid var(--dsw-alias-border-l2); }
 .catalogTabs button { display: inline-flex; min-height: 38px; align-items: center; gap: 6px; padding: 0 0 9px; border: 0; border-bottom: 2px solid transparent; background: transparent; color: var(--dsw-alias-label-secondary); font: inherit; font-size: 13px; line-height: 20px; cursor: pointer; }
@@ -46,18 +44,17 @@
 .groupTitle { display: flex; align-items: baseline; gap: 7px; margin: 0 0 8px; color: var(--dsw-alias-label-primary); font-size: 13px; line-height: 20px; font-weight: 600; }
 .groupTitle span { color: var(--dsw-alias-label-tertiary); font-size: 12px; font-weight: 400; }
 .catalogGrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin: 0; padding: 0; list-style: none; }
-.catalogGrid[data-catalog='skills'] { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .catalogCard { display: flex; min-width: 0; flex-direction: column; overflow: hidden; border: 0.5px solid var(--dsw-alias-border-l2); border-radius: 8px; box-sizing: border-box; background: var(--dsw-alias-bg-base); }
 .catalogCard:hover, .catalogCard:focus-within { border-color: var(--dsw-alias-border-l4); }
 .cardBody { display: grid; flex: 1; min-width: 0; gap: 12px; padding: 16px 16px 12px; border: 0; background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; }
 .cardBody:hover:not(:disabled) { background: var(--dsw-alias-interactive-bg-hover); }
 .cardBody:disabled { cursor: default; }
-.cardBody:focus-visible, .cardAction:focus-visible, .catalogItem:focus-visible { outline: 2px solid var(--dsw-alias-border-l4); outline-offset: -2px; }
+.cardBody:focus-visible, .cardAction:focus-visible { outline: 2px solid var(--dsw-alias-border-l4); outline-offset: -2px; }
 .cardIdentity { display: flex; min-width: 0; align-items: center; gap: 10px; }
 .cardIdentity > .catalogItemCopy { flex: 1; }
 .cardFooter { display: flex; min-height: 36px; align-items: center; justify-content: space-between; gap: 8px; padding: 0 16px 8px; }
 .cardFacts { display: flex; flex: 1; min-width: 0; flex-wrap: wrap; align-items: center; gap: 5px 12px; }
-.cardAction, .cardInstalled { display: inline-flex; flex: 0 0 auto; min-width: 56px; height: 28px; align-items: center; justify-content: center; gap: 4px; padding: 0 4px; box-sizing: border-box; font: inherit; font-size: 12px; line-height: 16px; white-space: nowrap; }
+.cardAction { display: inline-flex; flex: 0 0 auto; min-width: 56px; height: 28px; align-items: center; justify-content: center; gap: 4px; padding: 0 4px; box-sizing: border-box; font: inherit; font-size: 12px; line-height: 16px; white-space: nowrap; }
 .cardAction { border: 0; border-radius: 6px; color: var(--dsw-alias-label-secondary); background: transparent; cursor: pointer; }
 .cardAction:hover:not(:disabled) { color: var(--dsw-alias-label-primary); background: var(--dsw-alias-interactive-bg-hover); }
 .cardAction:disabled { opacity: 0.4; cursor: default; }
@@ -114,8 +111,8 @@
 .detailToolList li { padding: 0; border-bottom: 0.5px solid var(--dsw-alias-border-l2); color: var(--dsw-alias-label-primary); font-size: 12px; line-height: 18px; }
 .toolSummary { display: flex; flex-wrap: wrap; gap: 8px 20px; margin: 0 0 8px; padding: 10px 12px; color: var(--dsw-alias-label-secondary); background: var(--dsw-alias-bg-module-platform); font-size: 12px; line-height: 20px; }
 .toolSummary > span { flex: 1 1 190px; overflow-wrap: anywhere; }
-.toolRow, .toolDisclosure > summary { display: flex; min-height: 42px; align-items: center; justify-content: space-between; gap: 12px; padding: 3px 4px; border-radius: 5px; box-sizing: border-box; }
-.toolRow > strong, .toolDisclosure > summary > strong { min-width: 0; font-size: 13px; line-height: 19px; font-weight: 500; }
+.toolRow { display: flex; min-height: 42px; align-items: center; justify-content: space-between; gap: 12px; padding: 3px 4px; border-radius: 5px; box-sizing: border-box; }
+.toolRow > strong { min-width: 0; font-size: 13px; line-height: 19px; font-weight: 500; }
 .toolCopy { display: grid; min-width: 0; gap: 2px; }
 .toolCopy strong { color: var(--dsw-alias-label-primary); font-size: 13px; line-height: 19px; font-weight: 500; }
 .toolCopy span { color: var(--dsw-alias-label-secondary); font-size: 12px; line-height: 18px; }
@@ -130,12 +127,12 @@
 .connectorEditorContent > div:last-child > * { flex-shrink: 0; }
 .editorForm { display: grid; gap: 18px; }
 .editorField { display: grid; gap: 6px; min-width: 0; color: var(--dsw-alias-label-secondary); font-size: 12px; }
-.editorField input, .editorField textarea, .editorField select, .editorActions select { width: 100%; box-sizing: border-box; border: 0.5px solid var(--dsw-alias-border-l2); border-radius: 6px; padding: 8px 10px; background: var(--dsw-alias-bg-base); color: var(--dsw-alias-label-primary); font: inherit; font-size: 13px; letter-spacing: 0; }
+.editorField input, .editorField textarea, .editorField select { width: 100%; box-sizing: border-box; border: 0.5px solid var(--dsw-alias-border-l2); border-radius: 6px; padding: 8px 10px; background: var(--dsw-alias-bg-base); color: var(--dsw-alias-label-primary); font: inherit; font-size: 13px; letter-spacing: 0; }
 .editorField textarea { resize: vertical; min-height: 42px; line-height: 1.6; }
 .editorTabs { display: flex; gap: 8px; margin-bottom: 24px; padding-bottom: 12px; border-bottom: 0.5px solid var(--dsw-alias-border-l2); overflow-x: auto; }
 .editorTabs button { display: flex; align-items: center; gap: 7px; flex-shrink: 0; border: 0; border-radius: 6px; padding: 7px 9px; background: transparent; color: var(--dsw-alias-label-secondary); font: inherit; font-size: 12px; cursor: pointer; }
 .editorTabs button[aria-selected='true'] { background: var(--dsw-alias-interactive-bg-hover); color: var(--dsw-alias-label-primary); }
-.editorSectionHeading h3, .configurationSection h3 { margin: 0; font-size: 13px; font-weight: 500; }
+.configurationSection h3 { margin: 0; font-size: 13px; font-weight: 500; }
 .configurationSection { display: grid; gap: 10px; }
 .configurationHeading { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .addVariable { justify-self: start; }
@@ -167,7 +164,6 @@
 .detailDisclosure > summary > svg { flex: 0 0 auto; color: var(--dsw-alias-label-tertiary); transition: transform 120ms ease; }
 .detailDisclosure[open] > summary > svg { transform: rotate(90deg); }
 .disclosureBody { padding: 2px 2px 14px; }
-.disclosureBody .detailFacts { margin-top: 4px; }
 .disclosureBody pre { overflow: auto; margin: 0; color: var(--dsw-alias-label-primary); font: var(--dsw-font-markdown-code-block-small); line-height: 1.65; white-space: pre-wrap; word-break: break-word; }
 .knowledgeSearch { display: flex; align-items: center; gap: 8px; margin-top: 16px; }
 .knowledgeSearch .searchField { height: 32px; }
@@ -178,13 +174,12 @@
 .knowledgeResult span { color: var(--dsw-alias-label-tertiary); font-size: 11px; line-height: 16px; }
 .knowledgeResult p { display: -webkit-box; overflow: hidden; margin: 4px 0 0; color: var(--dsw-alias-label-secondary); font-size: 12px; line-height: 18px; -webkit-box-orient: vertical; -webkit-line-clamp: 4; }
 .markdown { color: var(--dsw-alias-label-primary); }
-@container (max-width: 540px) { }
 .taskKnowledgeReferences { display: flex; min-width: 0; max-width: min(360px, 40vw); align-items: center; gap: 6px; overflow-x: auto; padding: 2px; }
 .taskKnowledgeReference { display: inline-flex; flex: 0 0 auto; max-width: min(220px, 40vw); height: 28px; align-items: center; gap: 2px; padding: 0 4px; border: 0.5px solid var(--dsw-alias-border-l2); border-radius: 6px; background: var(--dsw-specific-selector); }
 .knowledgeReferenceName { display: inline-flex; min-width: 0; height: 26px; align-items: center; gap: 5px; padding: 0 3px; border: 0; background: transparent; color: var(--dsw-alias-label-secondary); font: inherit; font-size: 12px; cursor: pointer; }
 .knowledgeReferenceName > svg { flex: 0 0 auto; }
 .knowledgeReferenceName > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.knowledgeReferenceRemove, .knowledgeReferenceRequired { display: grid; flex: 0 0 20px; width: 20px; height: 24px; place-items: center; padding: 0; border: 0; border-radius: 4px; background: transparent; color: var(--dsw-alias-label-tertiary); }
+.knowledgeReferenceRemove { display: grid; flex: 0 0 20px; width: 20px; height: 24px; place-items: center; padding: 0; border: 0; border-radius: 4px; background: transparent; color: var(--dsw-alias-label-tertiary); }
 .knowledgeReferenceRemove { cursor: pointer; }
 .knowledgeReferenceRemove:hover:not(:disabled), .knowledgeReferenceName:hover:not(:disabled) { background: var(--dsw-alias-interactive-bg-hover); }
 .knowledgeReferenceName:focus-visible, .knowledgeReferenceRemove:focus-visible { outline: 2px solid var(--dsw-alias-border-l4); outline-offset: 1px; }
@@ -201,12 +196,8 @@
 .knowledgeSelectionFooter { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; padding-top: 12px; border-top: 0.5px solid var(--dsw-alias-border-l2); }
 .knowledgeSelectionFooter > div { display: flex; margin-left: auto; gap: 8px; }
 
-@container catalog (max-width: 880px) {
-  .catalogGrid[data-catalog='skills'] { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-}
-
 @container catalog (max-width: 580px) {
-  .catalogGrid, .catalogGrid[data-catalog='skills'] { grid-template-columns: minmax(0, 1fr); }
+  .catalogGrid { grid-template-columns: minmax(0, 1fr); }
   .catalogContent { padding-right: 16px; padding-left: 16px; }
   .catalogToolbar { align-items: stretch; flex-wrap: wrap; }
   .searchField { flex-basis: 100%; width: 100%; }
@@ -222,7 +213,7 @@
   .categoryButton { width: min(142px, 34vw); min-width: 104px; }
   .authEmptyState { align-items: flex-start; flex-wrap: wrap; }
   .authEmptyCopy { flex-basis: calc(100% - 54px); }
-  .catalogGrid, .catalogGrid[data-catalog='skills'] { grid-template-columns: minmax(0, 1fr); }
+  .catalogGrid { grid-template-columns: minmax(0, 1fr); }
   .catalogArtwork { flex-basis: 34px; width: 34px; height: 34px; }
   .detailHeader { align-items: flex-start; flex-direction: column; }
 }
@@ -254,7 +245,7 @@
 .knowledgeFilterSearch .searchField { flex: 1; }
 .knowledgeAddActions { display: flex; flex: 0 0 auto; align-items: center; gap: 6px; }
 .knowledgeFilters { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin: 0 0 16px; }
-.knowledgeFilters select, .knowledgeMoveLabel select { height: 34px; max-width: 100%; padding: 0 26px 0 10px; border: 0.5px solid var(--dsw-alias-border-l2); border-radius: 6px; color: var(--dsw-alias-label-primary); background: var(--dsw-alias-bg-base); font: inherit; font-size: 12px; }
+.knowledgeFilters select { height: 34px; max-width: 100%; padding: 0 26px 0 10px; border: 0.5px solid var(--dsw-alias-border-l2); border-radius: 6px; color: var(--dsw-alias-label-primary); background: var(--dsw-alias-bg-base); font: inherit; font-size: 12px; }
 .knowledgeFilters .iconButton { margin-left: auto; }
 .knowledgeTableScroll { min-width: 0; min-height: 120px; overflow: auto; }
 .knowledgeTable { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 12px; line-height: 18px; }
@@ -397,7 +388,7 @@
 .knowledgeFolderPicker { min-width: 0; margin: 0; padding: 10px; border: 0.5px solid var(--dsw-alias-border-l2); border-radius: 6px; }
 .knowledgeFolderPicker legend { padding: 0 4px; color: var(--dsw-alias-label-secondary); font-size: 12px; }
 .knowledgeFolderPickerRows { display: grid; max-height: 240px; overflow: auto; margin-top: 8px; }
-.knowledgeEditorForm label, .knowledgeMoveLabel { display: grid; gap: 7px; color: var(--dsw-alias-label-secondary); font-size: 12px; line-height: 18px; }
+.knowledgeEditorForm label { display: grid; gap: 7px; color: var(--dsw-alias-label-secondary); font-size: 12px; line-height: 18px; }
 .knowledgeEditorForm input, .knowledgeEditorForm textarea { box-sizing: border-box; width: 100%; min-width: 0; padding: 9px 10px; border: 0.5px solid var(--dsw-alias-border-l2); border-radius: 6px; background: var(--dsw-alias-bg-base); color: var(--dsw-alias-label-primary); font: inherit; font-size: 13px; line-height: 20px; }
 .knowledgeEditorForm textarea { min-height: 280px; resize: vertical; }
 .knowledgeEditorForm input:focus, .knowledgeEditorForm textarea:focus { outline: 1px solid var(--dsw-alias-border-l4); }

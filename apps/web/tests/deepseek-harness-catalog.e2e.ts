@@ -1637,7 +1637,7 @@ for (const { mode, installed, surface } of desktopCarriers) {
         const unavailableDialog = page.getByRole('dialog')
         await expect.poll(() => unavailableDialog.getByRole('alert').textContent()).toContain('ORGANIZATION_SERVICE_UNAVAILABLE')
         expect(await unavailableDialog.getByRole('button', { name: /^(Apply|应用)$/ }).isDisabled()).toBe(true)
-        expect(await unavailableDialog.getByRole('button', { name: /^(Exit kit|退出套件)/ }).count()).toBe(0)
+        expect(await unavailableDialog.getByRole('button', { name: /^(Restore available knowledge|恢复可用知识库)$/ }).count()).toBe(0)
         knowledgeUnavailable = false
         await unavailableDialog.getByRole('button', { name: /^(Retry|重试)$/ }).click()
         await unavailableDialog.getByRole('checkbox', { name: 'Operations playbook' }).waitFor()
