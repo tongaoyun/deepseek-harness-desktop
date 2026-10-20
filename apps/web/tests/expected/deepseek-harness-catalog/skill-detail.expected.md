@@ -1,7 +1,0 @@
-- dialog "Skill details":
-  - heading "Skill details" [level=2]
-  - button "Close"
-  - heading "Order analysis" [level=1]
-  - heading "Analysis workflow" [level=2]
-  - paragraph: Compare order totals and report unusual changes.
-  - button "Install skill"

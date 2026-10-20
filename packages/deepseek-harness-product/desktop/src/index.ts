@@ -12,8 +12,9 @@ import { DeepSeekHarnessNativeProcess } from './deepseek-harness-native-process.
 import { resolveDeepSeekHarnessConnectorProxyPolicy, resolveDeepSeekHarnessKnowledgeFilePolicy, resolveDeepSeekHarnessProductServerUrl, resolveDesktopSupportPolicy } from './deepseek-harness-product-config.ts'
 import { DesktopSupport } from './desktop-support.ts'
 import { ConnectorProxy } from './connector-proxy.ts'
+import { nativeExtensionPatches } from './native-extensions.ts'
 import { inferenceProfile } from './inference-profile.ts'
-import { ExtensionAuthoring } from './extension-authoring.ts'
+import { ConnectorDraftSchema } from '@deepseek-harness/product/connector-draft'
 import { PersonalConnectors } from './personal-connectors.ts'
 import { knowledgeUploadDialogOptions, KnowledgeUploads } from './knowledge-upload.ts'
 import { KnowledgeFiles } from './knowledge-files.ts'
@@ -26,7 +27,7 @@ interface ExtensionContext {
 interface ProductDesktopExtension {
   readonly namespace: string
   readonly ownsStartupDocument: boolean
-  prepareHost(): Promise<NodeJS.ProcessEnv | undefined>
+  prepareHost(profile: { readonly directory: string; readonly installAnchor: string }): Promise<NodeJS.ProcessEnv | undefined>
   invoke(method: unknown, payload?: unknown, signal?: AbortSignal): Promise<unknown>
   invokeRuntime(method: unknown, payload?: unknown, signal?: AbortSignal): Promise<unknown>
   subscribe(listener: (event: unknown) => void): () => void
@@ -140,22 +141,6 @@ export function createExtension(context: ExtensionContext): ProductDesktopExtens
       const entries: readonly unknown[] = Array.isArray(value) ? value : []
       return entries.find(entry => typeof entry === 'object' && entry !== null && 'id' in entry && entry.id === id)
     })
-  const authoring = new ExtensionAuthoring({
-    manageConnector: (method, input, api, employee, signal) => personalConnectors.manage(method, input, api, employee, signal),
-    directory: join(app.getPath('userData'), 'extension-conversations-v1'),
-    selectImport: async (source, kind) => {
-      const window = context.getWindow()
-      const options = { properties: source === 'directory' ? ['openDirectory' as const] : ['openFile' as const],
-        ...(source !== 'directory' ? { filters: [{ name: kind === 'skill' && source === 'file' ? 'ZIP / SKILL.md' : 'ZIP',
-          extensions: kind === 'skill' && source === 'file' ? ['zip', 'md'] : ['zip'] }] } : {}) }
-      const result = window ? await dialog.showOpenDialog(window, options) : await dialog.showOpenDialog(options)
-      return result.canceled ? undefined : result.filePaths[0]
-    },
-    installSkill: async (id, signal) => {
-      await productBridge.invoke('skills.install', { id }, signal)
-    },
-    saveConnector: (draft, api, employee, signal) => personalConnectors.save(draft, api, employee, signal),
-  })
   const productBridgeOptions: ProductBridgeOptions = {
     support: (method, input, api, session, signal) => support.invoke(method, input, api, session, signal),
     knowledgeFiles: (method, input, api, session, signal) => knowledgeFiles.invoke(method, input, api, session, signal),
@@ -176,11 +161,25 @@ export function createExtension(context: ExtensionContext): ProductDesktopExtens
     initialSession: storedDeepSeekHarnessSession?.session,
     nativeInvoke: (method, payload, signal) => nativeSidecar.invoke(method, payload, signal),
     taskCapabilities: (method, payload, signal) => context.requestHost('product', 'tasks.capabilities.' + method, payload, signal),
-    installedSkills: (method, payload, signal) => context.requestHost('product',
-      method === 'read' ? 'skills.installed.read' : 'skills.' + method, payload, signal),
-    installedExpertKits: (method, payload, signal) => context.requestHost('product',
-      method === 'read' ? 'expertKits.installed.read' : 'expertKits.' + method, payload, signal),
-    authoring: (method, payload, api, session, signal) => authoring.invoke(method, payload, api, session, signal ?? lifecycle.signal),
+    connectorManagement: async (method, payload, api, session, signal) => {
+      const lifetime = signal ?? lifecycle.signal
+      const employee = session.employeeId
+      if (!employee) throw new Error('Authenticated employee is required')
+      if (method.startsWith('extensions.connector.')) return personalConnectors.manage(method, payload, api, employee, lifetime)
+      if (method === 'extensions.save') {
+        const draft = ConnectorDraftSchema.parse(payload)
+        await personalConnectors.save(draft, api, employee, lifetime)
+        return { kind: 'connector', id: draft.id, version: draft.version, visibility: 'PERSONAL' }
+      }
+      if (method === 'extensions.submit') {
+        const { id, version } = payload
+        if (typeof id !== 'string' || !/^[a-z][a-z0-9-]{2,63}$/.test(id)
+          || typeof version !== 'string' || !/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(version)) throw new Error('Invalid connector coordinate')
+        await api.request(`/api/v1/extension-submissions/connector/${encodeURIComponent(id)}/versions/${encodeURIComponent(version)}/submissions`, { method: 'POST', signal: lifetime })
+        return { id, version, submitted: true }
+      }
+      throw new Error('Unsupported connector management operation')
+    },
     connectorRuntime: (value, signal, discoverTools) => personalConnectors.enrich(value, signal, discoverTools),
   }
   const productBridge = new DeepSeekHarnessProductBridge(productBridgeOptions)
@@ -300,7 +299,7 @@ export function createExtension(context: ExtensionContext): ProductDesktopExtens
   return {
     namespace: 'product',
     get ownsStartupDocument() { return deepseekHarnessAuthenticationVisible },
-    async prepareHost(): Promise<NodeJS.ProcessEnv | undefined> {
+    async prepareHost(profile: { readonly directory: string; readonly installAnchor: string }): Promise<NodeJS.ProcessEnv | undefined> {
       await knowledgeFiles.prepare()
       await connectorProxy.start()
       await nativeSidecar.start()
@@ -314,6 +313,8 @@ export function createExtension(context: ExtensionContext): ProductDesktopExtens
       const modelProfile = join(app.getPath('userData'), 'product-inference.patch.json')
       writeFileSync(modelProfile, JSON.stringify(inferenceProfile(bootstrap,
         fileURLToPath(import.meta.resolve('@deepseek-harness/product-runtime/inference-default')))), { mode: 0o600 })
+      const nativeExtensions = join(app.getPath('userData'), 'product-native-extensions.patch.json')
+      writeFileSync(nativeExtensions, JSON.stringify(nativeExtensionPatches(profile)), { mode: 0o600 })
       return {
         DEEPSEEK_HARNESS_SESSION_TOKEN: undefined,
         DEEPSEEK_API_KEY: bootstrap.modelApiKey,
@@ -321,6 +322,7 @@ export function createExtension(context: ExtensionContext): ProductDesktopExtens
         DSH_DESKTOP_PROFILE_PATCHES: JSON.stringify([
           fileURLToPath(import.meta.resolve('@deepseek-harness/product-runtime/cordis.patch.yml')),
           fileURLToPath(import.meta.resolve('@deepseek-harness/product-ui/cordis.patch.yml')),
+          nativeExtensions,
           modelProfile,
         ]),
       }
@@ -365,7 +367,6 @@ export function createExtension(context: ExtensionContext): ProductDesktopExtens
       await cleanup(() => knowledgeFiles.close())
       await cleanup(() => connectorProxy.close())
       await cleanup(() => personalConnectors.close())
-      await cleanup(() => authoring.close())
       await cleanup(() => nativeSidecar.stop())
       await Promise.allSettled([...operations])
       await Promise.allSettled([...authenticationOperations])

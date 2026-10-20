@@ -3,14 +3,14 @@ import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { useEffect, useRef, useState } from 'react'
 import { productFailure } from '@deepseek-harness/product/errors'
 import type { ProductTaskCapabilities } from '@deepseek-harness/product/protocol'
-import { Button, Checkbox, IconCloseOutlineRegular, IconDatabaseOutlineRegular, IconSearchOutlineRegular, IconSparkleRegular, Modal, Tooltip } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Button, Checkbox, IconCloseOutlineRegular, IconDatabaseOutlineRegular, IconSearchOutlineRegular, Modal, Tooltip } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { DeepSeekHarnessProductKey } from '../locales.ts'
 import type { ProductItem } from './catalog-shared.tsx'
 import type { TaskModeActions } from './harness-actions.ts'
 import { productErrorMessage } from './product-errors.ts'
 import css from '../DeepSeekHarnessProduct.module.css'
 
-/** Select optional knowledge while keeping kit dependencies locked and failed drafts intact.
+/** Select optional knowledge while preserving failed drafts.
  * @param props Current task scope, catalog access, and serialized preparation actions.
  * @returns Referenced knowledge tags and a staged multi-selection dialog opened by the Add menu.
  */
@@ -44,7 +44,7 @@ export function TaskKnowledgeSelector({
   const ids = capabilities?.knowledgeBaseIds ?? []
   const identity = ids.join('\n')
   const selectionKey = JSON.stringify([
-    sessionId, capabilities?.basePresetId, capabilities?.expertKit, ids, capabilities?.requiredKnowledgeBaseIds,
+    sessionId, capabilities?.basePresetId, ids,
   ])
   const activeKey = useRef(selectionKey)
   activeKey.current = selectionKey
@@ -84,8 +84,6 @@ export function TaskKnowledgeSelector({
   const options: readonly (Partial<ProductItem> & Pick<ProductItem, 'id' | 'label'>)[] = [
     ...catalog ?? [], ...ids.filter(id => !catalog?.some(row => row.id === id)).map(id => ({ id, label: id })),
   ]
-  const required = (row: Pick<ProductItem, 'id' | 'referenceKey' | 'reference'>) =>
-    capabilities?.requiredKnowledgeBaseIds.includes(row.id) ?? false
   const unavailable = catalog !== undefined && !loadFailed && ids.some(id => !catalog.some(row => row.id === id))
   const changed = selected.length !== ids.length || selected.some(id => !ids.includes(id))
   const filtered = options.filter(row => `${row.label} ${row.description ?? ''}`.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()))
@@ -106,16 +104,13 @@ export function TaskKnowledgeSelector({
     {ids.length > 0 && <div className={css.taskKnowledgeReferences} role="group" aria-label={t('taskKnowledge')}>
       {ids.map((id) => {
         const label = catalog?.find(row => row.id === id)?.label ?? id
-        const locked = capabilities?.requiredKnowledgeBaseIds.includes(id) ?? false
         return <span className={css.taskKnowledgeReference} key={id}>
           <Tooltip label={label} side="top"><button className={css.knowledgeReferenceName} type="button"
             aria-label={label} aria-haspopup="dialog" aria-expanded={open} disabled={pending}
             onClick={() => { setSelected([...ids]); setQuery(''); setFailed(''); setOpen(true) }}>
             <IconDatabaseOutlineRegular size={14} /><span>{label}</span>
           </button></Tooltip>
-          {locked ? <Tooltip label={t('kitRequiredKnowledge')} side="top">
-            <span className={css.knowledgeReferenceRequired} aria-label={t('kitRequiredKnowledge')}><IconSparkleRegular size={13} /></span>
-          </Tooltip> : <Tooltip label={t('removeKnowledgeReference', { name: label })} side="top">
+          {<Tooltip label={t('removeKnowledgeReference', { name: label })} side="top">
             <button className={css.knowledgeReferenceRemove} type="button" disabled={pending}
               aria-label={t('removeKnowledgeReference', { name: label })} onClick={() => {
                 apply(setKnowledgeSelection(ids.filter(value => value !== id), sessionId))
@@ -142,12 +137,11 @@ export function TaskKnowledgeSelector({
                   : key === 'PERSONAL' ? t('scopePersonal') : key === 'COMPANY' ? t('scopeCompany') : t('otherKnowledge')}</h3>
                 {rows.map(row => <div className={css.knowledgeSelectionRow} key={row.id}>
                   <Checkbox className={css.knowledgeSelectionCheckbox} label={row.label} checked={selected.includes(row.id)}
-                    disabled={pending || required(row)} onChange={(checked) => {
+                    disabled={pending} onChange={(checked) => {
                       setFailed('')
                       setSelected(value => checked ? [...value, row.id] : value.filter(id => id !== row.id))
                     }} />
-                  {required(row) ? <span className={css.knowledgeSelectionMeta}>{t('kitRequiredKnowledge')}</span>
-                    : !catalog?.some(item => item.id === row.id) && <span className={css.knowledgeSelectionMeta}>{t('statusUnavailable')}</span>}
+                  {!catalog?.some(item => item.id === row.id) && <span className={css.knowledgeSelectionMeta}>{t('statusUnavailable')}</span>}
                 </div>)}</section>)}
       </div>
       {(unavailable || capabilities?.unavailable !== undefined) && !loadFailed && <Button variant="outline" size="sm" disabled={pending || loading} onClick={() => {

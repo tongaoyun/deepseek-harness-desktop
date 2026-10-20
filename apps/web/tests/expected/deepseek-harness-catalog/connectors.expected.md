@@ -7,3 +7,4 @@
         - text: 1 read-only ·1 write
       - listitem:
         - button "Customer workspace Customer profiles and sales activity Authorization required"
+        - text: 0 read-only ·0 write

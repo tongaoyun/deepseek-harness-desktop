@@ -22,9 +22,6 @@ export const PRODUCT_PACKAGE_POLICY: Readonly<Record<string, ProductPackagePolic
   'packages/deepseek-harness-product/desktop': {
     category: 'product', reason: 'Credential-owning Desktop extension loaded by the independent Product assembly.',
   },
-  'packages/deepseek-harness-product/expert-kit-readme': {
-    category: 'product', reason: 'Product Expert Kit README provider loaded by the Product runtime composition.',
-  },
   'packages/deepseek-harness-product/runtime': {
     category: 'product', reason: 'Product Cordis runtime loaded by the independent Desktop profile.',
   },

@@ -30,7 +30,7 @@ it('loads knowledge in a selected scope, records replayable inputs, and releases
   const invoke = vi.fn(async (method: string, _payload?: unknown, _signal?: AbortSignal) => method === 'knowledge.sources.read' ? hit : [hit])
   new ProductData(ctx, { invoke })
   const release = await ctx.agentPresets.register({ id: 'selected', plugins: [{ id: 'knowledge', name: new URL('../src/knowledge.ts', import.meta.url).href,
-    config: { knowledgeBaseRefs: ['company:policy'], knowledgeBaseIds: ['selected'] } }] })
+    config: { knowledgeBaseIds: ['selected'] } }] })
   onTestFinished(release)
   const handle = await ctx.agents.create({ sessionId: SessionId('knowledge-fixture'), setup: child => ctx.agentPresets.mount(child, 'selected').then(() => undefined) })
   const agent = handle.agent

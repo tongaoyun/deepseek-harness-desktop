@@ -72,9 +72,6 @@
       "path": "../../../packages/credentials/deepseek-account"
     },
     {
-      "path": "../../../packages/deepseek-harness-product/expert-kit-readme"
-    },
-    {
       "path": "../../../packages/deepseek-harness-product/product"
     }
   ]

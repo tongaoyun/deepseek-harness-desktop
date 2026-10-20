@@ -1,9 +1,7 @@
 import type { ReactNode } from 'react'
 import {
-  IconAgentPresetOutlineRegular,
   IconApiOutlineRegular,
   IconDatabaseOutlineRegular,
-  IconSkillOutlineRegular,
   IconSparkleRegular,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { MainPanelId } from '@deepseek-ai/dsh-client-ui-layout/client'
@@ -12,8 +10,6 @@ import { NS } from '../locales.ts'
 import css from '../DeepSeekHarnessProduct.module.css'
 
 export const CAPABILITY_PANELS = [
-  { id: 'deepseek-harness-expert-kits' as MainPanelId, labelKey: 'expertKits', icon: IconAgentPresetOutlineRegular },
-  { id: 'deepseek-harness-skills' as MainPanelId, labelKey: 'skills', icon: IconSkillOutlineRegular },
   { id: 'deepseek-harness-connectors' as MainPanelId, labelKey: 'connectors', icon: IconApiOutlineRegular },
   { id: 'deepseek-harness-knowledge' as MainPanelId, labelKey: 'knowledge', icon: IconDatabaseOutlineRegular },
 ] as const

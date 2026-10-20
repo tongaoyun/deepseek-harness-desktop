@@ -74,8 +74,7 @@ async function fixture() {
                   : method === 'runtime.knowledge.preview.readChunk' ? { offset: 0, eof: true, dataBase64: original.toString('base64') }
                     : method === 'runtime.knowledge.preview.write.open' ? { ...pdfTransfer, byteLength: 0 }
                       : method === 'runtime.knowledge.preview.write.append' ? { offset: pdf.length }
-                        : method === 'runtime.knowledge.preview.write.commit' ? pdfTransfer
-                          : method === 'extensions.authoring.read' ? null : []
+                        : method === 'runtime.knowledge.preview.write.commit' ? pdfTransfer : undefined
           emit({ type: 'extension-result', requestId, result })
         }
       })
@@ -142,7 +141,7 @@ describe('original Office preview public Loader entry', () => {
       result: pdfTransfer })
     expect(h.ctx.sessions.list()).toEqual([])
     expect(h.ctx.agents.list()).toEqual([])
-    expect(await readdir(join(h.root, 'product-capabilities-v1/tasks-v1'))).toEqual([])
+    expect(await readdir(join(h.root, 'product-knowledge-tasks-v1'))).toEqual([])
     expect(h.calls.map(call => call.method)).not.toContain('knowledge.documents.read')
     expect(JSON.stringify(result)).not.toContain('employee-a')
     expect(engine.render).toHaveBeenCalledOnce()

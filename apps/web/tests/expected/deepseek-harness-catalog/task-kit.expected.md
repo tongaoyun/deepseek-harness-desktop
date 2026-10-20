@@ -1,6 +1,0 @@
-- menu:
-  - text: Expert kits
-  - menuitem "No expert kit"
-  - menuitem "Retail operations"
-  - separator
-  - menuitem "View expert kits"

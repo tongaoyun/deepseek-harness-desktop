@@ -48,7 +48,7 @@ export function isProductFailure(value: unknown): value is ProductFailure {
     && (!('dependencyChecks' in value) || value.dependencyChecks === undefined
       || Array.isArray(value.dependencyChecks) && value.dependencyChecks.every((row: unknown) =>
         typeof row === 'object' && row !== null && 'kind' in row && typeof row.kind === 'string'
-      && ['DESKTOP_VERSION', 'SKILL', 'DATA_CONNECTION', 'TOOL', 'KNOWLEDGE_BASE'].includes(row.kind)
+      && ['KNOWLEDGE_BASE'].includes(row.kind)
       && 'reference' in row && typeof row.reference === 'string' && 'status' in row && typeof row.status === 'string'
       && ['READY', 'MISSING', 'UNAUTHORIZED', 'INCOMPATIBLE', 'NOT_CHECKED'].includes(row.status)))
 }

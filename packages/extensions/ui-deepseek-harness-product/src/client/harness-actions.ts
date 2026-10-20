@@ -1,20 +1,17 @@
 /** The only product client adapter to Harness Sessions, Presets, Workspaces, and drafts. */
 import type { Context } from '@deepseek-ai/cordis'
 import { SessionId } from '@deepseek-ai/dsh-session/types'
-import { randomUUID } from '@deepseek-ai/dsh-util-crypto'
-import { ExtensionAuthoringSnapshotSchema } from '@deepseek-harness/product/extension-draft'
 import type {} from '@deepseek-ai/dsh-api-session-controller/client'
 import type {} from '@deepseek-ai/dsh-api-workspace-controller/client'
 import type {} from '@deepseek-ai/dsh-api-remotes/client'
 import type { DraftInput, DraftSnapshot } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {} from '@deepseek-ai/dsh-client-ui-workspace/client'
 import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
-import type {} from '@deepseek-ai/dsh-client-ui-skill/client'
-import type { ProductTaskCapabilityRequest, ProductTaskCapabilityResult, ProductTaskCapabilities, ProductInstalledExpertKits, ProductInstalledSkills } from '@deepseek-harness/product/protocol'
+import type { ProductTaskCapabilityRequest, ProductTaskCapabilityResult, ProductTaskCapabilities } from '@deepseek-harness/product/protocol'
 import type { DeepSeekHarnessCatalogActions } from './DeepSeekHarnessCatalogSection.tsx'
 import type { AgentPresetRow } from '@deepseek-ai/dsh-agent-preset-registry/types'
 import { productApi, type ProductApi } from './product-api.ts'
-import { isInstalled, items, nextProductRequestId, type Catalog, type ProductItem } from './catalog-shared.tsx'
+import { items, nextProductRequestId, type Catalog, type ProductItem } from './catalog-shared.tsx'
 import { CAPABILITY_PANELS } from './DeepSeekHarnessCapabilitiesNavigation.tsx'
 
 /** Adapt product selection to official task services.
@@ -94,29 +91,8 @@ export function createHarnessActions(ctx: Context): DeepSeekHarnessCatalogAction
   }
   const readCapabilities = async (sessionId = currentSession()): Promise<ProductTaskCapabilities> => {
     const value = await invoke('tasks.capabilities.read', sessionId === undefined ? {} : { sessionId })
-    if (typeof value !== 'object' || value === null || !('connectorIds' in value) || !Array.isArray(value.connectorIds)
-      || !('requiredConnectorIds' in value) || !Array.isArray(value.requiredConnectorIds)
-      || !('requiredKnowledgeBaseIds' in value) || !Array.isArray(value.requiredKnowledgeBaseIds)
-      || !('knowledgeBaseIds' in value) || !Array.isArray(value.knowledgeBaseIds)) throw new Error('Invalid task capabilities')
+    if (typeof value !== 'object' || value === null || !('knowledgeBaseIds' in value) || !Array.isArray(value.knowledgeBaseIds)) throw new Error('Invalid task knowledge selection')
     return value as ProductTaskCapabilities
-  }
-  const readInstalledSkills = async (sessionId = currentSession()): Promise<ProductInstalledSkills> => {
-    const value = await invoke('skills.installed.read', sessionId === undefined ? {} : { sessionId })
-    if (typeof value !== 'object' || value === null || !('installed' in value) || !Array.isArray(value.installed)
-      || !('available' in value) || !Array.isArray(value.available) || !('frozen' in value) || typeof value.frozen !== 'boolean') {
-      throw new Error('Invalid installed skill response')
-    }
-    return value as ProductInstalledSkills
-  }
-  const readInstalledExpertKits = async (signal?: AbortSignal): Promise<ProductInstalledExpertKits> => {
-    const value = await invoke('expertKits.installed.read', undefined, signal)
-    if (typeof value !== 'object' || value === null || !('installed' in value) || !Array.isArray(value.installed)
-      || value.installed.some((kit: unknown) => typeof kit !== 'object' || kit === null
-        || !('id' in kit) || typeof kit.id !== 'string' || !('version' in kit) || typeof kit.version !== 'string'
-        || !('sha256' in kit) || typeof kit.sha256 !== 'string' || !/^[a-fA-F0-9]{64}$/.test(kit.sha256))) {
-      throw new Error('Invalid installed Expert Kit response')
-    }
-    return value as ProductInstalledExpertKits
   }
   const prepare = async (request: ProductTaskCapabilityRequest, signal: AbortSignal, options: { navigation?: AbortSignal } = {}) => {
     const current = request.sessionId as SessionId | undefined
@@ -167,43 +143,6 @@ export function createHarnessActions(ctx: Context): DeepSeekHarnessCatalogAction
     })
   }
   return {
-    startExtensionAuthoring: (kind, options) => {
-      const current = currentSession()
-      const source = current === undefined ? undefined : ctx.sessions.retain(current, { source: 'gateway' })
-      let navigation: AbortSignal
-      try { navigation = ctx.layout.beginNavigation() }
-      catch (error) { source?.release(); throw error }
-      const captured = structuredClone(options)
-      return serialize(async (signal) => {
-        try {
-          await source?.ready
-          signal.throwIfAborted()
-          const location = await workspace(current)
-          const sessionId = SessionId(`session-${randomUUID()}`)
-          const state = ExtensionAuthoringSnapshotSchema.parse(await invoke('extensions.authoring.begin',
-            { kind, sessionId, ...captured }, signal))
-          try { await ctx.sessions.create({ workspaceId: location.workspaceId, sessionId }) }
-          catch (error) {
-            await invoke('extensions.authoring.discard', { sessionId, authoringId: state.authoringId, revision: state.revision }).catch(() => undefined)
-            throw error
-          }
-          await ctx.sessions.using(sessionId, { source: 'gateway' }, (reference) => {
-            signal.throwIfAborted()
-            const input = ctx.conversation.input.for(reference.binding.ctx)
-            initializeDraft(reference.binding, captured.prompt)
-            if (currentSession() === current && !navigation.aborted) { ctx.uiWorkspace.openSession(sessionId); input.focus() }
-            return Promise.resolve()
-          })
-        } finally { source?.release() }
-      })
-    },
-    readExpertKits: async (signal) => {
-      const [catalog, installations] = await Promise.all([
-        invoke('expertKits.list', undefined, signal), readInstalledExpertKits(signal),
-      ])
-      const installed = new Map(installations.installed.map(kit => [kit.id, kit]))
-      return items(catalog).filter(kit => isInstalled(installed, kit))
-    },
     readKnowledgeCatalog: signal => invoke('knowledge.bases.list', undefined, signal).then(items),
     openCatalog: (catalog) => {
       const panel = CAPABILITY_PANELS.find(value => value.labelKey === catalog)
@@ -225,7 +164,6 @@ export function createHarnessActions(ctx: Context): DeepSeekHarnessCatalogAction
       return { mode, capabilities,
         options: roster.value.presets.filter(row => row.selectable && row.defaultable && row.broken === undefined) }
     },
-    setExpertKit: (id, sessionId) => enqueue({ expertKitId: id }, sessionId),
     setKnowledgeSelection: (ids, sessionId) => enqueue({ knowledgeBaseIds: ids }, sessionId),
     recoverCapabilities: sessionId => enqueue({ recoverCapabilities: true }, sessionId),
     retryCapabilities: (sessionId = currentSession()) => {
@@ -244,14 +182,6 @@ export function createHarnessActions(ctx: Context): DeepSeekHarnessCatalogAction
         } finally { source.release() }
       })
     },
-    startExpertKit: id => enqueue({ expertKitId: id }),
-    installSkill: id => serialize(async (signal) => {
-      await invoke('skills.install', { id }, signal)
-      ctx.uiSkills.refresh()
-    }),
-    readInstalledSkills,
-    installExpertKit: id => serialize(async (signal) => { await invoke('expertKits.install', { id }, signal) }),
-    readInstalledExpertKits,
     readCapabilities,
     subscribeTaskSelection: (listener) => {
       const selection = () => {
@@ -271,8 +201,6 @@ export function createHarnessActions(ctx: Context): DeepSeekHarnessCatalogAction
 
 /** Task selectors use product catalogs and the official Session selection guard. */
 export interface TaskModeActions {
-  /** Read installed Expert Kits whose identities still match the accessible catalog. */
-  readonly readExpertKits: (signal?: AbortSignal) => Promise<readonly ProductItem[]>
   /** Read knowledge identities and references available to the employee. */
   readonly readKnowledgeCatalog: (signal?: AbortSignal) => Promise<readonly ProductItem[]>
   /** Open a capability directory without changing the current Session or draft. */
@@ -283,8 +211,6 @@ export interface TaskModeActions {
     options: readonly AgentPresetRow[]
     capabilities: ProductTaskCapabilities
   }>
-  /** Replace or clear the Expert Kit while preserving selected knowledge and drafts. */
-  readonly setExpertKit: (id: string | null, sessionId?: SessionId) => Promise<void>
   /** Apply a complete knowledge selection once, retaining other task configuration. */
   readonly setKnowledgeSelection: (ids: readonly string[], sessionId?: SessionId) => Promise<void>
   readonly recoverCapabilities: (sessionId?: SessionId) => Promise<void>

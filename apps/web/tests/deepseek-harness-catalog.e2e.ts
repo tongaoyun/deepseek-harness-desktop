@@ -10,7 +10,6 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 import { _electron, chromium, type ElectronApplication, type Locator, type Page } from 'playwright'
 import { expect, it, onTestFinished } from 'vitest'
 import { z } from 'zod'
-import * as tar from 'tar'
 import { captureStableAria, compareOrRefreshGolden, launchWebScaffold, seedSession, watchConsole, webSnapshotMode } from './scaffold.ts'
 import { expandOwningTurnProcess, newEnglishPage, REPO_ROOT } from './support.ts'
 import { prepareDevelopmentProject } from '../../desktop/scripts/development-project.ts'
@@ -18,8 +17,7 @@ import { developmentRuntimeDirectory, resolveDesktopBuildTarget } from '../../de
 import { createPluginProfile } from '../../desktop/src/project-manager.ts'
 import { DESKTOP_HOST_PROTOCOL_VERSION } from '../../desktop/src/host-protocol.ts'
 import { parseDesktopRelease } from '../../desktop/src/release.ts'
-import type { ProductContentIdentity, ProductTaskCapabilities } from '@deepseek-harness/product/protocol'
-import { ExtensionAuthoringSnapshotSchema, type ExtensionAuthoringSnapshot } from '@deepseek-harness/product/extension-draft'
+import type { ProductTaskCapabilities } from '@deepseek-harness/product/protocol'
 import { startMockLlmServer } from '@deepseek-ai/dsh-llm-mock-server'
 import { ToolCallId, createAssistantMessage, createToolResultMessage, createUserMessage } from '@deepseek-ai/dsh-llm'
 import { SESSION_FORMAT_VERSION, Session, SessionId } from '@deepseek-ai/dsh-session'
@@ -55,14 +53,6 @@ async function setCodingView(page: Page, enabled: boolean): Promise<void> {
   await dialog.getByRole('button', { name: /^(Close|关闭)$/, exact: true }).last().click()
 }
 
-const skills = [
-  { id: 'order-analysis', name: 'Order analysis', summary: 'Compare order trends and investigate unusual changes.',
-    author: 'Operations team', category: 'ecommerce-retail', version: '1.2.0', availabilityStatus: 'AVAILABLE' },
-  { id: 'inventory-check', name: 'Inventory reconciliation', summary: 'Find stock differences before planning replenishment.',
-    author: 'Operations team', category: 'ecommerce-retail', version: '1.1.0', availabilityStatus: 'AVAILABLE' },
-  { id: 'customer-summary', name: 'Customer summary', summary: 'Review customer activity and prepare an account summary.',
-    author: 'Sales team', category: 'ecommerce-retail', version: '1.0.0', availabilityStatus: 'AUTHORIZATION_REQUIRED' },
-]
 const connectors = [
   { id: 'erp', displayName: 'Order management', summary: 'Orders, inventory, and fulfillment', category: 'industry-data',
     availabilityStatus: 'AVAILABLE', authMode: 'employee-bearer', status: 'ACTIVE', tools: [
@@ -71,16 +61,6 @@ const connectors = [
     ] },
   { id: 'crm', displayName: 'Customer workspace', summary: 'Customer profiles and sales activity', category: 'industry-data',
     availabilityStatus: 'AUTHORIZATION_REQUIRED', authMode: 'oauth', authorizationStatus: 'REQUIRED', tools: [] },
-]
-const kits = [
-  { id: 'operations', name: 'Retail operations', summary: 'Investigate orders and inventory with your business data.',
-    author: 'Operations team', category: 'ecommerce-retail', version: '1.2.0', availabilityStatus: 'AVAILABLE',
-    skillDetails: skills.slice(0, 2), connectorRefs: ['erp'], knowledgeBaseRefs: ['company:playbook'],
-    commonTasks: [{ id: 'daily-review', name: 'Daily order review', description: 'Check order changes and delivery exceptions.',
-      prompt: 'Review today\'s orders and summarize delivery exceptions.', skillIds: ['order-analysis'] }] },
-  { id: 'customer-success', name: 'Customer success', summary: 'Prepare customer reviews and follow-up plans.',
-    author: 'Sales team', category: 'ecommerce-retail', version: '1.0.0', availabilityStatus: 'AUTHORIZATION_REQUIRED',
-    skillDetails: skills.slice(2), connectorRefs: ['crm'], knowledgeBaseRefs: [] },
 ]
 const organizationKnowledge = [
   { id: 'personal-notes', name: 'Personal notes', scope: 'PERSONAL', companyId: 'fixture-company', ownerEmployeeId: 'fixture-employee', ownerName: 'Fixture user', canRead: true, canManage: true },
@@ -119,8 +99,20 @@ async function openKnowledgeNavigation(page: Page) {
 }
 
 async function openKnowledgeFile(page: Page, name: string): Promise<void> {
-  await (await openKnowledgeNavigation(page)).getByRole('button', { name: /^(All materials|全部资料)$/, exact: true }).click()
+  const browse = page.getByRole('button', { name: /^(Browse materials|浏览资料)$/, exact: true })
+  if (await browse.isVisible() && await browse.getAttribute('aria-expanded') === 'true') await browse.click()
+  const back = page.getByRole('button', { name: /^(Back to files|返回文件列表)$/, exact: true })
+  if (await back.count()) await back.click()
+  await page.getByRole('tab', { name: /^(All files|全部文件)$/, exact: true }).click()
   await page.locator('[data-knowledge-content]').getByRole('button', { name, exact: true }).click()
+}
+
+async function submitKnowledgeUpload(page: Page): Promise<void> {
+  const dialog = page.getByRole('dialog', { name: /^(Upload files|上传文件)$/, exact: true })
+  await dialog.getByRole('button', { name: /^(Upload files|上传文件)$/, exact: true }).click()
+  await dialog.getByText(/^(Uploaded; see processing status in materials|已上传，处理状态见资料列表)$/).waitFor()
+  await expect.poll(() => dialog.getByRole('list').getAttribute('aria-busy')).toBe('false')
+  await dialog.getByRole('button', { name: /^(Close|关闭)$/, exact: true }).last().click()
 }
 
 async function expectKnowledgeNavigationFits(navigation: Locator): Promise<void> {
@@ -251,8 +243,9 @@ async function expectOriginalPreviews(page: Page, prefix: string): Promise<void>
   })).toBe(true)
   await reader.getByText(prefix === 'web' ? 'Selectable PDF text' : 'Office preview 中文文档', { exact: true }).first().waitFor()
   await page.screenshot({ path: join(screenshots, `${prefix}-knowledge-original-docx.png`), animations: 'disabled' })
-  await (await openKnowledgeNavigation(page)).getByRole('button', { name: /^(All materials|全部资料)$/, exact: true }).click()
+  await page.getByRole('button', { name: /^(Back to files|返回文件列表)$/, exact: true }).click()
 }
+
 
 async function expectPdfPixels(page: Page): Promise<void> {
   await expect.poll(() => page.locator('[data-knowledge-inline-reader] [data-pdf-page="1"] canvas').evaluate((canvas) => {
@@ -269,8 +262,9 @@ async function expectLargeOriginalPreview(page: Page, prefix: string): Promise<v
   await expectPdfPixels(page)
   await page.locator('[data-knowledge-inline-reader]').getByText('Selectable PDF text', { exact: true }).first().waitFor()
   await page.screenshot({ path: join(screenshots, `${prefix}-knowledge-original-large-pdf.png`), animations: 'disabled' })
-  await (await openKnowledgeNavigation(page)).getByRole('button', { name: /^(All materials|全部资料)$/, exact: true }).click()
+  await page.getByRole('button', { name: /^(Back to files|返回文件列表)$/, exact: true }).click()
 }
+
 
 async function expectLayout(page: Page, catalog: string, columns: number): Promise<void> {
   await expect.poll(() => page.locator(`ul[data-catalog='${catalog}']`).evaluate(grid =>
@@ -334,11 +328,7 @@ it('keeps a cited XLSX original visible inside the source modal on desktop and n
     calls.push(method)
     switch (method) {
       case 'auth.getSession': return { authenticated: true }
-      case 'extensions.authoring.read': return null
-      case 'tasks.capabilities.read': return { connectorIds: [], requiredConnectorIds: [], knowledgeBaseIds: [],
-        requiredKnowledgeBaseIds: [], knowledgeBaseRefs: [] }
-      case 'expertKits.list': return []
-      case 'expertKits.installed.read': return { installed: [] }
+      case 'tasks.capabilities.read': return { knowledgeBaseIds: [] }
       case 'knowledge.sources.read': return { ...source, content: 'Office preview spreadsheet passage.' }
       case 'knowledge.documents.previewMetadata': return knowledgeDocuments(source.knowledgeBaseId).find(row => row.id === source.documentId)
       case 'knowledge.documents.preview.open': return { transferId: 'sheet-transfer', fileName: source.filename, mediaType: file.mediaType,
@@ -451,122 +441,42 @@ it('keeps native themes and responsive catalogs while using official details and
     readonly folderId?: string | null
   }[] = []
   let connectorCatalog: readonly Record<string, unknown>[] = structuredClone(connectors)
-  let capabilities: ProductTaskCapabilities = {
-    connectorIds: [], requiredConnectorIds: [], knowledgeBaseIds: [], requiredKnowledgeBaseIds: [], knowledgeBaseRefs: [],
-  }
-  const installedSkills: ProductContentIdentity[] = []
-  const installedExpertKits: ProductContentIdentity[] = []
+  let capabilities: ProductTaskCapabilities = { knowledgeBaseIds: [] }
   const personalResources: Record<string, unknown>[] = []
-  const creationDrafts = new Map<string, ExtensionAuthoringSnapshot>()
   let failSave = true
-  let failKitUninstall = true
-  let failSkillUninstall = true
-  let skillReadme = '---\nname: order-analysis\n---\n# Order analysis\n\n## Analysis workflow\n\nCompare order totals and report unusual changes.'
-  const installExpertKit = (id: string): ProductContentIdentity => {
-    const kit = [...kits, ...personalResources.filter(row => row.kind === 'expert-kit')].find(row => row.id === id)
-    if (kit === undefined || typeof kit.name !== 'string' || typeof kit.version !== 'string') throw new Error('Missing expert kit')
-    const identity = { id, name: kit.name, version: kit.version, sha256: 'a'.repeat(64) }
-    const index = installedExpertKits.findIndex(row => row.id === id)
-    if (index < 0) installedExpertKits.push(identity)
-    else installedExpertKits.splice(index, 1, identity)
-    return identity
-  }
-  await page.exposeFunction('__productInvoke', (method: string, payload?: { sessionId?: string; revision?: number; id?: string; name?: string; kind?: string; version?: string; draft?: Record<string, unknown>; expertKitId?: string | null; expertKitTaskId?: string; basePresetId?: string; connectorIds?: string[]; knowledgeBaseIds?: string[]; knowledgeBaseId?: string; documentId?: string; query?: string; page?: number; size?: number; folderId?: string | null; parentId?: string | null; pdfParseMode?: string; rendered?: boolean; transferId?: string; offset?: number }): unknown => {
+  await page.exposeFunction('__productInvoke', (method: string, payload?: { sessionId?: string; revision?: number; id?: string; name?: string; kind?: string; version?: string; draft?: Record<string, unknown>; basePresetId?: string; knowledgeBaseIds?: string[]; knowledgeBaseId?: string; documentId?: string; query?: string; page?: number; size?: number; folderId?: string | null; parentId?: string | null; pdfParseMode?: string; rendered?: boolean; transferId?: string; offset?: number }): unknown => {
     calls.push(method)
     switch (method) {
       case 'auth.getSession': return { authenticated: true }
-      case 'extensions.authoring.begin': {
-        const kind = payload?.kind === 'expert-kit' ? 'expert-kit' : 'skill'
-        const state = ExtensionAuthoringSnapshotSchema.parse({ authoringId: '00000000-0000-4000-8000-000000000001',
-          sessionId: payload?.sessionId, revision: 1, files: [], missingFields: [], draft: {
-            kind, id: kind === 'skill' ? 'personal-review' : 'personal-operations', version: '1.0.0',
-            name: kind === 'skill' ? 'Personal review' : 'Personal operations', summary: 'Review the available evidence.',
-            category: 'knowledge-research', body: '# Review\n\nCheck the evidence.', triggers: ['Review facts'],
-            skills: kind === 'skill' ? [] : [{ id: 'daily-review', name: 'Daily review', summary: 'Review daily facts.', body: '# Daily review' }],
-            commonTasks: kind === 'skill' ? [] : [{ id: 'daily-summary', name: 'Daily summary', description: 'Review changes', prompt: 'Review today and summarize changes.', skillIds: ['daily-review'] }],
-          } })
-        creationDrafts.set(state.sessionId, state)
-        return state
-      }
-      case 'extensions.authoring.read': return creationDrafts.get(payload?.sessionId ?? '') ?? null
-      case 'extensions.authoring.save': {
-        if (failSave) { failSave = false; throw new Error('Transient fixture save failure') }
-        const state = creationDrafts.get(payload?.sessionId ?? '')
-        if (!state || state.revision !== payload?.revision) throw new Error('Draft changed')
-        personalResources.push({ ...state.draft, canEdit: true, canSubmit: true, canDelete: true, visibility: 'PERSONAL' })
-        state.saved = { id: state.draft.id ?? '', version: state.draft.version ?? '' }; state.revision += 1
-        return { id: state.draft.id, installed: state.draft.kind === 'skill', visibility: 'PERSONAL' }
-      }
       case 'tasks.capabilities.read': return capabilities
-      case 'skills.installed.read': return { installed: installedSkills, available: installedSkills, frozen: false }
-      case 'expertKits.installed.read': return { installed: [...installedExpertKits] }
-      case 'expertKits.install': return installExpertKit(payload?.id ?? '')
-      case 'expertKits.uninstall': {
-        if (failKitUninstall) { failKitUninstall = false; throw new Error('Transient fixture uninstall failure') }
-        const id = payload?.id ?? ''
-        const index = installedExpertKits.findIndex(row => row.id === id)
-        if (index >= 0) installedExpertKits.splice(index, 1)
-        return { id }
-      }
-      case 'skills.install': {
-        const resource = skills.find(skill => skill.id === payload?.id)
-        const skill = { id: payload?.id ?? '', name: resource?.name ?? '', version: resource?.version ?? '1.0.0', sha256: 'b'.repeat(64) }
-        const index = installedSkills.findIndex(row => row.id === skill.id)
-        if (index < 0) installedSkills.push(skill)
-        else installedSkills.splice(index, 1, skill)
-        return skill
-      }
-      case 'skills.uninstall': {
-        if (failSkillUninstall) { failSkillUninstall = false; throw new Error('Transient fixture uninstall failure') }
-        const id = payload?.id ?? ''
-        const index = installedSkills.findIndex(row => row.id === id)
-        if (index >= 0) installedSkills.splice(index, 1)
-        return { id }
-      }
       case 'tasks.capabilities.prepare': {
-        if (typeof payload?.expertKitId === 'string' && !installedExpertKits.some(row => row.id === payload.expertKitId)) {
-          throw new Error('KIT_NOT_INSTALLED')
-        }
-        capabilities = { ...capabilities, connectorIds: payload?.connectorIds ?? capabilities.connectorIds,
-          knowledgeBaseIds: payload?.knowledgeBaseIds ?? capabilities.knowledgeBaseIds }
-        if (payload?.expertKitId !== undefined) {
-          const kit = kits.find(row => row.id === payload.expertKitId)
-          const { expertKit: _previousKit, ...retained } = capabilities
-          capabilities = kit === undefined ? retained
-            : { ...retained, expertKit: { id: kit.id, name: kit.name, version: kit.version, sha256: 'a'.repeat(64) } }
-        }
-        const task = typeof payload?.expertKitTaskId === 'string'
-          ? kits.find(kit => kit.id === payload.expertKitId)?.commonTasks?.find(task => task.id === payload.expertKitTaskId) : undefined
-        return { kind: 'CURRENT_SESSION', presetId: 'standard', capabilities, dependencyChecks: [],
-          ...task === undefined ? {} : { prompt: task.prompt } }
+        capabilities = { ...capabilities, knowledgeBaseIds: payload?.knowledgeBaseIds ?? capabilities.knowledgeBaseIds }
+        return { kind: 'CURRENT_SESSION', presetId: 'standard', capabilities, dependencyChecks: [] }
       }
-      case 'expertKits.list': return [...kits, ...personalResources.filter(row => row.kind === 'expert-kit')]
-      case 'skills.list': return [...skills, ...personalResources.filter(row => row.kind === 'skill')]
       case 'connectors.list': return [...connectorCatalog, ...personalResources.filter(row => row.kind === 'connector')]
       case 'extensions.save': {
         if (failSave) { failSave = false; throw new Error('Transient fixture save failure') }
         personalResources.push({ ...payload, headers: {}, environment: {}, canEdit: true, canSubmit: true, canDelete: true, visibility: 'PERSONAL', reviewStatus: 'DRAFT' })
-        return { id: payload?.id, installed: payload?.kind === 'skill', visibility: 'PERSONAL' }
+        return { kind: 'connector', id: payload?.id, version: payload?.version, visibility: 'PERSONAL' }
       }
       case 'extensions.connector.read': {
         const resource = personalResources.find(row => row.id === payload?.id)
         const fields = Object.fromEntries(Object.entries(resource ?? {}).filter(([key]) =>
           !['canEdit', 'canSubmit', 'canDelete', 'visibility', 'reviewStatus'].includes(key)))
-        return { draft: { ...fields, version: '1.0.1', headers: { 'X-Api-Key': '' } } }
+        return { draft: { ...fields, version: '1.0.1', headers: { 'X-Api-Key': '' } }, configured: true, savePending: false }
       }
       case 'extensions.connector.update': {
         if (failSave) { failSave = false; throw new Error('Transient fixture save failure') }
         const resource = personalResources.find(row => row.id === payload?.id)
         if (!resource) throw new Error('Missing connector')
         Object.assign(resource, payload?.draft, { headers: {}, environment: {} })
-        return { id: resource.id, version: resource.version }
+        return { kind: 'connector', id: resource.id, version: resource.version, visibility: 'PERSONAL' }
       }
-      case 'extensions.delete':
       case 'extensions.connector.delete': {
         const index = personalResources.findIndex(row => row.id === payload?.id)
         if (index < 0) throw new Error('Missing connector')
         personalResources.splice(index, 1)
-        return { removed: true }
+        return { id: payload?.id, removed: true }
       }
       case 'extensions.submit': {
         const resource = personalResources.find(row => row.id === payload?.id)
@@ -574,11 +484,6 @@ it('keeps native themes and responsive catalogs while using official details and
         Object.assign(resource, { canSubmit: false, reviewStatus: 'SUBMITTED' })
         return { submitted: true }
       }
-      case 'extensions.import.inspect': return { stageId: '00000000-0000-4000-8000-000000000000',
-        draft: { kind: 'skill', id: 'imported-review', version: '1.0.0', name: 'Imported review', summary: 'Review imported facts.',
-          category: 'legal', triggers: ['Review a document'], body: '# Imported review\n\nReview the facts.' },
-        files: [{ path: 'SKILL.md', bytes: 120 }], missingFields: [] }
-      case 'extensions.import.release': return { released: true }
       case 'catalog.refresh': return undefined
       case 'knowledge.bases.list': return [...organizationKnowledge, ...newPersonalBases,
         { id: 'playbook', name: 'Operations playbook', scope: 'COMPANY', companyId: 'fixture-company', ownerName: 'Fixture company', canRead: true, canManage: false }]
@@ -596,10 +501,6 @@ it('keeps native themes and responsive catalogs while using official details and
       case 'knowledge.references.resolve': return [{ reference: 'company:playbook', status: 'RESOLVED', base: {
         id: 'playbook', name: 'Operations playbook', scope: 'COMPANY', companyId: 'fixture-company', ownerName: 'Fixture company',
       } }]
-      case 'expertKits.get': return [...kits, ...personalResources.filter(row => row.kind === 'expert-kit')].find(kit => kit.id === payload?.id)
-      case 'skills.get': return [...skills, ...personalResources.filter(row => row.kind === 'skill')].find(skill => skill.id === payload?.id)
-      case 'expertKits.readme': return { readme: '# Retail operations\n\n## Review process\n\nCheck business facts before making changes.' }
-      case 'skills.readme': return { readme: skillReadme }
       case 'knowledge.documents.list': {
         materialRequests.push({ ...payload })
         const page = payload?.page ?? 1
@@ -633,10 +534,10 @@ it('keeps native themes and responsive catalogs while using official details and
         const index = managedFolders.findIndex(row => row.id === payload?.folderId)
         if (index < 0) throw new Error('Missing managed folder')
         managedFolders.splice(index, 1)
-        return { removed: true }
+        return { folderId: payload?.folderId, deleted: true }
       }
       case 'knowledge.documents.upload.pending': return []
-      case 'knowledge.documents.upload': uploadModes.push(payload?.pdfParseMode ?? 'STANDARD'); uploadFolders.push(payload?.folderId); return { cancelled: true }
+      case 'knowledge.documents.upload.select': uploadModes.push(payload?.pdfParseMode ?? 'STANDARD'); uploadFolders.push(payload?.folderId); return []
       case 'knowledge.documents.read': return knowledgeContents(payload?.documentId ?? '', payload?.page ?? 1, payload?.size ?? 50)
       case 'knowledge.documents.preview.open': {
         const file = payload?.rendered ? { mediaType: 'application/pdf', data: Uint8Array.from(pdfFixture()) }
@@ -691,9 +592,6 @@ it('keeps native themes and responsive catalogs while using official details and
           const { fixtureChunk: _fixture, ...progress } = result
           result = { ...progress, data }
         }
-        if (['expertKits.install', 'expertKits.uninstall', 'skills.install', 'skills.uninstall'].includes(method)) {
-          for (const listener of listeners) listener({ type: 'catalog.changed' })
-        }
         return { ok: true, result }
       },
       cancel: () => {},
@@ -718,10 +616,10 @@ it('keeps native themes and responsive catalogs while using official details and
     await page.emulateMedia({ colorScheme: theme })
     for (const viewport of [{ width: 1440, height: 900 }, { width: 1024, height: 768 }, { width: 390, height: 844 }]) {
       await page.setViewportSize(viewport)
-      for (const [label, catalog] of [['Expert kits', 'expertKits'], ['Skills', 'skills'], ['Connectors', 'connectors']] as const) {
+      for (const [label, catalog] of [['Connectors', 'connectors']] as const) {
         await page.getByRole('button', { name: label, exact: true }).click()
         await page.locator(`ul[data-catalog='${catalog}']`).waitFor()
-        await expectLayout(page, catalog, viewport.width === 390 ? 1 : catalog === 'skills' && viewport.width === 1440 ? 3 : 2)
+        await expectLayout(page, catalog, viewport.width === 390 ? 1 : 2)
         await page.screenshot({ path: join(screenshots, `${catalog}-${theme}-${viewport.width}.png`) })
         if (theme === 'light' && viewport.width === 1440) await snapshot(catalog)
       }
@@ -771,251 +669,8 @@ it('keeps native themes and responsive catalogs while using official details and
     await page.setViewportSize({ width: 1440, height: 900 })
   }
   await page.keyboard.press('Escape')
-  await page.getByRole('button', { name: 'Expert kits', exact: true }).click()
-  await page.getByRole('button', { name: /Retail operations Operations team/ }).click()
-  await page.getByRole('heading', { name: 'Retail operations', exact: true, level: 1 }).waitFor()
-  await snapshot('kit-detail', '[class*="expertDetailPage"]')
-  await page.screenshot({ path: join(screenshots, 'kit-detail-dark.png') })
-  await page.getByRole('button', { name: 'Read full guide', exact: true }).click()
-  const kitGuide = page.getByRole('dialog', { name: 'Kit guide' })
-  await kitGuide.waitFor()
-  await kitGuide.getByRole('heading', { name: 'Review process', exact: true }).waitFor()
-  await kitGuide.evaluate(async (dialog) => {
-    await Promise.all(dialog.getAnimations().map(animation => animation.finished))
-  })
-  for (const width of [1440, 390]) {
-    await page.setViewportSize({ width, height: 900 })
-    const bounds = await kitGuide.boundingBox()
-    expect(bounds).not.toBeNull()
-    expect(bounds!.x).toBeGreaterThanOrEqual(0)
-    expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(width)
-    await page.screenshot({ path: join(screenshots, `kit-guide-${width}.png`) })
-  }
-  await page.keyboard.press('Escape')
-  expect(await page.getByRole('heading', { name: 'Retail operations', exact: true, level: 1 }).isVisible()).toBe(true)
-  await page.setViewportSize({ width: 1440, height: 900 })
-  const kitDetail = page.locator('[class*="expertDetailPage"]')
-  const checkKitActions = async (installed: boolean): Promise<void> => {
-    for (const width of [1440, 390]) {
-      await page.setViewportSize({ width, height: 900 })
-      await expect.poll(() => kitDetail.locator('[class*="detailActions"]').evaluate(actions =>
-        [...actions.children].every((element) => {
-          const bounds = element.getBoundingClientRect()
-          return bounds.left >= 0 && bounds.right <= window.innerWidth && element.scrollWidth <= element.clientWidth + 1
-        }))).toBe(true)
-      await page.screenshot({ path: join(screenshots, `expert-kit-actions-${installed ? 'installed' : 'available'}-${width}.png`), animations: 'disabled' })
-    }
-    await page.setViewportSize({ width: 1440, height: 900 })
-  }
-  await checkKitActions(false)
-  expect(await kitDetail.getByRole('button', { name: 'Start using', exact: true }).count()).toBe(0)
-  expect(await kitDetail.getByRole('button', { name: 'Daily order review Check order changes and delivery exceptions.', exact: true }).isDisabled()).toBe(true)
-  const beforeKitInstall = calls.filter(method => method === 'tasks.capabilities.prepare').length
-  await kitDetail.getByRole('button', { name: 'Install expert kit', exact: true }).click()
-  await kitDetail.getByText('Installed', { exact: true }).waitFor()
-  await checkKitActions(true)
-  expect(await kitDetail.getByRole('button', { name: 'Start using', exact: true }).isEnabled()).toBe(true)
-  expect(await kitDetail.getByRole('button', { name: 'Daily order review Check order changes and delivery exceptions.', exact: true }).isEnabled()).toBe(true)
-  expect(await kitDetail.getByRole('button', { name: 'Installed', exact: true }).count()).toBe(0)
-  expect(installedExpertKits.map(row => row.id)).toEqual(['operations'])
-  expect(calls.filter(method => method === 'tasks.capabilities.prepare')).toHaveLength(beforeKitInstall)
-  await kitDetail.getByRole('button', { name: 'More actions', exact: true }).click()
-  expect(await page.getByRole('menuitem').allTextContents()).toEqual(['Uninstall'])
-  await page.getByRole('menuitem', { name: 'Uninstall', exact: true }).click()
-  const uninstallDialog = page.getByRole('dialog', { name: 'Uninstall “Retail operations”?', exact: true })
-  await uninstallDialog.getByRole('button', { name: 'Cancel', exact: true }).click()
-  expect(installedExpertKits.map(row => row.id)).toEqual(['operations'])
-  await kitDetail.getByRole('button', { name: 'More actions', exact: true }).click()
-  await page.getByRole('menuitem', { name: 'Uninstall', exact: true }).click()
-  await uninstallDialog.getByRole('button', { name: 'Uninstall', exact: true }).click()
-  await uninstallDialog.getByRole('alert').waitFor()
-  expect(installedExpertKits.map(row => row.id)).toEqual(['operations'])
-  await page.screenshot({ path: join(screenshots, 'expert-kit-uninstall-retry.png'), animations: 'disabled' })
-  await uninstallDialog.getByRole('button', { name: 'Uninstall', exact: true }).click()
-  await expect.poll(() => uninstallDialog.count()).toBe(0)
-  await kitDetail.getByRole('button', { name: 'Install expert kit', exact: true }).waitFor()
-  expect(installedExpertKits).toEqual([])
-  expect(await kitDetail.getByRole('button', { name: 'Start using', exact: true }).count()).toBe(0)
-  expect(await page.getByRole('heading', { name: 'Retail operations', exact: true, level: 1 }).isVisible()).toBe(true)
-  expect(calls.filter(method => method === 'tasks.capabilities.prepare')).toHaveLength(beforeKitInstall)
-  await page.getByRole('button', { name: 'Back to catalog', exact: true }).click()
-  const kitCard = page.locator('li[data-catalog="expertKits"]').filter({ has: page.getByText('Retail operations', { exact: true }) })
-  await kitCard.getByRole('button', { name: 'Install expert kit', exact: true }).click()
-  await kitCard.getByText('Installed', { exact: true }).waitFor()
-  await kitCard.getByRole('button', { name: 'More actions', exact: true }).click()
-  await page.getByRole('menuitem', { name: 'Uninstall', exact: true }).click()
-  await uninstallDialog.getByRole('button', { name: 'Uninstall', exact: true }).click()
-  await kitCard.getByRole('button', { name: 'Install expert kit', exact: true }).waitFor()
-  await page.locator(`[data-row-key="session:${originalSession}"]`).click()
-  expect(await page.locator('[data-conversation-session]').last().getAttribute('data-conversation-session')).toBe(originalSession)
-  expect(await composer.textContent()).toBe('Design an API for order review.')
-  await page.getByRole('button', { name: 'Choose expert kit', exact: true }).click()
-  await page.getByRole('menuitem', { name: 'View expert kits', exact: true }).waitFor()
-  await page.getByRole('menu').getByText('Loading…', { exact: true }).waitFor({ state: 'hidden' })
-  await expect.poll(() => page.getByRole('menuitem', { name: /^Retail operations|^Customer success/ }).count()).toBe(0)
-  await snapshot('task-kit-uninstalled', '[role="menu"]')
-  expect(installedExpertKits).toEqual([])
-  expect(calls.filter(method => method === 'tasks.capabilities.prepare')).toHaveLength(beforeKitInstall)
-  await page.keyboard.press('Escape')
-  await page.getByRole('button', { name: 'Skills', exact: true }).click()
-  await page.getByRole('button', { name: /Order analysis Operations team/ }).click()
-  const skillDialog = page.getByRole('dialog', { name: 'Skill details' })
-  await skillDialog.waitFor()
-  await page.getByRole('heading', { name: 'Analysis workflow', exact: true }).waitFor()
-  await snapshot('skill-detail', '[role="dialog"]')
-  await page.screenshot({ path: join(screenshots, 'skill-detail-dark.png') })
-  expect(await skillDialog.getByRole('heading', { name: 'Order analysis', exact: true, level: 1 }).count()).toBe(1)
-  expect(await skillDialog.getByText('Compare order trends and investigate unusual changes.', { exact: true }).count()).toBe(0)
-  expect(await skillDialog.getByText('How to use', { exact: true }).count()).toBe(0)
-  for (const width of [1440, 390]) {
-    await page.setViewportSize({ width, height: 900 })
-    expect(await skillDialog.evaluate(dialog => dialog.scrollWidth > dialog.clientWidth)).toBe(false)
-    await page.screenshot({ path: join(screenshots, `skill-detail-${width}.png`) })
-  }
-  await page.setViewportSize({ width: 1440, height: 900 })
-  await page.keyboard.press('Escape')
-  skillReadme += Array.from({ length: 40 }, (_, index) => `\n\n## Review step ${index + 1}\n\nCompare the evidence and record the findings.`).join('')
-  for (const width of [1440, 390]) {
-    await page.setViewportSize({ width, height: 900 })
-    await page.getByRole('button', { name: /Order analysis Operations team/ }).click()
-    await skillDialog.getByRole('heading', { name: 'Review step 40', exact: true }).waitFor()
-    const closeButton = skillDialog.getByRole('button', { name: 'Close', exact: true })
-    const installButton = skillDialog.getByRole('button', { name: 'Install skill', exact: true })
-    const closeBefore = await closeButton.boundingBox()
-    const installBefore = await installButton.boundingBox()
-    const scroll = await skillDialog.locator('[data-skill-detail-body]').evaluate((body) => {
-      body.scrollTop = body.scrollHeight
-      return { top: body.scrollTop, remaining: body.scrollHeight - body.clientHeight - body.scrollTop }
-    })
-    expect(scroll.top).toBeGreaterThan(0)
-    expect(scroll.remaining).toBeLessThanOrEqual(1)
-    expect(await closeButton.boundingBox()).toEqual(closeBefore)
-    expect(await installButton.boundingBox()).toEqual(installBefore)
-    expect(await closeButton.isVisible()).toBe(true)
-    expect(await skillDialog.evaluate(dialog => dialog.scrollWidth > dialog.clientWidth)).toBe(false)
-    await page.screenshot({ path: join(screenshots, `skill-detail-scrolled-${width}.png`) })
-    await closeButton.click()
-    expect(await skillDialog.count()).toBe(0)
-  }
-  await page.setViewportSize({ width: 1440, height: 900 })
-  expect(await page.getByRole('button', { name: 'Install skill', exact: true }).nth(2).isDisabled()).toBe(false)
-  expect(await page.getByText('Available', { exact: true }).count()).toBe(0)
-  const preparations = calls.filter(method => method === 'tasks.capabilities.prepare').length
-  await page.getByRole('button', { name: 'Install skill', exact: true }).first().click()
-  await page.getByText('Installed', { exact: true }).waitFor()
-  expect(await page.getByRole('button', { name: 'Installed', exact: true }).count()).toBe(0)
-  expect(calls.filter(method => method === 'tasks.capabilities.prepare')).toHaveLength(preparations)
-  await page.getByRole('button', { name: /Order analysis Operations team/ }).click()
-  await skillDialog.getByText('Installed', { exact: true }).waitFor()
-  for (const width of [1440, 390]) {
-    await page.setViewportSize({ width, height: 900 })
-    expect(await skillDialog.evaluate(dialog => dialog.scrollWidth > dialog.clientWidth)).toBe(false)
-    const actions = await skillDialog.getByRole('button', { name: 'More actions', exact: true }).boundingBox()
-    expect(actions).not.toBeNull()
-    expect(actions!.x).toBeGreaterThanOrEqual(0)
-    expect(actions!.x + actions!.width).toBeLessThanOrEqual(width)
-    await page.screenshot({ path: join(screenshots, `skill-detail-installed-${width}.png`), animations: 'disabled' })
-  }
-  await skillDialog.getByRole('button', { name: 'More actions', exact: true }).click()
-  expect(await page.getByRole('menuitem').count()).toBe(1)
-  await page.getByRole('menuitem', { name: 'Uninstall', exact: true }).click()
-  const uninstallSkill = page.getByRole('dialog', { name: 'Uninstall “Order analysis”?', exact: true })
-  await uninstallSkill.getByRole('button', { name: 'Cancel', exact: true }).click()
-  expect(installedSkills.map(skill => skill.id)).toEqual(['order-analysis'])
-  await skillDialog.getByRole('button', { name: 'More actions', exact: true }).click()
-  await page.getByRole('menuitem', { name: 'Uninstall', exact: true }).click()
-  await uninstallSkill.getByRole('button', { name: 'Uninstall', exact: true }).click()
-  await uninstallSkill.getByRole('alert').waitFor()
-  expect(installedSkills.map(skill => skill.id)).toEqual(['order-analysis'])
-  expect(await uninstallSkill.evaluate(dialog => dialog.scrollWidth > dialog.clientWidth)).toBe(false)
-  await page.screenshot({ path: join(screenshots, 'skill-uninstall-retry-390.png'), animations: 'disabled' })
-  await uninstallSkill.getByRole('button', { name: 'Uninstall', exact: true }).click()
-  await expect.poll(() => uninstallSkill.count()).toBe(0)
-  await skillDialog.getByRole('button', { name: 'Install skill', exact: true }).waitFor()
-  expect(installedSkills).toEqual([])
-  expect(await skillDialog.getByRole('button', { name: 'More actions', exact: true }).count()).toBe(0)
-  await skillDialog.getByRole('button', { name: 'Close', exact: true }).click()
-  await page.setViewportSize({ width: 1440, height: 900 })
-  const skillCard = page.locator('li[data-catalog="skills"]').filter({ has: page.getByText('Order analysis', { exact: true }) })
-  await skillCard.getByRole('button', { name: 'Install skill', exact: true }).click()
-  await skillCard.getByText('Installed', { exact: true }).waitFor()
-  await skillCard.getByRole('button', { name: 'More actions', exact: true }).click()
-  await page.getByRole('menuitem', { name: 'Uninstall', exact: true }).click()
-  await uninstallSkill.getByRole('button', { name: 'Uninstall', exact: true }).click()
-  await skillCard.getByRole('button', { name: 'Install skill', exact: true }).waitFor()
-  expect(installedSkills).toEqual([])
-  expect(await skillCard.getByText('Order analysis', { exact: true }).count()).toBe(1)
-  await skillCard.getByRole('button', { name: 'Install skill', exact: true }).click()
-  await skillCard.getByText('Installed', { exact: true }).waitFor()
-  expect(installedSkills.map(skill => skill.id)).toEqual(['order-analysis'])
-  expect(calls.filter(method => method === 'tasks.capabilities.prepare')).toHaveLength(preparations)
-  expect(calls.filter(method => method === 'extensions.delete')).toHaveLength(0)
-  await page.locator('[data-row-key^="session:"]').first().click()
-  expect(await page.locator('[data-conversation-session]').last().getAttribute('data-conversation-session')).toBe(originalSession)
-  await expect.poll(() => composer.textContent()).toBe('Design an API for order review.')
-  expect(await page.getByRole('button', { name: 'Selected capabilities', exact: true }).count()).toBe(0)
-  await page.getByRole('button', { name: 'Expert kits', exact: true }).click()
-  await kitCard.getByRole('button', { name: 'Install expert kit', exact: true }).click()
-  await kitCard.getByText('Installed', { exact: true }).waitFor()
   await page.locator(`[data-row-key="session:${originalSession}"]`).click()
   expect(await composer.textContent()).toBe('Design an API for order review.')
-  await setCodingView(page, true)
-  const modePicker = page.locator('[data-slot="conversation.hero.agentPreset"]').getByRole('button')
-  const kitPicker = page.getByRole('button', { name: 'Choose expert kit', exact: true })
-  expect(await page.getByRole('button', { name: 'Execution mode', exact: true }).count()).toBe(0)
-  await modePicker.click()
-  expect(await page.getByRole('menuitem', { name: /^Retail operations/ }).count()).toBe(0)
-  const standardMode = page.getByRole('menuitem', { name: /^Standard mode/ })
-  expect(await standardMode.textContent()).toContain('Work with code, files, and information.')
-  expect(await standardMode.locator('svg').count()).toBe(1)
-  expect(await page.getByRole('menu').innerText()).not.toContain('product-task-')
-  await snapshot('task-mode', '[role="menu"]')
-  await kitPicker.click()
-  await page.getByRole('menuitem', { name: /^Retail operations/ }).waitFor()
-  expect(await page.getByRole('menuitem', { name: 'Standard mode', exact: true }).count()).toBe(0)
-  await snapshot('task-kit', '[role="menu"]')
-  for (const width of [1440, 390]) {
-    await page.setViewportSize({ width, height: 900 })
-    await expect.poll(() => page.getByRole('menu').evaluate((menu) => {
-      const bounds = menu.getBoundingClientRect()
-      return bounds.x >= 0 && bounds.right <= window.innerWidth
-    })).toBe(true)
-    await page.screenshot({ path: join(screenshots, `task-mode-${width}.png`) })
-  }
-  await page.setViewportSize({ width: 1440, height: 900 })
-  await page.getByRole('menuitem', { name: /^Retail operations/ }).click()
-  await expect.poll(() => kitPicker.textContent()).toBe('Retail operations')
-  await expect.poll(() => modePicker.textContent()).toBe('Standard mode')
-  await modePicker.click()
-  expect(await standardMode.locator('svg').count()).toBe(1)
-  expect(await page.getByRole('menu').innerText()).not.toContain('Retail operations')
-  await page.keyboard.press('Escape')
-  await setCodingView(page, false)
-  await expect.poll(() => modePicker.textContent()).toBe('Standard mode')
-  await modePicker.click()
-  await page.getByRole('menuitem', { name: /^Standard mode/ }).waitFor()
-  await page.getByRole('menuitem', { name: /^Creator mode/ }).waitFor()
-  expect(await page.getByRole('menuitem', { name: /^(PTC |Minimal mode)/ }).count()).toBe(0)
-  await page.keyboard.press('Escape')
-  expect(await kitPicker.isVisible()).toBe(true)
-  expect(capabilities.expertKit?.id).toBe('operations')
-  expect(await composer.textContent()).toBe('Design an API for order review.')
-  await setCodingView(page, true)
-  await expect.poll(() => modePicker.textContent()).toBe('Standard mode')
-  for (const width of [1440, 390]) {
-    await page.setViewportSize({ width, height: 900 })
-    await expect.poll(() => modePicker.evaluate(button => button.scrollWidth - button.clientWidth)).toBeLessThanOrEqual(1)
-    await expect.poll(() => kitPicker.evaluate(button => button.scrollWidth - button.clientWidth)).toBeLessThanOrEqual(1)
-    expect(await page.getByRole('button', { name: 'Task knowledge bases', exact: true }).count()).toBe(0)
-    for (const control of [modePicker, kitPicker]) {
-      await expect.poll(() => control.evaluate((button) => {
-        const box = button.getBoundingClientRect()
-        return box.left >= 0 && box.right <= window.innerWidth
-      })).toBe(true)
-    }
-    await page.screenshot({ path: join(screenshots, `task-selectors-${width}.png`) })
-  }
-  await page.setViewportSize({ width: 1440, height: 900 })
   await openTaskKnowledge(page)
   const knowledgeDialog = page.getByRole('dialog', { name: 'Task knowledge bases' })
   await knowledgeDialog.getByRole('checkbox', { name: 'Operations playbook' }).waitFor()
@@ -1035,7 +690,6 @@ it('keeps native themes and responsive catalogs while using official details and
   await page.getByRole('button', { name: 'Connectors', exact: true }).click()
   await page.getByRole('button', { name: /Order management Orders/ }).click()
   expect(await connectorDialog.getByRole('checkbox').count()).toBe(0)
-  expect(capabilities.connectorIds).toEqual([])
   await page.keyboard.press('Escape')
   connectorCatalog = connectorCatalog.map(connector => connector.id === 'erp' ? {
     ...connector, authMode: 'oauth', authorizationStatus: 'EXPIRED', availabilityStatus: 'AUTHORIZATION_REQUIRED', status: 'UNAVAILABLE',
@@ -1045,15 +699,12 @@ it('keeps native themes and responsive catalogs while using official details and
   await page.getByRole('button', { name: /Order management Orders/ }).click()
   expect(await connectorDialog.getByRole('checkbox').count()).toBe(0)
   await snapshot('connector-expired', '[role="dialog"]')
-  expect(capabilities.connectorIds).toEqual([])
   await page.keyboard.press('Escape')
-  capabilities = { ...capabilities, connectorIds: ['erp'], requiredConnectorIds: ['erp'] }
   connectorCatalog = structuredClone(connectors)
   await page.getByRole('button', { name: 'Connectors', exact: true }).click()
   await page.getByRole('button', { name: 'Refresh', exact: true }).click()
   await page.getByRole('button', { name: /Order management Orders/ }).click()
   expect(await connectorDialog.getByRole('checkbox').count()).toBe(0)
-  expect(capabilities.connectorIds).toEqual(['erp'])
   await snapshot('connector-required', '[role="dialog"]')
   await connectorDialog.evaluate(async (dialog) => {
     await Promise.all(dialog.getAnimations().map(animation => animation.finished))
@@ -1122,7 +773,7 @@ it('keeps native themes and responsive catalogs while using official details and
     await expect.poll(() => personalMaterials.getByRole('button', { name: 'Upload files', exact: true }).isEnabled()).toBe(true)
   }
   expect(uploadModes).toEqual(['STANDARD', 'TEXT'])
-  await (await openKnowledgeNavigation(page)).getByRole('button', { name: 'All materials', exact: true }).click()
+  await page.getByRole('tab', { name: 'All files', exact: true }).click()
   await personalMaterials.getByRole('button', { name: 'Next page', exact: true }).click()
   await personalMaterials.getByRole('button', { name: 'Handover guide.md', exact: true }).waitFor()
   expect(materialRequests.at(-1)).toMatchObject({ knowledgeBaseId: 'personal-notes', page: 2, size: 20 })
@@ -1245,7 +896,6 @@ it('keeps native themes and responsive catalogs while using official details and
   await page.getByRole('checkbox', { name: 'Operations playbook' }).click()
   await page.getByRole('button', { name: 'Apply', exact: true }).click()
   await expect.poll(() => capabilities.knowledgeBaseIds).toEqual(['playbook'])
-  expect(capabilities.connectorIds).toEqual(['erp'])
   const selectedKnowledge = page.locator('[data-composer-card]').getByRole('button', { name: 'Operations playbook', exact: true })
   await selectedKnowledge.waitFor()
   for (const width of [1440, 390]) {
@@ -1267,53 +917,6 @@ it('keeps native themes and responsive catalogs while using official details and
   await page.getByRole('button', { name: 'Apply', exact: true }).click()
   await expect.poll(() => capabilities.knowledgeBaseIds).toEqual(['playbook'])
   const beforeCreation = calls.filter(method => method === 'tasks.capabilities.prepare').length
-  await page.getByRole('button', { name: 'Skills', exact: true }).click()
-  await page.getByRole('button', { name: 'Add', exact: true }).click()
-  await page.getByRole('menuitem', { name: 'Create skill', exact: true }).click()
-  await expect.poll(() => composer.textContent()).toContain('I want to create a skill.')
-  expect(await page.getByRole('dialog').count()).toBe(0)
-  expect(await page.getByRole('button', { name: 'Draft preview', exact: true }).count()).toBe(0)
-  expect(personalResources).toHaveLength(0)
-  for (const width of [1440, 390]) {
-    await page.setViewportSize({ width, height: 900 })
-    await page.screenshot({ path: join(screenshots, `create-skill-${width}.png`), animations: 'disabled' })
-  }
-  await page.setViewportSize({ width: 1440, height: 900 })
-  const skillCreation = [...creationDrafts.values()].find(state => state.draft.kind === 'skill')!
-  personalResources.push({ ...skillCreation.draft, canEdit: true, canSubmit: true, canDelete: true, visibility: 'PERSONAL' })
-  skillCreation.saved = { id: skillCreation.draft.id!, version: skillCreation.draft.version! }
-  await page.getByRole('button', { name: 'Skills', exact: true }).click()
-  await page.getByText('Personal review', { exact: true }).waitFor()
-  await page.getByRole('button', { name: 'Add', exact: true }).click()
-  await page.getByRole('menuitem', { name: 'Import skill', exact: true }).click()
-  const importer = page.getByRole('dialog', { name: 'Import skill', exact: true })
-  await importer.getByRole('button', { name: 'Choose file', exact: true }).waitFor()
-  await page.screenshot({ path: join(screenshots, 'import-skill-select.png'), animations: 'disabled' })
-  await importer.getByRole('button', { name: 'Choose file', exact: true }).click()
-  const importPreview = page.getByRole('dialog', { name: 'Preview', exact: true })
-  await importPreview.getByText('Advanced information', { exact: false }).click()
-  await importPreview.getByText('SKILL.md', { exact: true }).waitFor()
-  await page.screenshot({ path: join(screenshots, 'import-skill-preview.png'), animations: 'disabled' })
-  await importPreview.getByRole('button', { name: 'Close', exact: true }).last().click()
-  await expect.poll(() => calls.includes('extensions.import.release')).toBe(true)
-  expect(personalResources).toHaveLength(1)
-  await page.getByRole('button', { name: 'Expert kits', exact: true }).click()
-  await page.getByRole('button', { name: 'Add', exact: true }).click()
-  await page.getByRole('menuitem', { name: 'Create expert kit', exact: true }).click()
-  await expect.poll(() => composer.textContent()).toContain('I want to create an expert kit.')
-  expect(await page.getByRole('button', { name: 'Draft preview', exact: true }).count()).toBe(0)
-  expect(await page.getByRole('dialog').count()).toBe(0)
-  await page.screenshot({ path: join(screenshots, 'create-kit-desktop.png'), animations: 'disabled' })
-  for (const width of [1440, 390]) {
-    await page.setViewportSize({ width, height: 900 })
-    await page.screenshot({ path: join(screenshots, `create-kit-${width}.png`), animations: 'disabled' })
-  }
-  await page.setViewportSize({ width: 1440, height: 900 })
-  const kitCreation = [...creationDrafts.values()].find(state => state.draft.kind === 'expert-kit')!
-  personalResources.push({ ...kitCreation.draft, canEdit: true, canSubmit: true, canDelete: true, visibility: 'PERSONAL' })
-  kitCreation.saved = { id: kitCreation.draft.id!, version: kitCreation.draft.version! }
-  await page.getByRole('button', { name: 'Expert kits', exact: true }).click()
-  await page.getByText('Personal operations', { exact: true }).waitFor()
   await page.getByRole('button', { name: 'Connectors', exact: true }).click()
   await page.getByRole('button', { name: 'Add', exact: true }).click()
   const connectorEditor = page.getByRole('dialog', { name: 'Add MCP server', exact: true })
@@ -1353,7 +956,7 @@ it('keeps native themes and responsive catalogs while using official details and
   await connectorEditor.getByRole('button', { name: 'Add', exact: true }).click()
   await page.getByText('Personal MCP', { exact: true }).waitFor()
   expect(await page.getByRole('tab', { name: 'Mine', exact: true }).getAttribute('aria-selected')).toBe('true')
-  expect(personalResources).toHaveLength(3)
+  expect(personalResources).toHaveLength(1)
   await page.getByText('Personal MCP', { exact: true }).click()
   await page.getByRole('dialog', { name: 'Connector details', exact: true }).getByRole('button', { name: 'More actions', exact: true }).click()
   await page.getByRole('menuitem', { name: 'Modify', exact: true }).click()
@@ -1378,31 +981,9 @@ it('keeps native themes and responsive catalogs while using official details and
   await deleteConnector.getByRole('button', { name: 'Delete', exact: true }).click()
   await expect.poll(() => personalResources.filter(row => row.kind === 'connector').length).toBe(0)
   await expect.poll(() => page.getByRole('dialog').count()).toBe(0)
-  for (const [directory, name] of [['Skills', 'Personal review'], ['Expert kits', 'Personal operations']] as const) {
-    await page.getByRole('button', { name: directory, exact: true }).click()
-    await page.getByText(name, { exact: true }).click()
-    const actions = directory === 'Skills' ? page.getByRole('dialog', { name: 'Skill details', exact: true })
-      : page.locator('article').filter({ has: page.getByRole('heading', { name, exact: true }) })
-    await actions.getByRole('button', { name: 'More actions', exact: true }).click()
-    await page.setViewportSize({ width: 390, height: 900 })
-    const menu = page.getByRole('menu')
-    await expect.poll(() => menu.evaluate(element => element.scrollWidth > element.clientWidth)).toBe(false)
-    await page.screenshot({ path: join(screenshots, `${directory === 'Skills' ? 'skill' : 'kit'}-management-390.png`), animations: 'disabled' })
-    await page.getByRole('menuitem', { name: 'Delete', exact: true }).click()
-    const dialog = page.getByRole('dialog', { name: `Delete “${name}”?`, exact: true })
-    expect(await dialog.evaluate(element => element.scrollWidth > element.clientWidth)).toBe(false)
-    await dialog.getByRole('button', { name: 'Cancel', exact: true }).click()
-    expect(personalResources.some(resource => resource.name === name)).toBe(true)
-    await actions.getByRole('button', { name: 'More actions', exact: true }).click()
-    await page.getByRole('menuitem', { name: 'Delete', exact: true }).click()
-    await dialog.getByRole('button', { name: 'Delete', exact: true }).click()
-    await expect.poll(() => personalResources.some(resource => resource.name === name)).toBe(false)
-    await expect.poll(() => page.getByRole('dialog').count()).toBe(0)
-    await page.setViewportSize({ width: 1440, height: 900 })
-  }
   expect(calls.filter(method => method === 'tasks.capabilities.prepare')).toHaveLength(beforeCreation)
   await page.locator('[data-row-key^="session:"]').first().click()
-  expect(await composer.textContent()).toContain('I want to create an expert kit.')
+  expect(await composer.textContent()).toBe('Design an API for order review.')
   expect(tripwire.pageErrors).toEqual([])
 }, 120_000)
 
@@ -1425,38 +1006,10 @@ for (const { mode, installed, surface } of desktopCarriers) {
       const project = join(root, 'runtime')
       const secret = 'fixture-employee-secret'
       const expiresAt = Math.floor(Date.now() / 1000) + 3600
-      const skillSource = join(root, 'skill-source')
-      await mkdir(skillSource)
-      await writeFile(join(skillSource, 'SKILL.md'),
-        '---\nname: order-analysis\ndescription: Analyze order trends.\n---\nCompare orders and report exceptions.\n')
-      const archivePath = join(root, 'skill.tar.gz')
-      await tar.c({ cwd: skillSource, file: archivePath, gzip: true }, ['SKILL.md'])
-      const archive = await readFile(archivePath)
-      const skillDigest = createHash('sha256').update(archive).digest('hex')
-      const kitSource = join(root, 'kit-source')
-      await mkdir(kitSource)
-      await writeFile(join(kitSource, 'README.md'), '# Retail operations\n\nUse policy evidence to review orders.\n')
-      await mkdir(join(kitSource, '.deepseek-harness-kit'))
-      await mkdir(join(kitSource, 'skills/policy-review'), { recursive: true })
-      await writeFile(join(kitSource, 'skills/policy-review/SKILL.md'), '---\nname: policy-review\ndescription: Review policy evidence.\n---\nUse policy evidence to review orders.\n')
-      await writeFile(join(kitSource, '.deepseek-harness-kit/kit.json'), JSON.stringify({ id: 'operations', version: '1.0.0',
-        commonTasks: [{ id: 'policy-review', name: 'Review policy', description: 'Review order policy evidence.',
-          prompt: 'Review order policy evidence.', skillIds: ['policy-review'] }] }))
-      const kitArchivePath = join(root, 'kit.tar.gz')
-      await tar.c({ cwd: kitSource, file: kitArchivePath, gzip: true }, ['README.md', '.deepseek-harness-kit', 'skills'])
-      const kitArchive = await readFile(kitArchivePath)
-      const kitDigest = createHash('sha256').update(kitArchive).digest('hex')
       const model = await startMockLlmServer({ sequence: ['success'], repeatLast: true,
         successText: 'Fixture review complete.', apiKey: 'fixture-model-key' })
       onTestFinished(() => model.close())
       const catalogRows: Record<string, object[]> = {
-        '/api/v1/expert-kits': [{ id: 'operations', name: 'Retail operations', version: '1.0.0',
-          summary: 'Review orders using policy evidence.', sha256: kitDigest, skillIds: ['policy-review'],
-          skillDetails: [{ id: 'policy-review', name: 'Policy review', summary: 'Review policy evidence.' }], connectorRefs: [],
-          requiredTools: [], knowledgeBaseRefs: ['company:policy'], commonTasks: [{ id: 'policy-review',
-            name: 'Review policy', description: 'Review order policy evidence.', prompt: 'Review order policy evidence.', skillIds: ['policy-review'] }] }],
-        '/api/v1/skills': [{ id: 'order-analysis', name: 'Order analysis', version: '1.0.0',
-          summary: 'Analyze order trends.', sha256: skillDigest, connectorRefs: ['erp'], requiredTools: ['orders_read'], knowledgeBaseRefs: [] }],
         '/api/v1/connectors': [{ id: 'erp', version: '1.0.0', name: 'Order management', displayName: 'Order management',
           status: 'ready', ready: true, authorizationStatus: 'AUTHORIZED', authMode: 'employee-bearer',
           transport: 'streamable-http', url: '/api/v1/connectors/erp/mcp', arguments: [], headers: {}, environment: {},
@@ -1559,7 +1112,7 @@ for (const { mode, installed, surface } of desktopCarriers) {
             if (request.method === 'DELETE') {
               const index = folderRows.findIndex(row => row.id === parts[6])
               if (index >= 0) folderRows.splice(index, 1)
-              response.end(JSON.stringify({ success: true, data: { removed: true } }))
+              response.end(JSON.stringify({ success: true, data: { folderId: parts[6], deleted: true } }))
             } else if (request.method === 'POST' || request.method === 'PUT') {
               void fixtureRequestBody(request).then((body) => {
                 if (typeof body.name !== 'string') throw new Error('Missing folder name')
@@ -1604,28 +1157,6 @@ for (const { mode, installed, surface } of desktopCarriers) {
           const source = { sourceId: 'policy-source', documentId: 'document-1', filename: 'Order review.md',
             content: 'Check order totals before changing delivery details.', locator: 'Section 1' }
           response.end(JSON.stringify({ success: true, data: path === '/api/v1/knowledge-searches' ? [source] : source }))
-        } else if (path === '/api/v1/expert-kits/operations') {
-          response.end(JSON.stringify({ success: true, data: catalogRows['/api/v1/expert-kits']![0] }))
-        } else if (path === '/api/v1/expert-kits/operations/readme') {
-          response.end(JSON.stringify({ success: true, data: { readme: '# Retail operations\n\nUse policy evidence to review orders.' } }))
-        } else if (path === '/api/v1/expert-kits/operations/artifacts') {
-          response.end(JSON.stringify({ success: true, data: { id: 'operations', version: '1.0.0',
-            sha256: kitDigest, url: origin + '/kit.tar.gz' } }))
-        } else if (path === '/kit.tar.gz') {
-          response.setHeader('content-type', 'application/gzip')
-          response.end(kitArchive)
-        } else if (path === '/api/v1/skills/order-analysis') {
-          response.end(JSON.stringify({ success: true, data: catalogRows['/api/v1/skills']![0] }))
-        } else if (path === '/api/v1/skills/order-analysis/readme') {
-          response.end(JSON.stringify({ success: true, data: {
-            readme: '---\nname: order-analysis\ndescription: Analyze order trends.\n---\nCompare orders and report exceptions.\n',
-          } }))
-        } else if (path === '/api/v1/skills/order-analysis/artifacts') {
-          response.end(JSON.stringify({ success: true, data: { id: 'order-analysis', version: '1.0.0',
-            sha256: skillDigest, url: origin + '/skill.tar.gz' } }))
-        } else if (path === '/skill.tar.gz') {
-          response.setHeader('content-type', 'application/gzip')
-          response.end(archive)
         } else if (path === '/api/v1/connectors/erp/mcp') {
           void (async () => {
             const chunks: Buffer[] = []
@@ -1844,6 +1375,10 @@ for (const { mode, installed, surface } of desktopCarriers) {
         .parse(JSON.parse(await readFile(hostDiagnostic, 'utf8')))
       expect(identities.loaderSharesRoot).toBe(true)
       expect(identities.modules.filter(url => /\/(?:dsh-)?app-boot\/lib\/index\.js$/u.test(url))).toHaveLength(1)
+      for (const entry of ['dsh-agency-agents/lib/remote.js', 'dsh-agency-agents/lib/index.js', 'dsh-skills-manager/lib/index.js']) {
+        expect(identities.modules.filter(url => url.endsWith(`/@michengai/${entry}`)))
+          .toHaveLength(mode === 'product' ? 1 : 0)
+      }
       await page.setViewportSize({ width: 1440, height: 900 })
       let composer = page.locator('[data-composer-input][contenteditable="true"]').last()
       await composer.waitFor({ timeout: 60_000 })
@@ -1924,8 +1459,7 @@ for (const { mode, installed, surface } of desktopCarriers) {
         await composer.fill('Keep this task draft')
         const currentSession = async () => page.locator('[data-conversation-session]').last().getAttribute('data-conversation-session')
         const originalSession = await currentSession()
-        for (const [name, content] of [[/^(Expert kits|专家套件)$/, 'Retail operations'],
-          [/^(Skills|技能)$/, 'Order analysis'], [/^(Connectors|连接器)$/, 'Order management'],
+        for (const [name, content] of [[/^(Connectors|连接器)$/, 'Order management'],
           [/^(Knowledge bases|知识库)$/, 'Operations playbook']] as const) {
           await page.getByRole('button', { name, exact: true }).click()
           await page.getByText(content, { exact: true }).first().waitFor()
@@ -1991,9 +1525,10 @@ for (const { mode, installed, surface } of desktopCarriers) {
           ['STANDARD', /^(Upload file \(standard parsing\)|上传文件（通用解析）)$/]] as const) {
           await ownMaterials.getByRole('button', { name: /^(Upload files|上传文件)$/, exact: true }).click()
           await page.getByRole('menuitem', { name: label, exact: true }).click()
+          await submitKnowledgeUpload(page)
           await expect.poll(() => uploadedFiles.at(-1)?.mode).toBe(mode)
           expect(await app.evaluate((): unknown => Reflect.get(globalThis, '__knowledgePickerOptions'))).toEqual({
-            properties: ['openFile'], ...mode === 'TEXT' ? { filters: [{ name: 'PDF', extensions: ['pdf'] }] } : {},
+            properties: ['openFile', 'multiSelections'], ...mode === 'TEXT' ? { filters: [{ name: 'PDF', extensions: ['pdf'] }] } : {},
           })
           await expect.poll(() => ownMaterials.getByRole('button', { name: /^(Upload files|上传文件)$/, exact: true }).isEnabled()).toBe(true)
         }
@@ -2001,6 +1536,7 @@ for (const { mode, installed, surface } of desktopCarriers) {
         await (await openKnowledgeNavigation(page)).getByRole('button', { name: 'Policies', exact: true }).click()
         await ownMaterials.getByRole('button', { name: /^(Upload files|上传文件)$/, exact: true }).click()
         await page.getByRole('menuitem', { name: /^(Upload file \(standard parsing\)|上传文件（通用解析）)$/, exact: true }).click()
+        await submitKnowledgeUpload(page)
         await expect.poll(() => uploadedFiles.at(-1)?.folderId).toBe('folder-policies')
         expect(await (await openKnowledgeNavigation(page)).getByRole('button', { name: 'Policies', exact: true }).getAttribute('aria-current')).toBe('page')
         await (await openKnowledgeNavigation(page)).getByRole('button', { name: /^(New personal knowledge base|新建个人知识库)$/, exact: true }).click()
@@ -2065,7 +1601,7 @@ for (const { mode, installed, surface } of desktopCarriers) {
         if (typeof openedPath !== 'string') throw new Error('Missing system-open file')
         expect(createHash('sha256').update(await readFile(openedPath)).digest('hex'))
           .toBe(createHash('sha256').update(realOfficeBytes('docx')).digest('hex'))
-        await (await openKnowledgeNavigation(page)).getByRole('button', { name: /^(All materials|全部资料)$/, exact: true }).click()
+        await page.getByRole('tab', { name: /^(All files|全部文件)$/, exact: true }).click()
         await ownMaterials.getByRole('button', { name: /^(Next page|下一页)$/, exact: true }).click()
         await ownMaterials.getByRole('button', { name: 'Handover guide.md', exact: true }).waitFor()
         await page.locator('[data-knowledge-content]').getByRole('searchbox').fill('handover')
@@ -2108,105 +1644,13 @@ for (const { mode, installed, surface } of desktopCarriers) {
         await page.keyboard.press('Escape')
         expect(await currentSession()).toBe(originalSession)
         expect(await composer.textContent()).toBe('Keep this task draft')
-        await page.getByRole('button', { name: /^(Skills|技能)$/, exact: true }).click()
-        await page.getByRole('button', { name: /^(Install skill|安装技能)$/, exact: true }).click()
-        await page.getByText(/^(Installed|已安装)$/, { exact: true }).waitFor()
-        expect(await page.getByRole('button', { name: /^(Installed|已安装)$/, exact: true }).count()).toBe(0)
-        await page.locator('[data-row-key^="session:"]').first().click()
-        expect(await currentSession()).toBe(originalSession)
-        expect(await composer.textContent()).toBe('Keep this task draft')
-        await expect(invoke('skills.installed.read', { sessionId: originalSession })).resolves.toMatchObject({
-          installed: [{ id: 'order-analysis', version: '1.0.0', sha256: skillDigest }],
-          available: [{ id: 'order-analysis' }], frozen: false,
-        })
-        await page.getByRole('button', { name: /^(Skills|技能)$/, exact: true }).click()
-        await page.getByRole('button', { name: /Order analysis/ }).click()
-        const skillDetail = page.getByRole('dialog', { name: /^(Skill details|技能详情)$/, exact: true })
-        await skillDetail.getByText('Compare orders and report exceptions.', { exact: true }).waitFor()
-        await skillDetail.getByRole('button', { name: /^(More actions|更多操作)$/, exact: true }).click()
-        const skillActions = page.getByRole('menu').filter({ has: page.getByRole('menuitem', { name: /^(Uninstall|卸载)$/, exact: true }) })
-        await expect.poll(() => skillActions.getByRole('menuitem').allTextContents()).toEqual([expect.stringMatching(/^(Uninstall|卸载)$/)])
-        await page.getByRole('menuitem', { name: /^(Uninstall|卸载)$/, exact: true }).click()
-        const skillUninstall = page.getByRole('dialog', { name: /Order analysis/ })
-        await skillUninstall.getByRole('button', { name: /^(Cancel|取消)$/, exact: true }).click()
-        await expect(invoke('skills.installed.read', { sessionId: originalSession })).resolves.toMatchObject({ installed: [{ id: 'order-analysis' }] })
-        await skillDetail.getByRole('button', { name: /^(More actions|更多操作)$/, exact: true }).click()
-        await page.getByRole('menuitem', { name: /^(Uninstall|卸载)$/, exact: true }).click()
-        await skillUninstall.getByRole('button', { name: /^(Uninstall|卸载)$/, exact: true }).click()
-        await skillDetail.getByRole('button', { name: /^(Install skill|安装技能)$/, exact: true }).waitFor()
-        await expect(invoke('skills.installed.read', { sessionId: originalSession })).resolves.toMatchObject({ installed: [], available: [] })
-        await skillDetail.getByRole('button', { name: /^(Close|关闭)$/, exact: true }).click()
-        expect(await page.getByText('Order analysis', { exact: true }).count()).toBeGreaterThan(0)
-        await page.locator(`[data-row-key="session:${originalSession}"]`).click()
-        expect(await currentSession()).toBe(originalSession)
-        expect(await composer.textContent()).toBe('Keep this task draft')
-        await composer.fill('/order')
-        await expect.poll(() => page.getByRole('option', { name: /order-analysis/ }).count()).toBe(0)
-        await composer.fill('Keep this task draft')
-        await page.getByRole('button', { name: /^(Skills|技能)$/, exact: true }).click()
-        await page.getByRole('button', { name: /^(Install skill|安装技能)$/, exact: true }).click()
-        await page.getByText(/^(Installed|已安装)$/, { exact: true }).waitFor()
-        await expect(invoke('skills.installed.read', { sessionId: originalSession })).resolves.toMatchObject({
-          installed: [{ id: 'order-analysis', version: '1.0.0', sha256: skillDigest }], available: [{ id: 'order-analysis' }],
-        })
-        await page.getByRole('button', { name: /^(Expert kits|专家套件)$/, exact: true }).click()
-        const installKit = page.getByRole('button', { name: /^(Install expert kit|安装专家套件)$/, exact: true })
-        await page.getByRole('button', { name: /Retail operations/ }).click()
-        const kitDetail = page.locator('[class*="expertDetailPage"]')
-        await kitDetail.getByRole('heading', { name: 'Retail operations', exact: true, level: 1 }).waitFor()
-        expect(await kitDetail.getByRole('button', { name: /^(Start using|开始使用)$/, exact: true }).count()).toBe(0)
-        const kitCommand = kitDetail.getByRole('button', { name: 'Review policy Review order policy evidence.', exact: true })
-        expect(await kitCommand.isDisabled()).toBe(true)
-        await expect(invoke('tasks.capabilities.prepare', { sessionId: originalSession, expertKitId: 'operations' }))
-          .rejects.toMatchObject({ code: 'KIT_NOT_INSTALLED' })
-        await expect(invoke('expertKits.installed.read')).resolves.toEqual({ installed: [] })
-        await installKit.click()
-        await page.getByText(/^(Installed|已安装)$/, { exact: true }).waitFor()
-        await expect.poll(() => kitDetail.getByRole('button', { name: /^(Start using|开始使用)$/, exact: true }).isEnabled()).toBe(true)
-        await expect.poll(() => kitCommand.isEnabled()).toBe(true)
-        expect(await page.getByRole('button', { name: /^(Installed|已安装)$/, exact: true }).count()).toBe(0)
-        await expect(invoke('expertKits.installed.read')).resolves.toMatchObject({
-          installed: [{ id: 'operations', version: '1.0.0', sha256: kitDigest }],
-        })
-        await page.getByRole('button', { name: /^(More actions|更多操作)$/, exact: true }).click()
-        const kitActions = page.getByRole('menu').filter({ has: page.getByRole('menuitem', { name: /^(Uninstall|卸载)$/, exact: true }) })
-        await expect.poll(() => kitActions.getByRole('menuitem').allTextContents()).toEqual([expect.stringMatching(/^(Uninstall|卸载)$/)])
-        await page.getByRole('menuitem', { name: /^(Uninstall|卸载)$/, exact: true }).click()
-        const kitUninstall = page.getByRole('dialog', { name: /Retail operations/ })
-        await kitUninstall.getByRole('button', { name: /^(Cancel|取消)$/, exact: true }).click()
-        await expect(invoke('expertKits.installed.read')).resolves.toMatchObject({ installed: [{ id: 'operations' }] })
-        await page.getByRole('button', { name: /^(More actions|更多操作)$/, exact: true }).click()
-        await page.getByRole('menuitem', { name: /^(Uninstall|卸载)$/, exact: true }).click()
-        await kitUninstall.getByRole('button', { name: /^(Uninstall|卸载)$/, exact: true }).click()
-        await installKit.waitFor()
-        await expect(invoke('expertKits.installed.read')).resolves.toEqual({ installed: [] })
-        expect(await kitDetail.getByRole('button', { name: /^(Start using|开始使用)$/, exact: true }).count()).toBe(0)
-        expect(await kitCommand.isDisabled()).toBe(true)
-        expect(await page.getByText('Retail operations', { exact: true }).count()).toBeGreaterThan(0)
-        await page.locator(`[data-row-key="session:${originalSession}"]`).click()
-        expect(await currentSession()).toBe(originalSession)
-        expect(await composer.textContent()).toBe('Keep this task draft')
-        const kitPicker = page.getByRole('button', { name: /^(Choose expert kit|选择专家套件)$/, exact: true })
-        await kitPicker.click()
-        await page.getByRole('menuitem', { name: /^(View expert kits|查看专家套件)$/, exact: true }).waitFor()
-        await expect.poll(() => page.getByRole('menuitem', { name: /^Retail operations/ }).count()).toBe(0)
-        await page.keyboard.press('Escape')
-        await expect(invoke('expertKits.installed.read')).resolves.toEqual({ installed: [] })
-        await composer.fill('/order')
-        await page.getByRole('option', { name: /order-analysis/ }).waitFor()
-        await composer.fill('Keep this task draft')
-        await page.getByRole('button', { name: /^(Knowledge bases|知识库)$/, exact: true }).click()
-        await (await openKnowledgeNavigation(page)).getByRole('button', { name: 'Operations playbook', exact: true }).click()
-        expect(await page.getByRole('checkbox').count()).toBe(0)
-        await page.keyboard.press('Escape')
-        await page.locator('[data-row-key^="session:"]').first().click()
         await openTaskKnowledge(page)
         await page.getByRole('heading', { name: /(?:Department|部门).*Sales \(21\)/ }).waitFor()
         await page.getByRole('heading', { name: /(?:Department|部门).*Sales \(22\)/ }).waitFor()
         await page.getByRole('checkbox', { name: 'Operations playbook' }).click()
         await page.getByRole('button', { name: /^(Apply|应用)$/ }).click()
         await expect.poll(async () => invoke('tasks.capabilities.read', { sessionId: await currentSession() }))
-          .toMatchObject({ knowledgeBaseIds: ['policy'], connectorIds: [] })
+          .toMatchObject({ knowledgeBaseIds: ['policy'] })
         await page.locator('[data-composer-card]').getByRole('button', { name: 'Operations playbook', exact: true }).waitFor()
         const sessionId = await currentSession()
         await page.keyboard.press('Escape')
@@ -2214,7 +1658,7 @@ for (const { mode, installed, surface } of desktopCarriers) {
         await page.getByRole('button', { name: /Order management/ }).click()
         expect(await page.getByRole('dialog').getByRole('checkbox').count()).toBe(0)
         await expect.poll(() => invoke('tasks.capabilities.read', { sessionId }))
-          .toMatchObject({ knowledgeBaseIds: ['policy'], connectorIds: [] })
+          .toMatchObject({ knowledgeBaseIds: ['policy'] })
         await page.keyboard.press('Escape')
         await page.locator('[data-row-key^="session:"]').first().click()
         expect(await currentSession()).toBe(sessionId)
@@ -2222,11 +1666,6 @@ for (const { mode, installed, surface } of desktopCarriers) {
         expect(JSON.stringify(await invoke('auth.getSession'))).not.toContain(secret)
         expect(JSON.stringify(await invoke('connectors.list'))).not.toContain('/mcp')
         await page.keyboard.press('Escape')
-        await page.getByRole('button', { name: /^(Expert kits|专家套件)$/, exact: true }).click()
-        await installKit.click()
-        await page.getByText(/^(Installed|已安装)$/, { exact: true }).waitFor()
-        await page.locator(`[data-row-key="session:${sessionId}"]`).click()
-        expect(await composer.textContent()).toBe('Keep this task draft')
         await setCodingView(page, true)
         const modePicker = page.locator('[data-slot="conversation.hero.agentPreset"]').getByRole('button')
         expect(await page.getByRole('button', { name: /^(Execution mode|执行模式)$/, exact: true }).count()).toBe(0)
@@ -2236,7 +1675,7 @@ for (const { mode, installed, surface } of desktopCarriers) {
         expect(await standardEntry.locator('svg').count()).toBe(1)
         await page.getByRole('menuitem', { name: /^PTC / }).click()
         await expect.poll(() => invoke('tasks.capabilities.read', { sessionId }))
-          .toMatchObject({ basePresetId: 'ptc', knowledgeBaseIds: ['policy'], connectorIds: [] })
+          .toMatchObject({ basePresetId: 'ptc', knowledgeBaseIds: ['policy'] })
         expect(await currentSession()).toBe(sessionId)
         expect(await composer.textContent()).toBe('Keep this task draft')
         expect(await modePicker.textContent()).toContain('PTC')
@@ -2244,67 +1683,7 @@ for (const { mode, installed, surface } of desktopCarriers) {
         await modePicker.click()
         await page.getByRole('menuitem', { name: /^(Standard mode|标准模式)/ }).click()
         await expect.poll(() => invoke('tasks.capabilities.read', { sessionId }))
-          .toMatchObject({ basePresetId: 'standard', knowledgeBaseIds: ['policy'], connectorIds: [] })
-        await kitPicker.click()
-        await page.getByRole('menuitem', { name: /^Retail operations/ }).click()
-        await expect.poll(() => invoke('tasks.capabilities.read', { sessionId }))
-          .toMatchObject({ expertKit: { id: 'operations' }, knowledgeBaseIds: ['policy'] })
-        await expect(invoke('expertKits.installed.read')).resolves.toMatchObject({
-          installed: [{ id: 'operations', version: '1.0.0', sha256: kitDigest }],
-        })
-        await expect.poll(() => kitPicker.textContent()).toBe('Retail operations')
-        expect(await modePicker.textContent()).toMatch(/^(Standard mode|标准模式)$/)
-        await modePicker.click()
-        expect(await standardEntry.locator('svg').count()).toBe(1)
-        expect(await page.getByRole('menu').innerText()).not.toMatch(/Retail operations|product-task-/)
-        await page.getByRole('menuitem', { name: /^PTC / }).click()
-        await expect.poll(() => invoke('tasks.capabilities.read', { sessionId }))
-          .toMatchObject({ basePresetId: 'ptc', expertKit: { id: 'operations' }, knowledgeBaseIds: ['policy'], requiredKnowledgeBaseIds: ['policy'] })
-        await expect.poll(() => kitPicker.textContent()).toBe('Retail operations')
-        expect(await currentSession()).toBe(sessionId)
-        expect(await composer.textContent()).toBe('Keep this task draft')
-        await modePicker.click()
-        expect(await page.getByRole('menuitem', { name: /^PTC / }).locator('svg').count()).toBe(1)
-        expect(await standardEntry.locator('svg').count()).toBe(0)
-        await standardEntry.click()
-        await expect.poll(() => invoke('tasks.capabilities.read', { sessionId }))
-          .toMatchObject({ basePresetId: 'standard', expertKit: { id: 'operations' }, knowledgeBaseIds: ['policy'] })
-        await setCodingView(page, false)
-        await expect.poll(() => modePicker.textContent()).toMatch(/^(Standard mode|标准模式)$/)
-        await modePicker.click()
-        await page.getByRole('menuitem', { name: /^(Standard mode|标准模式)/ }).waitFor()
-        await page.getByRole('menuitem', { name: /^(Creator mode|创造模式)/ }).waitFor()
-        expect(await page.getByRole('menuitem', { name: /^(PTC |Minimal mode|极简模式)/ }).count()).toBe(0)
-        await page.keyboard.press('Escape')
-        expect(await kitPicker.isVisible()).toBe(true)
-        await expect(invoke('tasks.capabilities.read', { sessionId })).resolves.toMatchObject({ expertKit: { id: 'operations' } })
-        expect(await composer.textContent()).toBe('Keep this task draft')
-        await setCodingView(page, true)
-        await expect.poll(() => modePicker.textContent()).toMatch(/^(Standard mode|标准模式)$/)
-        for (const width of [1440, 390]) {
-          await page.setViewportSize({ width, height: 900 })
-          for (const control of [modePicker, kitPicker]) {
-            expect(await control.evaluate(button => button.scrollWidth > button.clientWidth)).toBe(false)
-            const bounds = await control.boundingBox()
-            expect(bounds).not.toBeNull()
-            expect(bounds!.x).toBeGreaterThanOrEqual(0)
-            expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(width)
-          }
-          await page.screenshot({ path: join(screenshots, `electron-${carrier}-product-native-hero-${width}.png`), animations: 'disabled' })
-        }
-        await page.setViewportSize({ width: 1440, height: 900 })
-        expect(await page.locator('[data-composer-card]').getByRole('button', {
-          name: /^(Remove knowledge base "Operations playbook"|移除知识库「Operations playbook」)$/, exact: true,
-        }).count()).toBe(0)
-        await openTaskKnowledge(page)
-        const requiredKnowledge = page.getByRole('checkbox', { name: 'Operations playbook' })
-        await expect.poll(() => requiredKnowledge.isDisabled()).toBe(true)
-        await cancelTaskKnowledge(page)
-        await kitPicker.click()
-        await page.getByRole('menuitem', { name: /^(No expert kit|不使用套件)$/ }).click()
-        await expect.poll(() => invoke('tasks.capabilities.read', { sessionId }))
-          .toMatchObject({ knowledgeBaseIds: ['policy'], connectorIds: [] })
-        await expect.poll(async () => (await invoke('tasks.capabilities.read', { sessionId }) as ProductTaskCapabilities).expertKit).toBeUndefined()
+          .toMatchObject({ basePresetId: 'standard', knowledgeBaseIds: ['policy'] })
         await page.getByRole('button', { name: /^(Connectors|连接器)$/, exact: true }).click()
         await page.getByRole('button', { name: /Order management/ }).waitFor()
         await page.getByText(/^(Needs configuration|待配置)$/, { exact: true }).waitFor()
@@ -2314,7 +1693,7 @@ for (const { mode, installed, surface } of desktopCarriers) {
         await page.getByRole('button', { name: /Order management/ }).click()
         expect(await page.getByRole('dialog').getByRole('checkbox').count()).toBe(0)
         await expect.poll(() => invoke('tasks.capabilities.read', { sessionId }))
-          .toMatchObject({ knowledgeBaseIds: ['policy'], connectorIds: [] })
+          .toMatchObject({ knowledgeBaseIds: ['policy'] })
         await page.keyboard.press('Escape')
         await page.locator('[data-row-key^="session:"]').first().click()
         expect(await currentSession()).toBe(sessionId)
@@ -2332,7 +1711,6 @@ for (const { mode, installed, surface } of desktopCarriers) {
         await modeLabel.waitFor()
         expect(await nativeHeader.innerText()).not.toContain('product-task-')
         expect(await nativeHeader.getByRole('button', { name: /^(Standard mode|标准模式|Execution mode|执行模式)$/, exact: true }).count()).toBe(0)
-        expect(await kitPicker.count()).toBe(0)
         expect(await nativeHeader.getByText(/^(Expert kits|专家套件|Retail operations)$/, { exact: true }).count()).toBe(0)
         await compareOrRefreshGolden(join(expectedDir, 'task-header-without-kit.expected.md'),
           await captureStableAria(page, '[data-slot="conversation.session.header.actions"]', root, {
@@ -2364,7 +1742,7 @@ for (const { mode, installed, surface } of desktopCarriers) {
           .toContain('Replacement task draft')
         await expect(invoke('tasks.capabilities.read', { sessionId })).resolves.toMatchObject({ knowledgeBaseIds: ['policy'] })
         const prepared = await invoke('tasks.capabilities.prepare', { sessionId: replacementSession }) as { presetId: string }
-        const pinnedPath = join(home, 'product-capabilities-v1/tasks-v1', `${prepared.presetId}.json`)
+        const pinnedPath = join(home, 'product-knowledge-tasks-v1', `${prepared.presetId}.json`)
         const restart = async (reason: string) => {
           expect(tripwire.pageErrors).toEqual([])
           await expect.poll(() => page.locator('[data-chat-running]').count()).toBe(0)
@@ -2420,71 +1798,6 @@ for (const { mode, installed, surface } of desktopCarriers) {
         expect(model.requests[0]?.body).toMatchObject({ model: 'deepseek-v4-flash' })
         expect(JSON.stringify(model.requests.map(request => request.body))).not.toContain(secret)
         await page.screenshot({ path: join(screenshots, `electron-${carrier}-product-recovered-task.png`), animations: 'disabled' })
-        const pinnedKitPicker = page.getByRole('button', { name: /^(Choose expert kit|选择专家套件)$/, exact: true })
-        const currentInstallKit = page.getByRole('button', { name: /^(Install expert kit|安装专家套件)$/, exact: true })
-        const pinnedKitUninstall = page.getByRole('dialog', { name: /Retail operations/ })
-        await pinnedKitPicker.click()
-        await page.getByRole('menuitem', { name: /^Retail operations/ }).click()
-        await expect.poll(() => invoke('tasks.capabilities.read', { sessionId: recoveredSession }))
-          .toMatchObject({ expertKit: { id: 'operations', version: '1.0.0', sha256: kitDigest } })
-        const kitPreparation = await invoke('tasks.capabilities.prepare', { sessionId: recoveredSession }) as { presetId: string }
-        const kitSnapshotPath = join(home, 'product-capabilities-v1/tasks-v1', `${kitPreparation.presetId}.json`)
-        const kitSnapshot = await readFile(kitSnapshotPath, 'utf8')
-        await composer.fill('Use the installed retail operations kit')
-        await composer.press('Enter')
-        await expect.poll(() => page.locator('p').filter({ hasText: /^Fixture review complete\.$/ }).count()).toBe(1)
-        const pinnedKitHeader = page.locator('[data-slot="conversation.session.header.actions"]')
-        const pinnedKitLabel = pinnedKitHeader.getByText('Retail operations', { exact: true })
-        await pinnedKitLabel.waitFor()
-        expect(await pinnedKitPicker.count()).toBe(0)
-        expect(await pinnedKitHeader.getByRole('button', { name: 'Retail operations', exact: true }).count()).toBe(0)
-        await compareOrRefreshGolden(join(expectedDir, 'task-header-with-kit.expected.md'),
-          await captureStableAria(page, '[data-slot="conversation.session.header.actions"]', root, {
-            replacements: [['标准模式', 'Standard mode'], ['专家套件', 'Expert kits']],
-          }), webSnapshotMode())
-        for (const width of [1440, 390]) {
-          await page.setViewportSize({ width, height: 900 })
-          if (width === 390) await expect.poll(() => pinnedKitLabel.isVisible()).toBe(false)
-          else {
-            await expect.poll(async () => {
-              const bounds = await pinnedKitLabel.boundingBox()
-              return bounds !== null && bounds.x >= 0 && bounds.x + bounds.width <= width
-            }).toBe(true)
-            expect(await pinnedKitLabel.evaluate(label => label.scrollWidth > label.clientWidth)).toBe(false)
-          }
-          await page.screenshot({ path: join(screenshots, `electron-${carrier}-product-kit-readonly-header-${width}.png`), animations: 'disabled' })
-        }
-        await page.setViewportSize({ width: 1440, height: 900 })
-        await page.getByRole('button', { name: /^(Expert kits|专家套件)$/, exact: true }).click()
-        await page.getByRole('button', { name: /^(More actions|更多操作)$/, exact: true }).click()
-        await page.getByRole('menuitem', { name: /^(Uninstall|卸载)$/, exact: true }).click()
-        await pinnedKitUninstall.getByRole('button', { name: /^(Uninstall|卸载)$/, exact: true }).click()
-        await currentInstallKit.waitFor()
-        await expect(invoke('expertKits.installed.read')).resolves.toEqual({ installed: [] })
-        expect(await readFile(kitSnapshotPath, 'utf8')).toBe(kitSnapshot)
-        await page.locator(`[data-row-key="session:${recoveredSession}"]`).click()
-        await pinnedKitLabel.waitFor()
-        expect(await pinnedKitPicker.count()).toBe(0)
-        await expect(invoke('tasks.capabilities.read', { sessionId: recoveredSession })).resolves.toMatchObject({
-          expertKit: { id: 'operations', version: '1.0.0', sha256: kitDigest },
-        })
-        await composer.fill('Continue with the pinned kit after uninstall')
-        await composer.press('Enter')
-        await expect.poll(() => page.locator('p').filter({ hasText: /^Fixture review complete\.$/ }).count()).toBe(2)
-        await expect(invoke('expertKits.installed.read')).resolves.toEqual({ installed: [] })
-        expect(await readFile(kitSnapshotPath, 'utf8')).toBe(kitSnapshot)
-        const kitRequest = model.requests.at(-1)?.body
-        expect(JSON.stringify(kitRequest)).toContain('`expert-kit-operations`: Review orders using policy evidence.')
-        expect(JSON.stringify(kitRequest)).toContain(kitDigest)
-        expect(JSON.stringify(kitRequest)).not.toContain(secret)
-        await page.screenshot({ path: join(screenshots, `electron-${carrier}-product-kit-pinned-after-uninstall.png`), animations: 'disabled' })
-        await page.getByRole('button', { name: /^(New session|新建会话)$/, exact: true }).last().click()
-        await expect.poll(currentSession).not.toBe(recoveredSession)
-        await pinnedKitPicker.click()
-        await page.getByRole('menuitem', { name: /^(View expert kits|查看专家套件)$/, exact: true }).waitFor()
-        await expect.poll(() => page.getByRole('menuitem', { name: /^Retail operations/ }).count()).toBe(0)
-        await expect(invoke('expertKits.installed.read')).resolves.toEqual({ installed: [] })
-        await page.keyboard.press('Escape')
       }
       expect(tripwire.pageErrors).toEqual([])
       if (nativeUpdate !== undefined) {

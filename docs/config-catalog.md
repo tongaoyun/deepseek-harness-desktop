@@ -4583,35 +4583,6 @@ export interface Config {
 ```
 <!-- END GENERATED config-catalog:@deepseek-ai/dsh-workspace-changes -->
 
-<!-- BEGIN GENERATED config-catalog:@deepseek-harness/product-expert-kit-readme -->
-<a id="deepseek-harnessproduct-expert-kit-readme"></a>
-
-## `@deepseek-harness/product-expert-kit-readme`
-
-- `inject`: `skills`
-- `source`: [`packages/deepseek-harness-product/expert-kit-readme/src/index.ts:32`](../packages/deepseek-harness-product/expert-kit-readme/src/index.ts)
-
-```ts config-catalog
-/** Expert Kit README provider configuration for one immutable Agent Preset. */
-export interface Config {
-  /** Live catalog resource identity; file contents remain pinned to the installed generation. */
-  readonly expertKitId?: string
-  /** README entries belonging to the Preset's enabled Expert Kits. */
-  readonly entries: readonly ExpertKitReadmeEntry[]
-}
-
-/** One enabled Expert Kit README exposed to the model-facing skill catalog. */
-export interface ExpertKitReadmeEntry {
-  /** Collision-resistant kebab-case name used only by the model-facing skill loader. */
-  readonly name: string
-  /** Short routing summary included in the Session skill catalog. */
-  readonly description: string
-  /** Absolute path to the installed Expert Kit README. */
-  readonly path: string
-}
-```
-<!-- END GENERATED config-catalog:@deepseek-harness/product-expert-kit-readme -->
-
 ## Loadable plugins with no config
 
 These load from a `cordis.yml` entry with no `config:` block; they declare no configuration API.

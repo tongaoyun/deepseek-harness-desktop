@@ -22,13 +22,14 @@
         - button "Operations playbook" [expanded]
         - navigation "Folders":
           - text: Folders
-          - button "Root folder"
           - button "Expand Policies"
           - button "Policies"
-          - button "All materials"
   - main:
-    - navigation "All materials":
+    - navigation "Current location":
       - button "Operations playbook"
+    - tablist "Browse mode":
+      - tab "By folder" [selected]
+      - tab "All files"
     - text: Search material names…
     - searchbox "Search material names…"
     - button "Search"
@@ -53,34 +54,35 @@
       - option "Cancelled"
       - option "Deleting"
     - button "Refresh"
-    - table:
-      - rowgroup:
-        - row "Name Status Type Size Updated More actions":
-          - columnheader "Name"
-          - columnheader "Status"
-          - columnheader "Type"
-          - columnheader "Size"
-          - columnheader "Updated"
-          - columnheader "More actions"
-      - rowgroup:
-        - row "Policies Folder":
-          - cell "Policies":
-            - button "Policies"
-          - cell
-          - cell "Folder"
-          - cell
-          - cell
-          - cell
-        - row "Order review.md Searchable Online document 2.0KB Oct 10, 2026 Actions for “Order review.md”":
-          - cell "Order review.md":
-            - button "Order review.md"
-          - cell "Searchable"
-          - cell "Online document"
-          - cell "2.0KB"
-          - cell "Oct 10, 2026"
-          - cell "Actions for “Order review.md”":
-            - button "Actions for “Order review.md”"
-    - text: 2 items
-    - button "Previous page" [disabled]
-    - text: 1 / 1
-    - button "Next page" [disabled]
+    - tabpanel "By folder":
+      - table:
+        - rowgroup:
+          - row "Name Status Type Size Updated More actions":
+            - columnheader "Name"
+            - columnheader "Status"
+            - columnheader "Type"
+            - columnheader "Size"
+            - columnheader "Updated"
+            - columnheader "More actions"
+        - rowgroup:
+          - row "Policies Folder":
+            - cell "Policies":
+              - button "Policies"
+            - cell
+            - cell "Folder"
+            - cell
+            - cell
+            - cell
+          - row "Order review.md Searchable Online document 2.0KB Oct 10, 2026 Actions for “Order review.md”":
+            - cell "Order review.md":
+              - button "Order review.md"
+            - cell "Searchable"
+            - cell "Online document"
+            - cell "2.0KB"
+            - cell "Oct 10, 2026"
+            - cell "Actions for “Order review.md”":
+              - button "Actions for “Order review.md”"
+      - text: 2 items
+      - button "Previous page" [disabled]
+      - text: 1 / 1
+      - button "Next page" [disabled]

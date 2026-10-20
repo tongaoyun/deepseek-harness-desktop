@@ -8,9 +8,14 @@
     "src"
   ],
   "references": [
-    { "path": "../../subprocess/subprocess" },
+    {
+      "path": "../../subprocess/subprocess"
+    },
     {
       "path": "../product"
+    },
+    {
+      "path": "../../boot/app-boot"
     }
   ]
 }

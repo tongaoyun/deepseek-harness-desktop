@@ -1,7 +1,6 @@
 /** Employee-scoped product catalogs and display-only availability estimates. */
 
 import type { DeepSeekHarnessApiClient } from './http-client.ts'
-import { compare, valid } from 'semver'
 import type {
   ProductEvent,
   ProductMethod,
@@ -10,8 +9,6 @@ import type {
 
 const CATALOG_REFRESH_INTERVAL_MS = 5 * 60 * 1_000
 const CATALOG_ROUTES = {
-  'expertKits.list': '/api/v1/expert-kits',
-  'skills.list': '/api/v1/skills',
   'connectors.list': '/api/v1/connectors',
   'knowledge.bases.list': '/api/v1/knowledge-bases',
 } as const satisfies Partial<Record<ProductMethod, string>>
@@ -20,7 +17,6 @@ type CatalogMethod = keyof typeof CATALOG_ROUTES
 /** Employee identity, transport, and display version owned by Electron main. */
 export interface ProductCatalogManagerOptions {
   readonly api?: DeepSeekHarnessApiClient | undefined
-  readonly desktopVersion: string
   readonly getSession: () => ProductSession
   readonly ensureFreshSession: () => Promise<void>
   readonly getIdentitySignal: () => AbortSignal
@@ -80,7 +76,7 @@ export class ProductCatalogManager {
           this.snapshot.set(method, value)
           this.failures.delete(method)
         }
-        return value.map(entry => catalogEntry(method, entry, this.availableSnapshot(), this.options.desktopVersion))
+        return value.map(entry => catalogEntry(method, entry))
       } catch (error) {
         if (epoch === this.epoch && !this.closed && !signal?.aborted && revision === this.revisions.get(method)) {
           this.failures.set(method, error)
@@ -95,7 +91,7 @@ export class ProductCatalogManager {
     const value = this.snapshot.get(method) ?? []
     if (!Array.isArray(value)) return value
     return value.map(entry => catalogEntry(
-      method, entry, this.availableSnapshot(), this.options.desktopVersion,
+      method, entry,
     ))
   }
 
@@ -162,10 +158,6 @@ export class ProductCatalogManager {
     if (failure?.status === 'rejected') throw failure.reason
   }
 
-  private availableSnapshot(): ReadonlyMap<CatalogMethod, unknown> {
-    return new Map([...this.snapshot].filter(([method]) => !this.failures.has(method)))
-  }
-
   private nextRevision(method: CatalogMethod): number {
     const revision = (this.revisions.get(method) ?? 0) + 1
     this.revisions.set(method, revision)
@@ -184,87 +176,9 @@ function isCatalogMethod(method: ProductMethod): method is CatalogMethod {
   return method in CATALOG_ROUTES
 }
 
-function catalogEntry(
-  method: CatalogMethod,
-  value: unknown,
-  snapshot: ReadonlyMap<CatalogMethod, unknown>,
-  desktopVersion: string,
-): unknown {
-  if (typeof value !== 'object' || value === null || Array.isArray(value)) return value
+function catalogEntry(method: CatalogMethod, value: unknown): unknown {
+  if (method !== 'connectors.list' || typeof value !== 'object' || value === null || Array.isArray(value)) return value
   const record = value as Record<string, unknown>
-  if (method === 'knowledge.bases.list') return record
-  const id = optionalString(record.id)
-  if (id === undefined) return record
-  if (method === 'connectors.list') {
-    return { ...record, availabilityStatus: record.authorizationStatus !== 'AUTHORIZED'
-      ? 'AUTHORIZATION_REQUIRED' : record.ready === true ? 'AVAILABLE' : 'UNAVAILABLE' }
-  }
-  const minimumVersion = optionalString(record.minimumDesktopVersion)
-  if (minimumVersion !== undefined && compareVersions(desktopVersion, minimumVersion) < 0) {
-    return { ...record, availabilityStatus: 'INCOMPATIBLE' }
-  }
-  return { ...record, availabilityStatus: capabilityAvailability(method, record, snapshot) }
-}
-
-function capabilityAvailability(
-  method: CatalogMethod,
-  capability: Readonly<Record<string, unknown>>,
-  snapshot: ReadonlyMap<CatalogMethod, unknown>,
-): 'AVAILABLE' | 'AUTHORIZATION_REQUIRED' | 'UNAVAILABLE' {
-  if (method !== 'expertKits.list' && method !== 'skills.list') return 'AVAILABLE'
-  if (method === 'expertKits.list') {
-    const skills = catalogIds(snapshot.get('skills.list'))
-    const embeddedSkills = new Set(objectArray(capability.skillDetails)
-      .flatMap(value => optionalString(value.id) ?? []))
-    if (stringValues(capability.skillIds).some(id => !skills.has(id) && !embeddedSkills.has(id))) {
-      return 'UNAVAILABLE'
-    }
-  }
-  const connectors = catalogRecords(snapshot.get('connectors.list'))
-  const selected = stringValues(capability.connectorRefs).map(id => connectors.find(connector => connector.id === id))
-  if (selected.some(connector => connector === undefined)) return 'UNAVAILABLE'
-  if (selected.some(connector => connector?.authorizationStatus !== undefined
-    && connector.authorizationStatus !== 'AUTHORIZED')) return 'AUTHORIZATION_REQUIRED'
-  if (selected.some(connector => connector?.ready !== true)) return 'UNAVAILABLE'
-  // Required tools are composition-scoped and cannot be inferred from the
-  // connector catalog. The Host validates them before preparation succeeds.
-  const knowledge = catalogRecords(snapshot.get('knowledge.bases.list'))
-  const visibleKnowledge = new Set(knowledge.flatMap(entry => [entry.id, entry.referenceKey, entry.reference]
-    .flatMap(candidate => optionalString(candidate) ?? [])))
-  if (stringValues(capability.knowledgeBaseRefs).some(reference => !visibleKnowledge.has(reference))) {
-    return 'UNAVAILABLE'
-  }
-  return 'AVAILABLE'
-}
-
-function catalogRecords(value: unknown): Array<Record<string, unknown>> {
-  if (!Array.isArray(value)) return []
-  return value.filter((entry): entry is Record<string, unknown> =>
-    typeof entry === 'object' && entry !== null && !Array.isArray(entry))
-}
-
-function catalogIds(value: unknown): Set<string> {
-  return new Set(catalogRecords(value).flatMap(entry => optionalString(entry.id) ?? []))
-}
-
-function objectArray(value: unknown): Array<Record<string, unknown>> {
-  return catalogRecords(value)
-}
-
-function stringValues(value: unknown): string[] {
-  return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string' && item !== '') : []
-}
-
-function optionalString(value: unknown): string | undefined {
-  return typeof value === 'string' && value !== '' ? value : undefined
-}
-
-/** Compare semantic desktop versions, including prerelease ordering.
- * @param left - Installed desktop version.
- * @param right - Minimum required release.
- * @returns Negative, zero, or positive when installed versions are older, equal, or newer.
- */
-export function compareVersions(left: string, right: string): number {
-  if (valid(left) === null || valid(right) === null) throw new Error('Invalid desktop semantic version')
-  return compare(left, right)
+  return { ...record, availabilityStatus: record.authorizationStatus !== 'AUTHORIZED'
+    ? 'AUTHORIZATION_REQUIRED' : record.ready === true ? 'AVAILABLE' : 'UNAVAILABLE' }
 }

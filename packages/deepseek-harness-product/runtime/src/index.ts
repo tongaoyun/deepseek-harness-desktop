@@ -43,18 +43,6 @@ export async function apply(ctx: Context): Promise<void> {
       if (control === undefined) throw new Error('Product runtime is unavailable')
       const payload = assertProductPayload('payload' in message ? message.payload : undefined)
       if (message.method === 'knowledge.documents.renderOffice') return renderKnowledgeOffice(ctx, product, payload, controller.signal)
-      if (message.method === 'skills.install' || message.method === 'skills.uninstall') {
-        if (typeof payload.id !== 'string' || !/^[a-z][a-z0-9-]{2,63}$/.test(payload.id)) throw new Error('Invalid Skill identity')
-        return message.method === 'skills.install' ? control.installSkill(payload.id, controller.signal)
-          : control.uninstallSkill(payload.id, controller.signal)
-      }
-      if (message.method === 'skills.installed.read') return control.readInstalledSkills(sessionId(payload), controller.signal)
-      if (message.method === 'expertKits.install' || message.method === 'expertKits.uninstall') {
-        if (typeof payload.id !== 'string' || !/^[a-z][a-z0-9-]{2,63}$/.test(payload.id)) throw new Error('Invalid Expert Kit identity')
-        return message.method === 'expertKits.install' ? control.installExpertKit(payload.id, controller.signal)
-          : control.uninstallExpertKit(payload.id, controller.signal)
-      }
-      if (message.method === 'expertKits.installed.read') return control.readInstalledExpertKits(controller.signal)
       const request = capabilityRequest(payload)
       if (message.method === 'tasks.capabilities.read') return control.readCapabilities(request)
       if (message.method === 'tasks.capabilities.prepare') return control.prepareCapabilities(request, controller.signal)
@@ -67,10 +55,10 @@ export async function apply(ctx: Context): Promise<void> {
   process.on('message', onMessage)
   ctx.effect(() => async () => {
     closed = true
+    process.off('message', onMessage)
+    product.close('Product plugin unloaded')
     for (const operation of operations.values()) operation.controller.abort(new Error('Product plugin unloaded'))
     await Promise.allSettled([...operations.values()].map(operation => operation.settled))
-    process.off('message', onMessage)
-    product.close()
   }, 'product-runtime.ipc')
   await mountRuntime(ctx, { product, publishControl: (value) => { control = value } })
 }
@@ -83,15 +71,13 @@ function sessionId(payload: Record<string, unknown>): string | undefined {
 }
 
 function capabilityRequest(payload: Record<string, unknown>): ProductTaskCapabilityRequest {
-  const fields = new Set(['sessionId', 'basePresetId', 'expertKitId', 'connectorIds', 'recoverCapabilities', 'knowledgeBaseIds'])
+  const fields = new Set(['sessionId', 'basePresetId', 'recoverCapabilities', 'knowledgeBaseIds'])
   for (const key of Object.keys(payload)) {
     if (!fields.has(key)) throw new ProductError('CAPABILITY_REQUEST_INVALID', `Unknown capability field: ${key}`, false)
   }
   const request: {
     sessionId?: string
     basePresetId?: string
-    expertKitId?: string | null
-    connectorIds?: string[]
     recoverCapabilities?: boolean
     knowledgeBaseIds?: string[]
   } = {}
@@ -105,11 +91,7 @@ function capabilityRequest(payload: Record<string, unknown>): ProductTaskCapabil
     if (typeof payload.basePresetId !== 'string' || payload.basePresetId.length === 0 || payload.basePresetId.length > 256) throw new Error('Invalid execution mode')
     request.basePresetId = payload.basePresetId
   }
-  if (payload.expertKitId !== undefined) {
-    if (payload.expertKitId !== null && (typeof payload.expertKitId !== 'string' || !/^[a-z][a-z0-9-]{2,63}$/.test(payload.expertKitId))) throw new Error('Invalid Expert Kit identity')
-    request.expertKitId = payload.expertKitId
-  }
-  for (const key of ['connectorIds', 'knowledgeBaseIds'] as const) {
+  for (const key of ['knowledgeBaseIds'] as const) {
     const values = payload[key]
     if (values === undefined) continue
     if (!Array.isArray(values) || values.length > 32 || values.some(value => typeof value !== 'string' || value.length === 0 || value.length > 256)) {

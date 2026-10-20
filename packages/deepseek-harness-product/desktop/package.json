@@ -5,7 +5,12 @@
   "type": "module",
   "main": "lib/index.js",
   "types": "lib/types/index.d.ts",
-  "files": ["lib", "resources", "assembly.json", "desktop-extension.json"],
+  "files": [
+    "lib",
+    "resources",
+    "assembly.json",
+    "desktop-extension.json"
+  ],
   "exports": {
     ".": {
       "types": "./lib/types/index.d.ts",
@@ -24,14 +29,35 @@
     "@modelcontextprotocol/server": "2.0.0",
     "@modelcontextprotocol/node": "2.0.0",
     "zod": "^4.4.3",
-    "tar": "^7.5.0",
-    "yauzl": "^3.2.0",
     "@deepseek-harness/product": "workspace:*",
     "@deepseek-harness/product-runtime": "workspace:*",
-    "@deepseek-harness/product-ui": "workspace:*"
+    "@deepseek-harness/product-ui": "workspace:*",
+    "@michengai/dsh-agency-agents": "1.2.8",
+    "@michengai/dsh-skills-manager": "1.2.8",
+    "@deepseek-ai/cordis": "workspace:~",
+    "@deepseek-ai/dsh-api-remotes": "workspace:*",
+    "@deepseek-ai/dsh-client-connection": "workspace:*",
+    "@deepseek-ai/dsh-client-locale": "workspace:*",
+    "@deepseek-ai/dsh-client-ui-conversation": "workspace:*",
+    "@deepseek-ai/dsh-client-ui-input-trigger": "workspace:*",
+    "@deepseek-ai/dsh-client-ui-primitives": "workspace:*",
+    "@deepseek-ai/dsh-client-ui-settings": "workspace:*",
+    "@deepseek-ai/dsh-client-ui-slots": "workspace:*",
+    "@deepseek-ai/dsh-host-webserver": "workspace:*",
+    "@deepseek-ai/dsh-llm": "workspace:*",
+    "@deepseek-ai/dsh-settings": "workspace:*",
+    "@deepseek-ai/dsh-subagent": "workspace:*",
+    "@deepseek-ai/dsh-system-prompt": "workspace:*",
+    "@deepseek-ai/dsh-tools": "workspace:*",
+    "@deepseek-ai/dsh-typert-protocol": "workspace:*",
+    "@deepseek-ai/dsh-typert-registry": "workspace:*",
+    "@deepseek-ai/schemastery": "workspace:~",
+    "@deepseek-ai/dsh-session": "workspace:*",
+    "@deepseek-ai/dsh-skill": "workspace:*",
+    "@deepseek-ai/dsh-web-app": "workspace:*",
+    "@deepseek-ai/dsh-app-boot": "workspace:*"
   },
   "devDependencies": {
-    "@types/yauzl": "^2.10.3",
     "@types/node": "^22.20.0",
     "electron": "^44.0.0"
   }

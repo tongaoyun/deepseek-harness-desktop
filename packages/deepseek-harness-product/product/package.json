@@ -7,14 +7,6 @@
   "main": "lib/index.js",
   "types": "lib/types/index.d.ts",
   "exports": {
-    "./authoring": {
-      "types": "./lib/types/authoring.d.ts",
-      "default": "./lib/authoring.js"
-    },
-    "./extension-draft": {
-      "types": "./lib/types/extension-draft.d.ts",
-      "default": "./lib/extension-draft.js"
-    },
     ".": {
       "types": "./lib/types/index.d.ts",
       "default": "./lib/index.js"
@@ -38,6 +30,10 @@
     "./catalog-manager": {
       "types": "./lib/types/catalog-manager.d.ts",
       "default": "./lib/catalog-manager.js"
+    },
+    "./connector-draft": {
+      "types": "./lib/types/connector-draft.d.ts",
+      "default": "./lib/connector-draft.js"
     }
   },
   "scripts": {
@@ -50,13 +46,10 @@
   ],
   "devDependencies": {
     "@types/node": "^22.20.0",
-    "@types/semver": "^7.8.0",
     "typescript": "^6.0.3",
     "vitest": "^4.1.8"
   },
   "dependencies": {
-    "yaml": "^2.9.0",
-    "zod": "^4.4.3",
-    "semver": "^7.8.5"
+    "zod": "^4.4.3"
   }
 }

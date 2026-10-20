@@ -8,7 +8,7 @@ import { StdioClientTransport } from '@modelcontextprotocol/client/stdio'
 import { Server } from '@modelcontextprotocol/server'
 import { NodeStreamableHTTPServerTransport } from '@modelcontextprotocol/node'
 import { scrubbedParentEnv } from '@deepseek-ai/dsh-subprocess'
-import { ExtensionDraftSchema, type ExtensionDraft } from '@deepseek-harness/product/authoring'
+import { ConnectorDraftSchema, type ConnectorDraft } from '@deepseek-harness/product/connector-draft'
 import { DeepSeekHarnessApiError, type DeepSeekHarnessApiClient } from '@deepseek-harness/product'
 import { ProductError } from '@deepseek-harness/product/errors'
 import { z } from 'zod'
@@ -135,7 +135,7 @@ export class PersonalConnectors {
     if (!major || !minor || !patch || !/^\d+$/.test(patch)) throw new Error('Invalid connector version')
     const nextVersion = `${major}.${minor}.${String(BigInt(patch) + 1n)}`
     const pending = entry.authMode === 'oauth' ? undefined : await this.pending(this.filename(employee, entry.id, nextVersion))
-    const pendingDraft = pending === undefined ? undefined : ExtensionDraftSchema.parse({
+    const pendingDraft = pending === undefined ? undefined : ConnectorDraftSchema.parse({
       ...PendingMetadata.parse(JSON.parse(pending.body)), kind: 'connector', ...pending.config,
       url: pending.config.url, command: pending.config.command,
     })
@@ -143,7 +143,7 @@ export class PersonalConnectors {
       throw new ProductError('EXTENSION_PRIVATE_CONFIGURATION_INVALID', 'Pending connector identity is invalid', false)
     }
     if (pending) config = pending.config
-    const draft = ExtensionDraftSchema.parse({ kind: 'connector', id: entry.id, version: nextVersion,
+    const draft = ConnectorDraftSchema.parse({ kind: 'connector', id: entry.id, version: nextVersion,
       name: pendingDraft?.name ?? entry.name ?? entry.displayName, summary: pendingDraft?.summary ?? entry.summary,
       category: pendingDraft?.category ?? entry.category,
       transport: config?.transport ?? entry.transport, url: config?.url ?? entry.url, command: config?.command ?? entry.command,
@@ -154,8 +154,8 @@ export class PersonalConnectors {
     })
     if (method === 'extensions.connector.read') return { draft, configured: config !== undefined, savePending: pending !== undefined }
     if (method !== 'extensions.connector.update') throw new Error('Unsupported connector operation')
-    let edited = ExtensionDraftSchema.parse(input.draft)
-    if (edited.kind !== 'connector' || edited.id !== entry.id || edited.version !== nextVersion) throw new Error('Connector identity is fixed')
+    let edited = ConnectorDraftSchema.parse(input.draft)
+    if (edited.id !== entry.id || edited.version !== nextVersion) throw new Error('Connector identity is fixed')
     const sameTarget = config && edited.transport === config.transport && (edited.url || undefined) === config.url
       && (edited.command || undefined) === config.command && JSON.stringify(edited.arguments) === JSON.stringify(config.arguments)
     const retained = (values: Record<string, string>, previous: Record<string, string>): Record<string, string> =>
@@ -167,7 +167,7 @@ export class PersonalConnectors {
     edited = { ...edited, headers: retained(edited.headers, config?.headers ?? {}),
       environment: retained(edited.environment, config?.environment ?? {}) }
     await this.saveConfiguration(edited, api, employee, signal)
-    return { kind: 'connector', id: edited.id, version: edited.version, visibility: 'PERSONAL', installed: false }
+    return { kind: 'connector', id: edited.id, version: edited.version, visibility: 'PERSONAL' }
   }
 
   /** Discover the actual MCP tool list, then persist public configuration and encrypted local secrets.
@@ -176,7 +176,7 @@ export class PersonalConnectors {
    * @param employee Authenticated owner.
    * @param signal Cancellation. A dispatched request with an unknown outcome retains encrypted pending settings.
    */
-  async save(draft: ExtensionDraft, api: DeepSeekHarnessApiClient, employee: string,
+  async save(draft: ConnectorDraft, api: DeepSeekHarnessApiClient, employee: string,
     signal: AbortSignal): Promise<void> {
     await this.serialize(employee, draft.id, signal, lifetime => this.saveConfiguration(draft, api, employee, lifetime))
   }
@@ -196,7 +196,7 @@ export class PersonalConnectors {
     finally { if (this.operations.get(key) === pending) this.operations.delete(key) }
   }
 
-  private async saveConfiguration(draft: ExtensionDraft, api: DeepSeekHarnessApiClient, employee: string,
+  private async saveConfiguration(draft: ConnectorDraft, api: DeepSeekHarnessApiClient, employee: string,
     signal: AbortSignal): Promise<void> {
     signal.throwIfAborted()
     await this.resetIdentity(employee)

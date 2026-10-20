@@ -4,63 +4,31 @@ import { join } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-agent'
 import { entryListProblem, type PresetDefinition } from '@deepseek-ai/dsh-agent-preset-registry'
-import type { ProductContentIdentity, ProductTaskCapabilities, ProductTaskCapabilityRequest, ProductTaskCapabilityResult } from '@deepseek-harness/product/protocol'
+import type { ProductTaskCapabilities, ProductTaskCapabilityRequest, ProductTaskCapabilityResult } from '@deepseek-harness/product/protocol'
 import { ProductError, isProductFailure, productFailure, type ProductFailure } from '@deepseek-harness/product/errors'
 import { z } from 'zod'
-import { hydrateConnectors, parseConnectorSnapshots, snapshotConnector, type DeepSeekHarnessConnector } from './deepseek-harness-connector-contract.ts'
-
-export interface TaskContent {
-  readonly dependencyChecks?: ProductTaskCapabilityResult['dependencyChecks']
-  readonly requiredTools?: readonly string[]
-  readonly identity: ProductContentIdentity
-  readonly connectorRefs: readonly string[]
-  readonly knowledgeBaseRefs: readonly string[]
-  readonly plugins: PresetDefinition['plugins']
-}
 
 interface Snapshot {
-  readonly version: 3
+  readonly version: 4
   readonly presetId: string
   readonly definition: PresetDefinition
   readonly capabilities: ProductTaskCapabilities
-  readonly requiredConnectorIds: readonly string[]
-  readonly connectors: readonly Omit<DeepSeekHarnessConnector, 'headers' | 'environment'>[]
-  readonly basePluginKeys: readonly string[]
-  readonly requiredTools: readonly string[]
 }
 
 export interface TaskDependencies {
   readonly root: string
-  readonly authorizeKit?: (id: string, signal?: AbortSignal) => Promise<void>
-  readonly visibleKnowledge?: (signal?: AbortSignal) => Promise<readonly string[]>
-  readonly content: (kind: 'kit', id: string, signal?: AbortSignal) => Promise<TaskContent>
-  readonly connectors: (ids: readonly string[], signal?: AbortSignal) => Promise<readonly DeepSeekHarnessConnector[]>
-  readonly validateKnowledge: (ids: readonly string[], refs: readonly string[], signal?: AbortSignal) => Promise<readonly string[]>
-  readonly connectorPlugin: (connector: DeepSeekHarnessConnector) => PresetDefinition['plugins'][number]
-  readonly knowledgePlugins: (refs: readonly string[], ids: readonly string[]) => PresetDefinition['plugins']
-  readonly register: (
-    definition: PresetDefinition, connectors: readonly DeepSeekHarnessConnector[],
-  ) => Promise<() => Promise<void>>
-  readonly validateTools: (presetId: string, requiredTools: readonly string[]) => Promise<void>
+  readonly visibleKnowledge: (signal?: AbortSignal) => Promise<readonly string[]>
+  readonly validateKnowledge: (ids: readonly string[], signal?: AbortSignal) => Promise<readonly string[]>
+  readonly knowledgePlugins: (ids: readonly string[]) => PresetDefinition['plugins']
+  readonly register: (definition: PresetDefinition) => Promise<() => Promise<void>>
 }
-
-const empty: ProductTaskCapabilities = {
-  connectorIds: [], requiredConnectorIds: [], knowledgeBaseIds: [], requiredKnowledgeBaseIds: [], knowledgeBaseRefs: [],
-}
+const empty: ProductTaskCapabilities = { knowledgeBaseIds: [] }
 const prefix = 'product-task-'
 const CAPABILITY_PROMPT = 'cordis:product-task-capabilities'
 const sorted = (values: readonly string[]) => [...new Set(values)].sort()
-const rowKey = (row: PresetDefinition['plugins'][number]) => row.id ?? JSON.stringify(row)
 const identifier = z.string().min(1).max(256)
 const identifiers = z.array(identifier).max(32)
-const contentIdentity = z.object({ id: identifier, name: z.string().optional(), version: identifier,
-  sha256: z.string().regex(/^[a-fA-F0-9]{64}$/) }).strict()
-const capabilitySnapshot = z.object({
-  basePresetId: identifier, expertKit: contentIdentity.optional(),
-  connectorIds: identifiers, requiredConnectorIds: identifiers, knowledgeBaseIds: identifiers,
-  requiredKnowledgeBaseIds: identifiers, knowledgeBaseRefs: identifiers,
-}).strict().refine(value => value.requiredKnowledgeBaseIds.every(id => value.knowledgeBaseIds.includes(id))
-  && value.requiredConnectorIds.every(id => value.connectorIds.includes(id)))
+const capabilitySnapshot = z.object({ basePresetId: identifier, knowledgeBaseIds: identifiers }).strict()
 
 /** Validate a durable task generation before restoring or collecting its content.
  * @param raw Stored JSON, already checked against the snapshot byte limit.
@@ -74,31 +42,15 @@ export function parseTaskSnapshot(raw: string, filename: string): Snapshot {
     definition?: PresetDefinition | null
     capabilities?: ProductTaskCapabilities | null
   }
-  if (value.version !== 3 || `${value.presetId}.json` !== filename || value.definition == null
+  if (value.version !== 4 || `${value.presetId}.json` !== filename || value.definition == null
     || value.capabilities == null || value.definition.id !== value.presetId
     || entryListProblem(value.definition.plugins) !== undefined
-    || !Array.isArray(value.capabilities.connectorIds)
-    || !Array.isArray(value.capabilities.requiredKnowledgeBaseIds)
-    || !Array.isArray(value.capabilities.knowledgeBaseIds) || !Array.isArray(value.capabilities.knowledgeBaseRefs)
-    || !Array.isArray(value.requiredConnectorIds) || !Array.isArray(value.connectors)
-    || !Array.isArray(value.basePluginKeys) || value.basePluginKeys.some(key => typeof key !== 'string')
-    || !Array.isArray(value.requiredTools) || value.requiredTools.some(key => typeof key !== 'string')
-    || Object.keys(candidate).some(key => !['version', 'presetId', 'definition', 'capabilities',
-      'requiredConnectorIds', 'connectors', 'basePluginKeys', 'requiredTools'].includes(key))) throw new Error(`Invalid task snapshot: ${filename}`)
+    || Object.keys(candidate).some(key => !['version', 'presetId', 'definition', 'capabilities'].includes(key))) throw new Error(`Invalid task snapshot: ${filename}`)
   capabilitySnapshot.parse(value.capabilities)
-  if (typeof value.capabilities.basePresetId !== 'string'
-    || value.definition.selectionBase !== value.capabilities.basePresetId
-    || value.definition.selectable !== false || value.definition.defaultable !== false) {
-    throw new Error(`Inconsistent task selection base: ${filename}`)
-  }
-  identifiers.parse(value.requiredConnectorIds)
-  parseConnectorSnapshots(value.connectors)
-  if (JSON.stringify(value.requiredConnectorIds) !== JSON.stringify(value.capabilities.requiredConnectorIds)) {
-    throw new Error(`Inconsistent required connectors: ${filename}`)
-  }
+  if (value.definition.selectionBase !== value.capabilities.basePresetId
+    || value.definition.selectable !== false || value.definition.defaultable !== false) throw new Error(`Inconsistent task selection base: ${filename}`)
   const snapshot = value as Snapshot
-  const expected = identify(snapshot.definition, snapshot.capabilities,
-    snapshot.requiredConnectorIds, snapshot.connectors, snapshot.basePluginKeys, snapshot.requiredTools)
+  const expected = identify(snapshot.definition, snapshot.capabilities)
   if (expected !== snapshot.presetId) throw new Error(`Task snapshot identity mismatch: ${filename}`)
   return snapshot
 }
@@ -116,32 +68,16 @@ export async function createTaskCapabilities(ctx: Context, deps: TaskDependencie
     const failure = failures.get(id)
     if (failure === undefined) throw new Error(`Blocked task requires a restoration diagnostic: ${id}`)
     const dispose = await deps.register({ id, plugins: [{ id: 'product-blocked-task', name: CAPABILITY_PROMPT, config: { failure } }],
-      selectable: false, defaultable: false }, [])
+      selectable: false, defaultable: false })
     blockedPresets.set(id, dispose)
   }
   let committing = Promise.resolve()
-  const register = (snapshot: Snapshot, connectors: readonly DeepSeekHarnessConnector[], validate = true) => {
+  const register = (snapshot: Snapshot) => {
     let pending = registrations.get(snapshot.presetId)
     if (pending === undefined) {
-      const plugins = snapshot.definition.plugins.map((row) => {
-        const connector = connectors.find(value => row.id === deps.connectorPlugin(value).id)
-        return connector === undefined ? row : deps.connectorPlugin(connector)
-      })
-      pending = (async () => {
-        const dispose = await deps.register({ ...snapshot.definition, plugins }, connectors)
-        disposers.set(snapshot.presetId, dispose)
-        try {
-          if (validate) await deps.validateTools(snapshot.presetId, snapshot.requiredTools)
-        } catch (error) {
-          await dispose()
-          disposers.delete(snapshot.presetId)
-          throw error
-        }
-      })()
+      pending = deps.register(snapshot.definition).then((dispose) => { disposers.set(snapshot.presetId, dispose) })
       registrations.set(snapshot.presetId, pending)
       pending.catch(() => { registrations.delete(snapshot.presetId) })
-    } else if (validate) {
-      return pending.then(() => deps.validateTools(snapshot.presetId, snapshot.requiredTools))
     }
     return pending
   }
@@ -184,8 +120,7 @@ export async function createTaskCapabilities(ctx: Context, deps: TaskDependencie
         continue
       }
       // Restored providers may depend on services supplied by this activating Host plugin.
-      try { await register(snapshot, hydrateConnectors(snapshot.connectors,
-        snapshot.connectors.length === 0 ? [] : await deps.connectors(snapshot.connectors.map(connector => connector.id))), false) }
+      try { await register(snapshot) }
       catch (error) {
         failures.set(id, productFailure(error))
         await registerBlocked(id)
@@ -213,9 +148,7 @@ export async function createTaskCapabilities(ctx: Context, deps: TaskDependencie
       }
       const snapshot = presetId === undefined ? undefined : snapshots.get(presetId)
       if (snapshot !== undefined) {
-        if (snapshot.capabilities.expertKit !== undefined) await deps.authorizeKit?.(snapshot.capabilities.expertKit.id, signal)
-        await deps.validateKnowledge(snapshot.capabilities.knowledgeBaseIds, [], signal)
-        await deps.validateTools(snapshot.presetId, snapshot.requiredTools)
+        await deps.validateKnowledge(snapshot.capabilities.knowledgeBaseIds, signal)
       }
     },
     async read(request: ProductTaskCapabilityRequest): Promise<ProductTaskCapabilities> {
@@ -225,7 +158,7 @@ export async function createTaskCapabilities(ctx: Context, deps: TaskDependencie
         ? productFailure(new ProductError('TASK_SNAPSHOT_MISSING', 'Task capabilities need explicit recovery')) : undefined)
       return structuredClone(snapshot === undefined
         ? { ...empty, basePresetId: current.presetId, ...unavailable === undefined ? {} : { unavailable } }
-        : { ...snapshot.capabilities, requiredConnectorIds: snapshot.requiredConnectorIds,
+        : { ...snapshot.capabilities,
           ...unavailable === undefined ? {} : { unavailable } })
     },
     async resolveSelection(sessionId: string, requested: string): Promise<string> {
@@ -248,11 +181,8 @@ export async function createTaskCapabilities(ctx: Context, deps: TaskDependencie
         }
         const source = snapshots.get(current.presetId)
         if (request.recoverCapabilities === true) {
-          if (deps.visibleKnowledge === undefined) {
-            throw new ProductError('KNOWLEDGE_RECOVERY_UNAVAILABLE', 'Knowledge recovery is unavailable', true)
-          }
           const visible = await deps.visibleKnowledge(signal)
-          request = { ...request, expertKitId: null,
+          request = { ...request,
             knowledgeBaseIds: (request.knowledgeBaseIds ?? source?.capabilities.knowledgeBaseIds ?? []).filter(id => visible.includes(id)),
             basePresetId: request.basePresetId ?? source?.capabilities.basePresetId ?? ctx.agentPresets.defaultId }
         }
@@ -263,97 +193,18 @@ export async function createTaskCapabilities(ctx: Context, deps: TaskDependencie
           const mode = await ctx.agentPresets.resolve(basePresetId)
           if (mode.selectable === false || basePresetId.startsWith(prefix)) throw new Error('Selected Preset is not an execution mode')
         }
-        const base = ctx.agentPresets.derive(basePresetId, { id: 'pending-task', plugins: [], selectable: false, defaultable: false })
-        let basePluginKeys = previous?.basePluginKeys ?? base.plugins.map(rowKey)
-        let definition = previous === undefined
-          ? base
-          : { ...structuredClone(previous.definition), id: 'pending-task' }
-        if (request.basePresetId !== undefined && previous !== undefined) {
-          definition = { ...base, plugins: [...base.plugins, ...definition.plugins.filter(row => !basePluginKeys.includes(rowKey(row)))] }
-          basePluginKeys = base.plugins.map(rowKey)
-        }
-        capabilities = { ...capabilities, basePresetId }
-        let requiredConnectorIds = [...previous?.requiredConnectorIds ?? []]
-        let requiredTools = [...previous?.requiredTools ?? []]
-        const mergeContent = (content: TaskContent) => {
-          const keys = new Set(definition.plugins.map(rowKey))
-          definition = { ...definition, plugins: [...definition.plugins, ...content.plugins.filter(row => !keys.has(rowKey(row)))] }
-          dependencyChecks.push(...content.dependencyChecks ?? [])
-          requiredConnectorIds.push(...content.connectorRefs)
-          requiredTools.push(...content.requiredTools ?? [])
-          capabilities = { ...capabilities, knowledgeBaseRefs: sorted([...capabilities.knowledgeBaseRefs, ...content.knowledgeBaseRefs]) }
-        }
-        if (request.expertKitId !== undefined) {
-          const content = request.expertKitId === null ? undefined : await deps.content('kit', request.expertKitId, signal)
-          const retainedKnowledge = capabilities.knowledgeBaseIds
-          const retainedConnectors = capabilities.connectorIds.filter(id => !requiredConnectorIds.includes(id))
-          definition = base
-          basePluginKeys = base.plugins.map(rowKey)
-          capabilities = { ...empty, basePresetId, knowledgeBaseIds: retainedKnowledge, connectorIds: retainedConnectors,
-            ...content === undefined ? {} : { expertKit: content.identity },
-          }
-          requiredConnectorIds = []
-          requiredTools = []
-          if (content !== undefined) mergeContent(content)
-        }
-        requiredConnectorIds = sorted(requiredConnectorIds)
-        const connectorIds = sorted(request.connectorIds ?? capabilities.connectorIds)
-        if (request.connectorIds !== undefined && requiredConnectorIds.some(id => !connectorIds.includes(id))) {
-          throw new Error('A required connector cannot be disabled')
-        }
-        capabilities = { ...capabilities,
-          connectorIds: sorted([...connectorIds, ...requiredConnectorIds]),
-          requiredConnectorIds,
-          knowledgeBaseIds: sorted(request.knowledgeBaseIds ?? capabilities.knowledgeBaseIds),
-        }
-        dependencyChecks.push(
-          ...requiredTools.map(reference => ({ kind: 'TOOL' as const, reference, status: 'NOT_CHECKED' as const })),
-          ...capabilities.connectorIds.map(reference => ({ kind: 'DATA_CONNECTION' as const, reference, status: 'NOT_CHECKED' as const })),
-          ...sorted([...capabilities.knowledgeBaseIds, ...capabilities.knowledgeBaseRefs])
-            .map(reference => ({ kind: 'KNOWLEDGE_BASE' as const, reference, status: 'NOT_CHECKED' as const })),
-        )
-        const requiredKnowledge = request.expertKitId === undefined ? capabilities.requiredKnowledgeBaseIds
-          : await deps.validateKnowledge([], capabilities.knowledgeBaseRefs, signal)
-        if (request.expertKitId === undefined && request.knowledgeBaseIds !== undefined
-        && requiredKnowledge.some(id => !request.knowledgeBaseIds?.includes(id))) {
-          throw new ProductError('KNOWLEDGE_REQUIRED', 'A required knowledge base cannot be removed', false,
-            requiredKnowledge.map(id => ({ kind: 'knowledge-base', id })))
-        }
-        const resolvedKnowledge = await deps.validateKnowledge(sorted([...capabilities.knowledgeBaseIds, ...requiredKnowledge]), [], signal)
-        for (const reference of sorted([...capabilities.knowledgeBaseRefs, ...resolvedKnowledge])) {
-          dependencyChecks.push({ kind: 'KNOWLEDGE_BASE', reference, status: 'READY' })
-        }
-        capabilities = { ...capabilities, knowledgeBaseIds: sorted(resolvedKnowledge), requiredKnowledgeBaseIds: sorted(requiredKnowledge) }
-        if (capabilities.expertKit !== undefined) await deps.authorizeKit?.(capabilities.expertKit.id, signal)
-        const live = capabilities.connectorIds.length === 0 ? [] : await deps.connectors(capabilities.connectorIds, signal)
-        dependencyChecks.push(...capabilities.connectorIds.map(reference => ({ kind: 'DATA_CONNECTION' as const, reference,
-          status: live.some(row => row.id === reference) ? 'READY' as const : 'UNAUTHORIZED' as const })))
-        const connectors = selectedConnectors(capabilities.connectorIds, live).map((connector) => {
-          const pinned = request.expertKitId === undefined ? previous?.connectors.find(value => value.id === connector.id) : undefined
-          return pinned === undefined ? connector : hydrateConnectors([pinned], live)[0] ?? connector
+        const ids = sorted(request.knowledgeBaseIds ?? capabilities.knowledgeBaseIds)
+        const resolved = await deps.validateKnowledge(ids, signal)
+        capabilities = { basePresetId, knowledgeBaseIds: sorted(resolved) }
+        const definition = ctx.agentPresets.derive(basePresetId, {
+          id: 'pending-task', selectable: false, defaultable: false,
+          plugins: [
+            { id: 'product-task-capabilities', name: CAPABILITY_PROMPT, config: { capabilities } },
+            ...deps.knowledgePlugins(capabilities.knowledgeBaseIds),
+          ],
         })
-        definition = { ...definition, selectionBase: basePresetId, name: capabilities.expertKit?.name ?? basePresetId, plugins: [
-          ...definition.plugins.filter(row => !row.id?.startsWith('deepseek-harness-mcp-')
-          && row.id !== 'product-knowledge' && row.id !== 'product-task-capabilities'),
-          { id: 'product-task-capabilities', name: CAPABILITY_PROMPT, config: { capabilities } },
-          ...connectors.map(deps.connectorPlugin),
-          ...deps.knowledgePlugins([], capabilities.knowledgeBaseIds),
-        ] }
-        // Connector credentials are hydrated from main at mount time, never stored in snapshots.
-        const persisted = { ...definition, plugins: definition.plugins.map((row) => {
-          if (!row.id?.startsWith('deepseek-harness-mcp-')) return row
-          const config = { ...row.config as Record<string, unknown> }
-          delete config.headers
-          delete config.env
-          const connector = connectors.find(value => row.id === deps.connectorPlugin(value).id)
-          if (connector?.transport === 'streamable-http') config.url = `http://product.invalid/${encodeURIComponent(connector.id)}`
-          return { ...row, config }
-        }) }
-        const contracts = connectors.map(snapshotConnector)
-        requiredTools = sorted(requiredTools)
-        const presetId = identify(persisted, capabilities, requiredConnectorIds, contracts, basePluginKeys, requiredTools)
-        const snapshot: Snapshot = { version: 3, presetId, definition: { ...persisted, id: presetId },
-          capabilities, requiredConnectorIds, connectors: contracts, basePluginKeys, requiredTools }
+        const presetId = identify(definition, capabilities)
+        const snapshot: Snapshot = { version: 4, presetId, definition: { ...definition, id: presetId }, capabilities }
         const preceding = committing
         let release!: () => void
         committing = new Promise<void>((resolve) => { release = resolve })
@@ -366,7 +217,7 @@ export async function createTaskCapabilities(ctx: Context, deps: TaskDependencie
         try {
           signal?.throwIfAborted()
           if (blocked !== undefined) { await blocked(); blockedPresets.delete(presetId) }
-          await register(snapshot, connectors)
+          await register(snapshot)
           await writeFile(temporary, JSON.stringify(snapshot), { mode: 0o600, signal })
           signal?.throwIfAborted()
           if (failures.get(presetId)?.code === 'TASK_SNAPSHOT_INVALID') {
@@ -389,12 +240,7 @@ export async function createTaskCapabilities(ctx: Context, deps: TaskDependencie
         failures.delete(presetId)
         const latest = await inspect(request.sessionId)
         return { kind: request.sessionId !== undefined && !latest.started ? 'CURRENT_SESSION' : 'NEW_SESSION', presetId, capabilities,
-          dependencyChecks: [...new Map([
-            ...dependencyChecks.filter(check => check.status !== 'NOT_CHECKED'),
-            ...requiredTools.map(reference => ({ kind: 'TOOL' as const, reference, status: 'READY' as const })),
-            ...capabilities.connectorIds.map(reference => ({ kind: 'DATA_CONNECTION' as const, reference, status: 'READY' as const })),
-            ...capabilities.knowledgeBaseIds.map(reference => ({ kind: 'KNOWLEDGE_BASE' as const, reference, status: 'READY' as const })),
-          ].map(check => [`${check.kind}:${check.reference}`, check])).values()],
+          dependencyChecks: capabilities.knowledgeBaseIds.map(reference => ({ kind: 'KNOWLEDGE_BASE', reference, status: 'READY' })),
         }
       } catch (error) {
         if (!isProductFailure(error)) throw error
@@ -402,10 +248,9 @@ export async function createTaskCapabilities(ctx: Context, deps: TaskDependencie
         if (failure.dependencyChecks !== undefined) throw error
         const completed = new Map(dependencyChecks.map(check => [`${check.kind}:${check.reference}`, check]))
         for (const resource of failure.resources) {
-          const kind = resource.kind === 'connector' ? 'DATA_CONNECTION' : resource.kind === 'knowledge-base' ? 'KNOWLEDGE_BASE'
-            : resource.kind === 'tool' ? 'TOOL' : resource.kind === 'skill' ? 'SKILL' : undefined
-          if (kind !== undefined) completed.set(`${kind}:${resource.id}`, { kind, reference: resource.id,
-            status: kind === 'TOOL' || kind === 'SKILL' ? 'MISSING' : 'UNAUTHORIZED' })
+          if (resource.kind === 'knowledge-base') completed.set(`KNOWLEDGE_BASE:${resource.id}`, {
+            kind: 'KNOWLEDGE_BASE', reference: resource.id, status: 'UNAUTHORIZED',
+          })
         }
         throw new ProductError(failure.code, failure.message, failure.retryable, failure.resources,
           { cause: error, dependencyChecks: [...completed.values()] })
@@ -414,16 +259,6 @@ export async function createTaskCapabilities(ctx: Context, deps: TaskDependencie
   }
 }
 
-function identify(definition: PresetDefinition, capabilities: ProductTaskCapabilities,
-  requiredConnectorIds: readonly string[], connectors: Snapshot['connectors'], basePluginKeys: readonly string[], requiredTools: readonly string[]): string {
-  return prefix + createHash('sha256').update(JSON.stringify({ definition: { ...definition, id: '' }, capabilities,
-    requiredConnectorIds, connectors, basePluginKeys, requiredTools })).digest('hex')
-}
-
-function selectedConnectors(ids: readonly string[], live: readonly DeepSeekHarnessConnector[]) {
-  return ids.map((id) => {
-    const connector = live.find(value => value.id === id)
-    if (connector === undefined) throw new ProductError('CONNECTOR_AUTHORIZATION_REQUIRED', `Connector authorization is required: ${id}`, false, [{ kind: 'connector', id }])
-    return connector
-  })
+function identify(definition: PresetDefinition, capabilities: ProductTaskCapabilities): string {
+  return prefix + createHash('sha256').update(JSON.stringify({ definition: { ...definition, id: '' }, capabilities })).digest('hex')
 }

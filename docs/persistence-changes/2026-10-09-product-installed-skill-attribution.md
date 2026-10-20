@@ -52,7 +52,7 @@ The product-installed-skills source identifies its producer without changing mes
 <a id="verification"></a>
 ## Verification
 
-The real Loader composition and keyless capabilities-session recording verify pinned Skill instructions, connector definitions, retrieval inputs, restart restoration, and credential exclusion. See packages/deepseek-harness-product/runtime/tests/runtime-loader.spec.ts and packages/deepseek-harness-product/runtime/tests/installed-skills.spec.ts.
+The real Loader composition and keyless capabilities-session recording verify pinned Skill instructions, connector definitions, retrieval inputs, restart restoration, and credential exclusion. See packages/deepseek-harness-product/runtime/tests/runtime-loader.spec.ts and `installed-skills.spec.ts`（记录时的技能归属回归，现由原生技能 Provider 接管）.
 
 <a id="dev-note"></a>
 ## Dev Note

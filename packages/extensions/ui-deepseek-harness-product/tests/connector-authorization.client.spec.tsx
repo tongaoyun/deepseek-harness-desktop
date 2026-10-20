@@ -1,10 +1,10 @@
 // @vitest-environment jsdom
-import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, expect, it, vi } from 'vitest'
 import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import { zh as commonZh } from '@deepseek-ai/dsh-client-locale/src/locales/zh.ts'
 import { ConnectorDetail } from '../src/client/ConnectorView.tsx'
-import { ConnectorsPanel, ExpertKitsPanel } from '../src/client/DeepSeekHarnessCatalogSection.tsx'
+import { ConnectorsPanel } from '../src/client/DeepSeekHarnessCatalogSection.tsx'
 import { items, localDetail } from '../src/client/catalog-shared.tsx'
 import { zh } from '../src/locales.ts'
 
@@ -16,8 +16,6 @@ const actions = {
   usePanelInfo: unusedSlot, useRemoteAccess: unusedSlot, useSessionAccess: unusedSlot, useWorkspaceAccess: unusedSlot,
   useSessions: unusedSlot, useSessionStatus: unusedSlot, useSessionRetainInfo: unusedSlot,
   useWorkspaces: unusedSlot, useResource: unusedSlot, useAccess: unusedSlot, renderFactorySlot: unusedSlot,
-  startExpertKit: unusedSlot, installSkill: unusedSlot, installExpertKit: unusedSlot,
-  readInstalledExpertKits: async () => ({ installed: [] }),
 }
 afterEach(() => { cleanup(); vi.useRealTimers(); vi.unstubAllGlobals() })
 function transport(handler: (method: string) => Promise<unknown>) {
@@ -47,34 +45,6 @@ it('rejects an authorized poll result belonging to another connector', async () 
   await act(async () => { await vi.advanceTimersByTimeAsync(1_000) })
   expect(screen.getByRole('alert')).toBeTruthy()
   expect(changed).not.toHaveBeenCalled()
-})
-
-it.each(['authorize', 'revoke'] as const)('refreshes the connector dialog and kit dependency after %s from a kit', async (action) => {
-  let authorized = action === 'revoke'
-  const kit = { id: 'order-kit', version: '1.0.0', name: '订单套件', connectorRefs: ['erp'] }
-  transport(async (method) => {
-    if (method === 'auth.getSession') return { authenticated: true, employeeId: 'employee' }
-    if (method === 'expertKits.list') return [kit]
-    if (method === 'expertKits.get') return kit
-    if (method === 'expertKits.readme') return { ...kit, readme: '# 订单套件' }
-    if (method === 'connectors.list') return [{ ...descriptor, authorizationStatus: authorized ? 'AUTHORIZED' : 'REQUIRED' }]
-    if (method === 'connectors.authorization.begin') return launch
-    if (method === 'connectors.authorization.status') { authorized = true; return { connectorId: 'erp', status: 'AUTHORIZED' } }
-    if (method === 'connectors.authorization.revoke') { authorized = false; return { connectorId: 'erp', status: 'REQUIRED', expiresAt: null } }
-    return []
-  })
-  render(<ExpertKitsPanel {...actions} t={t} />)
-  fireEvent.click(await screen.findByRole('button', { name: /^订单套件/ }))
-  fireEvent.click(await screen.findByRole('button', { name: 'ERP 连接器' }))
-  const dialog = await screen.findByRole('dialog', { name: zh.connectorDetails })
-  if (action === 'authorize') vi.useFakeTimers()
-  await act(async () => { fireEvent.click(within(dialog).getByRole('button', { name: action === 'authorize' ? zh.authorize : zh.revokeAuthorization })) })
-  if (action === 'authorize') { await act(async () => { await vi.advanceTimersByTimeAsync(1_000) }); vi.useRealTimers() }
-  await waitFor(() => { expect(within(dialog).queryByRole('button', { name: action === 'authorize' ? zh.revokeAuthorization : zh.authorize })).toBeTruthy() })
-  const dependencies = screen.getByRole('heading', { level: 2, name: `${zh.dataConnections} 1` }).closest('section')!
-  expect(within(dependencies).getByText(action === 'authorize' ? zh.statusAuthorized : zh.statusRequired)).toBeTruthy()
-  expect(screen.getByRole('heading', { name: '订单套件' })).toBeTruthy()
-  expect(screen.queryByRole('alert')).toBeNull()
 })
 
 const invalidResponses = [
@@ -139,69 +109,6 @@ it('continues pending authorization until the matching connector is authorized',
   await act(async () => { await vi.advanceTimersByTimeAsync(1_000) })
   expect(polls).toBe(2)
   expect(changed).toHaveBeenCalledOnce()
-})
-
-it('cancels a connector reference refresh when closed and ignores its late result', async () => {
-  const pending = Promise.withResolvers<unknown>()
-  const started = Promise.withResolvers<undefined>()
-  const kit = { id: 'order-kit', name: '订单套件', version: '1.0.0', connectorRefs: ['erp'] }
-  let reads = 0
-  const api = transport(async (method) => {
-    if (method === 'auth.getSession') return { authenticated: true, employeeId: 'employee' }
-    if (method === 'expertKits.list') return [kit]
-    if (method === 'expertKits.get') return kit
-    if (method === 'expertKits.readme') return { ...kit, readme: '# 订单套件' }
-    if (method === 'connectors.list') {
-      if (++reads === 3) { started.resolve(undefined); return pending.promise }
-      return [descriptor]
-    }
-    if (method === 'connectors.authorization.revoke') return { connectorId: 'erp', status: 'REQUIRED' }
-    return []
-  })
-  render(<ExpertKitsPanel {...actions} t={t} />)
-  fireEvent.click(await screen.findByRole('button', { name: /^订单套件/ }))
-  fireEvent.click(await screen.findByRole('button', { name: 'ERP 连接器' }))
-  const dialog = await screen.findByRole('dialog', { name: zh.connectorDetails })
-  await act(async () => { fireEvent.click(within(dialog).getByRole('button', { name: zh.revokeAuthorization })); await started.promise })
-  const request = api.invoke.mock.calls.filter(call => call[1] === 'connectors.list').at(-1)!
-  fireEvent.click(within(dialog).getByRole('button', { name: zh.close }))
-  expect(api.cancel).toHaveBeenCalledWith('product', request[3])
-  await act(async () => { pending.resolve([{ ...descriptor, authorizationStatus: 'REQUIRED' }]) })
-  expect(screen.queryByRole('dialog')).toBeNull()
-  expect(screen.queryByRole('alert')).toBeNull()
-  const dependencies = screen.getByRole('heading', { level: 2, name: `${zh.dataConnections} 1` }).closest('section')!
-  expect(within(dependencies).getByText(zh.statusAuthorized)).toBeTruthy()
-})
-
-it('reports a failed reference refresh and retains the kit until a successful retry', async () => {
-  const kit = { id: 'order-kit', name: '订单套件', version: '1.0.0', connectorRefs: ['erp'] }
-  let reads = 0
-  const api = transport(async (method) => {
-    if (method === 'auth.getSession') return { authenticated: true, employeeId: 'employee' }
-    if (method === 'expertKits.list') return [kit]
-    if (method === 'expertKits.get') return kit
-    if (method === 'expertKits.readme') return { ...kit, readme: '# 订单套件' }
-    if (method === 'connectors.list') {
-      reads += 1
-      if (reads === 3) throw new Error('Directory unavailable')
-      return [{ ...descriptor, authorizationStatus: reads > 3 ? 'REQUIRED' : 'AUTHORIZED' }]
-    }
-    if (method === 'connectors.authorization.revoke') return { connectorId: 'erp', status: 'REQUIRED' }
-    return []
-  })
-  render(<ExpertKitsPanel {...actions} t={t} />)
-  fireEvent.click(await screen.findByRole('button', { name: /^订单套件/ }))
-  fireEvent.click(await screen.findByRole('button', { name: 'ERP 连接器' }))
-  const dialog = await screen.findByRole('dialog', { name: zh.connectorDetails })
-  fireEvent.click(within(dialog).getByRole('button', { name: zh.revokeAuthorization }))
-  expect((await within(dialog).findByRole('alert')).textContent).toBe(zh.connectorRefreshFailed)
-  const dependencies = screen.getByRole('heading', { level: 2, name: `${zh.dataConnections} 1` }).closest('section')!
-  expect(within(dependencies).getByText(zh.statusAuthorized)).toBeTruthy()
-  fireEvent.click(within(dialog).getByRole('button', { name: zh.refresh }))
-  await within(dialog).findByRole('button', { name: zh.authorize })
-  expect(within(dependencies).getByText(zh.statusRequired)).toBeTruthy()
-  expect(screen.queryByRole('alert')).toBeNull()
-  expect(api.invoke.mock.calls.filter(call => call[1] === 'connectors.authorization.revoke')).toHaveLength(1)
 })
 
 it.each(['authorize', 'revoke', 'configure'] as const)('retains catalog connector details and retries only reads after confirmed %s', async (operation) => {

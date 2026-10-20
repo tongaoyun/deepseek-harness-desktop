@@ -14,7 +14,7 @@ export interface DesktopExtensionContext {
 export interface DesktopExtension {
   readonly namespace: string
   readonly ownsStartupDocument: boolean
-  prepareHost(): Promise<NodeJS.ProcessEnv | undefined>
+  prepareHost(profile: { readonly directory: string; readonly installAnchor: string }): Promise<NodeJS.ProcessEnv | undefined>
   invoke(method: unknown, payload?: unknown, signal?: AbortSignal): Promise<unknown>
   invokeRuntime(method: unknown, payload?: unknown, signal?: AbortSignal): Promise<unknown>
   subscribe(listener: (event: unknown) => void): () => void

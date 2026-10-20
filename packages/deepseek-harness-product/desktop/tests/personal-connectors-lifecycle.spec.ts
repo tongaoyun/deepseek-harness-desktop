@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { expect, it, onTestFinished } from 'vitest'
 import { DeepSeekHarnessApiClient } from '@deepseek-harness/product'
-import { ExtensionDraftSchema } from '@deepseek-harness/product/authoring'
+import { ConnectorDraftSchema } from '@deepseek-harness/product/connector-draft'
 import { PersonalConnectors } from '../src/personal-connectors.ts'
 
 async function fixture() {
@@ -72,7 +72,7 @@ async function fixture() {
       } })
     } })
   onTestFinished(() => { api.close() })
-  const draft = ExtensionDraftSchema.parse({ kind: 'connector', id: 'lifecycle-mcp', version: '1.0.0', name: 'Lifecycle',
+  const draft = ConnectorDraftSchema.parse({ kind: 'connector', id: 'lifecycle-mcp', version: '1.0.0', name: 'Lifecycle',
     summary: 'Cancellation fixture', category: 'other', transport: 'streamable-http',
     url: `http://127.0.0.1:${address.port}/mcp` })
   await manager.save(draft, api, 'employee', new AbortController().signal)

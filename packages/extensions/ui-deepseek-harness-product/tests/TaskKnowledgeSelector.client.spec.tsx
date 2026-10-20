@@ -13,8 +13,7 @@ afterEach(cleanup)
 function fixture() {
   let open: (() => void) | undefined
   const props = {
-    capabilities: { connectorIds: [], requiredConnectorIds: [], knowledgeBaseIds: ['policy'],
-      requiredKnowledgeBaseIds: ['policy'] as string[], knowledgeBaseRefs: ['company:policy'] },
+    capabilities: { knowledgeBaseIds: ['policy'] },
     readKnowledgeCatalog: vi.fn(async () => items([{ id: 'policy', name: '业务规范', referenceKey: 'company:policy' },
       { id: 'manuals', name: '业务手册' }, { id: 'research', name: '调研资料' }])),
     recoverCapabilities: vi.fn(async () => {}), retryCapabilities: vi.fn(async () => {}),
@@ -30,7 +29,7 @@ function fixture() {
   return { ...props, open: () => { act(() => { open?.() }) } }
 }
 
-it('retries a temporary task failure without removing its knowledge or kit', async () => {
+it('retries a temporary task failure without removing its knowledge', async () => {
   const f = fixture()
   render(<TaskKnowledgeSelector {...f} capabilities={{ ...f.capabilities,
     unavailable: { code: 'CONNECTOR_DISCOVERY_FAILED', message: 'offline', retryable: true, resources: [] } }} />)
@@ -63,14 +62,13 @@ it('discards a pending Add-menu request when the user switches tasks', async () 
   expect(await screen.findByRole('dialog')).not.toBeNull()
 })
 
-it('locks kit requirements and applies multiple optional bases once', async () => {
+it('applies multiple selected knowledge bases once', async () => {
   const f = fixture()
   render(<TaskKnowledgeSelector {...f} />)
   await screen.findByText('业务规范')
   f.open()
   const policy = await screen.findByRole('checkbox', { name: '业务规范' })
-  expect(policy.hasAttribute('disabled')).toBe(true)
-  expect(screen.getByText(zh.kitRequiredKnowledge)).not.toBeNull()
+  expect(policy.hasAttribute('disabled')).toBe(false)
   fireEvent.click(screen.getByRole('checkbox', { name: '业务手册' }))
   fireEvent.click(screen.getByRole('checkbox', { name: '调研资料' }))
   expect(f.setKnowledgeSelection).not.toHaveBeenCalled()
@@ -112,8 +110,6 @@ it('keeps staged selection and the dialog when preparation fails', async () => {
 
 it('allows clearing optional knowledge to an explicit empty scope', async () => {
   const f = fixture()
-  f.capabilities.knowledgeBaseRefs = []
-  f.capabilities.requiredKnowledgeBaseIds = []
   render(<TaskKnowledgeSelector {...f} />)
   f.open()
   fireEvent.click(await screen.findByRole('checkbox', { name: '业务规范' }))
@@ -200,22 +196,20 @@ it('groups personal, every direct department ID, and company knowledge without m
   expect(dialog.getByRole('heading', { name: zh.scopeCompany })).not.toBeNull()
 })
 
-it('renders referenced bases inside the input, removing only optional references', async () => {
+it('renders referenced bases inside the input, allowing each reference to be removed', async () => {
   const f = fixture()
   f.capabilities.knowledgeBaseIds = ['policy', 'manuals']
   render(<TaskKnowledgeSelector {...f} />)
   const references = within(screen.getByRole('group', { name: zh.taskKnowledge }))
   await references.findByRole('button', { name: '业务手册' })
   expect(screen.queryByRole('button', { name: zh.taskKnowledge })).toBeNull()
-  expect(references.queryByRole('button', { name: '移除知识库「业务规范」' })).toBeNull()
-  expect(references.getByLabelText(zh.kitRequiredKnowledge)).not.toBeNull()
+  expect(references.getByRole('button', { name: '移除知识库「业务规范」' })).not.toBeNull()
   fireEvent.click(references.getByRole('button', { name: '移除知识库「业务手册」' }))
   await waitFor(() => { expect(f.setKnowledgeSelection).toHaveBeenCalledExactlyOnceWith(['policy'], undefined) })
 })
 
 it('keeps referenced tags when removal fails and reports a retryable action failure', async () => {
   const f = fixture()
-  f.capabilities.requiredKnowledgeBaseIds = []
   f.setKnowledgeSelection.mockRejectedValueOnce(new Error('network'))
   render(<TaskKnowledgeSelector {...f} />)
   fireEvent.click(await screen.findByRole('button', { name: '移除知识库「业务规范」' }))
@@ -229,7 +223,6 @@ it('keeps referenced tags when removal fails and reports a retryable action fail
 it('renders no knowledge control for an empty scope, while the Add action can still open selection', async () => {
   const f = fixture()
   f.capabilities.knowledgeBaseIds = []
-  f.capabilities.requiredKnowledgeBaseIds = []
   const view = render(<TaskKnowledgeSelector {...f} />)
   expect(view.container.textContent).toBe('')
   f.open()

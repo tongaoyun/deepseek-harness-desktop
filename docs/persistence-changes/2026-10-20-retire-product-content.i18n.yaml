@@ -1,0 +1,28 @@
+# Bilingual-pair consistency record for 2026-10-20-retire-product-content.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write docs/persistence-changes/2026-10-20-retire-product-content.md
+/:
+  en: 3d5a424ae7d7e46b
+  zh: c22a8e4a62d8cc1a
+/2026-10-20-retire-product-content:
+  en: b9bca7ed3d771e87
+  zh: 7cdda9f9520f0b55
+/2026-10-20-retire-product-content/summary:
+  en: 7401af03c17bc3b4
+  zh: 79ef270e81353d93
+/2026-10-20-retire-product-content/table-of-contents:
+  en: 6cf314a069ceb451
+  zh: 9adff678e9ecab3b
+/2026-10-20-retire-product-content/declaration:
+  en: 6907136f28e48c90
+  zh: 02f8298485f3d8e7
+/2026-10-20-retire-product-content/compatibility:
+  en: 1ee9c135283c02e5
+  zh: e540ae7a1c6fe14c
+/2026-10-20-retire-product-content/verification:
+  en: 1280db9c371439ae
+  zh: cff12fc7e9b4b530
+/2026-10-20-retire-product-content/dev-note:
+  en: b75c8458928b72b9
+  zh: 003ba4e17b4b5269

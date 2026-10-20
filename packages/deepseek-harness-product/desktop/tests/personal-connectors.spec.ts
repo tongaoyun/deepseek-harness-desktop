@@ -6,7 +6,7 @@ import { join } from 'node:path'
 import { expect, it, onTestFinished, vi } from 'vitest'
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client'
 import { DeepSeekHarnessApiClient } from '@deepseek-harness/product'
-import { ExtensionDraftSchema } from '@deepseek-harness/product/authoring'
+import { ConnectorDraftSchema } from '@deepseek-harness/product/connector-draft'
 import { PersonalConnectors } from '../src/personal-connectors.ts'
 import { ConnectorProxy } from '../src/connector-proxy.ts'
 
@@ -64,7 +64,7 @@ it('discovers real MCP annotations without business calls, encrypts secrets, iso
       return Response.json({ success: true, data: {} })
     }) })
   const signal = new AbortController().signal
-  const draft = ExtensionDraftSchema.parse({ kind: 'connector', id: 'my-orders', version: '1.0.0', name: 'Orders', summary: 'Orders',
+  const draft = ConnectorDraftSchema.parse({ kind: 'connector', id: 'my-orders', version: '1.0.0', name: 'Orders', summary: 'Orders',
     category: 'developer-tools', transport: 'streamable-http', url: endpoint, headers: { 'x-private-secret': 'device-secret' } })
   await manager.save(draft, api, owner, signal)
   expect(saved).toMatchObject([{ headers: { 'x-private-secret': '' }, environment: {}, toolNames: ['read_orders', 'destructive_read', 'write_orders', 'undeclared'] }])
@@ -130,7 +130,7 @@ it('discovers real MCP annotations without business calls, encrypts secrets, iso
     authMode: 'oauth', ready: true, visibility: 'SHARED', headers: { 'x-private-secret': 'device-secret' },
   }))
   onTestFinished(() => oauth.close())
-  const oauthDraft = ExtensionDraftSchema.parse({ kind: 'connector', id: 'my-oauth', version: '1.0.0',
+  const oauthDraft = ConnectorDraftSchema.parse({ kind: 'connector', id: 'my-oauth', version: '1.0.0',
     name: 'Personal OAuth', summary: 'Configured provider', category: 'developer-tools',
     transport: 'streamable-http', oauthProviderId: 'configured-provider' })
   await oauth.save(oauthDraft, api, owner, signal)
@@ -146,7 +146,7 @@ it('discovers real MCP annotations without business calls, encrypts secrets, iso
   await expect(unauthorized.save(oauthDraft, api, owner, signal)).rejects.toMatchObject({ code: 'CONNECTOR_AUTHORIZATION_REQUIRED' })
   expect(saved).toHaveLength(2)
   const editing = await manager.manage('extensions.connector.read', { id: draft.id, version: draft.version }, api, owner, signal) as { draft: unknown }
-  const update = ExtensionDraftSchema.parse(editing.draft)
+  const update = ConnectorDraftSchema.parse(editing.draft)
   expect(update.version).toBe('1.0.1')
   expect(update.headers).toEqual({ 'x-private-secret': '' })
   expect(JSON.stringify(editing)).not.toContain('device-secret')
@@ -177,7 +177,7 @@ it('discovers real MCP annotations without business calls, encrypts secrets, iso
   expect(await manager.enrich([storedEntry], signal)).toMatchObject([{ configurationStatus: 'CONFIGURED' }])
   const last = await manager.manage('extensions.connector.read', { id: draft.id, version: '1.0.2' }, api, owner, signal) as { draft: unknown }
   // The commit succeeds, then neither its receipt nor the confirmation request is available.
-  const lastDraft = ExtensionDraftSchema.parse(last.draft)
+  const lastDraft = ConnectorDraftSchema.parse(last.draft)
   confirmationOffline = true
   await expect(manager.save({ ...lastDraft, headers: draft.headers }, api, owner, signal))
     .rejects.toMatchObject({ code: 'CONNECTOR_SAVE_PENDING' })
@@ -226,7 +226,7 @@ it('closes discovery and cached stdio children and scrubs ambient credentials', 
   onTestFinished(() => manager.close())
   const api = new DeepSeekHarnessApiClient({ baseUrl: 'https://product.example', getSessionToken: () => 'employee-token',
     fetch: async () => Response.json({ success: true, data: {} }) })
-  const draft = ExtensionDraftSchema.parse({ kind: 'connector', id: 'my-stdio', version: '1.0.0', name: 'Stdio', summary: 'Stdio test',
+  const draft = ConnectorDraftSchema.parse({ kind: 'connector', id: 'my-stdio', version: '1.0.0', name: 'Stdio', summary: 'Stdio test',
     category: 'developer-tools', transport: 'stdio', command: process.execPath, arguments: ['--input-type=module', '-e', child], environment: { PRIVATE_VALUE: 'secret' } })
   await manager.save(draft, api, 'employee-one', new AbortController().signal)
   const enriched = await manager.enrich([{ id: draft.id, version: draft.version, ownerEmployeeId: 'employee-one', visibility: 'PERSONAL',
@@ -270,7 +270,7 @@ it('deletes only the selected connector connections while another connector fini
   onTestFinished(() => manager.close())
   const drafts = [
     { id: 'connector-a', version: '1.0.0' }, { id: 'connector-a', version: '1.0.1' }, { id: 'connector-b', version: '1.0.0' },
-  ].map(identity => ExtensionDraftSchema.parse({ ...identity, kind: 'connector', name: identity.id, summary: 'Deletion fixture',
+  ].map(identity => ConnectorDraftSchema.parse({ ...identity, kind: 'connector', name: identity.id, summary: 'Deletion fixture',
     category: 'other', transport: 'stdio', command: process.execPath, arguments: ['--input-type=module', '-e', child],
     environment: { CALL_STARTED: started, CALL_RELEASED: released } }))
   const entries = drafts.map(draft => ({ ...draft, visibility: 'PERSONAL', ownerEmployeeId: employee, canEdit: true,
@@ -339,7 +339,7 @@ it.each(['initialize', 'tools/list'])('applies the configured timeout to stalled
   onTestFinished(() => manager.close())
   const upload = vi.fn(async () => Response.json({ success: true, data: {} }))
   const api = new DeepSeekHarnessApiClient({ baseUrl: 'https://product.example', getSessionToken: () => 'employee-token', fetch: upload })
-  const draft = ExtensionDraftSchema.parse({ kind: 'connector', id: 'stalled-mcp', version: '1.0.0', name: 'Stalled', summary: 'Stalled fixture',
+  const draft = ConnectorDraftSchema.parse({ kind: 'connector', id: 'stalled-mcp', version: '1.0.0', name: 'Stalled', summary: 'Stalled fixture',
     category: 'other', transport: 'streamable-http', url: `http://127.0.0.1:${address.port}/mcp`, timeoutSeconds: 1 })
   const started = Date.now()
   await expect(manager.save(draft, api, 'employee', new AbortController().signal)).rejects.toThrow()

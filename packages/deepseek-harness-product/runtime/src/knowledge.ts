@@ -2,7 +2,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import { getProductData } from './data.ts'
 export const inject = ['productData', 'tools', 'systemPrompt']
-export interface Config { readonly knowledgeBaseRefs: readonly string[]; readonly knowledgeBaseIds: readonly string[] }
+export interface Config { readonly knowledgeBaseIds: readonly string[] }
 interface KnowledgeHit {
   readonly sourceId: string
   readonly knowledgeBaseId: string
@@ -45,9 +45,8 @@ export function apply(ctx: Context, config: Config): void {
     lifecycle.abort(new Error('Knowledge scope unloaded'))
     await Promise.allSettled([...pending])
   }, 'product-knowledge.requests')
-  const refs = config.knowledgeBaseRefs
   const ids = config.knowledgeBaseIds
-  if (refs.length === 0 && ids.length === 0) throw new Error('Knowledge tool requires an explicit selection')
+  if (ids.length === 0) throw new Error('Knowledge tool requires an explicit selection')
   ctx.systemPrompt.section({
     name: 'deepseek-harness:knowledge',
     order: 4_500,
@@ -55,7 +54,7 @@ export function apply(ctx: Context, config: Config): void {
   })
   ctx.effect(() => ctx.tools.register(defineTool({
     name: 'knowledge_search',
-    description: 'Search the enterprise knowledge bases available to the current employee and expert kit.',
+    description: 'Search the enterprise knowledge bases available to the current task selection.',
     parameters: {
       query: { type: 'string', required: true, description: 'A specific natural-language search query.' },
       limit: { type: 'integer', description: 'Maximum results from 1 to 12.' },
@@ -80,7 +79,7 @@ export function apply(ctx: Context, config: Config): void {
       const limit = args.limit ?? 8
       if (limit < 1 || limit > 12) throw new Error('limit must be between 1 and 12')
       const result = await invoke('knowledge.search', {
-        query: args.query.trim(), knowledgeBaseRefs: ids.length > 0 ? [] : refs,
+        query: args.query.trim(), knowledgeBaseRefs: [],
         knowledgeBaseIds: ids, restrictToKnowledgeBaseRefs: true, limit,
       }, exec.signal)
       const hits = knowledgeHits(result)

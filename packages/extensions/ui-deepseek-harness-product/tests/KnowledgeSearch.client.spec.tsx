@@ -3,14 +3,14 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testi
 import { afterEach, expect, it, vi } from 'vitest'
 import { ProductError } from '@deepseek-harness/product/errors'
 import { KnowledgeDetail } from '../src/client/KnowledgeView.tsx'
-import { detail } from '../src/client/catalog-shared.tsx'
+import { items, localDetail } from '../src/client/catalog-shared.tsx'
 import { zh, type DeepSeekHarnessProductKey } from '../src/locales.ts'
 import { createPreviewFixture, originalMetadata, originalPreview, renderKnowledgePreview } from './knowledge-preview-fixture.client.tsx'
 
 const t = (key: DeepSeekHarnessProductKey) => zh[key]
 const hit = { sourceId: 'chunk-1', documentId: 'doc-1', knowledgeBaseId: 'policy', filename: '业务规范.md', content: '检索摘要' }
 const source = { ...hit, content: '完整来源' }
-const library = detail({ id: 'policy', name: '业务规范', scope: 'PERSONAL', canManage: false }, {})!
+const library = localDetail(items([{ id: 'policy', name: '业务规范', scope: 'PERSONAL', canManage: false }])[0]!)
 
 function transport(handler: (method: string) => Promise<unknown>) {
   const preview = createPreviewFixture()

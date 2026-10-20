@@ -1,5 +1,0 @@
-- menu:
-  - text: Expert kits
-  - menuitem "No expert kit"
-  - separator
-  - menuitem "View expert kits"

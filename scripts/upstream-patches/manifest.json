@@ -115,7 +115,7 @@
         {
           "path": "scripts/product-package-policy.ts",
           "before": "607d8f9ac14b0345fb97b6b2cec45eda38b2bc4c6b61d1740d12950dd69e5b7c",
-          "after": "cce55d0d9fb6d2709255cba4ec02403bf788ea3424195dd10abd7926814c64a1"
+          "after": "95591d914e480c330e28144e332cb9118f0e86a6dfbd8c89fa538ea9eb0638c0"
         },
         {
           "path": "scripts/verify-product-use.spec.ts",
@@ -132,7 +132,7 @@
     },
     {
       "id": "desktop-extension",
-      "purpose": "Generic trusted desktop lifecycle hooks, environment/profile overlays, namespaced bidirectional IPC, validated caller deadlines, sender checks, cancellation, credential-free structured failures, and teardown. Every renderer boot reads current Host index injections through correlated IPC with a bounded deadline and rejects Host replacement rather than reusing stale module revisions. Host startup canonicalizes the runtime with native realpath so entry imports and profile resolution share module identities, including Windows short paths. Archived runtimes resolve the archive file without requiring plain Node to traverse its virtual directories; a real archived Electron child exercises this path. No product protocol is embedded in Electron or Host. 普通退出清理期间合并重复退出请求，分别记录清理失败并等待其余资源停止后退出；更新策略先于认证资源释放。",
+      "purpose": "Generic trusted desktop lifecycle hooks, environment/profile overlays, namespaced bidirectional IPC, validated caller deadlines, sender checks, cancellation, credential-free structured failures, and teardown. Every renderer boot reads current Host index injections through correlated IPC with a bounded deadline and rejects Host replacement rather than reusing stale module revisions. Host startup canonicalizes the runtime with native realpath so entry imports and profile resolution share module identities, including Windows short paths. Archived runtimes resolve the archive file without requiring plain Node to traverse its virtual directories; a real archived Electron child exercises this path. No product protocol is embedded in Electron or Host. 普通退出清理期间合并重复退出请求，分别记录清理失败并等待其余资源停止后退出；更新策略先于认证资源释放。 启动准备钩子提供官方 profile 目录与安装锚点，让独立扩展使用公开 profile API 补充插件，不在官方壳中识别产品包。",
       "tests": [
         "apps/desktop/tests/main-startup.spec.ts",
         "apps/desktop/tests/host-process.spec.ts",
@@ -142,7 +142,8 @@
         "apps/web/tests/deepseek-harness-catalog.e2e.ts",
         "apps/desktop/tests/project-manager.spec.ts",
         "apps/desktop/tests/profile-mcp.spec.ts",
-        "packages/boot/plugin-manager/tests/manager.spec.ts"
+        "packages/boot/plugin-manager/tests/manager.spec.ts",
+        "packages/deepseek-harness-product/desktop/tests/native-extensions.spec.ts"
       ],
       "files": [
         {
@@ -163,7 +164,7 @@
         {
           "path": "apps/desktop/src/extensions.ts",
           "before": null,
-          "after": "5c60bc2f56d89d54ac608bcde5cfb8c69a0c00bd716a8e4abbc74b4c10f6c222"
+          "after": "9a7fcc7e46310ca904439e9404215d62a0f0ebabcdb4bba7b57c1595e98c3885"
         },
         {
           "path": "apps/desktop/src/host-process.ts",
@@ -178,7 +179,7 @@
         {
           "path": "apps/desktop/src/main.ts",
           "before": "e345eda0425f2df795d20413bb87bb9a3ddc46e71ceb1cec0755ad1cca3fb847",
-          "after": "7672826edc2a60ec0e255e7dfd9ac6288b1dbe989c1c827977411c20e47e1940"
+          "after": "94e3af2c1fa162ef6de52f7bdf74b6914885abc3703e256c8f1d2c9dbc65fb08"
         },
         {
           "path": "apps/desktop/src/preload-app.ts",
@@ -287,7 +288,7 @@
         {
           "path": "apps/desktop/tests/prepare-package-set.spec.ts",
           "before": "0ad0552f5d64693e37a2c092627e7b84a9d98647303d71f4fb65e5e198159ea4",
-          "after": "e0c440f6e2cf4714998b6784d7b8f56db205c64b86f6ddb928f57a477f8f9339"
+          "after": "7016151794b0552d2f91c2cb5e8cacd5687cc3dd02bcd1666600fb0644744b0a"
         },
         {
           "path": "apps/desktop/tests/package-target.spec.ts",
@@ -758,7 +759,7 @@
         "scripts/verify-repository-references.spec.ts",
         "scripts/upstream-boundaries.spec.ts",
         "packages/deepseek-harness-product/runtime/tests/inference-default.spec.ts",
-        "packages/deepseek-harness-product/runtime/tests/content-retention.spec.ts",
+        "packages/deepseek-harness-product/runtime/tests/tasks.spec.ts",
         "packages/deepseek-harness-product/desktop/tests/inference-profile.spec.ts",
         "packages/extensions/ui-deepseek-harness-product/tests/KnowledgeToolResult.client.spec.tsx"
       ],
@@ -791,7 +792,7 @@
         {
           "path": "pnpm-lock.yaml",
           "before": "4637cca3b89c4c8d5a147321710e597aa62ec2444a3772ab542be5690893dfe4",
-          "after": "0ecbf246ce3d4e69d852eecac0116f90953e23a85d1fc2c6184efb44cf0cfd2a"
+          "after": "8d1ccb6edbaa1abef4b30dc7d4f4850ede0630da6c4c10811f4c470a8b8b704c"
         },
         {
           "path": "scripts/check-workspace-constraints.spec.ts",
@@ -821,7 +822,7 @@
         {
           "path": "tsconfig.base.json",
           "before": "5c43c1a82cc6eac83bbe9f73637144205e6560155346d9ff506d662f7ea8ca7e",
-          "after": "34f6e29480d414ffe0a4d44b2caff4a17c72acec401ad90c9a7fd1a9826fa7a9"
+          "after": "9b54617ccd2f22260669f6d73f92f48e2a5dc326d84356bcf66fa58b48936964"
         },
         {
           "path": "tsconfig.client.json",
@@ -831,7 +832,12 @@
         {
           "path": "tsconfig.host.json",
           "before": "d9f18524d4b0eb00e1cff0bfee748029c6051b00f47fc28b3fc57141703cead7",
-          "after": "642b5e6e6ce0e4ed5446eba1d5825110162de6a99956ea8e7d254e527e0468d2"
+          "after": "37c791b615bd5eecec5496731567ca91777460fe10ad2ef715f0b46b50fda88a"
+        },
+        {
+          "path": "pnpm-workspace.yaml",
+          "before": "3c624c26e58ab02ffc8d653bb8a9e8767a63fe0576bc0dbfaa3a5e43f88d973b",
+          "after": "a70f4fc9148fb07fdb1a90aef95ef5942375c09f5aebba9c45945942ce734292"
         }
       ],
       "diff": "workspace-integration.patch"
@@ -902,47 +908,32 @@
         {
           "path": "docs/config-catalog.md",
           "before": "1dd99a4488550d8ea6e303adfeb01abc41be7cfffa94708658e32ea5a2c5c015",
-          "after": "95313eada5acbf5fe3addf8ac535201e363e06da63f2915471533926ed1b5e98"
+          "after": "8f6f1ff3e1b8d107ffb5533ebcb5b37747d9387b8a0b2ff109bdec7eaf815e13"
         },
         {
           "path": "docs/config-catalog.zh.md",
           "before": "df509dde710b613d454b3ed01f6b76ec3d3f5f96321e1a4c52ab5471ee2d3e2e",
-          "after": "4b4162271de914a123305aeb49d119e3b702b99b6c74b8ff60b176c5f054ecd8"
+          "after": "548294793a62f4ee4a2fa44d7ff1192c0640aecb91f072606835a2cfc8136b42"
         },
         {
           "path": "docs/event-producer-consumer.md",
           "before": "d9c072884a46f3fbeb1f5d1c8d7a5750101aa244ff1aeb4f603c01639af8b7c5",
-          "after": "df5aa41f01e443bcdcbd232bf972631117cdff838d049b017284b3d1a447b414"
+          "after": "6571c4949d8361e592dce4af075caa78393a5c274d4c972baa44cd509579a801"
         },
         {
           "path": "docs/event-producer-consumer.zh.md",
           "before": "7d69de177a12cd40bf378da47ada45acf4a623747c100dd1af873e5248225495",
-          "after": "2fcf32b642d945f08ddcd94e184fc84c6e2831d1ffe80084173514f36fdeb51b"
-        },
-        {
-          "path": "docs/persistence-catalog.i18n.yaml",
-          "before": "ff872250f66e0f037d6e54dfdb1aab819d375810fc79829c73622d9a7b5f47bd",
-          "after": "da7c027cd724ce1ad854b8e3f7cecd09cbe0d1fdaf27c999ed3b8f2e701e99e8"
-        },
-        {
-          "path": "docs/persistence-catalog.md",
-          "before": "f5cac1e8b15c9fddce43eaedb30f10f0d73cef0e28bf3e6a6761a66958a3045b",
-          "after": "6c8b0a7ce2a0c02a75cb1ff1f99cb9b5b386a3b139fb25dc80d4c5debd0147ba"
-        },
-        {
-          "path": "docs/persistence-catalog.zh.md",
-          "before": "8d3747c2e45cfcedb86d41eab6f7f57b9ece8887b4285f27d506e668d257c818",
-          "after": "7bfcfda68b3138739232a291e7402c2de9d29a14306f0471a8ac26475a0054ea"
+          "after": "eb1678c592e87d3d753eba5f7bc89e95f2632f4ff5f02d8f86e36a5ce1d148b6"
         },
         {
           "path": "docs/persistence-changes/2026-10-09-product-installed-skill-attribution.i18n.yaml",
           "before": null,
-          "after": "e88cf17b01a905dfa8e1d9ae77103abc357d4537005a2fe39c63e123d96a8d01"
+          "after": "b1bc272681222d8b9565545fe2bc83b31385f80681d14251ca401824e01ef0af"
         },
         {
           "path": "docs/persistence-changes/2026-10-09-product-installed-skill-attribution.md",
           "before": null,
-          "after": "c9656f187d090d7793af33aa73babea9248cedb2139af6a4ac33807592596d85"
+          "after": "da50c23f7ded45d0956b49419191074d707ce7477c18e1aef05fd0d8d352bdc7"
         },
         {
           "path": "docs/persistence-changes/2026-10-09-product-installed-skill-attribution.schema.json",
@@ -952,27 +943,7 @@
         {
           "path": "docs/persistence-changes/2026-10-09-product-installed-skill-attribution.zh.md",
           "before": null,
-          "after": "ee62ab8a31ea9080755515d3e5157e89c1b02ef826c6259d02f2ba5828769f3f"
-        },
-        {
-          "path": "docs/persistence-changes/historical-formats/README.i18n.yaml",
-          "before": "401982f905c8f87d5fe67c57c68a76e54a389030178f5072e8d271f8ed0856a2",
-          "after": "34f5d5ec7050af4d8435366c19fdb8cf1a86714677cf89def59704b46945c295"
-        },
-        {
-          "path": "docs/persistence-changes/historical-formats/README.md",
-          "before": "716e4e7ede02111b3b501019f7682abc0907ddb2d4cd3ed008d2a0d771ff9974",
-          "after": "174d787a1d4fbb93bdefcf8890f9a4734d787709b894877308ec663bda6dd05d"
-        },
-        {
-          "path": "docs/persistence-changes/historical-formats/README.zh.md",
-          "before": "4a053fcbdb4454ad63993f0f09f87be4384acf1be7d2489c48a8e2ff36ab5e52",
-          "after": "ad62786e8d6fcb82358cfd1836f56f83bb44eb57ed163e2685b411c4db4017fc"
-        },
-        {
-          "path": "docs/persistence-schema.json",
-          "before": "80983484fe957b42092789f6203b92836b0d2bf235fc54bf557775bd0578561f",
-          "after": "bd7264196107b692e5d76afc43be9c070eb21aebd2c4b0647939c749e268c8e4"
+          "after": "40b527830c19d766dd66e40d6577a5a04ca7e59824bbba73e1a257ac20b5802b"
         },
         {
           "path": "docs/subsystems/README.i18n.yaml",
@@ -1012,7 +983,7 @@
         {
           "path": "packages/extensions/cordis-client-runner/src/client/slot-catalog.ts",
           "before": "f8e09d2e99335793434ca39fb65beefbbecbd0573d235bafd10e81131035d330",
-          "after": "14970e629e1056c97f1d3a63719314bb079ae72a62ad4f01d8f453204ab17efe"
+          "after": "f14c9c0cd10b35029953e37709f5939b6342e80e7c04e3ff4db74b89ce3ac59e"
         },
         {
           "path": "packages/extensions/tool-cordis/src/api-catalog.ts",
@@ -1022,7 +993,7 @@
         {
           "path": "packages/preset/agent-preset/skills/cordis-composition-reference/references/packages.md",
           "before": "dce58b653277bbcd25cf245178916e5f7b06e558382bb98a566f00b63318474c",
-          "after": "97e94267d538c6cb94669f34fed69b5abc40d2acf9c26b8641c1c38bf4b83dec"
+          "after": "cd52e0dc3257493a6b6da64e18e48926584412cc59e6c361d1ee17c0539ed302"
         },
         {
           "path": "scripts/doc-standard.spec.ts",
@@ -1107,64 +1078,6 @@
         }
       ],
       "diff": "maintained-note-paths.patch"
-    },
-    {
-      "id": "skill-catalog-refresh",
-      "purpose": "Expose a generic client service to invalidate cached skill discovery after provider installation or removal, preserving Sessions and drafts. Register its browser-only catalog ownership. Product installation uses the official Skill Provider and execution flow; the bilingual decision record documents ownership and version pinning.",
-      "tests": [
-        "packages/client/ui-skill/tests/browser-plugin.client.spec.ts",
-        "packages/deepseek-harness-product/runtime/tests/installed-skills.spec.ts",
-        "packages/extensions/ui-deepseek-harness-product/tests/harness-actions.client.spec.ts",
-        "apps/web/tests/deepseek-harness-catalog.e2e.ts"
-      ],
-      "files": [
-        {
-          "path": ".agents/notes/implemented/feature/2026-10-08-product-installed-skills.i18n.yaml",
-          "before": null,
-          "after": "4f0463ebe62dca52eb1bf1b1aa7f84990f7f9f80b73e58ef39a25f5c438163b0"
-        },
-        {
-          "path": ".agents/notes/implemented/feature/2026-10-08-product-installed-skills.md",
-          "before": null,
-          "after": "cc83183fbde42ff7589c073176058058b1035fca5fac9972313646454522d28c"
-        },
-        {
-          "path": ".agents/notes/implemented/feature/2026-10-08-product-installed-skills.zh.md",
-          "before": null,
-          "after": "9f1c43a0e06ea7ebb0ffbf78baf1870330eb9c4ff5bbe4347ba0e48cad706d60"
-        },
-        {
-          "path": "packages/client/ui-skill/README.i18n.yaml",
-          "before": "98d9d7199aa736575c85e1c54684d97de61eba8a421f95d5d14125dda6ceee2e",
-          "after": "2a5e4ba6cd9bfa0e297dd5a2dc9f178d0fa29561bbc9a3ac2514c2c6c15b0f42"
-        },
-        {
-          "path": "packages/client/ui-skill/README.md",
-          "before": "7a9735bf72b6a5afdb786c4ec2ad2577e6037a0369b7db2bebdf6299c3ec7bfc",
-          "after": "731ff3e36a76d2b593063dd0419d93a85ebd71b52ed1f83ea6aa34be1fd5a6b5"
-        },
-        {
-          "path": "packages/client/ui-skill/README.zh.md",
-          "before": "f59b5104fe1b74fd98e97553901c7e7d03f2228b877ed84be4120fdd5a1389a7",
-          "after": "aba52b76ccf1f5003d30feab3bf264d046582920531d941e2e11b75b7547fe2a"
-        },
-        {
-          "path": "packages/client/ui-skill/src/client/index.ts",
-          "before": "186b0f6edcaf69fda634ae1a7732c3b8bb3b28eaf3ababe0ec4d6e1b1d1b0fa5",
-          "after": "2da0934fffcfb08418362e8383045bb815d29a43da933afb75e912aaf3a89d60"
-        },
-        {
-          "path": "packages/client/ui-skill/tests/browser-plugin.client.spec.ts",
-          "before": "7cd49df2edb619a37cf268a94f638966ecd1876ae884b6c8090a63738592ecfc",
-          "after": "81ef912e5f4413e8439cc1fc20ac4de31f0b2a92331352ba860bf3b7b91e3e43"
-        },
-        {
-          "path": "scripts/gen-cordis-catalog.ts",
-          "before": "20d2d305dc12ae9b37e958081b93a5e9639479104555cca67eae0eeb23dbfca7",
-          "after": "5fc00d324a74629b5015d127e7a5c48624e99b76f1cc3f8b8c602ef5307c4556"
-        }
-      ],
-      "diff": "skill-catalog-refresh.patch"
     },
     {
       "id": "conversation-hero-actions",
@@ -1448,7 +1361,7 @@
         {
           "path": "scripts/translation-pairing.manifest.json",
           "before": "9944a604474c609318ec2793512661aa0dfc67f124d6789df4f285e8c5910153",
-          "after": "2cb9e0cdb3ed7b81d9f850b603b620d2940dbbd32a3d9bf7a7681ecac30fba93"
+          "after": "602617f0fe2a2e0fac3ae0ac89da12bffac1d6a0eddd74ef35816555d283ccae"
         },
         {
           "path": "scripts/verify-package-readme-limitations.ts",

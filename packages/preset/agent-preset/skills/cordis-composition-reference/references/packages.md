@@ -171,7 +171,6 @@ Every package below exports a Cordis plugin that a bundle patch can name in a Lo
 
 | Package | Config | Description |
 |---|---|---|
-| `@deepseek-harness/product-expert-kit-readme` | yes | Model-only Harness skill provider for DeepSeek Harness Expert Kit README instructions |
 | `@deepseek-harness/product-runtime` | no | undefined |
 
 ## deliverables

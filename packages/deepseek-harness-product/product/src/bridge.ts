@@ -58,11 +58,9 @@ export interface ProductBridgeOptions {
   readonly nativeInvoke?: (method: string, payload: unknown, signal?: AbortSignal) => Promise<unknown>
   /** Dispatch task capability operations to the trusted runtime. */
   readonly taskCapabilities?: (method: 'read' | 'prepare', payload: Readonly<Record<string, unknown>>, signal?: AbortSignal) => Promise<unknown>
-  /** Dispatch local installation and task-visible skill reads to the Host. */
-  readonly installedSkills?: (method: 'install' | 'uninstall' | 'read', payload: Readonly<Record<string, unknown>>, signal?: AbortSignal) => Promise<unknown>
-  readonly installedExpertKits?: (method: 'install' | 'uninstall' | 'read', payload: Readonly<Record<string, unknown>>, signal?: AbortSignal) => Promise<unknown>
-  /** Main-owned authoring, with authenticated API access and UI-safe employee identity. */
-  readonly authoring?: (method: string, payload: Readonly<Record<string, unknown>>, api: DeepSeekHarnessApiClient,
+  /** Dispatch knowledge selections and document rendering to the Host. */
+  /** Main-owned connector management, with authenticated API access and UI-safe employee identity. */
+  readonly connectorManagement?: (method: string, payload: Readonly<Record<string, unknown>>, api: DeepSeekHarnessApiClient,
     session: ProductSession, signal?: AbortSignal) => Promise<unknown>
   /** Resolve device-owned MCP configuration in main before projecting a credential-free catalog. */
   readonly connectorRuntime?: (value: unknown, signal: AbortSignal, discoverTools: boolean) => Promise<unknown>
@@ -82,13 +80,10 @@ export class DeepSeekHarnessProductBridge {
   private readonly api?: DeepSeekHarnessApiClient
   private readonly nativeInvoke?: ProductBridgeOptions['nativeInvoke']
   private readonly optionsTaskCapabilities?: ProductBridgeOptions['taskCapabilities']
-  private readonly installedSkills?: ProductBridgeOptions['installedSkills']
-  private readonly installedExpertKits?: ProductBridgeOptions['installedExpertKits']
-  private readonly authoring?: ProductBridgeOptions['authoring']
+  private readonly connectorManagement?: ProductBridgeOptions['connectorManagement']
   private readonly connectorRuntime?: ProductBridgeOptions['connectorRuntime']
   private readonly support?: ProductBridgeOptions['support']
   private readonly catalog: ProductCatalogManager
-  private readonly desktopVersion: string
   private readonly knowledgeUpload: KnowledgeUpload | undefined
   private readonly knowledgeFiles: ProductBridgeOptions['knowledgeFiles']
   private sessionRefresh: Promise<void> | undefined
@@ -100,15 +95,12 @@ export class DeepSeekHarnessProductBridge {
   constructor(options: ProductBridgeOptions = {}) {
     this.knowledgeUpload = options.knowledgeUpload
     this.knowledgeFiles = options.knowledgeFiles
-    this.desktopVersion = options.desktopVersion ?? '0.0.0'
     this.sessionToken = options.sessionToken
     this.session = options.initialSession ?? (options.sessionToken === undefined ? { authenticated: false } : { authenticated: true })
     this.persistSession = options.persistSession
     this.nativeInvoke = options.nativeInvoke
     this.optionsTaskCapabilities = options.taskCapabilities
-    this.installedSkills = options.installedSkills
-    this.installedExpertKits = options.installedExpertKits
-    this.authoring = options.authoring
+    this.connectorManagement = options.connectorManagement
     this.connectorRuntime = options.connectorRuntime
     this.support = options.support
     if (options.serverUrl !== undefined && options.serverUrl !== '') {
@@ -118,7 +110,6 @@ export class DeepSeekHarnessProductBridge {
     }
     this.catalog = new ProductCatalogManager({
       api: this.api,
-      desktopVersion: options.desktopVersion ?? '0.0.0',
       getSession: () => this.session,
       ensureFreshSession: () => this.ensureFreshSession(),
       getIdentitySignal: () => this.identityLifecycle.signal,
@@ -294,7 +285,6 @@ export class DeepSeekHarnessProductBridge {
         return await this.knowledgeFiles(method as KnowledgeFileMethod, assertProductPayload(payload), this.api, this.session, lifetime)
       })
     }
-    if (method === 'runtime.environment') return { desktopVersion: this.desktopVersion }
     if (method !== 'connectors.list') return this.invoke(method, payload, signal)
     return this.readRuntimeConnectors(payload, signal, true)
   }
@@ -342,14 +332,12 @@ export class DeepSeekHarnessProductBridge {
     if (method.startsWith('extensions.')) {
       signal = AbortSignal.any([this.identityLifecycle.signal, ...signal ? [signal] : []])
       if (!this.session.authenticated || !this.session.employeeId) throw new Error('Authenticated employee is required')
-      if (this.authoring === undefined) throw new Error('Personal extension editor is unavailable')
-      try { return await this.authoring(method, input, this.api, this.session, signal) }
+      if (this.connectorManagement === undefined) throw new Error('Personal extension editor is unavailable')
+      try { return await this.connectorManagement(method, input, this.api, this.session, signal) }
       finally {
         if (!signal.aborted) {
-          if (method === 'extensions.authoring.update' || method === 'extensions.authoring.save') this.emit({ type: 'authoring.changed', payload: { sessionId: input.sessionId } })
-          if (method === 'extensions.save' || method === 'extensions.authoring.save' || method === 'extensions.submit'
-            || method === 'extensions.delete' || method === 'extensions.connector.update' || method === 'extensions.connector.delete'
-            || method === 'extensions.connector.configuration.save') {
+          if (method === 'extensions.save' || method === 'extensions.submit' || method === 'extensions.connector.update'
+            || method === 'extensions.connector.delete' || method === 'extensions.connector.configuration.save') {
             this.catalogChanged()
           }
         }
@@ -359,62 +347,11 @@ export class DeepSeekHarnessProductBridge {
       return this.api.request('/api/v1/knowledge-references/resolve', { method: 'POST',
         headers: { 'content-type': 'application/json' }, body: JSON.stringify(input), ...(signal ? { signal } : {}) })
     }
-    if (method === 'skills.install' || method === 'skills.uninstall' || method === 'skills.installed.read') {
-      await this.ensureFreshSession()
-      signal?.throwIfAborted()
-      if (!this.session.authenticated) throw new Error('Authenticated employee is required')
-      if (this.installedSkills === undefined) throw new Error('Installed skill runtime is unavailable')
-      if (method !== 'skills.installed.read') requiredId(input)
-      if (method === 'skills.install') {
-        const id = requiredId(input)
-        const skills = await this.catalog.read('skills.list', signal)
-        const skill: unknown = Array.isArray(skills) ? skills.find((entry: unknown) =>
-          typeof entry === 'object' && entry !== null && 'id' in entry && entry.id === id) : undefined
-        if (typeof skill !== 'object' || skill === null || ('availabilityStatus' in skill && skill.availabilityStatus === 'INCOMPATIBLE')) {
-          throw new Error('Skill installation is unavailable')
-        }
-      }
-      signal?.throwIfAborted()
-      const operation = method === 'skills.install' ? 'install' : method === 'skills.uninstall' ? 'uninstall' : 'read'
-      const result = await this.installedSkills(operation, input, signal)
-      signal?.throwIfAborted()
-      if (operation !== 'read') this.emit({ type: 'catalog.changed' })
-      return result
-    }
-    if (method === 'expertKits.install' || method === 'expertKits.uninstall' || method === 'expertKits.installed.read') {
-      await this.ensureFreshSession()
-      signal?.throwIfAborted()
-      if (!this.session.authenticated) throw new Error('Authenticated employee is required')
-      if (this.installedExpertKits === undefined) throw new Error('Installed Expert Kit runtime is unavailable')
-      if (method !== 'expertKits.installed.read') requiredId(input)
-      const operation = method === 'expertKits.install' ? 'install' : method === 'expertKits.uninstall' ? 'uninstall' : 'read'
-      const result = await this.installedExpertKits(operation, input, signal)
-      if (operation !== 'read') this.emit({ type: 'catalog.changed' })
-      return result
-    }
     if (method === 'tasks.capabilities.read' || method === 'tasks.capabilities.prepare') {
       await this.ensureFreshSession()
       signal?.throwIfAborted()
       if (this.optionsTaskCapabilities === undefined) throw new Error('Product task runtime is unavailable')
       return this.optionsTaskCapabilities(method.endsWith('.read') ? 'read' : 'prepare', input, signal)
-    }
-    if (method === 'expertKits.get') {
-      return this.api.request(`/api/v1/expert-kits/${encodeURIComponent(requiredId(input))}`, { ...(signal === undefined ? {} : { signal }) })
-    }
-    if (method === 'expertKits.readme') {
-      return this.api.request(`/api/v1/expert-kits/${encodeURIComponent(requiredId(input))}/readme`, { ...(signal === undefined ? {} : { signal }) })
-    }
-    if (method === 'expertKits.artifact') {
-      return this.api.request(`/api/v1/expert-kits/${encodeURIComponent(requiredId(input))}/artifacts`, { ...(signal === undefined ? {} : { signal }) })
-    }
-    if (method === 'skills.get') {
-      return this.api.request(`/api/v1/skills/${encodeURIComponent(requiredId(input))}`, { ...(signal === undefined ? {} : { signal }) })
-    }
-    if (method === 'skills.readme') {
-      return this.api.request(`/api/v1/skills/${encodeURIComponent(requiredId(input))}/readme`, { ...(signal === undefined ? {} : { signal }) })
-    }
-    if (method === 'skills.artifact') {
-      return this.api.request(`/api/v1/skills/${encodeURIComponent(requiredId(input))}/artifacts`, { ...(signal === undefined ? {} : { signal }) })
     }
     if (method === 'connectors.authorization.status') {
       const result = await this.api.request(

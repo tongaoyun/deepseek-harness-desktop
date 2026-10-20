@@ -29,8 +29,6 @@ kind: "package-reference"
 
 ### source 提供什么
 
-改变已安装技能 Provider 的客户端通过公开服务 `ctx.uiSkills.refresh(sessionId?)` 使斜杠菜单目录失效。省略 Session ID 会刷新所有保留的目录。刷新取消待处理的目录读取和预览，保留草稿及 Session；下次发现会获取当前 Host 目录。服务随此插件释放。
-
 普通会话的候选来自 `skills/list` Remote；宿主提供每一个用户可调用的 skill，`modelInvocable: false` 的条目（即 `disable-model-invocation` skill，此路径是其唯一入口）会以当前语言把仅限用户标记作为描述前缀带上。结果经 `/` 菜单共享的名字排序器（ui-primitives 的 `rankByName`）排名：查询作为不区分大小写的有序子序列匹配 skill 名，前缀命中排最前，同分保持宿主顺序（[排名决策](../../../.agents/notes/archived/feature/2026-08-04-web-slash-command-fuzzy-discovery.md)）。`skills/list` 调用失败时会被记录并静默丢弃该菜单组——菜单只显示 pending／ready 状态。
 
 ### skill 工具行

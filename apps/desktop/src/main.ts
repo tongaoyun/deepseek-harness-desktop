@@ -605,7 +605,7 @@ async function main(): Promise<void> {
 
   const reconcileBackend = (): Promise<void> => {
     startup ??= (async () => {
-      const extensionEnvironment = await extension?.prepareHost()
+      const extensionEnvironment = await extension?.prepareHost({ directory: paths.profile, installAnchor: join(resources.dsh, 'node_modules', '@deepseek-ai', 'dsh', 'package.json') })
       if (extension !== undefined && extensionEnvironment === undefined) return
       extensionHostEnvironment = extensionEnvironment ?? {}
       const document = navigateMain(applicationUrl)
