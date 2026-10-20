@@ -1,0 +1,139 @@
+diff --git a/packages/client/ui-settings-general/src/client/index.ts b/packages/client/ui-settings-general/src/client/index.ts
+index 561174f90be2d053f7d9a30195a3c2097935d31f..c0dc4346efeb28e2bc22e8d785ffe3dac8c7dbe4 100644
+--- a/packages/client/ui-settings-general/src/client/index.ts
++++ b/packages/client/ui-settings-general/src/client/index.ts
+@@ -199,6 +199,11 @@ export function apply(ctx: ClientContext): void {
+       },
+     })
+ 
++    const disposeNavigation = ctx.on('settings/open', (sectionId) => {
++      if (!ctx.slots.entries('settings.section').some(entry => entry.options.id === sectionId)) return
++      shellInstance.actions.openSection(sectionId)
++      return true
++    })
+     const disposeSlot = ctx.slots.register({
+       name: 'sidebar.settings',
+       locale: NS,
+@@ -214,7 +219,7 @@ export function apply(ctx: ClientContext): void {
+       },
+       inject: shellInjected,
+     }, SettingsRoot)
+-    return () => { disposeCommand(); disposeSlot() }
++    return () => { disposeNavigation(); disposeCommand(); disposeSlot() }
+   })
+ 
+   ctx.slots.inject('settings.trigger', () =>
+diff --git a/packages/client/ui-settings-general/tests/shell.client.spec.ts b/packages/client/ui-settings-general/tests/shell.client.spec.ts
+index 47b7460e2c5df40762c7e7d6d55091a3def7f6c9..0c57edaa7ed756593a6bcecf3ef4aa1575adcdfd 100644
+--- a/packages/client/ui-settings-general/tests/shell.client.spec.ts
++++ b/packages/client/ui-settings-general/tests/shell.client.spec.ts
+@@ -10,6 +10,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
+ import { createClientTest, type TestClient, webApp } from '@deepseek-ai/dsh-client-test-runtime/src/assembly/index.ts'
+ import { inject } from '../src/client/index.ts'
+ import type { SettingsRootInjected } from '../src/client/shell-contract.ts'
++import { createSettingsShellStore } from '../src/client/shell-store.ts'
+ import { SettingsRoot } from '../src/client/SettingsRoot.tsx'
+ import type { DesktopUpdatePresentation } from '../src/types.ts'
+ 
+@@ -76,6 +77,25 @@ describe('ui-settings-general shell', () => {
+     expect(row.hooks.desktopUpdate.getSnapshot().presentation).toEqual(status)
+   }, COLD_BOOT_TIMEOUT_MS)
+ 
++  it('opens registered sections through the shared shell and releases navigation on unload', async ({ start }) => {
++    const c = await start()
++    const shell = () => (c.ctx.slots.entries('sidebar.settings')[0]!.store as ReturnType<typeof createSettingsShellStore>).create()
++    expect(c.ctx.bail('settings/open', 'missing')).toBeUndefined()
++    expect(shell().getSnapshot()).toEqual({ open: false, activeId: undefined })
++    expect(c.ctx.bail('settings/open', 'models')).toBe(true)
++    expect(shell().getSnapshot()).toEqual({ open: true, activeId: 'models' })
++    expect(c.ctx.bail('settings/open', 'missing')).toBeUndefined()
++    expect(shell().getSnapshot().activeId).toBe('models')
++    shell().actions.close()
++    await c.reload(SIDEBAR)
++    await c.flush()
++    expect(c.ctx.bail('settings/open', 'general')).toBe(true)
++    expect(shell().getSnapshot()).toEqual({ open: true, activeId: 'general' })
++    await c.unload(SELF)
++    await c.flush()
++    expect(c.ctx.bail('settings/open', 'general')).toBeUndefined()
++  }, COLD_BOOT_TIMEOUT_MS)
++
+   it('declares its services', () => {
+     expect(inject).toEqual(['slots', 'locale', 'connection', 'remote', 'remote.settings', 'configForms', 'shortcuts', 'modules'])
+   })
+diff --git a/packages/client/ui-settings/README.i18n.yaml b/packages/client/ui-settings/README.i18n.yaml
+index 2b1ae7c2f5d4e267f6999621cf22024da9916f93..e28261fed37d7a5354b90787fa289e5c70a1da84 100644
+--- a/packages/client/ui-settings/README.i18n.yaml
++++ b/packages/client/ui-settings/README.i18n.yaml
+@@ -30,8 +30,8 @@
+   en: 9767f17ca0f02ae3
+   zh: 8e475d6d3d670702
+ /deepseek-ai-dsh-client-ui-settings/understand-the-implementation:
+-  en: d756fe51d9456fb4
+-  zh: 41de582aace7332f
++  en: a775875f8e3542ed
++  zh: 42c24fe5032465d5
+ /deepseek-ai-dsh-client-ui-settings/understand-the-implementation/the-describe-mirror:
+   en: 0cd270ddcac46776
+   zh: 4e03bf1d153b3f04
+diff --git a/packages/client/ui-settings/README.md b/packages/client/ui-settings/README.md
+index b43b91a82919e2f2c26e2294c104985c8b460c0c..6f21c669b21b7a70731065632f4479355261811e 100644
+--- a/packages/client/ui-settings/README.md
++++ b/packages/client/ui-settings/README.md
+@@ -54,6 +54,8 @@ A committed write folds its answer into the shared mirror. Refused writes refres
+ 
+ The optional `settings.launcher` contribution receives sidebar geometry, whether the open Settings panel covers the sidebar, the settings navigation callbacks, and the effective Settings key labels and accessible combination. The shell omits shortcut presentation for an unbound command and retains its plain Settings trigger when no launcher is registered.
+ 
++Feature plugins can request an existing section with `ctx.bail('settings/open', sectionId)`. The shell returns `true` after opening its shared dialog, or `undefined` when the section or shell is unavailable; unavailable requests leave the current view unchanged.
++
+ <details>
+ <summary>Implementation internals — click to expand</summary>
+ 
+diff --git a/packages/client/ui-settings/README.zh.md b/packages/client/ui-settings/README.zh.md
+index 463ec9fd1502c087c625f363ecf903beddc8180c..c3bb60fc32a8eece2ba88ba80efd02a9cc12d8c5 100644
+--- a/packages/client/ui-settings/README.zh.md
++++ b/packages/client/ui-settings/README.zh.md
+@@ -54,6 +54,8 @@ kind: "package-reference"
+ 
+ 可选的 `settings.launcher` 贡献接收侧栏布局、设置面板是否覆盖侧栏、设置导航回调，以及有效的设置键位标签和无障碍组合。命令未绑定时，外壳不传快捷键展示信息；未注册入口时，外壳保留普通设置按钮。
+ 
++功能插件可通过 `ctx.bail('settings/open', sectionId)` 打开已有设置页面。共享设置窗口打开后返回 `true`；页面或窗口不可用时返回 `undefined`，保持当前界面不变。
++
+ <details>
+ <summary>实现细节——点击展开</summary>
+ 
+diff --git a/packages/client/ui-settings/src/client/index.ts b/packages/client/ui-settings/src/client/index.ts
+index e6182781c8c277caab307566f73fb95c91057e0f..7da3d3bfedee41fc9b98280578cb977ea3174728 100644
+--- a/packages/client/ui-settings/src/client/index.ts
++++ b/packages/client/ui-settings/src/client/index.ts
+@@ -24,6 +24,18 @@ export type {
+   SettingsDescribeFace, SettingsDescribeView, SettingsMirrorSnapshot,
+ } from './settings-mirror.ts'
+ 
++declare module '@deepseek-ai/cordis' {
++  interface Events {
++    /**
++     * Open a registered section in the shared settings shell.
++     * @mode bail
++     * @param sectionId - ID of an existing settings.section contribution.
++     * @returns true when opened, or undefined when the shell or section is unavailable.
++     */
++    'settings/open'(sectionId: string): true | undefined
++  }
++}
++
+ /**
+  * Required services: the Remote namespace the mirror reads through and the
+  * forwarded settings invalidation it refreshes on.
+diff --git a/scripts/gen-cordis-catalog.ts b/scripts/gen-cordis-catalog.ts
+index ebd752714286dd59491439c88a697bfa84f3b6f2..883213a4c9aa7f804802764b93ee28ea5210227f 100644
+--- a/scripts/gen-cordis-catalog.ts
++++ b/scripts/gen-cordis-catalog.ts
+@@ -273,6 +273,7 @@ export const EVENT_WALK_EXEMPTIONS: Record<string, string> = {
+   'slash/input-consume-token': 'client-face slash-input protocol — packages/client/ui-input-trigger/README.md owns the API',
+   'slash/input-insert-reference': 'client-face slash-input protocol — packages/client/ui-input-trigger/README.md owns the API',
+   'slash/input-insert-text': 'client-face slash-input protocol — packages/client/ui-input-trigger/README.md owns the API',
++  'settings/open': 'client-face settings section navigation — packages/client/ui-settings/README.md owns the API',
+   'slots/changed': 'client-face slot invalidation signal — packages/client/ui-renderer/README.md owns the API',
+   'theme/change': 'client-face theme switch signal — packages/client/ui-theme/README.md owns the API',
+ }

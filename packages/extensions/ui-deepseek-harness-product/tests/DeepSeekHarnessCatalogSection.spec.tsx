@@ -154,7 +154,9 @@ describe('DeepSeekHarness capability navigation', () => {
     const registrations: Array<{ options: Record<string, unknown>; component: unknown }> = []
     const selectPanel = vi.fn()
     const registerCommand = vi.fn((_command: CommandContribution) => () => {})
+    const bail = vi.fn(() => true)
     const ctx = {
+      bail,
       effect: (effect: () => unknown) => effect(),
       commandUi: { register: registerCommand },
       sessions: { subagentAddress: vi.fn(() => undefined) },
@@ -171,6 +173,10 @@ describe('DeepSeekHarness capability navigation', () => {
     apply(castClientContext(ctx))
 
     expect(registrations.filter(entry => entry.options.name === 'settings.section')).toEqual([])
+    const navigation = registrations.find(entry => entry.options.name === 'sidebar.panelheading')!
+    const navigationProps = (navigation.options.inject as () => { openExtension(id: string): boolean })()
+    expect(navigationProps.openExtension('agency-agents')).toBe(true)
+    expect(bail).toHaveBeenCalledWith('settings/open', 'agency-agents')
     expect(registrations.filter(entry => entry.options.name === 'sidebar.panelheading')
       .map(entry => entry.options.id)).toEqual(['deepseek-harness-capabilities'])
     expect(registrations.filter(entry => entry.options.name === 'sidebar.panellist')
@@ -257,9 +263,25 @@ describe('DeepSeekHarness capability navigation', () => {
   })
 
   it('renders Capability as a non-interactive group heading', () => {
-    render(<CapabilitiesHeading wide t={t} />)
+    render(<CapabilitiesHeading wide t={t} openExtension={() => true} />)
     expect(screen.getByText(zh.capabilities)).not.toBeNull()
     expect(screen.queryByRole('button', { name: zh.capabilities })).toBeNull()
+  })
+
+  it('opens the shared plugin pages and reports unavailable plugins without losing the shortcuts', () => {
+    const openExtension = vi.fn(() => false)
+    const { rerender } = render(<CapabilitiesHeading wide t={t} openExtension={openExtension} />)
+    fireEvent.click(screen.getByRole('button', { name: zh.expertKits }))
+    expect(openExtension).toHaveBeenLastCalledWith('agency-agents')
+    expect(screen.getByRole('alert').textContent).toBe(zh.extensionUnavailable)
+    openExtension.mockReturnValue(true)
+    fireEvent.click(screen.getByRole('button', { name: zh.skills }))
+    expect(openExtension).toHaveBeenLastCalledWith('skills-manager')
+    expect(screen.queryByRole('alert')).toBeNull()
+    rerender(<CapabilitiesHeading wide={false} t={t} openExtension={openExtension} />)
+    expect(screen.queryByText(zh.capabilities)).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: zh.expertKits }))
+    expect(openExtension).toHaveBeenLastCalledWith('agency-agents')
   })
 
   it('removes tree branches while retaining useful collapsed-rail icons', () => {

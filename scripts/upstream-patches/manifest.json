@@ -1502,6 +1502,53 @@
         }
       ],
       "diff": "office-fixture-determinism.patch"
+    },
+    {
+      "id": "settings-section-navigation",
+      "purpose": "通用客户端设置页导航：按已注册的 settings.section ID 打开共享设置窗口，不可用时保持当前页面；监听随设置壳卸载并在 Loader 重载后恢复。产品侧栏仅调用公开事件，不复制插件界面或修改第三方插件。",
+      "tests": [
+        "packages/client/ui-settings-general/tests/shell.client.spec.ts",
+        "packages/extensions/ui-deepseek-harness-product/tests/DeepSeekHarnessCatalogSection.spec.tsx",
+        "apps/web/tests/deepseek-harness-catalog.e2e.ts"
+      ],
+      "files": [
+        {
+          "path": "packages/client/ui-settings/src/client/index.ts",
+          "before": "63d15aa09f92e3e3bd890178d5052aa3bcd73783b756d95d6cd0758ddd1b0508",
+          "after": "c1128bb7131b59b7c01f43eb86e1ac1b585031e4e314d990894ce5929628a233"
+        },
+        {
+          "path": "packages/client/ui-settings-general/src/client/index.ts",
+          "before": "e48b77e65dcf8c6e09c7d37792907e998953bc180fce6cabcfa873d26fd307dc",
+          "after": "566f5786b69d800dfd84874a403e56d2e80b6fe807bef37d5a3847ee69cabd51"
+        },
+        {
+          "path": "packages/client/ui-settings-general/tests/shell.client.spec.ts",
+          "before": "db11a8d5c3657ba7f902e2471000f3ea1dc34602b2b1e6c895d78058e36b900f",
+          "after": "01ccef5d43dac2167849d5363af402014607e750b331bdf4a90fdb886c840c7b"
+        },
+        {
+          "path": "packages/client/ui-settings/README.md",
+          "before": "794b3fa30588d28121d4aa32fd3ae83d9ad18707a6fa536edb87b1b794ae81e3",
+          "after": "27f6c5fb85afbac756eb1c432ee69e101449822c44738e3431653c52bf0d6b29"
+        },
+        {
+          "path": "packages/client/ui-settings/README.zh.md",
+          "before": "812febb973438d9bfa5180d81f9c8a621b37f06aa70e922010536e36473df158",
+          "after": "54a35c8beffabab7a4b47ce105cfd20426625e38e5641e98941a6fdc09aa464c"
+        },
+        {
+          "path": "packages/client/ui-settings/README.i18n.yaml",
+          "before": "d0ca0300c35db9e00179dffd7ae80655476527e7be1398909dcde0417a2b25dc",
+          "after": "e30aa0b4511f1d74191ac6f64914abcce389a7e9615c2a253716949ddfed341b"
+        },
+        {
+          "path": "scripts/gen-cordis-catalog.ts",
+          "before": "20d2d305dc12ae9b37e958081b93a5e9639479104555cca67eae0eeb23dbfca7",
+          "after": "fc3c69ce73ad2cce793a227040808f285ee4d3c70192b10e968bb2297c38b894"
+        }
+      ],
+      "diff": "settings-section-navigation.patch"
     }
   ]
 }

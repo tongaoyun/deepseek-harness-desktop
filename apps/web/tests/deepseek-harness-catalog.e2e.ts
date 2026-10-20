@@ -612,6 +612,8 @@ it('keeps native themes and responsive catalogs while using official details and
       await captureStableAria(page, selector, scaffold.workspaceCwd), webSnapshotMode())
   }
 
+  await snapshot('extension-navigation', '[data-extension-navigation]')
+
   for (const theme of ['light', 'dark'] as const) {
     await page.emulateMedia({ colorScheme: theme })
     for (const viewport of [{ width: 1440, height: 900 }, { width: 1024, height: 768 }, { width: 390, height: 844 }]) {
@@ -1394,6 +1396,14 @@ for (const { mode, installed, surface } of desktopCarriers) {
         expect(await page.getByRole('button', { name: /^(Expert kits|专家套件)$/, exact: true }).count()).toBe(0)
         await expect(invoke('auth.getSession')).rejects.toThrow()
       } else {
+        for (const [label, section] of [[/^(Expert kits|专家套件)$/, /^(Experts|专家)$/], [/^(Skills|技能)$/, /^(Skills|技能)$/]] as const) {
+          await page.getByRole('button', { name: label, exact: true }).click()
+          const settings = page.getByRole('dialog', { name: /^(Settings|设置)$/, exact: true })
+          await settings.waitFor()
+          expect(await settings.locator('[aria-current="true"]').innerText()).toMatch(section)
+          await settings.getByRole('button', { name: /^(Close|关闭)$/, exact: true }).last().click()
+          await settings.waitFor({ state: 'hidden' })
+        }
         await expect.poll(() => deviceReports.length).toBeGreaterThan(0)
         expect(JSON.stringify(deviceReports)).not.toContain(secret)
         expect(deviceReports[0]?.deviceId).toMatch(/^[0-9a-f-]{36}$/u)

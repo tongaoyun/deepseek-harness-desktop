@@ -1,0 +1,3 @@
+- text: Extension capabilities
+- button "Expert kits"
+- button "Skills"

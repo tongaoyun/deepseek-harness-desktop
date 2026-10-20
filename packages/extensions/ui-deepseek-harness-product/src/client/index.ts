@@ -74,6 +74,7 @@ export function apply(ctx: ClientContext): void {
   }, TaskKnowledgeInput))
   ctx.slots.inject('sidebar.panelheading', () => ctx.slots.register({
     name: 'sidebar.panelheading', id: 'deepseek-harness-capabilities', order: -40, locale: NS,
+    inject: () => ({ openExtension: (sectionId: string) => ctx.bail('settings/open', sectionId) === true }),
   }, CapabilitiesHeading))
 
   for (const [index, panel] of CAPABILITY_PANELS.entries()) {
