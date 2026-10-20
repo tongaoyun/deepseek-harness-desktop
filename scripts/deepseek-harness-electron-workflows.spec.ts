@@ -33,10 +33,17 @@ describe('DeepSeekHarness Electron workflows', () => {
     expect(files).toEqual(['electron-ci.yml', 'github-desktop-sync.yml'])
   })
 
-  it('runs existing product contract tests after the Host extraction', () => {
+  it('builds product and bundled plugin artifacts before their contract checks', () => {
     const command = workflow('electron-ci.yml').jobs.desktop?.steps
       .find(step => step.name === 'Verify upstream and product contracts')?.run ?? ''
-    expect(command).toContain('pnpm exec tsx scripts/compile-referenced-projects.ts host-libraries')
+    expect(command).toContain('pnpm run build:artifacts\n')
+    for (const plugin of ['dsh-agency-agents', 'dsh-skills-manager']) {
+      const check = `pnpm exec tsc --noEmit -p vendor/${plugin}/tsconfig.json`
+      expect(command).toContain(check)
+      expect(command.indexOf('pnpm run build:artifacts\n')).toBeLessThan(command.indexOf(check))
+    }
+    expect(command).toContain('pnpm exec vitest run --config vendor/dsh-agency-agents/vitest.config.ts')
+    expect(command).toContain('node --test apps/product-desktop/tests/company-content.test.mjs')
     expect(command).toContain('pnpm run typecheck\n')
     expect(command).not.toContain('pnpm run build:lib:host')
     expect(command).not.toContain('pnpm run typecheck:contracts-ready')
