@@ -60,6 +60,10 @@ jobs:
           pnpm exec vitest run \
             packages/deepseek-harness-product \
             packages/extensions/ui-deepseek-harness-product \
+            packages/client/ui-settings-general/tests/section-view.client.spec.tsx \
+            packages/client/ui-settings-general/tests/settings-root.client.spec.tsx \
+            packages/client/ui-settings-general/tests/shell.client.spec.ts \
+            packages/client/ui-settings-general/tests/apply.client.spec.ts \
             scripts/upstream-boundaries.spec.ts \
             scripts/rescope-vendor.spec.ts \
             packages/client/hmr/tests/node-half.client.spec.ts \

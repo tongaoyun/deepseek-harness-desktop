@@ -1,3 +1,8 @@
-- text: Extension capabilities
-- button "Expert kits"
-- button "Skills"
+- navigation "Global panels":
+  - text: Extension capabilities
+  - button "Expert kits"
+  - button "Skills"
+  - button "Connectors"
+  - button "Knowledge bases"
+  - button "Plugins"
+  - button "Automation tasks"

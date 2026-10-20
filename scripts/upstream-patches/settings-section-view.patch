@@ -1,0 +1,378 @@
+diff --git a/packages/client/ui-settings-general/src/client/SettingsRoot.tsx b/packages/client/ui-settings-general/src/client/SettingsRoot.tsx
+index 761ae2dc0f19318cb9e7856501639d49598a5832..cf42cbe1591824e66bc4ccbc2c466b528920179d 100644
+--- a/packages/client/ui-settings-general/src/client/SettingsRoot.tsx
++++ b/packages/client/ui-settings-general/src/client/SettingsRoot.tsx
+@@ -41,6 +41,7 @@ function navIcon(id: string) {
+ type PanelProps = {
+   rows: readonly SettingsSectionRow[]
+   renderSlot: SettingsRootComponentProps['renderSlot']
++  renderFactorySlot: SettingsRootComponentProps['renderFactorySlot']
+   activeId: string | undefined
+   onSelect: (id: string) => void
+   onClose: () => void
+@@ -51,7 +52,7 @@ type PanelProps = {
+  * header button, a mask click, and document-level Escape (mounted only while
+  * open, so the listener lifetime is the panel's).
+  */
+-function SettingsPanel({ rows, renderSlot, activeId, onSelect, onClose }: PanelProps) {
++function SettingsPanel({ rows, renderSlot, renderFactorySlot, activeId, onSelect, onClose }: PanelProps) {
+   // Entries can unmount underneath the requested id, so the render-time
+   // projection falls back to the first row when the id is gone.
+   const active = rows.find(r => r.id === activeId)?.id ?? rows[0]?.id
+@@ -96,7 +97,7 @@ function SettingsPanel({ rows, renderSlot, activeId, onSelect, onClose }: PanelP
+             </button>
+           </div>
+           <div className={css.options}>
+-            {active !== undefined && renderSlot('settings.section', { close: onClose }, { only: active })}
++            {active !== undefined && renderFactorySlot('settings.section-view', { sectionId: active, close: onClose, presentation: 'dialog' })}
+           </div>
+         </div>
+       </div>
+@@ -111,7 +112,7 @@ function SettingsPanel({ rows, renderSlot, activeId, onSelect, onClose }: PanelP
+  */
+ export function SettingsRoot(props: SettingsRootComponentProps) {
+   const {
+-    wide, reconnect, useConnectionState, useSections, useOnboardingSteps, useSessions, renderSlot, t,
++    wide, reconnect, useConnectionState, useSections, useOnboardingSteps, useSessions, renderSlot, renderFactorySlot, t,
+     useDesktopUpdate, openDesktopUpdate, useStore, actions, useShortcuts,
+   } = props
+   const { open, activeId } = useStore(state => state)
+@@ -247,6 +248,7 @@ export function SettingsRoot(props: SettingsRootComponentProps) {
+         <SettingsPanel
+           rows={rows}
+           renderSlot={renderSlot}
++          renderFactorySlot={renderFactorySlot}
+           activeId={activeId}
+           onSelect={actions.select}
+           onClose={close}
+diff --git a/packages/client/ui-settings-general/src/client/SettingsSectionView.tsx b/packages/client/ui-settings-general/src/client/SettingsSectionView.tsx
+new file mode 100644
+index 0000000000000000000000000000000000000000..04484ab081f17b50c8fea8b31cbdfc9bdecadecd
+--- /dev/null
++++ b/packages/client/ui-settings-general/src/client/SettingsSectionView.tsx
+@@ -0,0 +1,14 @@
++/** Reuses settings contributions without transferring their slot ownership to callers. */
++import type { FactoryComponentPropsOf } from '@deepseek-ai/dsh-client-ui-slots'
++import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
++
++/** Render one exact page, suspending embedded content underneath the settings dialog.
++ * @param props - Factory input and shell-bound visibility hook.
++ * @returns The registered page, or null while suspended or unavailable.
++ */
++export function SettingsSectionView({ sectionId, close, presentation, useDialogOpen, renderSlot }:
++FactoryComponentPropsOf<'settings.section-view'>) {
++  const dialogOpen = useDialogOpen(open => open)
++  if (presentation === 'embedded' && dialogOpen) return null
++  return renderSlot('settings.section', { close }, { only: sectionId })
++}
+diff --git a/packages/client/ui-settings-general/src/client/index.ts b/packages/client/ui-settings-general/src/client/index.ts
+index 561174f90be2d053f7d9a30195a3c2097935d31f..dfc477367d760d6440c1d538dbb612ee72db5e84 100644
+--- a/packages/client/ui-settings-general/src/client/index.ts
++++ b/packages/client/ui-settings-general/src/client/index.ts
+@@ -30,6 +30,7 @@ import type {
+ import type { ShortcutCommandId } from '@deepseek-ai/dsh-client-shortcuts/client'
+ import { createSettingsShellStore } from './shell-store.ts'
+ import { SettingsRoot } from './SettingsRoot.tsx'
++import { SettingsSectionView } from './SettingsSectionView.tsx'
+ import { DesktopUpdateBadge } from './DesktopUpdateIndicator.tsx'
+ import type { DesktopUpdateBridge } from '../types.ts'
+ import { DesktopUpdateSource } from './desktop-update-source.ts'
+@@ -199,6 +200,14 @@ export function apply(ctx: ClientContext): void {
+       },
+     })
+ 
++    const disposeSectionView = ctx.slots.registerFactory({
++      name: 'settings.section-view', scope: 'root',
++      children: { 'settings.section': { kind: 'list', scope: 'root' } },
++      inject: () => ({ hooks: { dialogOpen: {
++        getSnapshot: () => shellInstance.getSnapshot().open,
++        subscribe: listener => shellInstance.subscribe(listener),
++      } } }),
++    }, SettingsSectionView)
+     const disposeSlot = ctx.slots.register({
+       name: 'sidebar.settings',
+       locale: NS,
+@@ -209,12 +218,11 @@ export function apply(ctx: ClientContext): void {
+         'settings.header': { kind: 'single', scope: 'root' },
+         'settings.action': { kind: 'list', scope: 'root' },
+         'settings.close': { kind: 'single', scope: 'root' },
+-        'settings.section': { kind: 'list', scope: 'root' },
+         'settings.onboarding': { kind: 'list', scope: 'root' },
+       },
+       inject: shellInjected,
+     }, SettingsRoot)
+-    return () => { disposeCommand(); disposeSlot() }
++    return () => { disposeCommand(); disposeSlot(); disposeSectionView() }
+   })
+ 
+   ctx.slots.inject('settings.trigger', () =>
+diff --git a/packages/client/ui-settings-general/src/client/shell-contract.ts b/packages/client/ui-settings-general/src/client/shell-contract.ts
+index 8589dfe28a10d9c22661622a34af44781d0b248f..5f4b960633e7bd6e494cdc52d1c6e2a2da8ff850 100644
+--- a/packages/client/ui-settings-general/src/client/shell-contract.ts
++++ b/packages/client/ui-settings-general/src/client/shell-contract.ts
+@@ -8,7 +8,7 @@
+  */
+ import type { ConnectionState } from '@deepseek-ai/dsh-client-connection/client'
+ import type {
+-  HostObservable, InjectFace, PropsLocale, PropsRenderSlots, PropsRuntime,
++  HostObservable, InjectFace, PropsLocale, PropsRenderFactories, PropsRenderSlots, PropsRuntime,
+ } from '@deepseek-ai/dsh-client-ui-slots'
+ // Type-only: pulls ui-sidebar's SlotMap merge (the 'sidebar.settings' entry)
+ // into every program that sees this contract.
+@@ -71,9 +71,9 @@ export type SettingsRootComponentProps =
+     | 'settings.header'
+     | 'settings.action'
+     | 'settings.close'
+-    | 'settings.section'
+     | 'settings.onboarding'
+   >
++  & PropsRenderFactories
+   & InjectFace<SettingsRootInjected>
+   & PropsLocale<'settings'>
+   & PropsStore<ReturnType<typeof createSettingsShellStore>>
+diff --git a/packages/client/ui-settings-general/tests/section-view.client.spec.tsx b/packages/client/ui-settings-general/tests/section-view.client.spec.tsx
+new file mode 100644
+index 0000000000000000000000000000000000000000..4f00ba907625bbed0b56ec4579ac3a79aebf6db1
+--- /dev/null
++++ b/packages/client/ui-settings-general/tests/section-view.client.spec.tsx
+@@ -0,0 +1,59 @@
++// @vitest-environment jsdom
++import { useEffect, useState } from 'react'
++import { act, fireEvent, within } from '@testing-library/react'
++import { describe, expect, onTestFinished } from 'vitest'
++import { createClientTest, webApp } from '@deepseek-ai/dsh-client-test-runtime/src/assembly/index.ts'
++import type { PropsRenderFactories, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
++import type { MainPanelId } from '@deepseek-ai/dsh-client-ui-layout/client'
++import type { SettingsSectionOwnerProps } from '@deepseek-ai/dsh-client-ui-settings/client'
++import type { createSettingsShellStore } from '../src/client/shell-store.ts'
++
++const it = createClientTest({ roster: webApp }, { mount: true })
++const PANEL = 'test-settings-page' as MainPanelId
++
++describe('shared settings section view', () => {
++  it('shares a registered page across main and settings, suspends covered instances, and follows Loader lifecycle', async ({ start }) => {
++    const c = await start()
++    const view = within(c.container!)
++    const shell = () => (c.ctx.slots.entries('sidebar.settings')[0]!.store as ReturnType<typeof createSettingsShellStore>).create()
++    let mounted = 0
++    const closeMain = () => { c.ctx.layout.selectPanel(null) }
++    const Page = ({ close }: SettingsSectionOwnerProps) => {
++      useEffect(() => { mounted += 1; return () => { mounted -= 1 } }, [])
++      return <button onClick={close}>Leave shared page</button>
++    }
++    const registerPage = () => c.ctx.slots.inject('settings.section', () => c.ctx.slots.register({ name: 'settings.section', id: 'shared-test', label: 'Shared test' }, Page))
++    let offPage = registerPage()
++    const offPanel = c.ctx.slots.inject('main', () => c.ctx.slots.register({ name: 'main', key: PANEL }, ({ renderFactorySlot }: PropsRuntime<'main'> & PropsRenderFactories) => {
++      const [sectionId, setSectionId] = useState('shared-test')
++      return <>
++        <button onClick={() => { setSectionId('missing-page') }}>Missing page</button>
++        <div data-testid="shared-main">{renderFactorySlot('settings.section-view', { sectionId, close: closeMain, presentation: 'embedded' })}</div>
++      </>
++    }))
++    onTestFinished(() => { offPage(); offPanel() })
++    await act(async () => { c.ctx.layout.selectPanel(PANEL); await c.flush() })
++    expect(view.getByTestId('shared-main').textContent).toBe('Leave shared page')
++    expect(mounted).toBe(1)
++    await act(async () => { shell().actions.openSection('shared-test'); await c.flush() })
++    expect(view.getByTestId('shared-main').textContent).toBe('')
++    expect(mounted).toBe(1)
++    const dialog = within(document.body).getByRole('dialog', { name: 'Settings' })
++    fireEvent.click(within(dialog).getByRole('button', { name: 'Leave shared page' }))
++    await c.flush()
++    expect(view.getByTestId('shared-main').textContent).toBe('Leave shared page')
++    expect(mounted).toBe(1)
++    await act(async () => { offPage(); await c.flush() })
++    expect(view.getByTestId('shared-main').textContent).toBe('')
++    expect(mounted).toBe(0)
++    await act(async () => { offPage = registerPage(); await c.flush() })
++    expect(mounted).toBe(1)
++    await act(async () => { await c.reload('@deepseek-ai/dsh-client-ui-sidebar'); c.ctx.layout.selectPanel(PANEL); await c.flush() })
++    expect(mounted).toBe(1)
++    fireEvent.click(view.getByRole('button', { name: 'Missing page' }))
++    expect(view.getByTestId('shared-main').textContent).toBe('')
++    expect(mounted).toBe(0)
++    await act(async () => { await c.unload('@deepseek-ai/dsh-client-ui-settings-general'); await c.flush() })
++    expect(c.ctx.slots.spec('settings.section')).toBeUndefined()
++  }, 60_000)
++})
+diff --git a/packages/client/ui-settings-general/tests/settings-root.client.spec.tsx b/packages/client/ui-settings-general/tests/settings-root.client.spec.tsx
+index 2f46ad2057eda508261c0ae68e7fe7be4fb13195..38f7a06ab50141fc09235ea24441712ca849e3cb 100644
+--- a/packages/client/ui-settings-general/tests/settings-root.client.spec.tsx
++++ b/packages/client/ui-settings-general/tests/settings-root.client.spec.tsx
+@@ -76,10 +76,13 @@ function mount({
+   const reconnect = vi.fn()
+   const renderSlot = vi.fn(
+     ((key: string, _owner: unknown, opts?: { only?: string; fallback?: import('react').ReactNode }) => {
+-      if (key === 'settings.section') return <div data-testid={`section-${opts?.only ?? 'all'}`} />
+       return SEAT_CONTENT[key] ?? opts?.fallback
+     }) as SettingsRootComponentProps['renderSlot'],
+   )
++  const renderFactorySlot = vi.fn(((name, input) => {
++    if (name === 'settings.section-view' && 'sectionId' in input) return <div data-testid={`section-${input.sectionId}`} />
++    return null
++  }) as SettingsRootComponentProps['renderFactorySlot'])
+   const activeId = SessionId('active-session')
+   const sessions: SessionListState = {
+     ids: [activeId],
+@@ -129,7 +132,7 @@ function mount({
+       }, [])
+       return select(current)
+     },
+-    renderSlot,
++    renderSlot, renderFactorySlot,
+   }
+   const view = render(<SettingsRoot {...props} />)
+   const bump = (next: Row[]) => {
+@@ -159,7 +162,10 @@ function mount({
+     act(() => { sessions.byId[activeId] = { ...session, blank: next } })
+     view.rerender(<SettingsRoot {...props} />)
+   }
+-  return { view, renderSlot, bump, listeners, reconnect, setConnectionState, setDesktopUpdate, setShortcuts, setOnboardingActive }
++  return {
++    view, renderSlot, renderFactorySlot, bump, listeners, reconnect,
++    setConnectionState, setDesktopUpdate, setShortcuts, setOnboardingActive,
++  }
+ }
+ 
+ function openPanel() {
+@@ -470,11 +476,11 @@ describe('SettingsPanel navigation', () => {
+   })
+ 
+   it('renders an empty content column and focuses the title when the ledger is empty', () => {
+-    const { renderSlot } = mount({ rows: [] })
++    const { renderFactorySlot } = mount({ rows: [] })
+     openPanel()
+     expect(document.activeElement).toBe(screen.getByText('Settings Title'))
+     expect(screen.getByRole('dialog')).toBeTruthy()
+-    const sectionCalls = renderSlot.mock.calls.filter(c => c[0] === 'settings.section')
++    const sectionCalls = renderFactorySlot.mock.calls.filter(c => c[0] === 'settings.section-view')
+     expect(sectionCalls).toHaveLength(0)
+   })
+ 
+diff --git a/packages/client/ui-settings/README.i18n.yaml b/packages/client/ui-settings/README.i18n.yaml
+index 2b1ae7c2f5d4e267f6999621cf22024da9916f93..0eff4a341090339313afe9f6c2379f9e6b520c7d 100644
+--- a/packages/client/ui-settings/README.i18n.yaml
++++ b/packages/client/ui-settings/README.i18n.yaml
+@@ -30,8 +30,8 @@
+   en: 9767f17ca0f02ae3
+   zh: 8e475d6d3d670702
+ /deepseek-ai-dsh-client-ui-settings/understand-the-implementation:
+-  en: d756fe51d9456fb4
+-  zh: 41de582aace7332f
++  en: abc3ce55d36d7942
++  zh: b253764e84dbba73
+ /deepseek-ai-dsh-client-ui-settings/understand-the-implementation/the-describe-mirror:
+   en: 0cd270ddcac46776
+   zh: 4e03bf1d153b3f04
+diff --git a/packages/client/ui-settings/README.md b/packages/client/ui-settings/README.md
+index b43b91a82919e2f2c26e2294c104985c8b460c0c..6d3dc69f9a3ed1025b333b295d507ec2d1b3a9d7 100644
+--- a/packages/client/ui-settings/README.md
++++ b/packages/client/ui-settings/README.md
+@@ -54,6 +54,8 @@ A committed write folds its answer into the shared mirror. Refused writes refres
+ 
+ The optional `settings.launcher` contribution receives sidebar geometry, whether the open Settings panel covers the sidebar, the settings navigation callbacks, and the effective Settings key labels and accessible combination. The shell omits shortcut presentation for an unbound command and retains its plain Settings trigger when no launcher is registered.
+ 
++Application panels can reuse a registered page with `renderFactorySlot('settings.section-view', { sectionId, close, presentation: 'embedded' })`. The shared Factory owns `settings.section`; callers do not redeclare that slot or mount registrant components directly. The settings shell uses `presentation: 'dialog'`. Embedded instances suspend while the dialog is open and resume after it closes, preventing duplicate page effects. Unknown section IDs render no page; callers should observe the section ledger and show their own localized unavailable state. `close` belongs to the caller's presentation and leaves that surface without changing the conversation.
++
+ <details>
+ <summary>Implementation internals — click to expand</summary>
+ 
+diff --git a/packages/client/ui-settings/README.zh.md b/packages/client/ui-settings/README.zh.md
+index 463ec9fd1502c087c625f363ecf903beddc8180c..993f58c99a42a028713ccb51e6bf9aa0d59fd1c1 100644
+--- a/packages/client/ui-settings/README.zh.md
++++ b/packages/client/ui-settings/README.zh.md
+@@ -54,6 +54,8 @@ kind: "package-reference"
+ 
+ 可选的 `settings.launcher` 贡献接收侧栏布局、设置面板是否覆盖侧栏、设置导航回调，以及有效的设置键位标签和无障碍组合。命令未绑定时，外壳不传快捷键展示信息；未注册入口时，外壳保留普通设置按钮。
+ 
++主内容区可通过 `renderFactorySlot('settings.section-view', { sectionId, close, presentation: 'embedded' })` 复用已注册页面。共享 Factory 持有 `settings.section` 的渲染权，调用方不重复声明插槽，也不直接挂载注册组件。设置窗口使用 `presentation: 'dialog'`。窗口打开时内嵌实例暂停，关闭后恢复，避免重复运行页面副作用。未知页面 ID 不渲染内容；调用方应订阅页面注册表并显示本地化的不可用提示。`close` 由当前展示容器提供，关闭该容器且不改变对话。
++
+ <details>
+ <summary>实现细节——点击展开</summary>
+ 
+diff --git a/packages/client/ui-settings/src/client/contract/slots.ts b/packages/client/ui-settings/src/client/contract/slots.ts
+index d04ac21fa606fe4dc0af75dee0bae4b60fb299a7..2d930113c8539c8292379aec7890d26f618ab99c 100644
+--- a/packages/client/ui-settings/src/client/contract/slots.ts
++++ b/packages/client/ui-settings/src/client/contract/slots.ts
+@@ -10,8 +10,18 @@
+  */
+ 
+ import type {} from '@deepseek-ai/dsh-client-ui-slots'
++import type { HostObservable } from '@deepseek-ai/dsh-client-ui-slots'
+ 
+ declare module '@deepseek-ai/dsh-client-ui-slots' {
++  interface SlotFactoryMap {
++    /** Shared renderer of registered settings pages, in a dialog or an application panel. */
++    'settings.section-view': {
++      scope: 'root'
++      props: SettingsSectionViewInput
++      inject: SettingsSectionViewInjected
++      children: { 'settings.section': { kind: 'list'; scope: 'root' } }
++    }
++  }
+   interface SlotMap {
+     /** Optional sidebar account launcher; opens the shell-owned settings panel. */
+     'settings.launcher': { kind: 'single'; scope: 'root'; owner: SettingsLauncherOwnerProps }
+@@ -49,7 +59,7 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
+      * position), `label` (registrant-localized display text — the registrant
+      * re-registers with fresh text on locale change, so the shell never
+      * subscribes locale state; the ledger bump doubles as the shell's
+-     * re-render trigger). Sections render inside the panel content column.
++     * re-render trigger). Sections render through the shared settings.section-view Factory.
+      * (`settings.general.item`, declared by ui-settings-general's General
+      * entry, is typed in the locale package — the common dependency of every
+      * item registrant; the shell neither declares nor renders it.)
+@@ -92,6 +102,23 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
+     'settings.general.item': { kind: 'list'; scope: 'root'; owner: SettingsGeneralItemOwnerProps }
+   }
+ }
++
++/** Input for the reusable settings page renderer; unknown IDs render no page. */
++export interface SettingsSectionViewInput extends SettingsSectionOwnerProps {
++  /** Registered settings.section ID. */
++  sectionId: string
++  /** Embedded pages suspend while the settings dialog is open. */
++  presentation: 'dialog' | 'embedded'
++}
++
++/** Shell-owned visibility prevents simultaneous embedded and dialog page instances. */
++export interface SettingsSectionViewInjected {
++  /** Reactive presentation facts shared by all page hosts. */
++  hooks: {
++    /** Whether the shared settings dialog is open. */
++    dialogOpen: HostObservable<boolean>
++  }
++}
+ /** Owner share of a General preference row (the section supplies nothing). */
+ export interface SettingsGeneralItemOwnerProps {
+   /** Marker field: item owner props are intentionally empty. */
+@@ -117,14 +144,14 @@ export interface SettingsHeaderOwnerProps {
+ }
+ 
+ /**
+- * Owner share of a settings section entry. The shell owns modal visibility
++ * Owner share of a settings section entry. The host owns visibility
+  * and navigation; a section's data arrives through its own inject faces and
+- * stores. `close` is the one shell affordance a section receives, for flows
++ * stores. `close` is the one host affordance a section receives, for flows
+  * that leave settings altogether (starting a session from a section) — the
+  * onboarding coordinator's `openSection`/`complete` precedent, inverted.
+  */
+ export interface SettingsSectionOwnerProps {
+-  /** Close the settings panel (the shell owns the open state). */
++  /** Leave the current settings dialog or embedded application panel. */
+   close: () => void
+ }
+ 
+diff --git a/packages/client/ui-settings/src/client/index.ts b/packages/client/ui-settings/src/client/index.ts
+index e6182781c8c277caab307566f73fb95c91057e0f..1bef5ded669ebb2c7a7e9489bf1f3c457f1ffd83 100644
+--- a/packages/client/ui-settings/src/client/index.ts
++++ b/packages/client/ui-settings/src/client/index.ts
+@@ -15,6 +15,7 @@ import { SettingsDescribeMirror } from './settings-mirror.ts'
+ export type {
+   SettingsLauncherOwnerProps, SettingsGeneralItemOwnerProps, SettingsHeaderOwnerProps, SettingsOnboardingOwnerProps,
+   SettingsPluginsTabOwnerProps, SettingsSectionOwnerProps, SettingsTriggerOwnerProps,
++  SettingsSectionViewInput, SettingsSectionViewInjected,
+ } from './contract/slots.ts'
+ export type { ConfigForms } from './config-form.ts'
+ export type { ConfigForm, ConfigFormSnapshot } from './config-form-types.ts'

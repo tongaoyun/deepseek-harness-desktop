@@ -20,8 +20,9 @@ import {
   ConnectorsPanel, KnowledgePanel,
 } from './DeepSeekHarnessCatalogSection.tsx'
 import {
-  CAPABILITY_PANELS, CapabilitiesHeading, createCapabilityChildIcon,
+  CAPABILITY_PANELS, EXTENSION_PANELS, CapabilitiesHeading, createCapabilityChildIcon,
 } from './DeepSeekHarnessCapabilitiesNavigation.tsx'
+import { ExtensionPage, type ExtensionPageInjected } from './ExtensionPage.tsx'
 import { DeepSeekHarnessSettingsMenu } from './DeepSeekHarnessSettingsMenu.tsx'
 import { createHarnessActions } from './harness-actions.ts'
 import { TaskKnowledgeInput } from './TaskKnowledgeInput.tsx'
@@ -74,8 +75,24 @@ export function apply(ctx: ClientContext): void {
   }, TaskKnowledgeInput))
   ctx.slots.inject('sidebar.panelheading', () => ctx.slots.register({
     name: 'sidebar.panelheading', id: 'deepseek-harness-capabilities', order: -40, locale: NS,
-    inject: () => ({ openExtension: (sectionId: string) => ctx.bail('settings/open', sectionId) === true }),
   }, CapabilitiesHeading))
+
+  for (const [index, panel] of EXTENSION_PANELS.entries()) {
+    ctx.slots.inject('main', () => ctx.slots.register({
+      name: 'main', key: panel.id, locale: NS,
+      inject: (): ExtensionPageInjected => ({
+        sectionId: panel.sectionId, close: () => { ctx.layout.selectPanel(null) },
+        hooks: { available: {
+          getSnapshot: () => ctx.slots.entries('settings.section').some(entry => entry.options.id === panel.sectionId),
+          subscribe: listener => ctx.slots.subscribe('settings.section', listener),
+        } },
+      }),
+    }, ExtensionPage))
+    ctx.slots.inject('sidebar.panellist', () => ctx.slots.register({
+      name: 'sidebar.panellist', id: panel.id, order: -39 + index, locale: NS,
+      label: () => t(panel.labelKey),
+    }, createCapabilityChildIcon(panel.icon)))
+  }
 
   for (const [index, panel] of CAPABILITY_PANELS.entries()) {
     const Component = PANEL_COMPONENTS[panel.labelKey]
@@ -84,7 +101,7 @@ export function apply(ctx: ClientContext): void {
       name: 'main', key: panel.id, locale: NS, inject: () => actions,
     }, Component))
     ctx.slots.inject('sidebar.panellist', () => ctx.slots.register({
-      name: 'sidebar.panellist', id: panel.id, order: -39 + index, locale: NS,
+      name: 'sidebar.panellist', id: panel.id, order: -37 + index, locale: NS,
       label: () => t(panel.labelKey),
     }, ChildIcon))
   }

@@ -76,10 +76,13 @@ function mount({
   const reconnect = vi.fn()
   const renderSlot = vi.fn(
     ((key: string, _owner: unknown, opts?: { only?: string; fallback?: import('react').ReactNode }) => {
-      if (key === 'settings.section') return <div data-testid={`section-${opts?.only ?? 'all'}`} />
       return SEAT_CONTENT[key] ?? opts?.fallback
     }) as SettingsRootComponentProps['renderSlot'],
   )
+  const renderFactorySlot = vi.fn(((name, input) => {
+    if (name === 'settings.section-view' && 'sectionId' in input) return <div data-testid={`section-${input.sectionId}`} />
+    return null
+  }) as SettingsRootComponentProps['renderFactorySlot'])
   const activeId = SessionId('active-session')
   const sessions: SessionListState = {
     ids: [activeId],
@@ -129,7 +132,7 @@ function mount({
       }, [])
       return select(current)
     },
-    renderSlot,
+    renderSlot, renderFactorySlot,
   }
   const view = render(<SettingsRoot {...props} />)
   const bump = (next: Row[]) => {
@@ -159,7 +162,10 @@ function mount({
     act(() => { sessions.byId[activeId] = { ...session, blank: next } })
     view.rerender(<SettingsRoot {...props} />)
   }
-  return { view, renderSlot, bump, listeners, reconnect, setConnectionState, setDesktopUpdate, setShortcuts, setOnboardingActive }
+  return {
+    view, renderSlot, renderFactorySlot, bump, listeners, reconnect,
+    setConnectionState, setDesktopUpdate, setShortcuts, setOnboardingActive,
+  }
 }
 
 function openPanel() {
@@ -470,11 +476,11 @@ describe('SettingsPanel navigation', () => {
   })
 
   it('renders an empty content column and focuses the title when the ledger is empty', () => {
-    const { renderSlot } = mount({ rows: [] })
+    const { renderFactorySlot } = mount({ rows: [] })
     openPanel()
     expect(document.activeElement).toBe(screen.getByText('Settings Title'))
     expect(screen.getByRole('dialog')).toBeTruthy()
-    const sectionCalls = renderSlot.mock.calls.filter(c => c[0] === 'settings.section')
+    const sectionCalls = renderFactorySlot.mock.calls.filter(c => c[0] === 'settings.section-view')
     expect(sectionCalls).toHaveLength(0)
   })
 

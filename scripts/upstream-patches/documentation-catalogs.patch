@@ -12779,7 +12779,7 @@ index 1dd6bf22b9f4ee5c58eaf07bec3fd5cbbf49da9d..e4e575131ded9e451b1f50a07b1df9b2
      name: 'RegisterFactory',
      declaration: 'export interface RegisterFactory {\n    <F extends keyof SlotFactoryMap & string>(options: RegisterFactoryOptions<F>, component: SlotComponent<FactoryComponentPropsOf<F>>): () => void;\n}',
 diff --git a/packages/extensions/cordis-client-runner/src/client/slot-catalog.ts b/packages/extensions/cordis-client-runner/src/client/slot-catalog.ts
-index 50bcbe529a7fd300d65688e8854e5da93d8250d4..ca8f1e87ad41d261cc244e913b935d178bd776d6 100644
+index 50bcbe529a7fd300d65688e8854e5da93d8250d4..09880346dc8e3d8a2c9464d4a466c910f8c599ba 100644
 --- a/packages/extensions/cordis-client-runner/src/client/slot-catalog.ts
 +++ b/packages/extensions/cordis-client-runner/src/client/slot-catalog.ts
 @@ -649,7 +649,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
@@ -13072,15 +13072,52 @@ index 50bcbe529a7fd300d65688e8854e5da93d8250d4..ca8f1e87ad41d261cc244e913b935d17
    {
      key: 'main',
      kind: 'keyed',
-@@ -2157,6 +2314,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
+@@ -2157,6 +2314,8 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
        'client-ui-conversation ConversationPanel key \'conversation\'',
        'client-ui-plugin-manager PluginManagerPage',
        'client-ui-schedule TaskManagerPage',
++      '@deepseek-harness/product-ui ExtensionPage',
 +      '@deepseek-harness/product-ui Component',
      ],
      replaceRisk: 'shadows-shipped-ui',
      example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'main\', () => ctx.slots.register(\n      { name: \'main\', key: \'<one key the owner dispatches>\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
-@@ -2962,6 +3120,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
+@@ -2803,7 +2962,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
+     ],
+     replaceRisk: 'none',
+     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'settings.action\', () => ctx.slots.register(\n      { name: \'settings.action\', id: \'my-entry\', order: 100, label: \'My entry\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
+-    source: 'packages/client/ui-settings/src/client/contract/slots.ts:39',
++    source: 'packages/client/ui-settings/src/client/contract/slots.ts:49',
+   },
+   {
+     key: 'settings.close',
+@@ -2836,7 +2995,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
+     ],
+     replaceRisk: 'shadows-shipped-ui',
+     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'settings.close\', () => ctx.slots.register(\n      { name: \'settings.close\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
+-    source: 'packages/client/ui-settings/src/client/contract/slots.ts:45',
++    source: 'packages/client/ui-settings/src/client/contract/slots.ts:55',
+   },
+   {
+     key: 'settings.general.item',
+@@ -2899,7 +3058,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
+     ],
+     replaceRisk: 'none',
+     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'settings.general.item\', () => ctx.slots.register(\n      { name: \'settings.general.item\', id: \'my-entry\', order: 100, label: \'My entry\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
+-    source: 'packages/client/ui-settings/src/client/contract/slots.ts:92',
++    source: 'packages/client/ui-settings/src/client/contract/slots.ts:102',
+   },
+   {
+     key: 'settings.header',
+@@ -2932,7 +3091,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
+     ],
+     replaceRisk: 'shadows-shipped-ui',
+     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'settings.header\', () => ctx.slots.register(\n      { name: \'settings.header\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
+-    source: 'packages/client/ui-settings/src/client/contract/slots.ts:33',
++    source: 'packages/client/ui-settings/src/client/contract/slots.ts:43',
+   },
+   {
+     key: 'settings.launcher',
+@@ -2962,10 +3121,11 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
      declaredBy: 'an entry in \'sidebar.settings\' (client-ui-settings-general), so it exists while that entry is mounted',
      occupants: [
        'client-ui-settings-account AccountMenu',
@@ -13088,7 +13125,74 @@ index 50bcbe529a7fd300d65688e8854e5da93d8250d4..ca8f1e87ad41d261cc244e913b935d17
      ],
      replaceRisk: 'shadows-shipped-ui',
      example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'settings.launcher\', () => ctx.slots.register(\n      { name: \'settings.launcher\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
-@@ -3635,7 +3794,59 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
+-    source: 'packages/client/ui-settings/src/client/contract/slots.ts:17',
++    source: 'packages/client/ui-settings/src/client/contract/slots.ts:27',
+   },
+   {
+     key: 'settings.models.footer',
+@@ -3139,7 +3299,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
+     ],
+     replaceRisk: 'none',
+     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'settings.onboarding\', () => ctx.slots.register(\n      { name: \'settings.onboarding\', id: \'my-entry\', order: 100, label: \'My entry\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
+-    source: 'packages/client/ui-settings/src/client/contract/slots.ts:77',
++    source: 'packages/client/ui-settings/src/client/contract/slots.ts:87',
+   },
+   {
+     key: 'settings.plugins.tab',
+@@ -3191,14 +3351,14 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
+     ],
+     replaceRisk: 'none',
+     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'settings.plugins.tab\', () => ctx.slots.register(\n      { name: \'settings.plugins.tab\', id: \'my-entry\', order: 100, label: \'My entry\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
+-    source: 'packages/client/ui-settings/src/client/contract/slots.ts:66',
++    source: 'packages/client/ui-settings/src/client/contract/slots.ts:76',
+   },
+   {
+     key: 'settings.section',
+     kind: 'list',
+     scope: 'root',
+     summary: 'One settings page per list entry.',
+-    doc: 'One settings page per list entry. Registrant options carry the nav\nidentity: `id` (section key, drives `only` filtering), `order` (nav\nposition), `label` (registrant-localized display text — the registrant\nre-registers with fresh text on locale change, so the shell never\nsubscribes locale state; the ledger bump doubles as the shell\'s\nre-render trigger). Sections render inside the panel content column.\n(`settings.general.item`, declared by ui-settings-general\'s General\nentry, is typed in the locale package — the common dependency of every\nitem registrant; the shell neither declares nor renders it.)',
++    doc: 'One settings page per list entry. Registrant options carry the nav\nidentity: `id` (section key, drives `only` filtering), `order` (nav\nposition), `label` (registrant-localized display text — the registrant\nre-registers with fresh text on locale change, so the shell never\nsubscribes locale state; the ledger bump doubles as the shell\'s\nre-render trigger). Sections render through the shared settings.section-view Factory.\n(`settings.general.item`, declared by ui-settings-general\'s General\nentry, is typed in the locale package — the common dependency of every\nitem registrant; the shell neither declares nor renders it.)',
+     registerOptions: [
+       {
+         name: 'id',
+@@ -3220,7 +3380,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
+       },
+     ],
+     ownerProps: [
+-      '/**\n * Owner share of a settings section entry. The shell owns modal visibility\n * and navigation; a section\'s data arrives through its own inject faces and\n * stores. `close` is the one shell affordance a section receives, for flows\n * that leave settings altogether (starting a session from a section) — the\n * onboarding coordinator\'s `openSection`/`complete` precedent, inverted.\n */\nexport interface SettingsSectionOwnerProps {\n  /** Close the settings panel (the shell owns the open state). */\n  close: () => void\n}',
++      '/**\n * Owner share of a settings section entry. The host owns visibility\n * and navigation; a section\'s data arrives through its own inject faces and\n * stores. `close` is the one host affordance a section receives, for flows\n * that leave settings altogether (starting a session from a section) — the\n * onboarding coordinator\'s `openSection`/`complete` precedent, inverted.\n */\nexport interface SettingsSectionOwnerProps {\n  /** Leave the current settings dialog or embedded application panel. */\n  close: () => void\n}',
+     ],
+     ownerPropsReferences: [],
+     standardProps: [
+@@ -3237,7 +3397,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
+     keyDomain: '',
+     hookContext: '',
+     slotInject: '',
+-    declaredBy: 'an entry in \'sidebar.settings\' (client-ui-settings-general), so it exists while that entry is mounted',
++    declaredBy: 'factory \'settings.section-view\' (client-ui-settings-general), so it exists while that definition is registered',
+     occupants: [
+       'client-ui-agent-preset AgentPresetSection id \'agent-presets\'',
+       'client-ui-settings-account AccountSection id \'account\'',
+@@ -3247,7 +3407,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
+     ],
+     replaceRisk: 'none',
+     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'settings.section\', () => ctx.slots.register(\n      { name: \'settings.section\', id: \'my-entry\', order: 100, label: \'My entry\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
+-    source: 'packages/client/ui-settings/src/client/contract/slots.ts:57',
++    source: 'packages/client/ui-settings/src/client/contract/slots.ts:67',
+   },
+   {
+     key: 'settings.trigger',
+@@ -3280,7 +3440,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
+     ],
+     replaceRisk: 'shadows-shipped-ui',
+     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'settings.trigger\', () => ctx.slots.register(\n      { name: \'settings.trigger\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
+-    source: 'packages/client/ui-settings/src/client/contract/slots.ts:27',
++    source: 'packages/client/ui-settings/src/client/contract/slots.ts:37',
+   },
+   {
+     key: 'shell.bottom',
+@@ -3635,7 +3795,59 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
      ],
      replaceRisk: 'none',
      example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'sidebar.footer.action\', () => ctx.slots.register(\n      { name: \'sidebar.footer.action\', id: \'my-entry\', order: 100, label: \'My entry\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
@@ -13149,7 +13253,7 @@ index 50bcbe529a7fd300d65688e8854e5da93d8250d4..ca8f1e87ad41d261cc244e913b935d17
    },
    {
      key: 'sidebar.panellist',
-@@ -3664,7 +3875,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
+@@ -3664,7 +3876,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
        },
      ],
      ownerProps: [
@@ -13158,10 +13262,11 @@ index 50bcbe529a7fd300d65688e8854e5da93d8250d4..ca8f1e87ad41d261cc244e913b935d17
      ],
      ownerPropsReferences: [],
      standardProps: [
-@@ -3685,10 +3896,11 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
+@@ -3685,10 +3897,12 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
      occupants: [
        'client-ui-plugin-manager PluginsPanelIcon',
        'client-ui-schedule TaskManagerIcon',
++      '@deepseek-harness/product-ui createCapabilityChildIcon(panel.icon)',
 +      '@deepseek-harness/product-ui ChildIcon',
      ],
      replaceRisk: 'none',
@@ -13171,7 +13276,7 @@ index 50bcbe529a7fd300d65688e8854e5da93d8250d4..ca8f1e87ad41d261cc244e913b935d17
    },
    {
      key: 'sidebar.right.pane.tab',
-@@ -4430,7 +4642,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
+@@ -4430,7 +4644,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
      ],
      replaceRisk: 'shadows-shipped-ui',
      example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'sidebar.settings\', () => ctx.slots.register(\n      { name: \'sidebar.settings\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
@@ -13180,7 +13285,7 @@ index 50bcbe529a7fd300d65688e8854e5da93d8250d4..ca8f1e87ad41d261cc244e913b935d17
    },
    {
      key: 'sidebar.toggle.badge',
-@@ -4494,7 +4706,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
+@@ -4494,7 +4708,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
      ],
      replaceRisk: 'shadows-shipped-ui',
      example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'sidebar.workspaces\', () => ctx.slots.register(\n      { name: \'sidebar.workspaces\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
@@ -13189,7 +13294,7 @@ index 50bcbe529a7fd300d65688e8854e5da93d8250d4..ca8f1e87ad41d261cc244e913b935d17
    },
    {
      key: 'sidebar.workspaces.directoryFlow',
-@@ -4686,14 +4898,14 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
+@@ -4686,14 +4900,14 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
      ],
      replaceRisk: 'shadows-shipped-ui',
      example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'tool.call.images\', () => ctx.slots.register(\n      { name: \'tool.call.images\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
@@ -13207,7 +13312,7 @@ index 50bcbe529a7fd300d65688e8854e5da93d8250d4..ca8f1e87ad41d261cc244e913b935d17
      registerOptions: [
        {
          name: 'key',
-@@ -4794,10 +5006,11 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
+@@ -4794,10 +5008,11 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
        'client-ui-cordis CordisRunRow key \'cordis_run\'',
        'client-ui-cordis CordisActionRow key \'cordis_stop\'',
        'client-ui-cordis CordisActionRow key \'cordis_undefine\'',

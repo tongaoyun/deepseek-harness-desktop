@@ -10,7 +10,6 @@ import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import { createClientTest, type TestClient, webApp } from '@deepseek-ai/dsh-client-test-runtime/src/assembly/index.ts'
 import { inject } from '../src/client/index.ts'
 import type { SettingsRootInjected } from '../src/client/shell-contract.ts'
-import { createSettingsShellStore } from '../src/client/shell-store.ts'
 import { SettingsRoot } from '../src/client/SettingsRoot.tsx'
 import type { DesktopUpdatePresentation } from '../src/types.ts'
 
@@ -75,25 +74,6 @@ describe('ui-settings-general shell', () => {
     expect(c.ctx.slots.entries('sidebar.toggle.badge')).toHaveLength(0)
     publish!({ phase: 'error', version: status.version, failure: 'install' })
     expect(row.hooks.desktopUpdate.getSnapshot().presentation).toEqual(status)
-  }, COLD_BOOT_TIMEOUT_MS)
-
-  it('opens registered sections through the shared shell and releases navigation on unload', async ({ start }) => {
-    const c = await start()
-    const shell = () => (c.ctx.slots.entries('sidebar.settings')[0]!.store as ReturnType<typeof createSettingsShellStore>).create()
-    expect(c.ctx.bail('settings/open', 'missing')).toBeUndefined()
-    expect(shell().getSnapshot()).toEqual({ open: false, activeId: undefined })
-    expect(c.ctx.bail('settings/open', 'models')).toBe(true)
-    expect(shell().getSnapshot()).toEqual({ open: true, activeId: 'models' })
-    expect(c.ctx.bail('settings/open', 'missing')).toBeUndefined()
-    expect(shell().getSnapshot().activeId).toBe('models')
-    shell().actions.close()
-    await c.reload(SIDEBAR)
-    await c.flush()
-    expect(c.ctx.bail('settings/open', 'general')).toBe(true)
-    expect(shell().getSnapshot()).toEqual({ open: true, activeId: 'general' })
-    await c.unload(SELF)
-    await c.flush()
-    expect(c.ctx.bail('settings/open', 'general')).toBeUndefined()
   }, COLD_BOOT_TIMEOUT_MS)
 
   it('declares its services', () => {

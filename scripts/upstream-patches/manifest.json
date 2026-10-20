@@ -983,7 +983,7 @@
         {
           "path": "packages/extensions/cordis-client-runner/src/client/slot-catalog.ts",
           "before": "f8e09d2e99335793434ca39fb65beefbbecbd0573d235bafd10e81131035d330",
-          "after": "f14c9c0cd10b35029953e37709f5939b6342e80e7c04e3ff4db74b89ce3ac59e"
+          "after": "07de98ac714dea3996cad7e7ba2993ffdfd0d743602f71760635f2254a61a4fb"
         },
         {
           "path": "packages/extensions/tool-cordis/src/api-catalog.ts",
@@ -1437,7 +1437,7 @@
         {
           "path": "packages/client/ui-settings-general/README.zh.md",
           "before": "ad4065e982da236937d7c27817ae9ed68fbce62b49ef0b4a45dbaeae801716da",
-          "after": "6c4bf99a06322d045dcfe4fad601e96529bf263f584972d657d3f60abb2a2b6b"
+          "after": "cdccb6ef0c0ea7b1c8363981d68b169a62a186260aa4f9da7d1959acadcb8001"
         },
         {
           "path": "packages/client/ui-settings-general/src/client/DesktopUpdateIndicator.module.css",
@@ -1477,12 +1477,12 @@
         {
           "path": "packages/client/ui-settings-general/README.i18n.yaml",
           "before": "ac68023f95af0afb3dde601523d433746e741e78ed417c0da37570e7fe748c79",
-          "after": "5f094c146bbcc7ff69a92edf8b954c5ddf4c8df4210186f88a0f277210dd9fe7"
+          "after": "70bf8d9ed01d19e753f4bb9cf9f4fa610d4d5ff589070c78e0dfeea9e6d64ea2"
         },
         {
           "path": "packages/client/ui-settings-general/README.md",
           "before": "be8ee0063561ac6ade8ec188e4f3941eee8595596dfeeed79d79ab4fa7f6a47c",
-          "after": "a78e0b3f50a87711a7362fe0b7aef40ee5335fb1e2f7910bbc9ba4e85f95a8a8"
+          "after": "0f10d9027438a30337b3eafb0675bd3d2a7e2505ff06fa83875fe0cf7771b103"
         }
       ],
       "diff": "desktop-update-availability.patch"
@@ -1504,10 +1504,12 @@
       "diff": "office-fixture-determinism.patch"
     },
     {
-      "id": "settings-section-navigation",
-      "purpose": "通用客户端设置页导航：按已注册的 settings.section ID 打开共享设置窗口，不可用时保持当前页面；监听随设置壳卸载并在 Loader 重载后恢复。产品侧栏仅调用公开事件，不复制插件界面或修改第三方插件。",
+      "id": "settings-section-view",
+      "purpose": "通用设置页复用 Factory：设置窗口与应用主区共享已注册页面，由唯一 Factory 持有 settings.section；弹窗打开时暂停内嵌实例，关闭后恢复；未知页面不回退。产品通过公开 Factory 和侧栏入口接入，不修改第三方插件。",
       "tests": [
+        "packages/client/ui-settings-general/tests/section-view.client.spec.tsx",
         "packages/client/ui-settings-general/tests/shell.client.spec.ts",
+        "packages/client/ui-settings-general/tests/settings-root.client.spec.tsx",
         "packages/extensions/ui-deepseek-harness-product/tests/DeepSeekHarnessCatalogSection.spec.tsx",
         "apps/web/tests/deepseek-harness-catalog.e2e.ts"
       ],
@@ -1515,40 +1517,60 @@
         {
           "path": "packages/client/ui-settings/src/client/index.ts",
           "before": "63d15aa09f92e3e3bd890178d5052aa3bcd73783b756d95d6cd0758ddd1b0508",
-          "after": "c1128bb7131b59b7c01f43eb86e1ac1b585031e4e314d990894ce5929628a233"
+          "after": "476ec9c82a6b4e8476846898f239174a798f331a315ff15bac33ddd691c2da95"
         },
         {
           "path": "packages/client/ui-settings-general/src/client/index.ts",
           "before": "e48b77e65dcf8c6e09c7d37792907e998953bc180fce6cabcfa873d26fd307dc",
-          "after": "566f5786b69d800dfd84874a403e56d2e80b6fe807bef37d5a3847ee69cabd51"
-        },
-        {
-          "path": "packages/client/ui-settings-general/tests/shell.client.spec.ts",
-          "before": "db11a8d5c3657ba7f902e2471000f3ea1dc34602b2b1e6c895d78058e36b900f",
-          "after": "01ccef5d43dac2167849d5363af402014607e750b331bdf4a90fdb886c840c7b"
+          "after": "d9a5b0531f9cedc43cf0d4cd4ddf50bac91df69b13893c1c7e933fb3e467188e"
         },
         {
           "path": "packages/client/ui-settings/README.md",
           "before": "794b3fa30588d28121d4aa32fd3ae83d9ad18707a6fa536edb87b1b794ae81e3",
-          "after": "27f6c5fb85afbac756eb1c432ee69e101449822c44738e3431653c52bf0d6b29"
+          "after": "45d8d6a72fdd6f0859722c027541ff9061b0e6132ae4f6f6da975bed50d21dca"
         },
         {
           "path": "packages/client/ui-settings/README.zh.md",
           "before": "812febb973438d9bfa5180d81f9c8a621b37f06aa70e922010536e36473df158",
-          "after": "54a35c8beffabab7a4b47ce105cfd20426625e38e5641e98941a6fdc09aa464c"
+          "after": "3e3d91519863e679581fbc2fb3a2e79984966f034c0b59a7149860d03689e1b1"
         },
         {
           "path": "packages/client/ui-settings/README.i18n.yaml",
           "before": "d0ca0300c35db9e00179dffd7ae80655476527e7be1398909dcde0417a2b25dc",
-          "after": "e30aa0b4511f1d74191ac6f64914abcce389a7e9615c2a253716949ddfed341b"
+          "after": "e60f9ce10cfc8e8501b1b851d005c7dd2ed49821071353809d7a79c18f95cfe6"
         },
         {
-          "path": "scripts/gen-cordis-catalog.ts",
-          "before": "20d2d305dc12ae9b37e958081b93a5e9639479104555cca67eae0eeb23dbfca7",
-          "after": "fc3c69ce73ad2cce793a227040808f285ee4d3c70192b10e968bb2297c38b894"
+          "path": "packages/client/ui-settings/src/client/contract/slots.ts",
+          "before": "2318031c951e80df0185be3fff1a55faf8d4932c2b36c16940d3ee33dce68060",
+          "after": "473f8b214dcc8fcdefbc61364d4d307f025d9f9e1e4ded3122cd8eab41446711"
+        },
+        {
+          "path": "packages/client/ui-settings-general/src/client/SettingsSectionView.tsx",
+          "before": null,
+          "after": "e69e4f6409ba4edb7ebf40cf90b0f3919e69ab92d724cbb0ed8e3fc51e91a70d"
+        },
+        {
+          "path": "packages/client/ui-settings-general/src/client/SettingsRoot.tsx",
+          "before": "01966a7299b66d16b2f80106c72dd1f37c541bbfe2d3a0397ca9edd96c21f466",
+          "after": "493cb8784f529f75820f3cf1f615506d37917fa04b3987e5a23124ddc3e2d86b"
+        },
+        {
+          "path": "packages/client/ui-settings-general/src/client/shell-contract.ts",
+          "before": "dc8d6f6decbbb285d30b3791d5889857062479faf2294286af909dd3662dcf25",
+          "after": "3c33388eb7be1b64986b69632868d24a7d19c175f823def96a611d3c09abc81b"
+        },
+        {
+          "path": "packages/client/ui-settings-general/tests/settings-root.client.spec.tsx",
+          "before": "e188a4b77bc7a082214672e8a9189a9e354580c82bf675b724d73f16c9f50c43",
+          "after": "7c5412b84068b1ef212aa9c1ef151ae4ded7ee54b6d5714c698e240ed4a1a2fb"
+        },
+        {
+          "path": "packages/client/ui-settings-general/tests/section-view.client.spec.tsx",
+          "before": null,
+          "after": "115fdcd66c8430e4f23bc3d6b41267685ecf3383aecf71252d21fa78ed1839cb"
         }
       ],
-      "diff": "settings-section-navigation.patch"
+      "diff": "settings-section-view.patch"
     }
   ]
 }

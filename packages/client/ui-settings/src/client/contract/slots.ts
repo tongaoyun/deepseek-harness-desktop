@@ -10,8 +10,18 @@
  */
 
 import type {} from '@deepseek-ai/dsh-client-ui-slots'
+import type { HostObservable } from '@deepseek-ai/dsh-client-ui-slots'
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
+  interface SlotFactoryMap {
+    /** Shared renderer of registered settings pages, in a dialog or an application panel. */
+    'settings.section-view': {
+      scope: 'root'
+      props: SettingsSectionViewInput
+      inject: SettingsSectionViewInjected
+      children: { 'settings.section': { kind: 'list'; scope: 'root' } }
+    }
+  }
   interface SlotMap {
     /** Optional sidebar account launcher; opens the shell-owned settings panel. */
     'settings.launcher': { kind: 'single'; scope: 'root'; owner: SettingsLauncherOwnerProps }
@@ -49,7 +59,7 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
      * position), `label` (registrant-localized display text — the registrant
      * re-registers with fresh text on locale change, so the shell never
      * subscribes locale state; the ledger bump doubles as the shell's
-     * re-render trigger). Sections render inside the panel content column.
+     * re-render trigger). Sections render through the shared settings.section-view Factory.
      * (`settings.general.item`, declared by ui-settings-general's General
      * entry, is typed in the locale package — the common dependency of every
      * item registrant; the shell neither declares nor renders it.)
@@ -92,6 +102,23 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
     'settings.general.item': { kind: 'list'; scope: 'root'; owner: SettingsGeneralItemOwnerProps }
   }
 }
+
+/** Input for the reusable settings page renderer; unknown IDs render no page. */
+export interface SettingsSectionViewInput extends SettingsSectionOwnerProps {
+  /** Registered settings.section ID. */
+  sectionId: string
+  /** Embedded pages suspend while the settings dialog is open. */
+  presentation: 'dialog' | 'embedded'
+}
+
+/** Shell-owned visibility prevents simultaneous embedded and dialog page instances. */
+export interface SettingsSectionViewInjected {
+  /** Reactive presentation facts shared by all page hosts. */
+  hooks: {
+    /** Whether the shared settings dialog is open. */
+    dialogOpen: HostObservable<boolean>
+  }
+}
 /** Owner share of a General preference row (the section supplies nothing). */
 export interface SettingsGeneralItemOwnerProps {
   /** Marker field: item owner props are intentionally empty. */
@@ -117,14 +144,14 @@ export interface SettingsHeaderOwnerProps {
 }
 
 /**
- * Owner share of a settings section entry. The shell owns modal visibility
+ * Owner share of a settings section entry. The host owns visibility
  * and navigation; a section's data arrives through its own inject faces and
- * stores. `close` is the one shell affordance a section receives, for flows
+ * stores. `close` is the one host affordance a section receives, for flows
  * that leave settings altogether (starting a session from a section) — the
  * onboarding coordinator's `openSection`/`complete` precedent, inverted.
  */
 export interface SettingsSectionOwnerProps {
-  /** Close the settings panel (the shell owns the open state). */
+  /** Leave the current settings dialog or embedded application panel. */
   close: () => void
 }
 
