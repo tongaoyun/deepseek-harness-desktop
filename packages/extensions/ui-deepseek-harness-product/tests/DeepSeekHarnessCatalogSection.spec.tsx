@@ -430,7 +430,7 @@ describe('DeepSeekHarness capability navigation', () => {
       if (operation === deletion) {
         if (fail) throw new Error('network')
         removed = true
-        return { removed: true }
+        return { removed: true, id: entry.id }
       }
       return undefined
     })
@@ -461,7 +461,7 @@ describe('DeepSeekHarness capability navigation', () => {
     const invoke = vi.fn(async (method: string): Promise<unknown> => {
       if (method === 'skills.list') return [{ id: 'my-skill', name: '我的技能', version: '1.0.1', canEdit: true,
         canSubmit: !submitted, canDelete: false, visibility: 'PERSONAL', reviewStatus: submitted ? 'SUBMITTED' : 'DRAFT' }]
-      if (method === 'extensions.submit') { submitted = true; return { submitted: true } }
+      if (method === 'extensions.submit') { submitted = true; return { submitted: true, id: 'my-skill', version: '1.0.1' } }
       return undefined
     })
     installProductApi({ invoke })

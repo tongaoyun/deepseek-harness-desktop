@@ -16,7 +16,7 @@ import { isKnowledgeAccessDenied } from './knowledge-data.ts'
 import { ExtensionPreview } from './ExtensionPreview.tsx'
 import { ConnectorEditor } from './ConnectorEditor.tsx'
 import { ExtensionImporter } from './ExtensionImporter.tsx'
-import { EXTENSION_CATEGORIES, ExtensionImportPreviewSchema, type ExtensionImportPreview } from '@deepseek-harness/product/extension-draft'
+import { EXTENSION_CATEGORIES, ExtensionImportPreviewSchema, ExtensionRemovalResultSchema, ExtensionSubmissionResultSchema, ExtensionUninstallResultSchema, type ExtensionImportPreview } from '@deepseek-harness/product/extension-draft'
 import { knowledgeReferenceDetails } from './catalog-shared.tsx'
 import { IconPlusOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives'
 import { ResourceActionsMenu } from './ResourceActionsMenu.tsx'
@@ -485,8 +485,14 @@ export function DeepSeekHarnessCatalogSection(props: CatalogSectionProps): React
       const method = target.action === 'uninstall' ? target.kind === 'skill' ? 'skills.uninstall' : 'expertKits.uninstall'
         : target.action === 'submit' ? 'extensions.submit'
           : target.kind === 'connector' ? 'extensions.connector.delete' : 'extensions.delete'
-      await api.invoke(method, { kind: target.kind, id: target.id, version: target.version }, requestId)
+      const value = await api.invoke(method, { kind: target.kind, id: target.id, version: target.version }, requestId)
       if (lifetime !== managementLifetime.current) return
+      const schema = target.action === 'submit' ? ExtensionSubmissionResultSchema
+        : target.action === 'delete' ? ExtensionRemovalResultSchema : ExtensionUninstallResultSchema
+      const receipt = schema.parse(value)
+      if (receipt.id !== target.id || ('version' in receipt && receipt.version !== target.version)) {
+        throw new Error('Resource management receipt does not match the submitted operation')
+      }
       setConfirmation(undefined)
       if (target.action === 'delete') {
         closeDetail()

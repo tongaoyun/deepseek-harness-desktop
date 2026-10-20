@@ -147,3 +147,10 @@ export const ConnectorDeviceConfigurationSchema = z.discriminatedUnion('transpor
 export type ConnectorDeviceConfigurationSnapshot = Readonly<z.infer<typeof ConnectorDeviceConfigurationSchema>>
 /** Validate confirmation that the selected connector version was configured on this device. */
 export const ConnectorConfigurationSaveResultSchema = z.object({ id, version, configured: z.literal(true) })
+
+/** Confirm deletion of a server resource identified independently of its historical versions. */
+export const ExtensionRemovalResultSchema = z.object({ id, removed: z.literal(true) })
+/** Confirm submission of the requested immutable resource version for shared review. */
+export const ExtensionSubmissionResultSchema = z.object({ id, version, submitted: z.literal(true) })
+/** Confirm removal of the resource's device installation, preserving task snapshots. */
+export const ExtensionUninstallResultSchema = z.object({ id })
