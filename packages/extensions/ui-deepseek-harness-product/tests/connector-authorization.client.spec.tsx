@@ -4,7 +4,7 @@ import { afterEach, expect, it, vi } from 'vitest'
 import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import { zh as commonZh } from '@deepseek-ai/dsh-client-locale/src/locales/zh.ts'
 import { ConnectorDetail } from '../src/client/ConnectorView.tsx'
-import { ExpertKitsPanel } from '../src/client/DeepSeekHarnessCatalogSection.tsx'
+import { ConnectorsPanel, ExpertKitsPanel } from '../src/client/DeepSeekHarnessCatalogSection.tsx'
 import { items, localDetail } from '../src/client/catalog-shared.tsx'
 import { zh } from '../src/locales.ts'
 
@@ -176,7 +176,7 @@ it('cancels a connector reference refresh when closed and ignores its late resul
 it('reports a failed reference refresh and retains the kit until a successful retry', async () => {
   const kit = { id: 'order-kit', name: '订单套件', version: '1.0.0', connectorRefs: ['erp'] }
   let reads = 0
-  transport(async (method) => {
+  const api = transport(async (method) => {
     if (method === 'auth.getSession') return { authenticated: true, employeeId: 'employee' }
     if (method === 'expertKits.list') return [kit]
     if (method === 'expertKits.get') return kit
@@ -194,11 +194,107 @@ it('reports a failed reference refresh and retains the kit until a successful re
   fireEvent.click(await screen.findByRole('button', { name: 'ERP 连接器' }))
   const dialog = await screen.findByRole('dialog', { name: zh.connectorDetails })
   fireEvent.click(within(dialog).getByRole('button', { name: zh.revokeAuthorization }))
-  expect((await within(dialog).findByRole('alert')).textContent).toBe(zh.authorizationFailed)
+  expect((await within(dialog).findByRole('alert')).textContent).toBe(zh.connectorRefreshFailed)
   const dependencies = screen.getByRole('heading', { level: 2, name: `${zh.dataConnections} 1` }).closest('section')!
   expect(within(dependencies).getByText(zh.statusAuthorized)).toBeTruthy()
-  fireEvent.click(within(dialog).getByRole('button', { name: zh.revokeAuthorization }))
+  fireEvent.click(within(dialog).getByRole('button', { name: zh.refresh }))
   await within(dialog).findByRole('button', { name: zh.authorize })
   expect(within(dependencies).getByText(zh.statusRequired)).toBeTruthy()
   expect(screen.queryByRole('alert')).toBeNull()
+  expect(api.invoke.mock.calls.filter(call => call[1] === 'connectors.authorization.revoke')).toHaveLength(1)
+})
+
+it.each(['authorize', 'revoke', 'configure'] as const)('retains catalog connector details and retries only reads after confirmed %s', async (operation) => {
+  let reads = 0
+  let authorized = operation !== 'authorize'
+  const api = transport(async (method) => {
+    if (method === 'auth.getSession') return { authenticated: true, employeeId: 'employee' }
+    if (method === 'connectors.list') {
+      if (++reads === 2) throw new Error('Directory unavailable')
+      return [{ ...descriptor, canConfigure: true, authorizationStatus: authorized ? 'AUTHORIZED' : 'REQUIRED' }]
+    }
+    if (method === 'connectors.authorization.begin') return launch
+    if (method === 'connectors.authorization.status') { authorized = true; return { connectorId: 'erp', status: 'AUTHORIZED' } }
+    if (method === 'connectors.authorization.revoke') { authorized = false; return { connectorId: 'erp', status: 'REQUIRED' } }
+    if (method === 'extensions.connector.configuration.read') return { id: 'erp', version: '1.0.0',
+      transport: 'streamable-http', url: 'https://mcp.example.test', arguments: [], headers: [], environment: [], configured: false, timeoutSeconds: 60 }
+    if (method === 'extensions.connector.configuration.save') return { id: 'erp', version: '1.0.0', configured: true }
+    throw new Error(`Unexpected method ${method}`)
+  })
+  render(<ConnectorsPanel {...actions} t={t} />)
+  fireEvent.click(await screen.findByRole('button', { name: /^ERP 连接器/ }))
+  const dialog = await screen.findByRole('dialog', { name: zh.connectorDetails })
+  if (operation === 'configure') {
+    fireEvent.click(within(dialog).getByRole('button', { name: zh.configureDevice }))
+    fireEvent.click(await screen.findByRole('button', { name: zh.saveConnector }))
+  } else {
+    if (operation === 'authorize') vi.useFakeTimers()
+    await act(async () => { fireEvent.click(within(dialog).getByRole('button', { name: operation === 'authorize' ? zh.authorize : zh.revokeAuthorization })) })
+    if (operation === 'authorize') { await act(async () => { await vi.advanceTimersByTimeAsync(1_000) }); vi.useRealTimers() }
+  }
+  expect((await screen.findByRole('alert')).textContent).toBe(zh.connectorRefreshFailed)
+  expect(screen.getByRole('dialog', { name: zh.connectorDetails })).toBe(dialog)
+  expect(screen.queryByRole('dialog', { name: zh.configureDevice })).toBeNull()
+  fireEvent.click(within(dialog).getByRole('button', { name: zh.refresh }))
+  await within(dialog).findByRole('button', { name: authorized ? zh.revokeAuthorization : zh.authorize })
+  expect(reads).toBe(3)
+  expect(screen.queryByRole('alert')).toBeNull()
+  const write = operation === 'configure' ? 'extensions.connector.configuration.save'
+    : operation === 'authorize' ? 'connectors.authorization.begin' : 'connectors.authorization.revoke'
+  expect(api.invoke.mock.calls.filter(call => call[1] === write)).toHaveLength(1)
+})
+
+it.each(['resolve', 'reject'] as const)('cancels a catalog connector refresh on close and ignores its late %s after another connector opens', async (outcome) => {
+  const pending = Promise.withResolvers<unknown>()
+  const started = Promise.withResolvers<undefined>()
+  const other = { ...descriptor, id: 'hr', name: 'HR 连接器' }
+  let reads = 0
+  const api = transport(async (method) => {
+    if (method === 'auth.getSession') return { authenticated: true, employeeId: 'employee' }
+    if (method === 'connectors.list') {
+      if (++reads === 2) { started.resolve(undefined); return pending.promise }
+      return [descriptor, other]
+    }
+    if (method === 'connectors.authorization.revoke') return { connectorId: 'erp', status: 'REQUIRED' }
+    throw new Error(`Unexpected method ${method}`)
+  })
+  render(<ConnectorsPanel {...actions} t={t} />)
+  fireEvent.click(await screen.findByRole('button', { name: /^ERP 连接器/ }))
+  const dialog = await screen.findByRole('dialog', { name: zh.connectorDetails })
+  await act(async () => { fireEvent.click(within(dialog).getByRole('button', { name: zh.revokeAuthorization })); await started.promise })
+  const request = api.invoke.mock.calls.filter(call => call[1] === 'connectors.list').at(-1)!
+  fireEvent.click(within(dialog).getByRole('button', { name: zh.close }))
+  expect(api.cancel).toHaveBeenCalledWith('product', request[3])
+  fireEvent.click(screen.getByRole('button', { name: /^HR 连接器/ }))
+  await act(async () => {
+    if (outcome === 'resolve') pending.resolve([{ ...descriptor, authorizationStatus: 'REQUIRED' }])
+    else pending.reject(new Error('Late directory failure'))
+  })
+  const current = screen.getByRole('dialog', { name: zh.connectorDetails })
+  expect(within(current).getByText('HR 连接器')).toBeTruthy()
+  expect(within(current).queryByText('ERP 连接器')).toBeNull()
+  expect(within(current).getByRole('button', { name: zh.revokeAuthorization })).toBeTruthy()
+  expect(screen.queryByRole('alert')).toBeNull()
+  expect(reads).toBe(2)
+})
+
+it('keeps a missing connector unavailable until the directory returns its matching resource', async () => {
+  let reads = 0
+  const api = transport(async (method) => {
+    if (method === 'auth.getSession') return { authenticated: true, employeeId: 'employee' }
+    if (method === 'connectors.list') return ++reads === 2 ? [] : [{ ...descriptor, authorizationStatus: reads > 2 ? 'REQUIRED' : 'AUTHORIZED' }]
+    if (method === 'connectors.authorization.revoke') return { connectorId: 'erp', status: 'REQUIRED' }
+    throw new Error(`Unexpected method ${method}`)
+  })
+  render(<ConnectorsPanel {...actions} t={t} />)
+  fireEvent.click(await screen.findByRole('button', { name: /^ERP 连接器/ }))
+  const dialog = await screen.findByRole('dialog', { name: zh.connectorDetails })
+  fireEvent.click(within(dialog).getByRole('button', { name: zh.revokeAuthorization }))
+  expect((await within(dialog).findByRole('alert')).textContent).toBe(zh.connectorRefreshFailed)
+  expect(within(dialog).queryByRole('button', { name: zh.revokeAuthorization })).toBeNull()
+  expect(within(dialog).queryByRole('heading', { name: zh.connectorTools })).toBeNull()
+  fireEvent.click(within(dialog).getByRole('button', { name: zh.refresh }))
+  await within(dialog).findByRole('button', { name: zh.authorize })
+  expect(screen.queryByRole('alert')).toBeNull()
+  expect(api.invoke.mock.calls.filter(call => call[1] === 'connectors.authorization.revoke')).toHaveLength(1)
 })

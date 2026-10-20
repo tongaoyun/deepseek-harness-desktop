@@ -42,6 +42,7 @@ export function ConnectorDetail({ product, onCatalogChanged, t }: {
 }): ReactNode {
   const [authorizationPending, setAuthorizationPending] = useState(false)
   const [authorizationError, setAuthorizationError] = useState(false)
+  const [refreshState, setRefreshState] = useState<'idle' | 'pending' | 'failed'>('idle')
   const [configuring, setConfiguring] = useState(false)
   const lifecycle = useRef<AbortController>(new AbortController())
   const authorizationAbort = useRef<AbortController>()
@@ -68,9 +69,22 @@ export function ConnectorDetail({ product, onCatalogChanged, t }: {
       activeRequests.current.delete(requestId)
     }
   }
+  const refreshCatalog = async (): Promise<void> => {
+    const signal = lifecycle.current.signal
+    if (refreshState === 'pending') return
+    setRefreshState('pending')
+    try {
+      signal.throwIfAborted()
+      await onCatalogChanged()
+      signal.throwIfAborted()
+      setRefreshState('idle')
+    } catch {
+      if (!signal.aborted) setRefreshState('failed')
+    }
+  }
   const authorize = async (): Promise<void> => {
     const api = productApi()
-    if (api === undefined || authorizationPending) return
+    if (api === undefined || authorizationPending || refreshState !== 'idle') return
     const controller = new AbortController()
     const signal = AbortSignal.any([controller.signal, lifecycle.current.signal])
     authorizationAbort.current = controller
@@ -86,7 +100,7 @@ export function ConnectorDetail({ product, onCatalogChanged, t }: {
         const value = await invoke(api, 'connectors.authorization.status')
         signal.throwIfAborted()
         const { status } = parseConnectorAuthorization(value, product.id)
-        if (status === 'AUTHORIZED') { await onCatalogChanged(); return }
+        if (status === 'AUTHORIZED') { await refreshCatalog(); return }
         if (status === 'EXPIRED' || status === 'REQUIRED') break
       }
       throw new Error('connector authorization did not complete')
@@ -99,7 +113,7 @@ export function ConnectorDetail({ product, onCatalogChanged, t }: {
   }
   const revoke = async (): Promise<void> => {
     const api = productApi()
-    if (api === undefined || authorizationPending) return
+    if (api === undefined || authorizationPending || refreshState !== 'idle') return
     const signal = lifecycle.current.signal
     setAuthorizationPending(true)
     setAuthorizationError(false)
@@ -107,7 +121,7 @@ export function ConnectorDetail({ product, onCatalogChanged, t }: {
       const result = await invoke(api, 'connectors.authorization.revoke')
       signal.throwIfAborted()
       if (parseConnectorAuthorization(result, product.id).status !== 'REQUIRED') throw new Error('Connector revocation was not confirmed')
-      await onCatalogChanged()
+      await refreshCatalog()
     } catch {
       if (!signal.aborted) setAuthorizationError(true)
     } finally {
@@ -117,7 +131,12 @@ export function ConnectorDetail({ product, onCatalogChanged, t }: {
   return <>
     <section className={css.connectorSection}>
       <h2>{t('connectorConfiguration')}</h2>
-      <div className={css.connectorConnection}>
+      {refreshState === 'pending' && <p role="status">{t('loading')}</p>}
+      {refreshState === 'failed' && <div className={css.detailActions}>
+        <span className={css.catalogError} role="alert">{t('connectorRefreshFailed')}</span>
+        <Button variant="outline" size="sm" onClick={() => { void refreshCatalog() }}>{t('refresh')}</Button>
+      </div>}
+      {refreshState === 'idle' && <div className={css.connectorConnection}>
         <dl className={css.connectorFacts}>
           {product.status !== undefined && <div><dt>{t('status')}</dt>
             <dd data-available={product.availabilityStatus === 'AVAILABLE'}>{localizedMetadata(product.status, t)}</dd></div>}
@@ -130,8 +149,8 @@ export function ConnectorDetail({ product, onCatalogChanged, t }: {
           {product.authMode !== undefined && <div><dt>{t('authMode')}</dt>
             <dd>{localizedMetadata(product.authMode, t)}</dd></div>}
         </dl>
-      </div>
-      {managedAuthorization && <div className={css.detailActions}>
+      </div>}
+      {managedAuthorization && refreshState === 'idle' && <div className={css.detailActions}>
         {product.authorizationStatus === 'AUTHORIZED'
           ? <Button variant="outline" size="sm" disabled={authorizationPending} onClick={() => { void revoke() }}>
             {authorizationPending ? t('authorizationWorking') : t('revokeAuthorization')}
@@ -142,17 +161,17 @@ export function ConnectorDetail({ product, onCatalogChanged, t }: {
           </Button>}
         {authorizationError && <span className={css.catalogError} role="alert">{t('authorizationFailed')}</span>}
       </div>}
-      {product.canConfigure === true && <div className={css.detailActions}>
+      {product.canConfigure === true && refreshState === 'idle' && <div className={css.detailActions}>
         <Button variant="outline" size="sm" onClick={() => { setConfiguring(true) }}><IconLinkOutlineRegular size={14} />{t('configureDevice')}</Button>
       </div>}
     </section>
     {configuring && <ConnectorDeviceConfiguration product={product} onClose={() => { setConfiguring(false) }}
       onSaved={async () => {
         const signal = lifecycle.current.signal
-        await onCatalogChanged()
+        await refreshCatalog()
         if (!signal.aborted) setConfiguring(false)
       }} t={t} />}
-    <section className={css.connectorSection}>
+    {refreshState === 'idle' && <section className={css.connectorSection}>
       <h2>{t('connectorTools')}</h2>
       {product.tools.length > 0 && <div className={css.toolSummary}>
         <span>{t('readCapabilityCount').replace('{count}', String(readTools.length))}</span>
@@ -172,7 +191,7 @@ export function ConnectorDetail({ product, onCatalogChanged, t }: {
               </span>
             </div></li>)}</ul></div>
         </details>}
-    </section>
+    </section>}
   </>
 }
 

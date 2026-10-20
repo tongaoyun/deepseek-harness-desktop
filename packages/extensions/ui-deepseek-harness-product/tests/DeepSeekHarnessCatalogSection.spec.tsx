@@ -1061,11 +1061,13 @@ describe('DeepSeekHarness capability navigation', () => {
 
   it('allows retrying a failed connector revocation after StrictMode effect reactivation', async () => {
     let fail = true
+    let authorized = true
     const invoke = vi.fn(async (method: string) => {
       if (method === 'connectors.list') return [{ id: 'erp', name: 'ERP 连接器',
-        authMode: 'oauth', authorizationStatus: 'AUTHORIZED', tools: [] }]
+        authMode: 'oauth', authorizationStatus: authorized ? 'AUTHORIZED' : 'REQUIRED', tools: [] }]
       if (method === 'connectors.authorization.revoke') {
         if (fail) throw new Error('network unavailable')
+        authorized = false
         return { connectorId: 'erp', status: 'REQUIRED' }
       }
       return []
@@ -1078,7 +1080,9 @@ describe('DeepSeekHarness capability navigation', () => {
     expect(screen.getByRole<HTMLButtonElement>('button', { name: zh.revokeAuthorization }).disabled).toBe(false)
     fail = false
     fireEvent.click(screen.getByRole('button', { name: zh.revokeAuthorization }))
-    await waitFor(() => { expect(screen.queryByRole('dialog')).toBeNull() })
+    const dialog = screen.getByRole('dialog', { name: zh.connectorDetails })
+    await within(dialog).findByRole('button', { name: zh.authorize })
+    expect(screen.queryByRole('alert')).toBeNull()
   })
 
   it.each(['card', 'detail'] as const)('uninstalls and reinstalls a shared skill from its %s with confirmation and retry', async (surface) => {

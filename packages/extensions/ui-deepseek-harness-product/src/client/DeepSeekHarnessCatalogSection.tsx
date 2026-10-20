@@ -562,23 +562,31 @@ export function DeepSeekHarnessCatalogSection(props: CatalogSectionProps): React
     } catch (error) { if (lifetime === managementLifetime.current && currentGeneration === detailReads.current.generation) setActionFailure(productErrorMessage(error, t, 'detailFailed')) }
   }
   const closeReference = (): void => { cancelReads(); setReference(undefined) }
-  const refreshConnectorReference = async (): Promise<void> => {
+  const refreshConnectorDetails = async (): Promise<void> => {
     const api = productApi()
-    if (!api || reference?.kind !== 'connectors') return
-    const id = reference.detail.id
+    if (!api) throw new Error(t('unavailable'))
+    const id = reference?.kind === 'connectors' ? reference.detail.id : catalog === 'connectors' ? selected?.id : undefined
+    if (id === undefined) return
     const lifetime = managementLifetime.current
     const generation = detailReads.current.generation
     const values = await read(api, 'connectors.list')
     if (lifetime !== managementLifetime.current || generation !== detailReads.current.generation) return
-    const item = items(values).find(entry => entry.id === id)
+    const connectors = items(values)
+    const item = connectors.find(entry => entry.id === id)
     if (!item) throw new Error(t('referenceUnauthorized'))
     setReference(previous => previous?.kind === 'connectors' && previous.detail.id === id
       ? { kind: 'connectors', detail: localDetail(item) } : previous)
-    setSelected(previous => previous === undefined ? previous : { ...previous,
-      connectorDetails: referenceDetails(previous.connectorRefs, values, 'connectors') })
+    if (catalog === 'connectors') {
+      setEntries(connectors)
+      setSelected(previous => previous?.id === id ? localDetail(item) : previous)
+      setError(undefined)
+    } else {
+      setSelected(previous => previous === undefined ? previous : { ...previous,
+        connectorDetails: referenceDetails(previous.connectorRefs, values, 'connectors') })
+    }
   }
   const referenceModal = reference?.kind === 'connectors' ? <ConnectorDetailModal open detail={reference.detail} loading={false} error={false}
-    onClose={closeReference} onCatalogChanged={refreshConnectorReference} t={t} />
+    onClose={closeReference} onCatalogChanged={refreshConnectorDetails} t={t} />
     : reference?.kind === 'skills' ? <SkillDetailModal open bundled detail={reference.detail}
       loading={false} error={false} installed={false}
       installationsKnown={false} actionPending={false}
@@ -743,7 +751,7 @@ export function DeepSeekHarnessCatalogSection(props: CatalogSectionProps): React
     {catalog === 'connectors' && <ConnectorDetailModal open={selectedId !== undefined} detail={selected}
       loading={detailLoading} error={detailError} onClose={closeDetail}
       managementActions={selected ? managementActions(selected) : undefined}
-      onCatalogChanged={() => { closeDetail(); return refresh() }} t={t} />}
+      onCatalogChanged={refreshConnectorDetails} t={t} />}
     {importer && (catalog === 'skills' || catalog === 'expertKits') && <ExtensionImporter kind={catalog === 'skills' ? 'skill' : 'expert-kit'}
       onClose={() => { setImporter(false) }} onInspected={(imported) => {
         const api = productApi()
