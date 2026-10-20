@@ -542,7 +542,7 @@ export function DeepSeekHarnessCatalogSection(props: CatalogSectionProps): React
     const api = productApi()
     if (!api || !value.kind) return
     const lifetime = managementLifetime.current
-    const currentGeneration = detailReads.current.generation
+    const currentGeneration = cancelReads()
     try {
       if (value.kind === 'skills') {
         const skill = selected?.skillDetails.find(skill => skill.id === value.id)
@@ -561,17 +561,33 @@ export function DeepSeekHarnessCatalogSection(props: CatalogSectionProps): React
       }
     } catch (error) { if (lifetime === managementLifetime.current && currentGeneration === detailReads.current.generation) setActionFailure(productErrorMessage(error, t, 'detailFailed')) }
   }
+  const closeReference = (): void => { cancelReads(); setReference(undefined) }
+  const refreshConnectorReference = async (): Promise<void> => {
+    const api = productApi()
+    if (!api || reference?.kind !== 'connectors') return
+    const id = reference.detail.id
+    const lifetime = managementLifetime.current
+    const generation = detailReads.current.generation
+    const values = await read(api, 'connectors.list')
+    if (lifetime !== managementLifetime.current || generation !== detailReads.current.generation) return
+    const item = items(values).find(entry => entry.id === id)
+    if (!item) throw new Error(t('referenceUnauthorized'))
+    setReference(previous => previous?.kind === 'connectors' && previous.detail.id === id
+      ? { kind: 'connectors', detail: localDetail(item) } : previous)
+    setSelected(previous => previous === undefined ? previous : { ...previous,
+      connectorDetails: referenceDetails(previous.connectorRefs, values, 'connectors') })
+  }
   const referenceModal = reference?.kind === 'connectors' ? <ConnectorDetailModal open detail={reference.detail} loading={false} error={false}
-    onClose={() => { setReference(undefined) }} onCatalogChanged={() => refresh()} t={t} />
+    onClose={closeReference} onCatalogChanged={refreshConnectorReference} t={t} />
     : reference?.kind === 'skills' ? <SkillDetailModal open bundled detail={reference.detail}
       loading={false} error={false} installed={false}
       installationsKnown={false} actionPending={false}
-      onClose={() => { setReference(undefined) }} onUse={() => undefined} t={t} />
+      onClose={closeReference} onUse={() => undefined} t={t} />
       : reference?.kind === 'knowledge' ? <div className={css.drawerBackdrop} onMouseDown={(event) => {
-        if (event.target === event.currentTarget) setReference(undefined)
+        if (event.target === event.currentTarget) closeReference()
       }}><aside className={`${css.detailDrawer} ${css.knowledgeDrawer}`} role="dialog" aria-modal="true" aria-label={reference.detail.name}>
           <div className={css.drawerBar}><span>{t('details')}</span><button type="button" className={css.iconButton} aria-label={t('close')}
-            onClick={() => { setReference(undefined) }}><IconCloseOutlineRegular size={16} /></button></div>
+            onClick={closeReference}><IconCloseOutlineRegular size={16} /></button></div>
           <article className={css.detailContent}><DetailIdentity detail={reference.detail} icon={IconDatabaseOutlineRegular}
             showVisibility={false} t={t} />
           <KnowledgeDetail product={reference.detail} renderFactorySlot={props.renderFactorySlot} t={t} /></article></aside></div> : null

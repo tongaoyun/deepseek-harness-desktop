@@ -1,5 +1,6 @@
 /** Browser-safe personal extension forms and previews, without archive or YAML parsing. */
 import { z } from 'zod'
+export { parseConnectorAuthorization, parseConnectorAuthorizationLaunch } from './connector-authorization.ts'
 
 /** Stable skill and kit categories in product display order. */
 export const EXTENSION_CATEGORIES = ['office-productivity', 'content-creation', 'marketing', 'ecommerce-retail',

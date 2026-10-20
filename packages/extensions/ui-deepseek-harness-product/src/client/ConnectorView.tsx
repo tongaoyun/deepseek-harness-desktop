@@ -1,12 +1,12 @@
 import type { ReactNode } from 'react'
 import { useEffect, useRef, useState } from 'react'
 import { Button, IconChevronRightOutlineRegular, IconLinkOutlineRegular, Modal } from '@deepseek-ai/dsh-client-ui-primitives'
-import { ConnectorConfigurationSaveResultSchema, ConnectorDeviceConfigurationSchema, type ConnectorDeviceConfigurationSnapshot } from '@deepseek-harness/product/extension-draft'
+import { parseConnectorAuthorization, parseConnectorAuthorizationLaunch, ConnectorConfigurationSaveResultSchema, ConnectorDeviceConfigurationSchema, type ConnectorDeviceConfigurationSnapshot } from '@deepseek-harness/product/extension-draft'
 import { type DeepSeekHarnessProductKey } from '../locales.ts'
 import css from '../DeepSeekHarnessProduct.module.css'
 import { productApi, type ProductApi } from './product-api.ts'
 import { productErrorMessage } from './product-errors.ts'
-import { type ProductDetail, AUTHORIZATION_TIMEOUT_MS, AUTHORIZATION_POLL_INTERVAL_MS, nextProductRequestId, abortableDelay, text, localizedMetadata, DetailIdentity } from './catalog-shared.tsx'
+import { type ProductDetail, AUTHORIZATION_TIMEOUT_MS, AUTHORIZATION_POLL_INTERVAL_MS, nextProductRequestId, abortableDelay, localizedMetadata, DetailIdentity } from './catalog-shared.tsx'
 
 export function ConnectorDetailModal({ detail: product, error, loading, onCatalogChanged, managementActions, onClose, open, t }: {
   readonly managementActions?: ReactNode
@@ -77,15 +77,15 @@ export function ConnectorDetail({ product, onCatalogChanged, t }: {
     setAuthorizationPending(true)
     setAuthorizationError(false)
     try {
-      await invoke(api, 'connectors.authorization.begin')
+      const launch = await invoke(api, 'connectors.authorization.begin')
       signal.throwIfAborted()
+      parseConnectorAuthorizationLaunch(launch, product.id)
       const expiresAt = Date.now() + AUTHORIZATION_TIMEOUT_MS
       while (Date.now() < expiresAt) {
         await abortableDelay(AUTHORIZATION_POLL_INTERVAL_MS, signal)
         const value = await invoke(api, 'connectors.authorization.status')
         signal.throwIfAborted()
-        const status = typeof value === 'object' && value !== null && !Array.isArray(value)
-          ? text(value as Record<string, unknown>, 'status') : undefined
+        const { status } = parseConnectorAuthorization(value, product.id)
         if (status === 'AUTHORIZED') { await onCatalogChanged(); return }
         if (status === 'EXPIRED' || status === 'REQUIRED') break
       }
@@ -104,8 +104,9 @@ export function ConnectorDetail({ product, onCatalogChanged, t }: {
     setAuthorizationPending(true)
     setAuthorizationError(false)
     try {
-      await invoke(api, 'connectors.authorization.revoke')
+      const result = await invoke(api, 'connectors.authorization.revoke')
       signal.throwIfAborted()
+      if (parseConnectorAuthorization(result, product.id).status !== 'REQUIRED') throw new Error('Connector revocation was not confirmed')
       await onCatalogChanged()
     } catch {
       if (!signal.aborted) setAuthorizationError(true)

@@ -7,6 +7,7 @@ import { invokeKnowledge, type KnowledgeUpload } from './knowledge-bridge.ts'
 export type { KnowledgeUpload, KnowledgeUploadPending } from './knowledge-bridge.ts'
 import { ProductError } from './errors.ts'
 import { z } from 'zod'
+import { parseConnectorAuthorization, parseConnectorAuthorizationLaunch } from './connector-authorization.ts'
 
 /** Main-process-only inference bootstrap. Secrets in this object never cross the preload bridge. */
 export interface ProductRuntimeBootstrap {
@@ -419,18 +420,21 @@ export class DeepSeekHarnessProductBridge {
       const result = await this.api.request(
         `/api/v1/connectors/${encodeURIComponent(requiredId(input))}/authorization`, { ...(signal === undefined ? {} : { signal }) },
       )
-      if (authorizationStatus(result) === 'AUTHORIZED') this.catalogChanged()
+      if (parseConnectorAuthorization(result, requiredId(input)).status === 'AUTHORIZED') this.catalogChanged()
       return result
     }
     if (method === 'connectors.authorization.begin') {
-      return this.api.request(`/api/v1/connectors/${encodeURIComponent(requiredId(input))}/authorization-requests`, {
+      const result = await this.api.request(`/api/v1/connectors/${encodeURIComponent(requiredId(input))}/authorization-requests`, {
         method: 'POST', ...(signal === undefined ? {} : { signal }),
       })
+      parseConnectorAuthorizationLaunch(result, requiredId(input))
+      return result
     }
     if (method === 'connectors.authorization.revoke') {
       const result = await this.api.request(`/api/v1/connectors/${encodeURIComponent(requiredId(input))}/authorization`, {
         method: 'DELETE', ...(signal === undefined ? {} : { signal }),
       })
+      if (parseConnectorAuthorization(result, requiredId(input)).status !== 'REQUIRED') throw new Error('Connector revocation was not confirmed')
       this.catalogChanged()
       return result
     }
@@ -636,15 +640,6 @@ function rendererConnector(value: unknown): unknown {
   const tools = Array.isArray(record.tools) ? record.tools.map((tool: Record<string, unknown>) =>
     Object.fromEntries(['name', 'displayName', 'description', 'access'].filter(key => key in tool).map(key => [key, tool[key]]))) : []
   return { ...Object.fromEntries(metadata.filter(key => key in record).map(key => [key, record[key]])), tools }
-}
-
-function authorizationStatus(value: unknown): string | undefined {
-  if (typeof value !== 'object' || value === null || Array.isArray(value)) return undefined
-  return optionalString((value as Record<string, unknown>).status)
-}
-
-function optionalString(value: unknown): string | undefined {
-  return typeof value === 'string' && value !== '' ? value : undefined
 }
 
 function requiredId(input: Readonly<Record<string, unknown>>): string {

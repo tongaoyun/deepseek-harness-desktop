@@ -1064,7 +1064,10 @@ describe('DeepSeekHarness capability navigation', () => {
     const invoke = vi.fn(async (method: string) => {
       if (method === 'connectors.list') return [{ id: 'erp', name: 'ERP 连接器',
         authMode: 'oauth', authorizationStatus: 'AUTHORIZED', tools: [] }]
-      if (method === 'connectors.authorization.revoke' && fail) throw new Error('network unavailable')
+      if (method === 'connectors.authorization.revoke') {
+        if (fail) throw new Error('network unavailable')
+        return { connectorId: 'erp', status: 'REQUIRED' }
+      }
       return []
     })
     installProductApi({ invoke })
@@ -1463,10 +1466,10 @@ describe('DeepSeekHarness capability navigation', () => {
     const invoke = vi.fn(async (method: string): Promise<unknown> => {
       if (method === 'connectors.list') return [{ id: 'erp', displayName: 'ERP 连接器',
         authMode: 'oauth', authorizationStatus: 'REQUIRED', tools: [] }]
-      if (method === 'connectors.authorization.begin') return { authorizationUrl: 'https://auth.example/' }
+      if (method === 'connectors.authorization.begin') return { connectorId: 'erp', status: 'PENDING', authorizationUrl: 'https://auth.example/' }
       if (method === 'connectors.authorization.status') {
         subscriber?.({ type: 'catalog.changed' })
-        return { status: 'AUTHORIZED' }
+        return { connectorId: 'erp', status: 'AUTHORIZED' }
       }
       throw new Error(`unexpected method: ${method}`)
     })
@@ -1490,8 +1493,8 @@ describe('DeepSeekHarness capability navigation', () => {
     const invoke = vi.fn(async (method: string): Promise<unknown> => {
       if (method === 'connectors.list') return [{ id: 'erp', displayName: 'ERP 连接器',
         authMode: 'oauth', authorizationStatus: 'REQUIRED', tools: [] }]
-      if (method === 'connectors.authorization.begin') return { authorizationUrl: 'https://auth.example/' }
-      if (method === 'connectors.authorization.status') return { status: 'PENDING' }
+      if (method === 'connectors.authorization.begin') return { connectorId: 'erp', status: 'PENDING', authorizationUrl: 'https://auth.example/' }
+      if (method === 'connectors.authorization.status') return { connectorId: 'erp', status: 'PENDING' }
       throw new Error(`unexpected method: ${method}`)
     })
     const cancel = vi.fn()
@@ -1533,7 +1536,7 @@ describe('DeepSeekHarness capability navigation', () => {
         authMode: 'oauth', authorizationStatus: 'AUTHORIZED', tools: [] }]
       if (method === 'connectors.authorization.revoke') {
         subscriber?.({ type: 'catalog.changed' })
-        return undefined
+        return { connectorId: 'erp', status: 'REQUIRED' }
       }
       throw new Error(`unexpected method: ${method}`)
     })
@@ -1557,9 +1560,9 @@ describe('DeepSeekHarness capability navigation', () => {
     const invoke = vi.fn(async (method: string): Promise<unknown> => {
       if (method === 'connectors.list') return [{ id: 'erp', displayName: 'ERP 连接器', authMode: 'oauth',
         authorizationStatus: authorized ? 'AUTHORIZED' : 'REQUIRED', tools: [] }]
-      if (method === 'connectors.authorization.begin') return { authorizationUrl: 'https://auth.example/' }
-      if (method === 'connectors.authorization.status') { authorized = true; return { status: 'AUTHORIZED' } }
-      if (method === 'connectors.authorization.revoke') { authorized = false; return { status: 'REQUIRED' } }
+      if (method === 'connectors.authorization.begin') return { connectorId: 'erp', status: 'PENDING', authorizationUrl: 'https://auth.example/' }
+      if (method === 'connectors.authorization.status') { authorized = true; return { connectorId: 'erp', status: 'AUTHORIZED' } }
+      if (method === 'connectors.authorization.revoke') { authorized = false; return { connectorId: 'erp', status: 'REQUIRED' } }
       throw new Error('Organization directory unavailable')
     })
     installProductApi({ getSession: vi.fn(async () => ({ authenticated: true })), invoke, cancel: vi.fn() })

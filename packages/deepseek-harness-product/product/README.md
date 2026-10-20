@@ -60,7 +60,7 @@ JSON 与原文件请求统一保留服务端错误的 `retryable`、资源和依
 
 任务能力读取和准备结果包含从固定专家套件解析的 `requiredConnectorIds`。调用方据此锁定任务选择，该选择独立于账号授权和连接器可用状态。
 
-`extensions.import.inspect`、`extensions.save`、`extensions.submit`、`extensions.delete` 将个人扩展编辑交给主进程，返回预览或业务结果。`extensions.import.release` 清理员工隔离的预览。`extension-draft` 出口提供浏览器可用的草稿、预览和保存回执校验，回执包含资源类型、ID、版本、个人可见性和安装结果；连接器编辑与本机配置的读取和配置回执也由该出口校验，本机模板只含私密字段名称。删除和卸载回执须匹配资源 ID，共享审核回执还须匹配提交版本。`authoring` 在主进程解析 YAML，生成标准技能/套件文件和依赖并集。所有者来自服务端认证。目录返回 `visibility`、`ownerEmployeeId`、`canEdit`、`canSubmit`、`canDelete` 和审核状态，个人可用资格独立于共享审核。知识引用解析区分不存在、无权访问、歧义与临时故障。
+`extensions.import.inspect`、`extensions.save`、`extensions.submit`、`extensions.delete` 将个人扩展编辑交给主进程，返回预览或业务结果。`extensions.import.release` 清理员工隔离的预览。`extension-draft` 出口提供浏览器可用的草稿、预览和保存回执校验，回执包含资源类型、ID、版本、个人可见性和安装结果；连接器编辑与本机配置的读取和配置回执也由该出口校验，本机模板只含私密字段名称。删除和卸载回执须匹配资源 ID，共享审核回执还须匹配提交版本。该出口也提供浏览器可用的连接器授权校验；主进程和渲染进程分别核对连接器 ID、授权状态及启动 URL，异常时不发布授权完成或撤销成功。`authoring` 在主进程解析 YAML，生成标准技能/套件文件和依赖并集。所有者来自服务端认证。目录返回 `visibility`、`ownerEmployeeId`、`canEdit`、`canSubmit`、`canDelete` 和审核状态，个人可用资格独立于共享审核。知识引用解析区分不存在、无权访问、歧义与临时故障。
 
 技能、内置技能与套件的 `knowledgeBaseRefs` 仅接受 `personal:<key>`、`department:<key>`、`company:<key>`，与目录 `reference` 一致。创建、导入和服务端提交均拒绝旧 `team:`、`organization:` 前缀，详情不转换引用。固定任务仍按实际知识库 ID 和实时权限执行。旧扩展须按[知识引用升级说明](../../../docs/upgrade-guide/v0.2.1-alpha.4/product-knowledge-references/guide.md)另建版本。
 

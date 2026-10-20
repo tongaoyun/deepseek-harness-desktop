@@ -963,7 +963,7 @@ describe('DeepSeekHarnessProductBridge', () => {
         fetch: (input) => {
           const path = requestUrl(input).pathname
           if (path.endsWith('/authorization')) return Promise.resolve(Response.json({ success: true,
-            data: { status: method.endsWith('.revoke') ? 'REQUIRED' : 'AUTHORIZED' } }))
+            data: { connectorId: 'erp', status: method.endsWith('.revoke') ? 'REQUIRED' : 'AUTHORIZED' } }))
           if (offline && path.endsWith('/knowledge-bases')) return Promise.resolve(Response.json({ success: false,
             errCode: 'ORGANIZATION_UNAVAILABLE', errMessage: 'Organization service unavailable' }, { status: 503 }))
           return catalogFetch(input)
@@ -975,7 +975,7 @@ describe('DeepSeekHarnessProductBridge', () => {
         events.length = 0
         offline = true
         await expect(bridge.invoke(method, { id: 'erp' })).resolves.toEqual({
-          status: method.endsWith('.revoke') ? 'REQUIRED' : 'AUTHORIZED',
+          connectorId: 'erp', status: method.endsWith('.revoke') ? 'REQUIRED' : 'AUTHORIZED',
         })
         expect(events.some(event => event.type === 'catalog.changed')).toBe(true)
         await expect(bridge.invoke('catalog.refresh')).rejects.toMatchObject({ code: 'ORGANIZATION_UNAVAILABLE' })
@@ -993,7 +993,7 @@ describe('DeepSeekHarnessProductBridge', () => {
       initialSession: { authenticated: true, employeeId: 'employee-1' },
       fetch: async (input, init) => {
         const path = requestUrl(input).pathname
-        if (path.endsWith('/authorization')) return Response.json({ success: true, data: { status: 'REQUIRED' } })
+        if (path.endsWith('/authorization')) return Response.json({ success: true, data: { connectorId: 'erp', status: 'REQUIRED' } })
         if (!path.endsWith('/knowledge-bases')) return catalogFetch(input)
         const signal = init?.signal
         if (!signal) throw new Error('Missing refresh cancellation')
@@ -1009,7 +1009,7 @@ describe('DeepSeekHarnessProductBridge', () => {
       },
     })
     try {
-      await expect(bridge.invoke('connectors.authorization.revoke', { id: 'erp' })).resolves.toEqual({ status: 'REQUIRED' })
+      await expect(bridge.invoke('connectors.authorization.revoke', { id: 'erp' })).resolves.toEqual({ connectorId: 'erp', status: 'REQUIRED' })
       await refreshStarted
       expect(refreshSettled).toBe(false)
     } finally { await bridge.dispose() }
@@ -1040,10 +1040,10 @@ describe('DeepSeekHarnessProductBridge', () => {
         requests.push(request)
         const path = new URL(request.url).pathname
         if (path.endsWith('/authorization-requests')) {
-          return Response.json({ success: true, data: { status: 'PENDING', authorizationUrl: 'https://login.example' } })
+          return Response.json({ success: true, data: { connectorId: 'erp', status: 'PENDING', authorizationUrl: 'https://login.example' } })
         }
         if (path.endsWith('/authorization')) {
-          return Response.json({ success: true, data: { status: request.method === 'DELETE' ? 'REQUIRED' : 'AUTHORIZED' } })
+          return Response.json({ success: true, data: { connectorId: 'erp', status: request.method === 'DELETE' ? 'REQUIRED' : 'AUTHORIZED' } })
         }
         const data = immutableCatalog[path as keyof typeof immutableCatalog] ?? []
         return Response.json({ success: true, data, pageIndex: 1, pageSize: 100,
