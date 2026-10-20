@@ -1,6 +1,9 @@
-import type { ReactNode } from 'react'
+import { useState, type ReactNode } from 'react'
 import {
+  IconAgentPresetOutlineRegular,
   IconApiOutlineRegular,
+  IconDeliverDocRegular,
+  Tooltip,
   IconDatabaseOutlineRegular,
   IconSparkleRegular,
 } from '@deepseek-ai/dsh-client-ui-primitives'
@@ -16,13 +19,30 @@ export const CAPABILITY_PANELS = [
 
 export type CapabilityPanel = typeof CAPABILITY_PANELS[number]
 
-/** Non-interactive heading for DeepSeekHarness's product capabilities. */
-export function CapabilitiesHeading({ wide, t }:
-PropsRuntime<'sidebar.panelheading'> & PropsLocale<typeof NS>): ReactNode {
-  if (!wide) return null
-  return <div className={css.capabilitiesHeading}>
-    <IconSparkleRegular size={16} />
-    <span>{t('capabilities')}</span>
+const EXTENSION_PAGES = [
+  { id: 'agency-agents', labelKey: 'expertKits', icon: IconAgentPresetOutlineRegular },
+  { id: 'skills-manager', labelKey: 'skills', icon: IconDeliverDocRegular },
+] as const
+
+/** Shortcuts share the plugin pages already contributed to Settings. */
+export function CapabilitiesHeading({ wide, t, openExtension }:
+PropsRuntime<'sidebar.panelheading'> & PropsLocale<typeof NS> & {
+  readonly openExtension: (sectionId: string) => boolean
+}): ReactNode {
+  const [unavailable, setUnavailable] = useState(false)
+  return <div className={css.extensionNavigation} data-extension-navigation>
+    {wide && <div className={css.capabilitiesHeading}>
+      <IconSparkleRegular size={16} />
+      <span>{t('capabilities')}</span>
+    </div>}
+    {EXTENSION_PAGES.map(({ id, labelKey, icon: Icon }) => <Tooltip key={id} label={t(labelKey)} disabled={wide}>
+      <button type="button" className={wide ? css.extensionShortcut : css.extensionShortcutCollapsed}
+        aria-label={t(labelKey)} onClick={() => { setUnavailable(!openExtension(id)) }}>
+        <span className={css.capabilityChildIcon}>{!wide && <Icon size={16} />}</span>
+        {wide && <span>{t(labelKey)}</span>}
+      </button>
+    </Tooltip>)}
+    {unavailable && <div role="alert" className={css.extensionNavigationError}>{t('extensionUnavailable')}</div>}
   </div>
 }
 

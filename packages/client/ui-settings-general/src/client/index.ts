@@ -199,6 +199,11 @@ export function apply(ctx: ClientContext): void {
       },
     })
 
+    const disposeNavigation = ctx.on('settings/open', (sectionId) => {
+      if (!ctx.slots.entries('settings.section').some(entry => entry.options.id === sectionId)) return
+      shellInstance.actions.openSection(sectionId)
+      return true
+    })
     const disposeSlot = ctx.slots.register({
       name: 'sidebar.settings',
       locale: NS,
@@ -214,7 +219,7 @@ export function apply(ctx: ClientContext): void {
       },
       inject: shellInjected,
     }, SettingsRoot)
-    return () => { disposeCommand(); disposeSlot() }
+    return () => { disposeNavigation(); disposeCommand(); disposeSlot() }
   })
 
   ctx.slots.inject('settings.trigger', () =>

@@ -54,6 +54,8 @@ kind: "package-reference"
 
 可选的 `settings.launcher` 贡献接收侧栏布局、设置面板是否覆盖侧栏、设置导航回调，以及有效的设置键位标签和无障碍组合。命令未绑定时，外壳不传快捷键展示信息；未注册入口时，外壳保留普通设置按钮。
 
+功能插件可通过 `ctx.bail('settings/open', sectionId)` 打开已有设置页面。共享设置窗口打开后返回 `true`；页面或窗口不可用时返回 `undefined`，保持当前界面不变。
+
 <details>
 <summary>实现细节——点击展开</summary>
 
