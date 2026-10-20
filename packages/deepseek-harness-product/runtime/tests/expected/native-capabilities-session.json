@@ -1,0 +1,54 @@
+{
+  "tools": [
+    "knowledge_destinations",
+    "knowledge_read",
+    "knowledge_save",
+    "knowledge_search",
+    "mcp__erp_d24f1f61__orders_read",
+    "mcp__erp_d24f1f61__orders_write",
+    "mcp__erp_d24f1f61__undeclared",
+    "skill"
+  ],
+  "skillCatalog": "<available_skills>\\n- `policy-review`: Compare policy evidence.\\n</available_skills>",
+  "loadedSkill": "<skill_content name=\"policy-review\">\n<skill_resources>\nBase directory for this skill: <HOME>/skills/policy-review\nResolve relative paths mentioned by this skill against the base directory before using them. Load referenced resources only as needed.\n</skill_resources>\n\n<skill_instructions>\nCompare retrieved policy before reporting.\n</skill_instructions>\n</skill_content>",
+  "retrieval": [
+    {
+      "query": "policy",
+      "knowledgeBaseRefs": [],
+      "knowledgeBaseIds": [
+        "policy"
+      ],
+      "restrictToKnowledgeBaseRefs": true,
+      "limit": 2
+    },
+    {
+      "sourceId": "source"
+    }
+  ],
+  "results": [
+    [
+      {
+        "type": "text",
+        "text": "<skill_content name=\"policy-review\">\n<skill_resources>\nBase directory for this skill: <HOME>/skills/policy-review\nResolve relative paths mentioned by this skill against the base directory before using them. Load referenced resources only as needed.\n</skill_resources>\n\n<skill_instructions>\nCompare retrieved policy before reporting.\n</skill_instructions>\n</skill_content>"
+      }
+    ],
+    [
+      {
+        "type": "text",
+        "text": "Recorded order facts."
+      }
+    ],
+    [
+      {
+        "type": "text",
+        "text": "1. Policy.md (section-1) [source: source]\nRecorded enterprise policy."
+      }
+    ],
+    [
+      {
+        "type": "text",
+        "text": "{\"sourceId\":\"source\",\"knowledgeBaseId\":\"policy\",\"knowledgeBaseName\":\"Policy\",\"documentId\":\"document\",\"filename\":\"Policy.md\",\"locator\":\"section-1\",\"content\":\"Recorded enterprise policy.\",\"score\":0.9}"
+      }
+    ]
+  ]
+}

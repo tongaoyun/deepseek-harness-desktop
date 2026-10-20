@@ -457,10 +457,10 @@ index ba647d76ac740f2aa7e40fab69cffbed44c7b9e0..f0a2accc282e43623ca42e0558897d17
  
    it('accepts unsigned supported targets and rejects preparation-only use', () => {
 diff --git a/apps/desktop/tests/prepare-package-set.spec.ts b/apps/desktop/tests/prepare-package-set.spec.ts
-index 6db1ccbd018bfba78fb6e58ff8d9968fe3220521..6d4e2d6ab67167617bb4f4e5f1f55b9f36d6aa2a 100644
+index 6db1ccbd018bfba78fb6e58ff8d9968fe3220521..f45326e035c8d584de5d29316a52f64c5648adf5 100644
 --- a/apps/desktop/tests/prepare-package-set.spec.ts
 +++ b/apps/desktop/tests/prepare-package-set.spec.ts
-@@ -78,6 +78,50 @@ describe('desktop package-set selection', () => {
+@@ -78,6 +78,47 @@ describe('desktop package-set selection', () => {
      ])
    })
  
@@ -493,18 +493,15 @@ index 6db1ccbd018bfba78fb6e58ff8d9968fe3220521..6d4e2d6ab67167617bb4f4e5f1f55b9f
 +      ['@deepseek-ai/dsh-desktop-host', packed('@deepseek-ai/dsh-desktop-host', {
 +        dependencies: {
 +          '@deepseek-ai/dsh': '^1.0.0',
-+          '@deepseek-harness/product-expert-kit-readme': '0.2.0-rc.2',
 +          '@deepseek-harness/product': '0.1.0',
 +        },
 +      })],
-+      ['@deepseek-harness/product-expert-kit-readme', packed('@deepseek-harness/product-expert-kit-readme')],
 +      ['@deepseek-harness/product', packed('@deepseek-harness/product')],
 +    ])
 +    expect(selectDesktopPackageClosure(available).map(entry => entry.manifest.name)).toEqual([
 +      '@deepseek-ai/dsh',
 +      '@deepseek-ai/dsh-desktop-host',
 +      '@deepseek-harness/product',
-+      '@deepseek-harness/product-expert-kit-readme',
 +    ])
 +  })
 +

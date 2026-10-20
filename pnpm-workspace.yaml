@@ -29,6 +29,8 @@ peerDependencyRules:
 # default and only allow scripts we need. esbuild (native binary) and lefthook
 # (git hooks) genuinely need theirs.
 allowBuilds:
+  # Native spawn helper required by the pinned third-party plugins' published peer closure.
+  '@deepseek-ai/dsh-subprocess-local': true
   esbuild: true
   lefthook: true
   # Cross-platform boundary for the persistent PTY backend, including ConPTY on Windows.
@@ -105,6 +107,7 @@ minimumReleaseAgeExclude:
   - pnpm@11.28.5
   # Desktop packaging requires this Electron fingerprint with node-addon-require-builtin 0.1.9.
   - electron@44.7.0
+  - '@michengai/dsh-agency-agents@1.2.8'
 patchedDependencies:
   '@earendil-works/pi-ai@1.1.0': patches/@earendil-works__pi-ai@1.1.0.patch
   '@electron/osx-sign@1.3.3': patches/@electron__osx-sign@1.3.3.patch

@@ -1,5 +1,5 @@
 diff --git a/scripts/product-package-policy.ts b/scripts/product-package-policy.ts
-index 802ce76f48b6d5178c908ff7eaccc15dc9189ae2..2bbd4dc3b5f17fb3c40ac4528f02de32021f13da 100644
+index 802ce76f48b6d5178c908ff7eaccc15dc9189ae2..7e94424930e28def245fc95e0f5182d8919510f9 100644
 --- a/scripts/product-package-policy.ts
 +++ b/scripts/product-package-policy.ts
 @@ -1,7 +1,7 @@
@@ -11,7 +11,7 @@ index 802ce76f48b6d5178c908ff7eaccc15dc9189ae2..2bbd4dc3b5f17fb3c40ac4528f02de32
  
  /** One explicitly maintained package role and its reason. */
  export interface ProductPackagePolicy {
-@@ -16,6 +16,21 @@ export interface ProductPackagePolicy {
+@@ -16,6 +16,18 @@ export interface ProductPackagePolicy {
   * Optional integrations may be reached by an optional bundle without becoming default capabilities.
   */
  export const PRODUCT_PACKAGE_POLICY: Readonly<Record<string, ProductPackagePolicy>> = {
@@ -20,9 +20,6 @@ index 802ce76f48b6d5178c908ff7eaccc15dc9189ae2..2bbd4dc3b5f17fb3c40ac4528f02de32
 +  },
 +  'packages/deepseek-harness-product/desktop': {
 +    category: 'product', reason: 'Credential-owning Desktop extension loaded by the independent Product assembly.',
-+  },
-+  'packages/deepseek-harness-product/expert-kit-readme': {
-+    category: 'product', reason: 'Product Expert Kit README provider loaded by the Product runtime composition.',
 +  },
 +  'packages/deepseek-harness-product/runtime': {
 +    category: 'product', reason: 'Product Cordis runtime loaded by the independent Desktop profile.',

@@ -2,7 +2,7 @@
 
 ## 概述
 
-企业桌面将官方 Harness 对话、执行模式、审批和文档预览，与钉钉身份、技能、专家套件、连接器及知识库结合。本页用于查找当前产品行为和对应文档。
+企业桌面将官方 Harness 对话、执行模式、审批和文档预览，与原生专家和技能插件、钉钉身份、连接器及知识库结合。本页用于查找当前产品行为和对应文档。
 
 产品自有文档只维护中文，规范文件名为 `README.md` 或对应的 `.md`。不再维护英文副本及翻译配对记录；官方上游文档随固定基线保留原有语言与校验规则。
 
@@ -13,6 +13,7 @@
 - [知识文件](#knowledge-files)
 - [仓库与架构](#repositories-and-architecture)
 - [开发与交付](#development-and-delivery)
+- [产品破坏性变更](breaking-changes.md)
 - [验收与限制](#verification-and-limitations)
 
 <a id="product-entry-points"></a>
@@ -27,12 +28,10 @@
 
 | 能力 | 员工操作 | 任务行为 |
 |---|---|---|
-| 技能 | 通过对话创建或修改；导入目录、ZIP 或 `SKILL.md`；在本机安装或卸载 | 依赖满足的已安装技能使用原生语义发现或显式 `/<skillName>` 调用，安装不创建 Preset |
-| 专家套件 | 安装并阅读说明，发送前选择套件并输入需求 | 任务固定套件内容，已开始对话只显示套件且不提供切换 |
-| 连接器 | 通过表单或 MCP JSON 添加，所有者可修改或删除，独立管理授权 | 技能和套件声明依赖；READ 注解进入策略检查，WRITE 工具走官方审批，未声明工具拒绝 |
+| 原生专家与技能 | 预装插件，在官方设置中管理 | 沿用官方 Agent、Skill Provider、工具与审批 |
+| 连接器 | 通过表单或 MCP JSON 添加，所有者可修改或删除，独立管理授权 | 已授权且配置完成的连接器供普通会话使用；READ 注解进入策略检查，WRITE 工具走官方审批，未声明工具拒绝 |
 | 知识库 | 在能力下浏览个人、直属部门和公司知识库 | 从对话输入框选择检索范围，浏览文件不将知识库加入任务 |
 
-创建将个人技能和套件保存到服务端，技能保存成功后也会安装到本机。提交共享是所有者的独立操作。修改创建新的不可变版本；卸载移除设备安装，删除退役本人拥有的服务端资源。这些操作不删除官方对话历史。已固定任务在卸载后保留内容，但仍需通过服务端当前权限检查。完整规则见 [UI](../../../packages/extensions/ui-deepseek-harness-product/README.md)和[运行时](../../../packages/deepseek-harness-product/runtime/README.md)说明。
 
 <a id="knowledge-files"></a>
 ## 知识文件
@@ -50,7 +49,6 @@
 |---|---|
 | `deepseek-harness-desktop` | 官方 Harness 基线、登记的通用补丁、独立产品包、UI 和桌面交付 |
 | `deepseek-harness-server` | 认证 API、网页控制中心、目录、个人资源、审核、组织权限和 WeKnora 适配 |
-| `deepseek-harness-extensions` | 维护的共享技能及套件源码、Schema、校验、不可变制品和发布流水线 |
 | `k3s-gitops` | 由 Fleet 同步的开发环境部署清单 |
 
 连接器实现归属 `erp-mcp-gateway` 等业务服务，目录和授权归属服务端。交付流程不依赖独立连接器仓库或上游镜像仓库；桌面仓库保留固定 Harness 基线标签和登记补丁。产品包通过 Cordis 插件及 UI 插槽使用 Harness 公开出口。见[包地图](../../../packages/deepseek-harness-product/README.md)、[子系统说明](../../../docs/subsystems/deepseek-harness-product.md)和[补丁清单](../../../scripts/upstream-patches/manifest.json)。

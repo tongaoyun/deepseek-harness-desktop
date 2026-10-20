@@ -17,26 +17,22 @@ import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { IconDatabaseOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives'
 import { en, NS, zh } from '../locales.ts'
 import {
-  ConnectorsPanel, ExpertKitsPanel, KnowledgePanel, SkillsPanel,
+  ConnectorsPanel, KnowledgePanel,
 } from './DeepSeekHarnessCatalogSection.tsx'
 import {
   CAPABILITY_PANELS, CapabilitiesHeading, createCapabilityChildIcon,
 } from './DeepSeekHarnessCapabilitiesNavigation.tsx'
 import { DeepSeekHarnessSettingsMenu } from './DeepSeekHarnessSettingsMenu.tsx'
 import { createHarnessActions } from './harness-actions.ts'
-import { TaskExpertKitSeat, TaskExpertKitHeader } from './TaskExpertKitSeat.tsx'
 import { TaskKnowledgeInput } from './TaskKnowledgeInput.tsx'
 import { registerKnowledgeToolResults } from './KnowledgeToolResult.tsx'
 import type {} from '@deepseek-ai/dsh-client-ui-agent-preset/client'
-import type {} from '@deepseek-ai/dsh-client-ui-skill/client'
 
 export const inject = [
-  'slots', 'locale', 'sessions', 'workspaces', 'uiWorkspace', 'conversation', 'layout', 'uiSkills', 'remote', 'remote.agentPresets', 'commandUi',
+  'slots', 'locale', 'sessions', 'workspaces', 'uiWorkspace', 'conversation', 'layout', 'remote', 'remote.agentPresets', 'commandUi',
 ]
 
 const PANEL_COMPONENTS = {
-  expertKits: ExpertKitsPanel,
-  skills: SkillsPanel,
   connectors: ConnectorsPanel,
   knowledge: KnowledgePanel,
 } as const
@@ -76,21 +72,6 @@ export function apply(ctx: ClientContext): void {
       },
     }),
   }, TaskKnowledgeInput))
-  const kitInjected = () => ({
-    readMode: actions.readMode,
-    readExpertKits: actions.readExpertKits, setExpertKit: actions.setExpertKit,
-    openCatalog: actions.openCatalog,
-    recoverCapabilities: actions.recoverCapabilities,
-    retryCapabilities: actions.retryCapabilities,
-  })
-  ctx.slots.inject('conversation.hero.actions', () => ctx.slots.register({
-    name: 'conversation.hero.actions', id: 'product-expert-kit', order: 10, locale: NS, inject: kitInjected,
-  }, TaskExpertKitSeat))
-  ctx.slots.inject('conversation.session.header.actions', () => ctx.slots.register({
-    name: 'conversation.session.header.actions', id: 'product-expert-kit', order: -5, locale: NS,
-    inject: () => ({ readMode: actions.readMode, recoverCapabilities: actions.recoverCapabilities,
-      retryCapabilities: actions.retryCapabilities }),
-  }, TaskExpertKitHeader))
   ctx.slots.inject('sidebar.panelheading', () => ctx.slots.register({
     name: 'sidebar.panelheading', id: 'deepseek-harness-capabilities', order: -40, locale: NS,
   }, CapabilitiesHeading))

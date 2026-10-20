@@ -5,7 +5,7 @@ import { StrictMode } from 'react'
 import { ProductError } from '@deepseek-harness/product/errors'
 import { KnowledgeDetail } from '../src/client/KnowledgeView.tsx'
 import { KnowledgeEditor } from '../src/client/KnowledgeEditor.tsx'
-import { detail } from '../src/client/catalog-shared.tsx'
+import { items, localDetail } from '../src/client/catalog-shared.tsx'
 import { zh, type DeepSeekHarnessProductKey } from '../src/locales.ts'
 import { createPreviewFixture, originalMetadata, renderKnowledgePreview } from './knowledge-preview-fixture.client.tsx'
 
@@ -15,7 +15,7 @@ const document = {
   sizeBytes: 1024, status: 'READY', chunkCount: 1, updatedAt: '2026-10-10T00:00:00Z', sourceType: 'manual',
 }
 const page = (items: readonly unknown[], total = items.length, number = 1, size = 20) => ({ items, page: number, size, total })
-const library = (canManage = false) => detail({ id: 'policy', name: '业务规范', scope: 'PERSONAL', ownerName: '张三', canManage }, {})!
+const library = (canManage = false) => localDetail(items([{ id: 'policy', name: '业务规范', scope: 'PERSONAL', ownerName: '张三', canManage }])[0]!)
 
 function transport(handler: (method: string, payload: unknown) => Promise<unknown>) {
   const preview = createPreviewFixture()

@@ -52,7 +52,7 @@ product-installed-skills 来源只标识生产者，不改变消息解释。未�
 <a id="verification"></a>
 ## 验证
 
-真实 Loader 组合及无密钥 capabilities-session 记录验证固定技能说明、连接器定义、检索输入、重启恢复和凭据排除。验证文件为 packages/deepseek-harness-product/runtime/tests/runtime-loader.spec.ts 和 packages/deepseek-harness-product/runtime/tests/installed-skills.spec.ts。
+真实 Loader 组合及无密钥 capabilities-session 记录验证固定技能说明、连接器定义、检索输入、重启恢复和凭据排除。验证文件为 packages/deepseek-harness-product/runtime/tests/runtime-loader.spec.ts 和 `installed-skills.spec.ts`（记录时的技能归属回归，现由原生技能 Provider 接管）。
 
 <a id="dev-note"></a>
 ## 开发备注

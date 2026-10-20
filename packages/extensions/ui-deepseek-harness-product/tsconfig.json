@@ -20,7 +20,6 @@
     { "path": "../../../packages/client/ui-tool/tsconfig.json" },
     { "path": "../../../packages/client/ui-commands/tsconfig.json" },
     { "path": "../../../packages/client/ui-input-trigger/tsconfig.json" },
-    { "path": "../../../packages/client/ui-skill/tsconfig.json" },
     { "path": "../../../packages/client/ui-layout/tsconfig.json" },
     { "path": "../../../packages/client/ui-primitives/tsconfig.json" },
     { "path": "../../../packages/client/ui-renderer/tsconfig.json" },

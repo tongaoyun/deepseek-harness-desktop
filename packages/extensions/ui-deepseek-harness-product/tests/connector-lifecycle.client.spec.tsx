@@ -2,7 +2,7 @@
 import { StrictMode } from 'react'
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, expect, it, vi } from 'vitest'
-import { ExtensionDraftSchema } from '@deepseek-harness/product/extension-draft'
+import { ConnectorDraftSchema } from '@deepseek-harness/product/connector-draft'
 import { ConnectorEditor } from '../src/client/ConnectorEditor.tsx'
 import { ConnectorDetail } from '../src/client/ConnectorView.tsx'
 import { items, localDetail } from '../src/client/catalog-shared.tsx'
@@ -10,14 +10,14 @@ import { zh } from '../src/locales.ts'
 
 afterEach(() => { cleanup(); vi.unstubAllGlobals() })
 const t = (key: keyof typeof zh) => zh[key]
-const draft = ExtensionDraftSchema.parse({ kind: 'connector', id: 'personal-mcp', version: '1.0.1', name: 'MCP',
+const draft = ConnectorDraftSchema.parse({ kind: 'connector', id: 'personal-mcp', version: '1.0.1', name: 'MCP',
   summary: 'Tools', category: 'other', transport: 'streamable-http', url: 'https://mcp.example.test' })
 const editing = { id: draft.id, version: '1.0.0' }
 const product = localDetail(items([{ ...editing, name: 'Shared MCP', authMode: 'none', canConfigure: true,
   status: 'needs-configuration', visibility: 'COMPANY', tools: [] }])[0]!)
 const template = { ...editing, transport: 'streamable-http', url: 'https://mcp.example.test', arguments: [],
   headers: ['Authorization'], environment: [], configured: false, timeoutSeconds: 60 }
-const receipt = { kind: 'connector', id: draft.id, version: draft.version, visibility: 'PERSONAL', installed: false }
+const receipt = { kind: 'connector', id: draft.id, version: draft.version, visibility: 'PERSONAL' }
 const loaded = { draft, configured: true, savePending: false }
 
 function deferred<T>() {
@@ -27,7 +27,7 @@ function deferred<T>() {
 }
 
 it.each([undefined, {}, { ...receipt, id: 'another-mcp' }, { ...receipt, version: '1.0.0' },
-  { ...receipt, kind: 'skill' }, { ...receipt, visibility: 'COMPANY' }, { ...receipt, installed: true }])(
+  { ...receipt, kind: 'skill' }, { ...receipt, visibility: 'COMPANY' }])(
   'retains personal connector edits after an unconfirmed receipt and accepts a valid retry: %j', async (invalid) => {
     let valid = false
     const invoke = vi.fn(async (_namespace: string, method: string) => ({ ok: true,
@@ -78,7 +78,7 @@ it.each([undefined, {}, { ...loaded, draft: { ...draft, id: 'another-mcp' } },
 it('keeps a new connector identity and private input after an invalid receipt until retry is confirmed', async () => {
   let valid = false
   const invoke = vi.fn(async (_namespace: string, method: string, payload?: unknown) => {
-    const value = method === 'extensions.save' ? ExtensionDraftSchema.parse(payload) : undefined
+    const value = method === 'extensions.save' ? ConnectorDraftSchema.parse(payload) : undefined
     return { ok: true, result: value ? valid
       ? { ...receipt, id: value.id, version: value.version } : { ...receipt, id: 'another-mcp' } : [] }
   })
@@ -182,7 +182,7 @@ it.each(['create', 'device'] as const)('cancels %s save on unmount and ignores t
   const pending = deferred<unknown>()
   let savingDraft = draft
   const invoke = vi.fn(async (_namespace: string, method: string, payload: unknown, _request?: string) => {
-    if (method === 'extensions.save') savingDraft = ExtensionDraftSchema.parse(payload)
+    if (method === 'extensions.save') savingDraft = ConnectorDraftSchema.parse(payload)
     return { ok: true, result: method === 'extensions.connector.configuration.read' ? template
       : method === 'connectors.list' ? [] : await pending.promise }
   })

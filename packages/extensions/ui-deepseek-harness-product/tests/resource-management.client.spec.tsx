@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, expect, it, vi } from 'vitest'
-import { ConnectorsPanel, ExpertKitsPanel, SkillsPanel } from '../src/client/DeepSeekHarnessCatalogSection.tsx'
+import { ConnectorsPanel } from '../src/client/DeepSeekHarnessCatalogSection.tsx'
 import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import { zh as commonZh } from '@deepseek-ai/dsh-client-locale/src/locales/zh.ts'
 import { zh } from '../src/locales.ts'
@@ -10,14 +10,8 @@ const t = makeTranslate(zh, commonZh)
 const identity = { id: 'personal-resource', version: '1.0.0', sha256: 'a'.repeat(64) }
 const entry = { ...identity, name: 'Receipt resource', canEdit: true, canSubmit: true, canDelete: true, visibility: 'PERSONAL' }
 const cases = [
-  { kind: 'skill', Panel: SkillsPanel, list: 'skills.list', action: 'delete', method: 'extensions.delete' },
-  { kind: 'expert-kit', Panel: ExpertKitsPanel, list: 'expertKits.list', action: 'delete', method: 'extensions.delete' },
   { kind: 'connector', Panel: ConnectorsPanel, list: 'connectors.list', action: 'delete', method: 'extensions.connector.delete' },
-  { kind: 'skill', Panel: SkillsPanel, list: 'skills.list', action: 'submit', method: 'extensions.submit' },
-  { kind: 'expert-kit', Panel: ExpertKitsPanel, list: 'expertKits.list', action: 'submit', method: 'extensions.submit' },
   { kind: 'connector', Panel: ConnectorsPanel, list: 'connectors.list', action: 'submit', method: 'extensions.submit' },
-  { kind: 'skill', Panel: SkillsPanel, list: 'skills.list', action: 'uninstall', method: 'skills.uninstall' },
-  { kind: 'expert-kit', Panel: ExpertKitsPanel, list: 'expertKits.list', action: 'uninstall', method: 'expertKits.uninstall' },
 ] as const
 
 afterEach(() => { cleanup(); vi.unstubAllGlobals() })
@@ -25,7 +19,6 @@ afterEach(() => { cleanup(); vi.unstubAllGlobals() })
 function unusedSlot(): never { throw new Error('Resource management does not read this slot') }
 
 function fixture(operation: typeof cases[number], result: () => Promise<unknown>) {
-  let installed = true
   let removed = false
   let submitted = false
   let employeeId = 'employee-one'
@@ -42,15 +35,12 @@ function fixture(operation: typeof cases[number], result: () => Promise<unknown>
     usePanelInfo: unusedSlot, useRemoteAccess: unusedSlot, useSessionAccess: unusedSlot, useWorkspaceAccess: unusedSlot,
     useSessions: unusedSlot, useSessionStatus: unusedSlot, useSessionRetainInfo: unusedSlot,
     useWorkspaces: unusedSlot, useResource: unusedSlot, useAccess: unusedSlot, renderFactorySlot: unusedSlot,
-    startExpertKit: vi.fn(async () => {}), installSkill: vi.fn(async () => {}), installExpertKit: vi.fn(async () => {}),
-    readInstalledSkills: vi.fn(async () => ({ installed: installed ? [identity] : [], available: [], frozen: false })),
-    readInstalledExpertKits: vi.fn(async () => ({ installed: installed ? [identity] : [] })),
   }
   const view = render(<operation.Panel t={t} {...actions} />)
-  const label = operation.action === 'delete' ? zh.deleteResource : operation.action === 'submit' ? zh.submitShared : zh.uninstallResource
+  const label = operation.action === 'delete' ? zh.deleteResource : zh.submitShared
   return { ...view, invoke, cancel, label,
     changeEmployee: () => { employeeId = 'employee-two'; listener?.({ type: 'session.changed', payload: { authenticated: true, employeeId } }) },
-    commit: () => { installed = false; removed = operation.action === 'delete'; submitted = operation.action === 'submit' },
+    commit: () => { removed = operation.action === 'delete'; submitted = operation.action === 'submit' },
   }
 }
 
@@ -63,9 +53,8 @@ async function confirm(label: string): Promise<HTMLElement> {
 }
 
 function receipt(operation: typeof cases[number]) {
-  return operation.action === 'uninstall' ? { id: identity.id }
-    : operation.action === 'delete' ? { id: identity.id, removed: true }
-      : { id: identity.id, version: identity.version, submitted: true }
+  return operation.action === 'delete' ? { id: identity.id, removed: true }
+    : { id: identity.id, version: identity.version, submitted: true }
 }
 
 const invalidCases = cases.flatMap(operation => [undefined, null, {}, [], { ...receipt(operation), id: 'another-resource' },
@@ -93,7 +82,6 @@ it.each(invalidCases)('keeps $kind $action unconfirmed after $invalid until retr
   await waitFor(() => { expect(screen.queryByRole('dialog')).toBeNull() })
   expect(view.invoke.mock.calls.filter(call => call[1] === operation.method)).toHaveLength(2)
   if (operation.action === 'delete') expect(screen.queryByText(entry.name)).toBeNull()
-  else if (operation.action === 'uninstall') expect(screen.getByRole('button', { name: operation.kind === 'skill' ? zh.installSkill : zh.installExpertKit })).toBeTruthy()
   else {
     fireEvent.click(await screen.findByRole('button', { name: zh.resourceActions }))
     expect(screen.getByText(zh.reviewPending)).toBeTruthy()

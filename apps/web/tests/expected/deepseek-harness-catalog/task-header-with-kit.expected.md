@@ -1,1 +1,0 @@
-- text: Standard mode Retail operations

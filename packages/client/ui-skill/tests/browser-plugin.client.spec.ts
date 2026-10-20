@@ -365,20 +365,6 @@ describe('catalog cache', () => {
     expect(payloads[2]).toEqual({ sessionId: 's1' })
   })
 
-  it('refreshes installed-provider catalogs through the public service without changing Sessions', async () => {
-    let rows = CATALOG
-    const { ctx, source, fiber } = await bench(payload => listOk(rows)(payload))
-    expect(await source.candidates(proj('s1'), req(''))).toHaveLength(3)
-    rows = [...CATALOG, { name: 'newly-installed', description: 'New skill', modelInvocable: true }]
-    expect(await source.candidates(proj('s1'), req(''))).toHaveLength(3)
-    ctx.uiSkills.refresh(sid('s1'))
-    expect(await source.candidates(proj('s1'), req(''))).toHaveLength(4)
-    ctx.uiSkills.refresh()
-    expect(await source.candidates(proj('s2'), req(''))).toHaveLength(4)
-    await fiber.dispose()
-    expect(ctx.get('uiSkills')).toBeUndefined()
-  })
-
   it('connection/reset clears every cached session', async () => {
     const { list, payloads } = countingList()
     const { ctx, source } = await bench(list)

@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react'
 import { useEffect, useRef, useState } from 'react'
 import { Button, IconChevronRightOutlineRegular, IconLinkOutlineRegular, Modal } from '@deepseek-ai/dsh-client-ui-primitives'
-import { parseConnectorAuthorization, parseConnectorAuthorizationLaunch, ConnectorConfigurationSaveResultSchema, ConnectorDeviceConfigurationSchema, type ConnectorDeviceConfigurationSnapshot } from '@deepseek-harness/product/extension-draft'
+import { parseConnectorAuthorization, parseConnectorAuthorizationLaunch, ConnectorConfigurationSaveResultSchema, ConnectorDeviceConfigurationSchema, type ConnectorDeviceConfigurationSnapshot } from '@deepseek-harness/product/connector-draft'
 import { type DeepSeekHarnessProductKey } from '../locales.ts'
 import css from '../DeepSeekHarnessProduct.module.css'
 import { productApi, type ProductApi } from './product-api.ts'

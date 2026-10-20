@@ -4,21 +4,14 @@ import type { ProductBridgeOptions } from '@deepseek-harness/product/bridge'
 import { ProductError } from '@deepseek-harness/product/errors'
 import { DeepSeekHarnessApiError } from '@deepseek-harness/product'
 import { createExtension } from '../src/index.ts'
-import type { ExtensionAuthoring } from '../src/extension-authoring.ts'
 
 const fixture = vi.hoisted(() => ({ authenticate: vi.fn<typeof import('@deepseek-harness/product/dingtalk-auth').ensureDingTalkSession>(),
   dialog: vi.fn(async (..._args: unknown[]) => ({ response: 0 })), quit: vi.fn(),
   bootstrap: vi.fn(async () => ({ modelApiKey: 'model-key', endpoints: { litellm: 'https://example.test/v1' }, models: ['deepseek-v4-flash', 'gpt-example'] })),
   stop: vi.fn(async () => {}), dispose: vi.fn(), knowledgeClose: vi.fn(async () => {}), writeFile: vi.fn(),
   bridgeOptions: vi.fn<(options: ProductBridgeOptions) => void>(),
-  invoke: vi.fn(async (..._args: unknown[]) => ({})), refreshCatalog: vi.fn(async () => {}),
-  authoringOptions: vi.fn<(options: ConstructorParameters<typeof ExtensionAuthoring>[0]) => void>() }))
-vi.mock('../src/extension-authoring.ts', async (original) => {
-  const module = await original<typeof import('../src/extension-authoring.ts')>()
-  return { ...module, ExtensionAuthoring: class extends module.ExtensionAuthoring {
-    constructor(options: ConstructorParameters<typeof ExtensionAuthoring>[0]) { super(options); fixture.authoringOptions(options) }
-  } }
-})
+  invoke: vi.fn(async (..._args: unknown[]) => ({})), refreshCatalog: vi.fn(async () => {}) }))
+vi.mock('../src/native-extensions.ts', () => ({ nativeExtensionPatches: () => [] }))
 vi.mock('node:fs', async original => ({ ...await original<typeof import('node:fs')>(), writeFileSync: fixture.writeFile }))
 vi.mock('electron', () => ({
   app: { isPackaged: false, getPath: () => '/unused-fixture', getAppPath: () => '/unused-fixture', getVersion: () => '0.1.0', quit: fixture.quit },
@@ -83,21 +76,6 @@ it('releases remaining resources and joins in-flight requests before reporting c
   expect(fixture.stop).toHaveBeenCalledOnce()
 })
 
-it('installs saved skills through the authenticated skill operation without requiring other catalogs', async () => {
-  fixture.refreshCatalog.mockRejectedValue(new ProductError('ORGANIZATION_SERVICE_UNAVAILABLE', 'Knowledge unavailable', true))
-  const host = vi.fn(async () => ({}))
-  const extension = createExtension({ getWindow: () => undefined, isQuitting: () => false, requestHost: host })
-  try {
-    const options = fixture.authoringOptions.mock.calls[0]?.[0]
-    if (!options) throw new Error('Missing authoring callbacks')
-    const signal = new AbortController().signal
-    await expect(options.installSkill('my-independent-skill', signal)).resolves.toBeUndefined()
-    expect(fixture.invoke).toHaveBeenCalledWith('skills.install', { id: 'my-independent-skill' }, signal)
-    expect(fixture.refreshCatalog).not.toHaveBeenCalled()
-    expect(host).not.toHaveBeenCalled()
-  } finally { await extension.close() }
-})
-
 it('cancels a shared sign-in only after its last caller cancels and allows a new attempt', async () => {
   const entered = Promise.withResolvers<AbortSignal>()
   fixture.authenticate.mockImplementationOnce(async (_bridge, _open, options) => {
@@ -134,7 +112,7 @@ it('retries expired DingTalk sign-in and supplies only model configuration and p
   fixture.authenticate.mockRejectedValueOnce(new DingTalkAuthorizationTimeoutError())
   const extension = createExtension({ getWindow: () => undefined, isQuitting: () => false, requestHost: async () => ({}) })
   try {
-    const environment = await extension.prepareHost()
+    const environment = await extension.prepareHost({ directory: '/unused-profile', installAnchor: '/unused-runtime/package.json' })
     expect(fixture.authenticate).toHaveBeenCalledTimes(2)
     expect(fixture.dialog).toHaveBeenCalledWith(expect.objectContaining({ message: '钉钉登录已超时' }))
     expect(environment).toMatchObject({ DEEPSEEK_API_KEY: 'model-key' })
@@ -161,7 +139,7 @@ it.each(['authentication', 'bootstrap'] as const)('waits for explicit retry afte
   fixture.dialog.mockImplementationOnce(async () => { shown.resolve(undefined); return choice.promise })
   const extension = createExtension({ getWindow: () => undefined, isQuitting: () => false, requestHost: async () => ({}) })
   try {
-    const pending = extension.prepareHost()
+    const pending = extension.prepareHost({ directory: '/unused-profile', installAnchor: '/unused-runtime/package.json' })
     await shown.promise
     expect(fixture.writeFile).not.toHaveBeenCalled()
     expect(fixture.bootstrap).toHaveBeenCalledTimes(phase === 'authentication' ? 0 : 1)
@@ -178,7 +156,7 @@ it('exits without writing inference configuration when startup retry is declined
   fixture.dialog.mockResolvedValueOnce({ response: 1 })
   const extension = createExtension({ getWindow: () => undefined, isQuitting: () => false, requestHost: async () => ({}) })
   try {
-    await expect(extension.prepareHost()).resolves.toBeUndefined()
+    await expect(extension.prepareHost({ directory: '/unused-profile', installAnchor: '/unused-runtime/package.json' })).resolves.toBeUndefined()
     expect(fixture.quit).toHaveBeenCalledOnce()
     expect(fixture.bootstrap).not.toHaveBeenCalled()
     expect(fixture.writeFile).not.toHaveBeenCalled()
@@ -190,7 +168,7 @@ it('keeps invalid startup configuration as a failure', async () => {
   fixture.bootstrap.mockRejectedValueOnce(failure)
   const extension = createExtension({ getWindow: () => undefined, isQuitting: () => false, requestHost: async () => ({}) })
   try {
-    await expect(extension.prepareHost()).rejects.toBe(failure)
+    await expect(extension.prepareHost({ directory: '/unused-profile', installAnchor: '/unused-runtime/package.json' })).rejects.toBe(failure)
     expect(fixture.dialog).not.toHaveBeenCalled()
     expect(fixture.writeFile).not.toHaveBeenCalled()
   } finally { await extension.close() }
@@ -202,7 +180,7 @@ it('settles startup on close and ignores a late retry choice', async () => {
   const choice = Promise.withResolvers<{ response: number }>()
   fixture.dialog.mockImplementationOnce(async () => { shown.resolve(undefined); return choice.promise })
   const extension = createExtension({ getWindow: () => undefined, isQuitting: () => false, requestHost: async () => ({}) })
-  const pending = extension.prepareHost()
+  const pending = extension.prepareHost({ directory: '/unused-profile', installAnchor: '/unused-runtime/package.json' })
   try {
     await shown.promise
     await extension.close()
@@ -214,22 +192,4 @@ it('settles startup on close and ignores a late retry choice', async () => {
     expect(fixture.writeFile).not.toHaveBeenCalled()
     expect(fixture.quit).not.toHaveBeenCalled()
   } finally { choice.resolve({ response: 1 }); await pending }
-})
-
-it('routes device Skill install, inspection, and uninstall through the Host product namespace', async () => {
-  const requestHost = vi.fn(async () => ({ id: 'document-insight' }))
-  const extension = createExtension({ getWindow: () => undefined, isQuitting: () => false, requestHost })
-  try {
-    const installedSkills = fixture.bridgeOptions.mock.calls[0]?.[0].installedSkills
-    expect(installedSkills).toBeDefined()
-    const signal = new AbortController().signal
-    await installedSkills!('install', { id: 'document-insight' }, signal)
-    await installedSkills!('read', {}, signal)
-    await installedSkills!('uninstall', { id: 'document-insight' }, signal)
-    expect(requestHost.mock.calls).toEqual([
-      ['product', 'skills.install', { id: 'document-insight' }, signal],
-      ['product', 'skills.installed.read', {}, signal],
-      ['product', 'skills.uninstall', { id: 'document-insight' }, signal],
-    ])
-  } finally { await extension.close() }
 })

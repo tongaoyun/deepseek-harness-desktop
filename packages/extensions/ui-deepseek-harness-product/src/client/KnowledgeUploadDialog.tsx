@@ -82,11 +82,11 @@ export function KnowledgeUploadDialog({ knowledgeBaseId, selections, onBusyChang
   }
   const accepted = entries.filter(entry => entry.result.kind === 'accepted' || entry.stage === 'release').length
   const started = entries.some(entry => entry.result.kind !== 'waiting')
-  const retryLabel = entries.some(entry => runnable(entry) && entry.stage === 'upload') ? 'knowledgeRetryUpload' : 'retry'
+  const retryLabelKey = entries.some(entry => runnable(entry) && entry.stage === 'upload') ? 'knowledgeRetryUpload' : 'retry'
   return <Modal open title={t('knowledgeUploadFiles')} closeLabel={t('close')} onClose={onClose} footer={<>
     <Button variant="ghost" size="sm" onClick={onClose}>{t(busy ? 'knowledgeUploadPause' : 'close')}</Button>
     {entries.some(runnable) && <Button variant="primary" size="sm" disabled={busy} onClick={() => { void submit() }}>
-      {t(busy ? 'knowledgeUploadRunning' : started ? retryLabel : 'knowledgeUpload')}</Button>}
+      {t(busy ? 'knowledgeUploadRunning' : started ? retryLabelKey : 'knowledgeUpload')}</Button>}
   </>}>
     <p role="status" className={css.knowledgeBatchSummary}>{t('knowledgeUploadProgress')
       .replace('{count}', String(accepted)).replace('{total}', String(entries.length))}</p>

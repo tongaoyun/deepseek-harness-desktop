@@ -139,7 +139,7 @@ index 0000000000000000000000000000000000000000..185b72e960b5cd7d2b8c313cf1ae91a1
 +}
 diff --git a/apps/desktop/src/extensions.ts b/apps/desktop/src/extensions.ts
 new file mode 100644
-index 0000000000000000000000000000000000000000..47ef0677929d31aeb4b2598fc006ba505429fc87
+index 0000000000000000000000000000000000000000..a153157a9e4c076f793059a66a5722ee54230562
 --- /dev/null
 +++ b/apps/desktop/src/extensions.ts
 @@ -0,0 +1,51 @@
@@ -159,7 +159,7 @@ index 0000000000000000000000000000000000000000..47ef0677929d31aeb4b2598fc006ba50
 +export interface DesktopExtension {
 +  readonly namespace: string
 +  readonly ownsStartupDocument: boolean
-+  prepareHost(): Promise<NodeJS.ProcessEnv | undefined>
++  prepareHost(profile: { readonly directory: string; readonly installAnchor: string }): Promise<NodeJS.ProcessEnv | undefined>
 +  invoke(method: unknown, payload?: unknown, signal?: AbortSignal): Promise<unknown>
 +  invokeRuntime(method: unknown, payload?: unknown, signal?: AbortSignal): Promise<unknown>
 +  subscribe(listener: (event: unknown) => void): () => void
@@ -491,7 +491,7 @@ index fc19021fa6047bf5ef2a1c5e65c510adda71ee08..ae6a6ba6a26e6e414cf497500d8538e4
  
  /** Scheme of Desktop-owned application documents. */
 diff --git a/apps/desktop/src/main.ts b/apps/desktop/src/main.ts
-index 2afdfd71948053aedd65f6a04a9ed9b279e13376..30bdee9c01ed86b96292fdba015504cf2da1c5d5 100644
+index 2afdfd71948053aedd65f6a04a9ed9b279e13376..e30a36057c8bfca386cb370795289087587dfe5e 100644
 --- a/apps/desktop/src/main.ts
 +++ b/apps/desktop/src/main.ts
 @@ -1,9 +1,12 @@
@@ -606,7 +606,7 @@ index 2afdfd71948053aedd65f6a04a9ed9b279e13376..30bdee9c01ed86b96292fdba015504cf
      startup ??= (async () => {
 -      await navigateMain(applicationUrl)
 -      await backend.start(async () => {
-+      const extensionEnvironment = await extension?.prepareHost()
++      const extensionEnvironment = await extension?.prepareHost({ directory: paths.profile, installAnchor: join(resources.dsh, 'node_modules', '@deepseek-ai', 'dsh', 'package.json') })
 +      if (extension !== undefined && extensionEnvironment === undefined) return
 +      extensionHostEnvironment = extensionEnvironment ?? {}
 +      const document = navigateMain(applicationUrl)

@@ -1,5 +1,5 @@
 /** Parse standard MCP JSON into an editable draft without connecting or executing commands. */
-import { ExtensionDraftSchema, type ExtensionDraft } from '@deepseek-harness/product/extension-draft'
+import { ConnectorDraftSchema, type ConnectorDraft } from '@deepseek-harness/product/connector-draft'
 import { parse, quote } from 'shell-quote'
 
 /** Split a complete executable command into literal argv; shell operations and expansion are rejected.
@@ -21,7 +21,7 @@ export function connectorCommand(text: string): { command: string; arguments: st
  * @param draft Connection configuration.
  * @returns Literal command text accepted by connectorCommand.
  */
-export function connectorCommandText(draft: ExtensionDraft): string {
+export function connectorCommandText(draft: ConnectorDraft): string {
   return draft.command ? quote([draft.command, ...draft.arguments]) : ''
 }
 
@@ -52,7 +52,7 @@ export function connectorVariables(text: string): Record<string, string> {
  * @param draft Current connector metadata.
  * @returns Validated connection choices without executing business tools.
  */
-export function connectorConfigurations(text: string, draft: ExtensionDraft): readonly ExtensionDraft[] {
+export function connectorConfigurations(text: string, draft: ConnectorDraft): readonly ConnectorDraft[] {
   if (text.length > 65_536) throw new Error('Configuration exceeds size limit')
   const object = (value: unknown): Record<string, unknown> => {
     if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('Expected MCP configuration')
@@ -76,7 +76,7 @@ export function connectorConfigurations(text: string, draft: ExtensionDraft): re
       throw new Error('Conflicting MCP configuration')
     }
     const { oauthProviderId: _oauthProviderId, ...base } = draft
-    return ExtensionDraftSchema.parse({ ...base, name, summary: draft.summary || (transport === 'stdio' ? 'STDIO MCP' : 'HTTP MCP'),
+    return ConnectorDraftSchema.parse({ ...base, name, summary: draft.summary || (transport === 'stdio' ? 'STDIO MCP' : 'HTTP MCP'),
       transport: transport === 'stdio' ? 'stdio' : 'streamable-http', url: config.url,
       command: config.command, arguments: config.args ?? [], headers: config.headers ?? {}, environment: config.env ?? {},
       timeoutSeconds: config.timeoutSeconds ?? 60 })

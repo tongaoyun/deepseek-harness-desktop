@@ -6,11 +6,9 @@
     - tab "All" [selected]
     - tab "Connected 1"
     - tab "Mine"
-  - text: Search
   - searchbox "Search"
   - button "Filter by category": All categories
   - button "Refresh"
-  - text: 2 items
   - tabpanel "All":
     - region "Industry data":
       - heading "Industry data 2" [level=2]
@@ -20,3 +18,4 @@
           - text: 1 read-only ·1 write
         - listitem:
           - button "Customer workspace Customer profiles and sales activity Authorization required"
+          - text: 0 read-only ·0 write

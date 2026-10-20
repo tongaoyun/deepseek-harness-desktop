@@ -144,19 +144,19 @@ it.each(['success', 'unauthorized'] as const)('discards a previous employee refr
   } finally { await bridge.dispose() }
 })
 
-it.each(['skills.get', 'bootstrap'] as const)('cancels an old %s failure without signing out the new employee', async (method) => {
+it.each(['connectors.authorization.status', 'bootstrap'] as const)('cancels an old %s failure without signing out the new employee', async (method) => {
   const started = deferred<boolean>()
   const response = deferred<Response>()
   const bridge = new DeepSeekHarnessProductBridge({ serverUrl: 'https://product.test',
     sessionToken: 'token-a', initialSession: { authenticated: true, employeeId: 'employee-a' },
     fetch: async (input) => {
-      if (new Request(input).url.endsWith(method === 'bootstrap' ? '/bootstrap' : '/skills/skill-test')) {
+      if (new Request(input).url.endsWith(method === 'bootstrap' ? '/bootstrap' : '/connectors/connector-test/authorization')) {
         started.resolve(true); return response.promise
       }
       return Response.json({ success: true, data: [], pageIndex: 1, pageSize: 100, totalCount: 0, totalPages: 0 })
     } })
   try {
-    const pending = method === 'bootstrap' ? bridge.loadRuntimeBootstrap() : bridge.invoke(method, { id: 'skill-test' })
+    const pending = method === 'bootstrap' ? bridge.loadRuntimeBootstrap() : bridge.invoke(method, { id: 'connector-test' })
     const rejected = expect(pending).rejects.toThrow('Product employee identity changed')
     await started.promise
     bridge.setSession({ authenticated: true, employeeId: 'employee-b' }, 'token-b')
@@ -173,12 +173,12 @@ it('does not sign out a renewed session when an older token returns unauthorized
     sessionToken: 'old-token', initialSession: { authenticated: true, employeeId: 'employee-a' },
     fetch: async (input) => {
       const url = new Request(input).url
-      if (url.endsWith('/skills/skill-test')) { started.resolve(true); return response.promise }
+      if (url.endsWith('/connectors/connector-test/authorization')) { started.resolve(true); return response.promise }
       if (url.endsWith('/session/refresh')) return refreshed('employee-a', 'new-token')
       return Response.json({ success: true, data: [], pageIndex: 1, pageSize: 100, totalCount: 0, totalPages: 0 })
     } })
   try {
-    const pending = bridge.invoke('skills.get', { id: 'skill-test' })
+    const pending = bridge.invoke('connectors.authorization.status', { id: 'connector-test' })
     const rejected = expect(pending).rejects.toMatchObject({ code: 'EMPLOYEE_UNAUTHORIZED' })
     await started.promise
     await bridge.invoke('auth.refresh')

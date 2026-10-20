@@ -2,7 +2,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { randomUUID } from '@deepseek-ai/dsh-util-crypto'
 import { Button, IconCloseOutlineRegular, IconDeliverDocRegular, IconPlusOutlineRegular, Modal, Tooltip } from '@deepseek-ai/dsh-client-ui-primitives'
-import { ConnectorEditorSnapshotSchema, ExtensionDraftSchema, ExtensionSaveResultSchema, type ExtensionDraft } from '@deepseek-harness/product/extension-draft'
+import { ConnectorEditorSnapshotSchema, ConnectorDraftSchema, ConnectorSaveResultSchema, type ConnectorDraft } from '@deepseek-harness/product/connector-draft'
 import type { DeepSeekHarnessProductKey } from '../locales.ts'
 import css from '../DeepSeekHarnessProduct.module.css'
 import { items, nextProductRequestId, type ProductItem } from './catalog-shared.tsx'
@@ -26,9 +26,8 @@ export function ConnectorEditor({ onClose, onSaved, editing, t }: {
   readonly onSaved: () => void
   readonly t: (key: DeepSeekHarnessProductKey) => string
 }): ReactNode {
-  const [draft, setDraft] = useState<ExtensionDraft>(() => ({
+  const [draft, setDraft] = useState<ConnectorDraft>(() => ({
     kind: 'connector', id: `connector-${randomUUID().slice(0, 8)}`, version: '1.0.0', name: '', summary: '', category: 'other',
-    body: '', triggers: [], minimumDesktopVersion: '0.1.0', connectorRefs: [], requiredTools: [], knowledgeBaseRefs: [], skills: [],
     transport: 'stdio', url: '', arguments: [], headers: {}, environment: {}, timeoutSeconds: 60,
   }))
   const [mode, setMode] = useState<'manual' | 'json'>('manual')
@@ -38,7 +37,7 @@ export function ConnectorEditor({ onClose, onSaved, editing, t }: {
   const [command, setCommand] = useState('')
   const [timeout, setTimeout] = useState('60')
   const [providers, setProviders] = useState<readonly ProductItem[]>([])
-  const [parsed, setParsed] = useState<readonly ExtensionDraft[]>([])
+  const [parsed, setParsed] = useState<readonly ConnectorDraft[]>([])
   const [selected, setSelected] = useState(0)
   const [error, setError] = useState<string>()
   const [pending, setPending] = useState(false)
@@ -81,10 +80,10 @@ export function ConnectorEditor({ onClose, onSaved, editing, t }: {
     }).catch(() => undefined)
     return () => { controller.abort() }
   }, [])
-  const update = <K extends keyof ExtensionDraft>(key: K, value: ExtensionDraft[K]): void => {
+  const update = <K extends keyof ConnectorDraft>(key: K, value: ConnectorDraft[K]): void => {
     setDraft(previous => ({ ...previous, [key]: value }))
   }
-  const applyJson = (value: ExtensionDraft, loaded = false): void => {
+  const applyJson = (value: ConnectorDraft, loaded = false): void => {
     setDraft(editing && !loaded ? { ...value, id: editing.id, version: draft.version } : value); setHeaders(pairs(value.headers)); setEnvironment(pairs(value.environment).length ? pairs(value.environment) : [{ key: '', value: '' }])
     setCommand(connectorCommandText(value)); setTimeout(String(value.timeoutSeconds)); setMode('manual'); setError(undefined)
   }
@@ -107,14 +106,14 @@ export function ConnectorEditor({ onClose, onSaved, editing, t }: {
     catch { setError(t('connectorCommandInvalid')); return }
     const timeoutSeconds = draft.oauthProviderId || timeout.trim() === '' ? 60 : Number(timeout)
     if (!Number.isInteger(timeoutSeconds) || timeoutSeconds < 1 || timeoutSeconds > 600) { setError(t('connectorTimeoutInvalid')); return }
-    const checked = ExtensionDraftSchema.safeParse({ ...draft, summary: draft.summary.trim()
+    const checked = ConnectorDraftSchema.safeParse({ ...draft, summary: draft.summary.trim()
       || t(draft.transport === 'stdio' ? 'transportStdio' : 'transportStreamableHttp'), ...privateValues, ...executable, timeoutSeconds })
     if (!checked.success) { setError(t('connectorFieldsInvalid')); return }
     setPending(true)
     try {
-      const receipt = ExtensionSaveResultSchema.parse(await invoke(editing ? 'extensions.connector.update' : 'extensions.save',
+      const receipt = ConnectorSaveResultSchema.parse(await invoke(editing ? 'extensions.connector.update' : 'extensions.save',
         editing ? { ...editing, draft: checked.data } : checked.data, timeoutSeconds * 2000 + 60_000, signal))
-      if (receipt.kind !== 'connector' || receipt.id !== checked.data.id || receipt.version !== checked.data.version || receipt.installed) {
+      if (receipt.id !== checked.data.id || receipt.version !== checked.data.version) {
         throw new Error(t('saveFailed'))
       }
       signal.throwIfAborted()

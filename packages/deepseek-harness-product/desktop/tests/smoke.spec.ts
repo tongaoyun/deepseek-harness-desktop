@@ -4,8 +4,6 @@ import { invokeSmokeProduct } from '../src/smoke.ts'
 
 describe('packaged runtime smoke product bridge', () => {
   it.each([
-    'skills.list',
-    'expertKits.list',
     'connectors.list',
   ] satisfies ProductRuntimeMethod[])('provides an empty %s catalog without employee credentials', async (method) => {
     await expect(invokeSmokeProduct(method)).resolves.toEqual([])

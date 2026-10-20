@@ -2,7 +2,7 @@ import { expect, it } from 'vitest'
 import { DeepSeekHarnessApiClient } from '../src/http-client.ts'
 
 const resources = [{ kind: 'knowledge-base', id: 'base' }]
-const dependencyChecks = [{ kind: 'SKILL', reference: 'orders', status: 'MISSING' }]
+const dependencyChecks = [{ kind: 'KNOWLEDGE_BASE', reference: 'orders', status: 'MISSING' }]
 
 it('accepts the nullable error fields of a successful COLA response', async () => {
   const client = new DeepSeekHarnessApiClient({ baseUrl: 'https://product.test', getSessionToken: () => undefined,

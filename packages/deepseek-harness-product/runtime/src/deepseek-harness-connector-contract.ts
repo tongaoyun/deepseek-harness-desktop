@@ -2,7 +2,6 @@ import { createHash } from 'node:crypto'
 import { objectRecord, stringField, stringList } from './response-fields.ts'
 import { publicToolName } from '@deepseek-ai/dsh-mcp-client'
 import { z } from 'zod'
-import { ProductError } from '@deepseek-harness/product/errors'
 
 export interface DeepSeekHarnessConnector {
   readonly id: string
@@ -23,47 +22,6 @@ export interface DeepSeekHarnessConnector {
 }
 
 export type ConnectorToolPolicy = 'unrelated' | 'read-only' | 'write' | 'undeclared'
-
-/** Credential-free connector definition retained by execution snapshots. */
-export type ConnectorSnapshot = Omit<DeepSeekHarnessConnector, 'headers' | 'environment'>
-
-/** Remove credentials and ephemeral relay addresses before persisting a connector.
- * @param connector Authorized live connector.
- * @returns Its execution definition without authentication material.
- */
-export function snapshotConnector(connector: DeepSeekHarnessConnector): ConnectorSnapshot {
-  const { headers: _headers, environment: _environment, ...definition } = connector
-  return { ...definition, ...connector.transport === 'streamable-http'
-    ? { url: `http://product.invalid/${encodeURIComponent(connector.id)}` } : {} }
-}
-
-/** Validate durable connector definitions through the catalog parser.
- * @param value Untrusted execution snapshot content.
- * @returns Credential-free definitions with validated tools and transport fields.
- */
-export function parseConnectorSnapshots(value: unknown): ConnectorSnapshot[] {
-  const entries = z.array(z.looseObject({ toolNames: z.array(z.string()), readOnlyTools: z.array(z.string()) })).parse(value)
-  return parseConnectorCatalog(entries.map(entry => ({ ...entry, headers: {}, environment: {},
-    tools: entry.toolNames.map(name => ({ name, access: entry.readOnlyTools.includes(name) ? 'READ' : 'WRITE' })),
-  }))).map(snapshotConnector)
-}
-
-/** Restore a pinned definition using the current authorized transport credentials.
- * @param contracts Persisted connector definitions.
- * @param live Currently authorized catalog.
- * @returns Connectors with pinned tool policy and fresh transport credentials.
- */
-export function hydrateConnectors(contracts: readonly ConnectorSnapshot[], live: readonly DeepSeekHarnessConnector[]) {
-  return contracts.map((contract) => {
-    const current = live.find(connector => connector.id === contract.id)
-    if (current === undefined) throw new Error(`Connector is unavailable: ${contract.id}`)
-    if (current.version !== contract.version) throw new ProductError('EXTENSION_VERSION_CONFLICT',
-      `Connector version changed: ${contract.id}; prepare a new task`, false, [{ kind: 'connector', id: contract.id }])
-    if (current.transport !== contract.transport) throw new Error(`Connector transport changed: ${contract.id}`)
-    return { ...contract, ...(current.url === undefined ? {} : { url: current.url }),
-      headers: current.headers, environment: current.environment }
-  })
-}
 
 export function parseConnectorCatalog(value: unknown): DeepSeekHarnessConnector[] {
   if (!Array.isArray(value)) throw new Error('deepseek-harness product: invalid connector catalog')
