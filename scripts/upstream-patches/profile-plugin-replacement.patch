@@ -1,3 +1,67 @@
+diff --git a/apps/cli/src/dump-config.ts b/apps/cli/src/dump-config.ts
+index 9e1de83917b1959956e85bb08e6d1eab29eb1f67..8f70d136ce7c560fac83e7f1c67fd2e71969e73c 100644
+--- a/apps/cli/src/dump-config.ts
++++ b/apps/cli/src/dump-config.ts
+@@ -58,6 +58,14 @@ export function collectConfigDumpLayers(
+     patches: layer.patches,
+   }))
+   if (!defaultOnly) {
++    const overlays = patches.map((file) => {
++      const absolute = resolve(file)
++      return { label: absolute, patches: loadOverlayPatches(NAME, absolute) }
++    })
++    for (const overlay of overlays) {
++      const defaults = overlay.patches.filter(patch => patch.defaults === true)
++      if (defaults.length > 0) layers.push({ ...overlay, patches: defaults })
++    }
+     if (existsSync(loaded.patchPath)) {
+       layers.push({ label: loaded.patchPath, patches: loaded.patches })
+     }
+@@ -66,9 +74,8 @@ export function collectConfigDumpLayers(
+     if (homePatches !== undefined) {
+       layers.push({ label: homePatchFile, patches: homePatches })
+     }
+-    for (const file of patches) {
+-      const absolute = resolve(file)
+-      layers.push({ label: absolute, patches: loadOverlayPatches(NAME, absolute) })
++    for (const overlay of overlays) {
++      layers.push({ ...overlay, patches: overlay.patches.filter(patch => patch.defaults !== true) })
+     }
+   }
+   return layers
+diff --git a/apps/cli/tests/default-plugin-dump.spec.ts b/apps/cli/tests/default-plugin-dump.spec.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..059635fd566d613b46714cb8c81b3b533170d84a
+--- /dev/null
++++ b/apps/cli/tests/default-plugin-dump.spec.ts
+@@ -0,0 +1,27 @@
++/** Config dumps use the same preinstalled defaults and employee overrides as runtime profiles. */
++import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
++import { tmpdir } from 'node:os'
++import { join } from 'node:path'
++import { composeEntries, initProfile, loadProfileDirectory, readProfilePatches, type ProfileContext } from '@deepseek-ai/dsh-app-boot'
++import { expect, it, onTestFinished, vi } from 'vitest'
++import { collectConfigDumpLayers } from '../src/dump-config.ts'
++
++it('composes default inserts before user edits and replacements after them', () => {
++  const home = mkdtempSync(join(tmpdir(), 'default-plugin-dump-'))
++  onTestFinished(() => { vi.unstubAllEnvs(); rmSync(home, { recursive: true, force: true }) })
++  vi.stubEnv('DSH_HOME', home)
++  const directory = join(home, 'profile')
++  initProfile(directory, [])
++  const user = [{ id: 'plugin', name: 'stable-package', config: { value: 'employee' } }]
++  const overlays = [{ defaults: true, insert: [{ id: 'plugin', name: 'stable-package', config: { value: 'default' } }] },
++    { id: 'plugin', name: 'stable-package', replace: 'file:///bundled-plugin.mjs' }]
++  writeFileSync(join(directory, 'cordis.patch.yml'), JSON.stringify(user))
++  const file = join(home, 'overlay.json')
++  writeFileSync(file, JSON.stringify(overlays))
++  const loaded = loadProfileDirectory('test', directory, join(home, 'package.json'))
++  const context: ProfileContext = { name: 'test', dir: directory, patchPath: loaded.patchPath, installAnchor: join(home, 'package.json'),
++    home, cwd: home, startedBundles: [], telemetryDisabledEnv: undefined, overlays }
++  const dumped = composeEntries(collectConfigDumpLayers(loaded, false, [file]).map(layer => layer.patches))
++  expect(dumped).toEqual(composeEntries([readProfilePatches('test', context, loaded)]))
++  expect(dumped).toEqual([{ id: 'plugin', name: 'file:///bundled-plugin.mjs', config: { value: 'employee' } }])
++})
 diff --git a/packages/boot/app-boot/src/profile-context.ts b/packages/boot/app-boot/src/profile-context.ts
 index e2ebfad5ce813370930caae11c7997add252893f..2bc4bc21c589060e54f85e34885d667590972409 100644
 --- a/packages/boot/app-boot/src/profile-context.ts

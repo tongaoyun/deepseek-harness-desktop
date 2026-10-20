@@ -1590,12 +1590,13 @@
     },
     {
       "id": "profile-plugin-replacement",
-      "purpose": "通用 profile 插件替换参数 replace：name 保持匹配条件，替换模块来源同时保留原条目 ID、配置、停用及隔离设置；拒绝空名称和分组替换。产品通过该公开补丁加载随软件提供的插件，防止已有 profile 的同名 npm 安装覆盖公司分支。 defaults 插入层先于用户覆盖；配置编辑器持久化替换前的稳定包名，支持新装、已有配置、修改、重启及模块路径升级。",
+      "purpose": "通用 profile 插件替换参数 replace：name 保持匹配条件，替换模块来源同时保留原条目 ID、配置、停用及隔离设置；拒绝空名称和分组替换。产品通过该公开补丁加载随软件提供的插件，防止已有 profile 的同名 npm 安装覆盖公司分支。 defaults 插入层先于用户覆盖；配置编辑器持久化替换前的稳定包名，支持新装、已有配置、修改、重启及模块路径升级。 CLI 配置和 schema 导出使用相同的默认插入顺序。",
       "tests": [
         "packages/boot/app-boot/tests/plugin-replacement.spec.ts",
         "packages/deepseek-harness-product/desktop/tests/native-extensions.spec.ts",
         "packages/deepseek-harness-product/desktop/tests/company-plugins.spec.ts",
-        "packages/boot/plugin-market/tests/replacement-configuration.spec.ts"
+        "packages/boot/plugin-market/tests/replacement-configuration.spec.ts",
+        "apps/cli/tests/default-plugin-dump.spec.ts"
       ],
       "files": [
         {
@@ -1622,6 +1623,16 @@
           "path": "packages/boot/plugin-market/tests/replacement-configuration.spec.ts",
           "before": null,
           "after": "711bb09e3674046979dca563c54ee7fe3e217956bc26f15842ac4e0f8b7d6c5a"
+        },
+        {
+          "path": "apps/cli/src/dump-config.ts",
+          "before": "02ec1ea1d0c16aec28353c16ef59961a7351bd8a4b56b2a291e536120f08bff9",
+          "after": "719e9926eeba745783dbf0cb058b4aed06113fd37c39095c7c32bb84b8b8ee65"
+        },
+        {
+          "path": "apps/cli/tests/default-plugin-dump.spec.ts",
+          "before": null,
+          "after": "f04c72d127bd56e2c7cdb52f87050d970067d4224dd178cad2049ee90acdd249"
         }
       ],
       "diff": "profile-plugin-replacement.patch"
