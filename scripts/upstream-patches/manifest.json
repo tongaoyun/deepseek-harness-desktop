@@ -988,7 +988,7 @@
         {
           "path": "packages/extensions/tool-cordis/src/api-catalog.ts",
           "before": "b36721249b3fbac383cf31f51b5e3656d1b788c3120739d65618953f64a923b7",
-          "after": "6fac8de1a4ca811bda273855ff575d40651ebe98bbc5900281844702ac3167f9"
+          "after": "132ff8492ac1032c5cee6d90c1cb4e8ab2e7a7677b0cd6da91095d56ef17bfea"
         },
         {
           "path": "packages/preset/agent-preset/skills/cordis-composition-reference/references/packages.md",
@@ -1617,7 +1617,7 @@
         {
           "path": "packages/boot/config-editor/src/index.ts",
           "before": "34a0b17d43446f8e35d4a35de0da2fd0f93673a3dc925956a6abfa4d8ffcbf33",
-          "after": "1e093a0ea884ea44b3f06cc9570d6f6e4344934cc4be9361eed1e501c32d17d3"
+          "after": "1b95a7f3d9af33736b7c2b17b74cfdf5a827d7c4d4cac82fea15193bfd16c6c0"
         },
         {
           "path": "packages/boot/plugin-market/tests/replacement-configuration.spec.ts",

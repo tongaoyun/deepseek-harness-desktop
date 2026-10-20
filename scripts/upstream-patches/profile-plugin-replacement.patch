@@ -155,7 +155,7 @@ index 0000000000000000000000000000000000000000..ebae845b925f40ffb360be162cbde4b8
 +  expect(entries[0]?.options.name).toBe(pathToFileURL(replacement).href)
 +})
 diff --git a/packages/boot/config-editor/src/index.ts b/packages/boot/config-editor/src/index.ts
-index ffec879f40fed1689509847ed18e472af13b405f..320995e959ddf4db62e7067842577c31b07b096b 100644
+index ffec879f40fed1689509847ed18e472af13b405f..adecc4a293e6dcd7547b86ba5efe1f02f352335c 100644
 --- a/packages/boot/config-editor/src/index.ts
 +++ b/packages/boot/config-editor/src/index.ts
 @@ -7,7 +7,7 @@ import { entryListSchema, type PatchOptions } from '@deepseek-ai/cordis-plugin-i
@@ -166,15 +166,6 @@ index ffec879f40fed1689509847ed18e472af13b405f..320995e959ddf4db62e7067842577c31
 +import { composeEntries, loadProfileDirectory, readBundlePatches, readProfilePatches, reconcileProfilePatches } from '@deepseek-ai/dsh-app-boot'
  import { withFileLock, writeFileAtomic } from '@deepseek-ai/dsh-atomic-write'
  import { isMap, isSeq, parseDocument, Scalar, visit } from 'yaml'
- 
-@@ -22,7 +22,7 @@ function flatten(rows: EntryOptions[]): EntryOptions[] {
-   return rows.flatMap(row => [row, ...row.group && Array.isArray(row.config) ? flatten(row.config as EntryOptions[]) : []])
- }
- 
--/** Persist complete raw configs and apply them through the normal Loader path. */
-+/** Persist raw configs using profile plugin names, retaining launcher substitutions during Loader reconciliation. */
- export class ConfigEditor extends Service {
-   static inject = ['loader', 'profileContext']
  
 @@ -54,7 +54,7 @@ export class ConfigEditor extends Service {
      const overridden = new Set(loaded.patches.filter(patch => patch.insert === undefined && Object.hasOwn(patch, 'config')).map(patch => patch.id))

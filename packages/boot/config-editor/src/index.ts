@@ -22,7 +22,7 @@ function flatten(rows: EntryOptions[]): EntryOptions[] {
   return rows.flatMap(row => [row, ...row.group && Array.isArray(row.config) ? flatten(row.config as EntryOptions[]) : []])
 }
 
-/** Persist raw configs using profile plugin names, retaining launcher substitutions during Loader reconciliation. */
+/** Persist complete raw configs and apply them through the normal Loader path. */
 export class ConfigEditor extends Service {
   static inject = ['loader', 'profileContext']
 
