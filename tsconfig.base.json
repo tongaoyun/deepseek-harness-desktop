@@ -35,6 +35,7 @@
       "@deepseek-harness/product": ["./packages/deepseek-harness-product/product/src/index.ts"],
             "@deepseek-harness/product/connector-draft": ["./packages/deepseek-harness-product/product/src/connector-draft.ts"],
       "@deepseek-harness/product/capabilities": ["./packages/deepseek-harness-product/product/src/capabilities.ts"],
+      "@deepseek-harness/product/company-content": ["./packages/deepseek-harness-product/product/src/company-content.ts"],
       "@deepseek-harness/product/errors": ["./packages/deepseek-harness-product/product/src/errors.ts"],
       "@deepseek-harness/product/catalog-manager": ["./packages/deepseek-harness-product/product/src/catalog-manager.ts"],
       "@deepseek-harness/product/protocol": ["./packages/deepseek-harness-product/product/src/protocol.ts"],

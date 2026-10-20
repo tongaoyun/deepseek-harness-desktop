@@ -32,8 +32,8 @@
     "@deepseek-harness/product": "workspace:*",
     "@deepseek-harness/product-runtime": "workspace:*",
     "@deepseek-harness/product-ui": "workspace:*",
-    "@michengai/dsh-agency-agents": "1.2.8",
-    "@michengai/dsh-skills-manager": "1.2.8",
+    "@michengai/dsh-agency-agents": "workspace:~",
+    "@michengai/dsh-skills-manager": "workspace:~",
     "@deepseek-ai/cordis": "workspace:~",
     "@deepseek-ai/dsh-api-remotes": "workspace:*",
     "@deepseek-ai/dsh-client-connection": "workspace:*",
@@ -59,6 +59,7 @@
   },
   "devDependencies": {
     "@types/node": "^22.20.0",
-    "electron": "^44.0.0"
+    "electron": "^44.0.0",
+    "@deepseek-ai/dsh-config-editor": "workspace:*"
   }
 }

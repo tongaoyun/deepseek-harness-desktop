@@ -34,6 +34,10 @@
     "./connector-draft": {
       "types": "./lib/types/connector-draft.d.ts",
       "default": "./lib/connector-draft.js"
+    },
+    "./company-content": {
+      "types": "./lib/types/company-content.d.ts",
+      "default": "./lib/company-content.js"
     }
   },
   "scripts": {

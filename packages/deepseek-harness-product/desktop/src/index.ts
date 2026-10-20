@@ -12,6 +12,7 @@ import { DeepSeekHarnessNativeProcess } from './deepseek-harness-native-process.
 import { resolveDeepSeekHarnessConnectorProxyPolicy, resolveDeepSeekHarnessKnowledgeFilePolicy, resolveDeepSeekHarnessProductServerUrl, resolveDesktopSupportPolicy } from './deepseek-harness-product-config.ts'
 import { DesktopSupport } from './desktop-support.ts'
 import { ConnectorProxy } from './connector-proxy.ts'
+import { installCompanyContent } from './company-content.ts'
 import { nativeExtensionPatches } from './native-extensions.ts'
 import { inferenceProfile } from './inference-profile.ts'
 import { ConnectorDraftSchema } from '@deepseek-harness/product/connector-draft'
@@ -239,7 +240,10 @@ export function createExtension(context: ExtensionContext): ProductDesktopExtens
       }
     }
   }
-  const prepareDeepSeekHarnessBootstrap = async (): Promise<ProductRuntimeBootstrap | undefined> => {
+  const prepareDeepSeekHarnessBootstrap = async (): Promise<{
+    bootstrap: ProductRuntimeBootstrap
+    companyContent: Awaited<ReturnType<typeof installCompanyContent>>
+  } | undefined> => {
     let operation = '钉钉登录'
     const stopped = (): boolean => context.isQuitting() || lifecycle.signal.aborted
     while (!stopped()) {
@@ -247,7 +251,13 @@ export function createExtension(context: ExtensionContext): ProductDesktopExtens
         operation = '钉钉登录'
         await ensureDeepSeekHarnessAuth()
         operation = '加载工作区配置'
-        return await productBridge.loadRuntimeBootstrap()
+        const bootstrap = await productBridge.loadRuntimeBootstrap()
+        operation = '同步公司扩展'
+        const employeeId = productBridge.getSession().employeeId
+        if (!employeeId) throw new Error('Authenticated employee is required')
+        const companyContent = await installCompanyContent(join(app.getPath('userData'), 'company-content'),
+          employeeId, await productBridge.loadCompanyContent(), lifecycle.signal)
+        return { bootstrap, companyContent }
       } catch (error) {
         if (stopped()) return undefined
         const expired = error instanceof DingTalkAuthorizationTimeoutError
@@ -303,8 +313,9 @@ export function createExtension(context: ExtensionContext): ProductDesktopExtens
       await knowledgeFiles.prepare()
       await connectorProxy.start()
       await nativeSidecar.start()
-      const bootstrap = await prepareDeepSeekHarnessBootstrap()
-      if (closed || bootstrap === undefined) return undefined
+      const prepared = await prepareDeepSeekHarnessBootstrap()
+      if (closed || prepared === undefined) return undefined
+      const { bootstrap, companyContent } = prepared
       reportDevice()
       if (supportTimer === undefined) {
         supportTimer = setInterval(reportDevice, supportPolicy.heartbeatIntervalMs)
@@ -316,6 +327,8 @@ export function createExtension(context: ExtensionContext): ProductDesktopExtens
       const nativeExtensions = join(app.getPath('userData'), 'product-native-extensions.patch.json')
       writeFileSync(nativeExtensions, JSON.stringify(nativeExtensionPatches(profile)), { mode: 0o600 })
       return {
+        DSH_COMPANY_SKILLS_ROOT: companyContent.skillsRoot,
+        DSH_COMPANY_EXPERTS_ROOT: companyContent.expertsRoot,
         DEEPSEEK_HARNESS_SESSION_TOKEN: undefined,
         DEEPSEEK_API_KEY: bootstrap.modelApiKey,
         DEEPSEEK_BASE_URL: bootstrap.endpoints.litellm,

@@ -1,0 +1,215 @@
+{
+  "upstreamCommit": "434e166fc1af6a8bcee4f6b22a3851e037fa90b7",
+  "files": [
+    {
+      "path": "README.md",
+      "before": null,
+      "after": "1c022a96c3be64599f56e4e0c1e3df8f90a05baf3a56dd1cc7f86ad10cefe9a5"
+    },
+    {
+      "path": "assets/branding/dsh-banner-en.webp",
+      "before": null,
+      "after": "da8d2487a70e4bc09d8f7b38d1c8deb6016c6c6d45ee7142c2488f58ca765ae3"
+    },
+    {
+      "path": "assets/branding/dsh-banner-zh-CN.webp",
+      "before": null,
+      "after": "9edb054165610dca89df6c934637317565c0df9d77f0adb0f90a7a3a501133d4"
+    },
+    {
+      "path": "assets/branding/dsh-logo.png",
+      "before": null,
+      "after": "debae5d73d02d4c7554d5457df9ea39ae23ed29fa385b82ca349de1445afadc3"
+    },
+    {
+      "path": "assets/brands/agents.svg",
+      "before": null,
+      "after": "f46b56e203269e44f83aa4f1b9aecdfc629c518146cb5000454fe2f625df7bdf"
+    },
+    {
+      "path": "assets/brands/cc-switch.png",
+      "before": null,
+      "after": "b2d3e204ea0b433c60acc2d9e435722a8ac2996a79497fa919f93faca87125e7"
+    },
+    {
+      "path": "assets/brands/claude.svg",
+      "before": null,
+      "after": "c46bee7e82071e9a8491a62ad3d5a0cf79d9ab5fce1cdc00ff568a290a69237e"
+    },
+    {
+      "path": "assets/brands/codebuddy.svg",
+      "before": null,
+      "after": "32a288fa67854e43afd5ed5dab1fd94976d6b8094e15d94ee0aabf6886e0aa3d"
+    },
+    {
+      "path": "assets/brands/codex.svg",
+      "before": null,
+      "after": "c8f958aaf1d98b1287b2e6f7a1ddd9e02c0a2ac91540657ccc4324fe94c88d89"
+    },
+    {
+      "path": "assets/brands/copilot.svg",
+      "before": null,
+      "after": "0a45a01fc4f1577302a817007363e8f00df859020e3c254714310c8b4acd37c4"
+    },
+    {
+      "path": "assets/brands/cursor.svg",
+      "before": null,
+      "after": "fe2ca85dc43a59cf2fcd2752ba427acde263e45169e2eeca8f4a784a56b7c72b"
+    },
+    {
+      "path": "assets/brands/dsh.png",
+      "before": null,
+      "after": "39545af1c84153f1ce55f2b0842371d3be73c56199366277f346d0cb9402d83d"
+    },
+    {
+      "path": "assets/brands/gemini.svg",
+      "before": null,
+      "after": "7fbd5820ec88dc8a6f7a7758787be1fec2482db8a0fcb0158f14f5ff0f4ec9b7"
+    },
+    {
+      "path": "assets/brands/openclaw.svg",
+      "before": null,
+      "after": "5b087fbed04ad6f3662fdbaae5c4c25aaeb43404e0190be44338d5531baa3523"
+    },
+    {
+      "path": "assets/brands/opencode.svg",
+      "before": null,
+      "after": "455dff845a18af8e13ed76d068c774745fd24208a062d5c1ad571937f72e3791"
+    },
+    {
+      "path": "assets/brands/qoder.svg",
+      "before": null,
+      "after": "8f2ac04e4fbaa1c5b2039fe5a7bd14b840aef50d930b1414a8e46b8a5192ba2f"
+    },
+    {
+      "path": "assets/brands/roo.svg",
+      "before": null,
+      "after": "021532beade8a3336591e4bfd6cb631a6d830899737f98bad8924ad2fa5b3f81"
+    },
+    {
+      "path": "assets/brands/trae.svg",
+      "before": null,
+      "after": "ee7cd476bacfe041bc38b370ad4a9bffd1e9796a91bc0717842eee9031b7a280"
+    },
+    {
+      "path": "assets/brands/windsurf.svg",
+      "before": null,
+      "after": "8106b356819f9b27958769dad1876818ec12ffa1e1d833c4d4cd2c45802c43eb"
+    },
+    {
+      "path": "assets/brands/workbuddy.png",
+      "before": null,
+      "after": "940fb7df86e474fb09b1f066be3b652c81a0901a87fc1eaa5ccf40d442af88e8"
+    },
+    {
+      "path": "assets/icon.png",
+      "before": null,
+      "after": "debae5d73d02d4c7554d5457df9ea39ae23ed29fa385b82ca349de1445afadc3"
+    },
+    {
+      "path": "assets/screenshots/delete-plugin.png",
+      "before": null,
+      "after": "79027b3e4b9bb3b20d16114ed3fe78908b0082a7e2d264c23d9087268bde2e4a"
+    },
+    {
+      "path": "assets/screenshots/project-skills.webp",
+      "before": null,
+      "after": "2ed25e19c0dd73f1eb57f2ccdb5dc970d7401e00041a1f78071f1941138224c9"
+    },
+    {
+      "path": "assets/screenshots/skill-detail.png",
+      "before": null,
+      "after": "a3e2d4517846f5578abac36873886f8cf610a52ef65e1f518a074e28c4b0ceb7"
+    },
+    {
+      "path": "assets/screenshots/skill-repositories.webp",
+      "before": null,
+      "after": "479e6abaeeed91778292a85761cc477ca0164f588d98d5ddf8763092b7cd1ace"
+    },
+    {
+      "path": "assets/screenshots/skills-manager-en.png",
+      "before": null,
+      "after": "50e29a00c95cc0bf79b91b45fb2c3ec089a1a15223e28fe5cc679421c673b9ac"
+    },
+    {
+      "path": "assets/screenshots/skills-manager-v2-preview.webp",
+      "before": null,
+      "after": "71f4107dd67e4659e78ef228a2eab50624dbb085b7519f21337eb34ff749c4c6"
+    },
+    {
+      "path": "assets/screenshots/skills-manager.png",
+      "before": null,
+      "after": "25429d14f5485eb292a9f3462fa54e5af4b56c5d404902be9344892f5d93ff53"
+    },
+    {
+      "path": "assets/screenshots/skills-public.png",
+      "before": null,
+      "after": "25429d14f5485eb292a9f3462fa54e5af4b56c5d404902be9344892f5d93ff53"
+    },
+    {
+      "path": "assets/screenshots/slash-command.png",
+      "before": null,
+      "after": "9d8a1eff4ff9f039d9ce8f6d4256315d5c7dc9fc0e6c50cf6a8c130dbbb2bf00"
+    },
+    {
+      "path": "assets/screenshots/upload-plugin.png",
+      "before": null,
+      "after": "11698a97f9f0a5aac69f784501ad48f1efcc04c6ce2eca3e5f82c49ccf56d4ea"
+    },
+    {
+      "path": "cordis.patch.yml",
+      "before": null,
+      "after": "4305b7105d0c84d0003f9bde1e27b308a9a0240aab447a367d6d9f3a1c830198"
+    },
+    {
+      "path": "locale/en.json",
+      "before": null,
+      "after": "5ad1630ace80298d643dc1de01ce91494ff81b989b5692a07f8ca90d91f1a5d2"
+    },
+    {
+      "path": "locale/zh.json",
+      "before": null,
+      "after": "eca542aaf360eea4f225cc018c81725d95bab24f67cedee05366276497150657"
+    },
+    {
+      "path": "package.json",
+      "before": "ab00b723dff6c3892185779fd08b781f221f3da629ffa7def861f47e5fec7903",
+      "after": "6da4c6b4602dade19217f50a716c59b2d756bb74641739448fd8f6e019548d84"
+    },
+    {
+      "path": "src/client.ts",
+      "before": "011746374560ee6939f22706cf8ec0961b9995e66e2cb237408f92b1a56ea826",
+      "after": "239712473a0703e6122059f1ac24213cff1b478670e51359b6aa2be9b4844911"
+    },
+    {
+      "path": "src/core.ts",
+      "before": "381bf44e1227b096bef76775439281c712fe912d686a9987dd18782bffcfc76b",
+      "after": "51a8c17d815e02db52a6a057eca71feaf5acb59a0bea171268b55858db2a0fc3"
+    },
+    {
+      "path": "src/index.ts",
+      "before": "d69d08241ad18df93d01c1b9b4cfacd34bbc837110830f72f448a4a9e588724c",
+      "after": "8ce20526c4e867d3631a79ab8e30f73b9ad3c2e9560ce2734eb6a99e5bb09aae"
+    },
+    {
+      "path": "src/plugin-update-model.ts",
+      "before": "4d02880bf5f1fb8c0f4f7260ccd17a804041d35ac186a01e2b067438639dec1e",
+      "after": null
+    },
+    {
+      "path": "src/plugin-update-ui.ts",
+      "before": "9e6e4a03e95c87755a2f76ae70807c05e5ab0bcd6e57f38fad883179e5c328b5",
+      "after": null
+    },
+    {
+      "path": "src/plugin-updater.ts",
+      "before": "6bc05e7b78677095418eb8a6cedc5b2ccf4bf66c02d08bb6864600b32a8ec632",
+      "after": null
+    },
+    {
+      "path": "tsdown.config.ts",
+      "before": null,
+      "after": "00299236bb54e3c2f713ad4a9eff64ac61f6cdfe80b6aa5f62978388a6008e63"
+    }
+  ]
+}

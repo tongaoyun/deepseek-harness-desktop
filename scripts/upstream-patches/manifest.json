@@ -767,7 +767,7 @@
         {
           "path": ".gitattributes",
           "before": "946bed079ec10d6ce1fe3fc3d76e42a9587548135f0f4a7500d77303d9cbd398",
-          "after": "b2be90cadea9e2a3dd76ccf7cf7f5d94b2b9bc53ef685dcf9c0c7cfcbd1ff408"
+          "after": "3476fc6a6f4a56007194d4734f8eaadb297ce349176bd15686ae7d87dfafc7d8"
         },
         {
           "path": ".gitignore",
@@ -792,17 +792,17 @@
         {
           "path": "pnpm-lock.yaml",
           "before": "4637cca3b89c4c8d5a147321710e597aa62ec2444a3772ab542be5690893dfe4",
-          "after": "8d1ccb6edbaa1abef4b30dc7d4f4850ede0630da6c4c10811f4c470a8b8b704c"
+          "after": "7430c76df2e65842c05f67e57f771044fc887bff344e349e0d7ed5e29653dbc3"
         },
         {
           "path": "scripts/check-workspace-constraints.spec.ts",
           "before": "7e4c84495238b2bf5f245770cace0d8a55a76f5392f765e6b0ec2ac171eacd97",
-          "after": "2accb5d8e3ef82e08894bcc44b86e156371809337ed6210a0609ce2ae40ba7d0"
+          "after": "8cacff29c2d0c4e5cd0eea5fced6bbb9e26333415410fcfba2710ddc80036fd1"
         },
         {
           "path": "scripts/check-workspace-constraints.ts",
           "before": "aec2e46fcc0f39056cebda61f81a47d688510a50b29b80e188f40d8d2c308384",
-          "after": "9ac400485f26548d5552503a5a5faafff6ad34f4b205d8a0abe2fdd66e369c85"
+          "after": "22afbe828443be2fc03c21129dd09340c68169690e089212484cf9a13b5a7807"
         },
         {
           "path": "scripts/client-tsconfig.spec.ts",
@@ -822,7 +822,7 @@
         {
           "path": "tsconfig.base.json",
           "before": "5c43c1a82cc6eac83bbe9f73637144205e6560155346d9ff506d662f7ea8ca7e",
-          "after": "9b54617ccd2f22260669f6d73f92f48e2a5dc326d84356bcf66fa58b48936964"
+          "after": "e4c99e571d0b57f98d0d11977a728a8a9050debf015255d50016d8a8368510dd"
         },
         {
           "path": "tsconfig.client.json",
@@ -1571,6 +1571,22 @@
         }
       ],
       "diff": "settings-section-view.patch"
+    },
+    {
+      "id": "company-plugin-vendor-documentation",
+      "purpose": "完整登记产品预装社区插件的固定源码来源、依赖装配、公司内容入口和本地差异；官方 profile 不引入产品插件。",
+      "tests": [
+        "packages/deepseek-harness-product/desktop/tests/company-plugins.spec.ts",
+        "scripts/upstream-boundaries.spec.ts"
+      ],
+      "files": [
+        {
+          "path": "vendor/README.md",
+          "before": "463f0475336df70f35805c60ea897b94d15cdd295595d8a50074dedd4555d311",
+          "after": "5c7cb2d65567df24a7529cf801416ba44a14fe8e291f97589df7c05735421400"
+        }
+      ],
+      "diff": "company-plugin-vendor-documentation.patch"
     }
   ]
 }

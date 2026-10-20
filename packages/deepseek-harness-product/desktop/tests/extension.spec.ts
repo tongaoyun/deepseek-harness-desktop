@@ -7,10 +7,12 @@ import { createExtension } from '../src/index.ts'
 
 const fixture = vi.hoisted(() => ({ authenticate: vi.fn<typeof import('@deepseek-harness/product/dingtalk-auth').ensureDingTalkSession>(),
   dialog: vi.fn(async (..._args: unknown[]) => ({ response: 0 })), quit: vi.fn(),
+  companyContent: vi.fn(async () => null),
   bootstrap: vi.fn(async () => ({ modelApiKey: 'model-key', endpoints: { litellm: 'https://example.test/v1' }, models: ['deepseek-v4-flash', 'gpt-example'] })),
   stop: vi.fn(async () => {}), dispose: vi.fn(), knowledgeClose: vi.fn(async () => {}), writeFile: vi.fn(),
   bridgeOptions: vi.fn<(options: ProductBridgeOptions) => void>(),
   invoke: vi.fn(async (..._args: unknown[]) => ({})), refreshCatalog: vi.fn(async () => {}) }))
+vi.mock('../src/company-content.ts', () => ({ installCompanyContent: async () => ({ skillsRoot: '/company/skills', expertsRoot: '/company/experts' }) }))
 vi.mock('../src/native-extensions.ts', () => ({ nativeExtensionPatches: () => [] }))
 vi.mock('node:fs', async original => ({ ...await original<typeof import('node:fs')>(), writeFileSync: fixture.writeFile }))
 vi.mock('electron', () => ({
@@ -37,12 +39,15 @@ vi.mock('@deepseek-harness/product/dingtalk-auth', async original => ({
 vi.mock('@deepseek-harness/product/bridge', () => ({ DeepSeekHarnessProductBridge: class {
   constructor(options: ProductBridgeOptions) { fixture.bridgeOptions(options) }
   dispose = fixture.dispose; invoke = fixture.invoke; invokeRuntime = async () => []
-  getSession = () => ({ authenticated: true })
+  getSession = () => ({ authenticated: true, employeeId: 'fixture' })
   subscribe = () => () => {}; refreshCatalog = fixture.refreshCatalog
   loadRuntimeBootstrap = fixture.bootstrap
+  loadCompanyContent = fixture.companyContent
 } }))
 beforeEach(() => {
-  vi.clearAllMocks(); fixture.authenticate.mockResolvedValue({ authenticated: true })
+  vi.clearAllMocks()
+  fixture.companyContent.mockReset().mockResolvedValue(null)
+  fixture.authenticate.mockResolvedValue({ authenticated: true })
   fixture.invoke.mockReset().mockResolvedValue({}); fixture.refreshCatalog.mockReset().mockResolvedValue()
   fixture.dispose.mockReset(); fixture.knowledgeClose.mockReset().mockResolvedValue(); fixture.stop.mockReset().mockResolvedValue()
 })
@@ -103,7 +108,7 @@ it('cancels a shared sign-in only after its last caller cancels and allows a new
     second.abort(new Error('Second cancelled'))
     await rejectedSecond
     expect(underlying.aborted).toBe(true)
-    await expect(extension.invoke('auth.ensureDingTalk')).resolves.toEqual({ authenticated: true })
+    await expect(extension.invoke('auth.ensureDingTalk')).resolves.toEqual({ authenticated: true, employeeId: 'fixture' })
     expect(fixture.authenticate).toHaveBeenCalledTimes(2)
   } finally { first.abort(); second.abort(); await extension.close() }
 })
@@ -122,7 +127,7 @@ it('retries expired DingTalk sign-in and supplies only model configuration and p
     expect(saved).toContain('gpt-example')
     expect(saved).not.toContain('model-key')
     expect(JSON.parse(environment!.DSH_DESKTOP_PROFILE_PATCHES!)).toContain('/unused-fixture/product-inference.patch.json')
-    expect(Object.keys(environment!)).toEqual(['DEEPSEEK_HARNESS_SESSION_TOKEN', 'DEEPSEEK_API_KEY', 'DEEPSEEK_BASE_URL', 'DSH_DESKTOP_PROFILE_PATCHES'])
+    expect(Object.keys(environment!)).toEqual(['DSH_COMPANY_SKILLS_ROOT', 'DSH_COMPANY_EXPERTS_ROOT', 'DEEPSEEK_HARNESS_SESSION_TOKEN', 'DEEPSEEK_API_KEY', 'DEEPSEEK_BASE_URL', 'DSH_DESKTOP_PROFILE_PATCHES'])
   } finally { await extension.close() }
   expect(fixture.stop).toHaveBeenCalledOnce()
   expect(fixture.dispose).toHaveBeenCalledOnce()
@@ -130,10 +135,11 @@ it('retries expired DingTalk sign-in and supplies only model configuration and p
   expect(signal.aborted).toBe(true)
 })
 
-it.each(['authentication', 'bootstrap'] as const)('waits for explicit retry after a network failure during %s', async (phase) => {
+it.each(['authentication', 'bootstrap', 'company-content'] as const)('waits for explicit retry after a network failure during %s', async (phase) => {
   const failure = new ProductError('PRODUCT_NETWORK_UNAVAILABLE', 'private diagnostic', true)
   if (phase === 'authentication') fixture.authenticate.mockRejectedValueOnce(failure)
-  else fixture.bootstrap.mockRejectedValueOnce(failure)
+  else if (phase === 'bootstrap') fixture.bootstrap.mockRejectedValueOnce(failure)
+  else fixture.companyContent.mockRejectedValueOnce(failure)
   const choice = Promise.withResolvers<{ response: number }>()
   const shown = Promise.withResolvers<undefined>()
   fixture.dialog.mockImplementationOnce(async () => { shown.resolve(undefined); return choice.promise })

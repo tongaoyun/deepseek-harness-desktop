@@ -70,7 +70,7 @@ description: "认证产品桌面用户，管理凭据、原生操作与产品资
 
 ## 原生扩展
 
-产品 profile 预装固定版本的 `@michengai/dsh-agency-agents` 与 `@michengai/dsh-skills-manager`。启动准备读取官方 profile，只补充缺失插件，保留已有配置及停用状态；同插件重复或预留 ID 冲突会明确报错。第三方插件界面位于其注册的官方设置入口。自建技能和套件的制品、创作和安装链路已移除，连接器与知识库仍由独立产品包提供。
+产品 profile 预装源码固定的 `@michengai/dsh-agency-agents` 与 `@michengai/dsh-skills-manager`。启动准备读取官方 profile，只补充缺失插件，保留已有配置及停用状态；同插件重复或预留 ID 冲突会明确报错。第三方插件界面同时通过侧栏“扩展能力”和官方设置入口访问。公司内容启动同步、发布与限制见[公司专家与技能](../../../apps/product-desktop/docs/company-content.md)。自建技能和套件的制品、创作和安装链路已移除，连接器与知识库仍由独立产品包提供。
 
 <a id="device-and-feedback"></a>
 ## 设备与反馈
