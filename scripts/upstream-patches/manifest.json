@@ -1583,29 +1583,45 @@
         {
           "path": "vendor/README.md",
           "before": "463f0475336df70f35805c60ea897b94d15cdd295595d8a50074dedd4555d311",
-          "after": "7c6be447095b9950cae23fc33f87309703ffed89e1f07c58c6e359231b21f1a6"
+          "after": "ee27c30ae22ff2c34109461558ddcab48a5fd9a6be22a8789bff88ce46a371e3"
         }
       ],
       "diff": "company-plugin-vendor-documentation.patch"
     },
     {
       "id": "profile-plugin-replacement",
-      "purpose": "通用 profile 插件替换参数 replace：name 保持匹配条件，替换模块来源同时保留原条目 ID、配置、停用及隔离设置；拒绝空名称和分组替换。产品通过该公开补丁加载随软件提供的插件，防止已有 profile 的同名 npm 安装覆盖公司分支。",
+      "purpose": "通用 profile 插件替换参数 replace：name 保持匹配条件，替换模块来源同时保留原条目 ID、配置、停用及隔离设置；拒绝空名称和分组替换。产品通过该公开补丁加载随软件提供的插件，防止已有 profile 的同名 npm 安装覆盖公司分支。 defaults 插入层先于用户覆盖；配置编辑器持久化替换前的稳定包名，支持新装、已有配置、修改、重启及模块路径升级。",
       "tests": [
         "packages/boot/app-boot/tests/plugin-replacement.spec.ts",
         "packages/deepseek-harness-product/desktop/tests/native-extensions.spec.ts",
-        "packages/deepseek-harness-product/desktop/tests/company-plugins.spec.ts"
+        "packages/deepseek-harness-product/desktop/tests/company-plugins.spec.ts",
+        "packages/boot/plugin-market/tests/replacement-configuration.spec.ts"
       ],
       "files": [
         {
           "path": "vendor/include/src/index.ts",
           "before": "50005dcc3b35cb8e18e33ee157567aa14210b932fb25e22506d31aee25e59428",
-          "after": "0aad2f6790a7e503afb143878b630739c2076728b456f0e0b77f6d926ffe5b87"
+          "after": "08996ab14c179e5c3c0673c60242470e704d10456c2fff7600abc6320e18a8e8"
         },
         {
           "path": "packages/boot/app-boot/tests/plugin-replacement.spec.ts",
           "before": null,
           "after": "37a4df6e9d6d94c6f4412adb01dbfb0c0ba31b59366574561d65fb765b67d163"
+        },
+        {
+          "path": "packages/boot/app-boot/src/profile-context.ts",
+          "before": "67b749c28496e903d00fb843b772703b6b9bb2b5faf8b8838d8d982ebd7e89b1",
+          "after": "aa71ef37d6dd3f98afc5a5c5900502c48c016f4b9bb5331f8ee28a912977f983"
+        },
+        {
+          "path": "packages/boot/config-editor/src/index.ts",
+          "before": "34a0b17d43446f8e35d4a35de0da2fd0f93673a3dc925956a6abfa4d8ffcbf33",
+          "after": "1e093a0ea884ea44b3f06cc9570d6f6e4344934cc4be9361eed1e501c32d17d3"
+        },
+        {
+          "path": "packages/boot/plugin-market/tests/replacement-configuration.spec.ts",
+          "before": null,
+          "after": "711bb09e3674046979dca563c54ee7fe3e217956bc26f15842ac4e0f8b7d6c5a"
         }
       ],
       "diff": "profile-plugin-replacement.patch"

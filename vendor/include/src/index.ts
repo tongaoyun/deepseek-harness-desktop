@@ -74,7 +74,7 @@ export function applyEntryPatches(
   buildMap(data)
 
   for (const patch of patches) {
-    const { id, insert, name, replace, ...overrides } = patch
+    const { id, insert, name, replace, defaults: _defaults, ...overrides } = patch
 
     if (insert) {
       if (id) {
@@ -140,6 +140,8 @@ export interface PatchOptions {
   name?: string
   /** Replacement plugin specifier; keeps the entry ID, config, and disabled state. The name field remains a match guard. */
   replace?: string
+  /** Profile launcher inserts this default layer before employee overrides; only insert patches are allowed. */
+  defaults?: boolean
   config?: any
   group?: boolean | null
   disabled?: boolean | null

@@ -73,6 +73,7 @@ jobs:
             scripts/verify-public-repository-links.spec.ts \
             scripts/verify-concrete-terms.spec.ts \
             packages/boot/app-boot/tests/plugin-replacement.spec.ts \
+            packages/boot/plugin-market/tests/replacement-configuration.spec.ts \
             packages/client/hmr/tests/node-half.client.spec.ts \
             packages/client/hmr/tests/transport.client.spec.ts \
             apps/desktop/tests/command-management.spec.ts \

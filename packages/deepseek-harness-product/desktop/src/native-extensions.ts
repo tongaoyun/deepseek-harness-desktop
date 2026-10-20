@@ -32,11 +32,15 @@ export function nativeExtensionPatches(profile: { readonly directory: string; re
     const existing = flattened.filter(matches)
     if (existing.length > 1) throw new Error(`Duplicate preinstalled plugin: ${packageName}`)
     const entry = existing[0]
-    if (entry && entry.name !== name) {
-      if (!entry.id || !entry.name) throw new Error(`Preinstalled plugin has no entry ID or name: ${packageName}`)
-      replacements.push({ id: entry.id, name: entry.name, replace: name })
+    if (entry) {
+      if (entry.name !== name) {
+        if (!entry.id || !entry.name) throw new Error(`Preinstalled plugin has no entry ID or name: ${packageName}`)
+        replacements.push({ id: entry.id, name: entry.name, replace: name })
+      }
+      return []
     }
-    return existing.length === 1 ? [] : [{ id, name }]
+    replacements.push({ id, name: packageName, replace: name })
+    return [{ id, name: packageName }]
   })
-  return [...(insert.length === 0 ? [] : [{ insert }]), ...replacements]
+  return [...(insert.length === 0 ? [] : [{ insert, defaults: true }]), ...replacements]
 }
