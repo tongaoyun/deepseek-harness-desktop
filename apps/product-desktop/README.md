@@ -9,6 +9,8 @@
 
 产品启动器在 `apps/desktop/.desktop-build/product-development/` 下使用独立 home 和 Electron 用户数据目录，可通过 `DSH_PRODUCT_HOME` 和 `DSH_PRODUCT_USER_DATA` 显式覆盖。继承的官方 `DSH_HOME` 和 `DSH_DESKTOP_USER_DATA_DIR` 不决定产品状态目录。开发时可用 `DEEPSEEK_HARNESS_SERVER_URL` 覆盖服务端 origin，安装版读取打包资源。已保存的员工会话过期时需正常钉钉登录，不在 profile 之间复制令牌。
 
+Host 沿用官方 CLI 包作为安装清单入口，插件管理页据此发现随附的实验插件。自定义插件市场在“插件 → 实验性插件 → 更多”中启用；市场源由用户配置，产品不预置市场源。
+
 ## 构建与发布
 
 Gitea 负责开发评审和 CI；手动工作流“同步桌面构建到 GitHub”同步精确源码提交，由原生 runner 构建 Windows x64、macOS ARM64 和 macOS Intel。校验及安装验收通过后，安装包同步到公开 GitHub 下载仓库和内网 Gitea Release。

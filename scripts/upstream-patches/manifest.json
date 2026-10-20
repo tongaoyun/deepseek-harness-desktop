@@ -139,13 +139,16 @@
         "apps/desktop/tests/host-process-archive.built.e2e.ts",
         "apps/desktop/tests/extension-transport.spec.ts",
         "packages/deepseek-harness-product/runtime/tests/runtime-loader.spec.ts",
-        "apps/web/tests/deepseek-harness-catalog.e2e.ts"
+        "apps/web/tests/deepseek-harness-catalog.e2e.ts",
+        "apps/desktop/tests/project-manager.spec.ts",
+        "apps/desktop/tests/profile-mcp.spec.ts",
+        "packages/boot/plugin-manager/tests/manager.spec.ts"
       ],
       "files": [
         {
           "path": "apps/desktop-host/src/index.ts",
           "before": "1f61890c63da8898cef678479450d7647163530c416751d161dde6b397c654d3",
-          "after": "4d2b4ada190f1027b8fb862f10ed507721ff62ff71b44f52bdad485ad0e9fed1"
+          "after": "b07e8a51c88ab3df87280080f7a467d09e275b5805aeb6474c9e21c96268f700"
         },
         {
           "path": "apps/desktop/src/extension-errors.ts",
