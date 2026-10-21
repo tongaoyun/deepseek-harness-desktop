@@ -17,15 +17,54 @@ skills/orders/references/policy.md
 
 专家 Markdown 和 `SKILL.md` 使用 `---` 分隔的 frontmatter，`name`、`description` 必须为非空单行字符串，正文不能为空。技能 `name` 与目录名一致。专家与技能保留原名，不要求公司前缀；公司来源由加载配置标识。专家文件名在所有分类中唯一。专家分类来自实际目录，不受社区内置分类限制。资源只能是普通文件，不接受符号链接、路径穿越及跨平台冲突名称。每包最多 2,048 个文件、32 MiB 解码内容；入口说明最多 128 KiB。公司内容只包含说明及技能资源，不包含插件代码、员工令牌或连接器私密配置。
 
-仓库构建完成后，在仓库根目录校验私有目录：
+<a id="ai-publishing"></a>
+### Codex／Claude 发布
+
+安装共用的[公司内容发布技能](../skills/harness-company-publish/SKILL.md)后，可直接要求 AI：“将这个专家套件发布到公司”或“修改公司订单技能后发布”。普通使用人员无需安装发布技能或取得发布权限。安装后的技能只依赖 Node.js 22.19+，不依赖桌面源码及构建工具；内容只发布到服务端，无需提交桌面仓库或重新打包软件。
+
+完整技能及安装器随 `deepseek-harness-desktop` 仓库维护，不需要手工分发 ZIP。给同事仓库地址，让其使用的 Codex 或 Claude 执行：
+
+> 从 http://192.168.2.66:3300/instudio/deepseek-harness-desktop 安装公司内容发布技能，按 apps/product-desktop/docs/company-content.md 的“仓库安装与更新”操作，安装到我当前使用的工具。
+
+#### 仓库安装与更新
+
+前提是可以读取公司 Gitea 仓库，并已安装 Node.js 22.19+。全新检出即可安装，不需要 pnpm、桌面依赖或构建产物。AI 可使用浅层稀疏检出，只下载发布工具及文档：
 
 ```sh
-node apps/product-desktop/scripts/publish-company-content.mjs /path/to/private-content --check
+git clone --depth 1 --filter=blob:none --sparse http://192.168.2.66:3300/instudio/deepseek-harness-desktop.git harness-company-tools
+cd harness-company-tools
+git sparse-checkout set apps/product-desktop/scripts apps/product-desktop/skills apps/product-desktop/docs
+node apps/product-desktop/scripts/install-company-content-skill.mjs --client codex
 ```
 
-使用受控环境配置 `COMPANY_CONTENT_SERVER_URL`（包含产品入口前缀）及 `COMPANY_CONTENT_PUBLISHER_TOKEN`，把 `--check` 改为 `--publish` 完成发布。服务端配置对应的 `deepseek-harness.company-content.publisher-token`；默认关闭机器发布。发布凭据只能读公司内容和发布新版本，不能调用员工、连接器或其他管理 API。不要把凭据放进命令参数、源码或流水线日志。
+Claude Code 使用 `--client claude`，两者都用则为 `--client both`。安装到当前用户的技能目录；已有 Codex 自定义 `CODEX_HOME` 时沿用该配置。Windows 同样执行 Node 命令，无需 WSL。安装完成后在工具的新对话中使用该技能。
 
-发布使用当前版本作为并发检查条件。同版本同哈希重复提交返回已有结果，不改变当前版本；内容变化必须使用新版本。发布中遇到版本冲突需重新读取当前版本并确认，不自动覆盖。清空公司目录也通过发布空的新版本完成。本期发布的是专家 Markdown 与技能目录，不包含专家团编排清单。
+更新时告诉 AI“从桌面仓库更新公司发布技能”。它在干净的工具检出中拉取 `main` 并重新安装；检出或本地技能存在自行修改时先保留并核对，不直接覆盖：
+
+```sh
+git pull --ff-only origin main
+node apps/product-desktop/scripts/install-company-content-skill.mjs --client codex --replace
+```
+
+技能源码和依赖完整位于 `apps/product-desktop/skills/harness-company-publish/`，支持直接按该路径从仓库安装。维护者修改后通过正常 PR 和 CI 合并到 `main`，同事从同一仓库更新；不向安装包或技能目录写入公司正文、用户数据或凭据。普通桌面使用人员无需安装此发布工具。
+
+发布人员的受控配置位于 `~/.config/deepseek-harness/company-content-publisher.json`，字段为 `COMPANY_CONTENT_SERVER_URL`（包括产品入口前缀）和 `COMPANY_CONTENT_PUBLISHER_TOKEN`。可使用成对同名环境变量或显式 `--config` 文件，不混用不同来源的地址与凭据。POSIX 配置归当前用户且权限为 600，Windows 由用户 ACL 保护；令牌不进入模型上下文、命令参数、内容、计划或日志。服务端配置独立的 `deepseek-harness.company-content.publisher-token`，默认关闭机器发布；只开放公司内容读取和发布，不授予员工或其他管理接口权限。
+
+源码及安装后的工具均位于技能的 `scripts/publish-company-content.mjs`。完整操作示例见技能；在仓库中校验私有目录：
+
+```sh
+node apps/product-desktop/skills/harness-company-publish/scripts/publish-company-content.mjs check /path/to/private-content
+```
+
+`current` 查询版本和路径，不输出全文；`export <资源路径> --out <新目录>` 导出已有专家或技能供编辑，并在 release.json 保存来源摘要。修改时保留摘要并使用新版本，同一资源在编辑期间变化会拒绝覆盖。新增资源遇到公司重名也要求先导出确认，不能直接覆盖。原生专家、SKILL.md 和资源文件无需增加产品元数据。
+
+`plan <目录> --out <新计划文件>` 读取当前完整内容并合并本次资源，保留其他专家与技能。传入的技能按完整目录替换，省略的旧资源出现在移除差异里；下架整个资源必须明确 `--remove skills/name` 或专家 Markdown 路径。空内容目录不会隐式清空公司目录。计划保存服务地址、基线版本和哈希、完整候选内容及差异，权限为 600，必须放私有目录并在完成后清理。
+
+`publish <计划文件> --confirm <plan 输出的摘要>` 只提交该预览内容，使用 expectedVersion 条件写入并重新查询生效版本。计划被改动、编辑资源已变化或其他发布者抢先发布时停止，不自动覆盖；写入超时只读核实，不重复写入。精确重复执行已生效计划不再 POST；旧版本的幂等回执不能被误报为当前已生效。本期发布不包含插件代码或专家团编排清单。
+
+### 控制中心
+
+管理员也可在控制中心“公司内容”上传目录或 ZIP，校验预览后发布。网页发布的是完整集合，适合统一维护整份目录；AI 工具先增量合并，再通过同一服务端发布完整集合，两者使用相同的并发检查和不可变版本规则。
 
 ## 员工使用
 
