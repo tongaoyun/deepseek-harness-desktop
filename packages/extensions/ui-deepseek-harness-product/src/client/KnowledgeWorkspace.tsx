@@ -4,7 +4,7 @@ import { Button, IconChevronDownOutlineRegular, IconChevronRightOutlineRegular, 
 import type { PropsRenderFactories } from '@deepseek-ai/dsh-client-ui-slots'
 import type { DeepSeekHarnessProductKey } from '../locales.ts'
 import css from '../DeepSeekHarnessProduct.module.css'
-import { localDetail, localizedMetadata, type ProductItem } from './catalog-shared.tsx'
+import { localDetail, knowledgeScopeLabel, type ProductItem } from './catalog-shared.tsx'
 import { KnowledgeDocuments } from './KnowledgeDocuments.tsx'
 import { KnowledgeBaseEditor } from './KnowledgeBaseEditor.tsx'
 import { useKnowledgeRequests } from './knowledge-data.ts'
@@ -78,7 +78,7 @@ export function KnowledgeWorkspace({ entries, loading, refreshRevision = 0, erro
           const department = scope === 'DEPARTMENT' ? `${entry.ownerName ?? t('scopeDepartment')}${duplicateName ? ` (${entry.ownerDepartmentId ?? ''})` : ''}` : ''
           groups.set(department, [...groups.get(department) ?? [], entry])
         }
-        return <section className={css.knowledgeLibraryGroup} key={scope} aria-label={scope === 'OTHER' ? t('otherKnowledge') : localizedMetadata(scope, t)}>
+        return <section className={css.knowledgeLibraryGroup} key={scope} aria-label={scope === 'OTHER' ? t('otherKnowledge') : knowledgeScopeLabel(scope, t)}>
           <h2 className={css.knowledgeLibraryGroupHeading}><button type="button" aria-expanded={!collapsed.has(scope)} onClick={() => {
             setCollapsed((previous) => {
               const next = new Set(previous)
@@ -86,7 +86,7 @@ export function KnowledgeWorkspace({ entries, loading, refreshRevision = 0, erro
               else next.add(scope)
               return next
             })
-          }}><span>{scope === 'OTHER' ? t('otherKnowledge') : localizedMetadata(scope, t)}</span>
+          }}><span>{scope === 'OTHER' ? t('otherKnowledge') : knowledgeScopeLabel(scope, t)}</span>
             {collapsed.has(scope) ? <IconChevronRightOutlineRegular size={12} /> : <IconChevronDownOutlineRegular size={12} />}
           </button>{scope === 'PERSONAL' && !authRequired && error === undefined && <Tooltip label={t('knowledgeCreatePersonalBase')}>
             <button type="button" className={css.iconButton} aria-label={t('knowledgeCreatePersonalBase')} disabled={loading}

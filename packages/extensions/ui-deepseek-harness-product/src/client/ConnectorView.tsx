@@ -8,22 +8,17 @@ import { productApi, type ProductApi } from './product-api.ts'
 import { productErrorMessage } from './product-errors.ts'
 import { type ProductDetail, AUTHORIZATION_TIMEOUT_MS, AUTHORIZATION_POLL_INTERVAL_MS, nextProductRequestId, abortableDelay, ConnectorStatus, DetailIdentity } from './catalog-shared.tsx'
 
-export function ConnectorDetailModal({ detail: product, error, loading, onCatalogChanged, managementActions, onClose, open, t }: {
+export function ConnectorDetailModal({ detail: product, onCatalogChanged, managementActions, onClose, t }: {
   readonly managementActions?: ReactNode
-  readonly open: boolean
   readonly detail: ProductDetail | undefined
-  readonly loading: boolean
-  readonly error: boolean
   readonly onClose: () => void
   readonly onCatalogChanged: () => Promise<void>
   readonly t: (key: DeepSeekHarnessProductKey) => string
 }): ReactNode {
-  return <Modal open={open} onClose={onClose} title={t('connectorDetails')}
+  return <Modal open={product !== undefined} onClose={onClose} title={t('connectorDetails')}
     closeLabel={t('close')} className={`${css.detailModal} ${css.connectorModal}`}
     contentClassName={css.detailModalContent as string}
     footer={managementActions ? <div className={css.detailActions}>{managementActions}</div> : undefined}>
-    {loading && <p className={css.modalStatus} role="status">{t('loading')}</p>}
-    {!loading && error && <p className={css.catalogError} role="alert">{t('detailFailed')}</p>}
     {product !== undefined && <>
       <div className={css.connectorOverview}>
         <DetailIdentity detail={product} icon={IconLinkOutlineRegular} t={t} />

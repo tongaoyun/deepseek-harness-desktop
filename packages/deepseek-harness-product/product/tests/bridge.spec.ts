@@ -411,10 +411,10 @@ describe('DeepSeekHarnessProductBridge', () => {
     expect(JSON.stringify(renderer)).not.toContain('employee-secret')
     expect(JSON.stringify(renderer)).not.toContain('private-connector-key')
     const { url: _url, headers: _headers, arguments: _arguments, environment: _environment, ...metadata } = connector
-    expect(renderer).toEqual([{ ...metadata, availabilityStatus: 'AVAILABLE' }])
+    expect(renderer).toEqual([metadata])
 
     const runtime = await bridge.invokeRuntime('connectors.list')
-    expect(runtime).toEqual([{ ...connector, availabilityStatus: 'AVAILABLE',
+    expect(runtime).toEqual([{ ...connector,
       url: 'https://deepseek-harness.test/root/api/v1/connectors/erp/mcp',
       headers: { 'x-connector-key': 'private-connector-key', Authorization: 'Bearer employee-secret', 'X-Harness-Connector-Version': '1.0.0' } }])
     await bridge.dispose()
