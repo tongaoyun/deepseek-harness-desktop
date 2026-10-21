@@ -1,4 +1,4 @@
-import { mkdtemp, rm, symlink, writeFile } from 'node:fs/promises'
+import { appendFile, mkdtemp, open, rm, symlink, writeFile, type FileHandle } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { expect, it, onTestFinished, vi } from 'vitest'
@@ -6,6 +6,76 @@ import { DeepSeekHarnessApiClient } from '@deepseek-harness/product'
 import { knowledgeUploadDialogOptions, uploadKnowledgeFile, KnowledgeUploads } from '../src/knowledge-upload.ts'
 
 const uploadPolicy = { maxBytes: 50 * 1024 * 1024 }
+
+it('bounds bytes read when a selected file grows after the initial size check', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'knowledge-upload-growing-'))
+  onTestFinished(() => rm(root, { recursive: true, force: true }))
+  const path = join(root, 'growing.md')
+  await writeFile(path, 'initial')
+  const probe = await open(path, 'r')
+  onTestFinished(() => probe.close())
+  const prototype = Object.getPrototypeOf(probe) as FileHandle
+  await probe.close()
+  const originalStat = Object.getOwnPropertyDescriptor(prototype, 'stat')!.value as FileHandle['stat']
+  const originalRead = Object.getOwnPropertyDescriptor(prototype, 'read')!.value as FileHandle['read']
+  const originalReadFile = Object.getOwnPropertyDescriptor(prototype, 'readFile')!.value as FileHandle['readFile']
+  let bytesRead = 0
+  const stat = vi.spyOn(prototype, 'stat').mockImplementation(async function (this: FileHandle) {
+    const info = await originalStat.call(this)
+    await appendFile(path, Buffer.alloc(1024 * 1024))
+    return info
+  })
+  onTestFinished(() => { stat.mockRestore() })
+  const read = vi.spyOn(prototype, 'read').mockImplementation(async function (this: FileHandle, ...args: Parameters<FileHandle['read']>) {
+    const result = await originalRead.apply(this, args)
+    bytesRead += result.bytesRead
+    return result
+  })
+  onTestFinished(() => { read.mockRestore() })
+  const readFile = vi.spyOn(prototype, 'readFile').mockImplementation(async function (this: FileHandle, ...args: Parameters<FileHandle['readFile']>) {
+    const result = await originalReadFile.apply(this, args)
+    bytesRead += Buffer.byteLength(result)
+    return result
+  })
+  onTestFinished(() => { readFile.mockRestore() })
+  const transport = vi.fn<typeof fetch>()
+  const api = new DeepSeekHarnessApiClient({ baseUrl: 'https://product.test', getSessionToken: () => 'employee', fetch: transport })
+  onTestFinished(() => { api.close() })
+  await expect(uploadKnowledgeFile(path, 'base', 'growing-file', 'STANDARD', api, undefined, { maxBytes: 16 }))
+    .rejects.toMatchObject({ code: 'KNOWLEDGE_FILE_CHANGED' })
+  expect(bytesRead).toBeLessThanOrEqual(17)
+  expect(transport).not.toHaveBeenCalled()
+})
+
+it('stops reading and closes the selected file when preparation is cancelled between chunks', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'knowledge-upload-cancel-read-'))
+  onTestFinished(() => rm(root, { recursive: true, force: true }))
+  const path = join(root, 'large.md')
+  await writeFile(path, Buffer.alloc(1024 * 1024))
+  const probe = await open(path, 'r')
+  onTestFinished(() => probe.close())
+  const prototype = Object.getPrototypeOf(probe) as FileHandle
+  await probe.close()
+  const originalRead = Object.getOwnPropertyDescriptor(prototype, 'read')!.value as FileHandle['read']
+  const controller = new AbortController()
+  const reason = new Error('Cancelled upload preparation')
+  let selectedFileDescriptor: (() => number) | undefined
+  const read = vi.spyOn(prototype, 'read').mockImplementation(async function (this: FileHandle, ...args: Parameters<FileHandle['read']>) {
+    selectedFileDescriptor = () => this.fd
+    const result = await originalRead.apply(this, args)
+    controller.abort(reason)
+    return result
+  })
+  onTestFinished(() => { read.mockRestore() })
+  const transport = vi.fn<typeof fetch>()
+  const api = new DeepSeekHarnessApiClient({ baseUrl: 'https://product.test', getSessionToken: () => 'employee', fetch: transport })
+  onTestFinished(() => { api.close() })
+  await expect(uploadKnowledgeFile(path, 'base', 'cancelled-file', 'STANDARD', api, controller.signal, uploadPolicy))
+    .rejects.toBe(reason)
+  expect(read).toHaveBeenCalledOnce()
+  expect(selectedFileDescriptor?.()).toBe(-1)
+  expect(transport).not.toHaveBeenCalled()
+})
 
 it('retains a dispatched upload when its page cancels and retries it without another picker', async () => {
   const root = await mkdtemp(join(tmpdir(), 'knowledge-upload-navigation-'))
