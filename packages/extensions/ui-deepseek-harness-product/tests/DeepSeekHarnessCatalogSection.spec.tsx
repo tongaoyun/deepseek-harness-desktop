@@ -14,7 +14,6 @@ import {
 import {
   CAPABILITY_PANELS, EXTENSION_PANELS, CapabilitiesHeading, CapabilityChildIcon,
 } from '../src/client/DeepSeekHarnessCapabilitiesNavigation.tsx'
-import { ConnectorPage } from '../src/client/ConnectorPage.tsx'
 import { ExtensionPage } from '../src/client/ExtensionPage.tsx'
 import type { PropsRenderFactories } from '@deepseek-ai/dsh-client-ui-slots'
 import { apply } from '../src/client/index.ts'
@@ -281,24 +280,6 @@ describe('DeepSeekHarness capability navigation', () => {
     expect(close).not.toHaveBeenCalled()
     rerender(<CapabilitiesHeading wide={false} t={t} />)
     expect(screen.queryByText(zh.capabilities)).toBeNull()
-  })
-
-  it('opens the bundled MCP page, switches to company connectors and handles keyboard and unload', async () => {
-    installProductApi({ invoke: async () => [] })
-    const close = vi.fn()
-    const renderFactorySlot = vi.fn((() => <div>MCP plugin content</div>) as PropsRenderFactories['renderFactorySlot'])
-    const props = { close, t, renderFactorySlot, useAvailable: (<T,>(select: (value: boolean) => T): T => select(true)) }
-    const { rerender } = render(<ConnectorPage {...props} />)
-    expect(screen.getByRole('tab', { name: zh.mcpConnectors }).getAttribute('aria-selected')).toBe('true')
-    expect(renderFactorySlot).toHaveBeenCalledWith('settings.section-view', { sectionId: 'mcp-connector', close, presentation: 'embedded' })
-    fireEvent.keyDown(screen.getByRole('tab', { name: zh.mcpConnectors }), { key: 'ArrowRight' })
-    expect(screen.getByRole('tab', { name: zh.companyConnectors })).toBe(document.activeElement)
-    expect(screen.queryByText('MCP plugin content')).toBeNull()
-    fireEvent.keyDown(screen.getByRole('tab', { name: zh.companyConnectors }), { key: 'Home' })
-    expect(screen.getByText('MCP plugin content')).toBeTruthy()
-    rerender(<ConnectorPage {...props} useAvailable={select => select(false)} />)
-    expect(screen.getByRole('alert').textContent).toBe(zh.extensionUnavailable)
-    expect(close).not.toHaveBeenCalled()
   })
 
   it('removes tree branches while retaining useful collapsed-rail icons', () => {

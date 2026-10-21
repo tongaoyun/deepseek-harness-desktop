@@ -73,8 +73,6 @@
     },
     {
       "path": "../../../packages/deepseek-harness-product/product"
-    },
-    { "path": "../../../packages/storage/storage" },
-    { "path": "../../../packages/storage/storage-domain" }
+    }
   ]
 }
