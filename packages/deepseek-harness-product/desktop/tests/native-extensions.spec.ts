@@ -1,7 +1,7 @@
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { initProfile } from '@deepseek-ai/dsh-app-boot'
+import { composeEntries, initProfile } from '@deepseek-ai/dsh-app-boot'
 import { expect, it, onTestFinished } from 'vitest'
 import { nativeExtensionPatches } from '../src/native-extensions.ts'
 
@@ -15,14 +15,19 @@ function fixture(entries: object[] = []) {
 
 it('preinstalls agents and skills through official profile entries without product execution presets', () => {
   const patch = nativeExtensionPatches(fixture())
-  expect(patch[0]?.insert.map(entry => entry.id)).toEqual(['agency-agents-remote', 'agency-agents', 'skills-manager'])
-  expect(patch[0]?.insert.every(entry => entry.name.startsWith('file:'))).toBe(true)
+  const entries = composeEntries([patch])
+  expect(entries.map(entry => entry.id)).toEqual(['agency-agents-remote', 'agency-agents', 'skills-manager'])
+  expect(entries.every(entry => entry.name?.startsWith('file:'))).toBe(true)
 })
 
 it('preserves an existing disabled plugin and its configuration under a custom ID', () => {
   const profile = fixture([{ id: 'employee-skills', name: '@michengai/dsh-skills-manager', disabled: true, config: { root: 'employee' } }])
   const patch = nativeExtensionPatches(profile)
-  expect(patch[0]?.insert.map(entry => entry.id)).not.toContain('skills-manager')
+  const entries = composeEntries([[{ insert: [{ id: 'employee-skills', name: '@michengai/dsh-skills-manager', disabled: true, config: { root: 'employee' } }] }], patch])
+  expect(entries.filter(entry => entry.id === 'employee-skills')).toEqual([
+    { id: 'employee-skills', name: import.meta.resolve('@michengai/dsh-skills-manager'), disabled: true, config: { root: 'employee' } },
+  ])
+  expect(entries.some(entry => entry.id === 'skills-manager')).toBe(false)
 })
 
 it('rejects occupied IDs and duplicate plugin entries before launching the Host', () => {

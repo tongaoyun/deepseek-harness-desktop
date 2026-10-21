@@ -7,7 +7,7 @@ import { entryListSchema, type PatchOptions } from '@deepseek-ai/cordis-plugin-i
 import yaml from 'js-yaml'
 import type { Entry, EntryOptions } from '@deepseek-ai/cordis-plugin-loader'
 import type {} from '@deepseek-ai/dsh-hmr'
-import { composeEntries, loadProfileDirectory, readProfilePatches, reconcileProfilePatches } from '@deepseek-ai/dsh-app-boot'
+import { composeEntries, loadProfileDirectory, readBundlePatches, readProfilePatches, reconcileProfilePatches } from '@deepseek-ai/dsh-app-boot'
 import { withFileLock, writeFileAtomic } from '@deepseek-ai/dsh-atomic-write'
 import { isMap, isSeq, parseDocument, Scalar, visit } from 'yaml'
 
@@ -54,7 +54,7 @@ export class ConfigEditor extends Service {
     const overridden = new Set(loaded.patches.filter(patch => patch.insert === undefined && Object.hasOwn(patch, 'config')).map(patch => patch.id))
     const composed = new Map<string, EntryOptions>()
     if (entries.some(entry => !overridden.has(entry.options.id))) {
-      for (const row of flatten(composeEntries([...loaded.layers.map(layer => layer.patches), loaded.patches]))) {
+      for (const row of flatten(composeEntries([readBundlePatches('dsh', profile, loaded), loaded.patches]))) {
         if (!composed.has(row.id)) composed.set(row.id, row)
       }
     }
@@ -75,7 +75,7 @@ export class ConfigEditor extends Service {
       const rest = { ...patch }; Reflect.deleteProperty(rest, 'config')
       return rest
     })
-    const row = flatten(composeEntries([...loaded.layers.map(layer => layer.patches), patches])).find(row => row.id === entry.options.id)
+    const row = flatten(composeEntries([readBundlePatches('dsh', this.ownerContext.profileContext, loaded), patches])).find(row => row.id === entry.options.id)
     return structuredClone((row?.config ?? {}) as Record<string, unknown>)
   }
 
@@ -96,7 +96,11 @@ export class ConfigEditor extends Service {
         await reconcileProfilePatches(this.ownerContext.root, beforePatches, 'dsh')
         if (!this.entries().includes(entry)) throw new Error('Configuration entry changed during reload')
         const current = structuredClone((entry.options.config ?? {}) as Record<string, unknown>)
-        const inherited = this.inherited(entry, loadProfileDirectory('dsh', this.ownerContext.profileContext.dir, this.ownerContext.profileContext.installAnchor))
+        const profile = this.ownerContext.profileContext
+        const loaded = loadProfileDirectory('dsh', profile.dir, profile.installAnchor)
+        const inherited = this.inherited(entry, loaded)
+        const sourceName = flatten(composeEntries([readBundlePatches('dsh', profile, loaded), loaded.patches]))
+          .find(row => row.id === entry.options.id)?.name ?? entry.options.name
         const next = change(current, inherited)
         const fiber = entry.fiber
         if (fiber.state !== FiberState.ACTIVE) throw new Error('Configuration plugin is no longer active')
@@ -116,7 +120,7 @@ export class ConfigEditor extends Service {
         document.contents.flow = false
         const index = document.contents.items.findLastIndex((item, index) => isMap(item)
           && document.getIn([index, 'id']) === entry.options.id && !item.has('insert')
-          && (!item.has('name') || document.getIn([index, 'name']) === entry.options.name))
+          && (!item.has('name') || document.getIn([index, 'name']) === sourceName))
         if (isDeepStrictEqual(next, inherited)) {
           for (let index = document.contents.items.length - 1; index >= 0; index--) {
             const row = document.contents.items[index]
@@ -124,7 +128,7 @@ export class ConfigEditor extends Service {
             row.delete('config')
             if (row.items.length === Number(row.has('id')) + Number(row.has('name'))) document.delete(index)
           }
-        } else if (index < 0) document.add(document.createNode({ id: entry.options.id, name: entry.options.name, config: next }))
+        } else if (index < 0) document.add(document.createNode({ id: entry.options.id, name: sourceName, config: next }))
         else document.setIn([index, 'config'], document.createNode(next))
         visit(document, { Map(_key, node) {
           if (node.items.length !== 1 || typeof node.get('__jsExpr') !== 'string') return
@@ -132,8 +136,6 @@ export class ConfigEditor extends Service {
           expression.tag = 'tag:yaml.org,2002:js'
           return expression
         } })
-        const profile = this.ownerContext.profileContext
-        const loaded = loadProfileDirectory('dsh', profile.dir, profile.installAnchor)
         const patches = readProfilePatches('dsh', profile, { ...loaded, patches: yaml.load(String(document), { schema: entryListSchema }) as PatchOptions[] })
         const effective = flatten(composeEntries([patches])).find(row => row.id === entry.options.id)
         if (!isDeepStrictEqual(effective?.config ?? {}, next)) {

@@ -32,6 +32,8 @@ Intentionally **not** vendored (verified unused by this set): `reggol`, `@cordis
 
 Keep this log exhaustive — every divergence from upstream must be listed.
 
+产品通用补丁：`include/src/index.ts` 的 `PatchOptions.replace` 只替换插件模块名，保留原条目的 ID、配置和停用状态；`name` 仍作为匹配条件。空名称与分组替换报错。Profile launcher 将带 `defaults: true` 的插入项放到用户配置前，其他 overlay 仍在其后；配置编辑器使用替换前的稳定包名保存用户配置。用于产品预装插件固定代码来源，避免已有 profile 的同名 npm 安装覆盖随软件提供的版本，并保证新装、重启和升级后的修改继续生效。覆盖测试：`packages/boot/app-boot/tests/plugin-replacement.spec.ts`、`packages/boot/plugin-market/tests/replacement-configuration.spec.ts`、`packages/deepseek-harness-product/desktop/tests/{native-extensions,company-plugins}.spec.ts`。
+
 1. **`hmr/src/index.ts`**: removed the `./locales/en-US.yml` / `./locales/zh-CN.yml` imports, the `.i18n({...})` call on the `Config` schema, and the `src/locales/` directory. Rationale: those imports require a runtime YAML loader hook (`@cordisjs/unyaml`) that we do not vendor; the i18n texts only localize config descriptions.
 2. **All `package.json` files**: regenerated for Harness releases with scoped names, release versions, publication metadata, precise bundled-runtime and `lib/types/**/*.d.ts` / `.d.ts.map` file entries, source exports where applicable, and declaration metadata pointing at `lib/types`. References within the vendored set use `workspace:~`. HMR declares `esbuild` as a direct dev dependency for its imported `BuildFailure` type, and Loader requires `node-addon-require-builtin@^0.1.4` to match published app runtimes.
 3. **All `tsconfig.json` files**: regenerated to extend the repo-root `tsconfig.base.json`, emit TypeScript intermediates to `lib/types`, and declare project references.
@@ -71,3 +73,24 @@ To update a vendored package from upstream:
 3. Re-apply the local modifications listed above (or drop them if upstream made them unnecessary — update the log either way).
 4. Update the version and commit hash in the manifest table.
 5. Run `pnpm install && pnpm run test && pnpm run build` at the repo root.
+
+## 产品预装社区插件
+
+以下 Apache-2.0 插件保留原包名，设置 `private: true`，只随产品装配分发，不属于官方 Harness profile 或 Cordis 框架副本。原 LICENSE/NOTICE 与社区内置素材保留；公司私有内容由服务端分发，不进入本仓库。
+
+| 目录 | 上游版本 | 固定提交 |
+| --- | --- | --- |
+| `dsh-agency-agents` | 1.2.8 | `9d117b0112d40fabf2958c168acbda0fe9ee21b3` |
+| `dsh-skills-manager` | 1.2.8 | `434e166fc1af6a8bcee4f6b22a3851e037fa90b7` |
+
+### 公司分支的完整本地修改
+
+各目录 `upstream.json` 记录原文件 SHA-256；`local-changes.json` 逐文件记录增加、修改和删除，包含修改后的哈希，供审查和升级核对。技能与专家仍通过官方 Skill Provider、工具及子代理运行。
+
+- 两个 `package.json` 改为私有工作区依赖及 `1.2.8-company.1`；构建配置输出 Host/Client 两面并保留稳定客户端模块 ID。专家插件补充源码所需图标依赖。
+- 专家 `src/index.ts` 删除独立更新注册，读取公司目录并拒绝社区 ID 冲突，按公司实际分类读取固定说明；空公司目录正常加载。`src/expert-contract.ts` 和客户端视图传播公司来源，`src/client/index.ts` 增加公司筛选并移除外部链接、重复反馈和更新按钮；`src/client/locales.ts` 统一“专家套件”名称。`locale/zh.json` 同步名称。
+- 技能 `src/index.ts` 删除独立更新注册；`src/core.ts` 登记只读公司来源并纳入原生来源排序；`src/client.ts` 增加公司来源文案、移除外部链接、重复反馈和独立更新；`locale/zh.json` 同步名称。
+- 两插件的 `plugin-updater`、`plugin-update-*` 源文件及专属测试删除。专家现有测试更新工作区依赖、套件名称和已删除入口，DOM 断言使用宿主当前组件，移除面向旧全局 CLI 布局的宿主模块探测，配置直接使用固定工作区的 Schemastery volatile，YAML 使用声明依赖，可选专家团由当前装配解析。对应旧布局测试删除，真实 Loader/profile 测试覆盖固定装配。
+- 目录 README、tsconfig、tsdown 和 Vitest 配置接入本仓库构建；原作者发布用 CI、脚本和文档不作为公司构建入口。技能的社区内容仓库更新保留。
+
+更新时从上述固定提交取得源文件，对照两份清单逐项应用或移除本地修改，更新基线及本地哈希；运行插件测试、真实公司 Loader/profile 测试和产品构建。发布操作见[公司内容说明](../apps/product-desktop/docs/company-content.md)。

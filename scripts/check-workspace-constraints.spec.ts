@@ -291,6 +291,7 @@ describe('DeepSeekHarness product package publication boundary', () => {
   it.each([
     ['packages/extensions/ui-deepseek-harness-product', '@deepseek-harness/product-ui'],
     ['packages/deepseek-harness-product/product', '@deepseek-harness/product'],
+    ['vendor/company-plugin', '@company/plugin'],
   ])('keeps %s private and outside the upstream release family', (dir, name) => {
     expect(checkWorkspaceManifest({ dir, manifest: { name, private: true } })).toEqual([])
     expect(checkWorkspaceManifest({ dir, manifest: { name, publishConfig: { access: 'public' } } })).toEqual([

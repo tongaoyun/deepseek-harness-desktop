@@ -13,7 +13,9 @@
     ".",
     "../runtime",
     "../product",
-    "../../extensions/ui-deepseek-harness-product"
+    "../../extensions/ui-deepseek-harness-product",
+    "../../../vendor/dsh-agency-agents",
+    "../../../vendor/dsh-skills-manager"
   ],
   "icons": {
     "macos": "resources/icon-macos.png",

@@ -1,0 +1,55 @@
+diff --git a/packages/api/gateway/src/client/index.ts b/packages/api/gateway/src/client/index.ts
+index f0d2400dc8675230fdef55ca6da53dffdd4434f0..24ca974810979ec7dff81694c7a0b369fb0f12d4 100644
+--- a/packages/api/gateway/src/client/index.ts
++++ b/packages/api/gateway/src/client/index.ts
+@@ -215,7 +215,12 @@ class ClientRemoteService extends Service implements ClientRemote {
+     const callerCtx = this.ctx
+     const owned = callerCtx.effect(async () => {
+       const dispose = await this.enqueue(() => this.mountContribution(callerCtx, contribution))
+-      return () => this.enqueue(dispose)
++      // Namespace withdrawal can stop consumers that own other Remote mounts.
++      // Start withdrawal in order, then release the queue before draining those consumers.
++      return async () => {
++        const { closing } = await this.enqueue(() => ({ closing: dispose() }))
++        await closing
++      }
+     }, `api-gateway.client.$mount(${JSON.stringify(contribution.package)})`)
+     await owned
+     return async () => { await owned() }
+diff --git a/packages/api/gateway/tests/gateway.client.spec.ts b/packages/api/gateway/tests/gateway.client.spec.ts
+index a7e0ca2560ce30dcf990e7789ff43408120412ed..184d57f5ee1ed6cbd46f4f57e553d70aa7bde189 100644
+--- a/packages/api/gateway/tests/gateway.client.spec.ts
++++ b/packages/api/gateway/tests/gateway.client.spec.ts
+@@ -1163,6 +1163,32 @@ describe('Client Typert API', () => {
+     expect(ctx.get('remote.probe')).toBeUndefined()
+   })
+ 
++  it('drains a namespace dependent that owns another Remote contribution', async () => {
++    const ctx = await bench(vi.fn<ConnectionHandle['rpc']['call']>())
++    try {
++      const { scope: _scope, ...direct } = directDescriptor()
++      const dependent = ctx.plugin({
++        inject: ['remote', 'remote.probe'],
++        apply: async (scope: Context) => scope.remote.$mount({
++          package: '@fixture/dependent-namespace',
++          descriptors: [{ ...direct, id: '@fixture/dependent-namespace#nestedProbe/create', namespace: 'nestedProbe' }],
++        }),
++      })
++      const dispose = await ctx.remote.$mount({ package: '@fixture/namespace-owner', descriptors: [direct] })
++      await dependent
++      expect(ctx.get('remote.nestedProbe')).toBeDefined()
++      await dispose()
++      expect(ctx.get('remote.probe')).toBeUndefined()
++      expect(ctx.get('remote.nestedProbe')).toBeUndefined()
++      const restored = await ctx.remote.$mount({ package: '@fixture/namespace-owner', descriptors: [direct] })
++      await dependent
++      expect(ctx.get('remote.nestedProbe')).toBeDefined()
++      await restored()
++    } finally {
++      await ctx.fiber.dispose()
++    }
++  })
++
+   it('unparks a namespace dependent only after its contribution methods exist', async () => {
+     const ctx = await bench(vi.fn<ConnectionHandle['rpc']['call']>())
+     const { scope: _scope, ...direct } = directDescriptor()

@@ -100,7 +100,7 @@
         {
           "path": "scripts/rescope-vendor.ts",
           "before": "cc64e6b550cabb1486d2ad7f04f19f86a4e55625202e08ed8f3cbc55b0c690d8",
-          "after": "7117d5938a46221c6336c4f236dd6bf34fea5cd4f7986e4de5cafe5bff300f46"
+          "after": "6fc90689b3658748e03b1bd47a4e98a33fa0e77565ef4a2d8a043523a7591fdc"
         }
       ],
       "diff": "rescope-runtime-identifiers.patch"
@@ -767,7 +767,7 @@
         {
           "path": ".gitattributes",
           "before": "946bed079ec10d6ce1fe3fc3d76e42a9587548135f0f4a7500d77303d9cbd398",
-          "after": "b2be90cadea9e2a3dd76ccf7cf7f5d94b2b9bc53ef685dcf9c0c7cfcbd1ff408"
+          "after": "3476fc6a6f4a56007194d4734f8eaadb297ce349176bd15686ae7d87dfafc7d8"
         },
         {
           "path": ".gitignore",
@@ -792,17 +792,17 @@
         {
           "path": "pnpm-lock.yaml",
           "before": "4637cca3b89c4c8d5a147321710e597aa62ec2444a3772ab542be5690893dfe4",
-          "after": "8d1ccb6edbaa1abef4b30dc7d4f4850ede0630da6c4c10811f4c470a8b8b704c"
+          "after": "7430c76df2e65842c05f67e57f771044fc887bff344e349e0d7ed5e29653dbc3"
         },
         {
           "path": "scripts/check-workspace-constraints.spec.ts",
           "before": "7e4c84495238b2bf5f245770cace0d8a55a76f5392f765e6b0ec2ac171eacd97",
-          "after": "2accb5d8e3ef82e08894bcc44b86e156371809337ed6210a0609ce2ae40ba7d0"
+          "after": "8cacff29c2d0c4e5cd0eea5fced6bbb9e26333415410fcfba2710ddc80036fd1"
         },
         {
           "path": "scripts/check-workspace-constraints.ts",
           "before": "aec2e46fcc0f39056cebda61f81a47d688510a50b29b80e188f40d8d2c308384",
-          "after": "9ac400485f26548d5552503a5a5faafff6ad34f4b205d8a0abe2fdd66e369c85"
+          "after": "22afbe828443be2fc03c21129dd09340c68169690e089212484cf9a13b5a7807"
         },
         {
           "path": "scripts/client-tsconfig.spec.ts",
@@ -822,7 +822,7 @@
         {
           "path": "tsconfig.base.json",
           "before": "5c43c1a82cc6eac83bbe9f73637144205e6560155346d9ff506d662f7ea8ca7e",
-          "after": "9b54617ccd2f22260669f6d73f92f48e2a5dc326d84356bcf66fa58b48936964"
+          "after": "e4c99e571d0b57f98d0d11977a728a8a9050debf015255d50016d8a8368510dd"
         },
         {
           "path": "tsconfig.client.json",
@@ -988,7 +988,7 @@
         {
           "path": "packages/extensions/tool-cordis/src/api-catalog.ts",
           "before": "b36721249b3fbac383cf31f51b5e3656d1b788c3120739d65618953f64a923b7",
-          "after": "6fac8de1a4ca811bda273855ff575d40651ebe98bbc5900281844702ac3167f9"
+          "after": "132ff8492ac1032c5cee6d90c1cb4e8ab2e7a7677b0cd6da91095d56ef17bfea"
         },
         {
           "path": "packages/preset/agent-preset/skills/cordis-composition-reference/references/packages.md",
@@ -1571,6 +1571,112 @@
         }
       ],
       "diff": "settings-section-view.patch"
+    },
+    {
+      "id": "company-plugin-vendor-documentation",
+      "purpose": "完整登记产品预装社区插件的固定源码来源、依赖装配、公司内容入口和本地差异；官方 profile 不引入产品插件。",
+      "tests": [
+        "packages/deepseek-harness-product/desktop/tests/company-plugins.spec.ts",
+        "scripts/upstream-boundaries.spec.ts"
+      ],
+      "files": [
+        {
+          "path": "vendor/README.md",
+          "before": "463f0475336df70f35805c60ea897b94d15cdd295595d8a50074dedd4555d311",
+          "after": "ee27c30ae22ff2c34109461558ddcab48a5fd9a6be22a8789bff88ce46a371e3"
+        }
+      ],
+      "diff": "company-plugin-vendor-documentation.patch"
+    },
+    {
+      "id": "profile-plugin-replacement",
+      "purpose": "通用 profile 插件替换参数 replace：name 保持匹配条件，替换模块来源同时保留原条目 ID、配置、停用及隔离设置；拒绝空名称和分组替换。产品通过该公开补丁加载随软件提供的插件，防止已有 profile 的同名 npm 安装覆盖公司分支。 defaults 插入层先于用户覆盖；配置编辑器持久化替换前的稳定包名，支持新装、已有配置、修改、重启及模块路径升级。 CLI 配置和 schema 导出使用相同的默认插入顺序。",
+      "tests": [
+        "packages/boot/app-boot/tests/plugin-replacement.spec.ts",
+        "packages/deepseek-harness-product/desktop/tests/native-extensions.spec.ts",
+        "packages/deepseek-harness-product/desktop/tests/company-plugins.spec.ts",
+        "packages/boot/plugin-market/tests/replacement-configuration.spec.ts",
+        "apps/cli/tests/default-plugin-dump.spec.ts"
+      ],
+      "files": [
+        {
+          "path": "vendor/include/src/index.ts",
+          "before": "50005dcc3b35cb8e18e33ee157567aa14210b932fb25e22506d31aee25e59428",
+          "after": "08996ab14c179e5c3c0673c60242470e704d10456c2fff7600abc6320e18a8e8"
+        },
+        {
+          "path": "packages/boot/app-boot/tests/plugin-replacement.spec.ts",
+          "before": null,
+          "after": "37a4df6e9d6d94c6f4412adb01dbfb0c0ba31b59366574561d65fb765b67d163"
+        },
+        {
+          "path": "packages/boot/app-boot/src/profile-context.ts",
+          "before": "67b749c28496e903d00fb843b772703b6b9bb2b5faf8b8838d8d982ebd7e89b1",
+          "after": "aa71ef37d6dd3f98afc5a5c5900502c48c016f4b9bb5331f8ee28a912977f983"
+        },
+        {
+          "path": "packages/boot/config-editor/src/index.ts",
+          "before": "34a0b17d43446f8e35d4a35de0da2fd0f93673a3dc925956a6abfa4d8ffcbf33",
+          "after": "1b95a7f3d9af33736b7c2b17b74cfdf5a827d7c4d4cac82fea15193bfd16c6c0"
+        },
+        {
+          "path": "packages/boot/plugin-market/tests/replacement-configuration.spec.ts",
+          "before": null,
+          "after": "711bb09e3674046979dca563c54ee7fe3e217956bc26f15842ac4e0f8b7d6c5a"
+        },
+        {
+          "path": "apps/cli/src/dump-config.ts",
+          "before": "02ec1ea1d0c16aec28353c16ef59961a7351bd8a4b56b2a291e536120f08bff9",
+          "after": "719e9926eeba745783dbf0cb058b4aed06113fd37c39095c7c32bb84b8b8ee65"
+        },
+        {
+          "path": "apps/cli/tests/default-plugin-dump.spec.ts",
+          "before": null,
+          "after": "f04c72d127bd56e2c7cdb52f87050d970067d4224dd178cad2049ee90acdd249"
+        }
+      ],
+      "diff": "profile-plugin-replacement.patch"
+    },
+    {
+      "id": "repository-file-list-capacity",
+      "purpose": "Git 文件清单读取容量与其他仓库门禁统一为 64 MiB，避免正常仓库文件名总量超过 Node 默认 1 MiB 时 ENOBUFS；原有检查范围及拒绝规则不变。",
+      "tests": [
+        "scripts/verify-public-repository-links.spec.ts",
+        "scripts/verify-concrete-terms.spec.ts"
+      ],
+      "files": [
+        {
+          "path": "scripts/verify-public-repository-links.ts",
+          "before": "271f05fff3950f4e97d020cbf3f34fcf918abd6b74a563ce13871f396026b239",
+          "after": "ce37f869c4d522bdf345ddbe2f3a04c4a6aecd553f15963ee386142a930f70d3"
+        },
+        {
+          "path": "scripts/verify-concrete-terms.ts",
+          "before": "07e440bbef0f3a435bc6ddc595f07dffd81529e4256b00414b27e437c8206a16",
+          "after": "a82be1fc1607e25ceee06736e0e4f793dced2a75a4a9af4c2068f465d5f8db97"
+        }
+      ],
+      "diff": "repository-file-list-capacity.patch"
+    },
+    {
+      "id": "remote-contribution-disposal",
+      "purpose": "通用 Remote 贡献项释放按队列顺序启动，但等待 namespace 依赖插件卸载时释放队列，避免依赖插件撤回自己持有的 Remote 贡献项时循环等待。卸载仍等待所有依赖清理结束；不更改产品协议、模型输入或 Session 格式。",
+      "tests": [
+        "packages/api/gateway/tests/gateway.client.spec.ts"
+      ],
+      "files": [
+        {
+          "path": "packages/api/gateway/src/client/index.ts",
+          "before": "67b346bbb099b65ec37c6fcedb08e4efeae2aee291fe1809e7a2d6fea080030c",
+          "after": "7c296d15f3769c50a496343d5abaf052b6f7593359961333a1aad35bea09c57e"
+        },
+        {
+          "path": "packages/api/gateway/tests/gateway.client.spec.ts",
+          "before": "293121bb3e33a4d35515c9e69984d6f75a5be8f872e28b488aa9a17b96965c29",
+          "after": "324c1c43d6ccf4defb2645077b33bc9e245dfffdeb0f62795144749994b2682a"
+        }
+      ],
+      "diff": "remote-contribution-disposal.patch"
     }
   ]
 }

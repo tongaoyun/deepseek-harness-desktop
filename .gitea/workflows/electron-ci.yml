@@ -52,7 +52,11 @@ jobs:
           pnpm exec vitest run apps/desktop/tests/desktop-assembly.spec.ts apps/desktop/tests/package-target.spec.ts apps/desktop/tests/desktop-auto-update-environment.spec.ts apps/desktop/tests/desktop-package-environment.spec.ts apps/desktop/tests/desktop-policy-environment.spec.ts apps/desktop/tests/update-coordinator.spec.ts apps/desktop/tests/update-schedule.spec.ts
           node --test apps/product-desktop/tests/acceptance-process.test.mjs apps/product-desktop/tests/office-process-diagnostics.test.mjs
           pnpm exec vitest run apps/product-desktop/tests/close-electron.spec.ts apps/product-desktop/tests/office-fixture.spec.ts
-          pnpm exec tsx scripts/compile-referenced-projects.ts host-libraries
+          pnpm run build:artifacts
+          pnpm exec tsc --noEmit -p vendor/dsh-agency-agents/tsconfig.json
+          pnpm exec tsc --noEmit -p vendor/dsh-skills-manager/tsconfig.json
+          pnpm exec vitest run --config vendor/dsh-agency-agents/vitest.config.ts
+          node --test apps/product-desktop/tests/company-content.test.mjs
           pnpm run typecheck
           pnpm run rescope-vendor:check
           pnpm run verify-package-dependencies
@@ -60,12 +64,18 @@ jobs:
           pnpm exec vitest run \
             packages/deepseek-harness-product \
             packages/extensions/ui-deepseek-harness-product \
+            packages/api/gateway/tests/gateway.client.spec.ts \
             packages/client/ui-settings-general/tests/section-view.client.spec.tsx \
             packages/client/ui-settings-general/tests/settings-root.client.spec.tsx \
             packages/client/ui-settings-general/tests/shell.client.spec.ts \
             packages/client/ui-settings-general/tests/apply.client.spec.ts \
             scripts/upstream-boundaries.spec.ts \
             scripts/rescope-vendor.spec.ts \
+            scripts/verify-public-repository-links.spec.ts \
+            scripts/verify-concrete-terms.spec.ts \
+            packages/boot/app-boot/tests/plugin-replacement.spec.ts \
+            packages/boot/plugin-market/tests/replacement-configuration.spec.ts \
+            apps/cli/tests/default-plugin-dump.spec.ts \
             packages/client/hmr/tests/node-half.client.spec.ts \
             packages/client/hmr/tests/transport.client.spec.ts \
             apps/desktop/tests/command-management.spec.ts \

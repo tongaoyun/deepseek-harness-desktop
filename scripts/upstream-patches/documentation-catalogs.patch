@@ -13326,7 +13326,7 @@ index 50bcbe529a7fd300d65688e8854e5da93d8250d4..09880346dc8e3d8a2c9464d4a466c910
    {
      key: 'tool.view.cordis',
 diff --git a/packages/extensions/tool-cordis/src/api-catalog.ts b/packages/extensions/tool-cordis/src/api-catalog.ts
-index be3e31626359ec9607789b83000f7e3128a425ea..03701034c4d4a02f1dbc71cb43c8f0c46780d0f7 100644
+index be3e31626359ec9607789b83000f7e3128a425ea..cdd3f1549f33c78522a5fdac411038905a069dba 100644
 --- a/packages/extensions/tool-cordis/src/api-catalog.ts
 +++ b/packages/extensions/tool-cordis/src/api-catalog.ts
 @@ -171,6 +171,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
@@ -13342,6 +13342,15 @@ index be3e31626359ec9607789b83000f7e3128a425ea..03701034c4d4a02f1dbc71cb43c8f0c4
        {
          signature: 'async mount(ctx: Context, id?: string): Promise<AgentPreset>',
          description: 'Bind an unpublished Agent to the current preset revision.',
+@@ -1877,7 +1883,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
+       },
+       {
+         signature: 'readonly overlays: readonly PatchOptions[]',
+-        description: 'Parsed command-line overlays, applied above profile and home patches.',
++        description: 'Parsed command-line overlays; default insertions precede profile edits, other patches follow home patches.',
+         parameters: [],
+       },
+       {
 @@ -4005,6 +4011,14 @@ export const EVENT_API: readonly EventApiEntry[] = [
      description: 'A declarative agent entry failed before it could publish a live agent. Consumers that buffer work for the configured identity use this transient signal to reject that work instead of waiting forever. Normal factory teardown suppresses failures from the cancelled startup attempt.',
      parameters: [{ name: 'payload', description: '.error - persistence, setup, or publication failure.' }],

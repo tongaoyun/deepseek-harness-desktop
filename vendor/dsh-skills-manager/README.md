@@ -1,0 +1,7 @@
+# 技能插件
+
+公司桌面预装的独立 Cordis 插件，基于 MichengAI 1.2.8 维护。上游提交及源文件哈希见 [upstream.json](upstream.json)，保留 Apache-2.0 许可和第三方声明。
+
+插件代码随桌面软件构建发布；页面不提供插件独立更新或外部项目入口。原生专家调用、技能加载及设置入口继续保留。
+
+构建：在仓库根目录运行 `pnpm run build:artifacts`。公司分支的完整差异登记在 [vendor/README.md](../README.md)。

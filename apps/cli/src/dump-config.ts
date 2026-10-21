@@ -58,6 +58,14 @@ export function collectConfigDumpLayers(
     patches: layer.patches,
   }))
   if (!defaultOnly) {
+    const overlays = patches.map((file) => {
+      const absolute = resolve(file)
+      return { label: absolute, patches: loadOverlayPatches(NAME, absolute) }
+    })
+    for (const overlay of overlays) {
+      const defaults = overlay.patches.filter(patch => patch.defaults === true)
+      if (defaults.length > 0) layers.push({ ...overlay, patches: defaults })
+    }
     if (existsSync(loaded.patchPath)) {
       layers.push({ label: loaded.patchPath, patches: loaded.patches })
     }
@@ -66,9 +74,8 @@ export function collectConfigDumpLayers(
     if (homePatches !== undefined) {
       layers.push({ label: homePatchFile, patches: homePatches })
     }
-    for (const file of patches) {
-      const absolute = resolve(file)
-      layers.push({ label: absolute, patches: loadOverlayPatches(NAME, absolute) })
+    for (const overlay of overlays) {
+      layers.push({ ...overlay, patches: overlay.patches.filter(patch => patch.defaults !== true) })
     }
   }
   return layers

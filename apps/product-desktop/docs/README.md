@@ -13,6 +13,7 @@
 - [知识文件](#knowledge-files)
 - [仓库与架构](#repositories-and-architecture)
 - [开发与交付](#development-and-delivery)
+- [公司专家与技能](company-content.md)
 - [产品破坏性变更](breaking-changes.md)
 - [验收与限制](#verification-and-limitations)
 

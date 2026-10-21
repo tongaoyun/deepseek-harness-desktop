@@ -133,6 +133,15 @@ export class DeepSeekHarnessProductBridge {
     return this.withEmployeeSession(undefined, async signal => runtimeBootstrap(await api.bootstrap<unknown>(signal)))
   }
 
+  /** Read company-owned native content in main, keeping employee authentication private.
+   * @returns Current validated release payload, or null when no content is published.
+   */
+  async loadCompanyContent(): Promise<unknown> {
+    if (this.api === undefined) throw new Error('Product server is unavailable')
+    const api = this.api
+    return this.withEmployeeSession(undefined, signal => api.request<unknown>('/api/v1/company-content', { signal }))
+  }
+
   /** Replace the current session and persist the opaque token outside the Renderer.
    * @param session - UI-safe employee session.
    * @param token - Opaque token retained by the main process.

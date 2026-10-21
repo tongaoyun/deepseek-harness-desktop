@@ -1,0 +1,26 @@
+diff --git a/scripts/verify-concrete-terms.ts b/scripts/verify-concrete-terms.ts
+index 980a0b364b90f39a5dc3cb4d03aa570d480e5e9d..bfaad18e7ee9aba17db7f9c70580b4cbf3753e95 100644
+--- a/scripts/verify-concrete-terms.ts
++++ b/scripts/verify-concrete-terms.ts
+@@ -50,7 +50,7 @@ export function findConcreteTermViolations(file: string, source: string): Concre
+ }
+ 
+ function trackedFiles(repoRoot: string): string[] {
+-  const files = execFileSync('git', ['ls-files', '-z'], { cwd: repoRoot, encoding: 'utf8' })
++  const files = execFileSync('git', ['ls-files', '-z'], { cwd: repoRoot, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 })
+     .split('\0')
+     .filter(file => file !== '')
+   if (!files.includes('AGENTS.md')
+diff --git a/scripts/verify-public-repository-links.ts b/scripts/verify-public-repository-links.ts
+index 28be42334defa33cfa69170acde513e205000429..30d4ea51e57e9bb6c71a1c6df98306381413f113 100644
+--- a/scripts/verify-public-repository-links.ts
++++ b/scripts/verify-public-repository-links.ts
+@@ -66,7 +66,7 @@ export function findUnavailableRepositoryReferences(file: string, source: string
+ }
+ 
+ function trackedFiles(repoRoot: string): string[] {
+-  return execFileSync('git', ['ls-files', '-z'], { cwd: repoRoot, encoding: 'utf8' })
++  return execFileSync('git', ['ls-files', '-z'], { cwd: repoRoot, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 })
+     .split('\0')
+     .filter(file => file !== '')
+ }

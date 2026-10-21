@@ -1883,7 +1883,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       },
       {
         signature: 'readonly overlays: readonly PatchOptions[]',
-        description: 'Parsed command-line overlays, applied above profile and home patches.',
+        description: 'Parsed command-line overlays; default insertions precede profile edits, other patches follow home patches.',
         parameters: [],
       },
       {

@@ -441,7 +441,7 @@ export function checkWorkspaceManifest({ dir, manifest }: WorkspaceManifest): st
     && manifest.name !== undefined
     && publicNativePackages.has(manifest.name)
 
-  if ((dir.startsWith('packages/') || dir.startsWith('apps/')) && manifest.name !== undefined
+  if ((dir.startsWith('packages/') || dir.startsWith('apps/') || dir.startsWith('vendor/')) && manifest.name !== undefined
     && !manifest.name.startsWith('@deepseek-ai/')) {
     if (manifest.private !== true) errors.push(`${label}: Desktop product package must set "private": true`)
     if (manifest.publishConfig !== undefined) errors.push(`${label}: Desktop product package must omit publishConfig`)

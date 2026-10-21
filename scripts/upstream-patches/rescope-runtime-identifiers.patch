@@ -52,7 +52,7 @@ index f05658ce64c50be84c61b447e3bcb00cf59ad2ae..21fe775a4ddc21ba8b3a75a865433e52
    it('classifies an insertion by its target form, so a duplicate is invalid', () => {
      expect(exactEditState(`log\n${ANCHOR}\n`, ANCHOR, INSERTED, 1)).toBe('pending')
 diff --git a/scripts/rescope-vendor.ts b/scripts/rescope-vendor.ts
-index e6292fb2a5a19230b71dc2a06f08a3617108ca2e..0d7338a63c48193671fb41160132a8f4c22a98c3 100644
+index e6292fb2a5a19230b71dc2a06f08a3617108ca2e..038cbc3d1e432beecd1b03599276c16ff8a976f5 100644
 --- a/scripts/rescope-vendor.ts
 +++ b/scripts/rescope-vendor.ts
 @@ -89,14 +89,31 @@ const GENERIC_SKIPS: readonly GenericSkip[] = [
@@ -123,3 +123,12 @@ index e6292fb2a5a19230b71dc2a06f08a3617108ca2e..0d7338a63c48193671fb41160132a8f4
  function classify(file: string): string {
    if (/^vendor\/[^/]+\/package\.json$/.test(file)) return 'vendor manifest name'
    if (file.endsWith('package.json')) return 'package.json dependencies'
+@@ -568,7 +598,7 @@ function main(): void {
+   const mode = args.includes('--apply') ? 'apply' : args.includes('--check') ? 'check' : 'dry'
+   const reverse = args.includes('--reverse')
+   const all = patterns(reverse)
+-  const files = execFileSync('git', ['ls-files', '-z'], { cwd: root, encoding: 'utf8' })
++  const files = execFileSync('git', ['ls-files', '-z'], { cwd: root, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 })
+     .split('\0')
+     .filter(file => file !== '' && !isRescopeExcluded(file))
+ 
