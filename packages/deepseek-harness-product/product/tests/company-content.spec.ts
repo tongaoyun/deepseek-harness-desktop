@@ -6,6 +6,33 @@ const files = { 'skills/orders/SKILL.md': markdown }
 const release = (data: Record<string, string> = files) => ({ version: '1.0.0', sha256: contentDigest(data), files: data })
 
 describe('company native content', () => {
+  it('rejects deeply nested metadata before converting YAML to objects', () => {
+    for (const depth of [64, 10000]) {
+      const data = { 'skills/orders/SKILL.md': Buffer.from(`---\nname: orders\ndescription: Orders\nextra: ${'['.repeat(depth)}0${']'.repeat(depth)}\n---\nUse tools.`).toString('base64') }
+      expect(() => companyContentRelease(release(data))).toThrow(/公司技能 YAML (?:格式无效|嵌套最多 64 层)/u)
+    }
+    const data = { 'skills/orders/SKILL.md': Buffer.from(`---\nname: orders\ndescription: Orders\nextra: ${'['.repeat(63)}0${']'.repeat(63)}\n---\nUse tools.`).toString('base64') }
+    expect(companyContentRelease(release(data)).files).toEqual(data)
+  })
+  it.each([
+    'description: null', 'description: true', 'description: 123', 'description: "unterminated',
+    'description: Orders\nextra: [broken', 'description: Orders\nextra: one\nextra: two',
+    'description: Orders\ndisable-model-invocation: maybe',
+    'description: Orders\nuserInvocable: true',
+    'description: &text Orders\nextra: *text',
+    'description: !unsupported Orders',
+  ])('rejects metadata ignored by the native skill provider: %s', (metadata) => {
+    const data = { 'skills/orders/SKILL.md': Buffer.from(`---\nname: orders\n${metadata}\n---\nUse the configured tools.`).toString('base64') }
+    expect(() => companyContentRelease(release(data))).toThrow()
+  })
+  it.each([
+    'description: 查询订单 # author comment',
+    'description: "查询\\u8ba2\\u5355"',
+    'description: \'查询订单\'\ndisable-model-invocation: YES\nuser-invocable: 0',
+  ])('preserves valid native YAML and invocation metadata: %s', (metadata) => {
+    const data = { 'skills/orders/SKILL.md': Buffer.from(`---\nname: orders # directory name\n${metadata}\n---\nUse the configured tools.`).toString('base64') }
+    expect(companyContentRelease(release(data)).files).toEqual(data)
+  })
   it('accepts standard files and a canonical digest, and represents an unpublished company explicitly', () => {
     expect(companyContentRelease(release())).toEqual(release())
     expect(companyContentRelease(null).files).toEqual({})

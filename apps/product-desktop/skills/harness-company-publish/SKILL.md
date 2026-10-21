@@ -30,6 +30,8 @@ skills/orders/references/policy.md
 
 专家 Markdown 与 SKILL.md 具有 `---` frontmatter，`name`、`description` 为非空单行字符串，正文非空。技能 name 与目录名一致；专家文件名在分类间唯一。无需 company- 前缀。技能必须带齐其资源文件，脚本按整个技能目录替换，省略的旧资源会删除并出现在差异里。内容总量最多 2048 文件、32 MiB，入口 Markdown 最多 128 KiB；不接受链接或非法路径。
 
+技能元数据按 YAML 1.2 解析，简介中的布尔值、数字等必须加引号；不接受重复字段、未知标签或别名。调用控制使用原生 `disable-model-invocation`、`user-invocable` 布尔字段，不使用驼峰旧字段。校验失败应修改源文件，不跳过校验或自动改写内容。
+
 修改已有资源先查询并导出。工具不会把公司全部正文输出到终端：
 
 ```sh

@@ -753,7 +753,7 @@
     },
     {
       "id": "workspace-integration",
-      "purpose": "Workspace integration registers private external-namespace packages, their compiler programs and public exports, and product assembly commands. Official runtime manifests and sources have no product dependency. Product build configuration stays package-local. Repository reference scanning distinguishes lockfile artifact byte counts from commit references while retaining checks for references on the same line.",
+      "purpose": "Workspace integration registers private external-namespace packages, their compiler programs and public exports, and product assembly commands. Official runtime manifests and sources have no product dependency. Product build configuration stays package-local. Repository reference scanning distinguishes lockfile artifact byte counts from commit references while retaining checks for references on the same line. 产品协议包声明 YAML 解析依赖，独立发布工具将其打包为无需安装依赖的校验产物；不引入官方运行时对产品包的依赖。",
       "tests": [
         "scripts/check-workspace-constraints.spec.ts",
         "scripts/client-tsconfig.spec.ts",
@@ -762,7 +762,9 @@
         "packages/deepseek-harness-product/runtime/tests/inference-default.spec.ts",
         "packages/deepseek-harness-product/runtime/tests/tasks.spec.ts",
         "packages/deepseek-harness-product/desktop/tests/inference-profile.spec.ts",
-        "packages/extensions/ui-deepseek-harness-product/tests/KnowledgeToolResult.client.spec.tsx"
+        "packages/extensions/ui-deepseek-harness-product/tests/KnowledgeToolResult.client.spec.tsx",
+        "packages/deepseek-harness-product/runtime/tests/company-skill-format.spec.ts",
+        "apps/product-desktop/tests/company-content.test.mjs"
       ],
       "files": [
         {
@@ -793,7 +795,7 @@
         {
           "path": "pnpm-lock.yaml",
           "before": "4637cca3b89c4c8d5a147321710e597aa62ec2444a3772ab542be5690893dfe4",
-          "after": "09e8c9669c78e0713dc7b3e47bcb4cc69d2f9cdb12b3ba6d6163beda89757c06"
+          "after": "cb6fea780a9ac106534e75b2439304ca73fcdddc1c842e005ec5cf15b9a32ea1"
         },
         {
           "path": "scripts/check-workspace-constraints.spec.ts",
