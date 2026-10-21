@@ -69,8 +69,18 @@ it('loads native skills with authorized MCP and exact knowledge scope, replays a
   const relayCredential = 'private-relay-fixture'
   let readAccess = 'READ'
   const mcpCalls: string[] = []
+  const mcpRequests: string[] = []
+  let catalogReads = 0
+  let catalogInvalid = false
+  let catalogPending = false
+  let pendingCatalog: string | undefined
+  let holdBrokenStartup = true
+  let brokenStartupPending = false
+  let releaseBrokenStartup!: () => void
+  const brokenStartup = new Promise<void>((resolve) => { releaseBrokenStartup = resolve })
   const server = createServer((request, response) => {
     void (async () => {
+      if (request.url === '/broken' && holdBrokenStartup) { brokenStartupPending = true; await brokenStartup }
       if (!mcpAvailable || request.url === '/broken') { response.writeHead(503).end(); return }
       if (request.headers.authorization !== relayCredential) { response.writeHead(401).end(); return }
       if (request.method !== 'POST') { response.writeHead(405).end(); return }
@@ -80,6 +90,7 @@ it('loads native skills with authorized MCP and exact knowledge scope, replays a
         chunks.push(chunk)
       }
       const call = JSON.parse(Buffer.concat(chunks).toString()) as { id?: number; method: string; params?: { name?: string } }
+      mcpRequests.push(call.method)
       if (call.id === undefined) { response.writeHead(202).end(); return }
       if (call.method === 'tools/call') mcpCalls.push(call.params?.name ?? '')
       response.setHeader('content-type', 'application/json')
@@ -111,10 +122,14 @@ it('loads native skills with authorized MCP and exact knowledge scope, replays a
     callback?.(null)
     if (message.type === 'extension-cancel') cancelled.push(String(message.requestId))
     if (message.type === 'extension-invoke') {
+      if (message.method === 'connectors.list' && message.payload === undefined) {
+        catalogReads++
+        if (catalogPending) { pendingCatalog = String(message.requestId); return true }
+      }
       if (message.method === 'knowledge.bases.list' && knowledgePending) { pendingRequest = String(message.requestId); return true }
       if (message.method === 'knowledge.search' || message.method === 'knowledge.sources.read') retrieval.push(message.payload)
       queueMicrotask(() => emitMessage({ type: 'extension-result', requestId: message.requestId,
-        result: message.method === 'connectors.list' ? [connector(), { ...connector(), id: 'broken', name: 'Broken CRM', url: `http://127.0.0.1:${address.port}/broken` }]
+        result: message.method === 'connectors.list' ? catalogInvalid ? {} : [connector(), { ...connector(), id: 'broken', name: 'Broken CRM', url: `http://127.0.0.1:${address.port}/broken` }]
           : message.method === 'knowledge.bases.list' ? [{ id: 'policy' }]
             : message.method === 'knowledge.search' ? [policyHit] : message.method === 'knowledge.sources.read' ? policyHit : [],
       }))
@@ -126,6 +141,7 @@ it('loads native skills with authorized MCP and exact knowledge scope, replays a
     return true
   } })
   onTestFinished(async () => {
+    releaseBrokenStartup()
     await ctx.fiber.dispose()
     for (const [key, descriptor] of descriptors) {
       if (descriptor === undefined) Reflect.deleteProperty(process, key)
@@ -171,8 +187,26 @@ it('loads native skills with authorized MCP and exact knowledge scope, replays a
     emitMessage({ type: 'extension-control', namespace: 'product', requestId, method, payload })
     return response
   }
-  await mount()
+  const decisions: string[] = []
+  ctx.on('tools/pre-execute', async (_exec, next) => { const decision = await next(); decisions.push(decision.kind); return decision }, { prepend: true })
+  const initialMount = mount()
+  try {
+    await vi.waitFor(() => {
+      expect(brokenStartupPending).toBe(true)
+      expect(ctx.tools.schemas().map(tool => tool.name)).toContain(ordersWrite)
+    })
+    await ctx.tools.execute({ name: ordersWrite, arguments: {}, callId: ToolCallId('startup-write'), signal: new AbortController().signal })
+    expect(decisions.at(-1)).toBe('ask')
+    expect(mcpCalls).toEqual([])
+  } finally {
+    holdBrokenStartup = false
+    releaseBrokenStartup()
+    await initialMount
+  }
   expect(process.listenerCount('message')).toBe(before + 1)
+  expect(catalogReads).toBe(1)
+  expect(mcpRequests.filter(method => method === 'initialize')).toHaveLength(1)
+  expect(mcpRequests.filter(method => method === 'tools/list')).toHaveLength(1)
   expect(await request(1, 'tasks.capabilities.prepare', { knowledgeBaseIds: ['policy'] })).toMatchObject({
     result: { capabilities: { basePresetId: 'minimal', knowledgeBaseIds: ['policy'] } },
   })
@@ -184,13 +218,25 @@ it('loads native skills with authorized MCP and exact knowledge scope, replays a
   expect((await ctx.agentPresets.remoteExportList()).presets.find(preset => preset.id === selected)?.selectionBase).toBe('minimal')
   const adapter = new FixtureAdapter()
   ctx.llm.registerAdapter(['fixture'], adapter)
-  const create = async (id: string, seed?: Parameters<typeof ctx.agents.create>[0]['seed']) => {
-    const handle = await ctx.agents.create({ sessionId: SessionId(id), ...(seed === undefined ? {} : { seed }),
+  const create = async (id: string, seed?: Parameters<typeof ctx.agents.create>[0]['seed'],
+    parentAgent?: Parameters<typeof ctx.agents.create>[0]['parentAgent']) => {
+    const handle = await ctx.agents.create({ sessionId: SessionId(id),
+      ...(seed === undefined ? {} : { seed }), ...(parentAgent === undefined ? {} : { parentAgent }),
       agentOptions: { provider: 'fixture', model: 'fixture' }, setup: child => ctx.agentPresets.mount(child, selected).then(() => undefined) })
     onTestFinished(() => handle.dispose())
     return handle
   }
   const handle = await create('native-session')
+  const sharedRequests = [...mcpRequests]
+  const sibling = await create('sibling-session')
+  const child = await create('child-session', undefined, handle.agent)
+  expect(ctx.tools.schemas(sibling.agent).map(tool => tool.name)).toContain(ordersRead)
+  expect(ctx.tools.schemas(child.agent).map(tool => tool.name)).toContain(ordersRead)
+  await sibling.dispose()
+  await child.dispose()
+  expect(ctx.tools.schemas(handle.agent).map(tool => tool.name)).toContain(ordersRead)
+  expect(catalogReads).toBe(1)
+  expect(mcpRequests).toEqual(sharedRequests)
   expect(ctx.tools.schemas(handle.agent).map(tool => tool.name)).toContain(ordersRead)
   expect(ctx.tools.schemas(handle.agent).map(tool => tool.name)).not.toContain(publicToolName(connectorServerName('broken'), 'orders_read'))
   handle.agent.followup(createUserMessage({ content: [{ type: 'text', text: 'Find policy.' }], source: { kind: 'user' } }))
@@ -222,10 +268,10 @@ it('loads native skills with authorized MCP and exact knowledge scope, replays a
   }, null, 2).replaceAll(root, '<HOME>') + '\n').toMatchFileSnapshot(new URL('./expected/native-capabilities-session.json', import.meta.url).pathname)
   const execute = (name: string) => ctx.tools.execute({ agent: handle.agent, name, arguments: {},
     callId: ToolCallId('check-' + name), signal: new AbortController().signal })
-  const decisions: string[] = []
-  ctx.on('tools/pre-execute', async (_exec, next) => { const decision = await next(); decisions.push(decision.kind); return decision }, { prepend: true })
   await execute(ordersWrite); expect(decisions.at(-1)).toBe('ask')
   await execute(undeclared); expect(decisions.at(-1)).toBe('deny')
+  await ctx.tools.execute({ name: ordersWrite, arguments: {}, callId: ToolCallId('workspace-write'), signal: new AbortController().signal })
+  expect(decisions.at(-1)).toBe('ask')
   connectorVersion = '2.0.0'
   expect((await execute(ordersRead)).isError).toBe(true)
   connectorVersion = '1.0.0'; connectorReady = false
@@ -247,6 +293,15 @@ it('loads native skills with authorized MCP and exact knowledge scope, replays a
   expect(decisions.at(-1)).toBe('ask')
   expect(mcpCalls).toEqual(['orders_read'])
   mcpAvailable = false
+  const requestsBeforeCreate = [...mcpRequests]
+  const reused = await create('reuse-offline-connection')
+  expect(ctx.tools.schemas(reused.agent).map(tool => tool.name)).toContain(ordersRead)
+  expect(catalogReads).toBe(2)
+  expect(mcpRequests).toEqual(requestsBeforeCreate)
+  await reused.dispose()
+  await ctx.loader.root.update([]); await ctx.loader.await()
+  await mount()
+  expect(catalogReads).toBe(3)
   const offline = await create('offline-connectors')
   expect(ctx.tools.schemas(offline.agent).map(tool => tool.name)).not.toContain(ordersRead)
   offline.agent.followup(createUserMessage({ content: [{ type: 'text', text: 'Explain a policy without ERP.' }], source: { kind: 'user' } }))
@@ -256,6 +311,22 @@ it('loads native skills with authorized MCP and exact knowledge scope, replays a
   expect(JSON.stringify(offline.agent.session.snapshotEvents())).not.toContain(relayCredential)
   await offline.dispose()
   mcpAvailable = true
+  await ctx.loader.root.update([]); await ctx.loader.await()
+  catalogInvalid = true
+  await mount()
+  const blocked = await create('invalid-connector-catalog')
+  const errors: unknown[] = []
+  ctx.on('agent/error', ({ error }) => { errors.push(error) })
+  const modelRequests = adapter.requests.length
+  blocked.agent.followup(createUserMessage({ content: [{ type: 'text', text: 'Continue.' }], source: { kind: 'user' } }))
+  await vi.waitFor(() => { expect(errors).toHaveLength(1) })
+  expect(errors[0]).toMatchObject({ code: 'CONNECTOR_STARTUP_FAILED', retryable: true })
+  expect(adapter.requests).toHaveLength(modelRequests)
+  expect(ctx.tools.schemas(blocked.agent).map(tool => tool.name)).not.toContain(ordersRead)
+  await blocked.dispose()
+  await ctx.loader.root.update([]); await ctx.loader.await()
+  catalogInvalid = false
+  await mount()
   knowledgePending = true
   const cancelledRequest = request(2, 'tasks.capabilities.prepare', { knowledgeBaseIds: ['policy'] })
   await vi.waitFor(() => { expect(pendingRequest).toBeDefined() })
@@ -270,6 +341,15 @@ it('loads native skills with authorized MCP and exact knowledge scope, replays a
   // Plugin release joins the operation but deliberately sends no response to a closed IPC owner.
   void unloadingRequest
   expect(cancelled).toContain(pendingRequest)
+  expect(process.listenerCount('message')).toBe(before)
+  expect(ctx.tools.schemas(restored.agent).map(tool => tool.name)).not.toContain(ordersRead)
+  catalogPending = true
+  const mounting = ctx.loader.root.update(structuredClone(rows)).then(() => ctx.loader.await())
+  await vi.waitFor(() => { expect(pendingCatalog).toBeDefined() })
+  const starting = ctx.loader.resolve('product-runtime').fiber
+  await ctx.loader.root.update([]); await ctx.loader.await(); await starting?.dispose()
+  await mounting
+  expect(cancelled).toContain(pendingCatalog)
   expect(process.listenerCount('message')).toBe(before)
   expect(ctx.tools.schemas(restored.agent).map(tool => tool.name)).not.toContain(ordersRead)
 })

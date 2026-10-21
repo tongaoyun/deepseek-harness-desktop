@@ -918,12 +918,12 @@
         {
           "path": "docs/event-producer-consumer.md",
           "before": "d9c072884a46f3fbeb1f5d1c8d7a5750101aa244ff1aeb4f603c01639af8b7c5",
-          "after": "6571c4949d8361e592dce4af075caa78393a5c274d4c972baa44cd509579a801"
+          "after": "031338852d65ea45b2a6276bf38cf886a9f0e7d8e5bb1257408a8117f19057ec"
         },
         {
           "path": "docs/event-producer-consumer.zh.md",
           "before": "7d69de177a12cd40bf378da47ada45acf4a623747c100dd1af873e5248225495",
-          "after": "eb1678c592e87d3d753eba5f7bc89e95f2632f4ff5f02d8f86e36a5ce1d148b6"
+          "after": "1f5d2544ae6be9ac4c050217198b993ab61c7b34cf965522b17fc1baa8eb3cb6"
         },
         {
           "path": "docs/persistence-changes/2026-10-09-product-installed-skill-attribution.i18n.yaml",
