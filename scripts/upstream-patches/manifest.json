@@ -792,7 +792,7 @@
         {
           "path": "pnpm-lock.yaml",
           "before": "4637cca3b89c4c8d5a147321710e597aa62ec2444a3772ab542be5690893dfe4",
-          "after": "cf7416ce22db9dd81e7069429487f3f52a2d30590155dc50c37a6fb779fd6f70"
+          "after": "7430c76df2e65842c05f67e57f771044fc887bff344e349e0d7ed5e29653dbc3"
         },
         {
           "path": "scripts/check-workspace-constraints.spec.ts",
@@ -1583,7 +1583,7 @@
         {
           "path": "vendor/README.md",
           "before": "463f0475336df70f35805c60ea897b94d15cdd295595d8a50074dedd4555d311",
-          "after": "020f362742d5c3a6987267746cdd3fc4e66dbd6d7fc1c14fdaf86e6c860fb1c3"
+          "after": "2c69c8be031a4f12d7b2d969259bee0867b58ae49e1120aaad6143853a05e0f1"
         }
       ],
       "diff": "company-plugin-vendor-documentation.patch"
@@ -1677,32 +1677,6 @@
         }
       ],
       "diff": "remote-contribution-disposal.patch"
-    },
-    {
-      "id": "authored-javascript-build",
-      "purpose": "工作区构建支持包通过 dsh.build: false 声明直接交付的 JavaScript 源码，避免 TypeScript 构建覆盖；保留 Windows 和 POSIX 路径处理。",
-      "tests": [
-        "scripts/workspace-package-globs.spec.ts",
-        "packages/deepseek-harness-product/desktop/tests/native-mcp-loader.spec.ts"
-      ],
-      "files": [
-        {
-          "path": "scripts/workspace-package-globs.spec.ts",
-          "before": "97e5cf0e0db2eadc9b694574ee60bab46169a4c2720f7d9121743492af890eb1",
-          "after": "b0e26847a09f5210354c066be9e67c3fb69a2e02340a749bd5f9009bc5b752b0"
-        },
-        {
-          "path": "scripts/workspace-package-globs.ts",
-          "before": "58df030d5bb525c92971fd1a2328cb30d117a13d06c6a244eea9a2299bba867a",
-          "after": "2918b932adb17e793fc99ea001cb82870e92090b16ec2df503a5f849a77d3592"
-        },
-        {
-          "path": "tsdown.config.ts",
-          "before": "5629c4b5baa03232241f086f4ef02aa7c8e54f86d977a514b3412eca3f0f0080",
-          "after": "41c67a7243197f9f108067d9cf5d3aaca3f7564577c509ef1e226c10459ac5ea"
-        }
-      ],
-      "diff": "authored-javascript-build.patch"
     }
   ]
 }

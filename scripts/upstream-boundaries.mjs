@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { join, resolve, sep } from 'node:path'
 import ts from 'typescript'
 
-export const productRoots = ['vendor/dsh-mcp-connector/', 'vendor/dsh-agency-agents/', 'vendor/dsh-skills-manager/', 'packages/deepseek-harness-product/', 'packages/extensions/ui-deepseek-harness-product/',
+export const productRoots = ['vendor/dsh-agency-agents/', 'vendor/dsh-skills-manager/', 'packages/deepseek-harness-product/', 'packages/extensions/ui-deepseek-harness-product/',
   'apps/product-desktop/', 'native/deepseek-harness/', 'scripts/upstream-patches/']
 const owned = new Set(['UPSTREAM_COMMIT', 'UPSTREAM_TAG', 'UPSTREAM_REPOSITORY',
   '.github/workflows/product-desktop-package.yml',
@@ -141,7 +141,7 @@ export function verifyDependencies(root) {
     }
   }
   let count = 0
-  for (const path of paths.filter(path => /\.[cm]?[jt]sx?$/.test(path) && (path.includes('/src/') || path.startsWith('vendor/dsh-mcp-connector/lib/')) && existsSync(resolve(root, path)))) {
+  for (const path of paths.filter(path => /\.[cm]?[jt]sx?$/.test(path) && path.includes('/src/') && existsSync(resolve(root, path)))) {
     count++
     for (const specifier of importSpecifiers(path, readFileSync(resolve(root, path), 'utf8'))) {
       const product = productOwned(path)

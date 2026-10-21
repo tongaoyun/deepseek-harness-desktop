@@ -17,13 +17,12 @@ import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { IconDatabaseOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives'
 import { en, NS, zh } from '../locales.ts'
 import {
-  KnowledgePanel,
+  ConnectorsPanel, KnowledgePanel,
 } from './DeepSeekHarnessCatalogSection.tsx'
 import {
   CAPABILITY_PANELS, EXTENSION_PANELS, CapabilitiesHeading, createCapabilityChildIcon,
 } from './DeepSeekHarnessCapabilitiesNavigation.tsx'
 import { ExtensionPage, type ExtensionPageInjected } from './ExtensionPage.tsx'
-import { ConnectorPage, type ConnectorPageInjected } from './ConnectorPage.tsx'
 import { DeepSeekHarnessSettingsMenu } from './DeepSeekHarnessSettingsMenu.tsx'
 import { createHarnessActions } from './harness-actions.ts'
 import { TaskKnowledgeInput } from './TaskKnowledgeInput.tsx'
@@ -33,6 +32,11 @@ import type {} from '@deepseek-ai/dsh-client-ui-agent-preset/client'
 export const inject = [
   'slots', 'locale', 'sessions', 'workspaces', 'uiWorkspace', 'conversation', 'layout', 'remote', 'remote.agentPresets', 'commandUi',
 ]
+
+const PANEL_COMPONENTS = {
+  connectors: ConnectorsPanel,
+  knowledge: KnowledgePanel,
+} as const
 
 /** Register DeepSeekHarness capability navigation in the official Harness sidebar. */
 export function apply(ctx: ClientContext): void {
@@ -91,23 +95,11 @@ export function apply(ctx: ClientContext): void {
   }
 
   for (const [index, panel] of CAPABILITY_PANELS.entries()) {
+    const Component = PANEL_COMPONENTS[panel.labelKey]
     const ChildIcon = createCapabilityChildIcon(panel.icon)
-    if (panel.labelKey === 'connectors') {
-      ctx.slots.inject('main', () => ctx.slots.register({
-        name: 'main', key: panel.id, locale: NS,
-        inject: (): ConnectorPageInjected => ({ ...actions,
-          close: () => { ctx.layout.selectPanel(null) },
-          hooks: { available: {
-            getSnapshot: () => ctx.slots.entries('settings.section').some(entry => entry.options.id === 'mcp-connector'),
-            subscribe: listener => ctx.slots.subscribe('settings.section', listener),
-          } },
-        }),
-      }, ConnectorPage))
-    } else {
-      ctx.slots.inject('main', () => ctx.slots.register({
-        name: 'main', key: panel.id, locale: NS, inject: () => actions,
-      }, KnowledgePanel))
-    }
+    ctx.slots.inject('main', () => ctx.slots.register({
+      name: 'main', key: panel.id, locale: NS, inject: () => actions,
+    }, Component))
     ctx.slots.inject('sidebar.panellist', () => ctx.slots.register({
       name: 'sidebar.panellist', id: panel.id, order: -37 + index, locale: NS,
       label: () => t(panel.labelKey),

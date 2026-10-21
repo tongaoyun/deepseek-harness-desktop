@@ -1,6 +1,0 @@
-# 产品桌面提供加密存储适配器，再装配本插件。
-- insert:
-    - id: mcp-connector
-      name: dsh-mcp-connector
-      config:
-        compactManagementTools: true

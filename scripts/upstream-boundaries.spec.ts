@@ -192,14 +192,3 @@ it('rejects official dependencies on product packages and private product import
   writeFileSync(join(root, 'packages/deepseek-harness-product/runtime/src/index.ts'), "import './local.ts'\n")
   expect(() =>{  verifyDependencies(root) }).not.toThrow()
 })
-
-it('checks authored vendored JavaScript against public Harness exports', () => {
-  const { root } = fixture()
-  mkdirSync(join(root, 'vendor/dsh-mcp-connector/lib'), { recursive: true })
-  writeFileSync(join(root, 'apps/host/package.json'), JSON.stringify({ name: '@deepseek-ai/dsh-host', exports: { '.': './lib/index.js' } }))
-  const file = join(root, 'vendor/dsh-mcp-connector/lib/index.js')
-  writeFileSync(file, "import '@deepseek-ai/dsh-host/src/private.ts'\n")
-  expect(() => verifyDependencies(root)).toThrow('Private Harness import')
-  writeFileSync(file, "import '@deepseek-ai/dsh-host'\n")
-  expect(() => verifyDependencies(root)).not.toThrow()
-})

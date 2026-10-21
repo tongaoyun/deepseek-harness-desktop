@@ -120,10 +120,9 @@ export type ProductRuntimeMethod = Extract<ProductMethod,
   | 'knowledge.documents.preview.open'
   | 'knowledge.documents.preview.close'
   | 'knowledge.documents.save'
-> | Extract<KnowledgeFileMethod, `runtime.${string}`> | 'runtime.connectors.storage'
+> | Extract<KnowledgeFileMethod, `runtime.${string}`>
 
 const PRODUCT_RUNTIME_METHODS: readonly ProductRuntimeMethod[] = [
-  'runtime.connectors.storage',
   'auth.getSession',
   'connectors.list', 'knowledge.bases.list', 'knowledge.search', 'knowledge.sources.read', 'knowledge.documents.save',
   'knowledge.documents.get', 'knowledge.documents.previewMetadata', 'knowledge.documents.preview.open', 'knowledge.documents.preview.close',

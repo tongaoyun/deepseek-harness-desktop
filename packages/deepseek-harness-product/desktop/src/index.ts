@@ -14,7 +14,6 @@ import { DesktopSupport } from './desktop-support.ts'
 import { ConnectorProxy } from './connector-proxy.ts'
 import { installCompanyContent } from './company-content.ts'
 import { nativeExtensionPatches } from './native-extensions.ts'
-import { NativeMcpStorage } from './native-mcp-storage.ts'
 import { inferenceProfile } from './inference-profile.ts'
 import { ConnectorDraftSchema } from '@deepseek-harness/product/connector-draft'
 import { PersonalConnectors } from './personal-connectors.ts'
@@ -143,8 +142,6 @@ export function createExtension(context: ExtensionContext): ProductDesktopExtens
       const entries: readonly unknown[] = Array.isArray(value) ? value : []
       return entries.find(entry => typeof entry === 'object' && entry !== null && 'id' in entry && entry.id === id)
     })
-  const nativeMcpStorage = new NativeMcpStorage(join(app.getPath('userData'), 'mcp-connectors'), safeStorage,
-    () => productBridge.getSession().authenticated ? productBridge.getSession().employeeId : undefined)
   const productBridgeOptions: ProductBridgeOptions = {
     support: (method, input, api, session, signal) => support.invoke(method, input, api, session, signal),
     knowledgeFiles: (method, input, api, session, signal) => knowledgeFiles.invoke(method, input, api, session, signal),
@@ -363,7 +360,6 @@ export function createExtension(context: ExtensionContext): ProductDesktopExtens
     async invokeRuntime(method: unknown, payload?: unknown, signal?: AbortSignal): Promise<unknown> {
       return track(signal, async (signal) => {
         if (closed || !isProductRuntimeMethod(method)) return Promise.reject(new Error('Unsupported runtime operation'))
-        if (method === 'runtime.connectors.storage') return nativeMcpStorage.invoke(payload, signal)
         const result = await productBridge.invokeRuntime(method, payload, signal)
         return method === 'connectors.list' ? connectorProxy.catalog(result) : result
       })
