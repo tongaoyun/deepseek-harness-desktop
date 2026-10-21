@@ -104,3 +104,26 @@ it('does not let a cancelled employee request unlock a newer submission', async 
   await act(async () => { rejectNew(new Error('New request cancelled')) })
   expect(screen.getByRole('dialog')).toBeTruthy()
 })
+
+it('keeps preparation and submission alive when the locale changes', async () => {
+  const f = fixture()
+  const prepared = Promise.withResolvers<typeof candidate>()
+  let preparation: AbortSignal | undefined
+  await act(async () => document.dispatchEvent(new CustomEvent('dsh:company-content-submit', {
+    cancelable: true, detail: { name: '订单核对', prepare: (signal: AbortSignal) => { preparation = signal; return prepared.promise } },
+  })))
+  f.view.rerender(<CompanyContentSubmission t={(...args) => t(...args)} />)
+  expect(preparation?.aborted).toBe(false)
+  await act(async () => { prepared.resolve(candidate) })
+  await screen.findByText('包含 1 个文件')
+  const response = Promise.withResolvers<{ ok: true; result: { status: string; reviewNote: string } }>()
+  f.invoke.mockImplementationOnce(() => response.promise)
+  fireEvent.click(screen.getByRole('button', { name: '提交到公司' }))
+  const cancellations = f.cancel.mock.calls.length
+  f.view.rerender(<CompanyContentSubmission t={(...args) => t(...args)} />)
+  expect(f.cancel).toHaveBeenCalledTimes(cancellations)
+  await act(async () => { response.resolve({ ok: true, result: { status: 'SUBMITTED', reviewNote: '' } }) })
+  expect(screen.getByText('已提交，等待管理员审核。')).toBeTruthy()
+  expect(screen.queryByText(t('companySubmitWorking'))).toBeNull()
+  expect(screen.getAllByRole<HTMLButtonElement>('button', { name: '关闭' }).at(-1)!.disabled).toBe(false)
+})

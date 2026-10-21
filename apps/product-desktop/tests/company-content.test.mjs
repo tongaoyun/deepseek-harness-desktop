@@ -129,6 +129,8 @@ test('same version changes, cross-category expert collisions and file-directory 
   assert.throws(() => planPublication(current, release('1.0.0', { 'skills/orders/SKILL.md': skill('orders') }), SITE), { code: 'VERSION_REQUIRED' })
   assert.throws(() => planPublication(current, release('1.0.1', { 'experts/finance/orders.md': expert('New') }), SITE))
   assert.throws(() => planPublication(null, release('1.0.1', { 'skills/orders/SKILL.md': skill('orders'), 'skills/orders/path': 'file', 'skills/orders/path/child': 'child' }), SITE), /文件与目录路径冲突/u)
+  assert.throws(() => planPublication(null, release('1.0.1', { 'skills/orders/SKILL.md': skill('orders'),
+    'skills/orders/Assets/one.txt': 'one', 'skills/orders/assets/two.txt': 'two' }), SITE), /目录大小写冲突/u)
 })
 
 test('plans cannot be overwritten or used after bytes have changed', async t => {

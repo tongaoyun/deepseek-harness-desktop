@@ -71,10 +71,15 @@ export function companyContentRelease(value: unknown): CompanyContentRelease {
       throw new Error('公司技能缺少 SKILL.md')
     }
   }
-  for (const path of paths) {
+  const directories = new Map<string, string>()
+  for (const path of Object.keys(files)) {
     const parts = path.split('/')
     for (let index = 1; index < parts.length; index++) {
-      if (paths.has(parts.slice(0, index).join('/'))) throw new Error('公司内容存在文件与目录路径冲突')
+      const parent = parts.slice(0, index).join('/')
+      const key = parent.toLowerCase()
+      if (paths.has(key)) throw new Error('公司内容存在文件与目录路径冲突')
+      if (directories.has(key) && directories.get(key) !== parent) throw new Error('公司内容存在目录大小写冲突')
+      directories.set(key, parent)
     }
   }
   if (contentDigest(files) !== value.sha256) throw new Error('公司内容校验失败')

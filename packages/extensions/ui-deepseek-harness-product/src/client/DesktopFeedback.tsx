@@ -45,8 +45,8 @@ export function DesktopFeedback({ open, onClose, t }: {
     const api = productApi()
     let live = true
     let revision = 0
-    const updateIdentity = (employee: unknown) => {
-      if (identityKnown.current && employee !== operation.current.employeeId) {
+    const updateIdentity = (employee: unknown, changed = false) => {
+      if (identityKnown.current ? employee !== operation.current.employeeId : changed) {
         if (operation.current.request) api?.cancel(operation.current.request)
         delete operation.current.request
         setPending(false)
@@ -60,7 +60,7 @@ export function DesktopFeedback({ open, onClose, t }: {
       revision++
       const value = event.payload
       const employee = typeof value === 'object' && value !== null && 'employeeId' in value ? value.employeeId : undefined
-      updateIdentity(employee)
+      updateIdentity(employee, true)
     })
     void api?.getSession().then((session) => { if (live && revision === 0) updateIdentity(session.employeeId) }).catch(() => {
       // Session reads can fail during login; subsequent identity events still clear stale drafts.
