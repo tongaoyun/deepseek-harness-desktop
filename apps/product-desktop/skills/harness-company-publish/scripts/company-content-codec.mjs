@@ -6680,6 +6680,9 @@ function companyContentRelease(value) {
 			if (path.endsWith("/SKILL.md")) {
 				const parsed = (0, import_dist.parseDocument)(frontmatter, { schema: "core" });
 				if (parsed.errors.length || parsed.warnings.length) throw new Error("公司技能 YAML 格式无效");
+				(0, import_dist.visit)(parsed, (_, node, ancestors) => {
+					if ((0, import_dist.isCollection)(node) && ancestors.filter(import_dist.isCollection).length >= 64) throw new Error("公司技能 YAML 嵌套最多 64 层");
+				});
 				const metadata = parsed.toJS({ maxAliasCount: 0 });
 				if (typeof metadata !== "object" || metadata === null || Array.isArray(metadata) || !("name" in metadata) || metadata.name !== path.split("/")[1] || !("description" in metadata) || typeof metadata.description !== "string" || !metadata.description.trim() || /[\r\n]/u.test(metadata.description)) throw new Error("公司技能必须包含与目录一致的名称和非空单行字符串简介");
 				validateSkillInvocation(metadata);

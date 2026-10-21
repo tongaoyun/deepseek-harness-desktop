@@ -6,6 +6,14 @@ const files = { 'skills/orders/SKILL.md': markdown }
 const release = (data: Record<string, string> = files) => ({ version: '1.0.0', sha256: contentDigest(data), files: data })
 
 describe('company native content', () => {
+  it('rejects deeply nested metadata before converting YAML to objects', () => {
+    for (const depth of [64, 10000]) {
+      const data = { 'skills/orders/SKILL.md': Buffer.from(`---\nname: orders\ndescription: Orders\nextra: ${'['.repeat(depth)}0${']'.repeat(depth)}\n---\nUse tools.`).toString('base64') }
+      expect(() => companyContentRelease(release(data))).toThrow(/公司技能 YAML (?:格式无效|嵌套最多 64 层)/u)
+    }
+    const data = { 'skills/orders/SKILL.md': Buffer.from(`---\nname: orders\ndescription: Orders\nextra: ${'['.repeat(63)}0${']'.repeat(63)}\n---\nUse tools.`).toString('base64') }
+    expect(companyContentRelease(release(data)).files).toEqual(data)
+  })
   it.each([
     'description: null', 'description: true', 'description: 123', 'description: "unterminated',
     'description: Orders\nextra: [broken', 'description: Orders\nextra: one\nextra: two',

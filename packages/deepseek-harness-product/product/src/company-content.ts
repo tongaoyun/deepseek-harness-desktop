@@ -1,6 +1,6 @@
 /** Company releases contain data for native plugins, never plugin executables or credentials. */
 import { createHash } from 'node:crypto'
-import { parseDocument } from 'yaml'
+import { isCollection, parseDocument, visit } from 'yaml'
 
 /** One company-wide immutable release of native expert and skill documents. */
 export interface CompanyContentRelease {
@@ -61,6 +61,9 @@ export function companyContentRelease(value: unknown): CompanyContentRelease {
       if (path.endsWith('/SKILL.md')) {
         const parsed = parseDocument(frontmatter, { schema: 'core' })
         if (parsed.errors.length || parsed.warnings.length) throw new Error('公司技能 YAML 格式无效')
+        visit(parsed, (_, node, ancestors) => {
+          if (isCollection(node) && ancestors.filter(isCollection).length >= 64) throw new Error('公司技能 YAML 嵌套最多 64 层')
+        })
         const metadata: unknown = parsed.toJS({ maxAliasCount: 0 })
         if (typeof metadata !== 'object' || metadata === null || Array.isArray(metadata)
           || !('name' in metadata) || metadata.name !== path.split('/')[1]
