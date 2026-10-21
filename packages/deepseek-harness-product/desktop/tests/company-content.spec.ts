@@ -16,7 +16,7 @@ async function fixture() {
   return root
 }
 function release(body = 'first') {
-  const files = { 'skills/company-orders/SKILL.md': Buffer.from(`---\nname: company-orders\ndescription: orders\n---\n${body}`).toString('base64') }
+  const files = { 'skills/orders/SKILL.md': Buffer.from(`---\nname: orders\ndescription: orders\n---\n${body}`).toString('base64') }
   return { version: '1.0.0', sha256: contentDigest(files), files }
 }
 
@@ -27,7 +27,7 @@ it('keeps installed content immutable across updates and isolates employees', as
   const other = await installCompanyContent(root, 'employee-b', release(), signal)
   expect(first.skillsRoot).not.toEqual(next.skillsRoot)
   expect(first.skillsRoot).not.toEqual(other.skillsRoot)
-  expect(await readFile(join(first.skillsRoot, 'company-orders/SKILL.md'), 'utf8')).toContain('first')
+  expect(await readFile(join(first.skillsRoot, 'orders/SKILL.md'), 'utf8')).toContain('first')
   expect(await installCompanyContent(root, 'employee-a', release(), signal)).toEqual(first)
 })
 
@@ -37,7 +37,7 @@ it('does not publish partial or cancelled content and rejects damaged caches', a
   await expect(installCompanyContent(root, 'a', release(), controller.signal)).rejects.toThrow()
   expect(await readdir(root)).toEqual([])
   const first = await installCompanyContent(root, 'a', release(), new AbortController().signal)
-  await writeFile(join(first.skillsRoot, 'company-orders/SKILL.md'), 'damaged')
+  await writeFile(join(first.skillsRoot, 'orders/SKILL.md'), 'damaged')
   await expect(installCompanyContent(root, 'a', release(), new AbortController().signal)).rejects.toThrow('损坏')
 })
 
@@ -54,10 +54,10 @@ it('joins concurrent installs and rejects unexpected files and intermediate link
     installCompanyContent(root, 'same', release(), signal), installCompanyContent(root, 'same', release(), signal),
   ])
   expect(first).toEqual(second)
-  await writeFile(join(first.skillsRoot, 'company-orders/extra.md'), 'unexpected')
+  await writeFile(join(first.skillsRoot, 'orders/extra.md'), 'unexpected')
   await expect(installCompanyContent(root, 'same', release(), signal)).rejects.toThrow('损坏')
-  await rm(join(first.skillsRoot, 'company-orders/extra.md'))
-  const original = join(first.skillsRoot, 'company-orders')
+  await rm(join(first.skillsRoot, 'orders/extra.md'))
+  const original = join(first.skillsRoot, 'orders')
   const other = join(root, 'other')
   const { rename } = await import('node:fs/promises')
   await rename(original, other)
@@ -73,7 +73,7 @@ it('verifies the winning directory after a Windows rename collision and cleans s
     throw Object.assign(new Error('Destination exists'), { code: 'EPERM' })
   })
   const installed = await installCompanyContent(root, 'windows-race', release(), signal)
-  expect(await readFile(join(installed.skillsRoot, 'company-orders/SKILL.md'), 'utf8')).toContain('first')
+  expect(await readFile(join(installed.skillsRoot, 'orders/SKILL.md'), 'utf8')).toContain('first')
   vi.mocked(rename).mockRejectedValueOnce(Object.assign(new Error('Permission denied'), { code: 'EPERM' }))
   await expect(installCompanyContent(root, 'windows-race', release('new'), signal)).rejects.toThrow()
   const [employee] = await readdir(root)

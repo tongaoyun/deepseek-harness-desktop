@@ -10,12 +10,12 @@
 
 ```text
 release.json                       # {"version":"1.0.0"}
-experts/operations/company-orders.md
-skills/company-orders/SKILL.md
-skills/company-orders/references/policy.md
+experts/operations/orders.md
+skills/orders/SKILL.md
+skills/orders/references/policy.md
 ```
 
-专家 Markdown 和 `SKILL.md` 使用 `---` 分隔的 frontmatter，`name`、`description` 必须为非空单行字符串，正文不能为空。技能 `name` 与目录名一致。公司 ID 使用 `company-` 前缀；专家文件名在所有分类中唯一。专家分类来自实际目录，不受社区内置分类限制。资源只能是普通文件，不接受符号链接、路径穿越及跨平台冲突名称。每包最多 2,048 个文件、32 MiB 解码内容；入口说明最多 128 KiB。公司内容只包含说明及技能资源，不包含插件代码、员工令牌或连接器私密配置。
+专家 Markdown 和 `SKILL.md` 使用 `---` 分隔的 frontmatter，`name`、`description` 必须为非空单行字符串，正文不能为空。技能 `name` 与目录名一致。专家与技能保留原名，不要求公司前缀；公司来源由加载配置标识。专家文件名在所有分类中唯一。专家分类来自实际目录，不受社区内置分类限制。资源只能是普通文件，不接受符号链接、路径穿越及跨平台冲突名称。每包最多 2,048 个文件、32 MiB 解码内容；入口说明最多 128 KiB。公司内容只包含说明及技能资源，不包含插件代码、员工令牌或连接器私密配置。
 
 仓库构建完成后，在仓库根目录校验私有目录：
 

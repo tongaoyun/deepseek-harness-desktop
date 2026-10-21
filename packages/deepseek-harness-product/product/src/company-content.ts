@@ -24,8 +24,8 @@ export function companyContentRelease(value: unknown): CompanyContentRelease {
     || !('files' in value) || typeof value.files !== 'object' || value.files === null || Array.isArray(value.files)) {
     throw new Error('公司内容格式无效')
   }
-  const expertPath = /^experts\/[a-z][a-z0-9-]*\/company-[a-z0-9]+(?:-[a-z0-9]+)*\.md$/u
-  const skillPath = /^skills\/company-[a-z0-9]+(?:-[a-z0-9]+)*\/[A-Za-z0-9_./-]+$/u
+  const expertPath = /^experts\/[a-z][a-z0-9-]*\/[a-z0-9]+(?:-[a-z0-9]+)*\.md$/u
+  const skillPath = /^skills\/[a-z0-9]+(?:-[a-z0-9]+)*\/[A-Za-z0-9_./-]+$/u
   const files: Record<string, string> = {}
   const paths = new Set<string>()
   const expertIds = new Set<string>()

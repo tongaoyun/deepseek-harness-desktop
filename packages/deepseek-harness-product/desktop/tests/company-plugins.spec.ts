@@ -29,8 +29,8 @@ it.each([true, false])('loads company skills and experts (published=%s), then wi
   vi.stubEnv('DSH_HOME', home)
   onTestFinished(() => { vi.unstubAllEnvs() })
   const files: Record<string, string> = published ? {
-    'skills/company-orders/SKILL.md': Buffer.from('---\nname: company-orders\ndescription: 查询公司订单\n---\nCompany order skill body.').toString('base64'),
-    'experts/operations/company-orders.md': Buffer.from('---\nname: 公司订单专家\ndescription: 处理公司订单\n---\nCompany order expert persona.').toString('base64'),
+    'skills/orders/SKILL.md': Buffer.from('---\nname: orders\ndescription: 查询公司订单\n---\nCompany order skill body.').toString('base64'),
+    'experts/operations/orders.md': Buffer.from('---\nname: 公司订单专家\ndescription: 处理公司订单\n---\nCompany order expert persona.').toString('base64'),
   } : {}
   const release = published ? { version: '1.0.0', sha256: contentDigest(files), files } : null
   const roots = await installCompanyContent(join(home, 'company-content'), 'employee-fixture', release, new AbortController().signal)
@@ -72,15 +72,15 @@ it.each([true, false])('loads company skills and experts (published=%s), then wi
   const library = ctx.get(AGENCY_LIBRARY_SERVICE)
   expect(library).toBeDefined()
   const catalog = await library!.catalog()
-  const expert = catalog.experts.find(expert => expert.slug === 'company-orders')
+  const expert = catalog.experts.find(expert => expert.slug === 'orders')
   expect(expert?.company).toBe(published ? true : undefined)
   if (published) {
     expect(expert?.division).toBe('operations')
     const persona = ctx.get(Agency.AGENCY_PERSONA_SERVICE)
-    expect((await persona!.getPrompt('company-orders', 'operations', 'zh')).prompt).toContain('Company order expert persona.')
+    expect((await persona!.getPrompt('orders', 'operations', 'zh')).prompt).toContain('Company order expert persona.')
   }
-  expect((await ctx.skills.list()).some(skill => skill.name === 'company-orders')).toBe(published)
-  if (published) expect((await ctx.skills.get('company-orders'))?.content).toContain('Company order skill body.')
+  expect((await ctx.skills.list()).some(skill => skill.name === 'orders')).toBe(published)
+  if (published) expect((await ctx.skills.get('orders'))?.content).toContain('Company order skill body.')
   await ctx.loader.root.update([])
   await ctx.loader.await()
   expect(ctx.get(AGENCY_LIBRARY_SERVICE)).toBeUndefined()
