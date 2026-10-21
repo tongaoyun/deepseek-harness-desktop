@@ -14,6 +14,7 @@ interface WorkflowStep {
 
 interface WorkflowJob {
   readonly 'runs-on': string
+  readonly env?: Readonly<Record<string, string>>
   readonly steps: readonly WorkflowStep[]
 }
 
@@ -71,6 +72,14 @@ describe('DeepSeekHarness Electron workflows', () => {
       group: '${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}',
       'cancel-in-progress': true,
     })
+  })
+
+  it('keeps the shared-runner test budget aligned with upstream CI', () => {
+    const upstream = yaml.load(readFileSync(resolve(import.meta.dirname, '..', '.github/workflows/ci.yml'), 'utf8')) as Workflow
+    const budget = Object.values(upstream.jobs).map(job => job.env?.DSH_COVERAGE_TEST_TIMEOUT_MS)
+      .find(value => value !== undefined)
+    expect(budget).toBeDefined()
+    expect(workflow('electron-ci.yml').jobs.desktop?.env?.DSH_COVERAGE_TEST_TIMEOUT_MS).toBe(budget)
   })
 
   it('confines the mock keychain to isolated macOS UI acceptance', () => {

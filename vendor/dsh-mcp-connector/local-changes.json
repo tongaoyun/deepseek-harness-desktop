@@ -1,0 +1,100 @@
+{
+  "upstreamCommit": "9c2a8a36003dc50482b5ee8568e4c5cd69eb0f8b",
+  "files": [
+    {
+      "path": ".gitignore",
+      "before": null,
+      "after": "15df6dbcd144d62b2aa74c2845d7de5414cb2986e12a9cfb6445408ce16087f7"
+    },
+    {
+      "path": "README.md",
+      "before": "3bacf735e0175cd1e9fa29686bdc9097b614497b254340b307619f0d5831fd78",
+      "after": "77a34db2cb0e60ef6b6206a575abb0a9f3cd6f11f7758259a98fd9a3cdd00fd8"
+    },
+    {
+      "path": "cordis.patch.yml",
+      "before": "ea4ffc05c045d60a9a5b3a4bf4a7d8d8df64b269632bbbc019bf0872114f5197",
+      "after": "ece75811940cef0c9791b8de2018927f659e1c0d04286828a45b20fc3a761d96"
+    },
+    {
+      "path": "lib/catalog.js",
+      "before": "6c609b752798fa65411b7a95bac3831796afd9f7eb922e493a975043c87712c8",
+      "after": "ef2da8521818320562c61420dba6f713d4552db118e8913af66cf67fa47e1482"
+    },
+    {
+      "path": "lib/client.js",
+      "before": "c255e83fe05b85aebe29c2590df35a27be66c40e9cd77831ea01af79b61b935b",
+      "after": "4b45b5077f88e00298645cbdaf330b34fe8f2015a73fb0df9db07e56d3ef5f39"
+    },
+    {
+      "path": "lib/governance.js",
+      "before": "a23edc52a989f86cbfc12388addf9b51c9afd408ce42b2c5da43a4d2972873dc",
+      "after": "3c04ff8c76f3f2c2c8db25e8ec270b61c19f8bcd810ce94931dc787be5ce6aa9"
+    },
+    {
+      "path": "lib/grant-journal.js",
+      "before": "b606ef7331441cc55a6a2770a2257a1644d735910c9421df43783fa739000ff9",
+      "after": null
+    },
+    {
+      "path": "lib/index.js",
+      "before": "82c58dc149ed9ed155eef5753f754ce146da887f7a0269c73445b9fe34278b26",
+      "after": "23900c587eef1948d653948fe324d66334305e79e87c6f8b8610cce48cff208a"
+    },
+    {
+      "path": "lib/mcp-http.js",
+      "before": "c6fd2e75ac5686a604d85535ce1effc068af234336d3f52e6af465de625c9b35",
+      "after": "2384b009197dd597d9b90ee8603d93a53b89e5f3cc4603c1b36b9b7ce23142dc"
+    },
+    {
+      "path": "lib/mcp-provision.js",
+      "before": "0efb4a976a0a539687b41b9b926eab4721f2dedc8698bd84889bf125df4ae6f9",
+      "after": "8053193221032efddc03a04cada40f87190bc24ca9c3d2aa42342c5a0adf38a5"
+    },
+    {
+      "path": "lib/migration.js",
+      "before": "44939a9ba6c4f2f7ae13262a9b786c55372c37a903d45d7a0e18a799dc7a4876",
+      "after": null
+    },
+    {
+      "path": "lib/settings.js",
+      "before": "d628b6bf9fb2ae27ce21365e6adc8f5a5d8c2ef34e1fd898b90e772139eda760",
+      "after": null
+    },
+    {
+      "path": "lib/stores.js",
+      "before": "38258d5d8fab01a51a575adc4319e2943f047947537bcf25cf958e39b7b70ba7",
+      "after": "1275a740393516466a98e1412c8e1fd85fb0b87586844623af3c52dcb6b07bef"
+    },
+    {
+      "path": "lib/tools.js",
+      "before": "2582fe3528f5f8608bff17f1867296f3cbfe3b491d02492494d0c9a9eb543854",
+      "after": "c20f6d3be614049723e63646388d2c1ef9efc80e6c51c244bb3c0e2a68d3cb5e"
+    },
+    {
+      "path": "lib/version-status.js",
+      "before": "bbf9eb823b5688a39edf7d0a2fa91c4750523e881fe0071dd9f4beec4778eb10",
+      "after": null
+    },
+    {
+      "path": "lib/web.js",
+      "before": "4e0a464d3d2f98870fc1377e325b0c820abc4730f057c82045738fc06ff3ffb6",
+      "after": "1f4d574d18675a63be7a4f040f9edc13b93ef959a68ebf8233e5dd16876402b6"
+    },
+    {
+      "path": "package.json",
+      "before": "62d5e5f8d7bdfe369af71408834cb960f7c696641464e60ff445866c3f72977c",
+      "after": "e62665e4d24c06b944a7ba371d99e11a3b42bd7dbe71f5562c45fe3217ffc4af"
+    },
+    {
+      "path": "test/source-integrity.test.mjs",
+      "before": null,
+      "after": "5b733a2c7be01ee1f44cee2314a92766c72554f2ea47b38a3c58106231fb1051"
+    },
+    {
+      "path": "ui/index.html",
+      "before": "4338cebf00214af5f8abeaa63479e993a59cb4c03fcba4b38e45ca0ce7872909",
+      "after": "38dcc4f7379c778b6a855d32f568a255f2a552494ef32c161ab2b9911db3fcba"
+    }
+  ]
+}

@@ -14,6 +14,9 @@ jobs:
   desktop:
     runs-on: ci-node
     timeout-minutes: 45
+    env:
+      # Match upstream CI's shared-host budget for cases, hooks and polling.
+      DSH_COVERAGE_TEST_TIMEOUT_MS: '90000'
     container:
       image: ci-node:1.0.0
       volumes:
@@ -57,6 +60,7 @@ jobs:
           pnpm exec tsc --noEmit -p vendor/dsh-skills-manager/tsconfig.json
           pnpm exec vitest run --config vendor/dsh-agency-agents/vitest.config.ts
           node --test apps/product-desktop/tests/company-content.test.mjs
+          pnpm --filter dsh-mcp-connector test
           pnpm run typecheck
           pnpm run rescope-vendor:check
           pnpm run verify-package-dependencies

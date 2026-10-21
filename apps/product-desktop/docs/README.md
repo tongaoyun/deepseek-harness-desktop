@@ -29,6 +29,8 @@
 
 左侧“扩展能力”中的“专家套件”“技能”在主内容区展示预装社区插件的管理页，设置中的入口继续保留，两处共用页面和数据。页面切换不修改当前对话或草稿。
 
+“连接器”内的“MCP 连接器”复用预装 `dsh-mcp-connector`，支持市场、HTTP/stdio、JSON 配置与工具管理；“公司连接器”保留企业授权目录。启动不等待公共目录，打开市场后自动刷新；插件代码随桌面软件更新。
+
 | 能力 | 员工操作 | 任务行为 |
 |---|---|---|
 | 专家套件与技能 | 预装插件，在官方设置中管理 | 沿用官方 Agent、Skill Provider、工具与审批 |
@@ -62,6 +64,8 @@
 企业开发使用产品启动入口，其 home 和 Electron profile 与官方桌面分开。[本地启动说明](../README.md#local-development)定义入口和 profile 覆盖方式。凭据留在 Electron 主进程或服务端受控配置，不放进渲染进程变量或提交文件。
 
 Gitea 负责评审和 CI，GitHub 原生 runner 构建 Windows x64 与两种 Mac 架构，安装包发布到公开下载仓库及内网 Gitea。支持 `unsigned` 开发包、`internal` 免费内部更新和 `signed` 正式签名更新；具体区别见[构建入口](../README.md#native-updates)。[交付说明](delivery.md)维护流水线参数和恢复，[签名接入](signing.md)维护证书要求。公开构建仓库的源码及 Git 历史可公开读取。
+
+Gitea 的共享 Runner 使用与上游 CI 一致的 `DSH_COVERAGE_TEST_TIMEOUT_MS=90000`，同时约束测试、清理钩子和轮询；不重试失败测试，也不改变应用运行超时。
 
 服务端通过其 Gitea 流水线、Harbor、GitOps 和 Fleet 部署。构建成功、部署就绪和员工流程验收是独立结果。服务端 `docs/README.md` 索引 API、部署、领域和验收说明。协议迁移先部署服务端，再更新依赖新协议的桌面；[产品升级说明](../../../docs/upgrade-guide/v0.2.1-alpha.2/product-knowledge-library/guide.md)记录受影响行为。
 

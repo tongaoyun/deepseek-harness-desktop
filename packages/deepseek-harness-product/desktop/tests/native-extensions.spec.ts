@@ -13,10 +13,10 @@ function fixture(entries: object[] = []) {
   return { directory, installAnchor: new URL('../package.json', import.meta.url).pathname }
 }
 
-it('preinstalls agents and skills through official profile entries without product execution presets', () => {
+it('preinstalls experts, skills and the MCP connector through official profile entries without product execution presets', () => {
   const patch = nativeExtensionPatches(fixture())
   const entries = composeEntries([patch])
-  expect(entries.map(entry => entry.id)).toEqual(['agency-agents-remote', 'agency-agents', 'skills-manager'])
+  expect(entries.map(entry => entry.id)).toEqual(['product-mcp-storage', 'mcp-connector', 'agency-agents-remote', 'agency-agents', 'skills-manager'])
   expect(entries.every(entry => entry.name?.startsWith('file:'))).toBe(true)
 })
 
