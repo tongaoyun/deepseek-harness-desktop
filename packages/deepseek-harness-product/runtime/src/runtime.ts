@@ -1,7 +1,6 @@
 /** Enterprise connectors and task-scoped knowledge on public Harness extension points. */
 import { join } from 'node:path'
-import type { Context, Fiber } from '@deepseek-ai/cordis'
-import type { Agent } from '@deepseek-ai/dsh-agent'
+import type { Context } from '@deepseek-ai/cordis'
 import type { PresetDefinition } from '@deepseek-ai/dsh-agent-preset-registry'
 import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
 import * as McpClient from '@deepseek-ai/dsh-mcp-client'
@@ -50,59 +49,49 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
       return dispose
     },
   })
-  const connectorsByAgent = new Map<Agent, readonly Connector[]>()
-  const failures = new Map<Agent, unknown>()
-  const connectorFibers = new Map<Agent, Fiber>()
+  const connectors: Connector[] = []
+  let connectorFailure: unknown
   const lifetime = new AbortController()
-  ctx.effect(() => async () => {
-    lifetime.abort(new Error('Product runtime unloaded'))
-    await Promise.allSettled([...connectorFibers.values()].map(fiber => fiber.dispose()))
-    connectorFibers.clear()
-    connectorsByAgent.clear()
-    failures.clear()
-  }, 'product-runtime.agent-connectors')
-  installConnectorPolicy(ctx, connectorsByAgent, config.product)
-  ctx.on('agent/created', async ({ agent, signal }) => {
-    const operationSignal = AbortSignal.any([lifetime.signal, ...signal === undefined ? [] : [signal]])
-    const fiber = agent.ctx.plugin({ name: 'product-agent-connectors', async apply(owner: Context) {
-      const selected = parseConnectorCatalog(await config.product.invoke('connectors.list', undefined, operationSignal))
-      owner.effect(() => () => { connectorsByAgent.delete(agent); failures.delete(agent) }, 'product-agent-connectors.policy')
-      const connected = await Promise.all(selected.map(async (connector) => {
-        const child = owner.plugin({ name: McpClient.name, inject: McpClient.inject, apply: McpClient.apply }, connectorConfig(connector))
-        try { await child; return connector }
-        catch {
-          await child.dispose()
-          operationSignal.throwIfAborted()
-          owner.logger.warn(`Enterprise connector ${connector.id} could not start; its tools are unavailable for this conversation.`)
-          return undefined
-        }
-      }))
-      operationSignal.throwIfAborted()
-      const available = connected.filter(connector => connector !== undefined)
-      const unavailable = selected.filter(connector => !available.includes(connector))
-      connectorsByAgent.set(agent, available)
-      const versions = (connectors: readonly Connector[]) => connectors.map(({ id, version }) => ({ id, version }))
-      owner.effect(() => owner.systemPrompt.section({ name: 'enterprise-connectors', order: 450,
-        interpolate: false,
-        text: `Enterprise connector versions: ${JSON.stringify(versions(available))}`
-          + (unavailable.length === 0 ? '' : `\nUnavailable enterprise connectors: ${JSON.stringify(unavailable.map(({ id, name }) => ({ id, name })))}. Their tools could not connect. If a task needs them, explain the missing capability and ask the user to retry in a new conversation; do not claim their operations succeeded.`),
-      }), 'product-agent-connectors.versions')
-    } })
-    connectorFibers.set(agent, fiber)
-    try { await fiber }
-    catch (error) {
-      await fiber.dispose()
-      failures.set(agent, error)
-      agent.ctx.effect(() => () => { failures.delete(agent) }, 'product-agent-connectors.failure')
-    }
-    return undefined
-  })
-  ctx.on('agent/disposed', ({ agent }) => { connectorFibers.delete(agent); failures.delete(agent); connectorsByAgent.delete(agent) })
+  const abortConnectors = () => { lifetime.abort(new Error('Product runtime unloaded')) }
+  // Unload can interrupt apply while the initial catalog request is pending.
+  ctx.on('internal/plugin', (fiber) => {
+    if (fiber === ctx.fiber && fiber.uid === null) abortConnectors()
+  }, { global: true })
+  ctx.effect(() => abortConnectors, 'product-runtime.connectors')
+  installConnectorPolicy(ctx, connectors, config.product)
+  const fiber = ctx.plugin({ name: 'product-workspace-connectors', async apply(owner: Context) {
+    const selected = parseConnectorCatalog(await config.product.invoke('connectors.list', undefined, lifetime.signal))
+    const connected = await Promise.all(selected.map(async (connector) => {
+      const child = owner.plugin({ name: McpClient.name, inject: McpClient.inject, apply: McpClient.apply }, connectorConfig(connector))
+      try { await child; return connector }
+      catch {
+        await child.dispose()
+        lifetime.signal.throwIfAborted()
+        owner.logger.warn(`Enterprise connector ${connector.id} could not start; its tools are unavailable in this workspace.`)
+        return undefined
+      }
+    }))
+    lifetime.signal.throwIfAborted()
+    const available = connected.filter(connector => connector !== undefined)
+    const unavailable = selected.filter(connector => !available.includes(connector))
+    connectors.push(...available)
+    const versions = (entries: readonly Connector[]) => entries.map(({ id, version }) => ({ id, version }))
+    owner.effect(() => owner.systemPrompt.section({ name: 'enterprise-connectors', order: 450,
+      interpolate: false,
+      text: `Enterprise connector versions: ${JSON.stringify(versions(available))}`
+        + (unavailable.length === 0 ? '' : `\nUnavailable enterprise connectors: ${JSON.stringify(unavailable.map(({ id, name }) => ({ id, name })))}. Their tools could not connect. If a task needs them, explain the missing capability and ask the user to reload the workspace; do not claim their operations succeeded.`),
+    }), 'product-workspace-connectors.versions')
+  } })
+  try { await fiber }
+  catch (error) {
+    await fiber.dispose()
+    lifetime.signal.throwIfAborted()
+    connectorFailure = error
+  }
   ctx.on('agent-preset/resolve-selection', async (agent, _requested, next) => tasks.resolveSelection(agent.session.id, await next()))
   ctx.on('agent/pre-step', async ({ agent, signal }, next) => {
-    const failure = failures.get(agent)
-    if (failure !== undefined) throw new ProductError('CONNECTOR_STARTUP_FAILED',
-      'Enterprise connector catalog could not load. Check your login and product service, then retry in a new conversation.', true, [], { cause: failure })
+    if (connectorFailure !== undefined) throw new ProductError('CONNECTOR_STARTUP_FAILED',
+      'Enterprise connector catalog could not load. Check your login and product service, then reload the workspace.', true, [], { cause: connectorFailure })
     await tasks.validate(ctx.agentPresets.composedPreset(agent.ctx), signal)
     return next()
   })
@@ -129,11 +118,10 @@ function connectorConfig(connector: Connector): McpClient.Config {
 
 function installConnectorPolicy(
   ctx: Context,
-  connectorsByAgent: ReadonlyMap<Agent, readonly Connector[]>,
+  connectors: readonly Connector[],
   product: Config['product'],
 ): void {
   ctx.on('tools/pre-execute', async (exec, next) => {
-    const connectors = exec.agent === undefined ? [] : connectorsByAgent.get(exec.agent) ?? []
     const policy = connectorToolPolicy(connectors, exec.name)
     if (policy === 'unrelated') return next()
     const connector = connectors.find(value => connectorToolPolicy([value], exec.name) !== 'unrelated')
@@ -144,7 +132,7 @@ function installConnectorPolicy(
       return { kind: 'deny' as const, reason: 'This connector authorization is unavailable.' }
     }
     if (current.version !== connector.version) return { kind: 'deny' as const,
-      reason: 'This connector configuration changed. Start a new task to use the updated connector.' }
+      reason: 'This connector configuration changed. Reload the workspace to use the updated connector.' }
     const livePolicy = connectorToolPolicy([current], exec.name)
     if (policy === 'undeclared' || livePolicy === 'undeclared' || livePolicy === 'unrelated') return { kind: 'deny' as const,
       reason: 'This connector tool is not declared in the enterprise catalog.' }
