@@ -59,7 +59,7 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
   }, { global: true })
   ctx.effect(() => abortConnectors, 'product-runtime.connectors')
   installConnectorPolicy(ctx, connectors, config.product)
-  const fiber = ctx.plugin({ name: 'product-workspace-connectors', async apply(owner: Context) {
+  const fiber = ctx.plugin({ name: 'product-connectors', async apply(owner: Context) {
     const selected = parseConnectorCatalog(await config.product.invoke('connectors.list', undefined, lifetime.signal))
     const connected = await Promise.all(selected.map(async (connector) => {
       const child = owner.plugin({ name: McpClient.name, inject: McpClient.inject, apply: McpClient.apply }, connectorConfig(connector))
@@ -67,7 +67,7 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
       catch {
         await child.dispose()
         lifetime.signal.throwIfAborted()
-        owner.logger.warn(`Enterprise connector ${connector.id} could not start; its tools are unavailable in this workspace.`)
+        owner.logger.warn(`Enterprise connector ${connector.id} could not start; its tools are unavailable until the product plugin reloads.`)
         return undefined
       }
     }))
@@ -79,8 +79,8 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
     owner.effect(() => owner.systemPrompt.section({ name: 'enterprise-connectors', order: 450,
       interpolate: false,
       text: `Enterprise connector versions: ${JSON.stringify(versions(available))}`
-        + (unavailable.length === 0 ? '' : `\nUnavailable enterprise connectors: ${JSON.stringify(unavailable.map(({ id, name }) => ({ id, name })))}. Their tools could not connect. If a task needs them, explain the missing capability and ask the user to reload the workspace; do not claim their operations succeeded.`),
-    }), 'product-workspace-connectors.versions')
+        + (unavailable.length === 0 ? '' : `\nUnavailable enterprise connectors: ${JSON.stringify(unavailable.map(({ id, name }) => ({ id, name })))}. Their tools could not connect. If a task needs them, explain the missing capability and ask the user to restart the desktop; do not claim their operations succeeded.`),
+    }), 'product-connectors.versions')
   } })
   try { await fiber }
   catch (error) {
@@ -91,7 +91,7 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
   ctx.on('agent-preset/resolve-selection', async (agent, _requested, next) => tasks.resolveSelection(agent.session.id, await next()))
   ctx.on('agent/pre-step', async ({ agent, signal }, next) => {
     if (connectorFailure !== undefined) throw new ProductError('CONNECTOR_STARTUP_FAILED',
-      'Enterprise connector catalog could not load. Check your login and product service, then reload the workspace.', true, [], { cause: connectorFailure })
+      'Enterprise connector catalog could not load. Check your login and product service, then restart the desktop.', true, [], { cause: connectorFailure })
     await tasks.validate(ctx.agentPresets.composedPreset(agent.ctx), signal)
     return next()
   })
@@ -132,7 +132,7 @@ function installConnectorPolicy(
       return { kind: 'deny' as const, reason: 'This connector authorization is unavailable.' }
     }
     if (current.version !== connector.version) return { kind: 'deny' as const,
-      reason: 'This connector configuration changed. Reload the workspace to use the updated connector.' }
+      reason: 'This connector configuration changed. Restart the desktop to use the updated connector.' }
     const livePolicy = connectorToolPolicy([current], exec.name)
     if (policy === 'undeclared' || livePolicy === 'undeclared' || livePolicy === 'unrelated') return { kind: 'deny' as const,
       reason: 'This connector tool is not declared in the enterprise catalog.' }
