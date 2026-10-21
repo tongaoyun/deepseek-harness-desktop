@@ -17,3 +17,7 @@
 ## 公司内容发布工具
 
 原 `apps/product-desktop/scripts/publish-company-content.mjs <目录> --check|--publish` 已移除，改用仓库内完整技能的 `scripts/publish-company-content.mjs`：`check <目录>`、`plan <目录> --out <计划>` 和 `publish <计划> --confirm <摘要>`。默认按本次资源增量合并，保留公司其他内容；修改已有资源先 export，并保留编辑来源摘要。不会继续保留可直接覆盖全目录的旧机器发布命令。Codex／Claude 从同一仓库安装或更新发布技能，无需构建桌面；接入说明见[公司内容](company-content.md#ai-publishing)。服务端接口和桌面同步协议不变。
+
+## 预装插件 1.2.9
+
+专家套件和技能插件基线更新到 1.2.9。技能的启用、导入和重新启用不再覆盖源文件调用权限；仅限用户调用的技能不会进入模型可用目录。非法调用声明继续阻断调用。公司内容同步、固定工作区加载及统一软件更新方式保留。
