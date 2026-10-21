@@ -71,8 +71,16 @@ describe('DeepSeekHarness connector contract', () => {
   it('mounts server-proxied authenticated connectors and skips unavailable entries', () => {
     expect(parseConnectorCatalog([remote({ status: 'unavailable', authMode: 'oauth' })])).toEqual([])
     expect(parseConnectorCatalog([remote({ tools: [] })])).toEqual([])
-    expect(parseConnectorCatalog([remote({ authMode: 'oauth' })]))
+    expect(parseConnectorCatalog([remote({ authMode: 'oauth', authorizationStatus: 'AUTHORIZED' })]))
       .toMatchObject([{ id: 'erp', authMode: 'oauth', url: 'https://erp.example/mcp' }])
+  })
+
+  it.each(['REQUIRED', 'PENDING', 'EXPIRED'])('skips OAuth accounts in %s without treating them as usable', (authorizationStatus) => {
+    expect(parseConnectorCatalog([remote({ authMode: 'oauth', authorizationStatus })])).toEqual([])
+  })
+
+  it('does not mount a ready catalog entry that is not executable', () => {
+    expect(parseConnectorCatalog([remote({ ready: false })])).toEqual([])
   })
 
   it('rejects unsupported connector authentication modes', () => {

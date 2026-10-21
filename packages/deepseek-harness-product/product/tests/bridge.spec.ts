@@ -25,6 +25,14 @@ function catalogTransport(catalog: Readonly<Record<string, readonly unknown[]>>)
   return (input) => {
     const url = requestUrl(input)
     const path = url.pathname.startsWith('/root/api/') ? url.pathname.slice('/root'.length) : url.pathname
+    const connector = /^\/api\/v1\/connectors\/([^/]+)\/configuration-template$/.exec(path)
+    if (connector) {
+      const data = catalog['/api/v1/connectors']?.find(entry => typeof entry === 'object' && entry !== null
+        && 'id' in entry && entry.id === decodeURIComponent(connector[1]!))
+      return Promise.resolve(data === undefined
+        ? Response.json({ success: false, errCode: 'CONNECTOR_NOT_FOUND' }, { status: 404 })
+        : Response.json({ success: true, data }))
+    }
     const data = catalog[path] ?? []
     return Promise.resolve(Response.json({ success: true, data, pageIndex: 1, pageSize: 100,
       totalCount: data.length, totalPages: data.length === 0 ? 0 : 1 }))
@@ -347,21 +355,45 @@ describe('DeepSeekHarnessProductBridge', () => {
     const connector = { id: 'erp', name: 'ERP', status: 'ready', authMode: 'none', transport: 'streamable-http',
       url: 'https://example.test/mcp', headers: {}, arguments: [], environment: {}, tools: [{ name: 'read', access: 'READ' }] }
     const enrich = vi.fn(async (value: unknown) => value)
+    const fetch = vi.fn(catalogTransport({ ...immutableCatalog, '/api/v1/connectors': [connector, { ...connector, id: 'stalled' }] }))
     const bridge = new DeepSeekHarnessProductBridge({
       serverUrl: 'https://deepseek-harness.test', sessionToken: 'employee-secret',
       initialSession: { authenticated: true, employeeId: 'employee-1' }, connectorRuntime: enrich,
-      fetch: catalogTransport({ ...immutableCatalog, '/api/v1/connectors': [connector, { ...connector, id: 'stalled' }] }),
+      fetch,
     })
     try {
       await expect(bridge.invokeRuntime('connectors.list', { ids: ['erp'] })).resolves.toEqual([expect.objectContaining({ id: 'erp' })])
       expect(enrich).toHaveBeenLastCalledWith([expect.objectContaining({ id: 'erp' })], expect.any(AbortSignal), true)
+      expect(fetch.mock.calls.map(([input]) => requestUrl(input).pathname)).toEqual(['/api/v1/connectors/erp/configuration-template'])
       await bridge.invoke('connectors.list')
       expect(enrich).toHaveBeenLastCalledWith(expect.any(Array), expect.any(AbortSignal), false)
       await bridge.readConnectorTransports(['erp'], new AbortController().signal)
       expect(enrich).toHaveBeenLastCalledWith([expect.objectContaining({ id: 'erp' })], expect.any(AbortSignal), false)
+      const reads = fetch.mock.calls.length
       await expect(bridge.invokeRuntime('connectors.list', { ids: [] })).resolves.toEqual([])
       await expect(bridge.invokeRuntime('connectors.list', { ids: 'erp' })).rejects.toThrow()
+      expect(fetch.mock.calls).toHaveLength(reads)
+      await expect(bridge.invokeRuntime('connectors.list', { ids: ['missing'] })).resolves.toEqual([])
     } finally { await bridge.dispose() }
+  })
+
+  it.each([
+    { status: 403, code: 'CONNECTOR_ACCESS_DENIED' },
+    { status: 503, code: 'EXTERNAL_SERVICE_ERROR' },
+  ])('does not treat a $status connector query failure as an empty directory', async ({ status, code }) => {
+    const bridge = new DeepSeekHarnessProductBridge({ serverUrl: 'https://deepseek-harness.test',
+      sessionToken: 'employee-session', initialSession: { authenticated: true, employeeId: 'employee-1' },
+      fetch: async () => Response.json({ success: false, errCode: code }, { status }) })
+    try { await expect(bridge.invokeRuntime('connectors.list', { ids: ['erp'] })).rejects.toMatchObject({ code }) }
+    finally { await bridge.dispose() }
+  })
+
+  it('rejects a connector detail returned for another resource', async () => {
+    const bridge = new DeepSeekHarnessProductBridge({ serverUrl: 'https://deepseek-harness.test',
+      sessionToken: 'employee-session', initialSession: { authenticated: true, employeeId: 'employee-1' },
+      fetch: async () => Response.json({ success: true, data: { id: 'unrelated' } }) })
+    try { await expect(bridge.invokeRuntime('connectors.list', { ids: ['erp'] })).rejects.toThrow() }
+    finally { await bridge.dispose() }
   })
 
   it('adds the employee bearer only to Host runtime connector metadata', async () => {

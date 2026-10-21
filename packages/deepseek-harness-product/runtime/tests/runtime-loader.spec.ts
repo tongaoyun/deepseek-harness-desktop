@@ -64,12 +64,14 @@ it('loads native skills with authorized MCP and exact knowledge scope, replays a
   const policyHit = { sourceId: 'source', knowledgeBaseId: 'policy', knowledgeBaseName: 'Policy',
     documentId: 'document', filename: 'Policy.md', locator: 'section-1', content: 'Recorded enterprise policy.', score: 0.9 }
   let connectorReady = true
+  let mcpAvailable = true
   let connectorVersion = '1.0.0'
   const relayCredential = 'private-relay-fixture'
   let readAccess = 'READ'
   const mcpCalls: string[] = []
   const server = createServer((request, response) => {
     void (async () => {
+      if (!mcpAvailable || request.url === '/broken') { response.writeHead(503).end(); return }
       if (request.headers.authorization !== relayCredential) { response.writeHead(401).end(); return }
       if (request.method !== 'POST') { response.writeHead(405).end(); return }
       const chunks: Buffer[] = []
@@ -93,7 +95,7 @@ it('loads native skills with authorized MCP and exact knowledge scope, replays a
   await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve))
   const address = server.address()
   if (address === null || typeof address === 'string') throw new Error('Fixture server has no port')
-  const connector = () => ({ id: 'erp', version: connectorVersion, name: 'Orders', status: connectorReady ? 'ready' : 'unavailable', authMode: 'oauth',
+  const connector = () => ({ id: 'erp', version: connectorVersion, name: 'Orders', status: connectorReady ? 'ready' : 'unavailable', authMode: 'oauth', authorizationStatus: 'AUTHORIZED',
     timeoutSeconds: 120,
     transport: 'streamable-http', url: `http://127.0.0.1:${address.port}/mcp`, arguments: [], environment: {},
     headers: { Authorization: relayCredential }, tools: [{ name: 'orders_read', access: readAccess }, { name: 'orders_write', access: 'WRITE' }] })
@@ -112,7 +114,7 @@ it('loads native skills with authorized MCP and exact knowledge scope, replays a
       if (message.method === 'knowledge.bases.list' && knowledgePending) { pendingRequest = String(message.requestId); return true }
       if (message.method === 'knowledge.search' || message.method === 'knowledge.sources.read') retrieval.push(message.payload)
       queueMicrotask(() => emitMessage({ type: 'extension-result', requestId: message.requestId,
-        result: message.method === 'connectors.list' ? [connector()]
+        result: message.method === 'connectors.list' ? [connector(), { ...connector(), id: 'broken', name: 'Broken CRM', url: `http://127.0.0.1:${address.port}/broken` }]
           : message.method === 'knowledge.bases.list' ? [{ id: 'policy' }]
             : message.method === 'knowledge.search' ? [policyHit] : message.method === 'knowledge.sources.read' ? policyHit : [],
       }))
@@ -190,6 +192,7 @@ it('loads native skills with authorized MCP and exact knowledge scope, replays a
   }
   const handle = await create('native-session')
   expect(ctx.tools.schemas(handle.agent).map(tool => tool.name)).toContain(ordersRead)
+  expect(ctx.tools.schemas(handle.agent).map(tool => tool.name)).not.toContain(publicToolName(connectorServerName('broken'), 'orders_read'))
   handle.agent.followup(createUserMessage({ content: [{ type: 'text', text: 'Find policy.' }], source: { kind: 'user' } }))
   await vi.waitFor(() => { expect(handle.agent.session.snapshotEvents().some(event => event.type === 'turn/end')).toBe(true) }, { timeout: 10000 })
   const events = handle.agent.session.snapshotEvents()
@@ -205,6 +208,8 @@ it('loads native skills with authorized MCP and exact knowledge scope, replays a
   expect(events.filter(event => event.type === 'tool/result').every(event => !event.data.message.isError)).toBe(true)
   expect(mcpCalls).toEqual(['orders_read'])
   const firstInput = JSON.stringify(adapter.requests[0]?.messages)
+  expect(firstInput).toContain('Unavailable enterprise connectors:')
+  expect(firstInput).toContain('Broken CRM')
   const loadedSkill = adapter.requests[1]?.messages.flatMap(message => message.content)
     .find(block => block.type === 'text' && block.text.startsWith('<skill_content name='))
   expect(loadedSkill?.type).toBe('text')
@@ -241,6 +246,16 @@ it('loads native skills with authorized MCP and exact knowledge scope, replays a
   await ctx.tools.execute({ agent: restored.agent, name: ordersRead, arguments: {}, callId: ToolCallId('restored-write'), signal: new AbortController().signal })
   expect(decisions.at(-1)).toBe('ask')
   expect(mcpCalls).toEqual(['orders_read'])
+  mcpAvailable = false
+  const offline = await create('offline-connectors')
+  expect(ctx.tools.schemas(offline.agent).map(tool => tool.name)).not.toContain(ordersRead)
+  offline.agent.followup(createUserMessage({ content: [{ type: 'text', text: 'Explain a policy without ERP.' }], source: { kind: 'user' } }))
+  await vi.waitFor(() => { expect(offline.agent.session.snapshotEvents().some(event => event.type === 'turn/end')).toBe(true) }, { timeout: 10000 })
+  expect(JSON.stringify(adapter.requests.at(-1)?.messages)).toContain('Unavailable enterprise connectors:')
+  expect(JSON.stringify(offline.agent.session.snapshotEvents())).toContain('Recorded policy retrieved.')
+  expect(JSON.stringify(offline.agent.session.snapshotEvents())).not.toContain(relayCredential)
+  await offline.dispose()
+  mcpAvailable = true
   knowledgePending = true
   const cancelledRequest = request(2, 'tasks.capabilities.prepare', { knowledgeBaseIds: ['policy'] })
   await vi.waitFor(() => { expect(pendingRequest).toBeDefined() })

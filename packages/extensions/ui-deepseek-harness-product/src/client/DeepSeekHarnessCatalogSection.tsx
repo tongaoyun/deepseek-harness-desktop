@@ -7,7 +7,7 @@ import { NS, type DeepSeekHarnessProductKey } from '../locales.ts'
 import css from '../DeepSeekHarnessProduct.module.css'
 import { productApi, type ProductApi } from './product-api.ts'
 import { productErrorMessage } from './product-errors.ts'
-import { type Catalog, type ProductItem, type ProductDetail, type DeepSeekHarnessCatalogActions, METHODS, DESCRIPTION_KEYS, ICONS, AUTHORIZATION_TIMEOUT_MS, nextProductRequestId, items, normalizedSearch, localizedCategory, itemMetadata, localDetail, ConnectorStatus, isConnectorConnected } from './catalog-shared.tsx'
+import { type Catalog, type ProductItem, type ProductDetail, type DeepSeekHarnessCatalogActions, METHODS, DESCRIPTION_KEYS, ICONS, AUTHORIZATION_TIMEOUT_MS, nextProductRequestId, items, normalizedSearch, localizedCategory, itemMetadata, localDetail, ConnectorStatus, isConnectorConfigured } from './catalog-shared.tsx'
 import { ConnectorDetailModal } from './ConnectorView.tsx'
 import { ConnectorEditor } from './ConnectorEditor.tsx'
 import { ResourceActionsMenu } from './ResourceActionsMenu.tsx'
@@ -36,7 +36,7 @@ export function DeepSeekHarnessCatalogSection(props: CatalogSectionProps): React
   const [error, setError] = useState<string>()
   const [query, setQuery] = useState('')
   const [categoryFilter, setCategoryFilter] = useState('all')
-  const [connectorFilter, setConnectorFilter] = useState<'all' | 'connected'>('all')
+  const [connectorFilter, setConnectorFilter] = useState<'all' | 'configured'>('all')
   const [categoryMenuOpen, setCategoryMenuOpen] = useState(false)
   const [mine, setMine] = useState(false)
   const [selectedId, setSelectedId] = useState<string>()
@@ -194,10 +194,10 @@ export function DeepSeekHarnessCatalogSection(props: CatalogSectionProps): React
 
 
   const filteredEntries = useMemo(() => entries.filter(entry =>
-    (!mine || entry.canEdit === true) && (connectorFilter !== 'connected' || isConnectorConnected(entry))
+    (!mine || entry.canEdit === true) && (connectorFilter !== 'configured' || isConnectorConfigured(entry))
     && (categoryFilter === 'all' || entry.category === categoryFilter)
     && normalizedSearch(entry).includes(query.trim().toLowerCase())), [entries, mine, connectorFilter, categoryFilter, query])
-  const connectedCount = entries.filter(isConnectorConnected).length
+  const configuredCount = entries.filter(isConnectorConfigured).length
   const groupedEntries = [...Map.groupBy(filteredEntries, entry => entry.category === undefined ? t('otherConnectors') : localizedCategory(entry.category, t))]
   const categories = [...new Set(entries.map(entry => entry.category ?? 'other'))].sort()
   const closeDetail = () => { cancelReads(); setSelectedId(undefined); setSelected(undefined); setDetailError(false) }
@@ -265,21 +265,21 @@ export function DeepSeekHarnessCatalogSection(props: CatalogSectionProps): React
       </header>
       {!authRequired && error === undefined && <div className={css.catalogTabs}
         role="tablist" aria-label={t('connectorFilter')}>
-        {(['all', 'connected', 'mine'] as const).map((id, index, tabs) => <button key={id} type="button" role="tab"
+        {(['all', 'configured', 'mine'] as const).map((id, index, tabs) => <button key={id} type="button" role="tab"
           id={`product-connectors-tab-${id}`} aria-selected={mine ? id === 'mine' : connectorFilter === id}
           aria-controls="deepseek-harness-catalog-results" tabIndex={(mine ? id === 'mine' : connectorFilter === id) ? 0 : -1}
-          onClick={() => { setMine(id === 'mine'); setConnectorFilter(id === 'connected' ? 'connected' : 'all') }} onKeyDown={(event) => {
+          onClick={() => { setMine(id === 'mine'); setConnectorFilter(id === 'configured' ? 'configured' : 'all') }} onKeyDown={(event) => {
             const next = event.key === 'Home' ? 'all' : event.key === 'End' ? 'mine'
               : event.key === 'ArrowLeft' ? tabs[(index + tabs.length - 1) % tabs.length]
                 : event.key === 'ArrowRight' ? tabs[(index + 1) % tabs.length] : undefined
             if (next === undefined) return
             event.preventDefault()
             setMine(next === 'mine')
-            setConnectorFilter(next === 'connected' ? 'connected' : 'all')
+            setConnectorFilter(next === 'configured' ? 'configured' : 'all')
             event.currentTarget.parentElement?.querySelector<HTMLButtonElement>(`#product-connectors-tab-${next}`)?.focus()
           }}>
-          {t(id === 'all' ? 'connectorFilterAll' : id === 'mine' ? 'mineExtensions' : 'connectorFilterConnected')}
-          {id === 'connected' && <span className={css.tabCount}>{connectedCount}</span>}
+          {t(id === 'all' ? 'connectorFilterAll' : id === 'mine' ? 'mineExtensions' : 'connectorFilterConfigured')}
+          {id === 'configured' && <span className={css.tabCount}>{configuredCount}</span>}
         </button>)}
       </div>}
       {!authRequired && <div className={css.catalogToolbar}>
@@ -298,7 +298,7 @@ export function DeepSeekHarnessCatalogSection(props: CatalogSectionProps): React
       {loading && <p role="status">{t('loading')}</p>}
       {!loading && !authRequired && !error && <div id="deepseek-harness-catalog-results" role="tabpanel"
         aria-labelledby={`product-connectors-tab-${mine ? 'mine' : connectorFilter}`}>
-        {filteredEntries.length === 0 && <p className={css.catalogStatus}>{t(query ? 'noSearchResults' : connectorFilter === 'connected' ? 'noConnectedConnectors' : 'empty')}</p>}
+        {filteredEntries.length === 0 && <p className={css.catalogStatus}>{t(query ? 'noSearchResults' : connectorFilter === 'configured' ? 'noConfiguredConnectors' : 'empty')}</p>}
         {groupedEntries.map(([group, rows]) => <section className={css.catalogGroup} aria-label={group} key={group}>
           <h2 className={css.groupTitle}>{group}<span>{rows.length}</span></h2>
           <ul className={css.catalogGrid} data-catalog="connectors">

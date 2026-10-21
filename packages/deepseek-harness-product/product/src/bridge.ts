@@ -300,17 +300,24 @@ export class DeepSeekHarnessProductBridge {
 
   private readRuntimeConnectors(payload: unknown, signal: AbortSignal | undefined, discoverTools: boolean): Promise<unknown> {
     return this.withEmployeeSession(signal, async (lifetime) => {
-      const value = await this.catalog.read('connectors.list', lifetime)
-      lifetime.throwIfAborted()
       const api = this.api
       const sessionToken = this.sessionToken
-      if (api === undefined || sessionToken === undefined || !Array.isArray(value)) {
+      if (api === undefined || sessionToken === undefined) {
         throw new Error('deepseek-harness product: connector runtime requires an employee session')
       }
       const input = assertProductPayload(payload)
       const ids = input.ids === undefined ? undefined : z.array(z.string().regex(/^[A-Za-z0-9._-]{1,128}$/)).max(1000).parse(input.ids)
-      const entries: readonly unknown[] = value
-      const selected = ids === undefined ? entries : entries.filter(entry => typeof entry === 'object' && entry !== null && 'id' in entry && ids.includes(String(entry.id)))
+      const selected = ids === undefined ? await this.catalog.read('connectors.list', lifetime)
+        : (await Promise.all([...new Set(ids)].map(async (id) => {
+          try { return z.looseObject({ id: z.literal(id) }).parse(await api.request(`/api/v1/connectors/${encodeURIComponent(id)}/configuration-template`, { signal: lifetime })) }
+          catch (error) {
+            if (error instanceof DeepSeekHarnessApiError && error.status === 404
+              && ['CONNECTOR_NOT_FOUND', 'CONNECTOR_RELEASE_NOT_FOUND'].includes(error.code)) return undefined
+            throw error
+          }
+        }))).filter(entry => entry !== undefined)
+      lifetime.throwIfAborted()
+      if (!Array.isArray(selected)) throw new Error('deepseek-harness product: invalid connector catalog')
       const runtime = selected.map(entry => runtimeConnector(entry, api, sessionToken))
       return this.connectorRuntime ? this.connectorRuntime(runtime, lifetime, discoverTools) : runtime
     })

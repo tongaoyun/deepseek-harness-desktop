@@ -179,6 +179,7 @@ function isCatalogMethod(method: ProductMethod): method is CatalogMethod {
 function catalogEntry(method: CatalogMethod, value: unknown): unknown {
   if (method !== 'connectors.list' || typeof value !== 'object' || value === null || Array.isArray(value)) return value
   const record = value as Record<string, unknown>
-  return { ...record, availabilityStatus: record.authorizationStatus !== 'AUTHORIZED'
-    ? 'AUTHORIZATION_REQUIRED' : record.ready === true ? 'AVAILABLE' : 'UNAVAILABLE' }
+  return { ...record, availabilityStatus: record.status !== 'ready' ? 'UNAVAILABLE'
+    : record.authMode === 'oauth' && record.authorizationStatus !== 'AUTHORIZED' ? 'AUTHORIZATION_REQUIRED'
+      : record.ready === true ? 'AVAILABLE' : 'UNAVAILABLE' }
 }

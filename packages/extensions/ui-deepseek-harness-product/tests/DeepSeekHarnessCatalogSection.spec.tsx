@@ -68,7 +68,7 @@ describe('DeepSeekHarness capability navigation', () => {
     })
     installProductApi({ invoke })
     render(<ConnectorsPanel t={t} {...actions()} />)
-    await screen.findByRole('button', { name: shared.name, exact: true })
+    await screen.findByRole('button', { name: new RegExp(shared.name) })
     fireEvent.click(screen.getByRole('button', { name: zh.addExtension }))
     fireEvent.change(screen.getByLabelText(zh.mcpServerName), { target: { value: 'My MCP' } })
     fireEvent.change(screen.getByLabelText(zh.mcpCommand), { target: { value: 'node server.js' } })
@@ -78,7 +78,7 @@ describe('DeepSeekHarness capability navigation', () => {
     expect(mine.getAttribute('aria-selected')).toBe('true')
     expect(screen.getByRole('tabpanel').getAttribute('aria-labelledby')).toBe(mine.id)
     fireEvent.click(screen.getByRole('tab', { name: zh.connectorFilterAll }))
-    expect(screen.getByRole('button', { name: shared.name, exact: true })).toBeTruthy()
+    expect(screen.getByRole('button', { name: new RegExp(shared.name) })).toBeTruthy()
   })
   it('configures private values for a shared connector without editing its resource or version', async () => {
     const entry = { id: 'shared-orders', name: '共享订单连接器', version: '1.0.0', visibility: 'COMPANY',
@@ -392,16 +392,16 @@ describe('DeepSeekHarness capability navigation', () => {
     expect(screen.queryByRole('alert')).toBeNull()
   })
 
-  it('presents connector business metadata while retaining operational details', async () => {
+  it('presents configured state and business tools without technical connection facts', async () => {
     const invoke = vi.fn(async (): Promise<unknown> => [
       { id: 'erp', name: 'erp-mcp', displayName: 'ERP 连接器', summary: '订单数据', category: 'industry-data',
-        status: 'ACTIVE', scope: 'COMPANY', transport: 'stdio', version: '0.4.0',
+        status: 'ready', scope: 'COMPANY', transport: 'stdio', version: '0.4.0',
         availabilityStatus: 'AVAILABLE',
         tools: [
           { name: 'orders_read', displayName: '查询订单', description: '读取订单', access: 'READ' },
           { name: 'orders_update', displayName: '更新订单', description: '修改订单', access: 'WRITE' },
         ], authMode: 'employee-bearer' },
-      { id: 'docs', name: '文档', summary: '企业文档', category: 'knowledge-documents', status: 'ACTIVE',
+      { id: 'docs', name: '文档', summary: '企业文档', category: 'knowledge-documents', status: 'ready',
         availabilityStatus: 'AVAILABLE', tools: [] },
     ])
     installProductApi({
@@ -415,7 +415,7 @@ describe('DeepSeekHarness capability navigation', () => {
     expect(screen.getByText(zh.allCategories)).not.toBeNull()
     const results = document.querySelector('#deepseek-harness-catalog-results')
     expect(results).not.toBeNull()
-    expect(results?.textContent?.match(new RegExp(zh.connectorConnected, 'gu'))).toHaveLength(2)
+    expect(results?.textContent?.match(new RegExp(zh.connectorConfigured, 'gu'))).toHaveLength(2)
     expect(screen.getByText(zh.readCapabilityShort.replace('{count}', '1'))).not.toBeNull()
     expect(screen.getByText(zh.writeCapabilityShort.replace('{count}', '1'))).not.toBeNull()
     expect(screen.queryByText(zh.scopeCompany)).toBeNull()
@@ -434,10 +434,10 @@ describe('DeepSeekHarness capability navigation', () => {
     expect(await screen.findByText(zh.connectorTools)).not.toBeNull()
     expect(screen.getByText(zh.readCapabilityCount.replace('{count}', '1'))).not.toBeNull()
     expect(screen.getByText(zh.writeCapabilityCount.replace('{count}', '1'))).not.toBeNull()
-    expect(screen.getByText(zh.scopeCompany)).not.toBeNull()
+    expect(screen.queryByText(zh.scopeCompany)).toBeNull()
     const capability = screen.getByText(zh.viewConnectorTools.replace('{count}', '2')).closest('details')
     expect(screen.queryByText('高级信息')).toBeNull()
-    expect(screen.getByText(zh.transportStdio).closest('details')).toBeNull()
+    expect(screen.queryByText(zh.transportStdio)).toBeNull()
     expect(capability?.open).toBe(false)
     fireEvent.click(screen.getByText(zh.viewConnectorTools.replace('{count}', '2')))
     expect(capability?.open).toBe(true)
@@ -445,7 +445,7 @@ describe('DeepSeekHarness capability navigation', () => {
     expect(screen.getByText(zh.readOnlyLabel)).not.toBeNull()
     expect(screen.getByText(zh.writeLabel)).not.toBeNull()
     expect(screen.queryByText('orders_read')).toBeNull()
-    expect(screen.getByText(zh.transportStdio)).not.toBeNull()
+    expect(screen.queryByText(zh.transportStdio)).toBeNull()
   })
 
   it('refreshes the catalog after a managed connector is authorized', async () => {
@@ -512,7 +512,7 @@ describe('DeepSeekHarness capability navigation', () => {
     render(<ConnectorsPanel t={t} {...actions()} />)
     fireEvent.click(await screen.findByRole('button', { name: /ERP 连接器/ }))
 
-    expect(within(screen.getByRole('dialog')).getByText(zh.statusExpired)).not.toBeNull()
+    expect(within(screen.getByRole('dialog')).getByText(zh.connectorAccountExpired)).not.toBeNull()
     expect(screen.getByRole('button', { name: zh.reauthorize })).not.toBeNull()
   })
 

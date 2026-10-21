@@ -83,11 +83,6 @@
 .connectorSection { padding: 16px 0; border-top: 0.5px solid var(--dsw-alias-border-l2); }
 .connectorSection h2 { margin: 0 0 12px; font-size: 13px; line-height: 20px; font-weight: 600; }
 .connectorConnection { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 14px 24px; }
-.connectorFacts { display: flex; flex-wrap: wrap; gap: 12px 24px; margin: 0; font-size: 12px; line-height: 18px; }
-.connectorFacts > div { display: grid; gap: 4px; min-width: 0; }
-.connectorFacts dt { color: var(--dsw-alias-label-tertiary); }
-.connectorFacts dd { margin: 0; color: var(--dsw-alias-label-primary); font-size: 13px; line-height: 20px; overflow-wrap: anywhere; }
-.connectorFacts dd[data-available='true'] { color: var(--dsw-alias-state-success-primary); }
 .connectorSection .detailActions { flex-wrap: wrap; }
 .connectorSection .detailDisclosure { margin-top: 0; border: 0; }
 .connectorSection .detailDisclosure > summary { min-height: 36px; padding: 0; font-size: 13px; }
