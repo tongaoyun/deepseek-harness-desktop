@@ -1,4 +1,4 @@
-/** Employee-scoped product catalogs and display-only availability estimates. */
+/** Employee-scoped product catalogs. */
 
 import type { DeepSeekHarnessApiClient } from './http-client.ts'
 import type {
@@ -14,7 +14,7 @@ const CATALOG_ROUTES = {
 } as const satisfies Partial<Record<ProductMethod, string>>
 type CatalogMethod = keyof typeof CATALOG_ROUTES
 
-/** Employee identity, transport, and display version owned by Electron main. */
+/** Employee identity and transport owned by Electron main. */
 export interface ProductCatalogManagerOptions {
   readonly api?: DeepSeekHarnessApiClient | undefined
   readonly getSession: () => ProductSession
@@ -57,7 +57,7 @@ export class ProductCatalogManager {
     return refresh
   }
 
-  /** Read a catalog with display availability estimates; knowledge always queries the server.
+  /** Read a catalog; knowledge always queries the server.
    * @param method - Catalog operation.
    * @param signal - Optional cancellation for a fresh remote read.
    * @returns Complete employee-visible catalog.
@@ -76,7 +76,7 @@ export class ProductCatalogManager {
           this.snapshot.set(method, value)
           this.failures.delete(method)
         }
-        return value.map(entry => catalogEntry(method, entry))
+        return value
       } catch (error) {
         if (epoch === this.epoch && !this.closed && !signal?.aborted && revision === this.revisions.get(method)) {
           this.failures.set(method, error)
@@ -89,10 +89,7 @@ export class ProductCatalogManager {
       catch (error) { if (!this.snapshot.has(method)) throw this.failures.get(method) ?? error }
     }
     const value = this.snapshot.get(method) ?? []
-    if (!Array.isArray(value)) return value
-    return value.map(entry => catalogEntry(
-      method, entry,
-    ))
+    return value
   }
 
   /** Drop employee-scoped state when authentication identity changes. */
@@ -174,12 +171,4 @@ export class ProductCatalogManager {
 
 function isCatalogMethod(method: ProductMethod): method is CatalogMethod {
   return method in CATALOG_ROUTES
-}
-
-function catalogEntry(method: CatalogMethod, value: unknown): unknown {
-  if (method !== 'connectors.list' || typeof value !== 'object' || value === null || Array.isArray(value)) return value
-  const record = value as Record<string, unknown>
-  return { ...record, availabilityStatus: record.status !== 'ready' ? 'UNAVAILABLE'
-    : record.authMode === 'oauth' && record.authorizationStatus !== 'AUTHORIZED' ? 'AUTHORIZATION_REQUIRED'
-      : record.ready === true ? 'AVAILABLE' : 'UNAVAILABLE' }
 }

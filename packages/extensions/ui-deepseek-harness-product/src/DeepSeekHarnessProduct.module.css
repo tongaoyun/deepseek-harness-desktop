@@ -60,8 +60,8 @@
 .cardAction:disabled { opacity: 0.4; cursor: default; }
 .availabilityStatus { display: inline-flex; flex: 0 0 auto; align-items: center; gap: 3px; color: var(--dsw-alias-label-tertiary); font-size: 11px; line-height: 16px; }
 .availabilityStatus[data-status='AVAILABLE'] { color: var(--dsw-alias-state-success-primary); }
-.availabilityStatus[data-status='AUTHORIZATION_REQUIRED'], .availabilityStatus[data-status='EXPIRED'], .availabilityStatus[data-status='PREPARING'] { color: var(--dsw-alias-state-warn-primary); }
-.availabilityStatus[data-status='PREPARATION_FAILED'], .availabilityStatus[data-status='INCOMPATIBLE'], .availabilityStatus[data-status='UNAVAILABLE'] { color: var(--dsw-alias-state-error-primary); }
+.availabilityStatus[data-status='AUTHORIZATION_REQUIRED'], .availabilityStatus[data-status='EXPIRED'] { color: var(--dsw-alias-state-warn-primary); }
+.availabilityStatus[data-status='UNAVAILABLE'] { color: var(--dsw-alias-state-error-primary); }
 .catalogCard[data-catalog='connectors'] .cardBody { padding: 14px 16px 8px; }
 .catalogCard[data-catalog='connectors'] .cardFooter { min-height: 22px; padding-left: 64px; }
 .catalogCard[data-catalog='connectors'] .itemDescription { -webkit-line-clamp: 1; }

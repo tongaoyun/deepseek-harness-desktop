@@ -588,7 +588,7 @@ function rendererConnector(value: unknown): unknown {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) throw new Error('Invalid connector catalog entry')
   const record = value as Record<string, unknown>
   const metadata = ['id', 'name', 'displayName', 'summary', 'description', 'category', 'icon', 'author', 'version',
-    'status', 'ready', 'authMode', 'authorizationStatus', 'availabilityStatus', 'transport', 'minimumDesktopVersion',
+    'status', 'ready', 'authMode', 'authorizationStatus', 'transport', 'minimumDesktopVersion',
     'visibility', 'ownerEmployeeId', 'canEdit', 'canSubmit', 'canDelete', 'reviewStatus', 'configurationStatus', 'canConfigure', 'managed']
   const tools = Array.isArray(record.tools) ? record.tools.map((tool: Record<string, unknown>) =>
     Object.fromEntries(['name', 'displayName', 'description', 'access'].filter(key => key in tool).map(key => [key, tool[key]]))) : []

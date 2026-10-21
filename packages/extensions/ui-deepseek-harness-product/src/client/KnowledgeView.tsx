@@ -4,7 +4,7 @@ import { Button, IconSearchOutlineRegular } from '@deepseek-ai/dsh-client-ui-pri
 import type { PropsRenderFactories } from '@deepseek-ai/dsh-client-ui-slots'
 import type { DeepSeekHarnessProductKey } from '../locales.ts'
 import css from '../DeepSeekHarnessProduct.module.css'
-import { type ProductDetail, localizedMetadata } from './catalog-shared.tsx'
+import { type ProductDetail, knowledgeScopeLabel } from './catalog-shared.tsx'
 import { KnowledgeDocuments } from './KnowledgeDocuments.tsx'
 import { KnowledgeDocumentReader } from './KnowledgeDocumentReader.tsx'
 import { isKnowledgeAccessDenied, knowledgeSearchResults, useKnowledgeRequests, type KnowledgeSearchResult } from './knowledge-data.ts'
@@ -20,7 +20,7 @@ export function KnowledgeDetail({ product, renderFactorySlot, t }: PropsRenderFa
 }): ReactNode {
   const [tab, setTab] = useState<'materials' | 'search'>('materials')
   return <section className={css.knowledgeDetail}>
-    <p className={css.knowledgeOwnership}>{product.scope && localizedMetadata(product.scope, t)}
+    <p className={css.knowledgeOwnership}>{product.scope && knowledgeScopeLabel(product.scope, t)}
       {product.ownerName && <span>{product.ownerName}</span>}</p>
     <div className={css.catalogTabs} role="tablist" aria-label={t('knowledge')}>
       {(['materials', 'search'] as const).map((value, index) => <button key={value} type="button" role="tab"

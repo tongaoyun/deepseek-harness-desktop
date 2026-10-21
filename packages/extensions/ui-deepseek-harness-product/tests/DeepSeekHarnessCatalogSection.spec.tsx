@@ -392,17 +392,54 @@ describe('DeepSeekHarness capability navigation', () => {
     expect(screen.queryByRole('alert')).toBeNull()
   })
 
+  it('groups uncategorized and unknown connectors together under Other', async () => {
+    installProductApi({ invoke: async () => [
+      { id: 'missing', name: 'Uncategorized MCP' },
+      { id: 'custom', name: 'Custom MCP', category: 'unregistered' },
+      { id: 'other', name: 'Other MCP', category: 'other' },
+      { id: 'erp', name: 'ERP MCP', category: 'industry-data' },
+    ] })
+    render(<ConnectorsPanel t={t} {...actions()} />)
+    await screen.findByRole('button', { name: /Uncategorized MCP/ })
+    expect(screen.getAllByRole('region', { name: zh.categoryOther })).toHaveLength(1)
+    fireEvent.click(screen.getByRole('button', { name: zh.categoryFilter }))
+    expect(screen.getAllByRole('menuitem', { name: zh.categoryOther })).toHaveLength(1)
+    fireEvent.click(screen.getByRole('menuitem', { name: zh.categoryOther }))
+    for (const name of ['Uncategorized MCP', 'Custom MCP', 'Other MCP']) {
+      expect(screen.getByRole('button', { name: new RegExp(name) })).toBeTruthy()
+    }
+    expect(screen.queryByRole('button', { name: /ERP MCP/ })).toBeNull()
+  })
+
+  it('keeps All, Configured and Mine mutually exclusive during keyboard navigation', async () => {
+    installProductApi({ invoke: async () => [
+      { id: 'shared', name: 'Shared MCP', status: 'ready', ready: true, authMode: 'none' },
+      { id: 'personal', name: 'Personal MCP', status: 'needs-configuration', canEdit: true },
+    ] })
+    render(<ConnectorsPanel t={t} {...actions()} />)
+    await screen.findByRole('button', { name: /Shared MCP/ })
+    fireEvent.keyDown(screen.getByRole('tab', { name: zh.connectorFilterAll }), { key: 'End' })
+    expect(screen.getByRole('tab', { selected: true }).textContent).toBe(zh.mineExtensions)
+    expect(screen.queryByRole('button', { name: /Shared MCP/ })).toBeNull()
+    expect(screen.getByRole('button', { name: /Personal MCP/ })).toBeTruthy()
+    fireEvent.keyDown(screen.getByRole('tab', { selected: true }), { key: 'ArrowLeft' })
+    expect(screen.getByRole('button', { name: /Shared MCP/ })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: /Personal MCP/ })).toBeNull()
+    fireEvent.keyDown(screen.getByRole('tab', { selected: true }), { key: 'Home' })
+    expect(screen.getByRole('tab', { selected: true }).textContent).toBe(zh.connectorFilterAll)
+    expect(screen.getByRole('button', { name: /Personal MCP/ })).toBeTruthy()
+  })
+
   it('presents configured state and business tools without technical connection facts', async () => {
     const invoke = vi.fn(async (): Promise<unknown> => [
       { id: 'erp', name: 'erp-mcp', displayName: 'ERP 连接器', summary: '订单数据', category: 'industry-data',
         status: 'ready', scope: 'COMPANY', transport: 'stdio', version: '0.4.0',
-        availabilityStatus: 'AVAILABLE',
         tools: [
           { name: 'orders_read', displayName: '查询订单', description: '读取订单', access: 'READ' },
           { name: 'orders_update', displayName: '更新订单', description: '修改订单', access: 'WRITE' },
         ], authMode: 'employee-bearer' },
       { id: 'docs', name: '文档', summary: '企业文档', category: 'knowledge-documents', status: 'ready',
-        availabilityStatus: 'AVAILABLE', tools: [] },
+        tools: [] },
     ])
     installProductApi({
       getSession: vi.fn(async () => ({ authenticated: true })), invoke, cancel: vi.fn(),

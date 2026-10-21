@@ -1,5 +1,4 @@
 import type { ComponentType, ReactNode } from 'react'
-import { IconDatabaseOutlineRegular, IconLinkOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives'
 import { type DeepSeekHarnessProductKey } from '../locales.ts'
 import css from '../DeepSeekHarnessProduct.module.css'
 import type { ProductTaskCapabilities } from '@deepseek-harness/product/protocol'
@@ -42,7 +41,6 @@ export type ProductItem = {
   readonly managed?: boolean
   readonly ready?: boolean
   readonly authorizationStatus?: string
-  readonly availabilityStatus?: string
   readonly tools: readonly ConnectorTool[]
   readonly createdAt?: string
   readonly updatedAt?: string
@@ -80,30 +78,15 @@ export type ProductDetail = {
   readonly managed?: boolean
   readonly ready?: boolean
   readonly authorizationStatus?: string
-  readonly availabilityStatus?: string
   readonly tools: readonly ConnectorTool[]
   readonly createdAt?: string
   readonly updatedAt?: string
 }
 
-export type CategoryFilter = string
-
-export type ConnectorFilter = 'all' | 'connected'
-
 export const METHODS = {
   connectors: 'connectors.list',
   knowledge: 'knowledge.bases.list',
 } as const
-
-export const DESCRIPTION_KEYS: Record<Catalog, DeepSeekHarnessProductKey> = {
-  connectors: 'connectorsDescription',
-  knowledge: 'knowledgeDescription',
-}
-
-export const ICONS: Record<Catalog, ComponentType<{ readonly size?: number }>> = {
-  connectors: IconLinkOutlineRegular,
-  knowledge: IconDatabaseOutlineRegular,
-}
 
 export const CATEGORY_KEYS: Readonly<Record<string, DeepSeekHarnessProductKey>> = {
   'industry-data': 'categoryIndustryData',
@@ -148,11 +131,6 @@ export function text(record: Record<string, unknown>, key: string): string | und
   return typeof value === 'string' && value.trim() !== '' ? value : undefined
 }
 
-export function stringList(record: Record<string, unknown>, key: string): readonly string[] {
-  const value = record[key]
-  return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : []
-}
-
 export function connectorTools(value: unknown): readonly ConnectorTool[] {
   if (!Array.isArray(value)) return []
   return value.flatMap((entry) => {
@@ -180,7 +158,7 @@ export function items(value: unknown): readonly ProductItem[] {
       .find((candidate): candidate is string => typeof candidate === 'string' && candidate.trim() !== '')
     const authorizationStatus = text(record, 'authorizationStatus')
     const metadata = Object.fromEntries(
-      ['author', 'category', 'version', 'sha256', 'status', 'scope', 'companyId', 'ownerEmployeeId', 'ownerDepartmentId', 'ownerName', 'referenceKey', 'reference', 'transport', 'authMode', 'availabilityStatus', 'createdAt', 'updatedAt', 'visibility', 'reviewStatus'].flatMap((key) => {
+      ['author', 'category', 'version', 'sha256', 'status', 'scope', 'companyId', 'ownerEmployeeId', 'ownerDepartmentId', 'ownerName', 'referenceKey', 'reference', 'transport', 'authMode', 'createdAt', 'updatedAt', 'visibility', 'reviewStatus'].flatMap((key) => {
         const value = text(record, key)
         return value === undefined ? [] : [[key, value]]
       }),
@@ -199,19 +177,14 @@ export function items(value: unknown): readonly ProductItem[] {
   })
 }
 
-export function localizedMetadata(value: string, t: (key: DeepSeekHarnessProductKey) => string): string {
-  const keys: Record<string, DeepSeekHarnessProductKey> = {
-    ACTIVE: 'statusActive', READY: 'statusReady', ENABLED: 'statusEnabled', DISABLED: 'statusDisabled',
-    PUBLISHED: 'statusPublished', 'NEEDS-CONFIGURATION': 'statusNeedsConfiguration', UNAVAILABLE: 'statusUnavailable',
-    AUTHORIZED: 'statusAuthorized', REQUIRED: 'statusRequired', EXPIRED: 'statusExpired',
-    AVAILABLE: 'availabilityAvailable', PREPARING: 'availabilityPreparing',
-    AUTHORIZATION_REQUIRED: 'availabilityAuthorizationRequired', INCOMPATIBLE: 'availabilityIncompatible',
-    PREPARATION_FAILED: 'availabilityPreparationFailed',
-    PERSONAL: 'scopePersonal', DEPARTMENT: 'scopeDepartment', COMPANY: 'scopeCompany',
-    'STREAMABLE-HTTP': 'transportStreamableHttp', STDIO: 'transportStdio',
-    'EMPLOYEE-BEARER': 'authEmployeeBearer', OAUTH: 'authOauth', NONE: 'authNone',
-  }
-  const key = CATEGORY_KEYS[value.toLocaleLowerCase()] ?? keys[value.toUpperCase()]
+/** Localize an organization knowledge scope; unknown values remain visible for diagnostics.
+ * @param value - Server-owned knowledge scope.
+ * @param t - Product locale dictionary.
+ * @returns Personal, department, or company label.
+ */
+export function knowledgeScopeLabel(value: string, t: (key: DeepSeekHarnessProductKey) => string): string {
+  const keys: Record<string, DeepSeekHarnessProductKey> = { PERSONAL: 'scopePersonal', DEPARTMENT: 'scopeDepartment', COMPANY: 'scopeCompany' }
+  const key = keys[value]
   return key === undefined ? value : t(key)
 }
 
@@ -220,8 +193,7 @@ export function localizedCategory(value: string, t: (key: DeepSeekHarnessProduct
   return key === undefined ? t('categoryOther') : t(key)
 }
 
-export function itemMetadata(item: ProductItem, catalog: Catalog, t: (key: DeepSeekHarnessProductKey) => string): readonly string[] {
-  if (catalog === 'knowledge') return [item.ownerName ?? localizedMetadata(item.scope ?? '', t)]
+export function itemMetadata(item: ProductItem, t: (key: DeepSeekHarnessProductKey) => string): readonly string[] {
   const read = item.tools.filter(tool => tool.access === 'READ').length
   return [t('readCapabilityShort').replace('{count}', String(read)), t('writeCapabilityShort').replace('{count}', String(item.tools.length - read))]
 }
@@ -260,7 +232,6 @@ export function localDetail(item: ProductItem): ProductDetail {
     ...(item.managed === undefined ? {} : { managed: item.managed }),
     ...(item.ready === undefined ? {} : { ready: item.ready }),
     ...(item.authorizationStatus === undefined ? {} : { authorizationStatus: item.authorizationStatus }),
-    ...(item.availabilityStatus === undefined ? {} : { availabilityStatus: item.availabilityStatus }),
     tools: item.tools,
     ...(item.createdAt === undefined ? {} : { createdAt: item.createdAt }),
     ...(item.updatedAt === undefined ? {} : { updatedAt: item.updatedAt }),
@@ -324,8 +295,4 @@ export function DetailIdentity({ detail: product, icon: Icon, showVisibility = t
       </div>
     </div>
   </header>
-}
-
-export function Fact({ label, value }: { readonly label: string; readonly value: string }): ReactNode {
-  return <><dt>{label}</dt><dd>{value}</dd></>
 }

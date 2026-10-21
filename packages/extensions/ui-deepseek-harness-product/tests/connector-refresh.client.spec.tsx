@@ -39,7 +39,7 @@ it.each(['authorize', 'revoke', 'configure'] as const)('retries only status read
   expect((await screen.findByRole('alert')).textContent).toBe(zh.connectorRefreshFailed)
   expect(screen.queryByText(zh.authorizationFailed)).toBeNull()
   expect(screen.queryByRole('dialog', { name: zh.configureDevice })).toBeNull()
-  expect(screen.queryByText(zh.statusAuthorized)).toBeNull()
+  expect(screen.queryByText(zh.connectorConfigured)).toBeNull()
   const writeCount = invoke.mock.calls.length
   fireEvent.click(screen.getByRole('button', { name: zh.refresh }))
   await screen.findByRole('alert')
