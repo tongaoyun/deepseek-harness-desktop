@@ -15,7 +15,7 @@ export interface AgencyTeamsRemote {
   deleteTeam(id: string, expectedRevision: number): Promise<RemoteResult<TeamSnapshot>>
 }
 export interface AgencyCatalogRemote {
-  getCatalog(): Promise<RemoteResult<CatalogSnapshot>>
+  getCatalog(refreshCompany: boolean): Promise<RemoteResult<CatalogSnapshot>>
   getCustomExpert(slug: string): Promise<RemoteResult<CustomExpertInput>>
   saveCustomExpert(expert: CustomExpertInput, enabled: boolean, expectedRevision: number): Promise<RemoteResult<CatalogSnapshot>>
   deleteCustomExpert(slug: string, expectedRevision: number): Promise<RemoteResult<CatalogSnapshot>>

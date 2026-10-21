@@ -2,7 +2,8 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { mkdir, readFile, readdir, rename, rm, writeFile, lstat } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
-import { companyContentRelease, type CompanyContentRelease } from '@deepseek-harness/product/company-content'
+import { companyContentRelease, COMPANY_CONTENT_MAX_BYTES, type CompanyContentRelease } from '@deepseek-harness/product/company-content'
+import type { CompanyContentRoots } from '@deepseek-harness/product/protocol'
 
 async function privateDirectory(path: string): Promise<void> {
   try { await mkdir(path, { mode: 0o700 }) }
@@ -44,9 +45,10 @@ async function verifyCache(directory: string, release: CompanyContentRelease, si
  * @param employeeId - Authenticated employee, never supplied by a Renderer.
  * @param value - Authenticated server release.
  * @param signal - Startup cancellation.
- * @returns Plugin directories fixed for this Host lifetime.
+ * @returns Immutable plugin directories; a Session can retain them across updates.
  */
-export async function installCompanyContent(root: string, employeeId: string, value: unknown, signal: AbortSignal) {
+export async function installCompanyContent(root: string, employeeId: string, value: unknown,
+  signal: AbortSignal): Promise<CompanyContentRoots> {
   const release = companyContentRelease(value)
   signal.throwIfAborted()
   await privateDirectory(root)
@@ -83,7 +85,48 @@ export async function installCompanyContent(root: string, employeeId: string, va
     } finally { await rm(staging, { recursive: true, force: true }) }
   }
   signal.throwIfAborted()
-  return { skillsRoot: join(directory, 'skills'), expertsRoot: join(directory, 'experts'), version: release.version }
+  return { skillsRoot: join(directory, 'skills'), expertsRoot: join(directory, 'experts'), version: release.version, sha256: release.sha256 }
+}
+
+/** Restore and verify an immutable release without a remote request.
+ * @param root - Main-owned company cache.
+ * @param employeeId - Authenticated employee.
+ * @param version - Version recorded in the latest pointer or Session binding.
+ * @param sha256 - Canonical content digest recorded by main.
+ * @param signal - Owning lifecycle cancellation.
+ * @returns Verified directories; missing or damaged content fails without replacement.
+ */
+export async function restoreCompanyContent(root: string, employeeId: string, version: string, sha256: string,
+  signal: AbortSignal): Promise<CompanyContentRoots> {
+  if (!/^[a-f0-9]{64}$/u.test(sha256)) throw new Error('公司内容版本无效')
+  const employee = join(root, createHash('sha256').update(employeeId).digest('hex'))
+  await privateDirectory(root)
+  await privateDirectory(employee)
+  const directory = join(employee, sha256)
+  const files: Record<string, string> = {}
+  let bytes = 0, entries = 0
+  const walk = async (relative: string): Promise<void> => {
+    signal.throwIfAborted()
+    const path = join(directory, relative)
+    const info = await lstat(path)
+    if (info.isSymbolicLink()) throw new Error('公司内容缓存路径不安全')
+    if (info.isDirectory()) {
+      for (const child of await readdir(path)) {
+        if (++entries > 4096) throw new Error('公司内容缓存文件过多')
+        await walk(relative ? `${relative}/${child}` : child)
+      }
+    } else if (relative !== 'release.json') {
+      bytes += info.size
+      if (!info.isFile() || bytes > COMPANY_CONTENT_MAX_BYTES || relative.length > 240) throw new Error('公司内容缓存已损坏')
+      files[relative] = (await readFile(path, { signal })).toString('base64')
+    } else if (!info.isFile() || info.size > 512) throw new Error('公司内容缓存已损坏')
+  }
+  await walk('')
+  const release = version === '0' && Object.keys(files).length === 0 ? companyContentRelease(null)
+    : companyContentRelease({ version, sha256, files })
+  if (release.sha256 !== sha256) throw new Error('公司内容缓存已损坏')
+  await verifyCache(directory, release, signal)
+  return { version, sha256, skillsRoot: join(directory, 'skills'), expertsRoot: join(directory, 'experts') }
 }
 
 function hasCode(error: unknown, code: string): boolean {

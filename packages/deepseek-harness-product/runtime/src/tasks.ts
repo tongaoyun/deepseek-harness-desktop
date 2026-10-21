@@ -104,9 +104,13 @@ export async function createTaskCapabilities(ctx: Context, deps: TaskDependencie
   const needed = new Set<string>()
   for (const session of references) {
     if (session.header.agentPreset?.startsWith(prefix)) needed.add(session.header.agentPreset)
-    using observation = await ctx.sessionQuery.observeSession(session.header.id)
-    const selected = observation.projections?.values.agentPreset
-    if (typeof selected === 'string' && selected.startsWith(prefix)) needed.add(selected)
+    try {
+      using observation = await ctx.sessionQuery.observeSession(session.header.id)
+      const selected = observation.projections?.values.agentPreset
+      if (typeof selected === 'string' && selected.startsWith(prefix)) needed.add(selected)
+    } catch (error) {
+      ctx.logger.warn(`Task history ${session.header.id} cannot be inspected during restoration: ${String(error)}`)
+    }
   }
   if (needed.size > 0) {
     for (const id of needed) {

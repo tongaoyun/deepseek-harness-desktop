@@ -49,7 +49,7 @@ export const AGENCY_AGENTS_DESCRIPTORS = [
     id: `@michengai/dsh-agency-agents#agencyAgents/${method}`, service: 'agencyAgents', namespace: 'agencyAgents', method,
     invocation: { kind: 'direct' }, parameters, result: strictCodec('AgencyTeamsSnapshot', teamSnapshotSchema),
   })),
-  catalogMethod('getCatalog', []),
+  catalogMethod('getCatalog', [jsonParameter('refreshCompany', 'boolean', z.boolean())]),
   catalogMethod('saveCustomExpert', [
     jsonParameter('expert', 'CustomExpertInput', customExpertInputSchema),
     jsonParameter('enabled', 'boolean', z.boolean()),

@@ -134,12 +134,13 @@ export class DeepSeekHarnessProductBridge {
   }
 
   /** Read company-owned native content in main, keeping employee authentication private.
+   * @param signal - Lifecycle cancellation for the shared main-process refresh.
    * @returns Current validated release payload, or null when no content is published.
    */
-  async loadCompanyContent(): Promise<unknown> {
+  async loadCompanyContent(signal?: AbortSignal): Promise<unknown> {
     if (this.api === undefined) throw new Error('Product server is unavailable')
     const api = this.api
-    return this.withEmployeeSession(undefined, signal => api.request<unknown>('/api/v1/company-content', { signal }))
+    return this.withEmployeeSession(signal, signal => api.request<unknown>('/api/v1/company-content', { signal }))
   }
 
   /** Replace the current session and persist the opaque token outside the Renderer.

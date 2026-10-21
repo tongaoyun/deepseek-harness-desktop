@@ -30,6 +30,7 @@ import { localizeTeam } from './team-content-en.js'
  */
 
 import type { Context } from '@deepseek-ai/cordis'
+import type { CompanyContentSource } from '@deepseek-harness/product/protocol'
 import { resolveTeamEngine, dispatchNativeTeam, blocksNativeDelegation } from './team-engine.js'
 import z from '@deepseek-ai/schemastery'
 import { defineTool } from '@deepseek-ai/dsh-tools'
@@ -382,7 +383,7 @@ export async function readLocalizedExpertPrompt(
 }
 
 export interface AgencyPersonaSource {
-  getPrompt(slug: string, division: string, locale: LocaleId): Promise<{ prompt: string }>
+  getPrompt(slug: string, division: string, locale: LocaleId, sessionId?: string, signal?: AbortSignal): Promise<{ prompt: string }>
 }
 
 // 路径仅留在 Host，不随名册摘要发送给客户端。
@@ -541,26 +542,12 @@ export function apply(ctx: Context, config: Config): void {
   const activeLocale = createHostLocaleReader(ctx)
   const teamTx = (key: string, values?: readonly unknown[]) => teamText(activeLocale(), key, values)
   const catalogRoot = resolveCatalogRoot(config.root)
-  const basePersonaSource = createAgencyPersonaSource(catalogRoot, config.divisions, async () => { await ensureReady(); return experts; })
+  const companySource = ctx.get('companyContent') as CompanyContentSource | undefined
+  const basePersonaSource = createAgencyPersonaSource(catalogRoot, config.divisions)
   let experts = new Map<string, Expert>()
-  let companyExperts = new Map<string, Expert>()
-  let companyDivisions: string[] = []
-  const companyRoot = process.env.DSH_COMPANY_EXPERTS_ROOT
+  const companyCatalogs = new Map<string, Promise<{ experts: Map<string, Expert>; divisions: string[] }>>()
   let loadError: string | null = null
-  const ready = Promise.all([
-    loadCatalog(catalogRoot, config.divisions, activeLocale()),
-    companyRoot ? readdir(companyRoot, { withFileTypes: true }).then(async entries => {
-      companyDivisions = entries.filter(entry => entry.isDirectory()).map(entry => entry.name).sort()
-      return companyDivisions.length ? loadCatalog(companyRoot, companyDivisions, activeLocale()) : new Map<string, Expert>()
-    }) : Promise.resolve(new Map<string, Expert>()),
-  ]).then(([base, company]) => {
-    for (const [slug, expert] of company) {
-      if (base.has(slug)) throw new Error(`Company expert ID conflicts with bundled content: ${slug}`)
-      company.set(slug, { ...expert, company: true })
-    }
-    companyExperts = company
-    experts = new Map([...base, ...company])
-  })
+  const ready = loadCatalog(catalogRoot, config.divisions, activeLocale()).then(base => { experts = base })
     .catch((error: unknown) => { loadError = String(error) })
 
   async function ensureReady(): Promise<void> {
@@ -568,12 +555,40 @@ export function apply(ctx: Context, config: Config): void {
     if (loadError !== null) throw new Error(formatHost(activeLocale(), 'error.catalogLoad', { detail: loadError }))
   }
 
-  let baseSummaries: Array<Expert & { custom: false }> | undefined
-  const library = createExpertLibrary(async () => {
+  const companyCatalog = (root: string) => {
+    let pending = companyCatalogs.get(root)
+    if (!pending) {
+      pending = readdir(root, { withFileTypes: true }).then(async entries => {
+        const divisions = entries.filter(entry => entry.isDirectory()).map(entry => entry.name).sort()
+        const company = divisions.length ? await loadCatalog(root, divisions, activeLocale()) : new Map<string, Expert>()
+        await ensureReady()
+        for (const [slug, expert] of company) {
+          if (experts.has(slug)) throw new Error(`Company expert ID conflicts with bundled content: ${slug}`)
+          company.set(slug, { ...expert, company: true })
+        }
+        return { experts: company, divisions }
+      })
+      companyCatalogs.set(root, pending)
+    }
+    return pending
+  }
+  const companyRoot = async (sessionId?: string, signal?: AbortSignal): Promise<string | undefined> => companySource
+    ? (await (sessionId === undefined ? companySource.read() : companySource.forSession(sessionId, signal))).expertsRoot
+    : process.env.DSH_COMPANY_EXPERTS_ROOT
+  const summaries = new Map<string, Array<Expert & { custom: false }>>()
+  const readSummaries = async (sessionId?: string, signal?: AbortSignal) => {
     await ensureReady()
-    baseSummaries ??= [...experts.values()].map(expert => ({ ...expert, custom: false }))
-    return baseSummaries
-  }, {
+    const root = await companyRoot(sessionId, signal)
+    const key = root ?? ''
+    let cached = summaries.get(key)
+    if (!cached) {
+      const company = root ? (await companyCatalog(root)).experts : new Map<string, Expert>()
+      cached = [...experts.values(), ...company.values()].map(expert => ({ ...expert, custom: false as const }))
+      summaries.set(key, cached)
+    }
+    return cached
+  }
+  const store: Parameters<typeof createExpertLibrary>[1] = {
     read: () => settingsSource(),
     revision: () => {
       const descriptor = ctx.settings.describe().find(item => item.ns === settingsNamespace)
@@ -581,7 +596,11 @@ export function apply(ctx: Context, config: Config): void {
       return descriptor.revision
     },
     mutate: (ops, revision) => ctx.settings.mutate(settingsNamespace, ops, revision),
-  }, [...new Set([...DEFAULT_DIVISIONS, ...config.divisions])], activeLocale)
+  }
+  const divisions = [...new Set([...DEFAULT_DIVISIONS, ...config.divisions])]
+  const library = createExpertLibrary(() => readSummaries(), store, divisions, activeLocale)
+  const catalogForSession = (sessionId?: string, signal?: AbortSignal) => sessionId === undefined ? library.catalog()
+    : createExpertLibrary(() => readSummaries(sessionId, signal), store, divisions, activeLocale).catalog()
   const teamLibrary = createTeamLibrary(() => library.catalog(), {
     read: () => settingsSource(),
     revision: () => {
@@ -624,14 +643,18 @@ export function apply(ctx: Context, config: Config): void {
   }
   // 闭包读取当前 source，避免 settings 服务替换时继续持有旧快照。
   const personaSource: AgencyPersonaSource = {
-    async getPrompt(slug, division, locale) {
+    async getPrompt(slug, division, locale, sessionId, signal) {
       await ensureReady()
       if (slug.startsWith('custom-') && settingsSource().customExperts?.some(item => item.slug === slug)) {
         const expert = await library.getCustom(slug)
         if (expert.division !== division) throw new Error(formatHost(locale, 'error.expertMissing', { query: slug }))
         return { prompt: expert.prompt }
       }
-      if (companyRoot && companyExperts.has(slug)) return readExpertPrompt(companyRoot, slug, division, companyDivisions)
+      const root = await companyRoot(sessionId, signal)
+      if (root) {
+        const company = await companyCatalog(root)
+        if (company.experts.has(slug)) return readExpertPrompt(root, slug, division, company.divisions)
+      }
       return basePersonaSource.getPrompt(slug, division, locale)
     },
   }
@@ -674,12 +697,12 @@ export function apply(ctx: Context, config: Config): void {
         return [{ type: 'text', text: renderExpertList(activeLocale(), args, { divisions, total: value.total as number }) }]
       },
     },
-    async execute(args) {
+    async execute(args, exec) {
       await ensureReady()
       const query = args.division === undefined ? '' : String(args.division).trim()
       const hasFilter = query !== ''
       const locale = activeLocale()
-      const catalog = await library.catalog()
+      const catalog = await catalogForSession(exec.agent?.id, exec.signal)
       const groups = groupByDivision(catalog.experts.filter(expert => !expert.conflict), hasFilter, locale)
       if (hasFilter) {
         const filtered = groups.filter((g) => matchDivision(query, g.division))
@@ -818,9 +841,9 @@ export function apply(ctx: Context, config: Config): void {
       if (!caps.toolFilter) throw new Error(formatHost(locale, 'error.providerNoToolFilter', { provider: config.provider }))
     }
     if (maxDepth !== undefined && !caps.depthLimit) throw new Error(formatHost(locale, 'error.providerNoMaxDepth', { provider: config.provider }))
-    const expert = resolveExpert((await library.catalog()).experts.filter(expert => !expert.conflict), query, locale)
+    const expert = resolveExpert((await catalogForSession(exec.agent.id, exec.signal)).experts.filter(expert => !expert.conflict), query, locale)
     if (!enabledSet().has(expert.slug)) throw new Error(formatHost(locale, 'error.expertDisabled', { name: localizedExpertName(expert, locale) }))
-    const { prompt: persona } = await personaSource.getPrompt(expert.slug, expert.division, locale)
+    const { prompt: persona } = await personaSource.getPrompt(expert.slug, expert.division, locale, exec.agent.id, exec.signal)
     const run = await startSubagentRun(config.provider, {
       label: localizedExpertName(expert, locale),
       prompt: [{ type: 'text', text: taskText }],
@@ -938,7 +961,7 @@ ctx.tools.register(localizeTeamTool(defineTool({ name: 'summon_expert_team', des
     parameters: { team: { type: 'string', required: true, description: teamTx("专家团稳定标识或完整名称。") }, task: { type: 'string', required: true, description: teamTx("目标、约束和文件路径。不要粘贴源码、CSS、HTML 或带引号的代码，否则工具参数会变成非法 JSON。最多{0}字。") } }, output: teamOutput,
     async execute(args, exec) {
         requireParent(exec);
-        const [snapshot, catalog] = await Promise.all([teamLibrary.snapshot(), library.catalog()]);
+        const [snapshot, catalog] = await Promise.all([teamLibrary.snapshot(), catalogForSession(exec.agent!.id, exec.signal)]);
         if (snapshot.revision !== catalog.revision)
             throw new Error(teamTx("名册已更新，请重新读取专家团。"));
         const team = snapshot.teams.map(t => localizeTeam(t, activeLocale())).find(t => t.id === args.team || t.name === args.team || snapshot.teams.find(original => original.id === t.id)?.name === args.team);
@@ -949,7 +972,7 @@ ctx.tools.register(localizeTeamTool(defineTool({ name: 'summon_expert_team', des
         if (engine.status.mode === 'native' && engine.service) {
             const result = await dispatchNativeTeam({ team, locale, experts: catalog.experts, enabled: catalog.enabled, task: String(args.task ?? ''), revision: snapshot.revision,
                 signal: exec.signal, agent: exec.agent!, service: engine.service, provider: config.provider,
-                readPersona: async (expert) => (await personaSource.getPrompt(expert.slug, expert.division, locale)).prompt });
+                readPersona: async (expert) => (await personaSource.getPrompt(expert.slug, expert.division, locale, exec.agent!.id, exec.signal)).prompt });
             return { report: JSON.stringify({ ...result, engine: engine.status }) };
         }
         const provider = ctx.subagents.getProvider(config.provider);
@@ -959,7 +982,7 @@ ctx.tools.register(localizeTeamTool(defineTool({ name: 'summon_expert_team', des
         if (!provider || (legacyTeamCaps && (!teamCaps?.persona || !teamCaps.toolFilter)) || (maxDepth !== undefined && !teamCaps?.depthLimit))
             throw new Error(teamTx("当前子代理服务不支持专家团所需的身份、工具过滤或深度限制。"));
         const result = await executeTeam({ team, locale, experts: catalog.experts, enabled: catalog.enabled, task: String(args.task ?? ''), revision: snapshot.revision, signal: exec.signal,
-            readPersona: async (expert) => (await personaSource.getPrompt(expert.slug, expert.division, locale)).prompt,
+            readPersona: async (expert) => (await personaSource.getPrompt(expert.slug, expert.division, locale, exec.agent!.id, exec.signal)).prompt,
             run: async (member: TeamMemberRun) => {
                 exec.signal?.throwIfAborted();
                 const run = await startSubagentRun(config.provider, { label: member.name, parent: exec.agent!,

@@ -60,6 +60,10 @@
   "devDependencies": {
     "@types/node": "^22.20.0",
     "electron": "^44.0.0",
-    "@deepseek-ai/dsh-config-editor": "workspace:*"
+    "@deepseek-ai/dsh-config-editor": "workspace:*",
+    "@deepseek-ai/dsh-agent": "workspace:*",
+    "@deepseek-ai/dsh-agent-loop": "workspace:*",
+    "@deepseek-ai/dsh-session-query-sqlite": "workspace:*",
+    "@deepseek-ai/dsh-session-projection": "workspace:*"
   }
 }

@@ -128,10 +128,10 @@ export function resolveAgentsHome() {
  * rank 与官方 filesystem provider 的用户级优先级衔接：DSH=400、Agents=500。
  * manager provider 以 450 接管公共 Agents（仍低于 DSH），其余来源依次排在其后。
  */
-export function userRoots(): SkillRoot[] {
+export function userRoots(companySkillsRoot = process.env.DSH_COMPANY_SKILLS_ROOT): SkillRoot[] {
   return rankSources([
-    ...process.env.DSH_COMPANY_SKILLS_ROOT ? [{
-      key: "company", path: process.env.DSH_COMPANY_SKILLS_ROOT, label: "公司技能",
+    ...companySkillsRoot ? [{
+      key: "company", path: companySkillsRoot, label: "公司技能",
       localeKey: "root.company", mutable: false, toggleable: true, native: false, rank: 550,
     }] : [],
     {
@@ -697,8 +697,8 @@ function rootDefinition(root: RootInput): SkillRoot | null {
   return userRoots().find((item) => resolve(item.path) === resolved) || null;
 }
 
-function rootByKey(key: string): SkillRoot | null | undefined {
-  return userRoots().find((item) => item.key === key) || null;
+function rootByKey(key: string, companySkillsRoot?: string): SkillRoot | null | undefined {
+  return userRoots(companySkillsRoot).find((item) => item.key === key) || null;
 }
 
 /** 只允许用户 DSH、Shared Agent，或由活动 Session 推导出的项目 DSH 根参与文件写入。 */
@@ -1424,7 +1424,7 @@ async function scanDeduplicatedRoots(roots: SkillRoot[] = userRoots(), options: 
 /** 详情与列表共享路径去重，扫描定位信息时不读取无关技能正文。 */
 async function visibleEntryForRoot(root: SkillRoot, name: string) {
   if (!validDiscoveryName(name)) return null;
-  const roots = root.scope === "project" ? [root] : userRoots();
+  const roots = root.scope === "project" ? [root] : userRoots(root.key === "company" ? root.path : undefined);
   const scans = await scanDeduplicatedRoots(roots, { metadataOnly: true });
   return (
     scans.get(root.key)?.entries.find((entry) => entry.name === name) || null
@@ -1731,7 +1731,7 @@ function invalidManagerStateWrite() {
 }
 
 export async function setSourceEnabled(key: string, enabled: boolean, log?: Log, options: ScopeOptions = {}) {
-  let root = rootByKey(key);
+  let root = rootByKey(key, options.companySkillsRoot);
   if (!root && PROJECT_ROOT_KEY_RE.test(key) && !key.startsWith("project-dsh:"))
     root = (await projectRoots(options.projectCwds)).find((item) => item.key === key);
   if (!root || root.kind === 'project-dsh' || !root.toggleable)
@@ -1752,6 +1752,8 @@ async function checkedPolicyRootDefinition(root: RootInput): Promise<SkillRoot |
   const definition = rootDefinition(root);
   if (!definition || !definition.toggleable) return null;
   if (definition.scope !== "project") {
+    // Company roots are resolved by Host, never accepted as client-supplied paths.
+    if (definition.key === "company" && definition.mutable === false) return definition;
     const canonical = rootByKey(definition.key);
     return canonical && resolve(canonical.path) === resolve(definition.path)
       ? canonical
@@ -1873,7 +1875,7 @@ function categoryError(code: string, error: string, params?: Record<string, unkn
 async function resolvedCategoryRoot(key: string, options: ScopeOptions = {}) {
   const rootKey = categoryRootKey(key);
   if (!rootKey) return null;
-  const user = rootByKey(rootKey);
+  const user = rootByKey(rootKey, options.companySkillsRoot);
   if (user) return user;
   if (!PROJECT_ROOT_KEY_RE.test(rootKey)) return null;
   return (await projectRoots(options.projectCwds)).find((item) => item.key === rootKey) || null;
@@ -3156,7 +3158,7 @@ export async function createSkill(input: CreateInput, log?: Log, options: Mutati
 
 export async function skillDetail(key: string, name: string, options: ScopeOptions & { workspaceBound?: boolean } = {}) {
   const scopedRoots = await projectRoots(options.projectCwds);
-  const root = options.workspaceBound ? scopedRoots.find((item) => item.key === key) : rootByKey(key) || scopedRoots.find((item) => item.key === key);
+  const root = options.workspaceBound ? scopedRoots.find((item) => item.key === key) : rootByKey(key, options.companySkillsRoot) || scopedRoots.find((item) => item.key === key);
   if (!root)
     return {
       ok: false,
@@ -3207,7 +3209,7 @@ export async function skillDetail(key: string, name: string, options: ScopeOptio
 export async function listProviderCandidates(options: ScopeOptions = {}) {
   const policyResult = await readManagerState();
   const candidates = [];
-  const user = userRoots();
+  const user = userRoots(options.companySkillsRoot);
   const userScans = await scanDeduplicatedRoots(user);
   const items = user.flatMap((root) =>
     userScans.get(root.key)!.entries.map((entry) => ({ root, entry, policy: effectiveSkillPolicy(policyResult, root, entry) })),
@@ -3297,7 +3299,7 @@ export async function getProviderSkill(candidate: ProviderCandidate, options: Sc
     typeof locator.realDocPath !== "string"
   )
     return undefined;
-  let root = rootByKey(locator.rootKey);
+  let root = rootByKey(locator.rootKey, options.companySkillsRoot);
   if (
     !root &&
     PROJECT_ROOT_KEY_RE.test(locator.rootKey) &&
@@ -3485,7 +3487,7 @@ export async function workspaceSkills(workspace: unknown, registered: unknown) {
 }
 
 export async function state(options: ScopeOptions = {}) {
-  const user = userRoots();
+  const user = userRoots(options.companySkillsRoot);
   const userScans = await scanDeduplicatedRoots(user);
   const projectWarnings: Diagnostic[] = [];
   const scoped = await projectRoots(options.projectCwds, projectWarnings);

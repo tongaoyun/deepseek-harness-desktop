@@ -323,16 +323,16 @@ describe("真实 Host 与 Remote 集成", () => {
     } as unknown as Context;
     apply(ctx, { root: "", provider: "spawn", divisions: ["engineering"], ...volatileConfig(settings) } as never);
     const remote = new AgencyAgentsRemote(ctx);
-    const initial = await remote.getCatalog();
+    const initial = await remote.getCatalog(false);
     await expect(remote.setEnabled(['missing-expert'], initial.revision)).rejects.toThrow();
-    expect(await remote.getCatalog()).toEqual(initial);
+    expect(await remote.getCatalog(false)).toEqual(initial);
     const saved = await remote.saveCustomExpert(input, true, initial.revision);
     const slug = saved.experts.find((expert) => expert.custom)!.slug;
     expect(await remote.getPrompt(slug, input.division)).toEqual({
       prompt: input.prompt,
     });
     expect(
-      await tools.get("list_experts")!.execute({ division: input.division }),
+      await tools.get("list_experts")!.execute({ division: input.division }, { agent: undefined }),
     ).toMatchObject({ total: 1 });
     expect(
       await tools
@@ -353,7 +353,7 @@ describe("真实 Host 与 Remote 集成", () => {
     ).rejects.toThrow();
     const deleted = await remote.deleteCustomExpert(slug, disabled.revision);
     await expect(remote.setEnabled([slug], deleted.revision)).rejects.toThrow();
-    expect(await remote.getCatalog()).toEqual(deleted);
+    expect(await remote.getCatalog(false)).toEqual(deleted);
     await expect(
       tools
         .get("summon_expert")!
@@ -366,12 +366,16 @@ describe("真实 Host 与 Remote 集成", () => {
 describe("动态名册异步一致性", () => {
   it("旧查询不覆盖保存结果，重启后的低修订号仍可刷新", async () => {
     let resolve!: (result: RemoteResult<CatalogSnapshot>) => void;
-    const remote = {
+    const unused = async (): Promise<never> => { throw new Error("Unexpected catalog mutation"); };
+    const remote: AgencyCatalogRemote = {
       getCatalog: () =>
         new Promise<RemoteResult<CatalogSnapshot>>((done) => {
           resolve = done;
         }),
-    } as AgencyCatalogRemote;
+      getCustomExpert: unused,
+      saveCustomExpert: unused,
+      deleteCustomExpert: unused,
+    };
     const pending = refreshCatalog(remote);
     expect(refreshCatalog(remote)).toBe(pending);
     acceptCatalog(remote, {

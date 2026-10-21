@@ -2,6 +2,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import { assertProductPayload, type ProductTaskCapabilityRequest } from '@deepseek-harness/product/protocol'
 import { ProductError, productFailure } from '@deepseek-harness/product/errors'
 import { ProductData } from './data.ts'
+import { CompanyContent } from './company-content.ts'
 import { DeepSeekHarnessProductIpc } from './deepseek-harness-product-ipc.ts'
 import { apply as mountRuntime, inject, type DeepSeekHarnessRuntimeControl } from './runtime.ts'
 import * as CapabilityPrompt from './capability-prompt.ts'
@@ -53,6 +54,7 @@ export async function apply(ctx: Context): Promise<void> {
     operations.set(requestId as number, { controller, settled })
   }
   process.on('message', onMessage)
+  new CompanyContent(ctx, product)
   ctx.effect(() => async () => {
     closed = true
     process.off('message', onMessage)

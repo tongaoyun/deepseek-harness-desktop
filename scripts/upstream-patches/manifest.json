@@ -792,7 +792,7 @@
         {
           "path": "pnpm-lock.yaml",
           "before": "4637cca3b89c4c8d5a147321710e597aa62ec2444a3772ab542be5690893dfe4",
-          "after": "7430c76df2e65842c05f67e57f771044fc887bff344e349e0d7ed5e29653dbc3"
+          "after": "09e8c9669c78e0713dc7b3e47bcb4cc69d2f9cdb12b3ba6d6163beda89757c06"
         },
         {
           "path": "scripts/check-workspace-constraints.spec.ts",
@@ -844,7 +844,7 @@
     },
     {
       "id": "documentation-catalogs",
-      "purpose": "Maintained bilingual integration documentation and generated API/config/slot catalogs describe the public extension points and product-owned consumers. Generated product names are documentation data only. Persistence history acknowledges source-only message attribution without changing official Session formats. Tool slot documentation is condensed without changing its contract to keep the expanded report within its existing per-slot limit when product tools register.",
+      "purpose": "Maintained bilingual integration documentation and generated API/config/slot catalogs describe the public extension points and product-owned consumers. Generated product names are documentation data only. Persistence history acknowledges source-only message attribution without changing official Session formats. Tool slot documentation is condensed without changing its contract to keep the expanded report within its existing per-slot limit when product tools register. The company content source is a private product Host service, documented by its owning package rather than projected into the official public service catalog.",
       "tests": [
         "scripts/doc-standard.spec.ts",
         "scripts/project-doc-site.spec.ts",
@@ -852,7 +852,8 @@
         "scripts/gen-third-party-notices.spec.ts",
         "scripts/persistence-changes.spec.ts",
         "scripts/persistence-formats.spec.ts",
-        "scripts/gen-client-catalog.spec.ts"
+        "scripts/gen-client-catalog.spec.ts",
+        "scripts/gen-cordis-catalog-partition.spec.ts"
       ],
       "files": [
         {
@@ -999,6 +1000,11 @@
           "path": "scripts/doc-standard.spec.ts",
           "before": "2ab0fb97c375354ef50688f89c9d4bd1caa739931f7e6f3f9f21a0be6078b4ae",
           "after": "fcf01cd13c044f7ecb7b2d80fdb663fe2aec068523e50d314ff8e8153f2d0c2c"
+        },
+        {
+          "path": "scripts/gen-cordis-catalog.ts",
+          "before": "20d2d305dc12ae9b37e958081b93a5e9639479104555cca67eae0eeb23dbfca7",
+          "after": "7dfc754f1b84826f20228ec2edcb27af0062f078d9b4cd3c70cf4645200a88ea"
         }
       ],
       "diff": "documentation-catalogs.patch"
@@ -1583,7 +1589,7 @@
         {
           "path": "vendor/README.md",
           "before": "463f0475336df70f35805c60ea897b94d15cdd295595d8a50074dedd4555d311",
-          "after": "2c69c8be031a4f12d7b2d969259bee0867b58ae49e1120aaad6143853a05e0f1"
+          "after": "a3b702559b2a9c645ae0fbb68c13deb1df8b8e91ff53bb1cd64dfe38d5367358"
         }
       ],
       "diff": "company-plugin-vendor-documentation.patch"

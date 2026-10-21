@@ -1,5 +1,6 @@
 {
   "version": 1,
+  "companyContentRefreshIntervalMs": 60000,
   "serverUrl": "http://192.168.2.67:30081",
   "connectorProxy": { "responseTimeoutMs": 30000, "streamIdleTimeoutMs": 120000 },
   "support": { "heartbeatIntervalMs": 300000, "reportIntervalMs": 86400000 }

@@ -8,6 +8,7 @@ import { customEn, customZh } from './custom-locales.js'
 
 /** 简体中文词条（key 集真相源）。 */
 export const zh = {
+  'company.retry': '重试加载',
   ...customZh,
   'discovery.search': '搜索名称、领域或关键词',
   'discovery.refine': '仅显示最相关的 8 位专家，请补充关键词缩小范围。',
@@ -77,6 +78,7 @@ export type AgencyKey = keyof typeof zh
 
 /** 英文词条，key 完整性由 satisfies 在编译期保证。 */
 export const en = {
+  'company.retry': 'Retry loading',
   ...customEn,
   'discovery.search': 'Search names, fields or keywords',
   'discovery.refine': 'Showing the 8 most relevant experts. Add keywords to narrow the results.',

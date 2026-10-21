@@ -290,17 +290,22 @@ function activeSessionCwds(ctx: HostContext, sessionId: unknown) {
   return typeof cwd === "string" && cwd.trim() ? [cwd.trim()] : [];
 }
 
-function externalSkillProvider(control: ProviderControl, invalidators: Set<() => void>) {
+function externalSkillProvider(control: ProviderControl, invalidators: Set<() => void>, companyRoot?: (signal?: AbortSignal) => Promise<string>) {
   invalidators.add(control.invalidate);
   if (control.signal && typeof control.signal.addEventListener === "function") {
     control.signal.addEventListener("abort", () => {
       invalidators.delete(control.invalidate);
     }, { once: true });
   }
+  const lookupOptions = async (options: ScopeOptions = {}): Promise<ScopeOptions> => {
+    const signal = control.signal === undefined ? options.signal : options.signal === undefined
+      ? control.signal : AbortSignal.any([control.signal, options.signal]);
+    return { ...options, signal, ...companyRoot ? { companySkillsRoot: await companyRoot(signal) } : {} };
+  };
   return {
     name: "dsh-skills-manager-external",
-    list: async (options?: ScopeOptions) => listProviderCandidates(options),
-    get: async (candidate: ProviderCandidate, options?: ScopeOptions) => getProviderSkill(candidate, options),
+    list: async (options?: ScopeOptions) => listProviderCandidates(await lookupOptions(options)),
+    get: async (candidate: ProviderCandidate, options?: ScopeOptions) => getProviderSkill(candidate, await lookupOptions(options)),
   };
 }
 
@@ -320,7 +325,9 @@ function registerAgentSkillProviders(ctx: HostContext, invalidators: Set<() => v
       ? agentCtx.get("skills")
       : agentCtx && agentCtx.skills;
     if (!skills || typeof skills.registerProvider !== "function") return;
-    const dispose = skills.registerProvider((control) => externalSkillProvider(control, invalidators));
+    const companySource = ctx.get?.("companyContent");
+    const dispose = skills.registerProvider((control) => externalSkillProvider(control, invalidators,
+      companySource ? async (signal) => (await companySource.forSession(agent.id, signal)).skillsRoot : undefined));
     registrations.set(agent.id, dispose);
   };
 
@@ -366,8 +373,7 @@ function apply(ctx: HostContext) {
     }
     return [];
   };
-  const roots = userRoots();
-  const rootByKey = Object.fromEntries(roots.map((r) => [r.key, r]));
+  const companySource = ctx.get?.("companyContent");
 
   const providerInvalidators = new Set<() => void>();
   const invalidateSkills = () => {
@@ -380,7 +386,8 @@ function apply(ctx: HostContext) {
     mutationQueue = queued.catch(() => undefined);
     return queued;
   };
-  ctx.effect(() => ctx.skills.registerProvider((control) => externalSkillProvider(control, providerInvalidators)), "skills-manager global external skills provider");
+  ctx.effect(() => ctx.skills.registerProvider((control) => externalSkillProvider(control, providerInvalidators,
+    companySource ? async () => (await companySource.read()).skillsRoot : undefined)), "skills-manager global external skills provider");
   ctx.effect(() => registerAgentSkillProviders(ctx, providerInvalidators), "skills-manager agent-scoped external skills providers");
 
   if (ctx.tools && typeof ctx.tools.register === "function") {
@@ -427,7 +434,8 @@ function apply(ctx: HostContext) {
       const u = new URL(req.url!, "http://localhost");
       const path = u.pathname.replace(/\/+$/, "");
       const sessionId = req.headers["x-dsh-skills-session"];
-      const projectOptions = () => ({ projectCwds: activeSessionCwds(ctx, sessionId) });
+      let companySkillsRoot = process.env.DSH_COMPANY_SKILLS_ROOT;
+      const projectOptions = () => ({ projectCwds: activeSessionCwds(ctx, sessionId), companySkillsRoot });
       /** 请求体带 workspace 时只经登记列表解析；字段存在但无效也拒绝，不静默回退到用户目录。 */
       const workspaceTarget = async (body: RequestBody) => {
         if (body.workspace === undefined) return null;
@@ -441,7 +449,7 @@ function apply(ctx: HostContext) {
         return { projectCwds: (target as { root: SkillRoot }).root.workspaceCwds ?? [] };
       };
       const scopedOptions = (scope: { projectCwds: string[] } | null) => scope ?? projectOptions();
-      const requestRoot = async (key: string, cwds?: string[]) => cwds ? (await projectRoots(cwds)).find((root) => root.key === key) : rootByKey[key] || (await projectRoots(projectOptions().projectCwds)).find((root) => root.key === key);
+      const requestRoot = async (key: string, cwds?: string[]) => cwds ? (await projectRoots(cwds)).find((root) => root.key === key) : userRoots(companySkillsRoot).find(root => root.key === key) || (await projectRoots(projectOptions().projectCwds)).find((root) => root.key === key);
       /** 单项操作的统一入口：有 workspace 就在其作用域内解析根，无则沿用当前会话。 */
       const withScope = async <T>(body: RequestBody, action: (scope: { projectCwds: string[] } | null) => Promise<T>) => {
         const scope = await workspaceScope(body);
@@ -466,7 +474,11 @@ function apply(ctx: HostContext) {
           return;
         }
         if (req.method === "GET" && path === "/api/dsh-skills-manager/state") {
-          return run(res, stateWithSources);
+          return run(res, async () => {
+            if (u.searchParams.get("refreshCompany") === "1") { await companySource?.refresh(); invalidateSkills(); }
+            if (companySource) companySkillsRoot = (await companySource.read()).skillsRoot;
+            return stateWithSources();
+          });
         }
         if ((req.method === "GET" || req.method === "HEAD") && path === "/api/dsh-skills-manager/workspaces") {
           return run(res, async () => ({ items: await listWorkspaces(registeredWorkspacePaths(ctx) ?? []) }), undefined, req.method === "HEAD");
@@ -507,6 +519,7 @@ function apply(ctx: HostContext) {
           json(res, requestError.statusCode, { ok: false, code: requestError.code, error: requestError.error });
           return;
         }
+        if (companySource) companySkillsRoot = (await companySource.read()).skillsRoot;
         const body = await readBody(req, path === "/api/dsh-skills-manager/upload" ? MAX_UPLOAD_BODY_BYTES : undefined);
         if (path.startsWith("/api/dsh-skills-manager/repositories/") && (!body || typeof body !== "object" || Array.isArray(body))) {
           json(res, 400, { ok: false, code: "error.repo.invalid", error: "仓库参数必须是对象" });

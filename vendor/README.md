@@ -91,7 +91,8 @@ To update a vendored package from upstream:
 - 专家 `src/index.ts` 删除独立更新注册，读取公司目录并拒绝社区 ID 冲突，按公司实际分类读取固定说明；空公司目录正常加载。`src/expert-contract.ts` 和客户端视图传播公司来源，`src/client/index.ts` 增加公司筛选并移除外部链接、重复反馈和更新按钮；`src/client/locales.ts` 统一“专家套件”名称。`locale/zh.json` 同步名称。
 - 技能 `src/index.ts` 删除独立更新注册；`src/core.ts` 登记只读公司来源并纳入原生来源排序；`src/client.ts` 增加公司来源文案、移除外部链接、重复反馈和独立更新；`locale/zh.json` 同步名称。
 - 两插件的 `plugin-updater`、`plugin-update-*` 源文件及专属测试删除。专家现有测试更新工作区依赖、套件名称和已删除入口，DOM 断言使用宿主当前组件，移除面向旧全局 CLI 布局的宿主模块探测，配置直接使用固定工作区的 Schemastery volatile，YAML 使用声明依赖，可选专家团由当前装配解析。对应旧布局测试删除，真实 Loader/profile 测试覆盖固定装配。
-- 目录 README、tsconfig、tsdown 和 Vitest 配置接入本仓库构建；原作者发布用 CI、脚本和文档不作为公司构建入口。技能的社区内容仓库更新保留。
+- 产品协议以类型依赖提供可选公司内容源。专家 `src/index.ts` 按 Session 读取不可变公司目录；远程声明、服务与客户端读取支持后台检查，`src/client/catalog.ts` 合并请求并拒绝旧响应覆盖。技能 `src/types.ts`、`src/core.ts`、`src/host-types.ts` 和 `src/index.ts` 为目录读取及 Agent Provider 传递固定根目录与单次调用取消信号；专家名册及说明读取传递工具取消信号，客户端路由和页面支持先本地后同步、失败保留及重试。原插件测试夹具提供当前官方执行上下文；真实 Loader 与无密钥快照验证版本隔离、记录和卸载。
+- 目录 README、tsconfig、tsdown 和 Vitest 配置接入本仓库构建；专家声明库包含 ES2024，输出语法仍为 ES2022，客户端名册调用显式选择本地读取，测试夹具完整实现当前 Remote 和工具执行参数。原作者发布用 CI、脚本和文档不作为公司构建入口。技能的社区内容仓库更新保留。
 - 技能管理采用 1.2.9 的生命周期总开关：启用保留源文件的模型和用户调用限制，目录显式返回 enabled；非法调用声明仍拒绝两类调用。真实 Loader/profile 回归覆盖导入、停用和重新启用。专家直接加载固定工作区模块，不引入上游针对 PM2 的全局宿主入口探测。
 
 更新时从上述固定提交取得源文件，对照两份清单逐项应用或移除本地修改，更新基线及本地哈希；运行插件测试、真实公司 Loader/profile 测试和产品构建。发布操作见[公司内容说明](../apps/product-desktop/docs/company-content.md)。

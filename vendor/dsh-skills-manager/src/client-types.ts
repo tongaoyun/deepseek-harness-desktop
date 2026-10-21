@@ -19,6 +19,7 @@ type SkillsShSearchResult = { skills: { id: string; source: string; skillId: str
 export type ApiRoutes = RepositoryRoutes & Record<SkillsShSearchPath, SkillsShSearchResult> & Record<`/clawhub/list?${string}`, ClawHubPage> & Record<`/clawhub/search?${string}`, ClawHubSearchResponse> & {
     '/repositories': Awaited<ReturnType<Manager['list']>>;
     '/state': ManagerSnapshot;
+    '/state?refreshCompany=1': ManagerSnapshot;
     '/workspaces': { items: Awaited<ReturnType<typeof listWorkspaces>> };
     '/workspace-skills': Success<Awaited<ReturnType<typeof workspaceSkills>>>;
     '/import': ImportResult;

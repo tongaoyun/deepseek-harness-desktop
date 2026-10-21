@@ -4,4 +4,6 @@
 
 插件代码随桌面软件构建发布；页面不提供插件独立更新或外部项目入口。原生专家调用、技能加载及设置入口继续保留。
 
-构建：在仓库根目录运行 `pnpm run build:artifacts`。公司分支的完整差异登记在 [vendor/README.md](../README.md)。
+公司目录打开时先显示本地内容，再共享检查服务端；失败可重试，已有会话及子会话继续使用固定版本。公司内容使用原生 Markdown 与技能目录，不包含插件代码或凭据。对话中的技能发现、读取和专家调用会将取消传到公司内容检查，不留下继续等待的任务请求。
+
+构建：在仓库根目录运行 `pnpm run build:artifacts`，再运行 `pnpm exec tsc --noEmit -p vendor/dsh-agency-agents/tsconfig.json` 检查插件源码及测试。编译声明包含宿主 Node.js 支持的 ES2024 API，输出语法仍以 ES2022 为目标。公司分支的完整差异登记在 [vendor/README.md](../README.md)。

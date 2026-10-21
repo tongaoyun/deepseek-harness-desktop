@@ -33,7 +33,7 @@ afterEach(() => { cleanup(); vi.unstubAllGlobals() })
 
 it('browses paginated materials and filters at the server without changing task selection', async () => {
   const api = transport(async method => method === 'knowledge.documents.list' ? page([document], 41) : page([]))
-  render(<KnowledgeDetail renderFactorySlot={renderKnowledgePreview} product={library()} t={t} />)
+  await act(async () => { render(<KnowledgeDetail renderFactorySlot={renderKnowledgePreview} product={library()} t={t} />) })
   await screen.findByRole('button', { name: document.filename })
   expect(screen.queryByRole('checkbox')).toBeNull()
   expect(screen.queryByRole('button', { name: zh.knowledgeUpload })).toBeNull()

@@ -436,8 +436,22 @@ import { installSettingsNavIcon } from "./settings-nav-icon.js";
       var workspaceRequests = react.useRef<Record<string, number>>({});
       var workspaceEpoch = react.useRef(0);
       react.useEffect(function () { return function () { workspaceEpoch.current++; }; }, []);
-      function refresh(silent: boolean) { if (!silent) setSnapshot({ loading: true, error: null, data: snapshot.data }); return sessionApi("/state").then(function (data) { setSnapshot({ loading: false, error: null, data: data }); return data; }).catch(function (error) { setSnapshot({ loading: false, error: translateError(t, error), data: snapshot.data }); }); }
-      react.useEffect(function () { refresh(false); }, []);
+      var catalogRequest = react.useRef(0);
+      function refresh(silent: boolean, checkCompany = false) {
+        var request = ++catalogRequest.current;
+        if (!silent) setSnapshot(previous => ({ ...previous, loading: true, error: null }));
+        return sessionApi(checkCompany ? "/state?refreshCompany=1" : "/state").then(function (data) {
+          if (request === catalogRequest.current) setSnapshot({ loading: false, error: null, data: data });
+          return data;
+        }).catch(function (error) {
+          if (request === catalogRequest.current) setSnapshot(previous => ({ ...previous, loading: false, error: translateError(t, error) }));
+        });
+      }
+      react.useEffect(function () {
+        var alive = true;
+        void refresh(false).then(() => { if (alive) return refresh(true, true); });
+        return () => { alive = false; catalogRequest.current++; };
+      }, []);
       function post<K extends keyof ApiRoutes>(path: K, body: unknown, successKey?: string | null, successParams?: object): Promise<ApiRoutes[K]> { if (inflightRef.current) return Promise.reject({ error: "operation already in progress" }); inflightRef.current = true; setBusy(true); setResult(null); return sessionApi(path, { method: "POST", headers: MUTATION_HEADERS, body: JSON.stringify(body || {}) }).then(function (data) { setResult({ ok: true, text: successKey ? t(successKey, successParams || data || {}) : t("result.updated") }); var scopedWorkspace = body && typeof (body as { workspace?: unknown }).workspace === "string" ? (body as { workspace: string }).workspace : ""; return Promise.all([refresh(true), scopedWorkspace ? loadWorkspaceDetail(scopedWorkspace) : null]).then(function () { return data; }); }).catch(function (error) { setResult({ ok: false, text: t("error.action", { error: translateError(t, error) }) }); throw error; }).finally(function () { inflightRef.current = false; setBusy(false); }); }
       function openDetail(root: RootView, skill: SkillView, workspacePath?: string) { setBusy(true); setDetail(null); setModal("detail"); sessionApi("/detail", { method: "POST", headers: MUTATION_HEADERS, body: JSON.stringify(workspacePath ? { root: root.key, name: skill.name, workspace: workspacePath } : { root: root.key, name: skill.name }) }).then(setDetail).catch(function (error) { setResult({ ok: false, text: t("error.action", { error: translateError(t, error) }) }); setModal(null); }).finally(function () { setBusy(false); }); }
       function updateForm(key: string, value: string) { setForm(Object.assign({}, form, { [key]: value })); }
@@ -821,7 +835,7 @@ import { installSettingsNavIcon } from "./settings-nav-icon.js";
       var tabs = h(SegmentedTabs, { key: "tabs", className: "dssm-scope-tabs", label: t("scope.label"), value: scope, onChange: function (next: string) { setScope(next); if (next === "project" || next === "trash") loadWorkspaces(next === "project"); if (next === "trash") refresh(true); }, items: tabItems });
       var skillControls = [ scope === "project" ? null : h("div", { key: "summary", className: "dssm-summary" }, [["total", "summary.total"], ["enabled", "summary.enabled"], ["disabled", "summary.disabled"], ["invalid", "summary.invalid"]].map(function (item) { return h("div", { key: item[1], className: "dssm-stat" }, h("strong", null, summary[item[0]]), t(countKey(item[1], summary[item[0]]), { count: summary[item[0]] }).replace(String(summary[item[0]]), "")); })), h("div", { key: "filters", className: "dssm-filters" }, scope === "project" ? null : h("div", { className: "dssm-source-filter" }, h(SourceSelect, { value: activeSource, label: t("filter.source"), options: options, onChange: setSource })), h("div", { className: "dssm-status-filter" }, h(SourceSelect, { value: filters.status, label: t("filter.status"), options: [{ value: "", label: t("filter.statusAll") }].concat(["enabled", "disabled", "shadowed", "invalid"].map(function (value) { return { value: value, label: t("status." + value) }; })), onChange: function (value) { updateFilter("status", value); } })), scope === "project" ? h("div", { className: "dssm-project-filter" }, h(SourceSelect, { value: selectedWorkspace, label: t("filter.workspace"), disabled: workspaceList.loading || !workspaceRows.length, options: workspaceRows.map(function (row) { return { value: workspacePath(row), label: row.name + (!row.available ? " · " + t("workspace.unavailable") : "") + (workspaceRows.filter(function (other) { return other.name === row.name; }).length > 1 ? " · " + workspacePath(row) : ""), disabled: !row.available || !workspacePath(row) }; }), onChange: selectWorkspace })) : null, h(Input, { className: "dssm-search", allowClear: true, value: query, "aria-label": t("search"), placeholder: t("search.placeholder"), onChange: function (e) { setQuery(e.target.value); } }),
         scope !== "trash" ? h("div", { className: "dssm-filter-actions" },
-          filterActionButton(t("btn.refresh"), strokeIcon("M13.5 8A5.5 5.5 0 118 2.5c2.3 0 4.3 1.4 5.1 3.5m.4-3.5v3.5H10"), function () { refresh(false); if (scope === "project") refreshWorkspaceDetails(); }, busy || snapshot.loading),
+          filterActionButton(t("btn.refresh"), strokeIcon("M13.5 8A5.5 5.5 0 118 2.5c2.3 0 4.3 1.4 5.1 3.5m.4-3.5v3.5H10"), function () { refresh(false, true); if (scope === "project") refreshWorkspaceDetails(); }, busy || snapshot.loading),
           filterActionButton(t("btn.create"), strokeIcon("M8 2.5v11M2.5 8h11"), openCreate, busy, t("btn.create") + "…"),
           filterActionButton(t("import.global"), strokeIcon("M2.5 10.5v2a1 1 0 001 1h9a1 1 0 001-1v-2M8 2.5v7M5 5.5l3-3 3 3"), openImport, busy)
         ) : null)];

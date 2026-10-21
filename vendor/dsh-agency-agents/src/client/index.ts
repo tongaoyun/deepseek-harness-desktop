@@ -1040,6 +1040,8 @@ function ExpertCardsSettings(props: PropsLocale<'agency'> & {
   onEnabledChange?: (enabled: ReadonlySet<string>) => void
 }): React.ReactElement {
   const cached = catalogState(props.remote)
+  const reloadEpoch = React.useRef(0)
+  React.useEffect(() => () => { reloadEpoch.current++ }, [props.remote])
   const [state, setState] = React.useState<EnabledState | null>(cached.revision < 0 ? null : cached)
   React.useEffect(() => {
     props.onSummary?.({ total: state?.experts.length ?? 0, enabled: state?.enabled.size ?? 0 })
@@ -1120,15 +1122,14 @@ function ExpertCardsSettings(props: PropsLocale<'agency'> & {
       props.onEnabledChange?.(current.enabled)
     }
     const loadCatalog = (): Promise<void> => readEnabled(props.remote).then((current) => { if (alive) applySnapshot(current) })
-    const known = catalogState(props.remote)
-    const pending = known.revision < 0
-      ? loadCatalog()
-      : props.remote.getEnabled().then(result => {
-        if (!alive || !result.ok || result.value.revision === known.revision) return
-        return loadCatalog()
-      })
+    const pending = loadCatalog().then(async () => {
+      const current = await refreshCatalog(props.remote, true)
+      if (!alive) return
+      applySnapshot(current)
+      setError(null)
+    })
     void pending.catch((err: unknown) => {
-      if (alive && catalogState(props.remote).revision < 0) setError(err instanceof Error ? err.message : String(err))
+      if (alive) setError(err instanceof Error ? err.message : String(err))
     })
     return () => { alive = false }
   }, [props.onEnabledChange, props.remote])
@@ -1191,7 +1192,16 @@ function ExpertCardsSettings(props: PropsLocale<'agency'> & {
   }
 
   const nodes: React.ReactNode[] = []
-  if (error !== null) nodes.push(React.createElement('div', { key: 'error', className: 'aag-error', role: 'alert' }, error))
+  if (error !== null) nodes.push(React.createElement('div', { key: 'error', className: 'aag-error', role: 'alert' }, error,
+    React.createElement(Button, { onClick: () => {
+      const request = ++reloadEpoch.current
+      void refreshCatalog(props.remote, true).then(current => {
+        if (request !== reloadEpoch.current) return
+        setState(current); setError(null)
+      }).catch((cause: unknown) => {
+        if (request === reloadEpoch.current) setError(cause instanceof Error ? cause.message : String(cause))
+      })
+    } }, props.t('company.retry'))))
   if (state === null) {
     nodes.push(React.createElement('div', { key: 'loading', className: 'aag-note' }, props.t('settings.loading')))
   } else {
@@ -1504,7 +1514,7 @@ export async function apply(ctx: ClientContext): Promise<() => void> {
         codec: {
           clipboardText: id => teamText(active, '@专家团：{0}\u00a0', [teamCache.find(team => team.id === id)?.name ?? teamText(active, '已移除团队（请重新选择）')]),
           serialize: async id => {
-            const [snapshot, catalog] = await Promise.all([refreshTeams(teamRemote), unwrap(teamRemote.getCatalog())])
+            const [snapshot, catalog] = await Promise.all([refreshTeams(teamRemote), unwrap(teamRemote.getCatalog(false))])
             teamCache = snapshot.teams.map(team => localizeTeam(team, active))
             const team = teamCache.find(team => team.id === id)
             if (!team || !snapshot.enabledTeams.includes(id) || team.members.some(member => !catalog.enabled.includes(member.expertSlug) || !catalog.experts.some(e => e.slug === member.expertSlug && !e.conflict))) throw new Error(teamText(active, '团队已停用或成员失效，请修复后再发送。'))
