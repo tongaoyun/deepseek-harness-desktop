@@ -6,7 +6,7 @@ import { type DeepSeekHarnessProductKey } from '../locales.ts'
 import css from '../DeepSeekHarnessProduct.module.css'
 import { productApi, type ProductApi } from './product-api.ts'
 import { productErrorMessage } from './product-errors.ts'
-import { type ProductDetail, AUTHORIZATION_TIMEOUT_MS, AUTHORIZATION_POLL_INTERVAL_MS, nextProductRequestId, abortableDelay, localizedMetadata, DetailIdentity } from './catalog-shared.tsx'
+import { type ProductDetail, AUTHORIZATION_TIMEOUT_MS, AUTHORIZATION_POLL_INTERVAL_MS, nextProductRequestId, abortableDelay, ConnectorStatus, DetailIdentity } from './catalog-shared.tsx'
 
 export function ConnectorDetailModal({ detail: product, error, loading, onCatalogChanged, managementActions, onClose, open, t }: {
   readonly managementActions?: ReactNode
@@ -47,7 +47,7 @@ export function ConnectorDetail({ product, onCatalogChanged, t }: {
   const lifecycle = useRef<AbortController>(new AbortController())
   const authorizationAbort = useRef<AbortController>()
   const activeRequests = useRef(new Map<string, ProductApi>())
-  const managedAuthorization = product.authMode === 'oauth'
+  const managedAuthorization = product.authMode === 'oauth' && product.status !== 'disabled' && product.status !== 'unavailable'
   const readTools = product.tools.filter(tool => tool.access === 'READ')
   const writeTools = product.tools.filter(tool => tool.access === 'WRITE')
   useEffect(() => {
@@ -137,18 +137,7 @@ export function ConnectorDetail({ product, onCatalogChanged, t }: {
         <Button variant="outline" size="sm" onClick={() => { void refreshCatalog() }}>{t('refresh')}</Button>
       </div>}
       {refreshState === 'idle' && <div className={css.connectorConnection}>
-        <dl className={css.connectorFacts}>
-          {product.status !== undefined && <div><dt>{t('status')}</dt>
-            <dd data-available={product.availabilityStatus === 'AVAILABLE'}>{localizedMetadata(product.status, t)}</dd></div>}
-          {product.authorizationStatus !== undefined && <div><dt>{t('authorizationStatus')}</dt>
-            <dd>{localizedMetadata(product.authorizationStatus, t)}</dd></div>}
-          {product.scope !== undefined && <div><dt>{t('scope')}</dt>
-            <dd>{localizedMetadata(product.scope, t)}</dd></div>}
-          {product.transport !== undefined && <div><dt>{t('transport')}</dt>
-            <dd>{localizedMetadata(product.transport, t)}</dd></div>}
-          {product.authMode !== undefined && <div><dt>{t('authMode')}</dt>
-            <dd>{localizedMetadata(product.authMode, t)}</dd></div>}
-        </dl>
+        <ConnectorStatus connector={product} t={t} />
       </div>}
       {managedAuthorization && refreshState === 'idle' && <div className={css.detailActions}>
         {product.authorizationStatus === 'AUTHORIZED'

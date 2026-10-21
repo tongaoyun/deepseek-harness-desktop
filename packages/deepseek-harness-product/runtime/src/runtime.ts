@@ -66,13 +66,26 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
     const operationSignal = AbortSignal.any([lifetime.signal, ...signal === undefined ? [] : [signal]])
     const fiber = agent.ctx.plugin({ name: 'product-agent-connectors', async apply(owner: Context) {
       const selected = parseConnectorCatalog(await config.product.invoke('connectors.list', undefined, operationSignal))
-      connectorsByAgent.set(agent, selected)
       owner.effect(() => () => { connectorsByAgent.delete(agent); failures.delete(agent) }, 'product-agent-connectors.policy')
-      for (const connector of selected) {
-        await owner.plugin({ name: McpClient.name, inject: McpClient.inject, apply: McpClient.apply }, connectorConfig(connector))
-      }
+      const connected = await Promise.all(selected.map(async (connector) => {
+        const child = owner.plugin({ name: McpClient.name, inject: McpClient.inject, apply: McpClient.apply }, connectorConfig(connector))
+        try { await child; return connector }
+        catch {
+          await child.dispose()
+          operationSignal.throwIfAborted()
+          owner.logger.warn(`Enterprise connector ${connector.id} could not start; its tools are unavailable for this conversation.`)
+          return undefined
+        }
+      }))
+      operationSignal.throwIfAborted()
+      const available = connected.filter(connector => connector !== undefined)
+      const unavailable = selected.filter(connector => !available.includes(connector))
+      connectorsByAgent.set(agent, available)
+      const versions = (connectors: readonly Connector[]) => connectors.map(({ id, version }) => ({ id, version }))
       owner.effect(() => owner.systemPrompt.section({ name: 'enterprise-connectors', order: 450,
-        text: `Enterprise connector versions: ${JSON.stringify(selected.map(({ id, version }) => ({ id, version })))}`,
+        interpolate: false,
+        text: `Enterprise connector versions: ${JSON.stringify(versions(available))}`
+          + (unavailable.length === 0 ? '' : `\nUnavailable enterprise connectors: ${JSON.stringify(unavailable.map(({ id, name }) => ({ id, name })))}. Their tools could not connect. If a task needs them, explain the missing capability and ask the user to retry in a new conversation; do not claim their operations succeeded.`),
       }), 'product-agent-connectors.versions')
     } })
     connectorFibers.set(agent, fiber)
@@ -89,7 +102,7 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
   ctx.on('agent/pre-step', async ({ agent, signal }, next) => {
     const failure = failures.get(agent)
     if (failure !== undefined) throw new ProductError('CONNECTOR_STARTUP_FAILED',
-      'Enterprise connectors could not load. Check authorization and open a new conversation.', true, [], { cause: failure })
+      'Enterprise connector catalog could not load. Check your login and product service, then retry in a new conversation.', true, [], { cause: failure })
     await tasks.validate(ctx.agentPresets.composedPreset(agent.ctx), signal)
     return next()
   })

@@ -1,5 +1,5 @@
 import type { ComponentType, ReactNode } from 'react'
-import { IconCheckOutlineRegular, IconDatabaseOutlineRegular, IconLinkOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconDatabaseOutlineRegular, IconLinkOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives'
 import { type DeepSeekHarnessProductKey } from '../locales.ts'
 import css from '../DeepSeekHarnessProduct.module.css'
 import type { ProductTaskCapabilities } from '@deepseek-harness/product/protocol'
@@ -267,30 +267,30 @@ export function localDetail(item: ProductItem): ProductDetail {
   }
 }
 
-/** Account connection state is independent of task selection and current server availability.
- * @param connector - Connector catalog metadata returned by the product server.
- * @returns Whether the device is configured and authorization or a managed connection is present.
+/** Whether the connector has the account and device configuration needed to attempt a connection.
+ * @param connector - Connector metadata; this does not probe the remote MCP service.
+ * @returns Whether the connector is configured and available for connection attempts.
  */
-export function isConnectorConnected(connector: Pick<ProductItem, 'authMode' | 'authorizationStatus' | 'availabilityStatus' | 'status'>): boolean {
-  if (connector.status === 'needs-configuration') return false
-  if (connector.authorizationStatus !== undefined) return connector.authorizationStatus === 'AUTHORIZED'
-  return connector.authMode !== 'oauth' && connector.availabilityStatus === 'AVAILABLE'
+export function isConnectorConfigured(connector: Pick<ProductItem, 'authMode' | 'authorizationStatus' | 'ready' | 'status'>): boolean {
+  return connector.status === 'ready' && connector.ready !== false
+    && (connector.authMode !== 'oauth' || connector.authorizationStatus === 'AUTHORIZED')
 }
 
-/** Show connector authorization and availability without implying task selection. */
+/** Display one actionable state without claiming the remote service has connected. */
 export function ConnectorStatus({ connector, t }: {
-  readonly connector: Pick<ProductItem, 'authorizationStatus' | 'availabilityStatus' | 'status'>
+  readonly connector: Pick<ProductItem, 'authMode' | 'authorizationStatus' | 'ready' | 'status'>
   readonly t: (key: DeepSeekHarnessProductKey) => string
 }): ReactNode {
-  const status = connector.status === 'needs-configuration' ? 'NEEDS-CONFIGURATION'
-    : connector.authorizationStatus === 'EXPIRED' ? 'EXPIRED'
-      : connector.authorizationStatus === 'REQUIRED' ? 'AUTHORIZATION_REQUIRED'
-        : connector.availabilityStatus ?? (connector.authorizationStatus === 'AUTHORIZED' ? 'AVAILABLE' : undefined)
-  if (status === undefined) return null
-  return <span className={css.availabilityStatus} data-status={status}>
-    {status === 'AVAILABLE' && <IconCheckOutlineRegular size={12} />}
-    {status === 'AVAILABLE' ? t('connectorConnected')
-      : status === 'AUTHORIZATION_REQUIRED' ? t('connectorAuthorizationRequired') : localizedMetadata(status, t)}
+  const key: DeepSeekHarnessProductKey = connector.status === 'disabled' ? 'statusDisabled'
+    : connector.status === 'unavailable' ? 'statusUnavailable'
+      : connector.authMode === 'oauth' && connector.authorizationStatus !== 'AUTHORIZED'
+        ? connector.authorizationStatus === 'EXPIRED' ? 'connectorAccountExpired' : 'connectorAccountRequired'
+        : connector.status === 'needs-configuration' ? 'statusNeedsConfiguration'
+          : isConnectorConfigured(connector) ? 'connectorConfigured' : 'statusUnavailable'
+  return <span className={css.availabilityStatus} data-status={key === 'connectorConfigured' ? 'AVAILABLE'
+    : key === 'connectorAccountRequired' || key === 'statusNeedsConfiguration' ? 'AUTHORIZATION_REQUIRED'
+      : key === 'connectorAccountExpired' ? 'EXPIRED' : key === 'statusDisabled' ? 'DISABLED' : 'UNAVAILABLE'}>
+    {t(key)}
   </span>
 }
 

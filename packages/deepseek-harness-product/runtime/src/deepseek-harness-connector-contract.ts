@@ -34,6 +34,7 @@ export function parseConnectorCatalog(value: unknown): DeepSeekHarnessConnector[
     if (!['none', 'employee-bearer', 'oauth'].includes(authMode)) {
       throw new Error(`deepseek-harness product: unsupported connector authentication ${authMode}`)
     }
+    if (record.ready === false || authMode === 'oauth' && record.authorizationStatus !== 'AUTHORIZED') return []
     const transport = stringField(record, 'transport')
     if (transport !== 'streamable-http' && transport !== 'stdio') {
       throw new Error(`deepseek-harness product: unsupported connector transport ${transport}`)
