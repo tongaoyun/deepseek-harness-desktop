@@ -1,5 +1,6 @@
 /** Company releases contain data for native plugins, never plugin executables or credentials. */
 import { createHash } from 'node:crypto'
+import { parseDocument } from 'yaml'
 
 /** One company-wide immutable release of native expert and skill documents. */
 export interface CompanyContentRelease {
@@ -57,11 +58,21 @@ export function companyContentRelease(value: unknown): CompanyContentRelease {
       const document = /^---\n([\s\S]*?)\n---\n([\s\S]+)$/u.exec(markdown)
       const [, frontmatter, body] = document ?? []
       if (!frontmatter || !body?.trim() || markdown.includes('\0')) throw new Error('公司技能或专家说明无效')
-      for (const key of ['name', 'description']) {
+      if (path.endsWith('/SKILL.md')) {
+        const parsed = parseDocument(frontmatter, { schema: 'core' })
+        if (parsed.errors.length || parsed.warnings.length) throw new Error('公司技能 YAML 格式无效')
+        const metadata: unknown = parsed.toJS({ maxAliasCount: 0 })
+        if (typeof metadata !== 'object' || metadata === null || Array.isArray(metadata)
+          || !('name' in metadata) || metadata.name !== path.split('/')[1]
+          || !('description' in metadata) || typeof metadata.description !== 'string'
+          || !metadata.description.trim() || /[\r\n]/u.test(metadata.description)) {
+          throw new Error('公司技能必须包含与目录一致的名称和非空单行字符串简介')
+        }
+        validateSkillInvocation(metadata)
+      } else for (const key of ['name', 'description']) {
         const values = frontmatter.split('\n').filter(line => line.startsWith(`${key}:`))
         const value = values[0]?.slice(key.length + 1).trim().replace(/^(?:"(.*)"|'(.*)')$/u, '$1$2')
         if (values.length !== 1 || !value || /^[|>\[\{]/u.test(value)) throw new Error('请填写单行名称和简介')
-        if (key === 'name' && path.endsWith('/SKILL.md') && value !== path.split('/')[1]) throw new Error('公司技能名称必须与目录一致')
       }
     }
     files[path] = encoded
@@ -84,6 +95,20 @@ export function companyContentRelease(value: unknown): CompanyContentRelease {
   }
   if (contentDigest(files) !== value.sha256) throw new Error('公司内容校验失败')
   return Object.freeze({ version: value.version, sha256: value.sha256, files: Object.freeze(files) })
+}
+
+/** Match the native file provider's invocation fields at the publication boundary. */
+function validateSkillInvocation(metadata: object): void {
+  for (const key of ['disableModelInvocation', 'modelInvocable', 'userInvocable']) {
+    if (Object.hasOwn(metadata, key)) throw new Error(`公司技能调用配置不支持 ${key}，请使用原生字段`)
+  }
+  for (const key of ['disable-model-invocation', 'user-invocable']) {
+    if (!Object.hasOwn(metadata, key)) continue
+    const value: unknown = Reflect.get(metadata, key)
+    if (typeof value === 'boolean' || value === 0 || value === 1
+      || typeof value === 'string' && /^(?:true|false|yes|no|on|off|0|1)$/iu.test(value)) continue
+    throw new Error(`公司技能调用配置 ${key} 必须是布尔值`)
+  }
 }
 
 /** Canonical file digest shared with the company's publication service.

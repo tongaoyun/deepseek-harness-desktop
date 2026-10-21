@@ -89,6 +89,19 @@ test('merges an updated skill as a complete directory while retaining other comp
   assert.equal(plan.baseline.version, '1.0.0')
 })
 
+test('standalone publication rejects YAML the native provider cannot load without changing files', async t => {
+  const root = await privateRoot(t)
+  for (const [index, metadata] of ['description: null', 'description: "unterminated',
+    'description: Orders\nextra: one\nextra: two', 'description: Orders\nuserInvocable: true'].entries()) {
+    const text = `---\nname: orders\n${metadata}\n---\nUse tools.`
+    const content = release('1.0.0', { 'skills/orders/SKILL.md': text })
+    const directory = join(root, String(index))
+    await materialize(directory, content)
+    await assert.rejects(inspectCompanyContent(directory))
+    assert.equal(await readFile(join(directory, 'skills/orders/SKILL.md'), 'utf8'), text)
+  }
+})
+
 test('edits retain their resource baseline and reject concurrent changes to that resource', async t => {
   const root = await privateRoot(t)
   const current = release('1.0.0', { 'skills/orders/SKILL.md': skill('orders'), 'skills/orders/references/release.json': '{"resource":true}' })
