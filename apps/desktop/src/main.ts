@@ -18,7 +18,6 @@ import {
   powerMonitor,
   nativeImage,
   nativeTheme,
-  net,
   protocol,
   session,
   shell,
@@ -39,7 +38,7 @@ import { claimDesktopSingleInstance } from './single-instance.ts'
 import { desktopUpdateChannel } from './update-channel.ts'
 import { DesktopUpdateCoordinator } from './update-coordinator.ts'
 import { DesktopCommandManager } from './command-management.ts'
-import { serveWebDocument, authenticateWebHost, forwardWebRequest } from './web-document.ts'
+import { serveWebDocument, authenticateWebHost, requestAuthenticatedWebHost, forwardWebRequest } from './web-document.ts'
 import { DesktopFatalRecovery } from './fatal-recovery.ts'
 import { pruneCrashReports, RendererConsoleTail, writeCrashReport, type CrashReportSource } from './crash-report.ts'
 import { openWelcomeWindow } from './welcome-window.ts'
@@ -485,10 +484,12 @@ async function main(): Promise<void> {
     return {
       start: async () => {
         const ready = await host.start()
-        hostCookie = await authenticateWebHost(ready.url)
+        const cookie = await authenticateWebHost(ready.url)
+        hostCookie = cookie
         hostUrl = ready.url
         if (ready.injections === undefined) throw new Error('Desktop Host did not provide boot injections')
-        welcomeBackend = await connectDesktopWelcome(ready.url, (input, init) => net.fetch(input, init), async () => (await session.defaultSession.cookies.get({ url: ready.url })).map(cookie => `${cookie.name}=${cookie.value}`).join('; '))
+        welcomeBackend = await connectDesktopWelcome(new URL(ready.url).origin,
+          (input, init) => requestAuthenticatedWebHost(input, init, ready.url, cookie), () => Promise.resolve(cookie))
         analyticsEnabled = await welcomeBackend.analyticsEnabled().catch(() => false)
         if (!reportedLaunch) { reportedLaunch = true; void track('desktop_app_launch', {}) }
         stopAccount?.()

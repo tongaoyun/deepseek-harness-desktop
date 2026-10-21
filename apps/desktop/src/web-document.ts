@@ -50,6 +50,21 @@ export async function authenticateWebHost(url: string): Promise<string> {
 }
 
 /**
+ * Send a native request with only the current Host credential, without Chromium's cookie jar.
+ * @param input - Request URL belonging to the owned Host.
+ * @param init - Native request options.
+ * @param host - Owned Host launch URL.
+ * @param cookie - Credential returned by the Host authentication exchange.
+ * @returns The Host response; redirects and other authorities are rejected.
+ */
+export function requestAuthenticatedWebHost(input: string, init: RequestInit | undefined, host: string, cookie: string): Promise<Response> {
+  if (new URL(input).origin !== new URL(host).origin) throw new Error('Desktop Host request rejected another authority')
+  const headers = new Headers(init?.headers)
+  headers.set('cookie', cookie)
+  return fetch(input, { ...init, headers, credentials: 'omit', redirect: 'error' })
+}
+
+/**
  * Response headers not relayed to the renderer. `set-cookie` would hand the
  * Host's authentication cookie to the page's cookie jar, which the shell owns
  * instead; the rest describe the Node `fetch` connection (its encoding, length,

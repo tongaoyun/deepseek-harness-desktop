@@ -132,7 +132,7 @@
     },
     {
       "id": "desktop-extension",
-      "purpose": "Generic trusted desktop lifecycle hooks, environment/profile overlays, namespaced bidirectional IPC, validated caller deadlines, sender checks, cancellation, credential-free structured failures, and teardown. Every renderer boot reads current Host index injections through correlated IPC with a bounded deadline and rejects Host replacement rather than reusing stale module revisions. Host startup canonicalizes the runtime with native realpath so entry imports and profile resolution share module identities, including Windows short paths. Archived runtimes resolve the archive file without requiring plain Node to traverse its virtual directories; a real archived Electron child exercises this path. No product protocol is embedded in Electron or Host. 普通退出清理期间合并重复退出请求，分别记录清理失败并等待其余资源停止后退出；更新策略先于认证资源释放。 启动准备钩子提供官方 profile 目录与安装锚点，让独立扩展使用公开 profile API 补充插件，不在官方壳中识别产品包。",
+      "purpose": "Generic trusted desktop lifecycle hooks, environment/profile overlays, namespaced bidirectional IPC, validated caller deadlines, sender checks, cancellation, credential-free structured failures, and teardown. Every renderer boot reads current Host index injections through correlated IPC with a bounded deadline and rejects Host replacement rather than reusing stale module revisions. Host startup canonicalizes the runtime with native realpath so entry imports and profile resolution share module identities, including Windows short paths. Archived runtimes resolve the archive file without requiring plain Node to traverse its virtual directories; a real archived Electron child exercises this path. No product protocol is embedded in Electron or Host. 普通退出清理期间合并重复退出请求，分别记录清理失败并等待其余资源停止后退出；更新策略先于认证资源释放。 启动准备钩子提供官方 profile 目录与安装锚点，让独立扩展使用公开 profile API 补充插件，不在官方壳中识别产品包。 原生欢迎及账户请求使用本次 Host 的认证 Cookie，不依赖 Chromium 累积的本机 Cookie；限定同一 authority，拒绝重定向。",
       "tests": [
         "apps/desktop/tests/main-startup.spec.ts",
         "apps/desktop/tests/host-process.spec.ts",
@@ -143,7 +143,8 @@
         "apps/desktop/tests/project-manager.spec.ts",
         "apps/desktop/tests/profile-mcp.spec.ts",
         "packages/boot/plugin-manager/tests/manager.spec.ts",
-        "packages/deepseek-harness-product/desktop/tests/native-extensions.spec.ts"
+        "packages/deepseek-harness-product/desktop/tests/native-extensions.spec.ts",
+        "apps/desktop/tests/web-document.spec.ts"
       ],
       "files": [
         {
@@ -179,7 +180,7 @@
         {
           "path": "apps/desktop/src/main.ts",
           "before": "e345eda0425f2df795d20413bb87bb9a3ddc46e71ceb1cec0755ad1cca3fb847",
-          "after": "94e3af2c1fa162ef6de52f7bdf74b6914885abc3703e256c8f1d2c9dbc65fb08"
+          "after": "6a5a1058e1c32bb6cd07ecfb6f0e35eb645bc09707ddb3f6c9827cd11929b112"
         },
         {
           "path": "apps/desktop/src/preload-app.ts",
@@ -1683,6 +1684,28 @@
         }
       ],
       "diff": "remote-contribution-disposal.patch"
+    },
+    {
+      "id": "desktop-owned-host-http",
+      "purpose": "原生 HTTP 请求仅携带当前 Host 的认证 Cookie，避免历次本机监听端口 Cookie 累积导致 HTTP 431；限定相同 authority 并拒绝重定向，不改变员工认证或执行循环。",
+      "tests": [
+        "apps/desktop/tests/web-document.spec.ts",
+        "apps/desktop/tests/welcome-host.spec.ts",
+        "apps/desktop/tests/main-startup.spec.ts"
+      ],
+      "files": [
+        {
+          "path": "apps/desktop/src/web-document.ts",
+          "before": "05ab6fd59199f1b7a7dd558e60f50e38f4df1085a70af671014c085d270e91cc",
+          "after": "869f5be43dccedf434b68fed98619df14243303c8887b477f818e3fc25afc7cf"
+        },
+        {
+          "path": "apps/desktop/tests/web-document.spec.ts",
+          "before": "7b8dcccededac3bb9f978e4446a00a1cf97fb7573f73fdd47e0de842bf92539b",
+          "after": "8db8248ca1d65aaee8282412a5963fd12f565f22938254615eceeeddf2479cbe"
+        }
+      ],
+      "diff": "desktop-owned-host-http.patch"
     }
   ]
 }

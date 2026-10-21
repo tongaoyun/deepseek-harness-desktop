@@ -2,7 +2,7 @@ import { afterEach, expect, it, vi } from 'vitest'
 import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { authenticateWebHost, forwardWebRequest, serveWebDocument } from '../src/web-document.ts'
+import { authenticateWebHost, requestAuthenticatedWebHost, forwardWebRequest, serveWebDocument } from '../src/web-document.ts'
 
 const roots: string[] = []
 afterEach(async () => {
@@ -33,6 +33,23 @@ it('requires the Host authentication exchange and retains only its cookie value'
   vi.stubGlobal('fetch', fetch)
   expect(await authenticateWebHost('http://127.0.0.1:1234/?token=owned')).toBe('session=owned')
   await expect(authenticateWebHost('http://127.0.0.1:1234/')).rejects.toThrow('authentication failed')
+})
+
+it('keeps native requests on the owned Host and out of the accumulated browser cookie jar', async () => {
+  const send = vi.fn().mockResolvedValue(new Response('authenticated'))
+  vi.stubGlobal('fetch', send)
+  const signal = new AbortController().signal
+  const response = await requestAuthenticatedWebHost('http://127.0.0.1:1234/api/settings/describe', {
+    method: 'POST', headers: { cookie: 'stale='.repeat(4096), 'content-type': 'application/json' }, body: '{}', signal,
+  }, 'http://127.0.0.1:1234/?token=owned', 'current=owned')
+  const [url, init] = send.mock.calls[0] as [string, RequestInit]
+  expect(url).toBe('http://127.0.0.1:1234/api/settings/describe')
+  expect(new Headers(init.headers).get('cookie')).toBe('current=owned')
+  expect(new Headers(init.headers).get('content-type')).toBe('application/json')
+  expect(init).toMatchObject({ method: 'POST', body: '{}', signal, credentials: 'omit', redirect: 'error' })
+  expect(await response.text()).toBe('authenticated')
+  expect(() => requestAuthenticatedWebHost('http://127.0.0.1:5678/', {}, 'http://127.0.0.1:1234/', 'current=owned')).toThrow('another authority')
+  expect(send).toHaveBeenCalledTimes(1)
 })
 
 it('forwards upload bytes and cancellation with Host credentials while keeping the response streaming', async () => {

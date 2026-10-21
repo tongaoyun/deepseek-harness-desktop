@@ -86,6 +86,7 @@ jobs:
             apps/desktop/tests/fatal-recovery.spec.ts \
             apps/desktop/tests/host-process.spec.ts \
             apps/desktop/tests/main-startup.spec.ts \
+            apps/desktop/tests/web-document.spec.ts \
             packages/client/ui-primitives/tests/code-file-icon.client.spec.tsx \
             packages/client/ui-settings-account/tests/apply.client.spec.ts \
             scripts/deepseek-harness-electron-workflows.spec.ts

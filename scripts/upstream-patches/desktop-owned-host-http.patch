@@ -1,0 +1,63 @@
+diff --git a/apps/desktop/src/web-document.ts b/apps/desktop/src/web-document.ts
+index a74ea7c7efd34bd916228bffa2bec782ef562c29..f46b062b4a2c93999857da7d5f30d35f24c20b33 100644
+--- a/apps/desktop/src/web-document.ts
++++ b/apps/desktop/src/web-document.ts
+@@ -49,6 +49,21 @@ export async function authenticateWebHost(url: string): Promise<string> {
+   return end < 0 ? cookie : cookie.slice(0, end)
+ }
+ 
++/**
++ * Send a native request with only the current Host credential, without Chromium's cookie jar.
++ * @param input - Request URL belonging to the owned Host.
++ * @param init - Native request options.
++ * @param host - Owned Host launch URL.
++ * @param cookie - Credential returned by the Host authentication exchange.
++ * @returns The Host response; redirects and other authorities are rejected.
++ */
++export function requestAuthenticatedWebHost(input: string, init: RequestInit | undefined, host: string, cookie: string): Promise<Response> {
++  if (new URL(input).origin !== new URL(host).origin) throw new Error('Desktop Host request rejected another authority')
++  const headers = new Headers(init?.headers)
++  headers.set('cookie', cookie)
++  return fetch(input, { ...init, headers, credentials: 'omit', redirect: 'error' })
++}
++
+ /**
+  * Response headers not relayed to the renderer. `set-cookie` would hand the
+  * Host's authentication cookie to the page's cookie jar, which the shell owns
+diff --git a/apps/desktop/tests/web-document.spec.ts b/apps/desktop/tests/web-document.spec.ts
+index 0fd9b591b1572548b17565785c4a00c5b33f2b68..9c6665c458957fd16940db728cc3f4fddfefc0df 100644
+--- a/apps/desktop/tests/web-document.spec.ts
++++ b/apps/desktop/tests/web-document.spec.ts
+@@ -2,7 +2,7 @@ import { afterEach, expect, it, vi } from 'vitest'
+ import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises'
+ import { tmpdir } from 'node:os'
+ import { join } from 'node:path'
+-import { authenticateWebHost, forwardWebRequest, serveWebDocument } from '../src/web-document.ts'
++import { authenticateWebHost, requestAuthenticatedWebHost, forwardWebRequest, serveWebDocument } from '../src/web-document.ts'
+ 
+ const roots: string[] = []
+ afterEach(async () => {
+@@ -35,6 +35,23 @@ it('requires the Host authentication exchange and retains only its cookie value'
+   await expect(authenticateWebHost('http://127.0.0.1:1234/')).rejects.toThrow('authentication failed')
+ })
+ 
++it('keeps native requests on the owned Host and out of the accumulated browser cookie jar', async () => {
++  const send = vi.fn().mockResolvedValue(new Response('authenticated'))
++  vi.stubGlobal('fetch', send)
++  const signal = new AbortController().signal
++  const response = await requestAuthenticatedWebHost('http://127.0.0.1:1234/api/settings/describe', {
++    method: 'POST', headers: { cookie: 'stale='.repeat(4096), 'content-type': 'application/json' }, body: '{}', signal,
++  }, 'http://127.0.0.1:1234/?token=owned', 'current=owned')
++  const [url, init] = send.mock.calls[0] as [string, RequestInit]
++  expect(url).toBe('http://127.0.0.1:1234/api/settings/describe')
++  expect(new Headers(init.headers).get('cookie')).toBe('current=owned')
++  expect(new Headers(init.headers).get('content-type')).toBe('application/json')
++  expect(init).toMatchObject({ method: 'POST', body: '{}', signal, credentials: 'omit', redirect: 'error' })
++  expect(await response.text()).toBe('authenticated')
++  expect(() => requestAuthenticatedWebHost('http://127.0.0.1:5678/', {}, 'http://127.0.0.1:1234/', 'current=owned')).toThrow('another authority')
++  expect(send).toHaveBeenCalledTimes(1)
++})
++
+ it('forwards upload bytes and cancellation with Host credentials while keeping the response streaming', async () => {
+   const body = new ReadableStream({ start(controller) { controller.enqueue(new TextEncoder().encode('stream')); controller.close() } })
+   const fetch = vi.fn().mockResolvedValue(new Response(body, { headers: { 'content-encoding': 'gzip', 'set-cookie': 'private' } }))
