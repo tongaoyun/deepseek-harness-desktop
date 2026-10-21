@@ -49,3 +49,23 @@ it('cancels preparation when closed or unmounted without submitting', async () =
   f.view.unmount()
   await waitFor(() => { expect(f.invoke).not.toHaveBeenCalled() })
 })
+
+it('does not let a cancelled employee request unlock a newer submission', async () => {
+  const f = fixture(); await open()
+  let rejectOld!: (reason: Error) => void
+  f.invoke.mockImplementationOnce(() => new Promise<never>((_resolve, reject) => { rejectOld = reject }))
+  fireEvent.click(screen.getByRole('button', { name: '提交到公司' }))
+  await act(async () => f.changeIdentity())
+  await open()
+  let rejectNew!: (reason: Error) => void
+  f.invoke.mockImplementationOnce(() => new Promise<never>((_resolve, reject) => { rejectNew = reject }))
+  fireEvent.click(screen.getByRole('button', { name: '提交到公司' }))
+  await act(async () => { rejectOld(new Error('Old employee request cancelled')) })
+  const closeButtons = screen.getAllByRole<HTMLButtonElement>('button', { name: '关闭' })
+  expect(closeButtons.at(-1)!.disabled).toBe(true)
+  fireEvent.click(closeButtons[0]!)
+  expect(screen.getByRole('dialog')).toBeTruthy()
+  expect(screen.getByRole('status').textContent).toBe(t('companySubmitWorking'))
+  await act(async () => { rejectNew(new Error('New request cancelled')) })
+  expect(screen.getByRole('dialog')).toBeTruthy()
+})

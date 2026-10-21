@@ -69,7 +69,7 @@ export function CompanyContentSubmission({ t }: PropsLocale<typeof NS>) {
       const result = await api.invoke('content.submissions.submit', candidate, requestId, 120_000)
       controller.signal.throwIfAborted(); setStatus(statusOf(result))
     } catch (reason) { if (!controller.signal.aborted) setError(reason instanceof Error ? reason.message : t('companySubmitFailed')) }
-    finally { writing.current = false; if (!controller.signal.aborted) setWorking(false) }
+    finally { if (operation.current === controller) { writing.current = false; if (!controller.signal.aborted) setWorking(false) } }
   }
   if (!intent) return null
   return <Modal open onClose={close} title={t('companySubmitTitle')} closeLabel={t('close')}
