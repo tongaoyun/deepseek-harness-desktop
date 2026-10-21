@@ -116,6 +116,8 @@ it('loads native skills with authorized MCP and exact knowledge scope, replays a
   await writeFile(join(skillRoot, 'SKILL.md'), '---\nname: policy-review\ndescription: Compare policy evidence.\n---\nCompare retrieved policy before reporting.\n')
   let companyBindingMissing = false
   let companyCacheInvalid = false
+  let companyPinPending = false
+  const pendingPins: string[] = []
   let knowledgePending = false
   let pendingRequest: string | undefined
   const cancelled: string[] = []
@@ -125,6 +127,10 @@ it('loads native skills with authorized MCP and exact knowledge scope, replays a
     callback?.(null)
     if (message.type === 'extension-cancel') cancelled.push(String(message.requestId))
     if (message.type === 'extension-invoke') {
+      if (message.method === 'runtime.companyContent.pin' && companyPinPending) {
+        pendingPins.push(String(message.requestId))
+        return true
+      }
       if (message.method === 'connectors.list' && message.payload === undefined) {
         catalogReads++
         if (catalogPending) { pendingCatalog = String(message.requestId); return true }
@@ -312,6 +318,45 @@ it('loads native skills with authorized MCP and exact knowledge scope, replays a
   }, null, 2) + '\n').toMatchFileSnapshot(new URL('./expected/company-content-cache-rejection.json', import.meta.url).pathname)
   companyCacheInvalid = false
   stopCacheErrors()
+  const requestsBeforeStop = adapter.requests.length
+  const historyBeforeStop = handle.agent.session.snapshotEvents()
+  companyPinPending = true
+  handle.agent.followup(createUserMessage({ content: [{ type: 'text', text: 'Stop while checking company content.' }], source: { kind: 'user' } }))
+  await vi.waitFor(() => { expect(pendingPins).toHaveLength(1) })
+  handle.agent.cancel({ kind: 'user' })
+  await vi.waitFor(() => { expect(handle.agent.status).toBe('idle') })
+  expect(cancelled).toContain(pendingPins[0])
+  expect(adapter.requests).toHaveLength(requestsBeforeStop)
+  const stopEvents = handle.agent.session.snapshotEvents()
+  const stoppedTurn = stopEvents.findLast(event => event.type === 'turn/end')
+  expect(stoppedTurn?.data.reason).toEqual({ kind: 'aborted', reason: { kind: 'user' } })
+  await expect(JSON.stringify({ turnEnd: stoppedTurn?.data.reason,
+    additionalModelRequests: adapter.requests.length - requestsBeforeStop,
+    mainRequestCancelled: cancelled.includes(pendingPins[0]!),
+    historyPreserved: JSON.stringify(stopEvents.slice(0, historyBeforeStop.length)) === JSON.stringify(historyBeforeStop),
+    sessionRetained: ctx.sessions.get(handle.agent.id) === handle.agent.session,
+  }, null, 2) + '\n').toMatchFileSnapshot(new URL('./expected/company-content-cancellation.json', import.meta.url).pathname)
+  const companyContent = ctx.get('companyContent')
+  if (companyContent === undefined) throw new Error('Product Loader did not register company content')
+  const firstReader = new AbortController()
+  const secondReader = new AbortController()
+  const firstCheck = expect(companyContent.forSession(handle.agent.id, firstReader.signal)).rejects.toThrow('First reader stopped')
+  const secondCheck = expect(companyContent.forSession(handle.agent.id, secondReader.signal)).rejects.toThrow('Second reader stopped')
+  await vi.waitFor(() => { expect(pendingPins).toHaveLength(2) })
+  firstReader.abort(new Error('First reader stopped'))
+  await firstCheck
+  expect(cancelled).not.toContain(pendingPins[1])
+  secondReader.abort(new Error('Second reader stopped'))
+  await secondCheck
+  expect(cancelled).toContain(pendingPins[1])
+  const recheck = companyContent.forSession(handle.agent.id)
+  await vi.waitFor(() => { expect(pendingPins).toHaveLength(3) })
+  const roots = { version: '1.0.0', sha256: 'a'.repeat(64), skillsRoot: join(root, 'skills'), expertsRoot: join(root, 'experts') }
+  // A late cancelled response cannot settle the new request.
+  emitMessage({ type: 'extension-result', requestId: pendingPins[0], result: roots })
+  emitMessage({ type: 'extension-result', requestId: pendingPins[2], result: roots })
+  expect(await recheck).toEqual(roots)
+  companyPinPending = false
   const execute = (name: string) => ctx.tools.execute({ agent: handle.agent, name, arguments: {},
     callId: ToolCallId('check-' + name), signal: new AbortController().signal })
   await execute(ordersWrite); expect(decisions.at(-1)).toBe('ask')
@@ -387,9 +432,9 @@ it('loads native skills with authorized MCP and exact knowledge scope, replays a
   expect(ctx.agents.get(unavailable.agent.id)).toBe(unavailable.agent)
   expect(unavailable.agent.session.snapshotEvents().slice(0, events.length)).toEqual(events)
   expect(adapter.requests).toHaveLength(requestsBeforeBlocked)
-  const companyContent = ctx.get('companyContent')
-  if (companyContent === undefined) throw new Error('Product Loader did not register company content')
-  await expect(companyContent.forSession(unavailable.agent.id)).rejects.toMatchObject({ code: 'COMPANY_CONTENT_BINDING_MISSING' })
+  const restoredCompanyContent = ctx.get('companyContent')
+  if (restoredCompanyContent === undefined) throw new Error('Product Loader did not restore company content')
+  await expect(restoredCompanyContent.forSession(unavailable.agent.id)).rejects.toMatchObject({ code: 'COMPANY_CONTENT_BINDING_MISSING' })
   stopBindingErrors()
   await unavailable.dispose()
   companyBindingMissing = false
@@ -402,8 +447,14 @@ it('loads native skills with authorized MCP and exact knowledge scope, replays a
   pendingRequest = undefined
   const unloadingRequest = request(3, 'tasks.capabilities.prepare', { knowledgeBaseIds: ['policy'] })
   await vi.waitFor(() => { expect(pendingRequest).toBeDefined() })
+  companyPinPending = true
+  const unloadingCompanyCheck = expect(restoredCompanyContent.forSession(restored.agent.id)).rejects.toThrow('unloaded')
+  await vi.waitFor(() => { expect(pendingPins).toHaveLength(4) })
   const unloading = ctx.loader.resolve('product-runtime').fiber
   await ctx.loader.root.update([]); await ctx.loader.await(); await unloading?.dispose()
+  await unloadingCompanyCheck
+  expect(cancelled).toContain(pendingPins[3])
+  companyPinPending = false
   // Plugin release joins the operation but deliberately sends no response to a closed IPC owner.
   void unloadingRequest
   expect(cancelled).toContain(pendingRequest)

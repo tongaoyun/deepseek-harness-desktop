@@ -1,0 +1,12 @@
+{
+  "turnEnd": {
+    "kind": "aborted",
+    "reason": {
+      "kind": "user"
+    }
+  },
+  "additionalModelRequests": 0,
+  "mainRequestCancelled": true,
+  "historyPreserved": true,
+  "sessionRetained": true
+}

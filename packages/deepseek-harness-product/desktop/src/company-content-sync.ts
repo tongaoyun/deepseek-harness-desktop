@@ -86,32 +86,33 @@ export class CompanyContentSync {
   pin(request: { sessionId: string; parentSessionId?: string | undefined; started: boolean },
     signal?: AbortSignal): Promise<CompanyContentRoots> {
     signal?.throwIfAborted()
+    const operationSignal = signal === undefined ? this.lifecycle.signal : AbortSignal.any([signal, this.lifecycle.signal])
     const action = this.queue.then(() => this.track(async () => {
-      signal?.throwIfAborted()
+      operationSignal.throwIfAborted()
       const directory = join(this.employeeRoot, 'sessions')
       await mkdir(directory, { recursive: true, mode: 0o700 })
       if ((await lstat(directory)).isSymbolicLink()) throw new Error('公司内容任务缓存路径不安全')
       const path = join(directory, `${digest(request.sessionId)}.json`)
       let saved: z.infer<typeof binding> | undefined
-      try { saved = binding.parse(await this.readJson(path)) }
+      try { saved = binding.parse(await this.readJson(path, operationSignal)) }
       catch (error) { if (!missing(error)) throw error }
       if (saved) {
         if (saved.sessionId !== request.sessionId) throw new Error('公司内容任务版本不匹配')
-        return await this.restore(saved)
+        return await this.restore(saved, operationSignal)
       }
       let roots: CompanyContentRoots
       if (request.parentSessionId) {
-        const parent = binding.parse(await this.readJson(join(directory, `${digest(request.parentSessionId)}.json`)))
+        const parent = binding.parse(await this.readJson(join(directory, `${digest(request.parentSessionId)}.json`), operationSignal))
         if (parent.sessionId !== request.parentSessionId) throw new Error('公司内容父任务版本不匹配')
-        roots = await this.restore(parent)
+        roots = await this.restore(parent, operationSignal)
       } else {
         if (request.started) throw new ProductError('COMPANY_CONTENT_BINDING_MISSING',
           '此任务缺少公司内容版本记录，请新建对话；原任务历史已保留。', false,
           [{ kind: 'session', id: request.sessionId }])
-        if (!this.confirmed) await this.refresh()
-        roots = await this.restore(this.read())
+        if (!this.confirmed) await this.refresh(operationSignal)
+        roots = await this.restore(this.read(), operationSignal)
       }
-      await this.writeJson(path, { sessionId: request.sessionId, version: roots.version, sha256: roots.sha256 })
+      await this.writeJson(path, { sessionId: request.sessionId, version: roots.version, sha256: roots.sha256 }, operationSignal)
       return roots
     }))
     this.queue = action.catch(() => undefined)
@@ -134,29 +135,30 @@ export class CompanyContentSync {
     return pending
   }
 
-  private async restore(value: { version: string; sha256: string }): Promise<CompanyContentRoots> {
+  private async restore(value: { version: string; sha256: string }, signal = this.lifecycle.signal): Promise<CompanyContentRoots> {
     try {
       return await restoreCompanyContent(this.options.root, this.options.employeeId,
-        value.version, value.sha256, this.lifecycle.signal)
+        value.version, value.sha256, signal)
     } catch (error) {
-      this.lifecycle.signal.throwIfAborted()
+      signal.throwIfAborted()
       throw new ProductError('COMPANY_CONTENT_CACHE_INVALID',
         '此任务的公司内容缓存缺失或损坏，已阻止执行；原任务历史和版本记录已保留。', false,
         [{ kind: 'company-content', id: value.sha256 }], { cause: error })
     }
   }
 
-  private async readJson(path: string): Promise<unknown> {
+  private async readJson(path: string, signal = this.lifecycle.signal): Promise<unknown> {
+    signal.throwIfAborted()
     const info = await lstat(path)
     if (!info.isFile() || info.isSymbolicLink() || info.size > 2048) throw new Error('公司内容版本记录已损坏')
-    return JSON.parse(await readFile(path, { encoding: 'utf8', signal: this.lifecycle.signal }))
+    return JSON.parse(await readFile(path, { encoding: 'utf8', signal }))
   }
 
-  private async writeJson(path: string, value: unknown): Promise<void> {
+  private async writeJson(path: string, value: unknown, signal = this.lifecycle.signal): Promise<void> {
     const temporary = `${path}.${randomUUID()}.tmp`
     try {
-      await writeFile(temporary, JSON.stringify(value), { flag: 'wx', mode: 0o600, signal: this.lifecycle.signal })
-      this.lifecycle.signal.throwIfAborted()
+      await writeFile(temporary, JSON.stringify(value), { flag: 'wx', mode: 0o600, signal })
+      signal.throwIfAborted()
       await rename(temporary, path)
     } finally { await rm(temporary, { force: true }) }
   }

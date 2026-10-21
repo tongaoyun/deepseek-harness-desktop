@@ -1589,7 +1589,7 @@
         {
           "path": "vendor/README.md",
           "before": "463f0475336df70f35805c60ea897b94d15cdd295595d8a50074dedd4555d311",
-          "after": "67c181984ffac7434fbfe93bd0a58089ff23f206fad14f2119f89542adc2e6c8"
+          "after": "9103defb16c311869d61bbac66a71074f11e9bd30d18e0e258a92205a1801c3c"
         }
       ],
       "diff": "company-plugin-vendor-documentation.patch"

@@ -720,7 +720,7 @@ describe('summon_expert', () => {
 
     applyOnHost(ctx, { root: dir, provider: 'spawn', divisions: ['engineering'] })
     const list = tools.find((tool) => (tool as { name?: string }).name === 'list_experts') as {
-      execute: (args: unknown) => Promise<{ divisions: Array<{ division: string }>; total: number }>
+      execute: (args: unknown, exec: { agent: undefined }) => Promise<{ divisions: Array<{ division: string }>; total: number }>
     }
 
     await expect(list.execute({ division: ' engineering ' }, { agent: undefined })).resolves.toMatchObject({ divisions: [{ division: 'engineering' }], total: 1 })
@@ -1564,7 +1564,7 @@ describe('list_experts 语言切换', () => {
 
   function install(locale?: 'zh' | 'en'): {
     list: {
-      execute: (args: unknown) => Promise<{ divisions: Array<{ division: string; count: number; experts?: Array<{ name: string; description: string }> }>; total: number }>
+      execute: (args: unknown, exec: { agent: undefined }) => Promise<{ divisions: Array<{ division: string; count: number; experts?: Array<{ name: string; description: string }> }>; total: number }>
       output: { render: (args: unknown, value: unknown) => Array<{ type: string; text: string }> }
     }
   } {
@@ -1582,7 +1582,7 @@ describe('list_experts 语言切换', () => {
     } as unknown as Context
     applyOnHost(ctx, { root: dir, provider: 'spawn', divisions: ['engineering'] })
     const list = tools.find((tool) => (tool as { name?: string }).name === 'list_experts') as {
-      execute: (args: unknown) => Promise<{ divisions: Array<{ division: string; count: number; experts?: Array<{ name: string; description: string }> }>; total: number }>
+      execute: (args: unknown, exec: { agent: undefined }) => Promise<{ divisions: Array<{ division: string; count: number; experts?: Array<{ name: string; description: string }> }>; total: number }>
       output: { render: (args: unknown, value: unknown) => Array<{ type: string; text: string }> }
     }
     return { list }

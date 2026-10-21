@@ -366,12 +366,16 @@ describe("真实 Host 与 Remote 集成", () => {
 describe("动态名册异步一致性", () => {
   it("旧查询不覆盖保存结果，重启后的低修订号仍可刷新", async () => {
     let resolve!: (result: RemoteResult<CatalogSnapshot>) => void;
-    const remote = {
+    const unused = async (): Promise<never> => { throw new Error("Unexpected catalog mutation"); };
+    const remote: AgencyCatalogRemote = {
       getCatalog: () =>
         new Promise<RemoteResult<CatalogSnapshot>>((done) => {
           resolve = done;
         }),
-    } as AgencyCatalogRemote;
+      getCustomExpert: unused,
+      saveCustomExpert: unused,
+      deleteCustomExpert: unused,
+    };
     const pending = refreshCatalog(remote);
     expect(refreshCatalog(remote)).toBe(pending);
     acceptCatalog(remote, {

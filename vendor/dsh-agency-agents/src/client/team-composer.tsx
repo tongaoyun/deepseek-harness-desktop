@@ -55,7 +55,7 @@ export function TeamMenu(props: {
             if (known.revision >= 0)
                 setExperts([...known.experts]);
             else {
-                const catalog = await unwrap(props.remote.getCatalog());
+                const catalog = await unwrap(props.remote.getCatalog(false));
                 if (alive.current)
                     setExperts(catalog.experts);
             }

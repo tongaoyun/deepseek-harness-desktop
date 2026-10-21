@@ -4,7 +4,7 @@
     {
       "path": "README.md",
       "before": null,
-      "after": "24f100ac36903695cb676a0f2504013f1b6694ddf03223a3e2e355f5f52f5ca6"
+      "after": "1b566018de38157182d8012a8106487423ea4bcee8be6732477d514bd7f301a2"
     },
     {
       "path": "assets/agency-agents-zh/LICENSE",
@@ -3637,9 +3637,19 @@
       "after": "d3a5053669f07b8fee4707ea565cf27babd2818bcf8f5a344c059343c491244d"
     },
     {
+      "path": "src/client/team-composer.tsx",
+      "before": "eac565c7b142af243fe132532aea1fc808e1d44c70b7a464bae6b6ec7ec80f1f",
+      "after": "186a67010f9b02c1890d7a0a26787e27594d1364e63c40d34f4d95d4e58a092a"
+    },
+    {
+      "path": "src/client/team-ui.tsx",
+      "before": "a57db732f3dd472314eac104a541b3481553f626a1c9787c45a187f814aa99d7",
+      "after": "ad731e5d2a7ac7aed1dfb743818da883aaa39816ed8ed7198c3427871b5a76fe"
+    },
+    {
       "path": "src/custom-experts.test.ts",
       "before": "d167e4595913828456f6072c212ed9f980c9fc0467cd010949240cbedf7cf0e4",
-      "after": "e988aa4a21e922fcdcd186323a097ebc00d3a88563db161316b8bb372de0e07b"
+      "after": "b33a7c68edbc10e5423343613b26743f04dfaca604fb33f786dd6903eda456f6"
     },
     {
       "path": "src/expert-contract.ts",
@@ -3649,7 +3659,7 @@
     {
       "path": "src/index.test.ts",
       "before": "e7b6d6e0f8037f6155eb90bf642790706a3f2765553b4cc0743a8a381e04fbce",
-      "after": "cbdd81ab7c103fba86cc1acc7edc2e2a6d140655e70de1e9c50ecd13b26561df"
+      "after": "4e2e9f15466ed46ddb528ce4b86cade2fa3113a9ae5976c82c3f49dc67397470"
     },
     {
       "path": "src/index.ts",
@@ -3700,6 +3710,11 @@
       "path": "src/team-integration.test.ts",
       "before": "7106b9534ddff9211c31ef010daff56ea290796d6f439f30d2d68c4ac6fa1dc5",
       "after": "683ff612b140d3fa8f28c2515ae725e230ac5ea1d2931fef80682e582cdd23b7"
+    },
+    {
+      "path": "tsconfig.json",
+      "before": "92fd889d79520f3afd7b498ed014b35006733d8bde4a05e2d3beb006820f39c0",
+      "after": "d0e7f46b0e6557490d6d25cc60fbbd432ad53e788f78928478366517643b0d3d"
     },
     {
       "path": "tsdown.config.ts",

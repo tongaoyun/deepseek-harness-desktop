@@ -17,8 +17,8 @@ export interface CompanyContentSource {
   read(): Promise<CompanyContentRoots>
   /** Coalesced, throttled server check; failures preserve the installed catalog. */
   refresh(): Promise<void>
-  /** Durable version bound to a Session; child Sessions inherit their parent. */
-  forSession(sessionId: string): Promise<CompanyContentRoots>
+  /** Durable Session version; cancellation releases this reader and aborts verification when none remain. */
+  forSession(sessionId: string, signal?: AbortSignal): Promise<CompanyContentRoots>
 }
 
 /** PDF upload parsing: standard document processing or embedded text without OCR. */

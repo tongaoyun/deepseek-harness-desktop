@@ -6,4 +6,4 @@
 
 公司目录打开时先显示本地内容，再共享检查服务端；失败可重试，已有会话及子会话继续使用固定版本。公司内容使用原生 Markdown 与技能目录，不包含插件代码或凭据。
 
-构建：在仓库根目录运行 `pnpm run build:artifacts`。公司分支的完整差异登记在 [vendor/README.md](../README.md)。
+构建：在仓库根目录运行 `pnpm run build:artifacts`，再运行 `pnpm exec tsc --noEmit -p vendor/dsh-agency-agents/tsconfig.json` 检查插件源码及测试。编译声明包含宿主 Node.js 支持的 ES2024 API，输出语法仍以 ES2022 为目标。公司分支的完整差异登记在 [vendor/README.md](../README.md)。

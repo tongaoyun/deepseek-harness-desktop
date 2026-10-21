@@ -5,11 +5,18 @@ import type { Agent } from '@deepseek-ai/dsh-agent'
 import type {} from '@deepseek-ai/dsh-system-prompt'
 import type {} from '@deepseek-ai/dsh-session-query'
 import { z } from 'zod'
+import { addAbortListener } from 'node:events'
 import type { CompanyContentRoots, CompanyContentSource } from '@deepseek-harness/product/protocol'
 import type { DeepSeekHarnessProductIpc } from './deepseek-harness-product-ipc.ts'
 
 const rootsSchema = z.object({ version: z.string().min(1).max(80), sha256: z.string().regex(/^[a-f0-9]{64}$/u),
   skillsRoot: z.string().min(1), expertsRoot: z.string().min(1) }).strict()
+
+interface BindingRequest {
+  readonly controller: AbortController
+  readonly result: Promise<CompanyContentRoots>
+  readers: number
+}
 
 declare module '@deepseek-ai/cordis' {
   interface Context { companyContent: CompanyContent }
@@ -18,27 +25,32 @@ declare module '@deepseek-ai/cordis' {
 /** Credential-free company content source exposed only inside the product Host. */
 export class CompanyContent extends Service implements CompanyContentSource {
   private readonly lifecycle = new AbortController()
-  private readonly pendingBindings = new Map<string, Promise<CompanyContentRoots>>()
+  private readonly pendingBindings = new Map<string, BindingRequest>()
+  private readonly operations = new Set<Promise<CompanyContentRoots>>()
   private readonly prompted = new WeakSet<Agent>()
 
   constructor(ctx: Context, private readonly product: Pick<DeepSeekHarnessProductIpc, 'invoke'>) {
     super(ctx, 'companyContent')
-    ctx.on('agent/created', async ({ agent }) => {
-      try { await this.installVersion(agent) }
+    ctx.on('agent/created', async ({ agent, signal }) => {
+      try { await this.installVersion(agent, signal) }
       catch (_error) {
         // Content failure blocks execution, while the native Session keeps its history and draft.
         this.lifecycle.signal.throwIfAborted()
+        signal?.throwIfAborted()
       }
     })
-    ctx.on('agent/pre-step', async ({ agent }, next) => {
-      await this.installVersion(agent)
+    ctx.on('agent/pre-step', async ({ agent, signal }, next) => {
+      await this.installVersion(agent, signal)
       return next()
     })
-    ctx.effect(() => () => { this.lifecycle.abort(new Error('Company content plugin unloaded')); this.pendingBindings.clear() }, 'company-content.lifecycle')
+    ctx.effect(() => async () => {
+      this.lifecycle.abort(new Error('Company content plugin unloaded'))
+      await Promise.allSettled([...this.operations])
+    }, 'company-content.lifecycle')
   }
 
-  private async installVersion(agent: Agent): Promise<void> {
-    const version = await this.forSession(agent.id)
+  private async installVersion(agent: Agent, signal?: AbortSignal): Promise<void> {
+    const version = await this.forSession(agent.id, signal)
     if (this.prompted.has(agent)) return
     const prompt = agent.ctx.get('systemPrompt')
     if (!prompt) throw new Error('Company content requires the native system prompt service')
@@ -60,26 +72,45 @@ export class CompanyContent extends Service implements CompanyContentSource {
 
   /** Resolve one real Session; resumed tasks and child Agents keep their original content.
    * @param sessionId - Native Session identity supplied by its Agent.
+   * @param signal - Cancel this reader; the last reader also cancels main-process verification.
    * @returns Roots revalidated by main; only concurrent requests share a check.
    */
-  forSession(sessionId: string): Promise<CompanyContentRoots> {
+  async forSession(sessionId: string, signal = this.lifecycle.signal): Promise<CompanyContentRoots> {
+    signal.throwIfAborted()
+    this.lifecycle.signal.throwIfAborted()
     let pending = this.pendingBindings.get(sessionId)
     if (!pending) {
       const session = this.ctx.sessions.get(SessionId(sessionId))
-      if (!session) return Promise.reject(new Error('Company content requires an existing Session'))
-      pending = (async () => {
+      if (!session) throw new Error('Company content requires an existing Session')
+      const controller = new AbortController()
+      const operationSignal = AbortSignal.any([controller.signal, this.lifecycle.signal])
+      const result = (async () => {
         using observation = await this.ctx.sessionQuery.observeSession(session.id)
+        operationSignal.throwIfAborted()
         const value = await this.product.invoke('runtime.companyContent.pin', { sessionId,
           ...session.header.parentSession === undefined ? {} : { parentSessionId: session.header.parentSession },
           started: observation.events.some(event => event.type === 'request/header'),
-        }, this.lifecycle.signal)
+        }, operationSignal)
         return rootsSchema.parse(value)
       })()
-      this.pendingBindings.set(sessionId, pending)
-      void pending.finally(() => {
-        if (this.pendingBindings.get(sessionId) === pending) this.pendingBindings.delete(sessionId)
+      pending = { controller, result, readers: 0 }
+      const request = pending
+      this.pendingBindings.set(sessionId, request)
+      this.operations.add(result)
+      void result.finally(() => {
+        this.operations.delete(result)
+        if (this.pendingBindings.get(sessionId) === request) this.pendingBindings.delete(sessionId)
       }).catch(() => undefined)
     }
-    return pending
+    pending.readers++
+    const cancelled = Promise.withResolvers<never>()
+    using _listener = addAbortListener(signal, () => { cancelled.reject(signal.reason) })
+    try { return await Promise.race([pending.result, cancelled.promise]) }
+    finally {
+      if (--pending.readers === 0) {
+        if (this.pendingBindings.get(sessionId) === pending) this.pendingBindings.delete(sessionId)
+        pending.controller.abort(new Error('Company content has no remaining readers'))
+      }
+    }
   }
 }

@@ -179,3 +179,26 @@ it('cancels one page waiter without cancelling a concurrent reader', async () =>
   expect(sync.read().version).toBe('1.0.0')
   expect(load).toHaveBeenCalledOnce()
 })
+
+it('cancels a cold Session pin without committing its binding or blocking the next Session', async () => {
+  const { load, create, root } = await fixture()
+  const remote = Promise.withResolvers<unknown>()
+  load.mockImplementationOnce((signal) => {
+    signal.addEventListener('abort', () => { remote.reject(signal.reason) }, { once: true })
+    return remote.promise
+  })
+  const sync = create()
+  await sync.prepare()
+  const stop = new AbortController()
+  const stopped = expect(sync.pin({ sessionId: 'stopped', started: false }, stop.signal)).rejects.toThrow('User stopped')
+  const next = sync.pin({ sessionId: 'next', started: false })
+  const [employee] = await readdir(root)
+  await vi.waitFor(async () => { expect(await readdir(join(root, employee!, 'sessions'))).toEqual([]) })
+  stop.abort(new Error('User stopped'))
+  await stopped
+  remote.resolve(release('1.0.0'))
+  expect((await next).version).toBe('1.0.0')
+  const records = await readdir(join(root, employee!, 'sessions'))
+  expect(records).toEqual([createHash('sha256').update('next').digest('hex') + '.json'])
+  expect(await readFile(join(root, employee!, 'sessions', records[0]!), 'utf8')).toContain('"sessionId":"next"')
+})

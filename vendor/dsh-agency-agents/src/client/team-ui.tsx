@@ -176,7 +176,7 @@ export function TeamsPanel(props: {
             if (known.revision >= 0)
                 setExperts([...known.experts]);
             else {
-                const catalog = await unwrap(props.remote.getCatalog());
+                const catalog = await unwrap(props.remote.getCatalog(false));
                 if (!alive.current)
                     return;
                 setExperts(catalog.experts);
@@ -359,7 +359,7 @@ export function TeamsPanel(props: {
       {editor && (<TeamEditor initial={editor.value} experts={experts} enabled={editor.enabled} enabledExperts={snapshot!.enabledExperts} close={() => setEditor(null)} refresh={async () => {
                 const latest = await unwrap(props.remote.getTeams());
                 accept(latest);
-                const catalog = await unwrap(props.remote.getCatalog());
+                const catalog = await unwrap(props.remote.getCatalog(false));
                 setExperts(catalog.experts);
                 return latest;
             }} save={async (value, enabled, revision) => {
