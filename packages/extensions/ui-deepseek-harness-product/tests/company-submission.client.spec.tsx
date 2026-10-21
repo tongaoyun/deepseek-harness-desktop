@@ -9,13 +9,17 @@ import { CompanyContentSubmission } from '../src/client/CompanyContentSubmission
 const t = makeTranslate(zh, commonZh)
 const candidate = { resourceKey: 'skills/orders', files: { 'skills/orders/SKILL.md': 'ZmlsZQ==' } }
 afterEach(() => { cleanup(); vi.unstubAllGlobals() })
-function fixture() {
-  let listener: ((event: { type: string }) => void) | undefined
-  const invoke = vi.fn(async (_namespace: string, method: string) => ({ ok: true, result: method.endsWith('inspect') ? { status: null } : { status: 'SUBMITTED', reviewNote: '' } }))
+function fixture(initialSession = Promise.resolve({ authenticated: true, employeeId: 'alice' })) {
+  let listener: ((event: { type: string; payload?: unknown }) => void) | undefined
+  const invoke = vi.fn(async (_namespace: string, method: string) => ({ ok: true, result: method === 'auth.getSession'
+    ? await initialSession
+    : method.endsWith('inspect') ? { status: null } : { status: 'SUBMITTED', reviewNote: '' } }))
   const cancel = vi.fn()
   vi.stubGlobal('dshDesktop', { extensions: { invoke, cancel, subscribe: (_namespace: string, next: typeof listener) => { listener = next; return () => { listener = undefined } } } })
   const view = render(<CompanyContentSubmission t={t} />)
-  return { invoke, cancel, view, changeIdentity: () => listener?.({ type: 'session.changed' }) }
+  return { invoke, cancel, view,
+    changeSession: (payload: unknown) => listener?.({ type: 'session.changed', payload }),
+    changeIdentity: () => listener?.({ type: 'session.changed', payload: { authenticated: true, employeeId: 'bob' } }) }
 }
 async function open(prepare: (signal: AbortSignal) => Promise<typeof candidate> = async () => candidate) {
   await act(async () => document.dispatchEvent(new CustomEvent('dsh:company-content-submit', { cancelable: true, detail: { name: '订单核对', prepare } })))
@@ -23,7 +27,7 @@ async function open(prepare: (signal: AbortSignal) => Promise<typeof candidate> 
 }
 it('requires confirmation, submits only once and shows durable review status', async () => {
   const { invoke } = fixture(); await open()
-  expect(invoke.mock.calls.map(call => call[1])).toEqual(['content.submissions.inspect'])
+  expect(invoke.mock.calls.filter(call => call[1] !== 'auth.getSession').map(call => call[1])).toEqual(['content.submissions.inspect'])
   expect(screen.getByRole('dialog').textContent).toMatchSnapshot()
   fireEvent.click(screen.getByRole('button', { name: '提交到公司' }))
   await screen.findByText('已提交，等待管理员审核。')
@@ -47,7 +51,38 @@ it('cancels preparation when closed or unmounted without submitting', async () =
   fireEvent.click(screen.getAllByRole('button', { name: '关闭' }).at(-1)!)
   expect(signal?.aborted).toBe(true)
   f.view.unmount()
-  await waitFor(() => { expect(f.invoke).not.toHaveBeenCalled() })
+  await waitFor(() => { expect(f.invoke.mock.calls.filter(call => call[1] !== 'auth.getSession')).toHaveLength(0) })
+})
+
+it('keeps an in-flight submission open when the same employee renews their login', async () => {
+  const f = fixture(); await open()
+  const response = Promise.withResolvers<{ ok: true; result: { status: string; reviewNote: string } }>()
+  f.invoke.mockImplementationOnce(() => response.promise)
+  fireEvent.click(screen.getByRole('button', { name: '提交到公司' }))
+  const cancellations = f.cancel.mock.calls.length
+  await act(async () => f.changeSession({ authenticated: true, employeeId: 'alice', expiresAt: 'renewed' }))
+  expect(screen.getByRole('dialog')).toBeTruthy()
+  expect(f.cancel).toHaveBeenCalledTimes(cancellations)
+  await act(async () => { response.resolve({ ok: true, result: { status: 'SUBMITTED', reviewNote: '' } }) })
+  expect(screen.getByText('已提交，等待管理员审核。')).toBeTruthy()
+  await act(async () => f.changeSession({ authenticated: false }))
+  expect(screen.queryByRole('dialog')).toBeNull()
+})
+
+it('cancels a pending preparation when identity changes before the initial session read settles', async () => {
+  const initialSession = Promise.withResolvers<{ authenticated: boolean; employeeId: string }>()
+  const f = fixture(initialSession.promise)
+  let preparation: AbortSignal | undefined
+  await act(async () => document.dispatchEvent(new CustomEvent('dsh:company-content-submit', {
+    cancelable: true, detail: { name: 'Pending', prepare: async (signal: AbortSignal) => { preparation = signal; return new Promise(() => {}) } },
+  })))
+  await act(async () => f.changeIdentity())
+  expect(preparation?.aborted).toBe(true)
+  expect(screen.queryByRole('dialog')).toBeNull()
+  await act(async () => { initialSession.resolve({ authenticated: true, employeeId: 'alice' }) })
+  await open()
+  await act(async () => f.changeSession({ authenticated: true, employeeId: 'bob' }))
+  expect(screen.getByRole('dialog')).toBeTruthy()
 })
 
 it('does not let a cancelled employee request unlock a newer submission', async () => {

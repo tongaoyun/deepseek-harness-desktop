@@ -2,7 +2,7 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { mkdir, readFile, readdir, rename, rm, writeFile, lstat } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
-import { companyContentRelease, COMPANY_CONTENT_MAX_BYTES, type CompanyContentRelease } from '@deepseek-harness/product/company-content'
+import { companyContentRelease, COMPANY_CONTENT_MAX_BYTES, COMPANY_CONTENT_MAX_FILES, COMPANY_CONTENT_MAX_PATH_LENGTH, type CompanyContentRelease } from '@deepseek-harness/product/company-content'
 import type { CompanyContentRoots } from '@deepseek-harness/product/protocol'
 
 async function privateDirectory(path: string): Promise<void> {
@@ -14,11 +14,17 @@ async function privateDirectory(path: string): Promise<void> {
 
 async function verifyCache(directory: string, release: CompanyContentRelease, signal: AbortSignal): Promise<void> {
   const expected = new Map(Object.entries(release.files))
+  const directories = new Set(['', 'skills', 'experts'])
+  for (const path of expected.keys()) {
+    const parts = path.split('/')
+    for (let index = 1; index < parts.length; index++) directories.add(parts.slice(0, index).join('/'))
+  }
   const walk = async (relative: string): Promise<void> => {
     signal.throwIfAborted()
     const stat = await lstat(join(directory, relative))
     if (stat.isSymbolicLink()) throw new Error('公司内容缓存路径不安全')
     if (stat.isDirectory()) {
+      if (!directories.has(relative)) throw new Error('公司内容缓存包含未知目录')
       for (const child of await readdir(join(directory, relative))) await walk(relative ? `${relative}/${child}` : child)
       return
     }
@@ -104,20 +110,23 @@ export async function restoreCompanyContent(root: string, employeeId: string, ve
   await privateDirectory(employee)
   const directory = join(employee, sha256)
   const files: Record<string, string> = {}
-  let bytes = 0, entries = 0
+  let bytes = 0, entries = 0, fileCount = 0
+  // Each one-character path segment requires a separator; valid releases can exceed 4,096 directories.
+  const maxEntries = COMPANY_CONTENT_MAX_FILES * Math.ceil(COMPANY_CONTENT_MAX_PATH_LENGTH / 2) + 3
   const walk = async (relative: string): Promise<void> => {
     signal.throwIfAborted()
+    if (relative.length > COMPANY_CONTENT_MAX_PATH_LENGTH) throw new Error('公司内容缓存路径过长')
     const path = join(directory, relative)
     const info = await lstat(path)
     if (info.isSymbolicLink()) throw new Error('公司内容缓存路径不安全')
     if (info.isDirectory()) {
       for (const child of await readdir(path)) {
-        if (++entries > 4096) throw new Error('公司内容缓存文件过多')
+        if (++entries > maxEntries) throw new Error('公司内容缓存文件过多')
         await walk(relative ? `${relative}/${child}` : child)
       }
     } else if (relative !== 'release.json') {
       bytes += info.size
-      if (!info.isFile() || bytes > COMPANY_CONTENT_MAX_BYTES || relative.length > 240) throw new Error('公司内容缓存已损坏')
+      if (!info.isFile() || ++fileCount > COMPANY_CONTENT_MAX_FILES || bytes > COMPANY_CONTENT_MAX_BYTES) throw new Error('公司内容缓存已损坏')
       files[relative] = (await readFile(path, { signal })).toString('base64')
     } else if (!info.isFile() || info.size > 512) throw new Error('公司内容缓存已损坏')
   }

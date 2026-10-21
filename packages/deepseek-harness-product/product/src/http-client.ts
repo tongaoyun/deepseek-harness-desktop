@@ -94,7 +94,7 @@ export class DeepSeekHarnessApiClient {
     signal.throwIfAborted()
     let response: Response
     try {
-      response = await this.requestFetch(`${this.baseUrl}${path}`, { ...init, headers, signal })
+      response = await this.requestFetch(`${this.baseUrl}${path}`, { ...init, headers, signal, redirect: 'error' })
     } catch (cause) {
       this.lifecycle.signal.throwIfAborted()
       init.signal?.throwIfAborted()

@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { createHash } from 'node:crypto'
 import { tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
@@ -67,6 +67,33 @@ it('new tasks use the new version while old tasks and child tasks keep their con
   expect(restored).toEqual(old)
   expect(await readFile(join(restored.skillsRoot, 'orders/SKILL.md'), 'utf8')).toContain('Skill 1.0.0')
   expect(await readFile(join(restored.expertsRoot, 'operations/orders.md'), 'utf8')).toContain('Expert 1.0.0')
+})
+
+it('restores a valid release with deeply nested skill resources after restart', async () => {
+  const { create, load } = await fixture()
+  const value = release('1.0.0')
+  const files = { ...value.files, ...Object.fromEntries(Array.from({ length: 420 }, (_, index) =>
+    [`skills/orders/assets/item-${index}/a/b/c/d/e/f/g/h/policy.txt`, Buffer.from('Policy').toString('base64')])) }
+  load.mockResolvedValue({ ...value, files, sha256: contentDigest(files) })
+  const first = create()
+  await first.prepare(); await first.refresh()
+  const pinned = await first.pin({ sessionId: 'nested', started: false })
+  await first.close()
+  const restarted = create()
+  await restarted.prepare()
+  expect(await restarted.pin({ sessionId: 'nested', started: true })).toEqual(pinned)
+  expect(await readFile(join(pinned.skillsRoot, 'orders/assets/item-419/a/b/c/d/e/f/g/h/policy.txt'), 'utf8')).toBe('Policy')
+})
+
+it('rejects an unexpected cache directory without deleting its contents or changing the Session binding', async () => {
+  const { create } = await fixture()
+  const sync = create()
+  await sync.prepare(); await sync.refresh()
+  const pinned = await sync.pin({ sessionId: 'unknown-directory', started: false })
+  const unexpected = join(pinned.skillsRoot, 'unexpected')
+  await mkdir(unexpected)
+  await expect(sync.pin({ sessionId: 'unknown-directory', started: true })).rejects.toMatchObject({ code: 'COMPANY_CONTENT_CACHE_INVALID' })
+  expect(await readdir(unexpected)).toEqual([])
 })
 
 it('keeps the verified catalog after network failure and retries without waiting for the throttle', async () => {

@@ -4,6 +4,10 @@ import { createHash } from "node:crypto";
 /** Company releases contain data for native plugins, never plugin executables or credentials. */
 /** Maximum decoded bytes in a release, enforced before writing native plugin files. */
 const COMPANY_CONTENT_MAX_BYTES = 32 * 1024 * 1024;
+/** Maximum ordinary files in a company release, excluding main-owned cache metadata. */
+const COMPANY_CONTENT_MAX_FILES = 2048;
+/** Maximum characters in a portable relative content path. */
+const COMPANY_CONTENT_MAX_PATH_LENGTH = 240;
 /** Validate downloaded files and their canonical digest before any filesystem write.
 * @param value - Authenticated server response, or null before the first publication.
 * @returns An immutable, validated release.
@@ -52,6 +56,10 @@ function companyContentRelease(value) {
 		files[path] = encoded;
 	}
 	for (const path of Object.keys(files)) if (path.startsWith("skills/") && files[`${path.split("/").slice(0, 2).join("/")}/SKILL.md`] === void 0) throw new Error("公司技能缺少 SKILL.md");
+	for (const path of paths) {
+		const parts = path.split("/");
+		for (let index = 1; index < parts.length; index++) if (paths.has(parts.slice(0, index).join("/"))) throw new Error("公司内容存在文件与目录路径冲突");
+	}
 	if (contentDigest(files) !== value.sha256) throw new Error("公司内容校验失败");
 	return Object.freeze({
 		version: value.version,
@@ -68,4 +76,4 @@ function contentDigest(files) {
 	return createHash("sha256").update(canonical).digest("hex");
 }
 //#endregion
-export { COMPANY_CONTENT_MAX_BYTES, companyContentRelease, contentDigest };
+export { COMPANY_CONTENT_MAX_BYTES, COMPANY_CONTENT_MAX_FILES, COMPANY_CONTENT_MAX_PATH_LENGTH, companyContentRelease, contentDigest };

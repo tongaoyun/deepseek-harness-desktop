@@ -10,6 +10,10 @@ export interface CompanyContentRelease {
 
 /** Maximum decoded bytes in a release, enforced before writing native plugin files. */
 export const COMPANY_CONTENT_MAX_BYTES = 32 * 1024 * 1024
+/** Maximum ordinary files in a company release, excluding main-owned cache metadata. */
+export const COMPANY_CONTENT_MAX_FILES = 2048
+/** Maximum characters in a portable relative content path. */
+export const COMPANY_CONTENT_MAX_PATH_LENGTH = 240
 
 /** Validate downloaded files and their canonical digest before any filesystem write.
  * @param value - Authenticated server response, or null before the first publication.
@@ -30,10 +34,10 @@ export function companyContentRelease(value: unknown): CompanyContentRelease {
   const paths = new Set<string>()
   const expertIds = new Set<string>()
   let bytes = 0
-  if (Object.keys(value.files).length > 2048) throw new Error('公司内容文件过多')
+  if (Object.keys(value.files).length > COMPANY_CONTENT_MAX_FILES) throw new Error('公司内容文件过多')
   for (const [path, encoded] of Object.entries(value.files)) {
     if (typeof encoded !== 'string' || encoded.length > Math.ceil(COMPANY_CONTENT_MAX_BYTES / 3) * 4
-      || path.length > 240
+      || path.length > COMPANY_CONTENT_MAX_PATH_LENGTH
       || !(expertPath.test(path) || skillPath.test(path))
       || path.split('/').some(part => ['', '.', '..'].includes(part) || part.endsWith('.')
         || /^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\..*)?$/iu.test(part))
@@ -65,6 +69,12 @@ export function companyContentRelease(value: unknown): CompanyContentRelease {
   for (const path of Object.keys(files)) {
     if (path.startsWith('skills/') && files[`${path.split('/').slice(0, 2).join('/')}/SKILL.md`] === undefined) {
       throw new Error('公司技能缺少 SKILL.md')
+    }
+  }
+  for (const path of paths) {
+    const parts = path.split('/')
+    for (let index = 1; index < parts.length; index++) {
+      if (paths.has(parts.slice(0, index).join('/'))) throw new Error('公司内容存在文件与目录路径冲突')
     }
   }
   if (contentDigest(files) !== value.sha256) throw new Error('公司内容校验失败')
