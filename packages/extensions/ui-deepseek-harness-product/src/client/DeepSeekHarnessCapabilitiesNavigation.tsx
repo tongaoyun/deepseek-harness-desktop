@@ -10,6 +10,7 @@ import type { MainPanelId } from '@deepseek-ai/dsh-client-ui-layout/client'
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import { NS } from '../locales.ts'
 import css from '../DeepSeekHarnessProduct.module.css'
+import { CompanyContentSubmission } from './CompanyContentSubmission.tsx'
 
 export const CAPABILITY_PANELS = [
   { id: 'deepseek-harness-connectors' as MainPanelId, labelKey: 'connectors', icon: IconApiOutlineRegular },
@@ -26,10 +27,10 @@ export const EXTENSION_PANELS = [
 /** Label the extension panels without adding an interactive navigation layer. */
 export function CapabilitiesHeading({ wide, t }:
 PropsRuntime<'sidebar.panelheading'> & PropsLocale<typeof NS>): ReactNode {
-  return wide && <div className={css.capabilitiesHeading}>
+  return <><CompanyContentSubmission t={t} />{wide && <div className={css.capabilitiesHeading}>
     <IconSparkleRegular size={16} />
     <span>{t('capabilities')}</span>
-  </div>
+  </div>}</>
 }
 
 /** Keep child labels aligned when wide and expose their own icon in the collapsed rail. */

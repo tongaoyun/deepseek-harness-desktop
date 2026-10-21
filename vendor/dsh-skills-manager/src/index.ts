@@ -26,6 +26,7 @@ import {
   browseDirectories,
   createSkill,
   skillDetail,
+  exportSkill,
   listProviderCandidates,
   getProviderSkill,
   userRoots,
@@ -598,6 +599,8 @@ function apply(ctx: HostContext) {
               return run(res, () => withScope(body, (scope) => repositories.restoreTrash(String(body.id || ""), { ...(scope ?? {}), registeredWorkspaces: registeredWorkspacePaths(ctx) })), afterWrite);
             case "/api/dsh-skills-manager/trash-delete":
               return run(res, () => repositories.permanentlyDeleteTrash(String(body.id || "")));
+            case "/api/dsh-skills-manager/export":
+              return run(res, () => withScope(body, (scope) => exportSkill(String(body.root || "dsh"), String(body.name || ""), scope ? { ...scope, workspaceBound: true } : projectOptions())));
             case "/api/dsh-skills-manager/detail":
               return run(res, () => withScope(body, (scope) => skillDetail(String(body.root || "dsh"), String(body.name || ""), scope ? { ...scope, workspaceBound: true } : projectOptions())));
             case "/api/dsh-skills-manager/create":

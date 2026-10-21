@@ -7,6 +7,7 @@ import { invokeKnowledge, type KnowledgeUpload } from './knowledge-bridge.ts'
 export type { KnowledgeUpload, KnowledgeUploadPending } from './knowledge-bridge.ts'
 import { ProductError } from './errors.ts'
 import { z } from 'zod'
+import { invokeContentSubmission } from './content-submission-bridge.ts'
 import { parseConnectorAuthorization, parseConnectorAuthorizationLaunch } from './connector-authorization.ts'
 
 /** Main-process-only inference bootstrap. Secrets in this object never cross the preload bridge. */
@@ -345,6 +346,11 @@ export class DeepSeekHarnessProductBridge {
       if (!this.session.authenticated || !this.session.employeeId) throw new ProductError('EMPLOYEE_UNAUTHORIZED', 'Employee sign-in is required')
       if (!this.support) throw new ProductError('FEATURE_UNAVAILABLE', 'Desktop support is unavailable')
       return this.support(method, input, this.api, this.session, lifetime)
+    }
+    if (method.startsWith('content.submissions.')) {
+      const lifetime = AbortSignal.any([this.identityLifecycle.signal, ...signal ? [signal] : []])
+      if (!this.session.authenticated || !this.session.employeeId) throw new ProductError('EMPLOYEE_UNAUTHORIZED', 'Employee sign-in is required')
+      return invokeContentSubmission(method, input, this.api, lifetime)
     }
     if (method.startsWith('extensions.')) {
       signal = AbortSignal.any([this.identityLifecycle.signal, ...signal ? [signal] : []])

@@ -65,6 +65,8 @@ export type ProductMethod =
   | 'support.feedback.submit'
   | 'extensions.save'
   | 'extensions.submit'
+  | 'content.submissions.inspect'
+  | 'content.submissions.submit'
   | 'extensions.connector.read'
   | 'extensions.connector.update'
   | 'extensions.connector.delete'
@@ -233,7 +235,7 @@ export function isProductMethod(value: unknown): value is ProductMethod {
   return typeof value === 'string' && [
     'support.device.report', 'support.feedback.submit',
     'tasks.capabilities.read', 'tasks.capabilities.prepare',
-    'extensions.save', 'extensions.submit',
+    'extensions.save', 'extensions.submit', 'content.submissions.inspect', 'content.submissions.submit',
     'extensions.connector.read', 'extensions.connector.update', 'extensions.connector.delete',
     'extensions.connector.configuration.read', 'extensions.connector.configuration.save', 'knowledge.references.resolve',
     'auth.getSession', 'auth.ensureDingTalk', 'auth.beginDingTalk', 'auth.pollDingTalk', 'auth.refresh', 'catalog.refresh',

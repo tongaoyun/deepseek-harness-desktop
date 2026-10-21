@@ -3614,7 +3614,7 @@
     {
       "path": "src/client/index.ts",
       "before": "f64bdef72dd87c3b6efefd3ed3d63ada14e7c005aa53a43e2de7c90823c2de04",
-      "after": "55cc569bdac4a752062c09436387e9a0bfa6983014680e3dd3ba7fbd95f1b0d6"
+      "after": "c59b06bf2af0e1fee258b8c2f15a7ce37c1036e72e358d12bd4e5c8680ec35c8"
     },
     {
       "path": "src/client/locales.ts",

@@ -1,0 +1,89 @@
+/** Employee sharing of native documents; the main process owns authentication and upload. */
+import { useEffect, useRef, useState } from 'react'
+import { randomUUID } from '@deepseek-ai/dsh-util-crypto'
+import { Button, Modal } from '@deepseek-ai/dsh-client-ui-primitives'
+import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
+import { NS } from '../locales.ts'
+import { productApi } from './product-api.ts'
+import css from '../DeepSeekHarnessProduct.module.css'
+
+interface Candidate { resourceKey: string; files: Record<string, string> }
+interface Intent { name: string; prepare: (signal: AbortSignal) => Promise<Candidate> }
+interface Status { status: 'SUBMITTED' | 'PUBLISHED' | 'REJECTED'; reviewNote: string }
+function statusOf(value: unknown): Status | null {
+  if (value === null) return null
+  if (typeof value !== 'object' || !('status' in value) || !['SUBMITTED', 'PUBLISHED', 'REJECTED'].includes(String(value.status))
+    || !('reviewNote' in value) || typeof value.reviewNote !== 'string') throw new Error('Invalid company submission status')
+  return { status: value.status as Status['status'], reviewNote: value.reviewNote }
+}
+
+/** One lifecycle owns content preparation, submission and cancellation in the product shell. */
+export function CompanyContentSubmission({ t }: PropsLocale<typeof NS>) {
+  const [intent, setIntent] = useState<Intent>()
+  const [candidate, setCandidate] = useState<Candidate>()
+  const [status, setStatus] = useState<Status | null>(null)
+  const [working, setWorking] = useState(false)
+  const [error, setError] = useState('')
+  const operation = useRef<AbortController>()
+  const writing = useRef(false)
+  const close = () => { if (writing.current) return; operation.current?.abort(); setIntent(undefined); setCandidate(undefined); setError('') }
+  useEffect(() => {
+    const receive = (event: Event) => {
+      if (!(event instanceof CustomEvent) || event.defaultPrevented || writing.current) return
+      const detail: unknown = event.detail
+      if (typeof detail !== 'object' || !detail || !('name' in detail) || typeof detail.name !== 'string'
+        || !('prepare' in detail) || typeof detail.prepare !== 'function') return
+      event.preventDefault()
+      // This is an in-process UI callback; only the resulting files cross IPC and are validated there.
+      const next = detail as Intent
+      const api = productApi()
+      if (!api) return
+      operation.current?.abort()
+      const controller = new AbortController(); operation.current = controller
+      const requestId = randomUUID()
+      controller.signal.addEventListener('abort', () => { api.cancel(requestId) }, { once: true })
+      setIntent(next); setCandidate(undefined); setStatus(null); setError(''); setWorking(true)
+      void next.prepare(controller.signal).then(async (value) => {
+        controller.signal.throwIfAborted()
+        const inspected = await api.invoke('content.submissions.inspect', value, requestId, 120_000)
+        controller.signal.throwIfAborted()
+        if (typeof inspected !== 'object' || !inspected || !('status' in inspected)) throw new Error('Invalid content inspection')
+        setStatus(statusOf(inspected.status)); setCandidate(value)
+      }).catch((reason: unknown) => { if (!controller.signal.aborted) setError(reason instanceof Error ? reason.message : t('companySubmitFailed')) })
+        .finally(() => { if (!controller.signal.aborted) setWorking(false) })
+    }
+    const unsubscribe = productApi()?.subscribe((event) => {
+      if (event.type === 'session.changed') { operation.current?.abort(); writing.current = false; setWorking(false); setIntent(undefined); setCandidate(undefined) }
+    })
+    document.addEventListener('dsh:company-content-submit', receive)
+    return () => { document.removeEventListener('dsh:company-content-submit', receive); unsubscribe?.(); operation.current?.abort() }
+  }, [t])
+  const submit = async () => {
+    if (!candidate || writing.current) return
+    const api = productApi(); if (!api) return
+    writing.current = true; setWorking(true); setError('')
+    const controller = new AbortController(); operation.current?.abort(); operation.current = controller
+    const requestId = randomUUID()
+    controller.signal.addEventListener('abort', () => { api.cancel(requestId) }, { once: true })
+    try {
+      const result = await api.invoke('content.submissions.submit', candidate, requestId, 120_000)
+      controller.signal.throwIfAborted(); setStatus(statusOf(result))
+    } catch (reason) { if (!controller.signal.aborted) setError(reason instanceof Error ? reason.message : t('companySubmitFailed')) }
+    finally { if (operation.current === controller) { writing.current = false; if (!controller.signal.aborted) setWorking(false) } }
+  }
+  if (!intent) return null
+  return <Modal open onClose={close} title={t('companySubmitTitle')} closeLabel={t('close')}
+    className={css.feedbackModal as string} footer={<>
+      <Button onClick={close} disabled={writing.current}>{t('close')}</Button>
+      <Button variant="primary" disabled={working || !candidate || status !== null} onClick={() => void submit()}>{working ? t('companySubmitWorking') : t('companySubmitTitle')}</Button>
+    </>}>
+    <div className={css.feedbackBody}>
+      <strong>{intent.name}</strong><p>{t('companySubmitHint')}</p>
+      {working && <p role="status">{t('companySubmitWorking')}</p>}
+      {candidate && <p>{t('companySubmitFiles', { count: Object.keys(candidate.files).length })}</p>}
+      {status && <p role="status">{t(status.status === 'SUBMITTED' ? 'companySubmitted' : status.status === 'PUBLISHED' ? 'companyPublished' : 'companyRejected')}</p>}
+      {status?.reviewNote && <p>{status.reviewNote}</p>}
+      {error && <p role="alert">{error}</p>}
+    </div>
+  </Modal>
+}

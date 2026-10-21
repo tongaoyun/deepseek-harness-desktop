@@ -23,7 +23,7 @@ import {
   isAbsolute,
   sep,
 } from "node:path";
-import { promises as fs } from "node:fs";
+import { constants as fsConstants, promises as fs } from "node:fs";
 import { createHash, randomUUID } from "node:crypto";
 import { unzipSync } from "fflate";
 import {
@@ -3630,3 +3630,41 @@ type SourceAnalysis = ({kind: "none"} & Diagnostic) | ({kind: "single"; skillFil
 type MetadataEntry = DiscoveredEntry & {name: string; providerRank?: number; policyAliases?: {rootKey: string; name: string}[]};
 interface MetadataScan {exists: boolean; entries: MetadataEntry[]; truncated?: boolean}
 interface TrashMetadata { id: string; name: string; deletedAt: string; repository?: {id: string; path: string}; catalog?: string[]; root?: {key: string; scope: string; label: string; localeKey?: string; projectRoot?: string; projectName?: string; kind?: string}; entries: string[] }
+
+/** Export one native skill with its resource files, refusing symlinks and oversized trees. */
+export async function exportSkill(key: string, name: string, options: ScopeOptions & { workspaceBound?: boolean } = {}) {
+  if (key === 'company') throw new Error('公司技能不能作为个人内容提交');
+  const detail = await skillDetail(key, name, options);
+  if ('ok' in detail || !detail.loadable || !KEBAB_RE.test(detail.declaredName)) throw new Error('请先修正技能名称和 SKILL.md');
+  const files: Record<string, string> = {};
+  let bytes = 0;
+  const add = async (file: string, path: string) => {
+    const handle = await fs.open(file, fsConstants.O_RDONLY | fsConstants.O_NOFOLLOW);
+    try {
+      const info = await handle.stat();
+      if (!info.isFile() || info.size + bytes > 32 * 1024 * 1024 || Object.keys(files).length >= 2048) throw new Error('技能文件超出发布限制');
+      const data = await handle.readFile();
+      bytes += data.byteLength;
+      if (bytes > 32 * 1024 * 1024) throw new Error('技能文件超出发布限制');
+      files['skills/' + detail.declaredName + '/' + path] = data.toString('base64');
+    } finally { await handle.close(); }
+  };
+  const root = detail.kind === 'flat' ? detail.path : dirname(detail.path);
+  const walk = async (directory: string, prefix: string) => {
+    if ((await fs.lstat(directory)).isSymbolicLink()) throw new Error('不能提交符号链接');
+    const entries = await fs.readdir(directory, { withFileTypes: true });
+    if (entries.length > 4096) throw new Error('技能目录条目过多');
+    for (const entry of entries) {
+      if (['.git', '.DS_Store'].includes(entry.name)) continue;
+      const path = prefix + entry.name;
+      if (path.length > 200 || !/^[A-Za-z0-9_./-]+$/.test(path) || path.split('/').some(part => part === '.' || part === '..')) throw new Error('技能包含非法资源路径');
+      if (entry.isSymbolicLink()) throw new Error('不能提交符号链接');
+      if (entry.isDirectory()) await walk(join(directory, entry.name), path + '/');
+      else if (entry.isFile()) await add(join(directory, entry.name), path);
+      else throw new Error('只能提交普通文件');
+    }
+  };
+  if ((await fs.lstat(detail.path)).isSymbolicLink()) throw new Error('不能提交符号链接');
+  if (detail.kind === 'flat') await add(root, 'SKILL.md'); else await walk(root, '');
+  return { resourceKey: 'skills/' + detail.declaredName, files };
+}
