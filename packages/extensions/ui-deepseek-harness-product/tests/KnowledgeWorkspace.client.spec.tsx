@@ -88,7 +88,7 @@ it.each(['reindex', 'cancel'] as const)('handles authorization and outage failur
     }
     return page([{ ...documentRow(String(payload.knowledgeBaseId)), status }])
   })
-  const view = render(<KnowledgeWorkspace {...props} />)
+  const view = await act(async () => render(<KnowledgeWorkspace {...props} />))
   fireEvent.click(await parts(view.container).content.findByRole('button', { name: '业务规范.md' }))
   await parts(view.container).content.findByRole('heading', { name: '当前原文件' })
   const submit = () => {

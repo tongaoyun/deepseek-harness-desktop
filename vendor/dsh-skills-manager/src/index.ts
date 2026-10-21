@@ -290,17 +290,22 @@ function activeSessionCwds(ctx: HostContext, sessionId: unknown) {
   return typeof cwd === "string" && cwd.trim() ? [cwd.trim()] : [];
 }
 
-function externalSkillProvider(control: ProviderControl, invalidators: Set<() => void>, companyRoot?: () => Promise<string>) {
+function externalSkillProvider(control: ProviderControl, invalidators: Set<() => void>, companyRoot?: (signal?: AbortSignal) => Promise<string>) {
   invalidators.add(control.invalidate);
   if (control.signal && typeof control.signal.addEventListener === "function") {
     control.signal.addEventListener("abort", () => {
       invalidators.delete(control.invalidate);
     }, { once: true });
   }
+  const lookupOptions = async (options: ScopeOptions = {}): Promise<ScopeOptions> => {
+    const signal = control.signal === undefined ? options.signal : options.signal === undefined
+      ? control.signal : AbortSignal.any([control.signal, options.signal]);
+    return { ...options, signal, ...companyRoot ? { companySkillsRoot: await companyRoot(signal) } : {} };
+  };
   return {
     name: "dsh-skills-manager-external",
-    list: async (options?: ScopeOptions) => listProviderCandidates({ ...options, ...companyRoot ? { companySkillsRoot: await companyRoot() } : {} }),
-    get: async (candidate: ProviderCandidate, options?: ScopeOptions) => getProviderSkill(candidate, { ...options, ...companyRoot ? { companySkillsRoot: await companyRoot() } : {} }),
+    list: async (options?: ScopeOptions) => listProviderCandidates(await lookupOptions(options)),
+    get: async (candidate: ProviderCandidate, options?: ScopeOptions) => getProviderSkill(candidate, await lookupOptions(options)),
   };
 }
 
@@ -322,7 +327,7 @@ function registerAgentSkillProviders(ctx: HostContext, invalidators: Set<() => v
     if (!skills || typeof skills.registerProvider !== "function") return;
     const companySource = ctx.get?.("companyContent");
     const dispose = skills.registerProvider((control) => externalSkillProvider(control, invalidators,
-      companySource ? async () => (await companySource.forSession(agent.id)).skillsRoot : undefined));
+      companySource ? async (signal) => (await companySource.forSession(agent.id, signal)).skillsRoot : undefined));
     registrations.set(agent.id, dispose);
   };
 

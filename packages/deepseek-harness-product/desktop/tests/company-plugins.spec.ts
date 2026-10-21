@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url'
 import { join } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import { expect, it, onTestFinished, vi } from 'vitest'
+import { z } from 'zod'
 import { boot, initProfile, readProfilePatches, type ProfileContext } from '@deepseek-ai/dsh-app-boot'
 import ConfigEditor from '@deepseek-ai/dsh-config-editor'
 import Settings from '@deepseek-ai/dsh-settings'
@@ -17,7 +18,7 @@ import SessionQuery from '@deepseek-ai/dsh-session-query-sqlite'
 import SessionProjections from '@deepseek-ai/dsh-session-projection'
 import Agents from '@deepseek-ai/dsh-agent'
 import AgentLoop from '@deepseek-ai/dsh-agent-loop'
-import Llm from '@deepseek-ai/dsh-llm'
+import Llm, { ToolCallId } from '@deepseek-ai/dsh-llm'
 import WebServer from '@deepseek-ai/dsh-host-webserver'
 import { contentDigest } from '@deepseek-harness/product/company-content'
 import * as Agency from '@michengai/dsh-agency-agents'
@@ -84,20 +85,33 @@ it.each([{ published: false, refresh: false }, { published: true, refresh: false
   const profile: ProfileContext = { name: 'test', startedBundles: [], dir: directory,
     patchPath: join(directory, 'cordis.patch.yml'), installAnchor: fileURLToPath(new URL('../package.json', import.meta.url)),
     cwd: home, home, overlays: [], telemetryDisabledEnv: undefined }
+  let holdPins = false
+  const pendingPins: AbortSignal[] = []
   const ctx = await boot('test', join(directory, 'cordis.yml'), readProfilePatches('test', profile), (ctx) => {
     ctx.provide('profileContext', profile)
-    // This case observes catalogs and does not execute or mock a model or a delegated task.
-    ctx.provide('subagents', {})
+    // Cancellation must stop before a delegated task can start.
+    ctx.provide('subagents', { getProvider: () => ({ capabilities: {} }), start: async () => { throw new Error('Unexpected delegated task') } })
     Object.assign(ctx.loader.builtins, { editor: ConfigEditor, settings: Settings, tools: Tools, prompt: SystemPrompt,
       skills: Skills, sessions: Sessions, web: WebServer, query: SessionQuery, projections: SessionProjections,
       llm: Llm, agents: Agents, loop: AgentLoop, company: { inject: ['sessions', 'sessionQuery', 'systemPrompt'], apply(owner: Context) {
-        new CompanyContent(owner, { invoke: async (method, payload) => {
+        new CompanyContent(owner, { invoke: async (method, payload, signal) => {
           if (method === 'runtime.companyContent.read') return sync.read()
           if (method === 'runtime.companyContent.refresh') { await sync.refresh(); return sync.read() }
           if (method === 'runtime.companyContent.pin' && payload && typeof payload === 'object' && 'sessionId' in payload
             && typeof payload.sessionId === 'string' && 'started' in payload && typeof payload.started === 'boolean') {
+            if (holdPins) {
+              if (!signal) throw new Error('Company pin requires cancellation')
+              pendingPins.push(signal)
+              return new Promise<never>((_resolve, reject) => {
+                signal.addEventListener('abort', () => {
+                  const reason: unknown = signal.reason
+                  reject(reason instanceof Error ? reason : new Error('Company pin cancelled', { cause: reason }))
+                }, { once: true })
+                signal.throwIfAborted()
+              })
+            }
             return sync.pin({ sessionId: payload.sessionId, started: payload.started,
-              ...'parentSessionId' in payload && typeof payload.parentSessionId === 'string' ? { parentSessionId: payload.parentSessionId } : {} })
+              ...'parentSessionId' in payload && typeof payload.parentSessionId === 'string' ? { parentSessionId: payload.parentSessionId } : {} }, signal)
           }
           throw new Error(`Unexpected company operation: ${method}`)
         } })
@@ -123,9 +137,9 @@ it.each([{ published: false, refresh: false }, { published: true, refresh: false
         method: 'POST', headers: { 'content-type': 'application/json', 'x-dsh-skills-manager': '1' },
         body: JSON.stringify(body), signal: AbortSignal.timeout(5_000),
       })
-      const result: { ok: boolean } = await response.json()
+      const result: unknown = await response.json()
       expect(response.status).toBe(200)
-      expect(result.ok).toBe(true)
+      expect(result).toHaveProperty('ok', true)
     }
     for (const [name, flags, invocation] of [
       ['policy-manual-only', 'disable-model-invocation: true', { modelInvocable: false, userInvocable: true }],
@@ -143,13 +157,51 @@ it.each([{ published: false, refresh: false }, { published: true, refresh: false
       expect((await ctx.skills.list()).find(skill => skill.name === name)?.invocation).toEqual(invocation)
     }
     const response = await fetch(`${endpoint}/state`, { signal: AbortSignal.timeout(5_000) })
-    const snapshot: { data: { roots: {
-      key: string
-      skills: { name: string; enabled?: boolean; effectiveModelInvocable: boolean }[]
-    }[] } } = await response.json()
+    const snapshot = z.object({ data: z.object({ roots: z.array(z.object({ key: z.string(),
+      skills: z.array(z.object({ name: z.string(), enabled: z.boolean().optional(), effectiveModelInvocable: z.boolean() })),
+    })) }) }).parse(await response.json())
     expect(response.status).toBe(200)
     expect(snapshot.data.roots.find(root => root.key === 'dsh')?.skills.find(skill => skill.name === 'policy-manual-only'))
       .toMatchObject({ enabled: true, effectiveModelInvocable: false })
+  }
+  if (published && !refresh) {
+    const task = await ctx.agents.create({ sessionId: SessionId('cancel-company-plugin'), agentOptions: { provider: 'fixture', model: 'fixture' } })
+    onTestFinished(() => task.dispose())
+    const persona = ctx.get(Agency.AGENCY_PERSONA_SERVICE)!
+    const actions: Record<string, (signal: AbortSignal) => Promise<unknown>> = {
+      'skill-list': signal => ctx.skills.list({ scope: task.agent, signal }),
+      'skill-read': signal => ctx.skills.get('orders', { scope: task.agent, signal }),
+      'expert-persona': signal => persona.getPrompt('orders', 'operations', 'zh', task.agent.id, signal),
+      ...Object.fromEntries(['list_experts', 'summon_expert', 'summon_expert_team'].map(name => [name,
+        (signal: AbortSignal) => ctx.tools.execute({ name, signal, agent: task.agent, callId: ToolCallId(`cancel-${name}`),
+          arguments: name === 'list_experts' ? {} : name === 'summon_expert' ? { expert: 'orders', task: 'fixture' } : { team: 'fixture', task: 'fixture' } }),
+      ])),
+    }
+    for (const [name, action] of Object.entries(actions)) {
+      holdPins = false
+      if (name === 'skill-read') await ctx.skills.list({ scope: task.agent })
+      if (name === 'skill-list') {
+        const dispose = ctx.skills.registerProvider(() => ({ name: 'cancel-fixture-revision', list: async () => [], get: async () => undefined }))
+        dispose()
+      }
+      holdPins = true
+      const controller = new AbortController()
+      const stopped = new Error(`Stopped ${name}`)
+      let settled = false
+      const result = action(controller.signal).catch((error: unknown) => error).finally(() => { settled = true })
+      try {
+        await vi.waitFor(() => { expect(pendingPins).toHaveLength(1) }, { timeout: 5_000 })
+        controller.abort(stopped)
+        await vi.waitFor(() => { expect(pendingPins[0]?.aborted, name).toBe(true); expect(settled, name).toBe(true) })
+        await result
+      } finally {
+        controller.abort(stopped)
+        pendingPins.length = 0
+      }
+    }
+    holdPins = false
+    expect((await ctx.skills.get('orders', { scope: task.agent }))?.content).toContain('Company order skill body.')
+    await task.dispose()
   }
   if (refresh) {
     const old = await ctx.agents.create({ sessionId: SessionId('old-company-task'), agentOptions: { provider: 'fixture', model: 'fixture' } })
@@ -181,4 +233,4 @@ it.each([{ published: false, refresh: false }, { published: true, refresh: false
   await ctx.loader.root.update([])
   await ctx.loader.await()
   expect(ctx.get(AGENCY_LIBRARY_SERVICE)).toBeUndefined()
-})
+}, 30_000)

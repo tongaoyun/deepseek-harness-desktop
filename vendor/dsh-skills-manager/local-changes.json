@@ -4,7 +4,7 @@
     {
       "path": "README.md",
       "before": null,
-      "after": "9d016e1ea6557e10d727a2536979e2b63206bbf931c1bb824698b319ce95a46e"
+      "after": "5aa9f8af3d35f49c5bf295208485830b84f36c6df31402276cdbba9e6e9851a5"
     },
     {
       "path": "assets/branding/dsh-banner-en.webp",
@@ -199,7 +199,7 @@
     {
       "path": "src/index.ts",
       "before": "d69d08241ad18df93d01c1b9b4cfacd34bbc837110830f72f448a4a9e588724c",
-      "after": "5bda65c0980cb1439fa4c0d53416e5d363abfcefd84f4bc0e8df7e279b96cece"
+      "after": "0a59b79d60acb23d77bd46a8cc9b9c3faff8a1216d2f7a57a0a610f6fd251e23"
     },
     {
       "path": "src/plugin-update-model.ts",

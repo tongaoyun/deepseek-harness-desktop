@@ -4,7 +4,7 @@
     {
       "path": "README.md",
       "before": null,
-      "after": "1b566018de38157182d8012a8106487423ea4bcee8be6732477d514bd7f301a2"
+      "after": "cef43fca605622019bd0946248d60d2b71e1ef1a4a6341c2c2454ed0c5931585"
     },
     {
       "path": "assets/agency-agents-zh/LICENSE",
@@ -3664,7 +3664,7 @@
     {
       "path": "src/index.ts",
       "before": "1461dd96a2f5450fa36f6ac56ee9e1a95a268b8205e9493c0761500a8da46a2c",
-      "after": "74d45a0b15a8ea120d1f17c7c0ff07b47518d35ddb7c53ededb2a12ec5fab28f"
+      "after": "bf4977bcc46c6f171e8c715f53878b23a6cf2f8d47f08d6a7e641afa551e22d6"
     },
     {
       "path": "src/plugin-update-runtime.d.ts",
