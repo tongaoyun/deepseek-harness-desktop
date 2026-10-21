@@ -184,10 +184,20 @@ export async function uploadKnowledgeFile(path: string, baseId: string, operatio
     if (stat.size > options.maxBytes) {
       throw new ProductError('KNOWLEDGE_FILE_TOO_LARGE', 'The selected file exceeds the upload size limit', false)
     }
-    const content = await file.readFile(signal === undefined ? {} : { signal })
-    if (content.byteLength !== stat.size || content.byteLength > options.maxBytes) {
+    // One extra byte detects growth without reading a concurrently growing file to EOF.
+    const buffer = Buffer.alloc(stat.size + 1)
+    let length = 0
+    while (length < buffer.length) {
+      signal?.throwIfAborted()
+      const result = await file.read(buffer, length, Math.min(256 * 1024, buffer.length - length), length)
+      signal?.throwIfAborted()
+      if (result.bytesRead === 0) break
+      length += result.bytesRead
+    }
+    if (length !== stat.size) {
       throw new ProductError('KNOWLEDGE_FILE_CHANGED', 'The selected file changed during upload preparation', true)
     }
+    const content = buffer.subarray(0, length)
     signal?.throwIfAborted()
     const sha256 = createHash('sha256').update(content).digest('hex')
     if (options.expectedSha256 !== undefined && options.expectedSha256 !== sha256) {
