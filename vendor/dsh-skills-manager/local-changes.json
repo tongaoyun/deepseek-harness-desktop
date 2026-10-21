@@ -4,7 +4,7 @@
     {
       "path": "README.md",
       "before": null,
-      "after": "e297f92c48c4c90194a3e83aa00615b0b539a8cd77d252d8212da28701c03907"
+      "after": "9d016e1ea6557e10d727a2536979e2b63206bbf931c1bb824698b319ce95a46e"
     },
     {
       "path": "assets/branding/dsh-banner-en.webp",
@@ -174,22 +174,32 @@
     {
       "path": "package.json",
       "before": "a23ccb2ad4ec5898e53461bd8f61eb356e11373d1c732d1114fc3cdf92580d27",
-      "after": "aaba24a9c02f82999aaa5052c2c07bceaf4c539a10ee36d8aad3e3ae031cd8ba"
+      "after": "176928a86b9d1410b6e4a2a7070cc5d097f3d5b50efd6bb2ce635df92cf6bf7d"
+    },
+    {
+      "path": "src/client-types.ts",
+      "before": "012d039bd45cb682f450562a29b8f48b3eef45e5a4119945e67c2ba7d15002fa",
+      "after": "67566f93081aa129a60eaadb6cda8fe0be853642488b4b646658090051786bfe"
     },
     {
       "path": "src/client.ts",
       "before": "011746374560ee6939f22706cf8ec0961b9995e66e2cb237408f92b1a56ea826",
-      "after": "239712473a0703e6122059f1ac24213cff1b478670e51359b6aa2be9b4844911"
+      "after": "f5e4eef191f2986406aa3d28e782b17cfd99893a72ff90c60861ce66682e49db"
     },
     {
       "path": "src/core.ts",
       "before": "c3b09f36a637e9f1bb9e7818489653ec4818aae04752ddf186d62dc8e070311a",
-      "after": "f874aea251e5fd86c83a737176d58783ce28dae058765bd5278d154e2a18d117"
+      "after": "920850ca47cc556639bfd5271832278a5140e8a31f41e09d5301541cc1cdb18a"
+    },
+    {
+      "path": "src/host-types.ts",
+      "before": "8060082be5c5b61dec099e8a4a38b34e5077981f785d71ddfd143de72235c4af",
+      "after": "592217ddec0246d6828c37bcd6b7395cd027635f9e80a95f086b61a5376d5c8b"
     },
     {
       "path": "src/index.ts",
       "before": "d69d08241ad18df93d01c1b9b4cfacd34bbc837110830f72f448a4a9e588724c",
-      "after": "8ce20526c4e867d3631a79ab8e30f73b9ad3c2e9560ce2734eb6a99e5bb09aae"
+      "after": "5bda65c0980cb1439fa4c0d53416e5d363abfcefd84f4bc0e8df7e279b96cece"
     },
     {
       "path": "src/plugin-update-model.ts",
@@ -205,6 +215,11 @@
       "path": "src/plugin-updater.ts",
       "before": "6bc05e7b78677095418eb8a6cedc5b2ccf4bf66c02d08bb6864600b32a8ec632",
       "after": null
+    },
+    {
+      "path": "src/types.ts",
+      "before": "6ddb4de8846b916fa79a8b1d0dd5ca4481f47758270998e920f80e539f398f97",
+      "after": "7278cf8b9d885a71a6dc21f11e4057b328e7f871b87a4f722ffe99c8ce082b2e"
     },
     {
       "path": "tsdown.config.ts",

@@ -4,7 +4,7 @@
     {
       "path": "README.md",
       "before": null,
-      "after": "80e504c56e4b7d4050b6649981be18aac6465d0d754b5135980e3f580f0be7a5"
+      "after": "24f100ac36903695cb676a0f2504013f1b6694ddf03223a3e2e355f5f52f5ca6"
     },
     {
       "path": "assets/agency-agents-zh/LICENSE",
@@ -3594,17 +3594,32 @@
     {
       "path": "package.json",
       "before": "3fda51d5d48ca76ae3347b9f28ac0619f94cddb9dd064fd6142ce06a9839a740",
-      "after": "0b6ff5361eed970a47db10f7db38f1c78f5ee39a46bdbb59a5c9a6210a6c5424"
+      "after": "00d6b869396e5ac22db608f0502b1f72b6952a30972ec02204a64fdf15c8e4f8"
+    },
+    {
+      "path": "src/client/catalog.test.ts",
+      "before": null,
+      "after": "ab602040f0bfd14f8c59ed20472456c86d7a013def9f144d303cb96762a6a11e"
+    },
+    {
+      "path": "src/client/catalog.ts",
+      "before": "916e3be0e964271b5009ae52f12053485afdbc30f43f5d68886d468298cdfa57",
+      "after": "923a7332e3a30b90686639b3e9353fcee85426b82c78e67643d639b684270cdb"
+    },
+    {
+      "path": "src/client/editor-review.ts",
+      "before": "4850ba80c50c8b5e8e192d20b3d32addc356db5b59ca7fa6fbeb1b9a8e9176b7",
+      "after": "edbfef8bc9c4a4b13df2b3dd7a9fe420c2475ae369b94296e9e662595d878865"
     },
     {
       "path": "src/client/index.ts",
       "before": "f64bdef72dd87c3b6efefd3ed3d63ada14e7c005aa53a43e2de7c90823c2de04",
-      "after": "4b973e0a632da68dc6e8033d2e854cfd90505028b2994b07ee1be9baf2d4a7b3"
+      "after": "55cc569bdac4a752062c09436387e9a0bfa6983014680e3dd3ba7fbd95f1b0d6"
     },
     {
       "path": "src/client/locales.ts",
       "before": "180462f2cd1f255c0da97e5937bd8e1111d16cc196b6bdc0c483b24e18f2eee3",
-      "after": "343d364aef6aa59e43654b790b7a3fe960cbf5ef4488ef1c45f002cc2894dc40"
+      "after": "9e1d1d091d0207d8775e0ecb73a406fe1752908e6f450dcb6de83e074a1da459"
     },
     {
       "path": "src/client/plugin-ui.test.ts",
@@ -3617,6 +3632,16 @@
       "after": null
     },
     {
+      "path": "src/client/remote.ts",
+      "before": "bec7ac09a97c76be9f7733f1f834c43e1b2228df7656448917c03c82a1634b56",
+      "after": "d3a5053669f07b8fee4707ea565cf27babd2818bcf8f5a344c059343c491244d"
+    },
+    {
+      "path": "src/custom-experts.test.ts",
+      "before": "d167e4595913828456f6072c212ed9f980c9fc0467cd010949240cbedf7cf0e4",
+      "after": "e988aa4a21e922fcdcd186323a097ebc00d3a88563db161316b8bb372de0e07b"
+    },
+    {
       "path": "src/expert-contract.ts",
       "before": "1236881de83c3b7184504f670d4504cdb964fe19bb0e6d16a5b2d07e7989816d",
       "after": "6c5b364fc2c77394e8e9b43dfec4bf5577590499b842f8f72ade336f61393a76"
@@ -3624,12 +3649,12 @@
     {
       "path": "src/index.test.ts",
       "before": "e7b6d6e0f8037f6155eb90bf642790706a3f2765553b4cc0743a8a381e04fbce",
-      "after": "d254e0d4037663e3fa7353c6e994733be8c29feac141c749391a9b08f22978f8"
+      "after": "cbdd81ab7c103fba86cc1acc7edc2e2a6d140655e70de1e9c50ecd13b26561df"
     },
     {
       "path": "src/index.ts",
       "before": "1461dd96a2f5450fa36f6ac56ee9e1a95a268b8205e9493c0761500a8da46a2c",
-      "after": "8d2add9fc0f6b60398f606a66f075fcc8d0b40cfa5575f1e8212e8f390329c7c"
+      "after": "74d45a0b15a8ea120d1f17c7c0ff07b47518d35ddb7c53ededb2a12ec5fab28f"
     },
     {
       "path": "src/plugin-update-runtime.d.ts",
@@ -3647,6 +3672,16 @@
       "after": null
     },
     {
+      "path": "src/remote-contract.ts",
+      "before": "14e812205af94f12d61e2cc117c294e6311a966aeeeff1d112ffb256103db29a",
+      "after": "8974b74683ea8c769323cdc244bb47b0c00f9de0a4e3a69d720bbc2c077759eb"
+    },
+    {
+      "path": "src/remote.ts",
+      "before": "0bf1c8004643a0b0e1f24bdab62ffa4f8a61d153662ffd899a4f1cde5de9fce8",
+      "after": "4f537674330c44b04db2075a59831070c0e60ab49caed142a5ece45a61e89cc6"
+    },
+    {
       "path": "src/settings-compat.ts",
       "before": "4302efdfe2b2130e5a1093405c7301d34299c03e59e2dd724d75adb94744c451",
       "after": "60700ea7f7212c7b03585f611bb0d8a6b5c437690001b0a65edb14fea35b2977"
@@ -3660,6 +3695,11 @@
       "path": "src/team-i18n.test.ts",
       "before": "ef16f00f9f2257a6292482cb5e485aa3855f235cf0c0b02ef4af106908c38425",
       "after": "f9ce13652aa3821e7d80ba6246b24bca987edcc244e360208d3a5413a1487131"
+    },
+    {
+      "path": "src/team-integration.test.ts",
+      "before": "7106b9534ddff9211c31ef010daff56ea290796d6f439f30d2d68c4ac6fa1dc5",
+      "after": "683ff612b140d3fa8f28c2515ae725e230ac5ea1d2931fef80682e582cdd23b7"
     },
     {
       "path": "tsdown.config.ts",

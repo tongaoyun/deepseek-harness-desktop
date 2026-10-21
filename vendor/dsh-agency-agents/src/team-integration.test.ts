@@ -77,7 +77,7 @@ describe('专家团宿主与远端集成', () => {
     const initial = await remote.getTeams()
     expect(initial.teams).toHaveLength(5)
     expect(Object.values(initial.nativeMembers ?? {})).toEqual(initial.teams.flatMap(group => group.members.map(member => member.expertSlug)))
-    const catalog = await remote.getCatalog()
+    const catalog = await remote.getCatalog(false)
     for (const group of initial.teams) {
       for (const member of group.members) {
         expect(catalog.experts.some(expert => expert.slug === member.expertSlug && !expert.conflict)).toBe(true)

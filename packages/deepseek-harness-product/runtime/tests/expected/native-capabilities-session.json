@@ -9,6 +9,7 @@
     "mcp__erp_d24f1f61__undeclared",
     "skill"
   ],
+  "companyVersion": "Company content version: 1.0.0; SHA-256: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.",
   "skillCatalog": "<available_skills>\\n- `policy-review`: Compare policy evidence.\\n</available_skills>",
   "loadedSkill": "<skill_content name=\"policy-review\">\n<skill_resources>\nBase directory for this skill: <HOME>/skills/policy-review\nResolve relative paths mentioned by this skill against the base directory before using them. Load referenced resources only as needed.\n</skill_resources>\n\n<skill_instructions>\nCompare retrieved policy before reporting.\n</skill_instructions>\n</skill_content>",
   "retrieval": [

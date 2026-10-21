@@ -14,7 +14,7 @@ import { connectorServerName, connectorToolPolicy, parseConnectorCatalog, type D
 import { objectRecord, stringField } from './response-fields.ts'
 
 const KNOWLEDGE_PLUGIN = import.meta.resolve('@deepseek-harness/product-runtime/knowledge')
-export const inject = ['agentPresets', 'agents', 'sessionQuery', 'sessionProjections', 'systemPrompt', 'tools']
+export const inject = ['agentPresets', 'agents', 'sessions', 'sessionQuery', 'sessionProjections', 'systemPrompt', 'tools']
 export interface DeepSeekHarnessRuntimeControl {
   readCapabilities(request: ProductTaskCapabilityRequest, signal?: AbortSignal): Promise<ProductTaskCapabilities>
   prepareCapabilities(request: ProductTaskCapabilityRequest, signal?: AbortSignal): Promise<ProductTaskCapabilityResult>

@@ -19,6 +19,7 @@ import Agents from '@deepseek-ai/dsh-agent'
 import AgentLoop from '@deepseek-ai/dsh-agent-loop'
 import Presets from '@deepseek-ai/dsh-agent-preset-registry'
 import { publicToolName } from '@deepseek-ai/dsh-mcp-client'
+import { productFailure } from '@deepseek-harness/product/errors'
 import { connectorServerName } from '../src/deepseek-harness-connector-contract.ts'
 import { expect, it, onTestFinished, vi } from 'vitest'
 import * as Runtime from '../src/index.ts'
@@ -113,6 +114,8 @@ it('loads native skills with authorized MCP and exact knowledge scope, replays a
   const skillRoot = join(root, 'skills', 'policy-review')
   await mkdir(skillRoot, { recursive: true })
   await writeFile(join(skillRoot, 'SKILL.md'), '---\nname: policy-review\ndescription: Compare policy evidence.\n---\nCompare retrieved policy before reporting.\n')
+  let companyBindingMissing = false
+  let companyCacheInvalid = false
   let knowledgePending = false
   let pendingRequest: string | undefined
   const cancelled: string[] = []
@@ -126,12 +129,29 @@ it('loads native skills with authorized MCP and exact knowledge scope, replays a
         catalogReads++
         if (catalogPending) { pendingCatalog = String(message.requestId); return true }
       }
+      if (message.method === 'runtime.companyContent.pin' && companyBindingMissing) {
+        queueMicrotask(() => emitMessage({ type: 'extension-result', requestId: message.requestId,
+          error: '此任务缺少公司内容版本记录，请新建对话；原任务历史已保留。',
+          failure: { code: 'COMPANY_CONTENT_BINDING_MISSING', message: '此任务缺少公司内容版本记录，请新建对话；原任务历史已保留。',
+            retryable: false, resources: [{ kind: 'session', id: 'missing-company-binding' }] },
+        }))
+        return true
+      }
+      if (message.method === 'runtime.companyContent.pin' && companyCacheInvalid) {
+        queueMicrotask(() => emitMessage({ type: 'extension-result', requestId: message.requestId,
+          error: '此任务的公司内容缓存缺失或损坏，已阻止执行；原任务历史和版本记录已保留。',
+          failure: { code: 'COMPANY_CONTENT_CACHE_INVALID', message: '此任务的公司内容缓存缺失或损坏，已阻止执行；原任务历史和版本记录已保留。',
+            retryable: false, resources: [{ kind: 'company-content', id: 'a'.repeat(64) }] },
+        }))
+        return true
+      }
       if (message.method === 'knowledge.bases.list' && knowledgePending) { pendingRequest = String(message.requestId); return true }
       if (message.method === 'knowledge.search' || message.method === 'knowledge.sources.read') retrieval.push(message.payload)
       queueMicrotask(() => emitMessage({ type: 'extension-result', requestId: message.requestId,
-        result: message.method === 'connectors.list' ? catalogInvalid ? {} : [connector(), { ...connector(), id: 'broken', name: 'Broken CRM', url: `http://127.0.0.1:${address.port}/broken` }]
-          : message.method === 'knowledge.bases.list' ? [{ id: 'policy' }]
-            : message.method === 'knowledge.search' ? [policyHit] : message.method === 'knowledge.sources.read' ? policyHit : [],
+        result: String(message.method).startsWith('runtime.companyContent.') ? { version: '1.0.0', sha256: 'a'.repeat(64), skillsRoot: join(root, 'skills'), expertsRoot: join(root, 'experts') }
+          : message.method === 'connectors.list' ? catalogInvalid ? {} : [connector(), { ...connector(), id: 'broken', name: 'Broken CRM', url: `http://127.0.0.1:${address.port}/broken` }]
+            : message.method === 'knowledge.bases.list' ? [{ id: 'policy' }]
+              : message.method === 'knowledge.search' ? [policyHit] : message.method === 'knowledge.sources.read' ? policyHit : [],
       }))
     }
     if (message.type === 'extension-control') {
@@ -172,9 +192,13 @@ it('loads native skills with authorized MCP and exact knowledge scope, replays a
   const releaseBase = await ctx.agentPresets.register({ id: 'minimal', plugins: [skillLoader] })
   onTestFinished(releaseBase)
   ctx.provide('sessionQuery', {
-    listSessions: async () => selection.id === undefined ? [] : [{ header: { id: 'recorded', agentPreset: selection.id } }],
-    observeSession: async () => ({ header: { agentPreset: selection.id }, projections: { values: { agentPreset: selection.id } },
-      events: [], [Symbol.dispose]() {} }),
+    listSessions: async () => [{ header: { id: 'unreadable-history', agentPreset: 'minimal' } },
+      ...selection.id === undefined ? [] : [{ header: { id: 'recorded', agentPreset: selection.id } }]],
+    observeSession: async (id: string) => {
+      if (id === 'unreadable-history') throw new Error('Unreadable session log')
+      return { header: { agentPreset: selection.id }, projections: { values: { agentPreset: selection.id } },
+        events: [], [Symbol.dispose]() {} }
+    },
   })
   ctx.loader.builtins['product-runtime'] = Runtime
   const rows = [{ id: 'product-runtime', name: 'cordis:product-runtime' }]
@@ -249,6 +273,7 @@ it('loads native skills with authorized MCP and exact knowledge scope, replays a
     { query: 'policy', knowledgeBaseRefs: [], knowledgeBaseIds: ['policy'], restrictToKnowledgeBaseRefs: true, limit: 2 },
     { sourceId: 'source' },
   ])
+  expect(JSON.stringify(events)).toContain('Company content version: 1.0.0; SHA-256: ' + 'a'.repeat(64))
   expect(JSON.stringify(events)).not.toContain(relayCredential)
   expect(JSON.stringify(events)).toContain('Recorded enterprise policy.')
   expect(events.filter(event => event.type === 'tool/result').every(event => !event.data.message.isError)).toBe(true)
@@ -261,11 +286,32 @@ it('loads native skills with authorized MCP and exact knowledge scope, replays a
   expect(loadedSkill?.type).toBe('text')
   await expect(JSON.stringify({
     tools: ctx.tools.schemas(handle.agent).map(tool => tool.name).sort(),
+    companyVersion: firstInput.match(/Company content version: [0-9.]+; SHA-256: [a-f0-9]{64}\./)?.[0],
     skillCatalog: firstInput.match(/<available_skills>[\s\S]*?<\/available_skills>/)?.[0],
     loadedSkill: loadedSkill?.type === 'text' ? loadedSkill.text : undefined,
     retrieval,
     results: events.filter(event => event.type === 'tool/result').map(event => event.data.message.content),
   }, null, 2).replaceAll(root, '<HOME>') + '\n').toMatchFileSnapshot(new URL('./expected/native-capabilities-session.json', import.meta.url).pathname)
+  const cacheErrors: unknown[] = []
+  const stopCacheErrors = ctx.on('agent/error', ({ agent, error }) => {
+    if (agent.id === handle.agent.id) cacheErrors.push(error)
+  })
+  const requestsBeforeDamage = adapter.requests.length
+  companyCacheInvalid = true
+  handle.agent.followup(createUserMessage({ content: [{ type: 'text', text: 'Continue with the pinned content.' }], source: { kind: 'user' } }))
+  await vi.waitFor(() => { expect(cacheErrors).toHaveLength(1) })
+  expect(cacheErrors[0]).toMatchObject({ code: 'COMPANY_CONTENT_CACHE_INVALID' })
+  expect(adapter.requests).toHaveLength(requestsBeforeDamage)
+  expect(ctx.sessions.get(handle.agent.id)).toBe(handle.agent.session)
+  expect(ctx.agents.get(handle.agent.id)).toBe(handle.agent)
+  expect(handle.agent.session.snapshotEvents().slice(0, events.length)).toEqual(events)
+  await expect(JSON.stringify({ failure: productFailure(cacheErrors[0]),
+    additionalModelRequests: adapter.requests.length - requestsBeforeDamage,
+    historyPreserved: handle.agent.session.snapshotEvents().slice(0, events.length).length === events.length,
+    sessionRetained: ctx.sessions.get(handle.agent.id) === handle.agent.session,
+  }, null, 2) + '\n').toMatchFileSnapshot(new URL('./expected/company-content-cache-rejection.json', import.meta.url).pathname)
+  companyCacheInvalid = false
+  stopCacheErrors()
   const execute = (name: string) => ctx.tools.execute({ agent: handle.agent, name, arguments: {},
     callId: ToolCallId('check-' + name), signal: new AbortController().signal })
   await execute(ordersWrite); expect(decisions.at(-1)).toBe('ask')
@@ -327,6 +373,26 @@ it('loads native skills with authorized MCP and exact knowledge scope, replays a
   await ctx.loader.root.update([]); await ctx.loader.await()
   catalogInvalid = false
   await mount()
+  companyBindingMissing = true
+  const unavailable = await create('missing-company-binding', events)
+  const bindingErrors: unknown[] = []
+  const stopBindingErrors = ctx.on('agent/error', ({ agent, error }) => {
+    if (agent.id === unavailable.agent.id) bindingErrors.push(error)
+  })
+  const requestsBeforeBlocked = adapter.requests.length
+  unavailable.agent.followup(createUserMessage({ content: [{ type: 'text', text: 'Keep this draft.' }], source: { kind: 'user' } }))
+  await vi.waitFor(() => { expect(bindingErrors).toHaveLength(1) })
+  expect(bindingErrors[0]).toMatchObject({ code: 'COMPANY_CONTENT_BINDING_MISSING' })
+  expect(ctx.sessions.get(unavailable.agent.id)).toBe(unavailable.agent.session)
+  expect(ctx.agents.get(unavailable.agent.id)).toBe(unavailable.agent)
+  expect(unavailable.agent.session.snapshotEvents().slice(0, events.length)).toEqual(events)
+  expect(adapter.requests).toHaveLength(requestsBeforeBlocked)
+  const companyContent = ctx.get('companyContent')
+  if (companyContent === undefined) throw new Error('Product Loader did not register company content')
+  await expect(companyContent.forSession(unavailable.agent.id)).rejects.toMatchObject({ code: 'COMPANY_CONTENT_BINDING_MISSING' })
+  stopBindingErrors()
+  await unavailable.dispose()
+  companyBindingMissing = false
   knowledgePending = true
   const cancelledRequest = request(2, 'tasks.capabilities.prepare', { knowledgeBaseIds: ['policy'] })
   await vi.waitFor(() => { expect(pendingRequest).toBeDefined() })

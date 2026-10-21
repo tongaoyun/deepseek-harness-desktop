@@ -1,7 +1,17 @@
 import { describe, expect, it } from 'vitest'
-import { resolveDeepSeekHarnessConnectorProxyPolicy, resolveDeepSeekHarnessProductServerUrl, resolveDesktopSupportPolicy } from '../src/deepseek-harness-product-config.ts'
+import { resolveCompanyContentRefreshInterval, resolveDeepSeekHarnessConnectorProxyPolicy, resolveDeepSeekHarnessProductServerUrl, resolveDesktopSupportPolicy } from '../src/deepseek-harness-product-config.ts'
 
 describe('DeepSeekHarness product configuration', () => {
+  it('requires a bounded company refresh interval from main-owned configuration', () => {
+    const options = { packaged: true, resourcesPath: '/installed/resources', appPath: '/installed/app.asar' }
+    const read = (value: unknown) => () => JSON.stringify({ version: 1, companyContentRefreshIntervalMs: value })
+    for (const interval of [1000, 60000, 3600000]) {
+      expect(resolveCompanyContentRefreshInterval({ ...options, readFile: read(interval) })).toBe(interval)
+    }
+    for (const invalid of [undefined, 0, 999, 3600001, '60000']) {
+      expect(() => resolveCompanyContentRefreshInterval({ ...options, readFile: read(invalid) })).toThrow()
+    }
+  })
   it('reads MCP deadlines from the main-owned packaged resource', () => {
     const options = { packaged: true, resourcesPath: '/installed/resources', appPath: '/installed/app.asar' }
     const connectorProxy = { responseTimeoutMs: 2000, streamIdleTimeoutMs: 5000 }

@@ -3,6 +3,24 @@
 /** Protocol identifier for the product sidecar bridge. */
 export const PRODUCT_PROTOCOL = 'deepseek-harness.native.v1' as const
 
+/** Immutable company documents, owned by main and shared with native Host plugins. */
+export interface CompanyContentRoots {
+  readonly version: string
+  readonly sha256: string
+  readonly skillsRoot: string
+  readonly expertsRoot: string
+}
+
+/** Optional company source supplied by the product Host to preinstalled plugins. */
+export interface CompanyContentSource {
+  /** Latest installed catalog; this read never contacts the remote server. */
+  read(): Promise<CompanyContentRoots>
+  /** Coalesced, throttled server check; failures preserve the installed catalog. */
+  refresh(): Promise<void>
+  /** Durable version bound to a Session; child Sessions inherit their parent. */
+  forSession(sessionId: string): Promise<CompanyContentRoots>
+}
+
 /** PDF upload parsing: standard document processing or embedded text without OCR. */
 export type KnowledgePdfParseMode = 'STANDARD' | 'TEXT'
 
@@ -121,8 +139,13 @@ export type ProductRuntimeMethod = Extract<ProductMethod,
   | 'knowledge.documents.preview.close'
   | 'knowledge.documents.save'
 > | Extract<KnowledgeFileMethod, `runtime.${string}`>
+  | 'runtime.companyContent.read'
+  | 'runtime.companyContent.refresh'
+  | 'runtime.companyContent.pin'
+
 
 const PRODUCT_RUNTIME_METHODS: readonly ProductRuntimeMethod[] = [
+  'runtime.companyContent.read', 'runtime.companyContent.refresh', 'runtime.companyContent.pin',
   'auth.getSession',
   'connectors.list', 'knowledge.bases.list', 'knowledge.search', 'knowledge.sources.read', 'knowledge.documents.save',
   'knowledge.documents.get', 'knowledge.documents.previewMetadata', 'knowledge.documents.preview.open', 'knowledge.documents.preview.close',

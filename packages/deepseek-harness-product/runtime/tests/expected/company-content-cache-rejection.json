@@ -1,0 +1,16 @@
+{
+  "failure": {
+    "code": "COMPANY_CONTENT_CACHE_INVALID",
+    "message": "此任务的公司内容缓存缺失或损坏，已阻止执行；原任务历史和版本记录已保留。",
+    "retryable": false,
+    "resources": [
+      {
+        "kind": "company-content",
+        "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      }
+    ]
+  },
+  "additionalModelRequests": 0,
+  "historyPreserved": true,
+  "sessionRetained": true
+}

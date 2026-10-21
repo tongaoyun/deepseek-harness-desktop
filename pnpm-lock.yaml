@@ -7549,9 +7549,21 @@ importers:
         specifier: ^4.4.3
         version: 4.4.3
     devDependencies:
+      '@deepseek-ai/dsh-agent':
+        specifier: workspace:*
+        version: link:../../core/agent
+      '@deepseek-ai/dsh-agent-loop':
+        specifier: workspace:*
+        version: link:../../core/agent-loop
       '@deepseek-ai/dsh-config-editor':
         specifier: workspace:*
         version: link:../../boot/config-editor
+      '@deepseek-ai/dsh-session-projection':
+        specifier: workspace:*
+        version: link:../../session/session-projection
+      '@deepseek-ai/dsh-session-query-sqlite':
+        specifier: workspace:*
+        version: link:../../session-query/session-query-sqlite
       '@types/node':
         specifier: ^22.20.0
         version: 22.20.1
@@ -16309,6 +16321,9 @@ importers:
       '@deepseek-ai/schemastery':
         specifier: link:../schemastery
         version: link:../schemastery
+      '@deepseek-harness/product':
+        specifier: workspace:*
+        version: link:../../packages/deepseek-harness-product/product
       '@tabler/icons-react':
         specifier: 3.47.0
         version: 3.47.0(react@18.3.1)
@@ -16424,6 +16439,9 @@ importers:
 
   vendor/dsh-skills-manager:
     dependencies:
+      '@deepseek-harness/product':
+        specifier: workspace:*
+        version: link:../../packages/deepseek-harness-product/product
       fflate:
         specifier: 0.8.3
         version: 0.8.3

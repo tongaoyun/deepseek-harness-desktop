@@ -86,7 +86,8 @@
     "@deepseek-ai/cordis"
   ],
   "dependencies": {
-    "fflate": "0.8.3"
+    "fflate": "0.8.3",
+    "@deepseek-harness/product": "workspace:*"
   },
   "private": true,
   "types": "lib/index.d.ts"

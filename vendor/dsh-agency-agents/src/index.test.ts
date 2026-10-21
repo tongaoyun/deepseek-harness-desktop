@@ -39,6 +39,7 @@ function alphaSettings(enabled: readonly string[], locale?: 'zh' | 'en') {
 
 /** 测试里的宿主配置走 0.2 volatile 字段；已自带 get() 的配置保持原样。 */
 function applyOnHost(ctx: Context, config: Parameters<typeof apply>[1]): void {
+  if (typeof ctx.get !== 'function') Object.assign(ctx, { get: () => undefined })
   const current = config as { enabled?: unknown }
   if (current.enabled !== null && typeof current.enabled === 'object' && typeof (current.enabled as { get?: unknown }).get === 'function') {
     apply(ctx, config)
@@ -722,8 +723,8 @@ describe('summon_expert', () => {
       execute: (args: unknown) => Promise<{ divisions: Array<{ division: string }>; total: number }>
     }
 
-    await expect(list.execute({ division: ' engineering ' })).resolves.toMatchObject({ divisions: [{ division: 'engineering' }], total: 1 })
-    await expect(list.execute({ division: 'en' })).resolves.toEqual({ divisions: [], total: 0 })
+    await expect(list.execute({ division: ' engineering ' }, { agent: undefined })).resolves.toMatchObject({ divisions: [{ division: 'engineering' }], total: 1 })
+    await expect(list.execute({ division: 'en' }, { agent: undefined })).resolves.toEqual({ divisions: [], total: 0 })
   })
 
   it.each([
@@ -1662,7 +1663,7 @@ describe('list_experts 语言切换', () => {
 
   it('默认中文：可用中文分区名筛选，并返回中文名和简介', async () => {
     const { list } = install()
-    const result = await list.execute({ division: '工程' })
+    const result = await list.execute({ division: '工程' }, { agent: undefined })
     expect(result).toMatchObject({
       divisions: [{
         division: 'engineering',
@@ -1675,7 +1676,7 @@ describe('list_experts 语言切换', () => {
 
   it('settings locale=en 时返回英文名和简介，分区标题用英文', async () => {
     const { list } = install('en')
-    const result = await list.execute({ division: 'engineering' })
+    const result = await list.execute({ division: 'engineering' }, { agent: undefined })
     expect(result.divisions[0]?.experts).toEqual([
       { name: 'Code Reviewer', emoji: '🔍', description: 'English intro' },
     ])

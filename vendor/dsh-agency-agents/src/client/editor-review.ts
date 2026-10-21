@@ -12,13 +12,13 @@ export async function loadEditorReview(
   slug: string | undefined,
   locale: "zh" | "en",
 ): Promise<EditorReview> {
-  const before = await remote.getCatalog();
+  const before = await remote.getCatalog(false);
   if (!before.ok) throw new Error(before.error.message);
   if (slug === undefined || !before.value.experts.some(item => item.slug === slug && item.custom))
     return { catalog: before.value };
   const expert = await remote.getCustomExpert(slug);
   if (!expert.ok) throw new Error(expert.error.message);
-  const after = await remote.getCatalog();
+  const after = await remote.getCatalog(false);
   if (!after.ok) throw new Error(after.error.message);
   if (before.value.revision !== after.value.revision) throw customError("conflict", locale);
   return { catalog: after.value, expert: expert.value };

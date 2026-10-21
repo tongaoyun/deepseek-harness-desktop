@@ -4,6 +4,7 @@ import type { ProductBridgeOptions } from '@deepseek-harness/product/bridge'
 import { ProductError } from '@deepseek-harness/product/errors'
 import { DeepSeekHarnessApiError } from '@deepseek-harness/product'
 import { createExtension } from '../src/index.ts'
+import { isProductMethod } from '@deepseek-harness/product/protocol'
 
 const fixture = vi.hoisted(() => ({ authenticate: vi.fn<typeof import('@deepseek-harness/product/dingtalk-auth').ensureDingTalkSession>(),
   dialog: vi.fn(async (..._args: unknown[]) => ({ response: 0 })), quit: vi.fn(),
@@ -12,7 +13,13 @@ const fixture = vi.hoisted(() => ({ authenticate: vi.fn<typeof import('@deepseek
   stop: vi.fn(async () => {}), dispose: vi.fn(), knowledgeClose: vi.fn(async () => {}), writeFile: vi.fn(),
   bridgeOptions: vi.fn<(options: ProductBridgeOptions) => void>(),
   invoke: vi.fn(async (..._args: unknown[]) => ({})), refreshCatalog: vi.fn(async () => {}) }))
-vi.mock('../src/company-content.ts', () => ({ installCompanyContent: async () => ({ skillsRoot: '/company/skills', expertsRoot: '/company/experts' }) }))
+vi.mock('../src/company-content-sync.ts', () => ({ CompanyContentSync: class {
+  prepare = async () => { void fixture.companyContent().catch(() => undefined); return this.read() }
+  read = () => ({ skillsRoot: '/company/skills', expertsRoot: '/company/experts', version: '0', sha256: '0'.repeat(64) })
+  refresh = async () => { await fixture.companyContent() }
+  pin = async () => this.read()
+  close = async () => {}
+} }))
 vi.mock('../src/native-extensions.ts', () => ({ nativeExtensionPatches: () => [] }))
 vi.mock('node:fs', async original => ({ ...await original<typeof import('node:fs')>(), writeFileSync: fixture.writeFile }))
 vi.mock('electron', () => ({
@@ -22,6 +29,7 @@ vi.mock('electron', () => ({
   screen: { getAllDisplays: () => [{ scaleFactor: 2 }] },
 }))
 vi.mock('../src/deepseek-harness-product-config.ts', () => ({ resolveDeepSeekHarnessProductServerUrl: () => 'https://example.test',
+  resolveCompanyContentRefreshInterval: () => 60000,
   resolveDeepSeekHarnessConnectorProxyPolicy: () => ({ responseTimeoutMs: 30000, streamIdleTimeoutMs: 120000 }),
   resolveDesktopSupportPolicy: () => ({ heartbeatIntervalMs: 300000, reportIntervalMs: 86400000 }),
   resolveDeepSeekHarnessKnowledgeFilePolicy: () => ({ previewMaxBytes: 1024, spreadsheetMaxBytes: 1024, officeInputMaxBytes: 1024,
@@ -135,11 +143,10 @@ it('retries expired DingTalk sign-in and supplies only model configuration and p
   expect(signal.aborted).toBe(true)
 })
 
-it.each(['authentication', 'bootstrap', 'company-content'] as const)('waits for explicit retry after a network failure during %s', async (phase) => {
+it.each(['authentication', 'bootstrap'] as const)('waits for explicit retry after a network failure during %s', async (phase) => {
   const failure = new ProductError('PRODUCT_NETWORK_UNAVAILABLE', 'private diagnostic', true)
   if (phase === 'authentication') fixture.authenticate.mockRejectedValueOnce(failure)
-  else if (phase === 'bootstrap') fixture.bootstrap.mockRejectedValueOnce(failure)
-  else fixture.companyContent.mockRejectedValueOnce(failure)
+  else fixture.bootstrap.mockRejectedValueOnce(failure)
   const choice = Promise.withResolvers<{ response: number }>()
   const shown = Promise.withResolvers<undefined>()
   fixture.dialog.mockImplementationOnce(async () => { shown.resolve(undefined); return choice.promise })
@@ -155,6 +162,17 @@ it.each(['authentication', 'bootstrap', 'company-content'] as const)('waits for 
     expect(fixture.authenticate).toHaveBeenCalledTimes(2)
     expect(fixture.quit).not.toHaveBeenCalled()
   } finally { choice.resolve({ response: 1 }); await extension.close() }
+})
+
+it('enters the workspace while the background company check fails and exposes retry through trusted Host IPC', async () => {
+  fixture.companyContent.mockRejectedValueOnce(new Error('Company server unavailable'))
+  const extension = createExtension({ getWindow: () => undefined, isQuitting: () => false, requestHost: async () => ({}) })
+  try {
+    await expect(extension.prepareHost({ directory: '/unused-profile', installAnchor: '/unused-runtime/package.json' })).resolves.toMatchObject({ DSH_COMPANY_SKILLS_ROOT: '/company/skills' })
+    expect(fixture.dialog).not.toHaveBeenCalled()
+    await expect(extension.invokeRuntime('runtime.companyContent.refresh')).resolves.toMatchObject({ version: '0' })
+    expect(isProductMethod('runtime.companyContent.pin')).toBe(false)
+  } finally { await extension.close() }
 })
 
 it('exits without writing inference configuration when startup retry is declined', async () => {

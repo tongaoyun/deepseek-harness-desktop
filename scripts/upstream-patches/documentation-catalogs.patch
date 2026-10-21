@@ -13456,3 +13456,15 @@ index 215048297e6ad71c344092d4f6873fb008c37dd5..d77faae08037fe15923d1493b7b04b40
  }
  
  interface SessionFormatRelease {
+diff --git a/scripts/gen-cordis-catalog.ts b/scripts/gen-cordis-catalog.ts
+index ebd752714286dd59491439c88a697bfa84f3b6f2..36feda64968093d9fa5ba0bd0ee651b15bf205b2 100644
+--- a/scripts/gen-cordis-catalog.ts
++++ b/scripts/gen-cordis-catalog.ts
+@@ -170,6 +170,7 @@ export const SERVICE_PAGE: Record<string, string> = {
+  * to a model as `cordis_runtime_inspect what:"client"`).
+  */
+ export const SERVICE_WALK_EXEMPTIONS: Record<string, string> = {
++  companyContent: 'product Host content source; main owns credentials and durable versions — packages/deepseek-harness-product/runtime/README.md owns this private API',
+   invocation: 'not a service: per-call accessor (RemoteInvocation | undefined) the Gateway derives for each Remote call — packages/api/gateway/README.md owns the contract',
+   webTerminals: 'client-side terminal view models — packages/api/terminal-controller/README.md owns the API',
+   appReady: 'not a service: launcher-provided successful-startup signal — packages/boot/cmdline/README.md owns the launcher contract',

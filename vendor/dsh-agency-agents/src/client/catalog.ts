@@ -68,11 +68,11 @@ export function acceptEnabled(remote: AgencyCatalogRemote, value: { enabled: str
   return acceptCatalog(remote, { experts: [...entry.value.experts], enabled: value.enabled, revision: value.revision })
 }
 /** 一次 @ 查询会并发读取多个分区，复用同一个请求而不重复传输名册。 */
-export function refreshCatalog(remote: AgencyCatalogRemote): Promise<CatalogState> {
+export function refreshCatalog(remote: AgencyCatalogRemote, refreshCompany = false): Promise<CatalogState> {
   const entry = cache(remote)
-  if (entry.pending !== undefined) return entry.pending
+  if (entry.pending !== undefined) return refreshCompany ? entry.pending.then(() => refreshCatalog(remote, true)) : entry.pending
   const generation = entry.generation
-  const pending = remote.getCatalog().then(result => {
+  const pending = (refreshCompany ? remote.getCatalog(true) : remote.getCatalog(false)).then(result => {
     // 写入完成后的提交优先于此前发出的查询；新查询允许宿主重启后的 revision 回落。
     if (generation !== entry.generation) return entry.value
     if (!result.ok) throw new Error(result.error.message)

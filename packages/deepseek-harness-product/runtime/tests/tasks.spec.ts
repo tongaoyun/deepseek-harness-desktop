@@ -16,13 +16,14 @@ async function setup() {
   let selected = 'standard'
   let started = false
   const context = (value: object): Context => value as Context
+  const query = {
+    listSessions: vi.fn(async () => [{ header: { id: 'session', agentPreset: selected } }]),
+    observeSession: vi.fn(async (_id?: string) => ({ header: { agentPreset: selected }, projections: { values: { agentPreset: selected } },
+      events: started ? [{ type: 'turn/start' }] : [], [Symbol.dispose]() {} })),
+  }
   const ctx = context({
     logger: { warn: vi.fn() },
-    sessionQuery: {
-      listSessions: async () => [{ header: { id: 'session', agentPreset: selected } }],
-      observeSession: async () => ({ header: { agentPreset: selected }, projections: { values: { agentPreset: selected } },
-        events: started ? [{ type: 'turn/start' }] : [], [Symbol.dispose]() {} }),
-    },
+    sessionQuery: query,
     agentPresets: { defaultId: 'standard', resolve: async (id: string) => definitions.get(id),
       derive(base: string, value: PresetDefinition) {
         return { ...value, selectionBase: base, plugins: [...definitions.get(base)!.plugins, ...value.plugins], resolutionBase: 'file:///profile/' }
@@ -38,8 +39,32 @@ async function setup() {
     knowledgePlugins: ids => ids.length ? [{ id: 'product-knowledge', name: 'knowledge', config: { knowledgeBaseIds: ids } }] : [],
   } satisfies TaskDependencies
   const tasks = await createTaskCapabilities(ctx, deps)
-  return { root, ctx, deps, tasks, register, select: (id: string) => { selected = id }, start: () => { started = true } }
+  return { root, ctx, deps, tasks, register, query, select: (id: string) => { selected = id }, start: () => { started = true } }
 }
+it.each(['standard', 'product-task-' + 'c'.repeat(64)])('isolates unreadable history using preset %s and restores healthy tasks', async (preset) => {
+  const f = await setup()
+  const prepared = await f.tasks.prepare({ sessionId: 'session', knowledgeBaseIds: ['manuals'] })
+  f.select(prepared.presetId)
+  const path = join(f.root, `${prepared.presetId}.json`)
+  const raw = await readFile(path, 'utf8')
+  f.query.listSessions.mockResolvedValue([
+    { header: { id: 'unreadable', agentPreset: preset } },
+    { header: { id: 'session', agentPreset: prepared.presetId } },
+  ])
+  f.query.observeSession.mockImplementation(async (id) => {
+    if (id === 'unreadable') throw new Error('Unreadable session log')
+    return { header: { agentPreset: prepared.presetId }, projections: { values: { agentPreset: prepared.presetId } },
+      events: [], [Symbol.dispose]() {} }
+  })
+  const restored = await createTaskCapabilities(f.ctx, f.deps)
+  await expect(restored.validate(prepared.presetId)).resolves.toBeUndefined()
+  expect(await restored.read({ sessionId: 'session' })).toEqual({ basePresetId: 'standard', knowledgeBaseIds: ['manuals'] })
+  expect(await readFile(path, 'utf8')).toBe(raw)
+  expect(f.ctx.logger.warn).toHaveBeenCalledWith(expect.stringContaining('unreadable'))
+  if (preset.startsWith('product-task-')) {
+    await expect(restored.validate(preset)).rejects.toMatchObject({ code: 'TASK_SNAPSHOT_MISSING' })
+  }
+})
 it('pins exact knowledge IDs, preserves loader resolution and restores after a restart', async () => {
   const f = await setup()
   const prepared = await f.tasks.prepare({ sessionId: 'session', knowledgeBaseIds: ['manuals'] })

@@ -111,3 +111,19 @@ export function resolveDeepSeekHarnessConnectorProxyPolicy(options: DeepSeekHarn
     || !('version' in document) || document.version !== 1) throw new Error('Invalid product configuration')
   return resolveConnectorProxyPolicy('connectorProxy' in document ? document.connectorProxy : undefined)
 }
+
+/** Read the minimum interval between successful company catalog checks.
+ * @param options - Product resource location and optional test reader.
+ * @returns Deployment-owned interval in milliseconds.
+ */
+export function resolveCompanyContentRefreshInterval(options: DeepSeekHarnessProductConfigOptions): number {
+  const path = options.packaged ? join(options.resourcesPath, 'deepseek-harness', 'product.json')
+    : fileURLToPath(new URL('../resources/product.json', import.meta.url))
+  const document: unknown = JSON.parse((options.readFile ?? ((file: string) => readFileSync(file, 'utf8')))(path))
+  if (typeof document !== 'object' || document === null || !('companyContentRefreshIntervalMs' in document)
+    || typeof document.companyContentRefreshIntervalMs !== 'number' || !Number.isSafeInteger(document.companyContentRefreshIntervalMs)
+    || document.companyContentRefreshIntervalMs < 1000 || document.companyContentRefreshIntervalMs > 3_600_000) {
+    throw new Error('Invalid company content refresh interval')
+  }
+  return document.companyContentRefreshIntervalMs
+}

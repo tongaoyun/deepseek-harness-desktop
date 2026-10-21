@@ -3,6 +3,7 @@ import { nativeTeamMemberName } from './team-engine.js'
 import { teamText } from './team-i18n.js'
 import type { TeamInput, TeamSnapshot, TeamEngineStatus } from './team-contract.js'
 import type { Context } from '@deepseek-ai/cordis'
+import type { CompanyContentSource } from '@deepseek-harness/product/protocol'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import type { TypertContribution } from '@deepseek-ai/dsh-typert-registry'
 import type {} from '@deepseek-ai/dsh-typert-registry'
@@ -75,7 +76,10 @@ export default class AgencyAgentsRemote extends TypertRemoteService {
 
   /** 返回动态名册，不预加载任何专家提示词正文。 */
   @Remote('getCatalog')
-  async getCatalog(): Promise<CatalogSnapshot> { return this.library().catalog() }
+  async getCatalog(refreshCompany: boolean): Promise<CatalogSnapshot> {
+    if (refreshCompany) await (this.ctx.get('companyContent') as CompanyContentSource | undefined)?.refresh()
+    return this.library().catalog()
+  }
 
   @Remote('getCustomExpert')
   async getCustomExpert(slug: string): Promise<CustomExpertInput> {

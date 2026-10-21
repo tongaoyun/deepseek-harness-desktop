@@ -3,6 +3,7 @@ import { mkdirSync, mkdtempSync, writeFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { fileURLToPath } from 'node:url'
 import { join } from 'node:path'
+import type { Context } from '@deepseek-ai/cordis'
 import { expect, it, onTestFinished, vi } from 'vitest'
 import { boot, initProfile, readProfilePatches, type ProfileContext } from '@deepseek-ai/dsh-app-boot'
 import ConfigEditor from '@deepseek-ai/dsh-config-editor'
@@ -11,6 +12,12 @@ import Tools from '@deepseek-ai/dsh-tools'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import Skills from '@deepseek-ai/dsh-skill'
 import Sessions from '@deepseek-ai/dsh-session'
+import { SessionId } from '@deepseek-ai/dsh-session'
+import SessionQuery from '@deepseek-ai/dsh-session-query-sqlite'
+import SessionProjections from '@deepseek-ai/dsh-session-projection'
+import Agents from '@deepseek-ai/dsh-agent'
+import AgentLoop from '@deepseek-ai/dsh-agent-loop'
+import Llm from '@deepseek-ai/dsh-llm'
 import WebServer from '@deepseek-ai/dsh-host-webserver'
 import { contentDigest } from '@deepseek-harness/product/company-content'
 import * as Agency from '@michengai/dsh-agency-agents'
@@ -18,12 +25,14 @@ const AGENCY_LIBRARY_SERVICE = 'agencyAgentsLibrary'
 interface AgencyExpertLibrary { catalog(): Promise<{ experts: readonly { slug: string; company?: boolean; division: string }[] }> }
 import { installCompanyContent } from '../src/company-content.ts'
 import { nativeExtensionPatches } from '../src/native-extensions.ts'
+import { CompanyContent } from '@deepseek-harness/product-runtime/company-content'
+import { CompanyContentSync } from '../src/company-content-sync.ts'
 
 declare module '@deepseek-ai/cordis' {
   interface Context { agencyAgentsLibrary: AgencyExpertLibrary; agencyAgentsPersona: Agency.AgencyPersonaSource }
 }
 
-it.each([true, false])('loads company skills and experts (published=%s), then withdraws registrations on disposal', async (published) => {
+it.each([{ published: false, refresh: false }, { published: true, refresh: false }, { published: true, refresh: true }])('loads native company catalogs and isolates refreshed content (%j)', async ({ published, refresh }) => {
   const home = mkdtempSync(join(tmpdir(), 'company-profile-'))
   onTestFinished(() =>{  rmSync(home, { recursive: true, force: true }) })
   vi.stubEnv('DSH_HOME', home)
@@ -34,6 +43,16 @@ it.each([true, false])('loads company skills and experts (published=%s), then wi
   } : {}
   const release = published ? { version: '1.0.0', sha256: contentDigest(files), files } : null
   const roots = await installCompanyContent(join(home, 'company-content'), 'employee-fixture', release, new AbortController().signal)
+  let remote: unknown = release
+  let now = Date.now()
+  if (refresh) {
+    vi.spyOn(Date, 'now').mockImplementation(() => now)
+    onTestFinished(() => { vi.restoreAllMocks() })
+  }
+  const sync = new CompanyContentSync({ root: join(home, 'company-content'), employeeId: 'employee-fixture', refreshIntervalMs: 1000,
+    load: async () => remote })
+  onTestFinished(() => sync.close())
+  await sync.prepare(); await sync.refresh()
   vi.stubEnv('DSH_COMPANY_SKILLS_ROOT', roots.skillsRoot)
   vi.stubEnv('DSH_COMPANY_EXPERTS_ROOT', roots.expertsRoot)
   const directory = join(home, 'profile')
@@ -42,6 +61,10 @@ it.each([true, false])('loads company skills and experts (published=%s), then wi
     { id: 'editor', name: 'cordis:editor' }, { id: 'settings', name: 'cordis:settings' },
     { id: 'tools', name: 'cordis:tools' }, { id: 'prompt', name: 'cordis:prompt' },
     { id: 'skills', name: 'cordis:skills' }, { id: 'sessions', name: 'cordis:sessions' },
+    { id: 'query', name: 'cordis:query', config: { path: ':memory:', openAt: 'never' } },
+    { id: 'projections', name: 'cordis:projections' }, { id: 'llm', name: 'cordis:llm' },
+    { id: 'agents', name: 'cordis:agents' }, { id: 'loop', name: 'cordis:loop', config: { agents: [] } },
+    { id: 'company', name: 'cordis:company' },
     { id: 'web', name: 'cordis:web', config: { host: '127.0.0.1', port: 0 } },
     { id: 'agency-agents', name: '@michengai/dsh-agency-agents' },
     { id: 'manager', name: '@michengai/dsh-skills-manager' },
@@ -66,7 +89,19 @@ it.each([true, false])('loads company skills and experts (published=%s), then wi
     // This case observes catalogs and does not execute or mock a model or a delegated task.
     ctx.provide('subagents', {})
     Object.assign(ctx.loader.builtins, { editor: ConfigEditor, settings: Settings, tools: Tools, prompt: SystemPrompt,
-      skills: Skills, sessions: Sessions, web: WebServer })
+      skills: Skills, sessions: Sessions, web: WebServer, query: SessionQuery, projections: SessionProjections,
+      llm: Llm, agents: Agents, loop: AgentLoop, company: { inject: ['sessions', 'sessionQuery', 'systemPrompt'], apply(owner: Context) {
+        new CompanyContent(owner, { invoke: async (method, payload) => {
+          if (method === 'runtime.companyContent.read') return sync.read()
+          if (method === 'runtime.companyContent.refresh') { await sync.refresh(); return sync.read() }
+          if (method === 'runtime.companyContent.pin' && payload && typeof payload === 'object' && 'sessionId' in payload
+            && typeof payload.sessionId === 'string' && 'started' in payload && typeof payload.started === 'boolean') {
+            return sync.pin({ sessionId: payload.sessionId, started: payload.started,
+              ...'parentSessionId' in payload && typeof payload.parentSessionId === 'string' ? { parentSessionId: payload.parentSessionId } : {} })
+          }
+          throw new Error(`Unexpected company operation: ${method}`)
+        } })
+      } } })
   })
   onTestFinished(() => ctx.fiber.dispose())
   const library = ctx.get(AGENCY_LIBRARY_SERVICE)
@@ -115,6 +150,33 @@ it.each([true, false])('loads company skills and experts (published=%s), then wi
     expect(response.status).toBe(200)
     expect(snapshot.data.roots.find(root => root.key === 'dsh')?.skills.find(skill => skill.name === 'policy-manual-only'))
       .toMatchObject({ enabled: true, effectiveModelInvocable: false })
+  }
+  if (refresh) {
+    const old = await ctx.agents.create({ sessionId: SessionId('old-company-task'), agentOptions: { provider: 'fixture', model: 'fixture' } })
+    onTestFinished(() => old.dispose())
+    const source = ctx.get('companyContent')!
+    const before = await source.forSession(old.agent.session.id)
+    expect((await ctx.skills.get('orders', { scope: old.agent }))?.content).toContain('Company order skill body.')
+    const next = { ...files,
+      'skills/orders/SKILL.md': Buffer.from('---\nname: orders\ndescription: updated orders\n---\nSecond company skill.').toString('base64'),
+      'experts/operations/orders.md': Buffer.from('---\nname: 公司订单专家\ndescription: updated orders\n---\nSecond company expert.').toString('base64'),
+    }
+    remote = { version: '2.0.0', sha256: contentDigest(next), files: next }
+    now += 2000
+    await source.refresh()
+    expect((await library!.catalog()).experts.find(expert => expert.slug === 'orders')?.company).toBe(true)
+    const persona = ctx.get(Agency.AGENCY_PERSONA_SERVICE)!
+    expect((await persona.getPrompt('orders', 'operations', 'zh')).prompt).toContain('Second company expert.')
+    expect((await persona.getPrompt('orders', 'operations', 'zh', old.agent.session.id)).prompt).toContain('Company order expert persona.')
+    const fresh = await ctx.agents.create({ sessionId: SessionId('fresh-company-task'), agentOptions: { provider: 'fixture', model: 'fixture' } })
+    onTestFinished(() => fresh.dispose())
+    expect((await ctx.skills.get('orders', { scope: fresh.agent }))?.content).toContain('Second company skill.')
+    expect((await ctx.skills.get('orders', { scope: old.agent }))?.content).toContain('Company order skill body.')
+    const oldPrompt = await ctx.systemPrompt.assemble({ scope: old.agent })
+    const freshPrompt = await ctx.systemPrompt.assemble({ scope: fresh.agent })
+    expect(JSON.stringify(oldPrompt)).toContain(before.sha256)
+    expect(JSON.stringify(freshPrompt)).toContain(contentDigest(next))
+    await fresh.dispose(); await old.dispose()
   }
   await ctx.loader.root.update([])
   await ctx.loader.await()

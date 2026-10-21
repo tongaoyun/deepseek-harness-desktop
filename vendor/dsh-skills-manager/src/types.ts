@@ -250,6 +250,8 @@ export interface RepositoryDependencies {
     parseRepositoryInput: (input?: RepositoryInput) => RepositorySource;
 }
 export interface ScopeOptions {
+    /** Immutable root selected by the product catalog or this Agent's Session. */
+    companySkillsRoot?: string;
     projectCwds?: string[];
     cwd?: string;
     signal?: AbortSignal;
