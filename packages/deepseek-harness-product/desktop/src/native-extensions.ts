@@ -2,6 +2,8 @@
 import { composeEntries, loadProfileDirectory } from '@deepseek-ai/dsh-app-boot'
 
 const plugins = [
+  { id: 'product-mcp-storage', packageName: '@deepseek-harness/product-runtime/native-mcp-storage' },
+  { id: 'mcp-connector', packageName: 'dsh-mcp-connector' },
   { id: 'agency-agents-remote', packageName: '@michengai/dsh-agency-agents/remote' },
   { id: 'agency-agents', packageName: '@michengai/dsh-agency-agents' },
   { id: 'skills-manager', packageName: '@michengai/dsh-skills-manager' },

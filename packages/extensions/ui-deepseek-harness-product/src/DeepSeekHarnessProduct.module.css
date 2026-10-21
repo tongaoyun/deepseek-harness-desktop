@@ -39,6 +39,12 @@
 .catalogTabs button:hover { color: var(--dsw-alias-label-primary); }
 .catalogTabs button[aria-selected='true'] { border-bottom-color: var(--dsw-alias-label-primary); color: var(--dsw-alias-label-primary); font-weight: 600; }
 .catalogTabs button:focus-visible { outline: 2px solid var(--dsw-alias-border-l4); outline-offset: 2px; }
+.connectorPage { display: flex; flex-direction: column; height: 100%; min-height: 0; }
+.connectorSources { display: flex; flex: none; gap: 24px; padding: 12px 24px 0; border-bottom: 0.5px solid var(--dsw-alias-border-l2); }
+.connectorSources button { min-height: 38px; padding: 0 0 10px; border: 0; border-bottom: 2px solid transparent; background: transparent; color: var(--dsw-alias-label-secondary); font: inherit; font-size: 13px; cursor: pointer; }
+.connectorSources button[aria-selected='true'] { color: var(--dsw-alias-label-primary); border-bottom-color: currentColor; font-weight: 600; }
+.connectorSources button:focus-visible { outline: 2px solid var(--dsw-alias-border-l4); outline-offset: 2px; }
+.connectorSourceContent { flex: 1; min-height: 0; overflow: auto; }
 .tabCount { color: var(--dsw-alias-label-tertiary); font-size: 12px; font-weight: 400; font-variant-numeric: tabular-nums; }
 .catalogGroup + .catalogGroup { margin-top: 22px; }
 .groupTitle { display: flex; align-items: baseline; gap: 7px; margin: 0 0 8px; color: var(--dsw-alias-label-primary); font-size: 13px; line-height: 20px; font-weight: 600; }

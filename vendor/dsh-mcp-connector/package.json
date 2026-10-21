@@ -1,0 +1,133 @@
+{
+  "name": "dsh-mcp-connector",
+  "version": "0.2.76-company.1",
+  "description": "DeepSeek Harness MCP Connector: connect servers, search tools across active connections, and troubleshoot discovery. Includes a continuously updated catalog; supports OAuth 2.0 PKCE, API keys, Streamable HTTP/stdio, and mcpServers JSON import.",
+  "type": "module",
+  "main": "lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./client": "./lib/client.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib",
+    "ui",
+    "catalog",
+    "registry",
+    "scripts/cli-bridge.mjs",
+    "README.md",
+    "LICENSE",
+    "cordis.patch.yml"
+  ],
+  "scripts": {
+    "test": "node --test test/*.test.mjs"
+  },
+  "keywords": [
+    "deepseek-harness",
+    "deepseek",
+    "harness",
+    "dsh",
+    "dsh-plugin",
+    "cordis",
+    "mcp",
+    "mcp-client",
+    "mcp-server",
+    "mcp-connector",
+    "mcp-marketplace",
+    "model-context-protocol",
+    "mcp-hub",
+    "mcp-manager",
+    "mcp-registry",
+    "mcp-tools",
+    "mcp-store",
+    "remote-mcp",
+    "streamable-http",
+    "stdio",
+    "connector",
+    "connection",
+    "connection-manager",
+    "marketplace",
+    "plugin",
+    "extension",
+    "integration",
+    "agent-skills",
+    "skill-extension",
+    "ai-tools",
+    "llm-tools",
+    "ai-agents",
+    "oauth",
+    "oauth2",
+    "pkce",
+    "api-key",
+    "json-import",
+    "enterprise-data",
+    "qichacha",
+    "qcc",
+    "tools",
+    "prompts",
+    "MCP连接器",
+    "连接器",
+    "连接管理",
+    "技能扩展",
+    "插件",
+    "扩展",
+    "企查查"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/duhu2000/dsh-mcp-connector.git"
+  },
+  "homepage": "https://github.com/duhu2000/dsh-mcp-connector#readme",
+  "bugs": {
+    "url": "https://github.com/duhu2000/dsh-mcp-connector/issues"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "inject": [
+        "@deepseek-ai/dsh-client-locale",
+        "@deepseek-ai/dsh-api-session-controller",
+        "@deepseek-ai/dsh-api-workspace-controller",
+        "@deepseek-ai/dsh-client-ui-layout",
+        "@deepseek-ai/dsh-client-ui-conversation",
+        "@deepseek-ai/dsh-client-ui-settings",
+        "@deepseek-ai/dsh-client-ui-workspace"
+      ],
+      "platform": "web"
+    },
+    "build": false
+  },
+  "peerDependencies": {
+    "@deepseek-ai/dsh-client-ui-conversation": "workspace:*",
+    "@deepseek-ai/dsh-client-ui-layout": "workspace:*",
+    "@deepseek-ai/dsh-mcp-client": "workspace:*",
+    "@deepseek-ai/dsh-storage-domain": "workspace:*",
+    "@deepseek-ai/schemastery": "workspace:~",
+    "@deepseek-ai/cordis": "workspace:~",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "zod": ">=4.1.8 <5",
+    "@deepseek-ai/dsh-client-locale": "workspace:*",
+    "@deepseek-ai/dsh-api-session-controller": "workspace:*",
+    "@deepseek-ai/dsh-api-workspace-controller": "workspace:*",
+    "@deepseek-ai/dsh-client-ui-settings": "workspace:*",
+    "@deepseek-ai/dsh-client-ui-workspace": "workspace:*"
+  },
+  "dependencies": {
+    "cross-spawn": "^7.0.6",
+    "undici": "^6.29.0",
+    "@deepseek-ai/dsh-mcp-client": "workspace:*",
+    "@deepseek-ai/dsh-storage-domain": "workspace:*"
+  },
+  "devDependencies": {
+    "@deepseek-ai/cordis": "workspace:~",
+    "@deepseek-ai/schemastery": "workspace:~"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "private": true
+}

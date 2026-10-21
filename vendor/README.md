@@ -95,3 +95,5 @@ To update a vendored package from upstream:
 - 技能管理采用 1.2.9 的生命周期总开关：启用保留源文件的模型和用户调用限制，目录显式返回 enabled；非法调用声明仍拒绝两类调用。真实 Loader/profile 回归覆盖导入、停用和重新启用。专家直接加载固定工作区模块，不引入上游针对 PM2 的全局宿主入口探测。
 
 更新时从上述固定提交取得源文件，对照两份清单逐项应用或移除本地修改，更新基线及本地哈希；运行插件测试、真实公司 Loader/profile 测试和产品构建。发布操作见[公司内容说明](../apps/product-desktop/docs/company-content.md)。
+
+产品另预装 [dsh-mcp-connector](dsh-mcp-connector/README.md) `0.2.76-company.1`（MIT），固定上游提交见该目录 `upstream.json`。源码为 `lib/*.js`，通过 `dsh.build: false` 跳过编译；凭据持久化改用产品主进程加密，执行仍委托官方 MCP 客户端。
