@@ -13,3 +13,7 @@
 ## 公司原生内容分发
 
 两插件改为随桌面构建的源码分支，插件独立更新及外部反馈入口已移除，统一随软件更新。新桌面启动要求服务端公司内容接口，需先部署服务端 V65；未发布内容时保持空公司目录。个人插件配置和官方 Session 保留，不恢复已移除的产品技能、套件制品及执行协议。详见[公司内容](company-content.md)。
+
+## 公司内容发布工具
+
+原 `apps/product-desktop/scripts/publish-company-content.mjs <目录> --check|--publish` 已移除，改用仓库内完整技能的 `scripts/publish-company-content.mjs`：`check <目录>`、`plan <目录> --out <计划>` 和 `publish <计划> --confirm <摘要>`。默认按本次资源增量合并，保留公司其他内容；修改已有资源先 export，并保留编辑来源摘要。不会继续保留可直接覆盖全目录的旧机器发布命令。Codex／Claude 从同一仓库安装或更新发布技能，无需构建桌面；接入说明见[公司内容](company-content.md#ai-publishing)。服务端接口和桌面同步协议不变。
