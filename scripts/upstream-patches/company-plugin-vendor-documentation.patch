@@ -1,5 +1,5 @@
 diff --git a/vendor/README.md b/vendor/README.md
-index 654276201d4a3ddd553bbeb6c794796cd47cd84c..3c50419e071776fb432c234df1693ffa2f7a5a8c 100644
+index 654276201d4a3ddd553bbeb6c794796cd47cd84c..a1a59182fbe5142a837143dc50313e2d456b7424 100644
 --- a/vendor/README.md
 +++ b/vendor/README.md
 @@ -32,6 +32,8 @@ Intentionally **not** vendored (verified unused by this set): `reggol`, `@cordis
@@ -39,4 +39,4 @@ index 654276201d4a3ddd553bbeb6c794796cd47cd84c..3c50419e071776fb432c234df1693ffa
 +
 +更新时从上述固定提交取得源文件，对照两份清单逐项应用或移除本地修改，更新基线及本地哈希；运行插件测试、真实公司 Loader/profile 测试和产品构建。发布操作见[公司内容说明](../apps/product-desktop/docs/company-content.md)。
 +
-+- 员工共享入口：专家 `src/client/index.ts` 与 `src/client/custom-locales.ts` 为自定义专家增加“提交到公司”；技能 `src/client.ts`、`src/client-types.ts`、`src/index.ts` 与 `src/core.ts` 增加单技能及资源文件导出和提交入口，拒绝符号链接、非法路径、超限目录与公司来源。两插件仅发出可取消的界面提交意图，产品 UI 负责确认、状态与 IPC，服务端负责归属和审核。原生执行及模型输入不变；回归见产品的 `content-submission.spec.ts`、`skill-submission-export.spec.ts`、`company-submission.client.spec.tsx` 和真实公司 Loader 测试。
++- 员工共享入口：专家 `src/client/index.ts` 与 `src/client/custom-locales.ts` 为自定义专家增加“提交到公司”；技能 `src/client.ts`、`src/client-types.ts`、`src/index.ts` 与 `src/core.ts` 增加单技能及资源文件导出，两个插件的提交入口统一放在原生“更多”菜单，拒绝符号链接、非法路径、超限目录与公司来源。两插件仅发出可取消的界面提交意图，产品 UI 负责确认、状态与 IPC，服务端负责归属和审核。原生执行及模型输入不变；回归见产品的 `content-submission.spec.ts`、`skill-submission-export.spec.ts`、`company-submission.client.spec.tsx` 和真实公司 Loader 测试。

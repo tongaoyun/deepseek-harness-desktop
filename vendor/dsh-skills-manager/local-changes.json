@@ -184,7 +184,7 @@
     {
       "path": "src/client.ts",
       "before": "011746374560ee6939f22706cf8ec0961b9995e66e2cb237408f92b1a56ea826",
-      "after": "23ff762a7c64dac623c87d69e91e6bb5d12d13ea235d975478b4ba8db3a0d47e"
+      "after": "312725dcd33fdb378a1df69f30652b3b0bcdbc116676bb7f93a6ff75126e5194"
     },
     {
       "path": "src/core.ts",

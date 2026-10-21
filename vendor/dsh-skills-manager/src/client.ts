@@ -578,6 +578,7 @@ import { installSettingsNavIcon } from "./settings-nav-icon.js";
         var cls = skill.shadowedBy ? "dssm-shadowed" : enabled ? "dssm-enabled" : "dssm-disabled";
         var showStatus = !showSwitch || !!skill.shadowedBy || skill.loadable === false;
         var menu: { value: string; label: string; danger?: boolean }[] = [{ value: "detail", label: t("btn.detail") }];
+        if (root.key !== "company" && "dshDesktop" in globalThis && skill.loadable) menu.push({ value: "submit-company", label: t("btn.submitCompany") });
         var categories = root.categories || [];
         var currentCatId = skill.categoryId || "";
         categories.forEach(function (category) {
@@ -594,6 +595,8 @@ import { installSettingsNavIcon } from "./settings-nav-icon.js";
         var skillActions: React.ReactNode[] = [
           h(SourceSelect, { action: true, icon: moreIcon(), label: t("btn.more"), disabled: busy, options: menu, onChange: function (action) {
           if (action === "detail") openDetail(root, skill, workspacePath);
+          if (action === "submit-company") document.dispatchEvent(new CustomEvent("dsh:company-content-submit", { cancelable: true,
+            detail: { name: skill.declaredName || skill.name, prepare: (signal: AbortSignal) => sessionApi("/export", { method: "POST", headers: MUTATION_HEADERS, body: JSON.stringify(scoped({ root: root.key, name: skill.name })), signal }) } }));
           if (action.indexOf("category:") === 0) {
             var categoryId = action.slice("category:".length);
             var category = categories.find(function (item) { return item.id === categoryId; });
@@ -648,10 +651,7 @@ import { installSettingsNavIcon } from "./settings-nav-icon.js";
           }
         },
         canDrag ? h("div", { className: "dssm-drag-handle", title: t("category.dragTip") }, "⋮⋮") : null,
-        h("div", { className: "dssm-skill-copy" }, h("div", { className: "dssm-name" }, skillName), h("div", { className: "dssm-skill-desc", title: skill.description || undefined }, description), renderLinkedNote(skill), renderFallback(skill)), h("div", { className: "dssm-skill-actions" }, skillActions, root.key !== "company" && "dshDesktop" in globalThis ? h("button", { type: "button", className: "dssm-action", disabled: busy || !skill.loadable, onClick: function (event: React.MouseEvent<HTMLButtonElement>) {
-          event.currentTarget.dispatchEvent(new CustomEvent("dsh:company-content-submit", { bubbles: true, cancelable: true,
-            detail: { kind: "skill", name: skillName, prepare: (signal: AbortSignal) => sessionApi("/export", { method: "POST", headers: MUTATION_HEADERS, body: JSON.stringify(scoped({ root: root.key, name: skill.name })), signal }) } }));
-        } }, t("btn.submitCompany")) : null));
+        h("div", { className: "dssm-skill-copy" }, h("div", { className: "dssm-name" }, skillName), h("div", { className: "dssm-skill-desc", title: skill.description || undefined }, description), renderLinkedNote(skill), renderFallback(skill)), h("div", { className: "dssm-skill-actions" }, skillActions));
       }
       var rows = roots.flatMap(function (root) { return (root.skills || []).map(function (skill) { return { root: root, skill: skill }; }); });
       var filteredRows = rows.filter(function (row) { return (!activeSource || row.root.key === activeSource) && (!filters.status || skillStatus(row.skill) === filters.status) && matchSkillQuery(Object.assign({}, row.skill, { rootLabel: rootDisplayName(t, row.root) }), query); });
