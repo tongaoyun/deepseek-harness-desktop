@@ -26,6 +26,8 @@ export function CompanyContentSubmission({ t }: PropsLocale<typeof NS>) {
   const [error, setError] = useState('')
   const operation = useRef<AbortController>()
   const writing = useRef(false)
+  const translate = useRef(t)
+  translate.current = t
   const close = () => { if (writing.current) return; operation.current?.abort(); setIntent(undefined); setCandidate(undefined); setError('') }
   useEffect(() => {
     const receive = (event: Event) => {
@@ -49,7 +51,7 @@ export function CompanyContentSubmission({ t }: PropsLocale<typeof NS>) {
         controller.signal.throwIfAborted()
         if (typeof inspected !== 'object' || !inspected || !('status' in inspected)) throw new Error('Invalid content inspection')
         setStatus(statusOf(inspected.status)); setCandidate(value)
-      }).catch((reason: unknown) => { if (!controller.signal.aborted) setError(reason instanceof Error ? reason.message : t('companySubmitFailed')) })
+      }).catch((reason: unknown) => { if (!controller.signal.aborted) setError(reason instanceof Error ? reason.message : translate.current('companySubmitFailed')) })
         .finally(() => { if (!controller.signal.aborted) setWorking(false) })
     }
     const api = productApi()
@@ -74,7 +76,7 @@ export function CompanyContentSubmission({ t }: PropsLocale<typeof NS>) {
     })
     document.addEventListener('dsh:company-content-submit', receive)
     return () => { live = false; document.removeEventListener('dsh:company-content-submit', receive); unsubscribe?.(); operation.current?.abort() }
-  }, [t])
+  }, [])
   const submit = async () => {
     if (!candidate || writing.current) return
     const api = productApi(); if (!api) return

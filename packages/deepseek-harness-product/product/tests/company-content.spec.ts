@@ -32,6 +32,17 @@ describe('company native content', () => {
       expect(() => companyContentRelease(release(data))).toThrow('文件与目录路径冲突')
     },
   )
+  it.each([
+    ['assets/Policies/one.txt', 'assets/policies/two.txt'],
+    ['Assets/one.txt', 'assets/two.txt'],
+  ])('rejects differently cased aliases of the same resource directory: %s, %s', (left, right) => {
+    const data = { ...files, [`skills/orders/${left}`]: markdown, [`skills/orders/${right}`]: markdown }
+    expect(() => companyContentRelease(release(data))).toThrow('目录大小写冲突')
+  })
+  it('accepts consistently cased shared resource directories', () => {
+    const data = { ...files, 'skills/orders/Assets/one.txt': markdown, 'skills/orders/Assets/two.txt': markdown }
+    expect(companyContentRelease(release(data)).files).toEqual(data)
+  })
 })
 
 it('rejects missing responses and native entries that would be silently ignored', () => {

@@ -56,9 +56,16 @@ function companyContentRelease(value) {
 		files[path] = encoded;
 	}
 	for (const path of Object.keys(files)) if (path.startsWith("skills/") && files[`${path.split("/").slice(0, 2).join("/")}/SKILL.md`] === void 0) throw new Error("公司技能缺少 SKILL.md");
-	for (const path of paths) {
+	const directories = /* @__PURE__ */ new Map();
+	for (const path of Object.keys(files)) {
 		const parts = path.split("/");
-		for (let index = 1; index < parts.length; index++) if (paths.has(parts.slice(0, index).join("/"))) throw new Error("公司内容存在文件与目录路径冲突");
+		for (let index = 1; index < parts.length; index++) {
+			const parent = parts.slice(0, index).join("/");
+			const key = parent.toLowerCase();
+			if (paths.has(key)) throw new Error("公司内容存在文件与目录路径冲突");
+			if (directories.has(key) && directories.get(key) !== parent) throw new Error("公司内容存在目录大小写冲突");
+			directories.set(key, parent);
+		}
 	}
 	if (contentDigest(files) !== value.sha256) throw new Error("公司内容校验失败");
 	return Object.freeze({

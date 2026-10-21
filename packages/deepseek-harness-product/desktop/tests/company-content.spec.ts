@@ -41,6 +41,15 @@ it('does not publish partial or cancelled content and rejects damaged caches', a
   await expect(installCompanyContent(root, 'a', release(), new AbortController().signal)).rejects.toThrow('损坏')
 })
 
+it('rejects directory case aliases before creating employee content on disk', async () => {
+  const root = await fixture()
+  const files = { ...release().files, 'skills/orders/Assets/one.txt': Buffer.from('one').toString('base64'),
+    'skills/orders/assets/two.txt': Buffer.from('two').toString('base64') }
+  await expect(installCompanyContent(root, 'employee-a', { version: '1.0.0', sha256: contentDigest(files), files },
+    new AbortController().signal)).rejects.toThrow('目录大小写冲突')
+  expect(await readdir(root)).toEqual([])
+})
+
 it('rejects symlink cache roots', async () => {
   const root = await fixture(), target = await fixture()
   const link = join(root, 'link')
