@@ -1,8 +1,34 @@
-import { expect, it } from 'vitest'
+import { createServer } from 'node:http'
+import { expect, it, onTestFinished } from 'vitest'
 import { DeepSeekHarnessApiClient } from '../src/http-client.ts'
 
 const resources = [{ kind: 'knowledge-base', id: 'base' }]
 const dependencyChecks = [{ kind: 'KNOWLEDGE_BASE', reference: 'orders', status: 'MISSING' }]
+
+it('rejects API redirects without forwarding employee credentials or replaying a write', async () => {
+  const requests: string[] = []
+  const server = createServer((request, response) => {
+    requests.push(request.url!)
+    if (request.url === '/api/write') { response.writeHead(307, { location: '/api/unexpected' }); response.end(); return }
+    response.setHeader('content-type', 'application/json'); response.end(JSON.stringify({ success: true, data: {} }))
+  })
+  onTestFinished(async () => {
+    server.closeAllConnections()
+    if (server.listening) await new Promise<void>((resolve, reject) => {
+      server.close((error) => { if (error) reject(error); else resolve() })
+    })
+  })
+  await new Promise<void>((resolve, reject) => { server.once('error', reject); server.listen(0, '127.0.0.1', () => { server.off('error', reject); resolve() }) })
+  const address = server.address()
+  if (!address || typeof address === 'string') throw new Error('Test server did not bind')
+  const client = new DeepSeekHarnessApiClient({ baseUrl: `http://127.0.0.1:${address.port}`,
+    getSessionToken: () => 'test-employee-token', getEmployeeId: () => 'alice' })
+  try {
+    await expect(client.request('/api/write', { method: 'POST', body: '{}', redirect: 'follow' }))
+      .rejects.toMatchObject({ code: 'PRODUCT_NETWORK_UNAVAILABLE' })
+    expect(requests).toEqual(['/api/write'])
+  } finally { client.close() }
+})
 
 it('accepts the nullable error fields of a successful COLA response', async () => {
   const client = new DeepSeekHarnessApiClient({ baseUrl: 'https://product.test', getSessionToken: () => undefined,

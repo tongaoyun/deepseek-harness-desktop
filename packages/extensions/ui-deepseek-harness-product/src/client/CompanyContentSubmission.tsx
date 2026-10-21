@@ -52,11 +52,28 @@ export function CompanyContentSubmission({ t }: PropsLocale<typeof NS>) {
       }).catch((reason: unknown) => { if (!controller.signal.aborted) setError(reason instanceof Error ? reason.message : t('companySubmitFailed')) })
         .finally(() => { if (!controller.signal.aborted) setWorking(false) })
     }
-    const unsubscribe = productApi()?.subscribe((event) => {
-      if (event.type === 'session.changed') { operation.current?.abort(); writing.current = false; setWorking(false); setIntent(undefined); setCandidate(undefined) }
+    const api = productApi()
+    let live = true
+    let identity: string | undefined
+    const updateIdentity = (session: Awaited<ReturnType<NonNullable<typeof api>['getSession']>>, changed = false) => {
+      const next = JSON.stringify([session.authenticated, session.employeeId])
+      if (identity === undefined ? changed : next !== identity) {
+        operation.current?.abort(); writing.current = false; setWorking(false); setIntent(undefined); setCandidate(undefined)
+      }
+      identity = next
+    }
+    const unsubscribe = api?.subscribe((event) => {
+      const value = event.payload
+      if (event.type !== 'session.changed' || typeof value !== 'object' || value === null
+        || !('authenticated' in value) || typeof value.authenticated !== 'boolean') return
+      updateIdentity({ authenticated: value.authenticated,
+        ...'employeeId' in value && typeof value.employeeId === 'string' ? { employeeId: value.employeeId } : {} }, true)
+    })
+    void api?.getSession().then((session) => { if (live && identity === undefined) updateIdentity(session) }).catch(() => {
+      // Identity events remain authoritative if the initial session read fails.
     })
     document.addEventListener('dsh:company-content-submit', receive)
-    return () => { document.removeEventListener('dsh:company-content-submit', receive); unsubscribe?.(); operation.current?.abort() }
+    return () => { live = false; document.removeEventListener('dsh:company-content-submit', receive); unsubscribe?.(); operation.current?.abort() }
   }, [t])
   const submit = async () => {
     if (!candidate || writing.current) return

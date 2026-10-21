@@ -41,15 +41,7 @@ async function ordinaryFile(path, limit) {
 function validateRelease(value) {
   if (value?.version === '0' && value.sha256 === contentDigest({}) && value.files !== null
     && typeof value.files === 'object' && !Array.isArray(value.files) && Object.keys(value.files).length === 0) return companyContentRelease(null)
-  const release = companyContentRelease(value)
-  const paths = new Set(Object.keys(release.files).map(path => path.toLowerCase()))
-  for (const path of paths) {
-    const parts = path.split('/')
-    for (let i = 1; i < parts.length; i++) {
-      if (paths.has(parts.slice(0, i).join('/'))) fail('PATH_CONFLICT', '文件与目录路径冲突。')
-    }
-  }
-  return release
+  return companyContentRelease(value)
 }
 
 /** Inspect an incremental native-content directory; release.json is not published. */

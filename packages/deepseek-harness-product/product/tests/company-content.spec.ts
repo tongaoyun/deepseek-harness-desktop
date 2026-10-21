@@ -25,6 +25,13 @@ describe('company native content', () => {
     expect(() => companyContentRelease(release({ ...files, 'skills/orders/skill.md': markdown }))).toThrow()
     expect(() => companyContentRelease(release({ ...files, 'skills/orders/file.txt': 'not base64!' }))).toThrow()
   })
+  it.each(['skills/orders/assets', 'skills/orders/Assets'])(
+    'rejects a file that is also a resource directory before installation: %s', (parent) => {
+      const data = { ...files, [parent]: Buffer.from('file').toString('base64'),
+        'skills/orders/assets/policy.txt': Buffer.from('policy').toString('base64') }
+      expect(() => companyContentRelease(release(data))).toThrow('文件与目录路径冲突')
+    },
+  )
 })
 
 it('rejects missing responses and native entries that would be silently ignored', () => {
