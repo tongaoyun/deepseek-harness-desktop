@@ -96,3 +96,5 @@ To update a vendored package from upstream:
 - 技能管理采用 1.2.9 的生命周期总开关：启用保留源文件的模型和用户调用限制，目录显式返回 enabled；非法调用声明仍拒绝两类调用。真实 Loader/profile 回归覆盖导入、停用和重新启用。专家直接加载固定工作区模块，不引入上游针对 PM2 的全局宿主入口探测。
 
 更新时从上述固定提交取得源文件，对照两份清单逐项应用或移除本地修改，更新基线及本地哈希；运行插件测试、真实公司 Loader/profile 测试和产品构建。发布操作见[公司内容说明](../apps/product-desktop/docs/company-content.md)。
+
+- 员工共享入口：专家 `src/client/index.ts` 与 `src/client/custom-locales.ts` 为自定义专家增加“提交到公司”；技能 `src/client.ts`、`src/client-types.ts`、`src/index.ts` 与 `src/core.ts` 增加单技能及资源文件导出和提交入口，拒绝符号链接、非法路径、超限目录与公司来源。两插件仅发出可取消的界面提交意图，产品 UI 负责确认、状态与 IPC，服务端负责归属和审核。原生执行及模型输入不变；回归见产品的 `content-submission.spec.ts`、`skill-submission-export.spec.ts`、`company-submission.client.spec.tsx` 和真实公司 Loader 测试。

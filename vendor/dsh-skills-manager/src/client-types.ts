@@ -26,6 +26,7 @@ export type ApiRoutes = RepositoryRoutes & Record<SkillsShSearchPath, SkillsShSe
     '/catalog/detail': { name: string; description: string; body: string; origin: string };
     '/catalog/install': { name: string; root: string };
     '/detail': Detail;
+    '/export': { resourceKey: string; files: Record<string, string> };
     '/create': Success<Awaited<ReturnType<typeof createSkill>>>;
     '/upload': ImportResult;
     '/delete': unknown;

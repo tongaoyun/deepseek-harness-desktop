@@ -47,3 +47,5 @@ description: "企业认证、连接器和知识库的协议与服务端访问。
 <a id="known-limitations-and-deferred-work"></a>
 
 - 企业服务需要有效员工身份及可访问的组织服务；第三方专家和技能插件使用其自身的管理入口。
+
+公司原生内容的员工提交使用 `content.submissions.inspect/submit`，主进程校验单个原生资源并计算 SHA-256，通过员工会话读取审核状态或提交；身份和取消信号由桥接持有，不接收所有者声明。

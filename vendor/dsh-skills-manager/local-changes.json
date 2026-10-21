@@ -179,17 +179,17 @@
     {
       "path": "src/client-types.ts",
       "before": "012d039bd45cb682f450562a29b8f48b3eef45e5a4119945e67c2ba7d15002fa",
-      "after": "67566f93081aa129a60eaadb6cda8fe0be853642488b4b646658090051786bfe"
+      "after": "94e4a24143d66699ba1ed7e4dc00c062d052e0df6d35501177937439c682a5ad"
     },
     {
       "path": "src/client.ts",
       "before": "011746374560ee6939f22706cf8ec0961b9995e66e2cb237408f92b1a56ea826",
-      "after": "f5e4eef191f2986406aa3d28e782b17cfd99893a72ff90c60861ce66682e49db"
+      "after": "23ff762a7c64dac623c87d69e91e6bb5d12d13ea235d975478b4ba8db3a0d47e"
     },
     {
       "path": "src/core.ts",
       "before": "c3b09f36a637e9f1bb9e7818489653ec4818aae04752ddf186d62dc8e070311a",
-      "after": "920850ca47cc556639bfd5271832278a5140e8a31f41e09d5301541cc1cdb18a"
+      "after": "e0d0b2cb382e1c35f5a38f56faec7cb411641ae24cd3847a6c2740fcbb34c1d1"
     },
     {
       "path": "src/host-types.ts",
@@ -199,7 +199,7 @@
     {
       "path": "src/index.ts",
       "before": "d69d08241ad18df93d01c1b9b4cfacd34bbc837110830f72f448a4a9e588724c",
-      "after": "0a59b79d60acb23d77bd46a8cc9b9c3faff8a1216d2f7a57a0a610f6fd251e23"
+      "after": "c2129ac257f65264d08bba3652539c3ed0597751abde338ce516fce41a85018c"
     },
     {
       "path": "src/plugin-update-model.ts",

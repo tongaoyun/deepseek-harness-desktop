@@ -1305,6 +1305,20 @@ function ExpertCardsSettings(props: PropsLocale<'agency'> & {
           toggle: () => toggle(expert.slug),
           moreItems: [
             { id: 'edit', label: props.t(expert.custom ? 'custom.edit' : 'custom.copy'), icon: React.createElement(expert.custom ? EditIcon : Copy, { size: 16, strokeWidth: 1.7, 'aria-hidden': true }), disabled: isSaving, onSelect: () => openEditor(expert) },
+            ...(expert.custom && 'dshDesktop' in globalThis ? [{ id: 'submit-company', label: props.t('custom.submitCompany'), disabled: isSaving, onSelect: () => {
+              document.dispatchEvent(new CustomEvent('dsh:company-content-submit', { cancelable: true, detail: {
+                kind: 'expert', name: expert.name, prepare: async (signal: AbortSignal) => {
+                  const result = await props.remote.getCustomExpert(expert.slug)
+                  signal.throwIfAborted()
+                  if (!result.ok) throw new Error(result.error.message)
+                  const value = result.value
+                  const markdown = `---\nname: ${JSON.stringify(value.name)}\ndescription: ${JSON.stringify(value.description)}\n---\n${value.prompt}\n`
+                  const encoded = new TextEncoder().encode(markdown)
+                  let binary = ''; for (const byte of encoded) binary += String.fromCharCode(byte)
+                  return { resourceKey: 'experts/' + expert.slug, files: { ['experts/' + value.division + '/' + expert.slug + '.md']: btoa(binary) } }
+                },
+              } }))
+            } }] : []),
             ...(expert.custom ? [{ id: 'delete', label: props.t('custom.delete'), icon: React.createElement(TrashIcon, { size: 16, strokeWidth: 1.7, 'aria-hidden': true }), danger: true, disabled: isSaving, onSelect: () => { setDeleting(expert); setDeleteError(null) } }] : []),
           ],
           actions: React.createElement('button', { type: 'button', className: 'aag-card-action', title: props.t('settings.viewPromptTitle'), 'aria-label': props.t('settings.viewPromptTitle'), 'aria-haspopup': 'dialog', onClick: (event: React.MouseEvent<HTMLButtonElement>) => viewPrompt(expert, event.currentTarget) },
