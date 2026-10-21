@@ -74,8 +74,13 @@ it('loads native skills with authorized MCP and exact knowledge scope, replays a
   let catalogInvalid = false
   let catalogPending = false
   let pendingCatalog: string | undefined
+  let holdBrokenStartup = true
+  let brokenStartupPending = false
+  let releaseBrokenStartup!: () => void
+  const brokenStartup = new Promise<void>((resolve) => { releaseBrokenStartup = resolve })
   const server = createServer((request, response) => {
     void (async () => {
+      if (request.url === '/broken' && holdBrokenStartup) { brokenStartupPending = true; await brokenStartup }
       if (!mcpAvailable || request.url === '/broken') { response.writeHead(503).end(); return }
       if (request.headers.authorization !== relayCredential) { response.writeHead(401).end(); return }
       if (request.method !== 'POST') { response.writeHead(405).end(); return }
@@ -136,6 +141,7 @@ it('loads native skills with authorized MCP and exact knowledge scope, replays a
     return true
   } })
   onTestFinished(async () => {
+    releaseBrokenStartup()
     await ctx.fiber.dispose()
     for (const [key, descriptor] of descriptors) {
       if (descriptor === undefined) Reflect.deleteProperty(process, key)
@@ -181,7 +187,22 @@ it('loads native skills with authorized MCP and exact knowledge scope, replays a
     emitMessage({ type: 'extension-control', namespace: 'product', requestId, method, payload })
     return response
   }
-  await mount()
+  const decisions: string[] = []
+  ctx.on('tools/pre-execute', async (_exec, next) => { const decision = await next(); decisions.push(decision.kind); return decision }, { prepend: true })
+  const initialMount = mount()
+  try {
+    await vi.waitFor(() => {
+      expect(brokenStartupPending).toBe(true)
+      expect(ctx.tools.schemas().map(tool => tool.name)).toContain(ordersWrite)
+    })
+    await ctx.tools.execute({ name: ordersWrite, arguments: {}, callId: ToolCallId('startup-write'), signal: new AbortController().signal })
+    expect(decisions.at(-1)).toBe('ask')
+    expect(mcpCalls).toEqual([])
+  } finally {
+    holdBrokenStartup = false
+    releaseBrokenStartup()
+    await initialMount
+  }
   expect(process.listenerCount('message')).toBe(before + 1)
   expect(catalogReads).toBe(1)
   expect(mcpRequests.filter(method => method === 'initialize')).toHaveLength(1)
@@ -247,8 +268,6 @@ it('loads native skills with authorized MCP and exact knowledge scope, replays a
   }, null, 2).replaceAll(root, '<HOME>') + '\n').toMatchFileSnapshot(new URL('./expected/native-capabilities-session.json', import.meta.url).pathname)
   const execute = (name: string) => ctx.tools.execute({ agent: handle.agent, name, arguments: {},
     callId: ToolCallId('check-' + name), signal: new AbortController().signal })
-  const decisions: string[] = []
-  ctx.on('tools/pre-execute', async (_exec, next) => { const decision = await next(); decisions.push(decision.kind); return decision }, { prepend: true })
   await execute(ordersWrite); expect(decisions.at(-1)).toBe('ask')
   await execute(undeclared); expect(decisions.at(-1)).toBe('deny')
   await ctx.tools.execute({ name: ordersWrite, arguments: {}, callId: ToolCallId('workspace-write'), signal: new AbortController().signal })

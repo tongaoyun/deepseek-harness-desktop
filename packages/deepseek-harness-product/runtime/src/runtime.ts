@@ -61,6 +61,8 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
   installConnectorPolicy(ctx, connectors, config.product)
   const fiber = ctx.plugin({ name: 'product-connectors', async apply(owner: Context) {
     const selected = parseConnectorCatalog(await config.product.invoke('connectors.list', undefined, lifetime.signal))
+    // Native clients may register tools before their sibling clients finish loading.
+    connectors.push(...selected)
     const connected = await Promise.all(selected.map(async (connector) => {
       const child = owner.plugin({ name: McpClient.name, inject: McpClient.inject, apply: McpClient.apply }, connectorConfig(connector))
       try { await child; return connector }
@@ -74,7 +76,6 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
     lifetime.signal.throwIfAborted()
     const available = connected.filter(connector => connector !== undefined)
     const unavailable = selected.filter(connector => !available.includes(connector))
-    connectors.push(...available)
     const versions = (entries: readonly Connector[]) => entries.map(({ id, version }) => ({ id, version }))
     owner.effect(() => owner.systemPrompt.section({ name: 'enterprise-connectors', order: 450,
       interpolate: false,
