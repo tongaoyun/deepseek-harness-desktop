@@ -65,6 +65,8 @@
 
 Gitea 负责评审和 CI，GitHub 原生 runner 构建 Windows x64 与两种 Mac 架构，安装包发布到公开下载仓库及内网 Gitea。支持 `unsigned` 开发包、`internal` 免费内部更新和 `signed` 正式签名更新；具体区别见[构建入口](../README.md#native-updates)。[交付说明](delivery.md)维护流水线参数和恢复，[签名接入](signing.md)维护证书要求。公开构建仓库的源码及 Git 历史可公开读取。
 
+Gitea 的共享 Runner 使用与上游 CI 一致的 `DSH_COVERAGE_TEST_TIMEOUT_MS=90000`，同时约束测试、清理钩子和轮询；不重试失败测试，也不改变应用运行超时。
+
 服务端通过其 Gitea 流水线、Harbor、GitOps 和 Fleet 部署。构建成功、部署就绪和员工流程验收是独立结果。服务端 `docs/README.md` 索引 API、部署、领域和验收说明。协议迁移先部署服务端，再更新依赖新协议的桌面；[产品升级说明](../../../docs/upgrade-guide/v0.2.1-alpha.2/product-knowledge-library/guide.md)记录受影响行为。
 
 <a id="verification-and-limitations"></a>
