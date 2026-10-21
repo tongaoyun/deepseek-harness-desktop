@@ -81,6 +81,41 @@ it.each([true, false])('loads company skills and experts (published=%s), then wi
   }
   expect((await ctx.skills.list()).some(skill => skill.name === 'orders')).toBe(published)
   if (published) expect((await ctx.skills.get('orders'))?.content).toContain('Company order skill body.')
+  if (published) {
+    const endpoint = `http://127.0.0.1:${ctx.webServer.port}/api/dsh-skills-manager`
+    const mutate = async (action: string, body: object) => {
+      const response = await fetch(`${endpoint}/${action}`, {
+        method: 'POST', headers: { 'content-type': 'application/json', 'x-dsh-skills-manager': '1' },
+        body: JSON.stringify(body), signal: AbortSignal.timeout(5_000),
+      })
+      const result: { ok: boolean } = await response.json()
+      expect(response.status).toBe(200)
+      expect(result.ok).toBe(true)
+    }
+    for (const [name, flags, invocation] of [
+      ['policy-manual-only', 'disable-model-invocation: true', { modelInvocable: false, userInvocable: true }],
+      ['policy-model-only', 'user-invocable: false', { modelInvocable: true, userInvocable: false }],
+      ['policy-invalid', 'disable-model-invocation: invalid', { modelInvocable: false, userInvocable: false }],
+    ] as const) {
+      const markdown = `---\nname: ${name}\ndescription: Invocation policy test\n${flags}\n---\nPolicy body.`
+      await mutate('upload', { entries: [{ path: `${name}/SKILL.md`, data: Buffer.from(markdown).toString('base64') }] })
+      await mutate('enable', { root: 'dsh', name })
+      expect((await ctx.skills.list()).find(skill => skill.name === name)?.invocation).toEqual(invocation)
+      await mutate('disable', { root: 'dsh', name })
+      expect((await ctx.skills.list()).find(skill => skill.name === name)?.invocation)
+        .toEqual({ modelInvocable: false, userInvocable: false })
+      await mutate('enable', { root: 'dsh', name })
+      expect((await ctx.skills.list()).find(skill => skill.name === name)?.invocation).toEqual(invocation)
+    }
+    const response = await fetch(`${endpoint}/state`, { signal: AbortSignal.timeout(5_000) })
+    const snapshot: { data: { roots: {
+      key: string
+      skills: { name: string; enabled?: boolean; effectiveModelInvocable: boolean }[]
+    }[] } } = await response.json()
+    expect(response.status).toBe(200)
+    expect(snapshot.data.roots.find(root => root.key === 'dsh')?.skills.find(skill => skill.name === 'policy-manual-only'))
+      .toMatchObject({ enabled: true, effectiveModelInvocable: false })
+  }
   await ctx.loader.root.update([])
   await ctx.loader.await()
   expect(ctx.get(AGENCY_LIBRARY_SERVICE)).toBeUndefined()

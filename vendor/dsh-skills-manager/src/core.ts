@@ -1265,7 +1265,7 @@ function entryOf(name: string, kind: string, docPath: string, doc: Pick<ParsedSk
     userInvocable: !userDisabled,
     invocationPolicyValid,
     hasFrontmatter: doc.hasFrontmatter,
-    // 调用策略值异常可以由 manager 本地策略覆盖；结构本身合法即可加载。
+    // 结构合法的条目保留在管理目录；非法调用策略继续阻断两类调用。
     loadable:
       doc.hasFrontmatter && description !== "" && KEBAB_RE.test(KEBAB_RE.test(declaredName) ? declaredName : toKebab(declaredName)),
     diagnostics,
@@ -1710,15 +1710,6 @@ function effectiveSkillPolicy(policyResult: PolicyResult, root: SkillRoot, entry
       enabled: false,
     };
   }
-  if (override === true) {
-    return {
-      override,
-      sourceEnabled,
-      modelInvocable: true,
-      userInvocable: true,
-      enabled: true,
-    };
-  }
   const modelInvocable = entry.invocationPolicyValid && entry.modelInvocable;
   const userInvocable = entry.invocationPolicyValid && entry.userInvocable;
   return {
@@ -1726,7 +1717,7 @@ function effectiveSkillPolicy(policyResult: PolicyResult, root: SkillRoot, entry
     sourceEnabled,
     modelInvocable,
     userInvocable,
-    enabled: modelInvocable && userInvocable,
+    enabled: true,
   };
 }
 
@@ -1870,7 +1861,7 @@ async function setPolicySkillEnabled(root: RootInput, name: string, enabled: boo
 
 // ── 启用 / 停用（同时控制模型与 / 手动调用，非破坏）──────────────────────────
 
-/** enabled=true 恢复模型与 / 手动调用；false 同时停用两种调用入口。 */
+/** enabled=true 恢复源文件声明的调用权限；false 同时停用模型与用户调用。 */
 export async function setSkillEnabled(root: RootInput, name: string, enabled: boolean, log?: Log) {
   return setPolicySkillEnabled(root, name, enabled, log);
 }
@@ -3544,6 +3535,7 @@ export async function state(options: ScopeOptions = {}) {
         invocationPolicyValid: e.invocationPolicyValid,
         hasFrontmatter: e.hasFrontmatter,
         loadable: e.loadable,
+        enabled: policy.enabled,
         managerEnabled,
         managerOverride: policy.override === undefined ? null : policy.override,
         effectiveModelInvocable: policy.modelInvocable,
