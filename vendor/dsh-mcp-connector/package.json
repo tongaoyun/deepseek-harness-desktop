@@ -28,7 +28,7 @@
     "harness",
     "dsh",
     "dsh-plugin",
-    "cordis",
+    "@deepseek-ai/cordis",
     "mcp",
     "mcp-client",
     "mcp-server",

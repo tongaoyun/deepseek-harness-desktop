@@ -84,7 +84,7 @@
     {
       "path": "package.json",
       "before": "62d5e5f8d7bdfe369af71408834cb960f7c696641464e60ff445866c3f72977c",
-      "after": "1580376db81ae2019da071e598526f97743b1258ff1bb3f49fec05979d18fd89"
+      "after": "e62665e4d24c06b944a7ba371d99e11a3b42bd7dbe71f5562c45fe3217ffc4af"
     },
     {
       "path": "test/source-integrity.test.mjs",
