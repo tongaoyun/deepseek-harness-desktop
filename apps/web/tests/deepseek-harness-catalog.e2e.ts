@@ -1386,8 +1386,12 @@ for (const { mode, installed, surface } of desktopCarriers) {
         .parse(JSON.parse(await readFile(hostDiagnostic, 'utf8')))
       expect(identities.loaderSharesRoot).toBe(true)
       expect(identities.modules.filter(url => /\/(?:dsh-)?app-boot\/lib\/index\.js$/u.test(url))).toHaveLength(1)
-      for (const entry of ['dsh-agency-agents/lib/remote.js', 'dsh-agency-agents/lib/index.js', 'dsh-skills-manager/lib/index.js']) {
-        expect(identities.modules.filter(url => url.endsWith(`/@michengai/${entry}`)))
+      for (const entry of [
+        /\/(?:product-experts|experts)\/lib\/remote\.js$/u,
+        /\/(?:product-experts|experts)\/lib\/index\.js$/u,
+        /\/(?:product-skills|skills)\/lib\/index\.js$/u,
+      ]) {
+        expect(identities.modules.filter(url => entry.test(url)))
           .toHaveLength(mode === 'product' ? 1 : 0)
       }
       await page.setViewportSize({ width: 1440, height: 900 })
@@ -1407,30 +1411,28 @@ for (const { mode, installed, surface } of desktopCarriers) {
       } else {
         const navigationSession = await page.locator('[data-conversation-session]').last().getAttribute('data-conversation-session')
         await composer.fill('Keep the extension navigation draft')
-        for (const [label, sectionId] of [[/^(Expert kits|专家套件)$/, 'agency-agents'], [/^(Skills|技能)$/, 'skills-manager']] as const) {
+        for (const [label, content] of [[/^(Expert kits|专家套件)$/, '.aag-library-shell'], [/^(Skills|技能)$/, '.dssm-section']] as const) {
           const entry = page.getByRole('button', { name: label, exact: true })
           await entry.click()
-          const embedded = page.locator(`[data-extension-page="${sectionId}"]`)
-          await embedded.waitFor()
+          const capability = page.locator('.product-capability-page')
+          await capability.locator(content).waitFor()
           expect(await entry.getAttribute('aria-current')).toBe('page')
           const settings = page.getByRole('dialog', { name: /^(Settings|设置)$/, exact: true })
           expect(await settings.count()).toBe(0)
-          await expect.poll(() => embedded.innerText()).toMatch(/.+/u)
-          expect(await embedded.getByRole('alert').count()).toBe(0)
-          expect(await embedded.evaluate(region => region.scrollWidth > region.clientWidth)).toBe(false)
+          await expect.poll(() => capability.innerText()).toMatch(/.+/u)
+          expect(await capability.getByRole('alert').count()).toBe(0)
+          expect(await capability.evaluate(region => region.scrollWidth > region.clientWidth)).toBe(false)
         }
         await page.getByRole('button', { name: /^(More menu|更多菜单)$/, exact: true }).click()
         await page.getByRole('menuitem', { name: /^(Settings|设置)$/, exact: true }).click()
         const sharedSettings = page.getByRole('dialog', { name: /^(Settings|设置)$/, exact: true })
         await sharedSettings.waitFor()
         for (const section of [/^(Experts|专家)$/, /^(Skills|技能)$/]) {
-          await sharedSettings.getByRole('button', { name: section, exact: true }).click()
-          expect(await sharedSettings.locator('[aria-current="true"]').innerText()).toMatch(section)
+          expect(await sharedSettings.getByRole('button', { name: section, exact: true }).count()).toBe(0)
         }
-        expect(await page.locator('[data-extension-page="skills-manager"]').innerText()).toBe('')
         await sharedSettings.getByRole('button', { name: /^(Close|关闭)$/, exact: true }).last().click()
         await sharedSettings.waitFor({ state: 'hidden' })
-        await expect.poll(() => page.locator('[data-extension-page="skills-manager"]').innerText()).toMatch(/.+/u)
+        await expect.poll(() => page.locator('.product-capability-page .dssm-section').innerText()).toMatch(/.+/u)
         await page.locator(`[data-row-key="session:${navigationSession}"]`).click()
         expect(await composer.textContent()).toBe('Keep the extension navigation draft')
         await expect.poll(() => deviceReports.length).toBeGreaterThan(0)
