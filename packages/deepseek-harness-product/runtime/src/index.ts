@@ -44,6 +44,10 @@ export async function apply(ctx: Context): Promise<void> {
       if (control === undefined) throw new Error('Product runtime is unavailable')
       const payload = assertProductPayload('payload' in message ? message.payload : undefined)
       if (message.method === 'knowledge.documents.renderOffice') return renderKnowledgeOffice(ctx, product, payload, controller.signal)
+      if (message.method === 'connectors.refresh') {
+        if (Object.keys(payload).length !== 0) throw new Error('Connector refresh does not accept parameters')
+        return control.refreshConnectors(controller.signal)
+      }
       const request = capabilityRequest(payload)
       if (message.method === 'tasks.capabilities.read') return control.readCapabilities(request)
       if (message.method === 'tasks.capabilities.prepare') return control.prepareCapabilities(request, controller.signal)

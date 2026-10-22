@@ -263,7 +263,8 @@ interface Frontmatter {
 type FrontmatterMetadata = Omit<Frontmatter, 'body'>
 
 const FRONTMATTER_READ_CHUNK_BYTES = 1_024
-const FRONTMATTER_MAX_BYTES = 64 * 1_024
+// Company publishing accepts entry documents up to 128 KiB, including metadata.
+const FRONTMATTER_MAX_BYTES = 128 * 1_024
 
 /** Neutralize strict `{{...}}` template interpolation inside expert prose. */
 export function sanitize(text: string): string {
@@ -327,7 +328,9 @@ async function readFrontmatterMetadata(filePath: string): Promise<FrontmatterMet
       const match = stripBom(raw).match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n/)
       if (match !== null) return parseFrontmatterMetadata(match[1])
     }
-    return undefined
+    raw += decoder.decode()
+    const match = stripBom(raw).match(/^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/)
+    return match === null ? undefined : parseFrontmatterMetadata(match[1])
   } finally {
     await file.close()
   }
@@ -458,7 +461,7 @@ async function walkMarkdown(dir: string, onFile: (filePath: string, fileName: st
 }
 
 /** 加载已配置分区中的专家元数据，按 slug 建立索引；persona 正文在召唤时按需读取。 */
-export async function loadCatalog(root: string, divisions: readonly string[], locale: LocaleId = 'zh'): Promise<Map<string, Expert>> {
+export async function loadCatalog(root: string, divisions: readonly string[], locale: LocaleId = 'zh', allowNameConflicts = false): Promise<Map<string, Expert>> {
   await assertDirectory(root, locale)
 
   const sources = divisions.map((division) => ({ dir: division, division }))
@@ -500,7 +503,7 @@ export async function loadCatalog(root: string, divisions: readonly string[], lo
       const normalized = normalizeExpertName(name)
       if (normalized === '') continue
       const owner = nameOwners.get(normalized)
-      if (owner !== undefined && owner.slug !== expert.slug) {
+      if (!allowNameConflicts && owner !== undefined && owner.slug !== expert.slug) {
         throw new Error(formatHost(locale, 'error.catalogDuplicateName', { name }))
       }
       nameOwners.set(normalized, expert)
@@ -560,10 +563,9 @@ export function apply(ctx: Context, config: Config): void {
     if (!pending) {
       pending = readdir(root, { withFileTypes: true }).then(async entries => {
         const divisions = entries.filter(entry => entry.isDirectory()).map(entry => entry.name).sort()
-        const company = divisions.length ? await loadCatalog(root, divisions, activeLocale()) : new Map<string, Expert>()
+        const company = divisions.length ? await loadCatalog(root, divisions, activeLocale(), true) : new Map<string, Expert>()
         await ensureReady()
         for (const [slug, expert] of company) {
-          if (experts.has(slug)) throw new Error(`Company expert ID conflicts with bundled content: ${slug}`)
           company.set(slug, { ...expert, company: true })
         }
         return { experts: company, divisions }
@@ -576,9 +578,8 @@ export function apply(ctx: Context, config: Config): void {
     ? (await (sessionId === undefined ? companySource.read() : companySource.forSession(sessionId, signal))).expertsRoot
     : process.env.DSH_COMPANY_EXPERTS_ROOT
   const summaries = new Map<string, Array<Expert & { custom: false }>>()
-  const readSummaries = async (sessionId?: string, signal?: AbortSignal) => {
+  const readRootSummaries = async (root: string | undefined) => {
     await ensureReady()
-    const root = await companyRoot(sessionId, signal)
     const key = root ?? ''
     let cached = summaries.get(key)
     if (!cached) {
@@ -588,6 +589,8 @@ export function apply(ctx: Context, config: Config): void {
     }
     return cached
   }
+  const readSummaries = async (sessionId?: string, signal?: AbortSignal) =>
+    readRootSummaries(await companyRoot(sessionId, signal))
   const store: Parameters<typeof createExpertLibrary>[1] = {
     read: () => settingsSource(),
     revision: () => {
@@ -653,6 +656,10 @@ export function apply(ctx: Context, config: Config): void {
       const root = await companyRoot(sessionId, signal)
       if (root) {
         const company = await companyCatalog(root)
+        const catalog = await createExpertLibrary(() => readRootSummaries(root), store, divisions, activeLocale).catalog()
+        if (catalog.experts.some(expert => expert.slug === slug && expert.conflict)) {
+          throw new Error(formatHost(locale, 'error.expertAmbiguous', { query: slug, candidates: slug }))
+        }
         if (company.experts.has(slug)) return readExpertPrompt(root, slug, division, company.divisions)
       }
       return basePersonaSource.getPrompt(slug, division, locale)

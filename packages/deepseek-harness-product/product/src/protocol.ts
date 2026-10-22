@@ -81,6 +81,7 @@ export type ProductMethod =
   | 'auth.pollDingTalk'
   | 'auth.refresh'
   | 'catalog.refresh'
+  | 'connectors.refresh'
   | 'connectors.list'
   | 'connectors.authorization.status'
   | 'connectors.authorization.begin'
@@ -238,7 +239,7 @@ export function isProductMethod(value: unknown): value is ProductMethod {
     'extensions.save', 'extensions.submit', 'content.submissions.inspect', 'content.submissions.submit',
     'extensions.connector.read', 'extensions.connector.update', 'extensions.connector.delete',
     'extensions.connector.configuration.read', 'extensions.connector.configuration.save', 'knowledge.references.resolve',
-    'auth.getSession', 'auth.ensureDingTalk', 'auth.beginDingTalk', 'auth.pollDingTalk', 'auth.refresh', 'catalog.refresh',
+    'auth.getSession', 'auth.ensureDingTalk', 'auth.beginDingTalk', 'auth.pollDingTalk', 'auth.refresh', 'catalog.refresh', 'connectors.refresh',
 
     'connectors.list',
     'connectors.authorization.status', 'connectors.authorization.begin', 'connectors.authorization.revoke',

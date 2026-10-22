@@ -357,6 +357,11 @@ export function createExtension(context: ExtensionContext): ProductDesktopExtens
           await ensureDeepSeekHarnessAuth(false, signal)
           return productBridge.getSession()
         }
+        if (method === 'connectors.refresh') {
+          if (!productBridge.getSession().authenticated) throw new ProductError('EMPLOYEE_UNAUTHORIZED', '请先登录钉钉。', false)
+          const input = z.object({}).strict().parse(payload ?? {})
+          return context.requestHost('product', 'connectors.refresh', input, signal)
+        }
         const result = await productBridge.invoke(method, payload, signal)
         if ((method === 'auth.beginDingTalk' || method === 'connectors.authorization.begin')
         && typeof result === 'object' && result !== null && 'authorizationUrl' in result && typeof result.authorizationUrl === 'string') {

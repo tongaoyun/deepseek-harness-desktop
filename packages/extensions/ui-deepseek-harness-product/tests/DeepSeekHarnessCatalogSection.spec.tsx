@@ -59,6 +59,28 @@ function castClientContext(value: object): ClientContext {
 }
 
 describe('DeepSeekHarness capability navigation', () => {
+  it('refreshes Host connector tools only on explicit refresh and keeps failures retryable', async () => {
+    let unavailable = true
+    const invoke = vi.fn(async (method: string) => {
+      if (method === 'connectors.refresh') {
+        if (unavailable) throw new ProductError('CONNECTOR_STARTUP_FAILED', '连接器加载失败，请重试', true)
+        return { connectedIds: ['crm'], unavailableIds: [] }
+      }
+      return [{ id: 'crm', name: 'CRM', version: '1.0.0' }]
+    })
+    installProductApi({ invoke })
+    render(<ConnectorsPanel t={t} {...actions()} />)
+    await screen.findByRole('button', { name: /CRM/ })
+    expect(invoke.mock.calls.filter(([method]) => method === 'connectors.refresh')).toHaveLength(0)
+    fireEvent.click(screen.getByRole('button', { name: zh.refresh }))
+    expect((await screen.findByRole('alert')).textContent).toContain('连接器加载失败')
+    unavailable = false
+    fireEvent.click(screen.getByRole('button', { name: zh.refresh }))
+    await screen.findByRole('button', { name: /CRM/ })
+    expect(screen.queryByRole('alert')).toBeNull()
+    expect(invoke.mock.calls.filter(([method]) => method === 'connectors.refresh')).toHaveLength(2)
+  })
+
   it('opens personal connectors after saving and keeps shared connectors under All', async () => {
     const shared = { id: 'shared-mcp', name: 'Shared MCP', version: '1.0.0', visibility: 'COMPANY', canEdit: false }
     const invoke = vi.fn(async (method: string, payload?: unknown) => {

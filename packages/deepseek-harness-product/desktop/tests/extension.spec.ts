@@ -217,3 +217,20 @@ it('settles startup on close and ignores a late retry choice', async () => {
     expect(fixture.quit).not.toHaveBeenCalled()
   } finally { choice.resolve({ response: 1 }); await pending }
 })
+
+
+it('routes explicit connector refresh to Host with strict payload and lifecycle cancellation', async () => {
+  const requestHost = vi.fn(async (..._args: unknown[]) => ({ connectedIds: ['crm'], unavailableIds: [] }))
+  const extension = createExtension({ getWindow: () => undefined, isQuitting: () => false, requestHost })
+  try {
+    const controller = new AbortController()
+    await expect(extension.invoke('connectors.refresh', {}, controller.signal))
+      .resolves.toEqual({ connectedIds: ['crm'], unavailableIds: [] })
+    expect(requestHost).toHaveBeenCalledWith('product', 'connectors.refresh', {}, expect.any(AbortSignal))
+    const forwarded = requestHost.mock.calls[0]![3] as AbortSignal
+    controller.abort()
+    expect(forwarded.aborted).toBe(true)
+    await expect(extension.invoke('connectors.refresh', { headers: { Authorization: 'forged' } })).rejects.toThrow()
+    expect(requestHost).toHaveBeenCalledTimes(1)
+  } finally { await extension.close() }
+})

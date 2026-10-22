@@ -18,6 +18,7 @@ export const inject = ['agentPresets', 'agents', 'sessions', 'sessionQuery', 'se
 export interface DeepSeekHarnessRuntimeControl {
   readCapabilities(request: ProductTaskCapabilityRequest, signal?: AbortSignal): Promise<ProductTaskCapabilities>
   prepareCapabilities(request: ProductTaskCapabilityRequest, signal?: AbortSignal): Promise<ProductTaskCapabilityResult>
+  refreshConnectors(signal?: AbortSignal): Promise<{ connectedIds: string[]; unavailableIds: string[] }>
 }
 export interface Config {
   readonly product: Pick<DeepSeekHarnessProductIpc, 'invoke'>
@@ -50,54 +51,81 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
     },
   })
   const connectors: Connector[] = []
-  let connectorFailure: unknown
+  let connectorStatus = 'Enterprise connector catalog is loading. Its tools are unavailable.'
   const lifetime = new AbortController()
   const abortConnectors = () => { lifetime.abort(new Error('Product runtime unloaded')) }
-  // Unload can interrupt apply while the initial catalog request is pending.
   ctx.on('internal/plugin', (fiber) => {
     if (fiber === ctx.fiber && fiber.uid === null) abortConnectors()
   }, { global: true })
-  ctx.effect(() => abortConnectors, 'product-runtime.connectors')
   installConnectorPolicy(ctx, connectors, config.product)
-  const fiber = ctx.plugin({ name: 'product-connectors', async apply(owner: Context) {
-    const selected = parseConnectorCatalog(await config.product.invoke('connectors.list', undefined, lifetime.signal))
-    // Native clients may register tools before their sibling clients finish loading.
-    connectors.push(...selected)
-    const connected = await Promise.all(selected.map(async (connector) => {
-      const child = owner.plugin({ name: McpClient.name, inject: McpClient.inject, apply: McpClient.apply }, connectorConfig(connector))
-      try { await child; return connector }
-      catch {
-        await child.dispose()
-        lifetime.signal.throwIfAborted()
-        owner.logger.warn(`Enterprise connector ${connector.id} could not start; its tools are unavailable until the product plugin reloads.`)
-        return undefined
+  ctx.effect(() => ctx.systemPrompt.section({ name: 'enterprise-connectors', order: 450,
+    interpolate: false, text: () => connectorStatus }), 'product-connectors.status')
+  let fiber: ReturnType<Context['plugin']> | undefined
+  let refreshQueue: Promise<unknown> = Promise.resolve()
+  const refreshConnectors: DeepSeekHarnessRuntimeControl['refreshConnectors'] = (signal) => {
+    const combined = AbortSignal.any([lifetime.signal, ...signal === undefined ? [] : [signal]])
+    const operation = refreshQueue.catch(() => undefined).then(async () => {
+      combined.throwIfAborted()
+      await fiber?.dispose()
+      fiber = undefined
+      connectors.length = 0
+      connectorStatus = 'Enterprise connector catalog is loading. Its tools are unavailable.'
+      let available: Connector[] = []
+      let unavailable: Connector[] = []
+      const current = ctx.plugin({ name: 'product-connectors', async apply(owner: Context) {
+        const selected = parseConnectorCatalog(await config.product.invoke('connectors.list', undefined, combined))
+        combined.throwIfAborted()
+        // Policies must be installed before any native MCP client exposes tools.
+        connectors.push(...selected)
+        const connected = await Promise.all(selected.map(async (connector) => {
+          const child = owner.plugin({ name: McpClient.name, inject: McpClient.inject, apply: McpClient.apply }, connectorConfig(connector))
+          try { await child; return connector }
+          catch {
+            await child.dispose()
+            combined.throwIfAborted()
+            owner.logger.warn(`Enterprise connector ${connector.id} could not start; refresh the connector page to retry.`)
+            return undefined
+          }
+        }))
+        combined.throwIfAborted()
+        available = connected.filter(connector => connector !== undefined)
+        unavailable = selected.filter(connector => !available.includes(connector))
+      } })
+      fiber = current
+      const cancel = () => { void current.dispose() }
+      combined.addEventListener('abort', cancel, { once: true })
+      try {
+        combined.throwIfAborted()
+        await current
+        combined.throwIfAborted()
+        connectorStatus = `Enterprise connector versions: ${JSON.stringify(available.map(({ id, version }) => ({ id, version })))}`
+          + (unavailable.length === 0 ? '' : `\nUnavailable enterprise connectors: ${JSON.stringify(unavailable.map(({ id, name }) => ({ id, name })))}. Their tools could not connect. If needed, explain the missing capability and ask the user to refresh the connector page; do not claim their operations succeeded.`)
+        return { connectedIds: available.map(({ id }) => id), unavailableIds: unavailable.map(({ id }) => id) }
+      } catch (error) {
+        await current.dispose()
+        if (fiber === current) fiber = undefined
+        connectors.length = 0
+        connectorStatus = 'Enterprise connector catalog is unavailable. No enterprise connector tools are available. If needed, explain the missing capability and ask the user to refresh the connector page; do not claim their operations succeeded.'
+        combined.throwIfAborted()
+        throw new ProductError('CONNECTOR_STARTUP_FAILED',
+          '连接器暂时无法加载，请检查登录和网络后刷新连接器页面。普通对话可继续使用。', true, [], { cause: error })
+      } finally {
+        combined.removeEventListener('abort', cancel)
       }
-    }))
-    lifetime.signal.throwIfAborted()
-    const available = connected.filter(connector => connector !== undefined)
-    const unavailable = selected.filter(connector => !available.includes(connector))
-    const versions = (entries: readonly Connector[]) => entries.map(({ id, version }) => ({ id, version }))
-    owner.effect(() => owner.systemPrompt.section({ name: 'enterprise-connectors', order: 450,
-      interpolate: false,
-      text: `Enterprise connector versions: ${JSON.stringify(versions(available))}`
-        + (unavailable.length === 0 ? '' : `\nUnavailable enterprise connectors: ${JSON.stringify(unavailable.map(({ id, name }) => ({ id, name })))}. Their tools could not connect. If a task needs them, explain the missing capability and ask the user to restart the desktop; do not claim their operations succeeded.`),
-    }), 'product-connectors.versions')
-  } })
-  try { await fiber }
-  catch (error) {
-    await fiber.dispose()
-    lifetime.signal.throwIfAborted()
-    connectorFailure = error
+    })
+    refreshQueue = operation
+    return operation
   }
+  ctx.effect(() => async () => { abortConnectors(); await refreshQueue.catch(() => undefined) }, 'product-runtime.connectors')
+  // Connector failure is reported in the model-visible, logged prompt, not as a global execution guard.
+  await refreshConnectors().catch((error: unknown) => { lifetime.signal.throwIfAborted(); ctx.logger.warn(String(error)) })
   ctx.on('agent-preset/resolve-selection', async (agent, _requested, next) => tasks.resolveSelection(agent.session.id, await next()))
   ctx.on('agent/pre-step', async ({ agent, signal }, next) => {
-    if (connectorFailure !== undefined) throw new ProductError('CONNECTOR_STARTUP_FAILED',
-      'Enterprise connector catalog could not load. Check your login and product service, then restart the desktop.', true, [], { cause: connectorFailure })
     await tasks.validate(ctx.agentPresets.composedPreset(agent.ctx), signal)
     return next()
   })
   config.publishControl({ readCapabilities: request => tasks.read(request),
-    prepareCapabilities: (request, signal) => tasks.prepare(request, signal) })
+    prepareCapabilities: (request, signal) => tasks.prepare(request, signal), refreshConnectors })
   ctx.effect(() => () => { config.publishControl(undefined) }, 'product.runtime-control')
 }
 
@@ -133,7 +161,7 @@ function installConnectorPolicy(
       return { kind: 'deny' as const, reason: 'This connector authorization is unavailable.' }
     }
     if (current.version !== connector.version) return { kind: 'deny' as const,
-      reason: 'This connector configuration changed. Restart the desktop to use the updated connector.' }
+      reason: 'This connector configuration changed. Refresh the connector page to use the updated connector.' }
     const livePolicy = connectorToolPolicy([current], exec.name)
     if (policy === 'undeclared' || livePolicy === 'undeclared' || livePolicy === 'unrelated') return { kind: 'deny' as const,
       reason: 'This connector tool is not declared in the enterprise catalog.' }

@@ -23,7 +23,7 @@ export class CompanyContentSync {
   private confirmed = false
   private pending: Promise<void> | undefined
   private lastChecked = -Infinity
-  private queue: Promise<unknown> = Promise.resolve()
+  private readonly queues = new Map<string, Promise<unknown>>()
 
   constructor(private readonly options: {
     root: string
@@ -87,7 +87,7 @@ export class CompanyContentSync {
     signal?: AbortSignal): Promise<CompanyContentRoots> {
     signal?.throwIfAborted()
     const operationSignal = signal === undefined ? this.lifecycle.signal : AbortSignal.any([signal, this.lifecycle.signal])
-    const action = this.queue.then(() => this.track(async () => {
+    const action = (this.queues.get(request.sessionId) ?? Promise.resolve()).then(() => this.track(async () => {
       operationSignal.throwIfAborted()
       const directory = join(this.employeeRoot, 'sessions')
       await mkdir(directory, { recursive: true, mode: 0o700 })
@@ -115,14 +115,16 @@ export class CompanyContentSync {
       await this.writeJson(path, { sessionId: request.sessionId, version: roots.version, sha256: roots.sha256 }, operationSignal)
       return roots
     }))
-    this.queue = action.catch(() => undefined)
+    const tail = action.catch(() => undefined)
+    this.queues.set(request.sessionId, tail)
+    void tail.finally(() => { if (this.queues.get(request.sessionId) === tail) this.queues.delete(request.sessionId) })
     return awaitShared(action, signal)
   }
 
   /** Cancel remote and filesystem work, then await all owned requests and queued pins. */
   async close(): Promise<void> {
     this.lifecycle.abort(new Error('公司内容同步已结束'))
-    await Promise.allSettled([...this.operations, this.queue])
+    await Promise.allSettled([...this.operations, ...this.queues.values()])
   }
 
   private track<T>(operation: () => Promise<T>): Promise<T> {

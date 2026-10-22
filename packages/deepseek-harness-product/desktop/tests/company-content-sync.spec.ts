@@ -1,10 +1,15 @@
-import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
+import { lstat, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { createHash } from 'node:crypto'
 import { tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
 import { expect, it, onTestFinished, vi } from 'vitest'
 import { contentDigest } from '@deepseek-harness/product/company-content'
 import { CompanyContentSync } from '../src/company-content-sync.ts'
+
+vi.mock('node:fs/promises', async (original) => {
+  const fs = await original<typeof import('node:fs/promises')>()
+  return { ...fs, lstat: vi.fn(fs.lstat) }
+})
 
 function release(version: string) {
   const files = {
@@ -228,4 +233,32 @@ it('cancels a cold Session pin without committing its binding or blocking the ne
   const records = await readdir(join(root, employee!, 'sessions'))
   expect(records).toEqual([createHash('sha256').update('next').digest('hex') + '.json'])
   expect(await readFile(join(root, employee!, 'sessions', records[0]!), 'utf8')).toContain('"sessionId":"next"')
+})
+
+it('serializes the same Session without making unrelated Sessions wait and joins work on close', async () => {
+  const { root, create } = await fixture()
+  const sync = create()
+  await sync.prepare(); await sync.refresh()
+  await sync.pin({ sessionId: 'slow', started: false })
+  const fs = await vi.importActual<typeof import('node:fs/promises')>('node:fs/promises')
+  const reached = Promise.withResolvers<undefined>(), resume = Promise.withResolvers<undefined>()
+  const path = join(root, createHash('sha256').update('a').digest('hex'), 'sessions', `${createHash('sha256').update('slow').digest('hex')}.json`)
+  vi.mocked(lstat).mockImplementation(async (...args) => {
+    if (args[0] === path) { reached.resolve(undefined); await resume.promise }
+    return fs.lstat(...args)
+  })
+  const slow = sync.pin({ sessionId: 'slow', started: true })
+  // Attach before close can cancel it, including when an assertion below fails.
+  const completed = slow.then(() => 'finished', () => 'cancelled')
+  try {
+    await reached.promise
+    expect((await sync.pin({ sessionId: 'independent', started: false })).version).toBe('1.0.0')
+    let closed = false
+    const closing = sync.close().then(() => { closed = true })
+    await Promise.resolve()
+    expect(closed).toBe(false)
+    resume.resolve(undefined)
+    await closing
+    expect(await completed).toBe('cancelled')
+  } finally { resume.resolve(undefined); await completed }
 })
