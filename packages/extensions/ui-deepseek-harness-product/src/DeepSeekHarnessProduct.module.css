@@ -41,7 +41,6 @@
 .catalogTabs button:hover { color: var(--dsw-alias-label-primary); }
 .catalogTabs button[aria-selected='true'] { border-bottom-color: var(--dsw-alias-label-primary); color: var(--dsw-alias-label-primary); font-weight: 600; }
 .catalogTabs button:focus-visible { outline: 2px solid var(--dsw-alias-border-l4); outline-offset: 2px; }
-.tabCount { color: var(--dsw-alias-label-tertiary); font-size: 12px; font-weight: 400; font-variant-numeric: tabular-nums; }
 .catalogGroup + .catalogGroup { margin-top: 22px; }
 .groupTitle { display: flex; align-items: baseline; gap: 7px; margin: 0 0 8px; color: var(--dsw-alias-label-primary); font-size: 13px; line-height: 20px; font-weight: 600; }
 .groupTitle span { color: var(--dsw-alias-label-tertiary); font-size: 12px; font-weight: 400; }
@@ -60,10 +59,6 @@
 .cardAction { border: 0; border-radius: 6px; color: var(--dsw-alias-label-secondary); background: transparent; cursor: pointer; }
 .cardAction:hover:not(:disabled) { color: var(--dsw-alias-label-primary); background: var(--dsw-alias-interactive-bg-hover); }
 .cardAction:disabled { opacity: 0.4; cursor: default; }
-.availabilityStatus { display: inline-flex; flex: 0 0 auto; align-items: center; gap: 3px; color: var(--dsw-alias-label-tertiary); font-size: 11px; line-height: 16px; }
-.availabilityStatus[data-status='AVAILABLE'] { color: var(--dsw-alias-state-success-primary); }
-.availabilityStatus[data-status='AUTHORIZATION_REQUIRED'], .availabilityStatus[data-status='EXPIRED'] { color: var(--dsw-alias-state-warn-primary); }
-.availabilityStatus[data-status='UNAVAILABLE'] { color: var(--dsw-alias-state-error-primary); }
 .catalogCard[data-catalog='connectors'] .cardBody { padding: 14px 16px 8px; }
 .catalogCard[data-catalog='connectors'] .cardFooter { min-height: 22px; padding-left: 64px; }
 .catalogCard[data-catalog='connectors'] .itemDescription { -webkit-line-clamp: 1; }
@@ -84,7 +79,6 @@
 .connectorOverview .detailSummary { margin-top: 12px; line-height: 20px; overflow-wrap: anywhere; }
 .connectorSection { padding: 16px 0; border-top: 0.5px solid var(--dsw-alias-border-l2); }
 .connectorSection h2 { margin: 0 0 12px; font-size: 13px; line-height: 20px; font-weight: 600; }
-.connectorConnection { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 14px 24px; }
 .connectorSection .detailActions { flex-wrap: wrap; }
 .connectorSection .detailDisclosure { margin-top: 0; border: 0; }
 .connectorSection .detailDisclosure > summary { min-height: 36px; padding: 0; font-size: 13px; }
@@ -200,7 +194,6 @@
   .searchField { flex-basis: 100%; width: 100%; }
   .catalogCard[data-catalog='connectors'] .cardIdentity { display: grid; grid-template-columns: 38px minmax(0, 1fr); gap: 5px 10px; }
   .catalogCard[data-catalog='connectors'] .catalogArtwork { grid-row: span 2; }
-  .catalogCard[data-catalog='connectors'] .availabilityStatus { grid-column: 2; justify-self: start; }
 }
 
 @media (max-width: 640px) {

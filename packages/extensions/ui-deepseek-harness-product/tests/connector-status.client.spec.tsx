@@ -1,7 +1,6 @@
 // @vitest-environment jsdom
 import { cleanup, render, screen } from '@testing-library/react'
 import { afterEach, expect, it } from 'vitest'
-import { ConnectorStatus, isConnectorConfigured } from '../src/client/catalog-shared.tsx'
 import { ConnectorDetail } from '../src/client/ConnectorView.tsx'
 import { items, localDetail } from '../src/client/catalog-shared.tsx'
 import { zh, type DeepSeekHarnessProductKey } from '../src/locales.ts'
@@ -10,24 +9,32 @@ afterEach(cleanup)
 
 const t = (key: DeepSeekHarnessProductKey): string => zh[key]
 
-it.each([
-  { status: 'ready', ready: true, authMode: 'employee-bearer', authorizationStatus: 'AUTHORIZED', label: zh.connectorConfigured, configured: true },
-  { status: 'disabled', ready: false, authMode: 'employee-bearer', authorizationStatus: 'AUTHORIZED', label: zh.statusDisabled, configured: false },
-  { status: 'unavailable', ready: false, authMode: 'none', authorizationStatus: 'AUTHORIZED', label: zh.statusUnavailable, configured: false },
-  { status: 'ready', ready: false, authMode: 'oauth', authorizationStatus: 'REQUIRED', label: zh.connectorAccountRequired, configured: false },
-  { status: 'ready', ready: false, authMode: 'oauth', authorizationStatus: 'EXPIRED', label: zh.connectorAccountExpired, configured: false },
-  { status: 'needs-configuration', ready: false, authMode: 'none', authorizationStatus: 'AUTHORIZED', label: zh.statusNeedsConfiguration, configured: false },
-  { status: 'ready', ready: false, authMode: 'none', authorizationStatus: 'AUTHORIZED', label: zh.statusUnavailable, configured: false },
-])('shows $label without claiming a live connection', (connector) => {
-  render(<ConnectorStatus connector={connector} t={t} />)
-  expect(screen.getByText(connector.label)).toBeTruthy()
-  expect(screen.queryByText('已连接')).toBeNull()
-  expect(isConnectorConfigured(connector)).toBe(connector.configured)
+it('shows tools without a redundant connection section for company connectors', () => {
+  const entry = items([{ id: 'crm', name: 'CRM', authMode: 'employee-bearer', tools: [
+    { name: 'orders.read', displayName: '查询订单', access: 'READ' },
+    { name: 'orders.write', displayName: '更新订单', access: 'WRITE' },
+  ] }])[0]!
+  render(<ConnectorDetail product={localDetail(entry)} t={t} onCatalogChanged={async () => {}} />)
+  expect(screen.queryByRole('heading', { name: zh.connectorConfiguration })).toBeNull()
+  expect(screen.getByText(zh.readOnlyLabel)).toBeTruthy()
+  expect(screen.getByText(zh.writeLabel)).toBeTruthy()
+  expect(screen.queryByText(/已配置|就绪|待配置|停用|不可用|已连接/)).toBeNull()
 })
 
-it.each(['disabled', 'unavailable'])('does not suggest reconnecting an account while the service is %s', (status) => {
-  const entry = items([{ id: 'crm', name: 'CRM', status, authMode: 'oauth', authorizationStatus: 'REQUIRED', tools: [] }])[0]!
+it.each([
+  { authorizationStatus: 'REQUIRED', action: zh.authorize },
+  { authorizationStatus: 'EXPIRED', action: zh.reauthorize },
+  { authorizationStatus: 'AUTHORIZED', action: zh.revokeAuthorization },
+])('retains the $action action for third-party OAuth', ({ authorizationStatus, action }) => {
+  const entry = items([{ id: 'crm', name: 'CRM', authMode: 'oauth', authorizationStatus, tools: [] }])[0]!
   render(<ConnectorDetail product={localDetail(entry)} t={t} onCatalogChanged={async () => {}} />)
+  expect(screen.getByRole('button', { name: action })).toBeTruthy()
+  expect(screen.queryByText(/已配置|就绪|待配置|停用|不可用|已连接/)).toBeNull()
+})
+
+it('offers device configuration only when required by the connector', () => {
+  const entry = items([{ id: 'crm', name: 'CRM', authMode: 'none', canConfigure: true, tools: [] }])[0]!
+  render(<ConnectorDetail product={localDetail(entry)} t={t} onCatalogChanged={async () => {}} />)
+  expect(screen.getByRole('button', { name: zh.configureDevice })).toBeTruthy()
   expect(screen.queryByRole('button', { name: zh.authorize })).toBeNull()
-  expect(screen.getByText(status === 'disabled' ? zh.statusDisabled : zh.statusUnavailable)).toBeTruthy()
 })
