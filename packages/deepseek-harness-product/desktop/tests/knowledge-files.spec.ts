@@ -18,6 +18,7 @@ async function fixture(data = new Uint8Array(KNOWLEDGE_FILE_CHUNK_BYTES + 3)) {
   let updatedAt = '2026-10-10T00:00:00Z'
   let filename = 'original.pdf'
   let sourceType = 'file'
+  let sizeBytes = data.byteLength
   const calls: string[] = []
   const api = new DeepSeekHarnessApiClient({ baseUrl: 'https://product.test', getSessionToken: () => 'main-only-token', getEmployeeId: () => employeeId,
     fetch: async (url, init) => {
@@ -26,7 +27,7 @@ async function fixture(data = new Uint8Array(KNOWLEDGE_FILE_CHUNK_BYTES + 3)) {
       expect(new Headers(init?.headers).get('authorization')).toBe('Bearer main-only-token')
       if (revoked) return Response.json({ success: false, errCode: 'KNOWLEDGE_ACCESS_REVOKED', errMessage: 'Revoked' }, { status: 403 })
       if (path.endsWith('/metadata')) return Response.json({ success: true, data: { ...identity, id: identity.documentId, filename,
-        sourceType, contentVersion: version, updatedAt, sizeBytes: data.byteLength,
+        sourceType, contentVersion: version, updatedAt, sizeBytes,
         previewMaxBytes: 50 * 1024 * 1024, downloadMaxBytes: 250 * 1024 * 1024 } })
       return new Response(data, { headers: { 'content-type': 'application/pdf' } })
     } })
@@ -41,8 +42,34 @@ async function fixture(data = new Uint8Array(KNOWLEDGE_FILE_CHUNK_BYTES + 3)) {
   return { files, api, invoke, directory, calls, saveDialog, openPath, renderOffice,
     revoke: () => { revoked = true }, version: () => { version = 'v2' }, employee: () => { employeeId = 'employee-b' },
     indexing: () => { updatedAt = '2026-10-10T00:01:00Z' },
+    size: (value: number) => { sizeBytes = value },
     filename: (value: string) => { filename = value }, sourceType: (value: string) => { sourceType = value } }
 }
+
+it.each(['knowledge.documents.preview.open', 'knowledge.documents.download', 'knowledge.documents.openExternal'] as const)(
+  'rejects incomplete or enlarged originals before exposing bytes through %s', async (method) => {
+    const data = new Uint8Array([1, 2, 3])
+    const h = await fixture(data)
+    for (const size of [4, 2, 0]) {
+      h.size(size)
+      await expect(h.invoke(method, identity)).rejects.toMatchObject({ code: 'KNOWLEDGE_PREVIEW_SOURCE_CHANGED', retryable: true })
+      expect(await readdir(join(h.directory, 'private'))).toEqual([])
+      expect(h.saveDialog).not.toHaveBeenCalled()
+      expect(h.openPath).not.toHaveBeenCalled()
+    }
+    h.size(data.byteLength)
+    const opened = await h.invoke('knowledge.documents.preview.open', identity) as KnowledgeFileTransfer
+    const chunk = await h.invoke('knowledge.documents.preview.read', { transferId: opened.transferId, offset: 0 }) as KnowledgeFileChunk
+    expect(chunk.data).toEqual(data)
+  },
+)
+
+it('keeps manual Markdown readable when file-size metadata does not describe its text', async () => {
+  const h = await fixture(new TextEncoder().encode('# Original'))
+  h.sourceType('manual'); h.size(0)
+  const opened = await h.invoke('knowledge.documents.preview.open', identity) as KnowledgeFileTransfer
+  expect(opened.byteLength).toBe(10)
+})
 
 it('streams original bytes into private storage and returns bounded structured-clone chunks', async () => {
   const data = new Uint8Array(KNOWLEDGE_FILE_CHUNK_BYTES + 3); data.fill(71)

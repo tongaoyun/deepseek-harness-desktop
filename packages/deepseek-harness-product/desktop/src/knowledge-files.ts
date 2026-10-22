@@ -46,7 +46,7 @@ export interface KnowledgeFilesOptions {
   readonly openPath: (path: string) => Promise<string>
 }
 
-/** Own streaming, conversion chunks, downloads and private temporary-file cleanup. */
+/** Own streaming, conversion chunks, downloads and cleanup; file originals must match their declared byte size. */
 export class KnowledgeFiles {
   private readonly entries = new Map<string, Transfer>()
   private readonly operations = new Set<Promise<unknown>>()
@@ -234,6 +234,9 @@ export class KnowledgeFiles {
       const result = await api.streamBytes(`/api/v1/knowledge-bases/${encodeURIComponent(identity.knowledgeBaseId)}/documents/${encodeURIComponent(identity.documentId)}/${download ? 'download' : 'preview'}`,
         maximum, async (data) => { await entry.handle.writeFile(data); lifetime.throwIfAborted() },
         lifetime, this.options.policy.fileRequestTimeoutMs)
+      if (source.sourceType === 'file' && result.byteLength !== source.sizeBytes) {
+        throw new ProductError('KNOWLEDGE_PREVIEW_SOURCE_CHANGED', 'The original file size does not match its metadata; reopen the file', true)
+      }
       entry.mediaType = result.mediaType
       entry.byteLength = result.byteLength
       await this.reauthorize(entry, api, employeeId, lifetime)
