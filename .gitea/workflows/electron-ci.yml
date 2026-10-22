@@ -24,20 +24,6 @@ jobs:
     steps:
       - name: Checkout
         uses: http://192.168.2.66:3300/instudio/checkout@v4
-      - name: 检出服务端内置专家清单
-        uses: http://192.168.2.66:3300/instudio/checkout@v4
-        with:
-          repository: instudio/deepseek-harness-server
-          ref: main
-          token: ${{ secrets.GITOPS_TOKEN }}
-          path: .artifacts/expert-contract/server
-          sparse-checkout: |
-            scripts/sync-bundled-expert-ids.mjs
-            deepseek-harness-server-domain/src/main/java/com/instudio/deepseek/harness/server/domain/companycontent/release/vo/BundledExpertIds.java
-          sparse-checkout-cone-mode: false
-          persist-credentials: false
-      - name: 检查桌面与服务端专家 ID 一致
-        run: node .artifacts/expert-contract/server/scripts/sync-bundled-expert-ids.mjs . --check
       - name: Fetch stored Harness baseline
         run: |
           UPSTREAM_TAG="$(cat UPSTREAM_TAG)"

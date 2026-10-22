@@ -9,14 +9,12 @@ import { TEAM_CSS } from './team-style.js'
 import { TeamMenu } from './team-composer.js'
 import { TEAM_REFERENCE_SOURCE, insertTeamReference, teamReference } from './team-reference.js'
 import { TeamLocaleContext } from './team-locale.js'
-import { localizeTeam } from '../team-content-en.js'
 import { teamText } from '../team-i18n.js'
 import type { ExpertTeam } from '../team-contract.js'
 import { PromptDialog } from "./prompt-dialog.js";
 import React from 'react'
 import { CategorySelect } from './category-select.js'
 import { ExpertDiscovery, DISCOVERY_CSS } from './expert-discovery.js'
-import { expertTaskExample } from './task-examples.js'
 import type { Context as CordisClientContext } from '@deepseek-ai/cordis'
 import type { SessionId } from '@deepseek-ai/dsh-client-connection/client'
 import type { InputTriggerSource, ReferenceInsert, TokenSpan } from '@deepseek-ai/dsh-client-ui-input-trigger/client'
@@ -28,9 +26,8 @@ import type { RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
-import { ZH_NAME, ZH_DIVISION, EN_DIVISION } from '../names.js'
+import { ZH_DIVISION, EN_DIVISION } from '../names.js'
 import { EXPERT_AVATAR_URLS } from './avatars.js'
-import { ROSTER } from './roster.js'
 import { zh, en, type AgencyKey } from './locales.js'
 import { TYPERT_REMOTE, type AgencyAgentsEnabledState, type AgencyAgentsPrompt } from './remote.js'
 import { DEFAULT_EXPERT_EMOJI, type CustomExpertInput, type CatalogSnapshot } from '../expert-contract.js'
@@ -162,19 +159,6 @@ interface ExpertGroup<T extends ExpertView> {
   readonly experts: T[]
 }
 
-const EXPERTS: ReadonlyArray<ExpertView> = ROSTER
-  .map((e) => ({
-    slug: e.slug,
-    name: ZH_NAME[e.slug] ?? e.nameEn,
-    nameEn: e.nameEn,
-    emoji: e.emoji,
-    division: e.division,
-    divisionZh: ZH_DIVISION[e.division] ?? e.division,
-    divisionEn: EN_DIVISION[e.division] ?? e.division,
-    description: e.description,
-    descriptionEn: e.descriptionEn,
-  }))
-  .sort((a, b) => a.division.localeCompare(b.division) || a.slug.localeCompare(b.slug))
 
 /** 按当前语言比较专家显示名，供设置页和菜单分组排序。 */
 export function compareExpertName(
@@ -305,35 +289,10 @@ function expertCategoryForDivision(division: string): AvatarCategory | undefined
   >).find(([, divisions]) => divisions.has(division))?.[0]
 }
 
-function expertAvatarKey(slug: string, division: string): string {
-  return `${division}\u0000${slug}`
-}
-
-/**
- * 对当前花名册做分类内轮转分配，确保全部头像都被使用，且复用次数差不超过 1。
- * 排序和映射只在模块加载时计算一次，不增加卡片渲染开销。
- */
-const EXPERT_AVATAR_INDEX_BY_KEY = new Map<string, number>()
-for (const [category, pool] of Object.entries(EXPERT_AVATAR_POOL_INDEXES) as ReadonlyArray<
-  readonly [AvatarCategory, ReadonlyArray<number>]
->) {
-  const experts = EXPERTS
-    .filter((expert) => AVATAR_CATEGORY_DIVISIONS[category].has(expert.division))
-    .slice()
-    .sort((left, right) => left.slug.localeCompare(right.slug, 'en'))
-  experts.forEach((expert, index) => {
-    EXPERT_AVATAR_INDEX_BY_KEY.set(expertAvatarKey(expert.slug, expert.division), pool[index % pool.length] ?? 0)
-  })
-}
-
-/** 当前花名册使用均衡映射；未知专家或分区安全回退为稳定哈希。 */
+/** 按分类及标识稳定分配头像，不依赖预置专家名册。 */
 export function expertAvatarIndexForDivision(slug: string, division: string): number {
-  const mapped = EXPERT_AVATAR_INDEX_BY_KEY.get(expertAvatarKey(slug, division))
-  if (mapped !== undefined) return mapped
   const category = expertCategoryForDivision(division)
-  const pool: ReadonlyArray<number> = category === undefined
-    ? ALL_EXPERT_AVATAR_INDEXES
-    : EXPERT_AVATAR_POOL_INDEXES[category]
+  const pool: readonly number[] = category === undefined ? ALL_EXPERT_AVATAR_INDEXES : EXPERT_AVATAR_POOL_INDEXES[category]
   return pool[expertAvatarIndex(slug, pool.length)] ?? 0
 }
 
@@ -353,12 +312,6 @@ export function inputTriggerCandidateName(
 function menuAvatar(expert: Pick<ExpertView, 'slug' | 'division' | 'custom' | 'avatar'>): string {
   const index = expert.custom ? expert.avatar ?? 0 : expertAvatarIndexForDivision(expert.slug, expert.division)
   return EXPERT_AVATAR_URLS[index] ?? EXPERT_AVATAR_URLS[0]
-}
-
-/** 选中候选后按内部标识还原纯专家名，防止展示用 emoji 进入召唤标签。 */
-export function inputTriggerPickName(slug: string, fallbackName: string, active: 'zh' | 'en'): string {
-  const expert = EXPERTS.find((item) => item.slug === slug)
-  return expert === undefined ? fallbackName : displayName(expert, active)
 }
 
 /** 统一生成宿主可识别的专家提及文本，避免重复 @ 或将展示 emoji 写入草稿。 */
@@ -415,7 +368,7 @@ export function buildExpertReference(
 }
 
 /** 名册更新后仍可发送旧草稿，但不向用户或模型泄露已失效的内部标识。 */
-export function expertMentionFromReference(slug: string, active: 'zh' | 'en', experts: readonly ExpertView[] = EXPERTS): string {
+export function expertMentionFromReference(slug: string, active: 'zh' | 'en', experts: readonly ExpertView[] = []): string {
   const expert = experts.find((item) => item.slug === slug)
   if (expert === undefined) {
     return active === 'en'
@@ -749,7 +702,7 @@ export function insertSelectedExpert(
   slug: string,
   active: 'zh' | 'en',
   insertReference: ((reference: ReferenceInsert) => boolean) | undefined,
-  experts: readonly ExpertView[] = EXPERTS,
+  experts: readonly ExpertView[] = [],
 ): boolean {
   const expert = experts.find((item) => item.slug === slug)
   return expert !== undefined && insertReference?.(buildExpertReference(expert, active)) === true
@@ -1055,7 +1008,7 @@ function ExpertCardsSettings(props: PropsLocale<'agency'> & {
   const promptLock = React.useRef(false)
   const saving = React.useRef(false)
   const [isSaving, setIsSaving] = React.useState(false)
-  const [source, setSource] = React.useState<'all' | 'base' | 'custom' | 'company'>('all')
+  const [source, setSource] = React.useState<'custom' | 'company'>('company')
   const [editor, setEditor] = React.useState<{ expert?: CustomExpertInput; enabled: boolean; revision: number } | null>(null)
   const [deleting, setDeleting] = React.useState<ExpertView | null>(null)
   const [deleteError, setDeleteError] = React.useState<string | null>(null)
@@ -1208,13 +1161,13 @@ function ExpertCardsSettings(props: PropsLocale<'agency'> & {
     const ordered = initialOrder === null
       ? sortExpertsByEnabled(state.experts, state.enabled)
       : sortExpertsByOrder(state.experts, initialOrder)
-    const filtered = filterExperts(ordered.filter(expert => source === 'all' || (source === 'company' ? expert.company === true : source === 'custom' ? expert.custom : !expert.custom && !expert.company)), { query, division })
+    const filtered = filterExperts(ordered.filter(expert => source === 'company' ? expert.company === true : expert.custom), { query, division })
       .filter(expert => status === '' || state.enabled.has(expert.slug) === (status === 'enabled'))
     const enabledCount = state.enabled.size
     const total = state.experts.length
     if (state.experts.some(expert => expert.conflict)) nodes.push(React.createElement('div', { key: 'conflicts', className: 'aag-error', role: 'alert' }, props.t('custom.nameConflictHint')))
     const hasFilter = normalizeExpertQuery(query) !== '' || division !== '' || status !== ''
-    const resetFilters = (): void => { setSource('all'); setQuery(''); setDivision(''); setStatus('') }
+    const resetFilters = (): void => { setSource('company'); setQuery(''); setDivision(''); setStatus('') }
     if (!props.sharedHeader) nodes.push(React.createElement('div', { key: 'toolbar', className: 'aag-toolbar' },
       React.createElement('div', { className: 'aag-title-row' },
         React.createElement('h2', { className: 'aag-title' }, props.t('settings.title')),
@@ -1241,11 +1194,9 @@ function ExpertCardsSettings(props: PropsLocale<'agency'> & {
       React.createElement('div', { className: 'aag-field aag-field-source' },
         React.createElement(CategorySelect, {
           id: 'aag-filter-source', value: source, label: props.t('settings.filter.source'),
-          onChange: (value) => setSource(value === 'base' || value === 'custom' || value === 'company' ? value : 'all'),
+          onChange: (value) => setSource(value === 'custom' ? 'custom' : 'company'),
           options: [
-            { value: 'all', label: props.t('settings.filter.allSources') },
             { value: 'company', label: props.t('settings.source.company') },
-            { value: 'base', label: props.t('custom.base') },
             { value: 'custom', label: props.t('custom.source') },
           ],
         })),
@@ -1429,8 +1380,8 @@ export async function apply(ctx: ClientContext): Promise<() => void> {
         return expert ? [[identity, displayName(expert, active)] as const] : []
       }))
       const teams = snapshot.teams.map(team => ({
-        names: [...new Set([team.name, localizeTeam(team, active).name])],
-        label: localizeTeam(team, active).name,
+        names: [team.name],
+        label: team.name,
       }))
       return { members, teams }
     }, error => console.warn('[agency-agents] 原生成员显示名读取失败：', error))
@@ -1447,14 +1398,12 @@ export async function apply(ctx: ClientContext): Promise<() => void> {
     const sessions = ctx.sessions as unknown as ReferenceSessionAccess
     const id = resolveTargetSessionId(sessions, sessionId)
     const actx = id === undefined ? undefined : sessions.scope?.(id) ?? sessions.binding?.(id)?.ctx
-    const expert = catalogState(remote).experts.find(item => item.slug === reference.ref)
-    const example = expert === undefined ? undefined : expertTaskExample(expert, getActive())
     return insertExpertReference({
       state: current.state,
       insertReference: (ref, tokenSpan) => current.insertReference(ref, tokenSpan),
       insertText: (text, tokenSpan) => actx?.bail(actx, 'slash/input-insert-text', { text, span: tokenSpan }) === true,
       notify: (level, text) => current.notify?.(level, text),
-    }, reference, example, span, t('discovery.exampleFailed'))
+    }, reference, undefined, span, t('discovery.exampleFailed'))
   }
   // 同一缓存供工具栏和 @ 标签使用，语言切换不丢失已插入团队名称。
   let teamCache: ExpertTeam[] = []
@@ -1514,7 +1463,7 @@ export async function apply(ctx: ClientContext): Promise<() => void> {
           const cached = teamState(teamRemote)
           const snapshot = cached ?? await refreshTeams(teamRemote)
           if (cached) void refreshTeams(teamRemote).catch((error: unknown) => console.warn('[agency-agents] 专家团刷新失败：', error))
-          teamCache = snapshot.teams.map(team => localizeTeam(team, active))
+          teamCache = snapshot.teams
           return teamCache.filter(team => snapshot.enabledTeams.includes(team.id) && `${team.name} ${team.description}`.toLowerCase().includes(String(request.query ?? '').toLowerCase())).map(team => ({ name: `${team.name} · ${teamText(active, '专家团')}`, hint: team.id, section: teamText(active, '专家团') }))
         },
         onPick: pick => {
@@ -1529,7 +1478,7 @@ export async function apply(ctx: ClientContext): Promise<() => void> {
           clipboardText: id => teamText(active, '@专家团：{0}\u00a0', [teamCache.find(team => team.id === id)?.name ?? teamText(active, '已移除团队（请重新选择）')]),
           serialize: async id => {
             const [snapshot, catalog] = await Promise.all([refreshTeams(teamRemote), unwrap(teamRemote.getCatalog(false))])
-            teamCache = snapshot.teams.map(team => localizeTeam(team, active))
+            teamCache = snapshot.teams
             const team = teamCache.find(team => team.id === id)
             if (!team || !snapshot.enabledTeams.includes(id) || team.members.some(member => !catalog.enabled.includes(member.expertSlug) || !catalog.experts.some(e => e.slug === member.expertSlug && !e.conflict))) throw new Error(teamText(active, '团队已停用或成员失效，请修复后再发送。'))
             return teamText(active, '@专家团：{0}\u00a0', [team.name])

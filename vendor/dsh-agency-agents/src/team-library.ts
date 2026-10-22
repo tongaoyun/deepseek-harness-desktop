@@ -1,10 +1,8 @@
 import { teamText, type TeamLocale } from './team-i18n.js'
 import { randomUUID } from 'node:crypto'
-import { localizeTeam } from './team-content-en.js'
 import type { CatalogSnapshot } from './expert-contract.js'
 import type { ExpertSettingsStore } from './expert-library.js'
 import {
-  BUILTIN_TEAMS,
   TEAM_CUSTOM_ID,
   teamInputSchema,
   teamSchema,
@@ -29,10 +27,7 @@ export function createTeamLibrary(
     if (!Number.isSafeInteger(revision) || revision !== store.revision())
       throw new Error(tx('配置已更新，请读取最新内容后重试。'))
   }
-  const teams = (): ExpertTeam[] => [
-    ...structuredClone(BUILTIN_TEAMS),
-    ...read().custom,
-  ]
+  const teams = (): ExpertTeam[] => read().custom
   const requireMembers = (team: TeamInput, snapshot: CatalogSnapshot) => {
     if (
       team.members.some(
@@ -73,7 +68,7 @@ export function createTeamLibrary(
       const all = await catalog()
       check(revision)
       if (value.id && !TEAM_CUSTOM_ID.test(value.id))
-        throw new Error(tx('内置专家团只读，请复制为自定义。'))
+        throw new Error(tx('专家团标识无效，请重新创建。'))
       const state = read()
       if (value.id && !state.custom.some((team) => team.id === value.id))
         throw new Error(tx('专家团已删除，请作为新团队保存。'))
@@ -83,7 +78,7 @@ export function createTeamLibrary(
         teams().some(
           (team) =>
             team.id !== value.id &&
-            [team.name, localizeTeam(team, 'en').name].some(name => name.trim().toLowerCase() === value.name.trim().toLowerCase()),
+            team.name.trim().toLowerCase() === value.name.trim().toLowerCase(),
         )
       )
         throw new Error(tx('团队名称已被使用。'))
@@ -91,7 +86,6 @@ export function createTeamLibrary(
       const team = {
         ...value,
         id: value.id ?? `team-custom-${randomUUID()}`,
-        builtin: false,
       }
       await store.mutate(
         [

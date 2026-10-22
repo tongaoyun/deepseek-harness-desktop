@@ -57,15 +57,9 @@ describe('DeepSeekHarness Electron workflows', () => {
     for (const path of tests) expect(existsSync(resolve(import.meta.dirname, '..', path)), path).toBe(true)
   })
 
-  it('checks actual expert assets against the server snapshot before shipping', () => {
+  it('does not couple desktop CI to a server community expert list', () => {
     const steps = workflow('electron-ci.yml').jobs.desktop!.steps
-    const source = steps.find(step => step.name === '检出服务端内置专家清单')
-    expect(source?.with?.repository).toBe('instudio/deepseek-harness-server')
-    expect(source?.with?.['persist-credentials']).toBe(false)
-    expect(source?.with?.['sparse-checkout-cone-mode']).toBe(false)
-    expect(source?.with?.['sparse-checkout']).toContain('BundledExpertIds.java')
-    expect(steps.find(step => step.name === '检查桌面与服务端专家 ID 一致')?.run)
-      .toBe('node .artifacts/expert-contract/server/scripts/sync-bundled-expert-ids.mjs . --check')
+    expect(JSON.stringify(steps)).not.toMatch(/BundledExpertIds|sync-bundled-expert-ids|expert-contract/u)
   })
 
   it('uses only available internal runners and actions', () => {

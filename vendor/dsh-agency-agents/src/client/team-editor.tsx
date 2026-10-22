@@ -1,7 +1,7 @@
-import { useTeamLocale, localizeTeam, localizedExperts } from './team-locale.js';
+import { useTeamLocale, localizedExperts } from './team-locale.js';
 import { LibraryEditorFooter } from './library-ui.js';
 import React from 'react';
-import { effectiveCoordinator, BUILTIN_TEAMS, TEAM_PROMPTS, teamInputSchema, type TeamInput, type TeamSnapshot, } from '../team-contract.js';
+import { effectiveCoordinator, TEAM_PROMPTS, teamInputSchema, type TeamInput, type TeamSnapshot, } from '../team-contract.js';
 import type { ExpertSummary } from '../expert-contract.js';
 import { Button, Input } from './plugin-ui.js';
 import { SegmentedControl } from '@deepseek-ai/dsh-client-ui-primitives';
@@ -18,7 +18,7 @@ function MemberPicker(props: {
     experts: readonly ExpertSummary[]
     locale: 'zh' | 'en'
     query: string
-    source: 'all' | 'base' | 'custom'
+    source: 'all' | 'company' | 'custom'
     division: string
     status: TeamMemberPickerStatus
     enabled: readonly string[]
@@ -26,7 +26,7 @@ function MemberPicker(props: {
     replacing: number
     tx(key: string): string
     onQuery(value: string): void
-    onSource(value: 'all' | 'base' | 'custom'): void
+    onSource(value: 'all' | 'company' | 'custom'): void
     onDivision(value: string): void
     onStatus(value: TeamMemberPickerStatus): void
     onPick(expert: ExpertSummary): void
@@ -69,10 +69,10 @@ function MemberPicker(props: {
     return (<TeamDialog title={props.tx("选择团队成员")} close={props.close} className="agt-picker">
       <div className="aag-filters aag-card-filters agt-picker-tools">
         <div className="aag-field aag-field-source">
-          <CategorySelect id="agt-picker-source" value={props.source} label={props.tx("来源")} onChange={(value) => props.onSource(value === 'base' || value === 'custom' ? value : 'all')} options={[
+          <CategorySelect id="agt-picker-source" value={props.source} label={props.tx("来源")} onChange={(value) => props.onSource(value === 'company' || value === 'custom' ? value : 'all')} options={[
             { value: 'all', label: props.tx("全部来源") },
-            { value: 'base', label: props.tx("内置") },
-            { value: 'custom', label: props.tx("自定义") },
+            { value: 'company', label: props.tx("团队共享") },
+            { value: 'custom', label: props.tx("我的") },
           ]}/>
         </div>
         <div className="aag-field aag-field-category">
@@ -146,7 +146,7 @@ export function TeamEditor(props: {
     const latestTeam = review?.teams.find((team) => team.id === draft.id);
     const [picker, setPicker] = React.useState<number | null>(null);
     const [query, setQuery] = React.useState('');
-    const [pickerSource, setPickerSource] = React.useState<'all' | 'base' | 'custom'>('all');
+    const [pickerSource, setPickerSource] = React.useState<'all' | 'company' | 'custom'>('all');
     const [pickerDivision, setPickerDivision] = React.useState('');
     const [pickerStatus, setPickerStatus] = React.useState<TeamMemberPickerStatus>('enabled');
     const [confirm, setConfirm] = React.useState<'discard' | 'restore' | 'enable' | null>(null);
@@ -217,7 +217,7 @@ export function TeamEditor(props: {
             original.current = JSON.stringify(latest);
         }
         else if (draft.id && !latest) {
-            const { id: _id, builtin: _builtin, ...copy } = draft;
+            const { id: _id, ...copy } = draft;
             setDraft(copy);
         }
         setCurrentEnabled(latest ? review.enabledTeams.includes(latest.id) : false);
@@ -441,6 +441,6 @@ export function TeamEditor(props: {
             });
             setPicker(null);
         }}/>)}
-      {preview && (<TeamDetails team={{ ...draft, tags, id: draft.id ?? 'team-preview', builtin: false }} experts={props.experts} close={() => setPreview(false)}/>)}
+      {preview && (<TeamDetails team={{ ...draft, tags, id: draft.id ?? 'team-preview' }} experts={props.experts} close={() => setPreview(false)}/>)}
     </TeamDialog>);
 }

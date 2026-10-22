@@ -1,6 +1,5 @@
 import { teamText } from './team-i18n.js';
 import type { ExpertSummary } from './expert-contract.js';
-import { localizeTeam } from './team-content-en.js';
 import { localizedExpertName, type LocaleId } from './i18n.js';
 import { teamCollaboration } from './team-collaboration.js';
 import { effectiveCoordinator, teamSchema, type ExpertTeam, } from './team-contract.js';
@@ -26,7 +25,7 @@ export async function executeTeam(args: {
 }) {
     const tx = (key: string, values?: readonly unknown[]) => teamText(args.locale ?? 'zh', key, values);
 
-    const team = structuredClone(teamSchema.parse(localizeTeam(args.team, args.locale ?? 'zh')));
+    const team = structuredClone(teamSchema.parse(args.team));
     const experts = structuredClone(args.experts).map(expert => ({ ...expert, name: localizedExpertName(expert, args.locale ?? 'zh') }));
     const task = args.task.trim();
     if (!task || Array.from(task).length > TEAM_TASK_MAX_CHARS)

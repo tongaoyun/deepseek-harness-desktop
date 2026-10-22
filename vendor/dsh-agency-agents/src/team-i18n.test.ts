@@ -1,25 +1,14 @@
+import { TEST_TEAMS } from '../tests/fixtures/teams.js'
 import { describe, expect, it } from 'vitest'
 import { readFileSync } from 'node:fs'
 import ts from 'typescript'
-import { BUILTIN_TEAMS, effectiveCoordinator, teamSchema } from './team-contract.js'
-import { localizeTeam } from './team-content-en.js'
+import { effectiveCoordinator, teamSchema } from './team-contract.js'
 import { TEAM_EN, teamText } from './team-i18n.js'
 
 describe('专家团完整国际化', () => {
-  it('英文内置内容保持身份、符合保存契约，主理人提示词完整翻译', () => {
-    for (const team of BUILTIN_TEAMS) {
-      const english = localizeTeam(team, 'en')
-      expect(() => teamSchema.parse(english), team.id).not.toThrow()
-      expect(english.id).toBe(team.id)
-      expect(english.members.map(member => member.expertSlug)).toEqual(team.members.map(member => member.expertSlug))
-      expect(JSON.stringify(english)).not.toMatch(/[\u3400-\u9fff]/u)
-      expect(effectiveCoordinator(english, 'en')).not.toMatch(/[\u3400-\u9fff]/u)
-      expect(localizeTeam(english, 'zh')).toEqual(team)
-    }
-  })
   it('切换语言不修改自定义内容或自定义主理人规则', () => {
-    const custom = { ...BUILTIN_TEAMS[0], builtin: false, coordinatorMode: 'custom' as const, coordinatorPrompt: '我的中文工作方法' }
-    expect(localizeTeam(custom, 'en')).toBe(custom)
+    const custom = { ...TEST_TEAMS[0],  coordinatorMode: 'custom' as const, coordinatorPrompt: '我的中文工作方法' }
+    expect(teamSchema.parse(custom).name).toBe(custom.name)
     expect(effectiveCoordinator(custom, 'en')).toBe(custom.coordinatorPrompt)
     expect(teamText('en', '{0} 位专家', [3])).toBe('3 experts')
     expect(teamText('en', 'toString')).toBe('toString')

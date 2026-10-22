@@ -1,5 +1,5 @@
 diff --git a/vendor/README.md b/vendor/README.md
-index 654276201d4a3ddd553bbeb6c794796cd47cd84c..6ac069a30fa337d63ec1fca08b7ba7cb89222e0a 100644
+index 654276201d4a3ddd553bbeb6c794796cd47cd84c..b0668c8f88cb9a97fb79d9bce2f831d1596d7d39 100644
 --- a/vendor/README.md
 +++ b/vendor/README.md
 @@ -32,6 +32,8 @@ Intentionally **not** vendored (verified unused by this set): `reggol`, `@cordis
@@ -11,14 +11,14 @@ index 654276201d4a3ddd553bbeb6c794796cd47cd84c..6ac069a30fa337d63ec1fca08b7ba7cb
  1. **`hmr/src/index.ts`**: removed the `./locales/en-US.yml` / `./locales/zh-CN.yml` imports, the `.i18n({...})` call on the `Config` schema, and the `src/locales/` directory. Rationale: those imports require a runtime YAML loader hook (`@cordisjs/unyaml`) that we do not vendor; the i18n texts only localize config descriptions.
  2. **All `package.json` files**: regenerated for Harness releases with scoped names, release versions, publication metadata, precise bundled-runtime and `lib/types/**/*.d.ts` / `.d.ts.map` file entries, source exports where applicable, and declaration metadata pointing at `lib/types`. References within the vendored set use `workspace:~`. HMR declares `esbuild` as a direct dev dependency for its imported `BuildFailure` type, and Loader requires `node-addon-require-builtin@^0.1.4` to match published app runtimes.
  3. **All `tsconfig.json` files**: regenerated to extend the repo-root `tsconfig.base.json`, emit TypeScript intermediates to `lib/types`, and declare project references.
-@@ -71,3 +73,28 @@ To update a vendored package from upstream:
+@@ -71,3 +73,29 @@ To update a vendored package from upstream:
  3. Re-apply the local modifications listed above (or drop them if upstream made them unnecessary — update the log either way).
  4. Update the version and commit hash in the manifest table.
  5. Run `pnpm install && pnpm run test && pnpm run build` at the repo root.
 +
 +## 产品预装社区插件
 +
-+以下 Apache-2.0 插件保留原包名，设置 `private: true`，只随产品装配分发，不属于官方 Harness profile 或 Cordis 框架副本。原 LICENSE/NOTICE 与社区内置素材保留；公司私有内容由服务端分发，不进入本仓库。
++以下 Apache-2.0 插件保留原包名，设置 `private: true`，只随产品装配分发，不属于官方 Harness profile 或 Cordis 框架副本。原 LICENSE/NOTICE 保留，社区专家素材只作为测试夹具，不随软件分发；公司私有内容由服务端分发，不进入本仓库。
 +
 +| 目录 | 上游版本 | 固定提交 |
 +| --- | --- | --- |
@@ -29,9 +29,10 @@ index 654276201d4a3ddd553bbeb6c794796cd47cd84c..6ac069a30fa337d63ec1fca08b7ba7cb
 +
 +各目录 `upstream.json` 记录原文件 SHA-256；`local-changes.json` 逐文件记录增加、修改和删除，包含修改后的哈希，供审查和升级核对。技能与专家仍通过官方 Skill Provider、工具及子代理运行。
 +
-+- 两个 `package.json` 改为私有工作区依赖及 `1.2.9-company.1`；构建配置输出 Host/Client 两面并保留稳定客户端模块 ID。专家插件补充源码所需图标依赖。
-+- 专家 `src/index.ts` 删除独立更新注册，读取公司目录，将与内置专家相同 ID 或名称及公司目录内的重名标记为冲突，仅阻止相关专家调用，不使整份目录加载失败，按公司实际分类读取固定说明；提示词读取再次检查冲突，禁止回退到另一份同名专家。专家元数据读取上限与公司入口发布的 128 KiB 对齐，保留分块读取和超限拒绝，避免合法长文件发布后无法加载。公司目录允许将重名交由既有名册冲突投影处理，内置目录的严格校验保持原样；空公司目录正常加载。回归见产品 `company-plugins.spec.ts` 的真实 Loader/profile 冲突组合。`src/expert-contract.ts` 和客户端视图传播公司来源，`src/client/index.ts` 增加公司筛选并移除外部链接、重复反馈和更新按钮；`src/client/locales.ts` 统一“专家套件”名称。`locale/zh.json` 同步名称。
-+- 技能 `src/index.ts` 删除独立更新注册；`src/core.ts` 登记只读公司来源并纳入原生来源排序；`src/client.ts` 增加公司来源文案、移除外部链接、重复反馈和独立更新；`locale/zh.json` 同步名称。
++- 两个 `package.json` 改为私有工作区依赖及 `1.2.9-company.1`；构建配置输出 Host/Client 两面并保留稳定客户端模块 ID，Host 构建先清理旧输出，避免分发已删除的专家数据。专家插件补充源码所需图标依赖。
++- 专家 `src/index.ts` 不再默认加载随包目录，删除社区名称映射，显式外部目录和共享内容保留原文；实际目录内的重名仅隔离冲突项，说明读取再次检查冲突。元数据读取上限与发布的 128 KiB 对齐。`src/client/index.ts` 来源收敛为“我的／团队共享”，删除静态名册、社区任务示例、外部链接和独立更新入口，头像按分类和标识稳定分配。`locale`、`custom-locales` 和 `expert-contract` 同步文案。
++- 专家团删除预置数据、`builtin` 字段、只读分支和整团翻译映射，仅保留本人创建的编排及原生委派。`assets/agency-agents*`、静态名册和中文名称映射移到 `tests/fixtures/`；`package.json` 只分发运行代码、许可及品牌图，不打包测试素材，测试配置包含夹具。原库解析和执行回归使用显式夹具，真实 Loader 测试覆盖默认空目录、共享名称原样、局部冲突和固定会话。
++- 技能 `src/index.ts` 删除独立更新注册；`src/core.ts` 登记只读公司来源并纳入原生来源排序；`src/client.ts` 统一“团队共享”来源及“提交共享”文案、移除外部链接、重复反馈和独立更新；`locale/zh.json` 同步名称。
 +- 两插件的 `plugin-updater`、`plugin-update-*` 源文件及专属测试删除。专家现有测试更新工作区依赖、套件名称和已删除入口，DOM 断言使用宿主当前组件，移除面向旧全局 CLI 布局的宿主模块探测，配置直接使用固定工作区的 Schemastery volatile，YAML 使用声明依赖，可选专家团由当前装配解析。对应旧布局测试删除，真实 Loader/profile 测试覆盖固定装配。
 +- 产品协议以类型依赖提供可选公司内容源。专家 `src/index.ts` 按 Session 读取不可变公司目录；远程声明、服务与客户端读取支持后台检查，`src/client/catalog.ts` 合并请求并拒绝旧响应覆盖。技能 `src/types.ts`、`src/core.ts`、`src/host-types.ts` 和 `src/index.ts` 为目录读取及 Agent Provider 传递固定根目录与单次调用取消信号；专家名册及说明读取传递工具取消信号，客户端路由和页面支持先本地后同步、失败保留及重试。原插件测试夹具提供当前官方执行上下文；真实 Loader 与无密钥快照验证版本隔离、记录和卸载。
 +- 目录 README、tsconfig、tsdown 和 Vitest 配置接入本仓库构建；专家声明库包含 ES2024，输出语法仍为 ES2022，客户端名册调用显式选择本地读取，测试夹具完整实现当前 Remote 和工具执行参数。原作者发布用 CI、脚本和文档不作为公司构建入口。技能的社区内容仓库更新保留。
@@ -39,4 +40,4 @@ index 654276201d4a3ddd553bbeb6c794796cd47cd84c..6ac069a30fa337d63ec1fca08b7ba7cb
 +
 +更新时从上述固定提交取得源文件，对照两份清单逐项应用或移除本地修改，更新基线及本地哈希；运行插件测试、真实公司 Loader/profile 测试和产品构建。发布操作见[公司内容说明](../apps/product-desktop/docs/company-content.md)。
 +
-+- 员工共享入口：专家 `src/client/index.ts` 与 `src/client/custom-locales.ts` 为自定义专家增加“提交到公司”；技能 `src/client.ts`、`src/client-types.ts`、`src/index.ts` 与 `src/core.ts` 增加单技能及资源文件导出，两个插件的提交入口统一放在原生“更多”菜单，拒绝符号链接、非法路径、超限目录与公司来源。两插件仅发出可取消的界面提交意图，产品 UI 负责确认、状态与 IPC，服务端负责归属和审核。原生执行及模型输入不变；回归见产品的 `content-submission.spec.ts`、`skill-submission-export.spec.ts`、`company-submission.client.spec.tsx` 和真实公司 Loader 测试。
++- 员工共享入口：专家 `src/client/index.ts` 与 `src/client/custom-locales.ts` 为自定义专家增加“提交共享”；技能 `src/client.ts`、`src/client-types.ts`、`src/index.ts` 与 `src/core.ts` 增加单技能及资源文件导出，两个插件的提交入口统一放在原生“更多”菜单，拒绝符号链接、非法路径、超限目录与公司来源。两插件仅发出可取消的界面提交意图，产品 UI 负责确认、状态与 IPC，服务端负责归属和审核。原生执行及模型输入不变；回归见产品的 `content-submission.spec.ts`、`skill-submission-export.spec.ts`、`company-submission.client.spec.tsx` 和真实公司 Loader 测试。

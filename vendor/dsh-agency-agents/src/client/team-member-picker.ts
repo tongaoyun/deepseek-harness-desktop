@@ -12,7 +12,7 @@ export function filterTeamMemberCandidates<T extends {
 }>(
   experts: readonly T[],
   options: {
-    source: 'all' | 'base' | 'custom'
+    source: 'all' | 'company' | 'custom'
     division: string
     status: TeamMemberPickerStatus
     enabled: readonly string[]

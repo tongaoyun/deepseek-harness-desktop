@@ -5,11 +5,11 @@
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
     "declaration": true,
-    "rootDir": "src",
+    "rootDir": ".",
     "strict": true,
     "jsx": "react-jsx",
     "skipLibCheck": true,
     "types": ["node"]
   },
-  "include": ["src"]
+  "include": ["src", "tests"]
 }
