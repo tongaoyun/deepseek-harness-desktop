@@ -1,10 +1,10 @@
+import { TEST_TEAMS } from '../tests/fixtures/teams.js'
 import { describe, expect, it, vi } from 'vitest'
-import { BUILTIN_TEAMS } from './team-contract.js'
 import { executeTeam } from './team-runtime.js'
 import { teamCollaboration } from './team-collaboration.js'
 import type { ExpertSummary } from './expert-contract.js'
 
-const team = BUILTIN_TEAMS[0]
+const team = TEST_TEAMS[0]
 const experts: ExpertSummary[] = team.members.map((member) => ({
   slug: member.expertSlug,
   name: member.expertSlug,
@@ -76,10 +76,10 @@ describe('专家团协作交接', () => {
     expect(result.instruction).toContain('没有可用的成员结果')
   })
   it('五团有不同的准备与验收重点，自定义规则不混入旧团队专属方法', () => {
-    expect(BUILTIN_TEAMS).toHaveLength(5)
+    expect(TEST_TEAMS).toHaveLength(5)
     expect(
       new Set(
-        BUILTIN_TEAMS.map((t) =>
+        TEST_TEAMS.map((t) =>
           JSON.stringify(teamCollaboration(t).reviewChecklist),
         ),
       ).size,

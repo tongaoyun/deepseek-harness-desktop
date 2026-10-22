@@ -1,5 +1,4 @@
 import { readHostLocale } from './i18n.js';
-import { localizeTeam } from './team-content-en.js';
 import { teamText } from './team-i18n.js';
 import { createHash } from 'node:crypto';
 import type { Context } from '@deepseek-ai/cordis';
@@ -114,7 +113,7 @@ type NativeDispatchArgs = Omit<Parameters<typeof executeTeam>[0], 'run'> & {
 export async function dispatchNativeTeam(args: NativeDispatchArgs) {
     const tx = (key: string, values?: readonly unknown[]) => teamText(args.locale ?? 'zh', key, values);
 
-    const team = localizeTeam(args.team, args.locale ?? 'zh');
+    const team = args.team;
     args.signal.throwIfAborted();
     if (activeLeads.has(args.agent))
         throw new Error(tx("当前会话正在创建专家团，请等待本次委派完成。"));

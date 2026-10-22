@@ -1,6 +1,6 @@
 import { adoptSharedRevision, catalogState } from './catalog.js';
 import { acceptTeams, refreshTeams, subscribeTeams, teamState } from './team-cache.js';
-import { useTeamLocale, localizeTeam, localizedExperts } from './team-locale.js';
+import { useTeamLocale, localizedExperts } from './team-locale.js';
 import React from 'react';
 import type { ExpertTeam, TeamSnapshot } from '../team-contract.js';
 import type { ExpertSummary } from '../expert-contract.js';
@@ -103,7 +103,7 @@ export function TeamMenu(props: {
                 setBusy(false);
         }
     };
-    const teams = snapshot?.teams.map(team => localizeTeam(team, locale)).filter((t) => (query !== '' || snapshot.enabledTeams.includes(t.id)) &&
+    const teams = snapshot?.teams.filter((t) => (query !== '' || snapshot.enabledTeams.includes(t.id)) &&
         `${t.name} ${t.description}`
             .toLowerCase()
             .includes(query.toLowerCase())) ?? [];

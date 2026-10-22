@@ -1,4 +1,4 @@
-import { BUILTIN_TEAMS, TEAM_CUSTOM_ID, teamSchema, type ExpertTeam } from './team-contract.js'
+import { TEAM_CUSTOM_ID, teamSchema, type ExpertTeam } from './team-contract.js'
 import { randomUUID } from 'node:crypto'
 import { teamText } from './team-i18n.js'
 import schema from '@deepseek-ai/schemastery'
@@ -21,10 +21,10 @@ export const agencySettingsSchema = schema.object({
 export function validateAgencySettings(value: AgencySettings, locale: 'zh' | 'en' = 'zh'): void {
   const teams = z.array(teamSchema).max(100).parse(value.customTeams ?? [])
   const teamIds = new Set<string>()
-  const teamNames = new Set(BUILTIN_TEAMS.map(team => normalizeName(team.name)))
+  const teamNames = new Set<string>()
   for (const team of teams) {
-    if (team.builtin || !TEAM_CUSTOM_ID.test(team.id) || teamIds.has(team.id) || teamNames.has(normalizeName(team.name))) {
-      throw new Error(teamText(locale, '自定义专家团标识或名称重复，或使用了内置团队标识。'))
+    if (!TEAM_CUSTOM_ID.test(team.id) || teamIds.has(team.id) || teamNames.has(normalizeName(team.name))) {
+      throw new Error(teamText(locale, '专家团标识或名称重复。'))
     }
     teamIds.add(team.id)
     teamNames.add(normalizeName(team.name))
@@ -81,15 +81,15 @@ export function createExpertLibrary(
     if (others.some(other => overlaps(expert, other))) throw customError('duplicate', locale())
   }
   // 只按数组引用缓存。调用方必须返回同一份基础名册；就地修改该数组不会使冲突标记失效。
-  let builtinMemo: { source: readonly ExpertSummary[]; experts: ExpertSummary[] } | undefined
-  const projectBuiltins = (builtins: readonly ExpertSummary[]): readonly ExpertSummary[] => {
-    if (builtinMemo?.source === builtins) return builtinMemo.experts
-    const experts = builtins.map(expert => ({ ...expert, conflict: builtins.some(other => other !== expert && overlaps(expert, other)) }))
-    builtinMemo = { source: builtins, experts }
+  let catalogMemo: { source: readonly ExpertSummary[]; experts: ExpertSummary[] } | undefined
+  const projectCatalog = (catalogExperts: readonly ExpertSummary[]): readonly ExpertSummary[] => {
+    if (catalogMemo?.source === catalogExperts) return catalogMemo.experts
+    const experts = catalogExperts.map(expert => ({ ...expert, conflict: catalogExperts.some(other => other !== expert && overlaps(expert, other)) }))
+    catalogMemo = { source: catalogExperts, experts }
     return experts
   }
-  const project = (builtins: readonly ExpertSummary[], state: ReturnType<typeof read>): CatalogSnapshot => {
-    const ready = projectBuiltins(builtins)
+  const project = (catalogExperts: readonly ExpertSummary[], state: ReturnType<typeof read>): CatalogSnapshot => {
+    const ready = projectCatalog(catalogExperts)
     const custom = state.customExperts.filter(item => !item.deleted).map(summary)
     const experts = [...ready,
       ...custom.map(expert => ({ ...expert, conflict: [...ready, ...custom.filter(other => other !== expert)].some(other => overlaps(expert, other)) }))]
@@ -109,9 +109,9 @@ export function createExpertLibrary(
   }
   const library: AgencyExpertLibrary = {
     async catalog() {
-      const builtins = await base()
+      const catalogExperts = await base()
       const state = read()
-      return project(builtins, state)
+      return project(catalogExperts, state)
     },
     async getCustom(slug) {
       assertWritable(slug)
@@ -120,19 +120,19 @@ export function createExpertLibrary(
       return expert
     },
     async saveCustom(input, enabled, expectedRevision) {
-      const builtins = await base()
+      const catalogExperts = await base()
       checkRevision(expectedRevision)
       const parsed = customExpertInputSchema.safeParse(input)
       if (!parsed.success || typeof enabled !== 'boolean') throw customError('invalid', locale())
       const value = parsed.data
-      if (!divisions.includes(value.division) && !builtins.some(item => item.division === value.division)) throw customError('division', locale())
+      if (!divisions.includes(value.division) && !catalogExperts.some(item => item.division === value.division)) throw customError('division', locale())
       const state = read()
       if (value.slug !== undefined && !state.customExperts.some(item => item.slug === value.slug && !item.deleted)) throw customError('missing', locale())
       if (value.slug === undefined && state.customExperts.filter(item => !item.deleted).length >= CUSTOM_EXPERT_LIMIT) throw customError('limit', locale())
       const expert: CustomExpert = { ...value, slug: value.slug ?? `custom-${randomUUID()}` }
       const next = state.customExperts.filter(item => item.slug !== expert.slug)
       next.push(expert)
-      assertUnique(summary(expert), [...builtins, ...next.filter(item => !item.deleted && item.slug !== expert.slug).map(summary)])
+      assertUnique(summary(expert), [...catalogExperts, ...next.filter(item => !item.deleted && item.slug !== expert.slug).map(summary)])
       return persist({ customExperts: next, enabled: [...state.enabled.filter(slug => slug !== expert.slug), ...(enabled ? [expert.slug] : [])] }, expectedRevision)
     },
     async deleteCustom(slug, expectedRevision) {
@@ -146,10 +146,10 @@ export function createExpertLibrary(
       }, expectedRevision)
     },
     async setEnabled(enabled, expectedRevision) {
-      const builtins = await base()
+      const catalogExperts = await base()
       checkRevision(expectedRevision)
       const state = read()
-      const available = new Set(project(builtins, state).experts.filter(expert => !expert.conflict).map(expert => expert.slug))
+      const available = new Set(project(catalogExperts, state).experts.filter(expert => !expert.conflict).map(expert => expert.slug))
       if (enabled.some(slug => !available.has(slug))) throw customError('unavailable', locale())
       const next = [...new Set(enabled)]
       await store.mutate([

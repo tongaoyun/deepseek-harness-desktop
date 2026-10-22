@@ -1,6 +1,6 @@
+import { TEST_TEAMS } from '../tests/fixtures/teams.js'
 import { describe, it, expect, vi } from 'vitest'
 import {
-  BUILTIN_TEAMS,
   teamInputSchema,
   effectiveCoordinator,
 } from './team-contract.js'
@@ -13,7 +13,7 @@ import {
 import type { ExpertSummary } from './expert-contract.js'
 
 const experts: ExpertSummary[] = [
-  ...new Set(BUILTIN_TEAMS.flatMap((t) => t.members.map((m) => m.expertSlug))),
+  ...new Set(TEST_TEAMS.flatMap((t) => t.members.map((m) => m.expertSlug))),
 ].map((slug) => ({
   slug,
   name: slug,
@@ -25,8 +25,8 @@ const experts: ExpertSummary[] = [
   divisionZh: '工程',
   custom: false,
 }))
-function setup() {
-  let state: AgencySettings = { enabled: [], customExperts: [] }
+function setup(seedTeams = false) {
+  let state: AgencySettings = { enabled: [], customExperts: [], customTeams: seedTeams ? structuredClone([...TEST_TEAMS]) : [] }
   let revision = 0
   const store = {
     read: () => structuredClone(state),
@@ -49,7 +49,7 @@ function setup() {
   return { library, store }
 }
 const draft = () => {
-  const { id: _id, builtin: _builtin, ...value } = BUILTIN_TEAMS[0]
+  const { id: _id, ...value } = TEST_TEAMS[0]
   return { ...value, name: '我的评审团' }
 }
 describe('专家团配置与执行', () => {
@@ -60,21 +60,26 @@ describe('专家团配置与执行', () => {
     await expect(library.get('missing')).rejects.toThrow('专家团不存在')
     locale = 'en'
     await expect(library.get('missing')).rejects.toThrow('Team not found')
-    await expect(library.save({ ...draft(), name: 'Product Review Team' }, false, 0)).rejects.toThrow('already')
-    await expect(library.setEnabled(BUILTIN_TEAMS[0].id, true, 9)).rejects.toThrow('Settings changed')
+    await library.save(draft(), false, 0)
+    await expect(library.save(draft(), false, 1)).rejects.toThrow('already')
+    const team = (await library.snapshot()).teams[0]
+    await expect(library.setEnabled(team.id, true, 9)).rejects.toThrow('Settings changed')
   })
   it.each(['save', 'enable'] as const)('%s 保留名册暂不可用的原始启用记录', async (action) => {
-    const { store } = setup()
+    const { store } = setup(true)
     const retained = ['temporarily-conflicted', 'outside-current-divisions']
     await store.mutate([{ path: ['enabled'], value: retained }], 0)
     const library = createTeamLibrary(async () => ({ experts, enabled: [], revision: store.revision() }), store)
     if (action === 'save') await library.save(draft(), true, 1)
-    else await library.setEnabled(BUILTIN_TEAMS[0].id, true, 1)
+    else await library.setEnabled(TEST_TEAMS[0].id, true, 1)
     expect(store.read().enabled).toEqual([...retained, ...draft().members.map(member => member.expertSlug)])
   })
-  it('自定义团队不能与内置团队的英文名称冲突', async () => {
+  it('默认无预置团队，不保留社区团队名称', async () => {
     const { library } = setup()
-    await expect(library.save({ ...draft(), name: 'Product Review Team' }, false, 0)).rejects.toThrow('团队名称已被使用')
+    expect((await library.snapshot()).teams).toEqual([])
+    await expect(library.get('team-product')).rejects.toThrow('不存在')
+    const saved = await library.save({ ...draft(), name: 'Product Review Team' }, false, 0)
+    expect(saved.teams).toHaveLength(1)
   })
   it('不把旧名册与新团队配置拼成同一个快照', async () => {
     const { store } = setup()
@@ -82,14 +87,14 @@ describe('专家团配置与执行', () => {
     const library = createTeamLibrary(async () => ({ experts, enabled: [], revision: 0 }), store)
     await expect(library.snapshot()).rejects.toThrow('配置已更新')
   })
-  it('持久化拒绝冒充内置团队、重复标识和名称', () => {
+  it('持久化拒绝非法标识、重复标识和名称', () => {
     const team = {
       ...draft(),
       id: 'team-custom-12345678-1234-4234-8234-123456789012',
-      builtin: false,
+
     }
     expect(() =>
-      validateAgencySettings({ enabled: [], customTeams: [BUILTIN_TEAMS[0]] }),
+      validateAgencySettings({ enabled: [], customTeams: [{ ...team, id: 'team-product' }] }),
     ).toThrow()
     expect(() =>
       validateAgencySettings({ enabled: [], customTeams: [team, team] }),
@@ -97,13 +102,13 @@ describe('专家团配置与执行', () => {
     expect(() =>
       validateAgencySettings({
         enabled: [],
-        customTeams: [{ ...team, name: BUILTIN_TEAMS[0].name }],
+        customTeams: [team, { ...team, id: TEST_TEAMS[1].id }],
       }),
     ).toThrow()
   })
   it('包含五个三人团队，主理人模板各自完整且成员不重复', () => {
-    expect(BUILTIN_TEAMS).toHaveLength(5)
-    for (const team of BUILTIN_TEAMS) {
+    expect(TEST_TEAMS).toHaveLength(5)
+    for (const team of TEST_TEAMS) {
       expect(team.members).toHaveLength(3)
       expect(teamInputSchema.safeParse(team).success).toBe(true)
       expect(effectiveCoordinator(team)).toContain('处理分歧')
@@ -133,41 +138,41 @@ describe('专家团配置与执行', () => {
   it('模板和自定义只生效一份', () => {
     expect(
       effectiveCoordinator({
-        ...BUILTIN_TEAMS[0],
+        ...TEST_TEAMS[0],
         coordinatorMode: 'custom',
         coordinatorPrompt: '仅输出决策依据',
       }),
     ).toBe('仅输出决策依据')
   })
   it('启用团队与成员原子写入；停用团队保留成员；拒绝过期写入', async () => {
-    const { library } = setup()
-    const enabled = await library.setEnabled(BUILTIN_TEAMS[0].id, true, 0)
-    expect(enabled.enabledTeams).toContain(BUILTIN_TEAMS[0].id)
+    const { library } = setup(true)
+    const enabled = await library.setEnabled(TEST_TEAMS[0].id, true, 0)
+    expect(enabled.enabledTeams).toContain(TEST_TEAMS[0].id)
     expect(enabled.enabledExperts).toEqual(
-      BUILTIN_TEAMS[0].members.map((m) => m.expertSlug),
+      TEST_TEAMS[0].members.map((m) => m.expertSlug),
     )
     await expect(
-      library.setEnabled(BUILTIN_TEAMS[1].id, true, 0),
+      library.setEnabled(TEST_TEAMS[1].id, true, 0),
     ).rejects.toThrow()
-    const disabled = await library.setEnabled(BUILTIN_TEAMS[0].id, false, 1)
+    const disabled = await library.setEnabled(TEST_TEAMS[0].id, false, 1)
     expect(disabled.enabledTeams).toEqual([])
     expect(disabled.enabledExperts).toEqual(enabled.enabledExperts)
   })
-  it('自定义持久化、名称唯一、内置只读及删除不删成员', async () => {
+  it('自定义持久化、名称唯一、未知标识拒绝及删除不删成员', async () => {
     const { library } = setup()
     const saved = await library.save(draft(), true, 0)
-    const team = saved.teams.find((t) => !t.builtin)!
+    const team = saved.teams[0]
     expect(team.id).toMatch(/^team-custom-/)
     await expect(library.save(draft(), false, 1)).rejects.toThrow('名称')
     await expect(
-      library.save({ ...draft(), id: BUILTIN_TEAMS[0].id }, false, 1),
+      library.save({ ...draft(), id: TEST_TEAMS[0].id }, false, 1),
     ).rejects.toThrow()
     const removed = await library.remove(team.id, 1)
-    expect(removed.teams).toHaveLength(5)
+    expect(removed.teams).toHaveLength(0)
     expect(removed.enabledExperts).toHaveLength(3)
   })
   it('冻结分工与提示词，保留部分失败，不自动重试', async () => {
-    const team = structuredClone(BUILTIN_TEAMS[0])
+    const team = structuredClone(TEST_TEAMS[0])
     const run = vi.fn(
       async (member: { name: string; prompt: string; persona: string }) => {
         if (member.name === team.members[1].expertSlug)
@@ -196,7 +201,7 @@ describe('专家团配置与执行', () => {
   it('停用或失效成员不得悄悄运行，取消后不得新建任务', async () => {
     const run = vi.fn(async () => '结果')
     const args = {
-      team: BUILTIN_TEAMS[0],
+      team: TEST_TEAMS[0],
       experts,
       enabled: [] as string[],
       task: '任务',
@@ -218,7 +223,7 @@ describe('专家团配置与执行', () => {
   })
   it('团队任务恰好达到上限仍进入成员校验，多一个字则要求压缩后重试', async () => {
     const args = {
-      team: BUILTIN_TEAMS[0],
+      team: TEST_TEAMS[0],
       experts,
       enabled: [] as string[],
       revision: 0,
@@ -231,7 +236,7 @@ describe('专家团配置与执行', () => {
   })
   it('八人团队最多四人同时执行，取消后不启动排队成员', async () => {
     const team = {
-      ...structuredClone(BUILTIN_TEAMS[0]),
+      ...structuredClone(TEST_TEAMS[0]),
       members: experts
         .slice(0, 8)
         .map((e) => ({

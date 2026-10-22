@@ -1,6 +1,6 @@
+import { TEST_TEAMS } from '../tests/fixtures/teams.js'
 import { describe, expect, it, vi } from 'vitest'
 import { detectTeamEngine, resolveTeamEngine, dispatchNativeTeam, blocksNativeDelegation, type NativeTeamService } from './team-engine.js'
-import { BUILTIN_TEAMS } from './team-contract.js'
 
 function native() {
   const members: { name: string; status: string }[] = []
@@ -56,7 +56,7 @@ describe('专家团运行引擎能力分流', () => {
 })
 
 describe('原生专家团启动语义', () => {
-  const team = BUILTIN_TEAMS[0]
+  const team = TEST_TEAMS[0]
   const input = () => ({
     team, revision: 1, task: '评审现有方案', enabled: team.members.map(m => m.expertSlug),
     experts: team.members.map(m => ({ slug: m.expertSlug, name: m.expertSlug, nameEn: m.expertSlug, division: 'engineering', divisionZh: '工程', description: '', descriptionEn: '', emoji: '', custom: false })),
@@ -70,8 +70,9 @@ describe('原生专家团启动语义', () => {
     expect(service.spawnTeammate.mock.calls[0][1].description).toBe('Expert')
     expect(service.spawnTeammate.mock.calls[0][1].name).toMatch(/^agency-[a-z0-9-]+-[0-9a-f]{10}$/u)
     expect(report.dispatch.members[0].expert).toBe('Expert')
-    expect(JSON.stringify(report)).not.toMatch(/[\u3400-\u9fff]/u)
-    expect(service.createTask.mock.calls[0][1].subject).toContain('Product Review Team')
+    expect(report.team).toEqual(args.team)
+    expect(report.coordinator).not.toMatch(/[\u3400-\u9fff]/u)
+    expect(service.createTask.mock.calls[0][1].subject).toContain(args.team.name)
   })
   it('创建队友与任务，报告启动状态而非虚构完成结果', async () => {
     const { service } = native()

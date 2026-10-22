@@ -1,8 +1,8 @@
 import { readFile } from 'node:fs/promises'
 import { describe, expect, it } from 'vitest'
-import { ROSTER } from './client/roster.js'
+import { ROSTER } from '../tests/fixtures/roster.js'
 import { parseFrontmatter } from './index.js'
-import { ZH_NAME } from './names.js'
+import { ZH_NAME } from '../tests/fixtures/names.js'
 
 const HAN_PATTERN = /\p{Script=Han}/u
 
@@ -13,14 +13,14 @@ function isChineseDominant(text: string): boolean {
 }
 
 async function readPersona(locale: 'en' | 'zh', division: string, slug: string): Promise<string> {
-  const root = locale === 'en' ? '../assets/agency-agents/' : '../assets/agency-agents-zh/'
+  const root = locale === 'en' ? '../tests/fixtures/agency-agents/' : '../tests/fixtures/agency-agents-zh/'
   const raw = await readFile(new URL(`${root}${division}/${slug}.md`, import.meta.url), 'utf8')
   const parsed = parseFrontmatter(raw)
   if (parsed === undefined || parsed.body === '') throw new Error(`${locale}:${division}/${slug} persona 无效`)
   return parsed.body
 }
 
-describe('内置专家名册', () => {
+describe('外部 Markdown 名册测试夹具', () => {
   it('融合参考库中的 331 位正式专家，且不包含文档与流程模板', () => {
     const slugs = new Set(ROSTER.map((expert) => expert.slug))
     expect(ROSTER).toHaveLength(331)

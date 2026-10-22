@@ -5,11 +5,10 @@ import { teamCollaboration } from './team-collaboration.js'
 import { createTeamLibrary, AGENCY_TEAM_SERVICE } from './team-library.js'
 import { effectiveCoordinator } from './team-contract.js'
 import { executeTeam, TEAM_TASK_MAX_CHARS, type TeamMemberRun } from './team-runtime.js'
-import { localizeTeam } from './team-content-en.js'
 /**
  * Agency Experts — a summonable specialist roster for DSH.
  *
- * Reads The Agency persona collection (a directory of `<division>/*.md` files
+ * Reads an explicitly configured persona collection (a directory of `<division>/*.md` files
  * with YAML frontmatter) and exposes an "expert mode":
  *
  *   - `list_experts(division?)`    browse the roster grouped by division.
@@ -41,11 +40,9 @@ import { SessionId } from '@deepseek-ai/dsh-session'
 import { PERSONA_PREFIX_SECTION } from '@deepseek-ai/dsh-system-prompt'
 import { randomUUID } from 'node:crypto'
 import { open, readdir, readFile, stat } from 'node:fs/promises'
-import { join, relative, resolve } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { join } from 'node:path'
 import { TextDecoder } from 'node:util'
-import { ZH_DIVISION, ZH_NAME } from './names.js'
-export { ZH_NAME }
+import { ZH_DIVISION } from './names.js'
 import { createHostLocaleReader, formatHost, localizedExpertDescription, localizedExpertName, matchDivision, renderExpertList, renderSummonResults, type LocaleId } from './i18n.js'
 import { isLiveValue, readAgencySettings, recoverImportedAgencySettings, settingsNamespaceCompat } from './settings-compat.js'
 import { AGENCY_LIBRARY_SERVICE, createExpertLibrary, type AgencySettings } from './expert-library.js'
@@ -204,10 +201,8 @@ export interface Config {
   maxDepth?: number
 }
 
-/** 未在配置中显式提供 `root` 时，先读取该环境变量，再使用随包发布的智能体目录。 */
+/** 可显式配置本地目录；未配置时仅加载团队共享与个人内容。 */
 const ROOT_ENV = 'AGENCY_AGENTS_ROOT'
-const BUNDLED_ROOT = fileURLToPath(new URL('../assets/agency-agents/', import.meta.url))
-const BUNDLED_CHINESE_ROOT = fileURLToPath(new URL('../assets/agency-agents-zh/', import.meta.url))
 export const AGENCY_PERSONA_SERVICE = 'agencyAgentsPersona'
 
 /** 仅当宿主 schemastery 提供 volatile() 时，把字段标成可实时更新。插件自己的新版本不能代替宿主判断。 */
@@ -236,11 +231,11 @@ for (const [key, field] of [
 
 export const Config: z<Config> = schema.object(configFields) as unknown as z<Config>
 
-/** 解析智能体根目录：显式配置优先，其次读取环境变量，最后使用包内资产。 */
-export function resolveCatalogRoot(root: string): string {
+/** 解析智能体根目录：显式配置优先，其次读取环境变量，未配置时不加载基础目录。 */
+export function resolveCatalogRoot(root: string): string | undefined {
   if (root.trim() !== '') return root
   const environmentRoot = process.env[ROOT_ENV]?.trim()
-  return environmentRoot === undefined || environmentRoot === '' ? BUNDLED_ROOT : environmentRoot
+  return environmentRoot === '' ? undefined : environmentRoot
 }
 
 /** 规范化可选深度上限：配置表单的空值等同于未设置，其他值必须允许至少一层子代理。 */
@@ -392,14 +387,12 @@ export interface AgencyPersonaSource {
 // 路径仅留在 Host，不随名册摘要发送给客户端。
 const personaPaths = new WeakMap<Expert, string>();
 
-/** 创建展示与召唤共用的来源；可复用 Host 已加载的名册，外部目录不混入内置翻译。 */
+/** 创建展示与召唤共用的来源；可复用 Host 已加载的名册，按来源读取原文。 */
 export function createAgencyPersonaSource(
   root: string,
   divisions: readonly string[],
   catalog?: () => Promise<ReadonlyMap<string, Expert>>,
 ): AgencyPersonaSource {
-  const chineseRoot =
-    resolve(root) === resolve(BUNDLED_ROOT) ? BUNDLED_CHINESE_ROOT : undefined;
   let loaded: Promise<ReadonlyMap<string, Expert>> | undefined;
   return {
     async getPrompt(slug, division, locale) {
@@ -410,13 +403,6 @@ export function createAgencyPersonaSource(
       const path = expert === undefined ? undefined : personaPaths.get(expert);
       if (expert?.division !== division || path === undefined)
         throw new PersonaError('PERSONA_NOT_FOUND', locale);
-      if (locale === "zh" && chineseRoot !== undefined) {
-        try {
-          return await readPersonaFile(join(chineseRoot, relative(root, path)));
-        } catch (error) {
-          if (!(error instanceof PersonaError) || error.code !== 'PERSONA_NOT_FOUND') throw error;
-        }
-      }
       return readPersonaFile(path, locale);
     },
   };
@@ -482,7 +468,7 @@ export async function loadCatalog(root: string, divisions: readonly string[], lo
       }
       const expert: Expert = {
         slug,
-        name: ZH_NAME[slug] ?? parsed.name,
+        name: parsed.name,
         nameEn: parsed.name,
         description: parsed.description,
         descriptionEn: parsed.descriptionEn ?? '',
@@ -546,11 +532,11 @@ export function apply(ctx: Context, config: Config): void {
   const teamTx = (key: string, values?: readonly unknown[]) => teamText(activeLocale(), key, values)
   const catalogRoot = resolveCatalogRoot(config.root)
   const companySource = ctx.get('companyContent') as CompanyContentSource | undefined
-  const basePersonaSource = createAgencyPersonaSource(catalogRoot, config.divisions)
+  const basePersonaSource = catalogRoot === undefined ? undefined : createAgencyPersonaSource(catalogRoot, config.divisions)
   let experts = new Map<string, Expert>()
   const companyCatalogs = new Map<string, Promise<{ experts: Map<string, Expert>; divisions: string[] }>>()
   let loadError: string | null = null
-  const ready = loadCatalog(catalogRoot, config.divisions, activeLocale()).then(base => { experts = base })
+  const ready = (catalogRoot === undefined ? Promise.resolve(new Map<string, Expert>()) : loadCatalog(catalogRoot, config.divisions, activeLocale())).then(base => { experts = base })
     .catch((error: unknown) => { loadError = String(error) })
 
   async function ensureReady(): Promise<void> {
@@ -662,6 +648,7 @@ export function apply(ctx: Context, config: Config): void {
         }
         if (company.experts.has(slug)) return readExpertPrompt(root, slug, division, company.divisions)
       }
+      if (basePersonaSource === undefined) throw new PersonaError('PERSONA_NOT_FOUND', locale)
       return basePersonaSource.getPrompt(slug, division, locale)
     },
   }
@@ -871,7 +858,7 @@ export function apply(ctx: Context, config: Config): void {
 
   ctx.tools.register(defineTool({
     name: 'summon_expert',
-    description: "Summon a domain expert from The Agency roster to complete a task: a specialist subagent runs with that expert's full persona and returns its result. If the user already named this expert, call this immediately. Do not read the project or do the analysis yourself. Call list_experts first only if you do not know the expert name.",
+    description: "Summon a domain expert from the available personal and team-shared roster to complete a task: a specialist subagent runs with that expert's full persona and returns its result. If the user already named this expert, call this immediately. Do not read the project or do the analysis yourself. Call list_experts first only if you do not know the expert name.",
     parameters: {
       expert: { type: 'string', required: true, description: 'Expert name to summon (e.g. "Frontend Developer").' },
       task: { type: 'string', required: true, description: summonTaskDescription('single') },
@@ -951,13 +938,13 @@ const teamOutput = { schema: { type: 'object' as const, additionalProperties: fa
         report?: unknown;
     }) => [{ type: 'text' as const, text: String(value.report ?? '') }] };
 ctx.tools.register(localizeTeamTool(defineTool({ name: 'list_expert_teams', description: teamTx("列出已启用专家团。召唤前使用 get_expert_team 读取主理人规则及成员分工。"), parameters: {}, output: teamOutput,
-    async execute(_args, exec) { requireParent(exec); const snapshot = await teamLibrary.snapshot(); return { report: JSON.stringify(snapshot.teams.filter(t => snapshot.enabledTeams.includes(t.id)).map(t => localizeTeam(t, activeLocale())).map(t => ({ id: t.id, name: t.name, description: t.description }))) }; }, }), activeLocale));
+    async execute(_args, exec) { requireParent(exec); const snapshot = await teamLibrary.snapshot(); return { report: JSON.stringify(snapshot.teams.filter(t => snapshot.enabledTeams.includes(t.id)).map(t => ({ id: t.id, name: t.name, description: t.description }))) }; }, }), activeLocale));
 ctx.tools.register(localizeTeamTool(defineTool({ name: 'get_expert_team', description: teamTx("读取已启用专家团的目标、分工和主理人提示词。当前主会话应先按该规则澄清任务，再调用 summon_expert_team，之后统一汇总。"),
     parameters: { team: { type: 'string', required: true, description: teamTx("专家团稳定标识或完整名称。") } }, output: teamOutput,
     async execute(args, exec) {
         requireParent(exec);
         const snapshot = await teamLibrary.snapshot();
-        const team = snapshot.teams.map(t => localizeTeam(t, activeLocale())).find(t => t.id === args.team || t.name === args.team || snapshot.teams.find(original => original.id === t.id)?.name === args.team);
+        const team = snapshot.teams.find(t => t.id === args.team || t.name === args.team);
         if (!team || !snapshot.enabledTeams.includes(team.id))
             throw new Error(teamTx("专家团未启用或不存在。"));
         const engine = resolveTeamEngine(ctx, exec.agent, maxDepth).status;
@@ -971,7 +958,7 @@ ctx.tools.register(localizeTeamTool(defineTool({ name: 'summon_expert_team', des
         const [snapshot, catalog] = await Promise.all([teamLibrary.snapshot(), catalogForSession(exec.agent!.id, exec.signal)]);
         if (snapshot.revision !== catalog.revision)
             throw new Error(teamTx("名册已更新，请重新读取专家团。"));
-        const team = snapshot.teams.map(t => localizeTeam(t, activeLocale())).find(t => t.id === args.team || t.name === args.team || snapshot.teams.find(original => original.id === t.id)?.name === args.team);
+        const team = snapshot.teams.find(t => t.id === args.team || t.name === args.team);
         if (!team || !snapshot.enabledTeams.includes(team.id))
             throw new Error(teamTx("专家团未启用或不存在。"));
         const engine = resolveTeamEngine(ctx, exec.agent, maxDepth);
@@ -1023,7 +1010,7 @@ ctx.systemPrompt.section({ name: 'agency:teams', order: 118, text: context => {
     text: (context) => {
       const agent = (context as { agent?: { session?: { header?: { parentSession?: unknown } } } }).agent
       if (agent?.session?.header?.parentSession !== undefined) return ''
-      return '## Agency expert mode\nThe parent session has a roster of domain experts from The Agency (specialists across 22 divisions, individually enable/disable; ALL are disabled by default, and the user enables some in the Agency settings tab). A composer selection inserts one enabled expert as a native reference chip; all remaining draft text is that expert\'s task. When the user message already names experts, call summon_expert or summon_experts immediately. Summarize that message into the user goal, constraints, and file paths; do not pass the raw text when it is long. Do not call list_experts, read the project, or do the analysis yourself. Experts read the files and produce the analysis; the parent only synthesizes their results. Call list_experts only when the user did not name an expert. summon_experts runs at most 8 experts; partial results are returned if some fail. A disabled expert cannot be summoned. When calling either tool, pass only a short brief: the user goal, constraints, and file paths. Do not paste source, CSS, HTML, or quoted code into the tool argument; an unescaped quote makes the JSON invalid and no expert starts. Each task must stay within ' + SUMMON_TASK_MAX_CHARS + ' characters. Experts read the files themselves.'
+      return '## Agency expert mode\nThe parent session uses personal and team-shared domain experts. The user enables experts in the expert library; only enabled experts can be summoned. A composer selection inserts one enabled expert as a native reference chip; all remaining draft text is that expert\'s task. When the user message already names experts, call summon_expert or summon_experts immediately. Summarize that message into the user goal, constraints, and file paths; do not pass the raw text when it is long. Do not call list_experts, read the project, or do the analysis yourself. Experts read the files and produce the analysis; the parent only synthesizes their results. Call list_experts only when the user did not name an expert. summon_experts runs at most 8 experts; partial results are returned if some fail. A disabled expert cannot be summoned. When calling either tool, pass only a short brief: the user goal, constraints, and file paths. Do not paste source, CSS, HTML, or quoted code into the tool argument; an unescaped quote makes the JSON invalid and no expert starts. Each task must stay within ' + SUMMON_TASK_MAX_CHARS + ' characters. Experts read the files themselves.'
     },
   })
 }

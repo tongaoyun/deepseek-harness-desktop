@@ -1,3 +1,4 @@
+import { fileURLToPath } from 'node:url'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
@@ -10,9 +11,9 @@ import z from '@deepseek-ai/schemastery'
 import { Config, SUMMON_EXPERTS_CONCURRENCY, SUMMON_EXPERTS_MAX, SUMMON_TASK_MAX_CHARS, apply, inject, liveSchemaField, loadCatalog, createAgencyPersonaSource, mapPool, parseFrontmatter, resolveCatalogRoot, resolveExpert, sanitize, stripBom, toSummonItemResult, truncate, unquote, validateSummonSpecs } from './index.js'
 import AgencyAgentsRemote, { readExpertPrompt, readLocalizedExpertPrompt } from './remote.js'
 import { AGENCY_AGENTS_DESCRIPTORS } from './remote-contract.js'
-import { buildExpertMentionLexicon, buildExpertReference, CARD_SETTINGS_CSS, compareExpertName, COMPOSER_CSS, EXPERT_AVATAR_POOL_INDEXES, expertAvatarIndex, expertAvatarIndexForDivision, expertDivisionFilterValues, expertMentionFromReference, filterExperts, formatExpertMention, formatExpertMentionInsertion, inject as clientInject, inputTriggerCandidateName, inputTriggerPickName, inputTriggerSourceId, inputTriggerSourceName, insertExpertReference, insertSelectedExpert, keepComposerFocus, matchExpertQuery, normalizeExpertQuery, resolveExpertMenuPosition, resolveReferenceInsertionTarget, resolveTargetSessionId, SETTINGS_CSS, sortExpertsByEnabled, sortExpertsByOrder, writeErrorKey, writeErrorMessage } from './client/index.js'
+import { buildExpertMentionLexicon, buildExpertReference, CARD_SETTINGS_CSS, compareExpertName, COMPOSER_CSS, EXPERT_AVATAR_POOL_INDEXES, expertAvatarIndex, expertAvatarIndexForDivision, expertDivisionFilterValues, expertMentionFromReference, filterExperts, formatExpertMention, formatExpertMentionInsertion, inject as clientInject, inputTriggerCandidateName, inputTriggerSourceId, inputTriggerSourceName, insertExpertReference, insertSelectedExpert, keepComposerFocus, matchExpertQuery, normalizeExpertQuery, resolveExpertMenuPosition, resolveReferenceInsertionTarget, resolveTargetSessionId, SETTINGS_CSS, sortExpertsByEnabled, sortExpertsByOrder, writeErrorKey, writeErrorMessage } from './client/index.js'
 import { en, zh, type AgencyKey } from './client/locales.js'
-import { ROSTER } from './client/roster.js'
+import { ROSTER } from '../tests/fixtures/roster.js'
 import { enHost, formatHost, matchDivision, readHostLocale, renderExpertList, renderSummonResults, resolveHostLocale, zhHost } from './i18n.js'
 import { TYPERT_REMOTE } from './client/remote.js'
 import { agencySettingsFromLegacyDocument, readAgencySettings, recoverImportedAgencySettings, settingsNamespaceCompat } from './settings-compat.js'
@@ -378,9 +379,11 @@ describe('loadCatalog', () => {
     await expect(loadCatalog(join(dir, 'empty'), ['engineering'])).rejects.toThrow()
   })
 
-  it('未配置 root 时加载随包发布的智能体目录', async () => {
-    const map = await loadCatalog(resolveCatalogRoot(''), ['academic'])
-    expect(map.size).toBeGreaterThan(0)
+  it('未配置 root 时没有预置目录', () => {
+    const original = process.env.AGENCY_AGENTS_ROOT
+    delete process.env.AGENCY_AGENTS_ROOT
+    try { expect(resolveCatalogRoot('')).toBeUndefined() }
+    finally { if (original !== undefined) process.env.AGENCY_AGENTS_ROOT = original }
   })
 
   it('在解析 root 时读取之后设置的环境变量', () => {
@@ -631,11 +634,11 @@ describe('summon_expert', () => {
       },
     } as unknown as Context
 
-    applyOnHost(ctx, { root: '', provider: 'spawn', divisions: ['company'] })
+    applyOnHost(ctx, { root: fileURLToPath(new URL('../tests/fixtures/agency-agents-zh', import.meta.url)), provider: 'spawn', divisions: ['company'] })
     const summon = tools.find((tool) => (tool as { name?: string }).name === 'summon_expert') as {
       execute: (args: unknown, exec: unknown) => Promise<unknown>
     }
-    await expect(summon.execute({ expert: '首席执行官', task: '制定战略' }, { agent: {} })).resolves.toEqual({ expert: '首席执行官（CEO）', answer: 'done' })
+    await expect(summon.execute({ expert: '首席执行官（CEO）', task: '制定战略' }, { agent: {} })).resolves.toEqual({ expert: '首席执行官（CEO）', answer: 'done' })
 
     const displayed = await promptSource!.getPrompt('chief-executive-officer', 'company', 'zh')
     expect(displayed.prompt).toContain('首席执行官')
@@ -1223,17 +1226,11 @@ describe('expertAvatarIndex', () => {
     expect(developmentIndex).toBe(expertAvatarIndexForDivision('engineering-code-reviewer', 'engineering'))
   })
 
-  it('321 位专家覆盖全部头像，且分类池内均衡复用', () => {
-    const usage = new Map<number, number>()
+  it('外部专家的头像保持稳定且来自可用头像池', () => {
     for (const expert of ROSTER) {
       const index = expertAvatarIndexForDivision(expert.slug, expert.division)
-      usage.set(index, (usage.get(index) ?? 0) + 1)
-    }
-
-    expect(usage.size).toBe(36)
-    for (const pool of Object.values(EXPERT_AVATAR_POOL_INDEXES)) {
-      const counts = pool.map((index) => usage.get(index) ?? 0)
-      expect(Math.max(...counts) - Math.min(...counts)).toBeLessThanOrEqual(1)
+      expect(index).toBe(expertAvatarIndexForDivision(expert.slug, expert.division))
+      expect(Object.values(EXPERT_AVATAR_POOL_INDEXES).flat()).toContain(index)
     }
   })
 })
@@ -1350,9 +1347,6 @@ describe('@ 菜单分组标题本地化', () => {
     const expert = { name: '代码审查工程师', nameEn: 'Code Reviewer', emoji: '🔍' }
     expect(inputTriggerCandidateName(expert, 'zh')).toBe('代码审查工程师')
     expect(inputTriggerCandidateName(expert, 'en')).toBe('Code Reviewer')
-    expect(inputTriggerPickName('engineering-code-reviewer', '🔍 代码审查工程师', 'zh')).toBe('代码审查工程师')
-    expect(inputTriggerPickName('engineering-code-reviewer', '🔍 Code Reviewer', 'en')).toBe('Code Reviewer')
-    expect(inputTriggerPickName('missing', '未知专家', 'zh')).toBe('未知专家')
   })
 
   it('将专家名称格式化为 @ 提及，并只把已启用专家加入输入框词典', () => {
@@ -1478,16 +1472,17 @@ describe('@ 菜单分组标题本地化', () => {
       return true
     }
 
-    expect(insertSelectedExpert('engineering-code-reviewer', 'zh', insertReference)).toBe(true)
+    const experts = [{ ...ROSTER.find(e => e.slug === 'engineering-code-reviewer')!, name: '代码审查工程师', custom: false, divisionZh: '工程', divisionEn: 'Engineering' }]
+    expect(insertSelectedExpert('engineering-code-reviewer', 'zh', insertReference, experts)).toBe(true)
     expect(calls).toHaveLength(1)
-    expect(insertSelectedExpert('missing-expert', 'zh', insertReference)).toBe(false)
-    expect(insertSelectedExpert('engineering-code-reviewer', 'zh', () => false)).toBe(false)
-    expect(insertSelectedExpert('engineering-code-reviewer', 'zh', undefined)).toBe(false)
+    expect(insertSelectedExpert('missing-expert', 'zh', insertReference, experts)).toBe(false)
+    expect(insertSelectedExpert('engineering-code-reviewer', 'zh', () => false, experts)).toBe(false)
+    expect(insertSelectedExpert('engineering-code-reviewer', 'zh', undefined, experts)).toBe(false)
   })
 
   it('历史 chip 的专家已移除时不抛错、不泄露内部 slug', () => {
-    expect(expertMentionFromReference('engineering-code-reviewer', 'zh')).toBe('@代码审查工程师\u00A0')
-    expect(expertMentionFromReference('engineering-code-reviewer', 'en')).toBe('@Code Reviewer\u00A0')
+    expect(expertMentionFromReference('engineering-code-reviewer', 'zh', [{ ...ROSTER.find(e => e.slug === 'engineering-code-reviewer')!, name: '代码审查工程师', custom: false, divisionZh: '工程', divisionEn: 'Engineering' }])).toBe('@代码审查工程师\u00A0')
+    expect(expertMentionFromReference('engineering-code-reviewer', 'en', [{ ...ROSTER.find(e => e.slug === 'engineering-code-reviewer')!, name: '代码审查工程师', custom: false, divisionZh: '工程', divisionEn: 'Engineering' }])).toBe('@Code Reviewer\u00A0')
     expect(expertMentionFromReference('missing-expert', 'zh')).toBe('@已移除专家（请重新选择）\u00A0')
     expect(expertMentionFromReference('missing-expert', 'en')).toBe('@Removed expert (please reselect)\u00A0')
   })
@@ -1681,7 +1676,7 @@ describe('list_experts 语言切换', () => {
     expect(result).toMatchObject({
       divisions: [{
         division: 'engineering',
-        experts: [{ name: '代码审查工程师', description: '中文简介' }],
+        experts: [{ name: 'Code Reviewer', description: '中文简介' }],
       }],
       total: 1,
     })

@@ -1,3 +1,3 @@
 // Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
 
-exports[`requires confirmation, submits only once and shows durable review status 1`] = `"提交到公司订单核对提交当前内容及资源文件，由管理员审核。通过后全公司可用；不影响本地使用。请先确认文件中没有密码、令牌或私人资料。包含 1 个文件关闭提交到公司"`;
+exports[`requires confirmation, submits only once and shows durable review status 1`] = `"提交共享订单核对提交当前内容及资源文件，由管理员审核。通过后所有同事可用；不影响本地使用。请先确认文件中没有密码、令牌或私人资料。包含 1 个文件关闭提交共享"`;

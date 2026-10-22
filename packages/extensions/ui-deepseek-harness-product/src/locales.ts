@@ -3,8 +3,8 @@ export const NS = 'deepseekHarnessProduct'
 
 /** Simplified Chinese labels for the DeepSeekHarness product extension. */
 export const zh = {
-  companySubmitTitle: '提交到公司',
-  companySubmitHint: '提交当前内容及资源文件，由管理员审核。通过后全公司可用；不影响本地使用。请先确认文件中没有密码、令牌或私人资料。',
+  companySubmitTitle: '提交共享',
+  companySubmitHint: '提交当前内容及资源文件，由管理员审核。通过后所有同事可用；不影响本地使用。请先确认文件中没有密码、令牌或私人资料。',
   companySubmitWorking: '正在处理…',
   companySubmitFiles: '包含 {count} 个文件',
   companySubmitted: '已提交，等待管理员审核。',
@@ -390,7 +390,7 @@ export const zh = {
 
 /** English labels for the DeepSeekHarness product extension. */
 export const en = {
-  companySubmitTitle: 'Submit to company',
+  companySubmitTitle: 'Submit for sharing',
   companySubmitHint: 'Submit this content and its files for administrator review. Approval makes it available company-wide. Local use is unchanged. Check that files contain no credentials or private data.',
   companySubmitWorking: 'Working…',
   companySubmitFiles: '{count} files included',

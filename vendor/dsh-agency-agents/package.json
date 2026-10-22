@@ -1,6 +1,6 @@
 {
   "name": "@michengai/dsh-agency-agents",
-  "description": "DSH Agency Agents — 为 DeepSeek Harness 提供 331 名可召唤的专业智能体 · 331 summonable domain experts for DeepSeek Harness",
+  "description": "Harness 个人专家与团队共享专家",
   "version": "1.2.9-company.1",
   "type": "module",
   "packageManager": "pnpm@11.22.0",
@@ -28,12 +28,12 @@
   },
   "files": [
     "lib",
-    "assets",
     "locale",
     "cordis.patch.yml",
     "LICENSE",
     "NOTICE",
-    "upstream.json"
+    "upstream.json",
+    "assets/branding"
   ],
   "scripts": {
     "build": "tsdown",

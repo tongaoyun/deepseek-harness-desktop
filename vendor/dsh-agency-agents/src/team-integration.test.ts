@@ -1,10 +1,11 @@
+import { TEST_TEAMS } from '../tests/fixtures/teams.js'
+import { fileURLToPath } from 'node:url'
 import { describe, it, expect, vi } from 'vitest'
 import type { NativeTeamService } from './team-engine.js'
 import { Context } from '@deepseek-ai/cordis'
 import type { SettingsNamespace } from '@deepseek-ai/dsh-settings'
 import { apply, DEFAULT_DIVISIONS } from './index.js'
 import AgencyAgentsRemote from './remote.js'
-import { BUILTIN_TEAMS } from './team-contract.js'
 import { MemorySettings } from './settings-memory.js'
 class TestSettings extends MemorySettings {
   protected async persist(
@@ -29,7 +30,7 @@ function volatileConfig(settings: TestSettings) {
   }
 }
 describe('专家团宿主与远端集成', () => {
-  it('五团名册、启用、主理人规则、三人委派、子会话隔离与停用', async () => {
+  it('个人团队创建、启用、主理人规则、三人委派、子会话隔离与停用', async () => {
     const settings = new TestSettings(new Context())
     settings.restore({ 'agency-agents': { enabled: [] } })
     const services = new Map<string, unknown>()
@@ -72,18 +73,20 @@ describe('专家团宿主与远端集成', () => {
         },
       },
     } as unknown as Context
-    apply(ctx, { root: '', provider: 'spawn', divisions: DEFAULT_DIVISIONS, ...volatileConfig(settings) } as never)
+    apply(ctx, { root: fileURLToPath(new URL('../tests/fixtures/agency-agents', import.meta.url)), provider: 'spawn', divisions: DEFAULT_DIVISIONS, ...volatileConfig(settings) } as never)
     const remote = new AgencyAgentsRemote(ctx)
-    const initial = await remote.getTeams()
-    expect(initial.teams).toHaveLength(5)
-    expect(Object.values(initial.nativeMembers ?? {})).toEqual(initial.teams.flatMap(group => group.members.map(member => member.expertSlug)))
+    expect((await remote.getTeams()).teams).toEqual([])
+    const { id: _fixtureId, ...firstDraft } = TEST_TEAMS[0]
+    const initial = await remote.saveTeam(firstDraft, false, 0)
+    expect(initial.teams).toHaveLength(1)
+    expect(initial.nativeMembers ?? {}).toEqual({})
     const catalog = await remote.getCatalog(false)
     for (const group of initial.teams) {
       for (const member of group.members) {
         expect(catalog.experts.some(expert => expert.slug === member.expertSlug && !expert.conflict)).toBe(true)
       }
     }
-    const team = BUILTIN_TEAMS[0]
+    const team = initial.teams[0]
     const enabled = await remote.setTeamEnabled(team.id, true, initial.revision)
     expect(enabled.enabledExperts).toEqual(
       expect.arrayContaining(team.members.map((m) => m.expertSlug)),
@@ -141,10 +144,10 @@ describe('专家团宿主与远端集成', () => {
       invoke('summon_expert_team', { team: team.id, task: '再次运行' }),
     ).rejects.toThrow('未启用')
     expect(starts).toHaveLength(3)
-    const { id: _id, builtin: _builtin, ...draft } = team
+    const { id: _id, ...draft } = team
     const before = await remote.getTeams()
     const custom = await remote.saveTeam({ ...draft, name: '自定义验收团', coordinatorMode: 'custom', coordinatorPrompt: '优先输出反证和待确认事项。' }, true, before.revision)
-    const saved = custom.teams.find(group => !group.builtin)!
+    const saved = custom.teams.find(group => group.name === '自定义验收团')!
     const customReport = await invoke('summon_expert_team', { team: saved.id, task: '评审配置变更' })
     expect(customReport.coordinator).toBe('优先输出反证和待确认事项。')
     expect(customReport.results).toHaveLength(3)

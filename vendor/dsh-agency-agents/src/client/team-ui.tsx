@@ -1,6 +1,6 @@
 import { adoptSharedRevision, catalogState } from './catalog.js';
 import { acceptTeams, refreshTeams, subscribeTeams, teamState } from './team-cache.js';
-import { useTeamLocale, localizeTeam, localizedExperts } from './team-locale.js';
+import { useTeamLocale, localizedExperts } from './team-locale.js';
 import { LibraryCard } from './library-ui.js';
 import { Button, Input } from './plugin-ui.js';
 import { CategorySelect } from './category-select.js';
@@ -37,7 +37,7 @@ export function TeamDetails(props: {
 }) {
     const { locale, tx } = useTeamLocale();
 
-    props = { ...props, team: localizeTeam(props.team, locale), experts: localizedExperts(props.experts, locale) };
+    props = { ...props, team: props.team, experts: localizedExperts(props.experts, locale) };
     const [prompt, setPrompt] = React.useState(false);
     return (<TeamDialog title={tx("{0}详情", [props.team.name])} close={props.close} className="agt-detail">
       <header className="agt-detail-head">
@@ -52,7 +52,7 @@ export function TeamDetails(props: {
             </div>)}
           </div>
           <p>
-            {props.team.builtin ? tx("内置专家团") : tx("我的专家团")} ·{' '}
+            {tx("我的专家团")} ·{' '}
             {props.team.members.length}{tx("位专家")}</p>
           <div className="agt-row">
             {props.onSelect && (<Button type="primary" onClick={() => props.onSelect?.()}>
@@ -127,7 +127,6 @@ export function TeamsPanel(props: {
     });
     const experts = localizedExperts(rawExperts, locale);
     const [query, setQuery] = React.useState('');
-    const [filter, setFilter] = React.useState<'all' | 'builtin' | 'custom'>('all');
     const [status, setStatus] = React.useState('');
     const [error, setError] = React.useState('');
     const [notice, setNotice] = React.useState('');
@@ -245,7 +244,7 @@ export function TeamsPanel(props: {
     };
     const copy = (team: ExpertTeam) => {
         setDetails(null);
-        const { id: _id, builtin: _builtin, ...value } = team;
+        const { id: _id, ...value } = team;
         setEditor({
             value: {
                 ...structuredClone(value),
@@ -255,9 +254,7 @@ export function TeamsPanel(props: {
             revision: snapshot!.revision,
         });
     };
-    const filtered = snapshot?.teams.map(team => localizeTeam(team, locale)).filter((team) => (filter === 'all' ||
-        (filter === 'builtin' ? team.builtin : !team.builtin)) &&
-        (!status ||
+    const filtered = snapshot?.teams.filter((team) => (!status ||
             snapshot.enabledTeams.includes(team.id) === (status === 'enabled')) &&
         `${team.name} ${team.description} ${team.members.map((m) => experts.find((e) => e.slug === m.expertSlug)?.name ?? '').join(' ')}`
             .toLowerCase()
@@ -280,13 +277,6 @@ export function TeamsPanel(props: {
       </div>}
 
       <div className="aag-filters aag-card-filters">
-        <div className="aag-field aag-field-source">
-          <CategorySelect id="aag-team-source" label={tx("来源")} value={filter} onChange={(value) => { if (value === 'builtin' || value === 'custom' || value === 'all') setFilter(value) }} options={[
-            { value: 'all', label: tx("全部来源") },
-            { value: 'builtin', label: tx("内置") },
-            { value: 'custom', label: tx("自定义") },
-          ]}/>
-        </div>
         <div className="aag-field aag-field-status">
           <CategorySelect id="aag-team-status" label={tx("状态")} value={status} onChange={setStatus} options={[
             { value: '', label: tx("全部状态") },
@@ -329,8 +319,8 @@ export function TeamsPanel(props: {
                 </div>} metadata={tx("{0} 位专家", [team.members.length])} description={enabled && issue
                     ? `${team.description} ${tx(issue)}`
                     : team.description} enabled={enabled} disabled={busy} enabledLabel={tx("已启用")} disabledLabel={tx("已停用")} toggle={() => void change(team, 'enable')} moreItems={[
-                    { id: 'edit', label: team.builtin ? tx("复制并自定义") : tx("编辑专家团"), icon: <IconCopy size={16} />, disabled: busy, onSelect: () => (team.builtin ? copy(team) : edit(team)) },
-                    ...(!team.builtin ? [{ id: 'delete', label: tx("删除专家团"), icon: <IconTrash size={16} />, danger: true, disabled: busy, onSelect: () => void change(team, 'delete') }] : []),
+                    { id: 'edit', label: tx("编辑专家团"), icon: <IconCopy size={16} />, disabled: busy, onSelect: () => edit(team) },
+                    { id: 'delete', label: tx("删除专家团"), icon: <IconTrash size={16} />, danger: true, disabled: busy, onSelect: () => void change(team, 'delete') },
                 ]} actions={<>
                   <button type="button" className="aag-card-action" title={tx("查看详情")} aria-label={tx("查看详情")} aria-haspopup="dialog" onClick={() => setDetails(team)}>
                     <IconEye size={18}/><span className="aag-card-action-text">{tx("查看详情")}</span></button>
@@ -343,19 +333,16 @@ export function TeamsPanel(props: {
           <p>{tx("换个关键词，或创建自己的专家团。")}</p>
           <Button onClick={() => {
                 setQuery('');
-                setFilter('all');
             }}>{tx("清除筛选")}</Button>
         </div>)}
-      {details && (<TeamDetails team={details} experts={experts} close={() => setDetails(null)} onCopy={() => copy(details)} onSelect={(example) => void change(details, 'select', example)} onEdit={!details.builtin
-                ? () => {
+      {details && (<TeamDetails team={details} experts={experts} close={() => setDetails(null)} onCopy={() => copy(details)} onSelect={(example) => void change(details, 'select', example)} onEdit={() => {
                     setEditor({
                         value: details,
                         enabled: snapshot!.enabledTeams.includes(details.id),
                         revision: snapshot!.revision,
                     });
                     setDetails(null);
-                }
-                : undefined} onDelete={!details.builtin ? () => void change(details, 'delete') : undefined}/>)}
+                }} onDelete={() => void change(details, 'delete')}/>)}
       {editor && (<TeamEditor initial={editor.value} experts={experts} enabled={editor.enabled} enabledExperts={snapshot!.enabledExperts} close={() => setEditor(null)} refresh={async () => {
                 const latest = await unwrap(props.remote.getTeams());
                 accept(latest);

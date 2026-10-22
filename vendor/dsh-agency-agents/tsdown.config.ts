@@ -51,7 +51,7 @@ const node: UserConfig = {
   plugins: [standardDecoratorPlugin()],
   dts: true,
   fixedExtension: false,
-  clean: false,
+  clean: true,
 }
 
 const client: UserConfig = {

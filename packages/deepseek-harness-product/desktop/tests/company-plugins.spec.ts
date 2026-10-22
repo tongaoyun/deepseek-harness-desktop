@@ -24,7 +24,7 @@ import { contentDigest } from '@deepseek-harness/product/company-content'
 import * as Agency from '@michengai/dsh-agency-agents'
 const AGENCY_LIBRARY_SERVICE = 'agencyAgentsLibrary'
 interface AgencyExpertLibrary {
-  catalog(): Promise<{ experts: readonly { slug: string; company?: boolean; division: string; conflict?: boolean }[] }>
+  catalog(): Promise<{ experts: readonly { slug: string; name: string; company?: boolean; division: string; conflict?: boolean }[] }>
 }
 import { installCompanyContent } from '../src/company-content.ts'
 import { nativeExtensionPatches } from '../src/native-extensions.ts'
@@ -136,7 +136,9 @@ it.each([{ published: false, refresh: false, collision: false }, { published: tr
   const catalog = await library!.catalog()
   const expert = catalog.experts.find(expert => expert.slug === 'orders')
   expect(expert?.company).toBe(published ? true : undefined)
+  if (!published) expect(catalog.experts).toEqual([])
   if (published) {
+    expect(catalog.experts.every(expert => expert.company)).toBe(true)
     expect(catalog.experts.find(expert => expert.slug === 'long-header')?.company).toBe(true)
     expect(expert?.division).toBe('operations')
     const persona = ctx.get(Agency.AGENCY_PERSONA_SERVICE)
@@ -144,11 +146,12 @@ it.each([{ published: false, refresh: false, collision: false }, { published: tr
   }
   if (collision) {
     const conflicts = catalog.experts.filter(expert => expert.conflict)
-    expect(conflicts.filter(expert => expert.slug === 'chief-executive-officer')).toHaveLength(2)
+    expect(catalog.experts.filter(expert => expert.slug === 'chief-executive-officer')).toHaveLength(1)
+    expect(catalog.experts.find(expert => expert.slug === 'chief-executive-officer')).toMatchObject({ name: '冲突公司专家', conflict: false })
     expect(conflicts.map(expert => expert.slug)).toEqual(expect.arrayContaining(['duplicate-one', 'duplicate-two']))
     const persona = ctx.get(Agency.AGENCY_PERSONA_SERVICE)!
     for (const expert of conflicts) await expect(persona.getPrompt(expert.slug, expert.division, 'zh')).rejects.toThrow()
-    const healthy = catalog.experts.find(expert => !expert.company && !expert.conflict)!
+    const healthy = catalog.experts.find(expert => expert.slug === 'orders')!
     expect((await persona.getPrompt(healthy.slug, healthy.division, 'zh')).prompt.length).toBeGreaterThan(0)
   }
   expect((await ctx.skills.list()).some(skill => skill.name === 'orders')).toBe(published)
