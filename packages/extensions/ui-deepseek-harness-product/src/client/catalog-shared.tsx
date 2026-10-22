@@ -28,7 +28,6 @@ export type ProductItem = {
   readonly category?: string
   readonly version?: string
   readonly sha256?: string
-  readonly status?: string
   readonly scope?: string
   readonly companyId?: string
   readonly ownerEmployeeId?: string
@@ -39,7 +38,6 @@ export type ProductItem = {
   readonly transport?: string
   readonly authMode?: string
   readonly managed?: boolean
-  readonly ready?: boolean
   readonly authorizationStatus?: string
   readonly tools: readonly ConnectorTool[]
   readonly createdAt?: string
@@ -67,7 +65,6 @@ export type ProductDetail = {
   readonly summary?: string
   readonly category?: string
   readonly sha256?: string
-  readonly status?: string
   readonly scope?: string
   readonly companyId?: string
   readonly ownerEmployeeId?: string
@@ -76,7 +73,6 @@ export type ProductDetail = {
   readonly transport?: string
   readonly authMode?: string
   readonly managed?: boolean
-  readonly ready?: boolean
   readonly authorizationStatus?: string
   readonly tools: readonly ConnectorTool[]
   readonly createdAt?: string
@@ -158,14 +154,13 @@ export function items(value: unknown): readonly ProductItem[] {
       .find((candidate): candidate is string => typeof candidate === 'string' && candidate.trim() !== '')
     const authorizationStatus = text(record, 'authorizationStatus')
     const metadata = Object.fromEntries(
-      ['author', 'category', 'version', 'sha256', 'status', 'scope', 'companyId', 'ownerEmployeeId', 'ownerDepartmentId', 'ownerName', 'referenceKey', 'reference', 'transport', 'authMode', 'createdAt', 'updatedAt', 'visibility', 'reviewStatus'].flatMap((key) => {
+      ['author', 'category', 'version', 'sha256', 'scope', 'companyId', 'ownerEmployeeId', 'ownerDepartmentId', 'ownerName', 'referenceKey', 'reference', 'transport', 'authMode', 'createdAt', 'updatedAt', 'visibility', 'reviewStatus'].flatMap((key) => {
         const value = text(record, key)
         return value === undefined ? [] : [[key, value]]
       }),
     )
     return [{ id, label, ...(description === undefined ? {} : { description }), ...metadata,
       ...(typeof record.managed === 'boolean' ? { managed: record.managed } : {}),
-      ...(typeof record.ready === 'boolean' ? { ready: record.ready } : {}),
       ...(authorizationStatus === undefined ? {} : { authorizationStatus }),
       ...(typeof record.canEdit === 'boolean' ? { canEdit: record.canEdit } : {}),
       ...(typeof record.canSubmit === 'boolean' ? { canSubmit: record.canSubmit } : {}),
@@ -204,7 +199,7 @@ export function formatDate(value: string): string {
 }
 
 export function normalizedSearch(item: ProductItem): string {
-  return [item.label, item.description, item.author, item.category, item.version, item.status, item.scope, item.ownerName,
+  return [item.label, item.description, item.author, item.category, item.version, item.scope, item.ownerName,
     item.transport, item.authMode, ...item.tools.flatMap(tool => [tool.name, tool.displayName, tool.description])]
     .filter((value): value is string => value !== undefined).join('\n').toLocaleLowerCase()
 }
@@ -223,46 +218,17 @@ export function localDetail(item: ProductItem): ProductDetail {
     ...(item.author === undefined ? {} : { author: item.author }),
     ...(item.category === undefined ? {} : { category: item.category }),
     ...(item.version === undefined ? {} : { version: item.version }),
-    ...(item.status === undefined ? {} : { status: item.status }),
     ...(item.scope === undefined ? {} : { scope: item.scope }),
     ...Object.fromEntries(['companyId', 'ownerEmployeeId', 'ownerDepartmentId', 'ownerName'].flatMap(key => item[key as keyof ProductItem] === undefined ? [] : [[key, item[key as keyof ProductItem]]])),
     ...(item.canConfigure === undefined ? {} : { canConfigure: item.canConfigure }),
     ...(item.transport === undefined ? {} : { transport: item.transport }),
     ...(item.authMode === undefined ? {} : { authMode: item.authMode }),
     ...(item.managed === undefined ? {} : { managed: item.managed }),
-    ...(item.ready === undefined ? {} : { ready: item.ready }),
     ...(item.authorizationStatus === undefined ? {} : { authorizationStatus: item.authorizationStatus }),
     tools: item.tools,
     ...(item.createdAt === undefined ? {} : { createdAt: item.createdAt }),
     ...(item.updatedAt === undefined ? {} : { updatedAt: item.updatedAt }),
   }
-}
-
-/** Whether the connector has the account and device configuration needed to attempt a connection.
- * @param connector - Connector metadata; this does not probe the remote MCP service.
- * @returns Whether the connector is configured and available for connection attempts.
- */
-export function isConnectorConfigured(connector: Pick<ProductItem, 'authMode' | 'authorizationStatus' | 'ready' | 'status'>): boolean {
-  return connector.status === 'ready' && connector.ready !== false
-    && (connector.authMode !== 'oauth' || connector.authorizationStatus === 'AUTHORIZED')
-}
-
-/** Display one actionable state without claiming the remote service has connected. */
-export function ConnectorStatus({ connector, t }: {
-  readonly connector: Pick<ProductItem, 'authMode' | 'authorizationStatus' | 'ready' | 'status'>
-  readonly t: (key: DeepSeekHarnessProductKey) => string
-}): ReactNode {
-  const key: DeepSeekHarnessProductKey = connector.status === 'disabled' ? 'statusDisabled'
-    : connector.status === 'unavailable' ? 'statusUnavailable'
-      : connector.authMode === 'oauth' && connector.authorizationStatus !== 'AUTHORIZED'
-        ? connector.authorizationStatus === 'EXPIRED' ? 'connectorAccountExpired' : 'connectorAccountRequired'
-        : connector.status === 'needs-configuration' ? 'statusNeedsConfiguration'
-          : isConnectorConfigured(connector) ? 'connectorConfigured' : 'statusUnavailable'
-  return <span className={css.availabilityStatus} data-status={key === 'connectorConfigured' ? 'AVAILABLE'
-    : key === 'connectorAccountRequired' || key === 'statusNeedsConfiguration' ? 'AUTHORIZATION_REQUIRED'
-      : key === 'connectorAccountExpired' ? 'EXPIRED' : key === 'statusDisabled' ? 'DISABLED' : 'UNAVAILABLE'}>
-    {t(key)}
-  </span>
 }
 
 export function markdownLabels(t: (key: DeepSeekHarnessProductKey) => string) {

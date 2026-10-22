@@ -411,7 +411,7 @@ describe('DeepSeekHarness capability navigation', () => {
     expect(screen.queryByRole('button', { name: /ERP MCP/ })).toBeNull()
   })
 
-  it('keeps All, Configured and Mine mutually exclusive during keyboard navigation', async () => {
+  it('keeps All and Mine mutually exclusive during keyboard navigation', async () => {
     installProductApi({ invoke: async () => [
       { id: 'shared', name: 'Shared MCP', status: 'ready', ready: true, authMode: 'none' },
       { id: 'personal', name: 'Personal MCP', status: 'needs-configuration', canEdit: true },
@@ -424,13 +424,14 @@ describe('DeepSeekHarness capability navigation', () => {
     expect(screen.getByRole('button', { name: /Personal MCP/ })).toBeTruthy()
     fireEvent.keyDown(screen.getByRole('tab', { selected: true }), { key: 'ArrowLeft' })
     expect(screen.getByRole('button', { name: /Shared MCP/ })).toBeTruthy()
-    expect(screen.queryByRole('button', { name: /Personal MCP/ })).toBeNull()
+    expect(screen.getByRole('button', { name: /Personal MCP/ })).toBeTruthy()
+    expect(screen.getAllByRole('tab')).toHaveLength(2)
     fireEvent.keyDown(screen.getByRole('tab', { selected: true }), { key: 'Home' })
     expect(screen.getByRole('tab', { selected: true }).textContent).toBe(zh.connectorFilterAll)
     expect(screen.getByRole('button', { name: /Personal MCP/ })).toBeTruthy()
   })
 
-  it('presents configured state and business tools without technical connection facts', async () => {
+  it('presents business tools without directory status or technical connection facts', async () => {
     const invoke = vi.fn(async (): Promise<unknown> => [
       { id: 'erp', name: 'erp-mcp', displayName: 'ERP 连接器', summary: '订单数据', category: 'industry-data',
         status: 'ready', scope: 'COMPANY', transport: 'stdio', version: '0.4.0',
@@ -452,7 +453,7 @@ describe('DeepSeekHarness capability navigation', () => {
     expect(screen.getByText(zh.allCategories)).not.toBeNull()
     const results = document.querySelector('#deepseek-harness-catalog-results')
     expect(results).not.toBeNull()
-    expect(results?.textContent?.match(new RegExp(zh.connectorConfigured, 'gu'))).toHaveLength(2)
+    expect(results?.textContent).not.toMatch(/已配置|就绪|待配置|停用|不可用/)
     expect(screen.getByText(zh.readCapabilityShort.replace('{count}', '1'))).not.toBeNull()
     expect(screen.getByText(zh.writeCapabilityShort.replace('{count}', '1'))).not.toBeNull()
     expect(screen.queryByText(zh.scopeCompany)).toBeNull()
@@ -549,7 +550,6 @@ describe('DeepSeekHarness capability navigation', () => {
     render(<ConnectorsPanel t={t} {...actions()} />)
     fireEvent.click(await screen.findByRole('button', { name: /ERP 连接器/ }))
 
-    expect(within(screen.getByRole('dialog')).getByText(zh.connectorAccountExpired)).not.toBeNull()
     expect(screen.getByRole('button', { name: zh.reauthorize })).not.toBeNull()
   })
 

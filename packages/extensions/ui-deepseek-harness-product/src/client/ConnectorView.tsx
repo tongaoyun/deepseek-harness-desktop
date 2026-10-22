@@ -6,7 +6,7 @@ import { type DeepSeekHarnessProductKey } from '../locales.ts'
 import css from '../DeepSeekHarnessProduct.module.css'
 import { productApi, type ProductApi } from './product-api.ts'
 import { productErrorMessage } from './product-errors.ts'
-import { type ProductDetail, AUTHORIZATION_TIMEOUT_MS, AUTHORIZATION_POLL_INTERVAL_MS, nextProductRequestId, abortableDelay, ConnectorStatus, DetailIdentity } from './catalog-shared.tsx'
+import { type ProductDetail, AUTHORIZATION_TIMEOUT_MS, AUTHORIZATION_POLL_INTERVAL_MS, nextProductRequestId, abortableDelay, DetailIdentity } from './catalog-shared.tsx'
 
 export function ConnectorDetailModal({ detail: product, onCatalogChanged, managementActions, onClose, t }: {
   readonly managementActions?: ReactNode
@@ -42,7 +42,7 @@ export function ConnectorDetail({ product, onCatalogChanged, t }: {
   const lifecycle = useRef<AbortController>(new AbortController())
   const authorizationAbort = useRef<AbortController>()
   const activeRequests = useRef(new Map<string, ProductApi>())
-  const managedAuthorization = product.authMode === 'oauth' && product.status !== 'disabled' && product.status !== 'unavailable'
+  const managedAuthorization = product.authMode === 'oauth'
   const readTools = product.tools.filter(tool => tool.access === 'READ')
   const writeTools = product.tools.filter(tool => tool.access === 'WRITE')
   useEffect(() => {
@@ -124,15 +124,12 @@ export function ConnectorDetail({ product, onCatalogChanged, t }: {
     }
   }
   return <>
-    <section className={css.connectorSection}>
+    {(managedAuthorization || product.canConfigure === true) && <section className={css.connectorSection}>
       <h2>{t('connectorConfiguration')}</h2>
       {refreshState === 'pending' && <p role="status">{t('loading')}</p>}
       {refreshState === 'failed' && <div className={css.detailActions}>
         <span className={css.catalogError} role="alert">{t('connectorRefreshFailed')}</span>
         <Button variant="outline" size="sm" onClick={() => { void refreshCatalog() }}>{t('refresh')}</Button>
-      </div>}
-      {refreshState === 'idle' && <div className={css.connectorConnection}>
-        <ConnectorStatus connector={product} t={t} />
       </div>}
       {managedAuthorization && refreshState === 'idle' && <div className={css.detailActions}>
         {product.authorizationStatus === 'AUTHORIZED'
@@ -148,7 +145,7 @@ export function ConnectorDetail({ product, onCatalogChanged, t }: {
       {product.canConfigure === true && refreshState === 'idle' && <div className={css.detailActions}>
         <Button variant="outline" size="sm" onClick={() => { setConfiguring(true) }}><IconLinkOutlineRegular size={14} />{t('configureDevice')}</Button>
       </div>}
-    </section>
+    </section>}
     {configuring && <ConnectorDeviceConfiguration product={product} onClose={() => { setConfiguring(false) }}
       onSaved={async () => {
         const signal = lifecycle.current.signal
