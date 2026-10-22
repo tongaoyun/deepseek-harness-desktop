@@ -56,9 +56,9 @@ jobs:
           node --test apps/product-desktop/tests/acceptance-process.test.mjs apps/product-desktop/tests/office-process-diagnostics.test.mjs
           pnpm exec vitest run apps/product-desktop/tests/close-electron.spec.ts apps/product-desktop/tests/office-fixture.spec.ts
           pnpm run build:artifacts
-          pnpm exec tsc --noEmit -p vendor/dsh-agency-agents/tsconfig.json
-          pnpm exec tsc --noEmit -p vendor/dsh-skills-manager/tsconfig.json
-          pnpm exec vitest run --config vendor/dsh-agency-agents/vitest.config.ts
+          pnpm exec tsc --noEmit -p packages/deepseek-harness-product/experts/tsconfig.json
+          pnpm exec tsc --noEmit -p packages/deepseek-harness-product/skills/tsconfig.json
+          pnpm exec vitest run --config packages/deepseek-harness-product/experts/vitest.config.ts
           node --test apps/product-desktop/tests/company-content.test.mjs
           pnpm run typecheck
           pnpm run rescope-vendor:check
@@ -76,8 +76,6 @@ jobs:
             scripts/rescope-vendor.spec.ts \
             scripts/verify-public-repository-links.spec.ts \
             scripts/verify-concrete-terms.spec.ts \
-            packages/boot/app-boot/tests/plugin-replacement.spec.ts \
-            packages/boot/plugin-market/tests/replacement-configuration.spec.ts \
             apps/cli/tests/default-plugin-dump.spec.ts \
             packages/client/hmr/tests/node-half.client.spec.ts \
             packages/client/hmr/tests/transport.client.spec.ts \

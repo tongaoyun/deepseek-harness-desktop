@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { join, resolve, sep } from 'node:path'
 import ts from 'typescript'
 
-export const productRoots = ['vendor/dsh-agency-agents/', 'vendor/dsh-skills-manager/', 'packages/deepseek-harness-product/', 'packages/extensions/ui-deepseek-harness-product/',
+export const productRoots = ['vendor/product-expert-fixtures/', 'packages/deepseek-harness-product/', 'packages/extensions/ui-deepseek-harness-product/',
   'apps/product-desktop/', 'native/deepseek-harness/', 'scripts/upstream-patches/']
 const owned = new Set(['UPSTREAM_COMMIT', 'UPSTREAM_TAG', 'UPSTREAM_REPOSITORY',
   '.github/workflows/product-desktop-package.yml',

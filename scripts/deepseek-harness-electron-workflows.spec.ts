@@ -39,12 +39,12 @@ describe('DeepSeekHarness Electron workflows', () => {
     const command = workflow('electron-ci.yml').jobs.desktop?.steps
       .find(step => step.name === 'Verify upstream and product contracts')?.run ?? ''
     expect(command).toContain('pnpm run build:artifacts\n')
-    for (const plugin of ['dsh-agency-agents', 'dsh-skills-manager']) {
-      const check = `pnpm exec tsc --noEmit -p vendor/${plugin}/tsconfig.json`
+    for (const module of ['experts', 'skills']) {
+      const check = `pnpm exec tsc --noEmit -p packages/deepseek-harness-product/${module}/tsconfig.json`
       expect(command).toContain(check)
       expect(command.indexOf('pnpm run build:artifacts\n')).toBeLessThan(command.indexOf(check))
     }
-    expect(command).toContain('pnpm exec vitest run --config vendor/dsh-agency-agents/vitest.config.ts')
+    expect(command).toContain('pnpm exec vitest run --config packages/deepseek-harness-product/experts/vitest.config.ts')
     expect(command).toContain('node --test apps/product-desktop/tests/company-content.test.mjs')
     expect(command).toContain('pnpm run typecheck\n')
     expect(command).not.toContain('pnpm run build:lib:host')

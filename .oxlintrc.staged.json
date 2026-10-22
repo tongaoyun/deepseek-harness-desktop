@@ -13,6 +13,11 @@
     "**/.node-next-types-*/**",
     "website/.generated/**",
     "vendor/**",
+    // Imported community implementations retain their original lint scope; integration code is checked separately.
+    "packages/deepseek-harness-product/experts/src/**",
+    "packages/deepseek-harness-product/skills/src/**",
+    "!packages/deepseek-harness-product/experts/src/settings.ts",
+    "!packages/deepseek-harness-product/skills/src/submission.ts",
     "native/**",
     "**/*.js",
     "**/*.mjs",

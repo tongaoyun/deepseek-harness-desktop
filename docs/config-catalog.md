@@ -4583,6 +4583,38 @@ export interface Config {
 ```
 <!-- END GENERATED config-catalog:@deepseek-ai/dsh-workspace-changes -->
 
+<!-- BEGIN GENERATED config-catalog:@deepseek-harness/product-experts -->
+<a id="deepseek-harnessproduct-experts"></a>
+
+## `@deepseek-harness/product-experts`
+
+- `inject`: `tools` · `subagents` · `systemPrompt` · `settings` · `webServer`
+- `refs`: `Volatile` (`@deepseek-ai/cordis`)
+- `source`: [`packages/deepseek-harness-product/experts/src/index.ts:207`](../packages/deepseek-harness-product/experts/src/index.ts)
+
+```ts config-catalog
+/** Plugin config: the persona root, the subagent provider, and the divisions to scan. */
+export interface Config {
+  /** Directory holding the `division/*.md` persona files. */
+  root: string
+  /** `ctx.subagents` provider name (default `spawn`). */
+  provider: string
+  /** Division directory names to scan under `root`. */
+  divisions: string[]
+  /** 可选的正整数绝对子代理深度上限；未设置时沿用 provider 的默认行为。 */
+  maxDepth?: number
+  /** 官方实时配置引用，保存个人专家选择。 */
+  enabled?: Volatile<string[]>
+  /** 个人专家正文及元数据。 */
+  customExperts?: Volatile<unknown[]>
+  /** 个人专家团编排。 */
+  customTeams?: Volatile<unknown[]>
+  /** 已启用的个人专家团标识。 */
+  enabledTeams?: Volatile<string[]>
+}
+```
+<!-- END GENERATED config-catalog:@deepseek-harness/product-experts -->
+
 ## Loadable plugins with no config
 
 These load from a `cordis.yml` entry with no `config:` block; they declare no configuration API.
@@ -4802,4 +4834,5 @@ Imported as libraries by other packages; a `cordis.yml` cannot load them.
 | `@deepseek-ai/dsh-win32-process` | — | [`packages/subprocess/win32-process/src/index.ts`](../packages/subprocess/win32-process/src/index.ts) |
 | `@deepseek-harness/product` | — | [`packages/deepseek-harness-product/product/src/index.ts`](../packages/deepseek-harness-product/product/src/index.ts) |
 | `@deepseek-harness/product-desktop` | — | [`packages/deepseek-harness-product/desktop/src/index.ts`](../packages/deepseek-harness-product/desktop/src/index.ts) |
+| `@deepseek-harness/product-skills` | — | [`packages/deepseek-harness-product/skills/src/index.ts`](../packages/deepseek-harness-product/skills/src/index.ts) |
 <!-- END GENERATED config-catalog:library -->

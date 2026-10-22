@@ -35,3 +35,7 @@ kind: "package-group"
 ## 开发备注
 
 产品包只能依赖 Harness 公开 API，不替换或修改 Harness 运行时。
+
+## 内建扩展能力
+
+[专家套件](experts/README.md)与[技能](skills/README.md)由产品桌面固定装配，界面合入产品 UI，左侧直接访问，不再另行安装、配置或更新功能插件。连接器和知识库沿用现有产品模块。官方 profile 不加载这些产品能力，官方执行循环保持不变。

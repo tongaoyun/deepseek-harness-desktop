@@ -14,7 +14,7 @@ import { DesktopSupport } from './desktop-support.ts'
 import { ConnectorProxy } from './connector-proxy.ts'
 import { CompanyContentSync } from './company-content-sync.ts'
 import { z } from 'zod'
-import { nativeExtensionPatches } from './native-extensions.ts'
+import { builtinCapabilityPatches } from './builtin-capabilities.ts'
 import { inferenceProfile } from './inference-profile.ts'
 import { ConnectorDraftSchema } from '@deepseek-harness/product/connector-draft'
 import { PersonalConnectors } from './personal-connectors.ts'
@@ -305,7 +305,7 @@ export function createExtension(context: ExtensionContext): ProductDesktopExtens
   return {
     namespace: 'product',
     get ownsStartupDocument() { return deepseekHarnessAuthenticationVisible },
-    async prepareHost(profile: { readonly directory: string; readonly installAnchor: string }): Promise<NodeJS.ProcessEnv | undefined> {
+    async prepareHost(): Promise<NodeJS.ProcessEnv | undefined> {
       await knowledgeFiles.prepare()
       await connectorProxy.start()
       await nativeSidecar.start()
@@ -334,8 +334,8 @@ export function createExtension(context: ExtensionContext): ProductDesktopExtens
       const modelProfile = join(app.getPath('userData'), 'product-inference.patch.json')
       writeFileSync(modelProfile, JSON.stringify(inferenceProfile(bootstrap,
         fileURLToPath(import.meta.resolve('@deepseek-harness/product-runtime/inference-default')))), { mode: 0o600 })
-      const nativeExtensions = join(app.getPath('userData'), 'product-native-extensions.patch.json')
-      writeFileSync(nativeExtensions, JSON.stringify(nativeExtensionPatches(profile)), { mode: 0o600 })
+      const builtinCapabilities = join(app.getPath('userData'), 'product-builtin-capabilities.patch.json')
+      writeFileSync(builtinCapabilities, JSON.stringify(builtinCapabilityPatches()), { mode: 0o600 })
       return {
         DSH_COMPANY_SKILLS_ROOT: roots.skillsRoot,
         DSH_COMPANY_EXPERTS_ROOT: roots.expertsRoot,
@@ -345,7 +345,7 @@ export function createExtension(context: ExtensionContext): ProductDesktopExtens
         DSH_DESKTOP_PROFILE_PATCHES: JSON.stringify([
           fileURLToPath(import.meta.resolve('@deepseek-harness/product-runtime/cordis.patch.yml')),
           fileURLToPath(import.meta.resolve('@deepseek-harness/product-ui/cordis.patch.yml')),
-          nativeExtensions,
+          builtinCapabilities,
           modelProfile,
         ]),
       }

@@ -99,8 +99,6 @@ export class ConfigEditor extends Service {
         const profile = this.ownerContext.profileContext
         const loaded = loadProfileDirectory('dsh', profile.dir, profile.installAnchor)
         const inherited = this.inherited(entry, loaded)
-        const sourceName = flatten(composeEntries([readBundlePatches('dsh', profile, loaded), loaded.patches]))
-          .find(row => row.id === entry.options.id)?.name ?? entry.options.name
         const next = change(current, inherited)
         const fiber = entry.fiber
         if (fiber.state !== FiberState.ACTIVE) throw new Error('Configuration plugin is no longer active')
@@ -120,7 +118,7 @@ export class ConfigEditor extends Service {
         document.contents.flow = false
         const index = document.contents.items.findLastIndex((item, index) => isMap(item)
           && document.getIn([index, 'id']) === entry.options.id && !item.has('insert')
-          && (!item.has('name') || document.getIn([index, 'name']) === sourceName))
+          && (!item.has('name') || document.getIn([index, 'name']) === entry.options.name))
         if (isDeepStrictEqual(next, inherited)) {
           for (let index = document.contents.items.length - 1; index >= 0; index--) {
             const row = document.contents.items[index]
@@ -128,7 +126,7 @@ export class ConfigEditor extends Service {
             row.delete('config')
             if (row.items.length === Number(row.has('id')) + Number(row.has('name'))) document.delete(index)
           }
-        } else if (index < 0) document.add(document.createNode({ id: entry.options.id, name: sourceName, config: next }))
+        } else if (index < 0) document.add(document.createNode({ id: entry.options.id, name: entry.options.name, config: next }))
         else document.setIn([index, 'config'], document.createNode(next))
         visit(document, { Map(_key, node) {
           if (node.items.length !== 1 || typeof node.get('__jsExpr') !== 'string') return

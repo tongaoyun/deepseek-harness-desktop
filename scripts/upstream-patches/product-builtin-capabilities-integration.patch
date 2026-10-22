@@ -1,0 +1,107 @@
+diff --git a/.oxlintrc.json b/.oxlintrc.json
+index f52fdb1e8463ee694b52103e51040a16b5ffc292..e1df728d889c8f61c7d409cb7273401ceb547e9e 100644
+--- a/.oxlintrc.json
++++ b/.oxlintrc.json
+@@ -23,6 +23,11 @@
+     "packages/typert/generator/tests/fixtures/type-model/**", // tsgolint rejects this fixture's preserved project shapes before rules run.
+     "website/.generated/**",
+     "vendor/**", // Vendored source keeps upstream style and idioms.
++    // Imported community implementations retain their original lint scope; integration code is checked separately.
++    "packages/deepseek-harness-product/experts/src/**",
++    "packages/deepseek-harness-product/skills/src/**",
++    "!packages/deepseek-harness-product/experts/src/settings.ts",
++    "!packages/deepseek-harness-product/skills/src/submission.ts",
+     "packages/experimental/claude-code-mods/examples/*/{hooks,tests,types}/**", // Claude Code's published example mods and their tests keep the upstream style; see the headers.
+     "native/**", // The imported landlock-run subtree has its own gates; see native/README.md.
+     "**/*.js",
+diff --git a/.oxlintrc.staged.json b/.oxlintrc.staged.json
+index ca693f67ae21bf051eea28f42c1646fa72752ffb..f2feaeee6724cc2898f192b627c0bf52524b14fd 100644
+--- a/.oxlintrc.staged.json
++++ b/.oxlintrc.staged.json
+@@ -13,6 +13,11 @@
+     "**/.node-next-types-*/**",
+     "website/.generated/**",
+     "vendor/**",
++    // Imported community implementations retain their original lint scope; integration code is checked separately.
++    "packages/deepseek-harness-product/experts/src/**",
++    "packages/deepseek-harness-product/skills/src/**",
++    "!packages/deepseek-harness-product/experts/src/settings.ts",
++    "!packages/deepseek-harness-product/skills/src/submission.ts",
+     "native/**",
+     "**/*.js",
+     "**/*.mjs",
+diff --git a/scripts/no-unknown-casts.baseline.json b/scripts/no-unknown-casts.baseline.json
+index 41520f4e27c7ee4807d36872f4a673fc5374ccbf..d43e9fb865db39596a0673f12149d81246a1ac2e 100644
+--- a/scripts/no-unknown-casts.baseline.json
++++ b/scripts/no-unknown-casts.baseline.json
+@@ -1004,6 +1004,70 @@
+   "packages/credentials/credentials-local/tests/watcher.spec.ts": {
+     "6dfe702b6cb8848eeb1d56c5af6ff723d84841aaa1d96790295db4ed70616c65": 1
+   },
++  "packages/deepseek-harness-product/experts/src/client/index.ts": {
++    "e53f3f91912e38ac194b7debba8833c85aa5ccd198e00c70a72e472d2a200d55": 3
++  },
++  "packages/deepseek-harness-product/experts/src/client/plugin-ui.test.ts": {
++    "7fe58280287ff63d40e979e72329f975e11015a95e9a8eec207a5a78748d3c89": 1
++  },
++  "packages/deepseek-harness-product/experts/src/client/plugin-ui.ts": {
++    "53f1197af19938d444b06ebf666a8751240d0b5e5ea13edf6100316d1bc5ede2": 1
++  },
++  "packages/deepseek-harness-product/experts/src/custom-experts.test.ts": {
++    "0fd6d92dcc0751f9420e487c653825904c6f6764e7a2b78c8858f2062a2135b2": 1,
++    "95f8cb27369bc8e0c7fdb2ab159fd183edae314b249ee6d4be765be2d0fecd4d": 1,
++    "0585ec2918d8249625edda41c017bc88bb5bd8538091ae218658e43a337e2caa": 1,
++    "5e9a0c9cbc5ec8cd167153b0b222ffad3e8ff65968e4e6a1210a6c5be8e7a1e1": 1,
++    "62c32a460fd4fbcd82004245cdbf9c956e344358451565dcfac99c689f747e57": 1,
++    "5254a646b2ee3bd81afd1d40d0d629fb387d81bfb21bc0f7f8799e6692a5d4c9": 1,
++    "2c09887e37d49f9d1f85d55200134740cbc9ee9ef23674ba48a612b0ace9b682": 1,
++    "4ec86027febf1f06ad42c7759a1145c0e4163c72ba77a5e6047d70c43c6e48a7": 1,
++    "6e6346ff4cc26f28fcea5c71093216c3198e3394a5d3061a2b9826f5d3172b10": 1,
++    "bead6a2ecc175e323a32298c0de57db2a02faed9d4aa5ab36f9a5f3648af80eb": 1
++  },
++  "packages/deepseek-harness-product/experts/src/index.test.ts": {
++    "da42f6c204aecbd12346284fc9afca45fc59abd5fd0c52859f0826c06ac45786": 1,
++    "04378fab636fce05ea5c3ab2aa7f99d500eaa6589688c3fdcf6d7d46d8cdf9f6": 1,
++    "af56762ba38c5992394daade688a67e536c674cbe1f7e4549208a6f26cfa002e": 1,
++    "d15bae220b53cb1b54174f2b24f1003260576e438c58e3210fc1e2a3ecf524a7": 1,
++    "5097395b740b395d729311ed3a93e43e3b5d512d952c84bb322c669acd48cf28": 1,
++    "52611758c3af1d9aea3e10e0c103b752569547bc2005843dad2f7f05f7a9b517": 1,
++    "c9da2bbd63d402c70f1ef8ac2bc892a22ad9fda0222c548916ee3399b2642ba4": 1,
++    "02d60e32b60b2b4844d4c626f147340a456ba7c149eedf5595ff1840bc9408e6": 1,
++    "328dc85dbee5a76e873c5af08f3e5a619faaba3a05f395ad7c2047fffeb854f0": 1,
++    "9ff85b5070cd26dc0e822ff6c925a928517281c2d9b074141071cc7bc036c469": 1,
++    "6f3e9f7bcd39bda8c4a4a696db8f6c2d4b7dc3017a5fb62514dd9dfdadf86ec2": 1,
++    "8d9a28592219a5a70b213a7b7cfc9875d09f9d3fcb55a8f95ebe1e21b8dc0ea5": 1,
++    "6c84f18c38af5c123e1c27d5daffff088e4246123716258c6d094980ad3298ae": 1,
++    "f2750a973826f661d1b3b58640858fdc5f990123a5b765ed910cd1fe91a6bdae": 1,
++    "bb1c933f857205ccd878d5e6a3806356eb133b41e9d4dd18b21d347b23285d45": 1,
++    "f19a96d380180ca240aebce304b21d89add1fb34743d64d013cd70b820ad7504": 1,
++    "9e9d4d68f89af2294b9ddd85cb289c6a3d3f6b20bbb4c6efa8363db23781379b": 1,
++    "e0198dd59dc2540d2001eebd3fc5f56593831cfaf240357be8eac6a63f494f11": 1,
++    "31659836e0b2b09dc0577b7974f7a1e809cc886cd3af62a089f0358d6933043b": 1,
++    "4ab4e8d448c31d611730fa18c0aa824ae5a4a71fb641a34fd4d3675881abaabe": 1,
++    "781cb3ad2542065f2650d53d9a49c917108d454e5a3c0cc885a78511182a9818": 1,
++    "9244f58f8435935db20ad71e058eb420cbde527a3fd18adcd62aeaa73c18d256": 1,
++    "723607d2df11414e0d320746a6afd6eb22a696a4329ca0c2dd1839bef020debd": 1
++  },
++  "packages/deepseek-harness-product/experts/src/index.ts": {
++    "ae5776af8c1e9965a4eca94bcbc07b65da8d2e9e24e4570d2141b34d60b4f90f": 1,
++    "9534aec2c81f94abc4aede2b15724a3d6266d63ef902de3e19842af728a3cc61": 1
++  },
++  "packages/deepseek-harness-product/experts/src/team-integration.test.ts": {
++    "2aa4e835c5b85d1a413f2059ddc571c065c3c3ebebe14123880766c31d39764a": 1
++  },
++  "packages/deepseek-harness-product/experts/src/team-tool-host.test.ts": {
++    "818be3a27a86b06d16197ea8b91ade162058a709a2d7cd3162a789cdec35b777": 1,
++    "04767bbf2d53f16eb55e2e4c33e38514a3f043888b85e9c39c9b2ea0f85f53f3": 1,
++    "5b288722afbfcaaf959c31346a1f3ab70df0300720e0fc890fbf2479a084d1a8": 1
++  },
++  "packages/deepseek-harness-product/experts/src/teams.test.ts": {
++    "ac3a6c2bec4be0657823b6adf699a6e56e05fbc68a3250d3d98f05df1c81e101": 1
++  },
++  "packages/deepseek-harness-product/skills/src/index.ts": {
++    "38a7cf3dfd5da2f739390f5b233b97731f3bfa1ac3a51fdb8e1594735764bb80": 1
++  },
+   "packages/deliverables/tool-present/tests/present.spec.ts": {
+     "64ab5463fdb068e88a33f022baff473b7a0da77854c4ecf8e26412763d6dccf6": 1
+   },

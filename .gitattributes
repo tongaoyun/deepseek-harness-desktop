@@ -20,4 +20,4 @@ docs/persistence-changes/historical-formats/*.schema.json linguist-generated=tru
 
 # Imported community documents retain upstream Markdown hard breaks and ASCII separators.
 # This applies only to the fixed data payload; plugin source keeps normal whitespace checks.
-vendor/dsh-agency-agents/assets/** -whitespace conflict-marker-size=128
+vendor/product-expert-fixtures/** -whitespace conflict-marker-size=128

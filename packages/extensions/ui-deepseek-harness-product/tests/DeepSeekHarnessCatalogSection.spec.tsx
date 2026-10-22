@@ -14,8 +14,6 @@ import {
 import {
   CAPABILITY_PANELS, EXTENSION_PANELS, CapabilitiesHeading, CapabilityChildIcon,
 } from '../src/client/DeepSeekHarnessCapabilitiesNavigation.tsx'
-import { ExtensionPage } from '../src/client/ExtensionPage.tsx'
-import type { PropsRenderFactories } from '@deepseek-ai/dsh-client-ui-slots'
 import { apply } from '../src/client/index.ts'
 import { DeepSeekHarnessSettingsMenu } from '../src/client/DeepSeekHarnessSettingsMenu.tsx'
 import { zh, type DeepSeekHarnessProductKey } from '../src/locales.ts'
@@ -179,6 +177,7 @@ describe('DeepSeekHarness capability navigation', () => {
     const selectPanel = vi.fn()
     const registerCommand = vi.fn((_command: CommandContribution) => () => {})
     const ctx = {
+      plugin: vi.fn(),
       effect: (effect: () => unknown) => effect(),
       commandUi: { register: registerCommand },
       sessions: { subagentAddress: vi.fn(() => undefined) },
@@ -200,7 +199,7 @@ describe('DeepSeekHarness capability navigation', () => {
     expect(registrations.filter(entry => entry.options.name === 'sidebar.panellist')
       .map(entry => entry.options.id)).toEqual([...EXTENSION_PANELS, ...CAPABILITY_PANELS].map(panel => panel.id))
     expect(registrations.filter(entry => entry.options.name === 'main')
-      .map(entry => entry.options.key)).toEqual([...EXTENSION_PANELS, ...CAPABILITY_PANELS].map(panel => panel.id))
+      .map(entry => entry.options.key)).toEqual(CAPABILITY_PANELS.map(panel => panel.id))
     const settingsLaunchers = registrations.filter(entry => entry.options.name === 'settings.launcher')
     expect(settingsLaunchers).toHaveLength(1)
     // Let the browser slot facade allocate the shadowing rank so this product
@@ -231,6 +230,7 @@ describe('DeepSeekHarness capability navigation', () => {
     const sessionB = 'session-b' as SessionId
     const subagent = 'subagent' as SessionId
     const ctx = {
+      plugin: vi.fn(),
       effect: (effect: () => unknown) => {
         const dispose = effect()
         if (typeof dispose === 'function') disposers.push(dispose as () => void)
@@ -284,24 +284,6 @@ describe('DeepSeekHarness capability navigation', () => {
     render(<CapabilitiesHeading wide t={t} />)
     expect(screen.getByText(zh.capabilities)).not.toBeNull()
     expect(screen.queryByRole('button', { name: zh.capabilities })).toBeNull()
-  })
-
-  it('embeds the exact shared page and reports an unavailable plugin without rendering another section', () => {
-    const close = vi.fn()
-    const renderFactorySlot = vi.fn((() => <div>Plugin page</div>) as PropsRenderFactories['renderFactorySlot'])
-    const props = { sectionId: 'agency-agents', close, t, renderFactorySlot, useAvailable: (<T,>(select: (value: boolean) => T): T => select(true)) }
-    const { rerender } = render(<ExtensionPage {...props} />)
-    expect(screen.getByText('Plugin page')).toBeTruthy()
-    expect(renderFactorySlot).toHaveBeenCalledWith('settings.section-view', {
-      sectionId: 'agency-agents', close, presentation: 'embedded',
-    })
-    renderFactorySlot.mockClear()
-    rerender(<ExtensionPage {...props} useAvailable={select => select(false)} />)
-    expect(screen.getByRole('alert').textContent).toBe(zh.extensionUnavailable)
-    expect(renderFactorySlot).not.toHaveBeenCalled()
-    expect(close).not.toHaveBeenCalled()
-    rerender(<CapabilitiesHeading wide={false} t={t} />)
-    expect(screen.queryByText(zh.capabilities)).toBeNull()
   })
 
   it('removes tree branches while retaining useful collapsed-rail icons', () => {

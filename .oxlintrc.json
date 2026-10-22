@@ -23,6 +23,11 @@
     "packages/typert/generator/tests/fixtures/type-model/**", // tsgolint rejects this fixture's preserved project shapes before rules run.
     "website/.generated/**",
     "vendor/**", // Vendored source keeps upstream style and idioms.
+    // Imported community implementations retain their original lint scope; integration code is checked separately.
+    "packages/deepseek-harness-product/experts/src/**",
+    "packages/deepseek-harness-product/skills/src/**",
+    "!packages/deepseek-harness-product/experts/src/settings.ts",
+    "!packages/deepseek-harness-product/skills/src/submission.ts",
     "packages/experimental/claude-code-mods/examples/*/{hooks,tests,types}/**", // Claude Code's published example mods and their tests keep the upstream style; see the headers.
     "native/**", // The imported landlock-run subtree has its own gates; see native/README.md.
     "**/*.js",

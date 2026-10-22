@@ -32,7 +32,7 @@ Intentionally **not** vendored (verified unused by this set): `reggol`, `@cordis
 
 Keep this log exhaustive — every divergence from upstream must be listed.
 
-产品通用补丁：`include/src/index.ts` 的 `PatchOptions.replace` 只替换插件模块名，保留原条目的 ID、配置和停用状态；`name` 仍作为匹配条件。空名称与分组替换报错。Profile launcher 将带 `defaults: true` 的插入项放到用户配置前，其他 overlay 仍在其后；配置编辑器使用替换前的稳定包名保存用户配置。用于产品预装插件固定代码来源，避免已有 profile 的同名 npm 安装覆盖随软件提供的版本，并保证新装、重启和升级后的修改继续生效。覆盖测试：`packages/boot/app-boot/tests/plugin-replacement.spec.ts`、`packages/boot/plugin-market/tests/replacement-configuration.spec.ts`、`packages/deepseek-harness-product/desktop/tests/{native-extensions,company-plugins}.spec.ts`。
+产品通用补丁：Profile launcher 将带 `defaults: true` 的插入项放到用户配置前，其他 overlay 仍在其后。产品内建模块以固定条目 ID 装配，配置编辑器按该身份保存个人配置，重启后恢复用户覆盖。覆盖测试：`apps/cli/tests/default-plugin-dump.spec.ts`、`packages/deepseek-harness-product/desktop/tests/{builtin-capabilities,company-plugins}.spec.ts`。
 
 1. **`hmr/src/index.ts`**: removed the `./locales/en-US.yml` / `./locales/zh-CN.yml` imports, the `.i18n({...})` call on the `Config` schema, and the `src/locales/` directory. Rationale: those imports require a runtime YAML loader hook (`@cordisjs/unyaml`) that we do not vendor; the i18n texts only localize config descriptions.
 2. **All `package.json` files**: regenerated for Harness releases with scoped names, release versions, publication metadata, precise bundled-runtime and `lib/types/**/*.d.ts` / `.d.ts.map` file entries, source exports where applicable, and declaration metadata pointing at `lib/types`. References within the vendored set use `workspace:~`. HMR declares `esbuild` as a direct dev dependency for its imported `BuildFailure` type, and Loader requires `node-addon-require-builtin@^0.1.4` to match published app runtimes.
@@ -74,28 +74,6 @@ To update a vendored package from upstream:
 4. Update the version and commit hash in the manifest table.
 5. Run `pnpm install && pnpm run test && pnpm run build` at the repo root.
 
-## 产品预装社区插件
+## 产品模块来源
 
-以下 Apache-2.0 插件保留原包名，设置 `private: true`，只随产品装配分发，不属于官方 Harness profile 或 Cordis 框架副本。原 LICENSE/NOTICE 保留，社区专家素材只作为测试夹具，不随软件分发；公司私有内容由服务端分发，不进入本仓库。
-
-| 目录 | 上游版本 | 固定提交 |
-| --- | --- | --- |
-| `dsh-agency-agents` | 1.2.9 | `4504e593e52286045c62a424d70423350d461d5b` |
-| `dsh-skills-manager` | 1.2.9 | `20d8affd70875b1f50564088de5ba0439c19bf8c` |
-
-### 公司分支的完整本地修改
-
-各目录 `upstream.json` 记录原文件 SHA-256；`local-changes.json` 逐文件记录增加、修改和删除，包含修改后的哈希，供审查和升级核对。技能与专家仍通过官方 Skill Provider、工具及子代理运行。
-
-- 两个 `package.json` 改为私有工作区依赖及 `1.2.9-company.1`；构建配置输出 Host/Client 两面并保留稳定客户端模块 ID，Host 构建先清理旧输出，避免分发已删除的专家数据。专家插件补充源码所需图标依赖。
-- 专家 `src/index.ts` 不再默认加载随包目录，删除社区名称映射，显式外部目录和共享内容保留原文；实际目录内的重名仅隔离冲突项，说明读取再次检查冲突。元数据读取上限与发布的 128 KiB 对齐。`src/client/index.ts` 来源收敛为“我的／团队共享”，删除静态名册、社区任务示例、外部链接和独立更新入口，头像按分类和标识稳定分配。`locale`、`custom-locales` 和 `expert-contract` 同步文案。
-- 专家团删除预置数据、`builtin` 字段、只读分支和整团翻译映射，仅保留本人创建的编排及原生委派。`assets/agency-agents*`、静态名册和中文名称映射移到 `tests/fixtures/`；`package.json` 只分发运行代码、许可及品牌图，不打包测试素材，测试配置包含夹具。原库解析和执行回归使用显式夹具，真实 Loader 测试覆盖默认空目录、共享名称原样、局部冲突和固定会话。
-- 技能 `src/index.ts` 删除独立更新注册；`src/core.ts` 登记只读公司来源并纳入原生来源排序；`src/client.ts` 统一“团队共享”来源及“提交共享”文案、移除外部链接、重复反馈和独立更新；`locale/zh.json` 同步名称。
-- 两插件的 `plugin-updater`、`plugin-update-*` 源文件及专属测试删除。专家现有测试更新工作区依赖、套件名称和已删除入口，DOM 断言使用宿主当前组件，移除面向旧全局 CLI 布局的宿主模块探测，配置直接使用固定工作区的 Schemastery volatile，YAML 使用声明依赖，可选专家团由当前装配解析。对应旧布局测试删除，真实 Loader/profile 测试覆盖固定装配。
-- 产品协议以类型依赖提供可选公司内容源。专家 `src/index.ts` 按 Session 读取不可变公司目录；远程声明、服务与客户端读取支持后台检查，`src/client/catalog.ts` 合并请求并拒绝旧响应覆盖。技能 `src/types.ts`、`src/core.ts`、`src/host-types.ts` 和 `src/index.ts` 为目录读取及 Agent Provider 传递固定根目录与单次调用取消信号；专家名册及说明读取传递工具取消信号，客户端路由和页面支持先本地后同步、失败保留及重试。原插件测试夹具提供当前官方执行上下文；真实 Loader 与无密钥快照验证版本隔离、记录和卸载。
-- 目录 README、tsconfig、tsdown 和 Vitest 配置接入本仓库构建；专家声明库包含 ES2024，输出语法仍为 ES2022，客户端名册调用显式选择本地读取，测试夹具完整实现当前 Remote 和工具执行参数。原作者发布用 CI、脚本和文档不作为公司构建入口。技能的社区内容仓库更新保留。
-- 技能管理采用 1.2.9 的生命周期总开关：启用保留源文件的模型和用户调用限制，目录显式返回 enabled；非法调用声明仍拒绝两类调用。真实 Loader/profile 回归覆盖导入、停用和重新启用。专家直接加载固定工作区模块，不引入上游针对 PM2 的全局宿主入口探测。
-
-更新时从上述固定提交取得源文件，对照两份清单逐项应用或移除本地修改，更新基线及本地哈希；运行插件测试、真实公司 Loader/profile 测试和产品构建。发布操作见[公司内容说明](../apps/product-desktop/docs/company-content.md)。
-
-- 员工共享入口：专家 `src/client/index.ts` 与 `src/client/custom-locales.ts` 为自定义专家增加“提交共享”；技能 `src/client.ts`、`src/client-types.ts`、`src/index.ts` 与 `src/core.ts` 增加单技能及资源文件导出，两个插件的提交入口统一放在原生“更多”菜单，拒绝符号链接、非法路径、超限目录与公司来源。两插件仅发出可取消的界面提交意图，产品 UI 负责确认、状态与 IPC，服务端负责归属和审核。原生执行及模型输入不变；回归见产品的 `content-submission.spec.ts`、`skill-submission-export.spec.ts`、`company-submission.client.spec.tsx` 和真实公司 Loader 测试。
+专家套件与技能已收至[产品包](../packages/deepseek-harness-product/README.md)，由桌面统一装配和更新，不属于 Cordis 框架副本或独立预装插件。两个模块保留 Apache-2.0 LICENSE、NOTICE 和原始来源摘要；后续社区改动选择性合入。

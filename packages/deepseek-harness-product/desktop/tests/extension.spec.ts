@@ -20,7 +20,7 @@ vi.mock('../src/company-content-sync.ts', () => ({ CompanyContentSync: class {
   pin = async () => this.read()
   close = async () => {}
 } }))
-vi.mock('../src/native-extensions.ts', () => ({ nativeExtensionPatches: () => [] }))
+vi.mock('../src/builtin-capabilities.ts', () => ({ builtinCapabilityPatches: () => [] }))
 vi.mock('node:fs', async original => ({ ...await original<typeof import('node:fs')>(), writeFileSync: fixture.writeFile }))
 vi.mock('electron', () => ({
   app: { isPackaged: false, getPath: () => '/unused-fixture', getAppPath: () => '/unused-fixture', getVersion: () => '0.1.0', quit: fixture.quit },

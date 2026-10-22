@@ -1,0 +1,180 @@
+diff --git a/apps/cli/src/dump-config.ts b/apps/cli/src/dump-config.ts
+index 9e1de83917b1959956e85bb08e6d1eab29eb1f67..8f70d136ce7c560fac83e7f1c67fd2e71969e73c 100644
+--- a/apps/cli/src/dump-config.ts
++++ b/apps/cli/src/dump-config.ts
+@@ -58,6 +58,14 @@ export function collectConfigDumpLayers(
+     patches: layer.patches,
+   }))
+   if (!defaultOnly) {
++    const overlays = patches.map((file) => {
++      const absolute = resolve(file)
++      return { label: absolute, patches: loadOverlayPatches(NAME, absolute) }
++    })
++    for (const overlay of overlays) {
++      const defaults = overlay.patches.filter(patch => patch.defaults === true)
++      if (defaults.length > 0) layers.push({ ...overlay, patches: defaults })
++    }
+     if (existsSync(loaded.patchPath)) {
+       layers.push({ label: loaded.patchPath, patches: loaded.patches })
+     }
+@@ -66,9 +74,8 @@ export function collectConfigDumpLayers(
+     if (homePatches !== undefined) {
+       layers.push({ label: homePatchFile, patches: homePatches })
+     }
+-    for (const file of patches) {
+-      const absolute = resolve(file)
+-      layers.push({ label: absolute, patches: loadOverlayPatches(NAME, absolute) })
++    for (const overlay of overlays) {
++      layers.push({ ...overlay, patches: overlay.patches.filter(patch => patch.defaults !== true) })
+     }
+   }
+   return layers
+diff --git a/apps/cli/tests/default-plugin-dump.spec.ts b/apps/cli/tests/default-plugin-dump.spec.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..9a84c9eea821f1cf76f4a07935dee856da58460d
+--- /dev/null
++++ b/apps/cli/tests/default-plugin-dump.spec.ts
+@@ -0,0 +1,27 @@
++/** Config dumps use the same preinstalled defaults and employee overrides as runtime profiles. */
++import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
++import { tmpdir } from 'node:os'
++import { join } from 'node:path'
++import { composeEntries, initProfile, loadProfileDirectory, readProfilePatches, type ProfileContext } from '@deepseek-ai/dsh-app-boot'
++import { expect, it, onTestFinished, vi } from 'vitest'
++import { collectConfigDumpLayers } from '../src/dump-config.ts'
++
++it('composes default inserts before user edits before later overlays', () => {
++  const home = mkdtempSync(join(tmpdir(), 'default-plugin-dump-'))
++  onTestFinished(() => { vi.unstubAllEnvs(); rmSync(home, { recursive: true, force: true }) })
++  vi.stubEnv('DSH_HOME', home)
++  const directory = join(home, 'profile')
++  initProfile(directory, [])
++  const user = [{ id: 'plugin', name: 'stable-package', config: { value: 'employee' } }]
++  const overlays = [{ defaults: true, insert: [{ id: 'plugin', name: 'stable-package', config: { value: 'default' } }] },
++    { id: 'plugin', name: 'stable-package', disabled: true }]
++  writeFileSync(join(directory, 'cordis.patch.yml'), JSON.stringify(user))
++  const file = join(home, 'overlay.json')
++  writeFileSync(file, JSON.stringify(overlays))
++  const loaded = loadProfileDirectory('test', directory, join(home, 'package.json'))
++  const context: ProfileContext = { name: 'test', dir: directory, patchPath: loaded.patchPath, installAnchor: join(home, 'package.json'),
++    home, cwd: home, startedBundles: [], telemetryDisabledEnv: undefined, overlays }
++  const dumped = composeEntries(collectConfigDumpLayers(loaded, false, [file]).map(layer => layer.patches))
++  expect(dumped).toEqual(composeEntries([readProfilePatches('test', context, loaded)]))
++  expect(dumped).toEqual([{ id: 'plugin', name: 'stable-package', config: { value: 'employee' }, disabled: true }])
++})
+diff --git a/packages/boot/app-boot/src/profile-context.ts b/packages/boot/app-boot/src/profile-context.ts
+index e2ebfad5ce813370930caae11c7997add252893f..2bc4bc21c589060e54f85e34885d667590972409 100644
+--- a/packages/boot/app-boot/src/profile-context.ts
++++ b/packages/boot/app-boot/src/profile-context.ts
+@@ -23,7 +23,7 @@ export interface ProfileContext {
+   readonly home: string
+   /** Bundle packages used to start this process, before any persisted edits. */
+   readonly startedBundles: readonly string[]
+-  /** Parsed command-line overlays, applied above profile and home patches. */
++  /** Parsed command-line overlays; default insertions precede profile edits, other patches follow home patches. */
+   readonly overlays: readonly PatchOptions[]
+   /** Launch-time DSH_TELEMETRY_DISABLED value; any non-empty value opts out. */
+   readonly telemetryDisabledEnv: string | undefined
+@@ -54,15 +54,17 @@ export function resolveTelemetryPatch(disabledEnv: string | undefined, hasRow: b
+   return { id: TELEMETRY_ROW_ID, disabled: true }
+ }
+ 
+-/** Read the selected bundles' patches, which apply before the profile patch file.
++/** Read bundle patches and launcher default insertions, before the profile patch file.
+  * @param binName Diagnostic prefix for malformed or missing configuration.
+  * @param context Data supplied by the profile launcher.
+  * @param initialProfile Already loaded startup profile; omitted reads the current files.
+- * @returns Bundle patches in application order.
++ * @returns Bundle patches followed by launcher default insertions.
+  */
+ export function readBundlePatches(binName: string, context: ProfileContext, initialProfile?: Profile): PatchOptions[] {
+   const profile = initialProfile ?? loadProfileDirectory(binName, context.dir, context.installAnchor, { userLayer: false })
+-  return profile.layers.flatMap(layer => layer.patches)
++  const defaults = context.overlays.filter(patch => patch.defaults === true)
++  if (defaults.some(patch => patch.insert === undefined)) throw new Error(`${binName}: default profile patches must insert entries`)
++  return [...profile.layers.flatMap(layer => layer.patches), ...defaults]
+ }
+ 
+ /** Read current bundle and user layers with the launch-time overlays.
+@@ -76,7 +78,7 @@ export function readProfilePatches(binName: string, context: ProfileContext, ini
+     ...readBundlePatches(binName, context, initialProfile),
+     ...(initialProfile?.patches ?? loadOptionalPatches(binName, context.patchPath) ?? []),
+     ...(loadOptionalPatches(binName, join(context.home, PROFILE_PATCH_FILENAME)) ?? []),
+-    ...context.overlays,
++    ...context.overlays.filter(patch => patch.defaults !== true),
+   ])
+   const telemetryPatch = resolveTelemetryPatch(context.telemetryDisabledEnv,
+     composeEntries([patches]).some(row => row.id === TELEMETRY_ROW_ID))
+diff --git a/packages/boot/config-editor/src/index.ts b/packages/boot/config-editor/src/index.ts
+index ffec879f40fed1689509847ed18e472af13b405f..23cca9801b9e8c7dafdec6d1cde0d2ad6f611996 100644
+--- a/packages/boot/config-editor/src/index.ts
++++ b/packages/boot/config-editor/src/index.ts
+@@ -7,7 +7,7 @@ import { entryListSchema, type PatchOptions } from '@deepseek-ai/cordis-plugin-i
+ import yaml from 'js-yaml'
+ import type { Entry, EntryOptions } from '@deepseek-ai/cordis-plugin-loader'
+ import type {} from '@deepseek-ai/dsh-hmr'
+-import { composeEntries, loadProfileDirectory, readProfilePatches, reconcileProfilePatches } from '@deepseek-ai/dsh-app-boot'
++import { composeEntries, loadProfileDirectory, readBundlePatches, readProfilePatches, reconcileProfilePatches } from '@deepseek-ai/dsh-app-boot'
+ import { withFileLock, writeFileAtomic } from '@deepseek-ai/dsh-atomic-write'
+ import { isMap, isSeq, parseDocument, Scalar, visit } from 'yaml'
+ 
+@@ -54,7 +54,7 @@ export class ConfigEditor extends Service {
+     const overridden = new Set(loaded.patches.filter(patch => patch.insert === undefined && Object.hasOwn(patch, 'config')).map(patch => patch.id))
+     const composed = new Map<string, EntryOptions>()
+     if (entries.some(entry => !overridden.has(entry.options.id))) {
+-      for (const row of flatten(composeEntries([...loaded.layers.map(layer => layer.patches), loaded.patches]))) {
++      for (const row of flatten(composeEntries([readBundlePatches('dsh', profile, loaded), loaded.patches]))) {
+         if (!composed.has(row.id)) composed.set(row.id, row)
+       }
+     }
+@@ -75,7 +75,7 @@ export class ConfigEditor extends Service {
+       const rest = { ...patch }; Reflect.deleteProperty(rest, 'config')
+       return rest
+     })
+-    const row = flatten(composeEntries([...loaded.layers.map(layer => layer.patches), patches])).find(row => row.id === entry.options.id)
++    const row = flatten(composeEntries([readBundlePatches('dsh', this.ownerContext.profileContext, loaded), patches])).find(row => row.id === entry.options.id)
+     return structuredClone((row?.config ?? {}) as Record<string, unknown>)
+   }
+ 
+@@ -96,7 +96,9 @@ export class ConfigEditor extends Service {
+         await reconcileProfilePatches(this.ownerContext.root, beforePatches, 'dsh')
+         if (!this.entries().includes(entry)) throw new Error('Configuration entry changed during reload')
+         const current = structuredClone((entry.options.config ?? {}) as Record<string, unknown>)
+-        const inherited = this.inherited(entry, loadProfileDirectory('dsh', this.ownerContext.profileContext.dir, this.ownerContext.profileContext.installAnchor))
++        const profile = this.ownerContext.profileContext
++        const loaded = loadProfileDirectory('dsh', profile.dir, profile.installAnchor)
++        const inherited = this.inherited(entry, loaded)
+         const next = change(current, inherited)
+         const fiber = entry.fiber
+         if (fiber.state !== FiberState.ACTIVE) throw new Error('Configuration plugin is no longer active')
+@@ -132,8 +134,6 @@ export class ConfigEditor extends Service {
+           expression.tag = 'tag:yaml.org,2002:js'
+           return expression
+         } })
+-        const profile = this.ownerContext.profileContext
+-        const loaded = loadProfileDirectory('dsh', profile.dir, profile.installAnchor)
+         const patches = readProfilePatches('dsh', profile, { ...loaded, patches: yaml.load(String(document), { schema: entryListSchema }) as PatchOptions[] })
+         const effective = flatten(composeEntries([patches])).find(row => row.id === entry.options.id)
+         if (!isDeepStrictEqual(effective?.config ?? {}, next)) {
+diff --git a/vendor/include/src/index.ts b/vendor/include/src/index.ts
+index ee4dd53fb853af9197b59f4820dfe6348698f026..44ac482a308a4a6fd441b5ddb8a81d8c93516fb6 100644
+--- a/vendor/include/src/index.ts
++++ b/vendor/include/src/index.ts
+@@ -74,7 +74,7 @@ export function applyEntryPatches(
+   buildMap(data)
+ 
+   for (const patch of patches) {
+-    const { id, insert, name, ...overrides } = patch
++    const { id, insert, name, defaults: _defaults, ...overrides } = patch
+ 
+     if (insert) {
+       if (id) {
+@@ -131,6 +131,8 @@ export interface PatchOptions {
+   id?: string
+   insert?: EntryOptions[]
+   name?: string
++  /** Profile launcher inserts this default layer before employee overrides; only insert patches are allowed. */
++  defaults?: boolean
+   config?: any
+   group?: boolean | null
+   disabled?: boolean | null

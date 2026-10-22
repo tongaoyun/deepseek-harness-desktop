@@ -410,7 +410,6 @@
 .feedbackImageItem > small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-top: 5px; font-size: 11px; color: var(--dsw-alias-label-secondary); }
 @media (max-width: 420px) { .feedbackImageGrid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 
-.extensionPage { display: flex; flex: 1; flex-direction: column; min-width: 0; min-height: 0; height: 100%; overflow: auto; }
-.extensionPageContent { width: 100%; max-width: 1128px; box-sizing: border-box; margin: 0 auto; padding: 28px clamp(16px, 4vw, 44px) 48px; }
-:global([data-platform='darwin']) .extensionPageContent { padding-top: calc(28px + var(--dsh-frame-top-clearance, 0px)); }
-.extensionPageError { margin: auto; max-width: 420px; padding: 24px; color: var(--dsw-alias-label-secondary); text-align: center; }
+:global(.product-capability-page) { display: flex; flex: 1; flex-direction: column; min-width: 0; min-height: 0; height: 100%; overflow: auto; }
+:global(.product-capability-content) { width: 100%; max-width: 1128px; box-sizing: border-box; margin: 0 auto; padding: 28px clamp(16px, 4vw, 44px) 48px; }
+:global([data-platform='darwin'] .product-capability-content) { padding-top: calc(28px + var(--dsh-frame-top-clearance, 0px)); }
