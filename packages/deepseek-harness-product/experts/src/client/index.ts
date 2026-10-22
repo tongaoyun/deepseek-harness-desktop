@@ -21,6 +21,7 @@ import type { InputTriggerSource, ReferenceInsert, TokenSpan } from '@deepseek-a
 // Type-only: 拉入 api-remotes 的 ctx.remote 合并（client 侧 TypertClientRemote）。
 import type {} from '@deepseek-ai/dsh-api-remotes/client'
 import type { PropsLocale, TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
+import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type { RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
 // Type-only: 拉入 ctx.locale 的 Context merge（跨插件协作只走服务，不做值导入）。
 import type {} from '@deepseek-ai/dsh-client-locale/client'

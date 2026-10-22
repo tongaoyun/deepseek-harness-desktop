@@ -111,7 +111,7 @@ index a5e45dbf91d13035b4ef1ab2aea79455c544cd0c..d28206fd17e652358645b467844b1e7c
      "package:desktop": "pnpm --filter @deepseek-ai/dsh-desktop run package",
      "package:desktop:dir": "pnpm --filter @deepseek-ai/dsh-desktop run package:dir",
 diff --git a/pnpm-lock.yaml b/pnpm-lock.yaml
-index 5f38bae3561846058531c3fcc1092df01b012024..3f69fcff5a397d858c3746c61688e81747964188 100644
+index 5f38bae3561846058531c3fcc1092df01b012024..d062af65dfe8d4b02cb20fca13a922e1235ecd91 100644
 --- a/pnpm-lock.yaml
 +++ b/pnpm-lock.yaml
 @@ -709,6 +709,9 @@ importers:
@@ -150,7 +150,7 @@ index 5f38bae3561846058531c3fcc1092df01b012024..3f69fcff5a397d858c3746c61688e817
    apps/web:
      devDependencies:
        '@deepseek-ai/cordis-plugin-group':
-@@ -7309,124 +7331,564 @@ importers:
+@@ -7309,124 +7331,567 @@ importers:
          version: link:../../llm/llm
        '@deepseek-ai/dsh-ptc-runtime':
          specifier: workspace:*
@@ -450,6 +450,9 @@ index 5f38bae3561846058531c3fcc1092df01b012024..3f69fcff5a397d858c3746c61688e817
 +      '@deepseek-ai/dsh-client-ui-primitives':
 +        specifier: workspace:*
 +        version: link:../../client/ui-primitives
++      '@deepseek-ai/dsh-client-ui-renderer':
++        specifier: workspace:*
++        version: link:../../client/ui-renderer
 +      '@deepseek-ai/dsh-client-ui-settings':
 +        specifier: workspace:*
 +        version: link:../../client/ui-settings
@@ -803,7 +806,7 @@ index 5f38bae3561846058531c3fcc1092df01b012024..3f69fcff5a397d858c3746c61688e817
  
    packages/deliverables/tool-present:
      dependencies:
-@@ -9936,6 +10398,87 @@ importers:
+@@ -9936,6 +10401,87 @@ importers:
          specifier: ^18.2.0
          version: 18.3.1
  
@@ -891,7 +894,7 @@ index 5f38bae3561846058531c3fcc1092df01b012024..3f69fcff5a397d858c3746c61688e817
    packages/feedback/command-feedback:
      dependencies:
        zod:
-@@ -17756,10 +18299,18 @@ packages:
+@@ -17756,10 +18302,18 @@ packages:
    '@mixmark-io/domino@2.2.0':
      resolution: {integrity: sha512-Y28PR25bHXUg88kCV7nivXrP2Nj2RueZ3/l/jdx6J9f8J4nsEGcgX0Qe6lt7Pa+J79+kPiJU3LguR6O/6zrLOw==}
  
@@ -910,7 +913,7 @@ index 5f38bae3561846058531c3fcc1092df01b012024..3f69fcff5a397d858c3746c61688e817
    '@modelcontextprotocol/core@2.2.0':
      resolution: {integrity: sha512-iLhmprRmWI8EcosOA3wVvww22z02NkgqhV4fBH6f/odQBsi7xnJc0HGmi21yWO+/iKw2yzqVE127Zhna5/+JXw==}
      engines: {node: '>=20'}
-@@ -17792,6 +18343,10 @@ packages:
+@@ -17792,6 +18346,10 @@ packages:
      resolution: {integrity: sha512-kKaFkyAh6oipvc9+EAbJ552JafnMnOq5nzmzWkp1jJdBhTAAGpmIpWihUG1+rfNhmEFM98gUZDdCHCDD4v6a7Q==}
      hasBin: true
  
@@ -921,7 +924,7 @@ index 5f38bae3561846058531c3fcc1092df01b012024..3f69fcff5a397d858c3746c61688e817
    '@modelcontextprotocol/server@2.2.0':
      resolution: {integrity: sha512-qFnltjus6Gk8Lx6J1w2RXmr3YPN22MNT6qD6zjAkaiWIlFIFxWClz0rXHNuJF/KSUyn5YGhkSvXkWDbQHVLFEQ==}
      engines: {node: '>=20'}
-@@ -18797,6 +19352,14 @@ packages:
+@@ -18797,6 +19355,14 @@ packages:
      resolution: {integrity: sha512-4BAffykYOgO+5nzBWYwE3W90sBgLJoUPRWWcL8wlyiM8IB8ipJz3UMJ9KXQd1RKQXpKp8Tutn80HZtWsu2u76w==}
      engines: {node: '>=10'}
  
@@ -936,7 +939,7 @@ index 5f38bae3561846058531c3fcc1092df01b012024..3f69fcff5a397d858c3746c61688e817
    '@tanstack/react-virtual@3.14.10':
      resolution: {integrity: sha512-SRyoUbdFMRHuYXMijV5H4ZarQWpXkj3iANq8OFre+pybeVap8ZJjZ3Nz9bVjx4d8PfobVUQUdKyyyHYk3E+djw==}
      peerDependencies:
-@@ -22720,6 +23283,10 @@ packages:
+@@ -22720,6 +23286,10 @@ packages:
      resolution: {integrity: sha512-7++dFhtcx3353uBaq8DDR4NuxBetBzC7ZQOhmTQInHEd6bSrXdiEyzCvG07Z44UYdLShWUyXt5M/yhz8ekcb1A==}
      engines: {node: '>=8'}
  
@@ -947,7 +950,7 @@ index 5f38bae3561846058531c3fcc1092df01b012024..3f69fcff5a397d858c3746c61688e817
    sherpa-onnx-darwin-arm64@1.13.8:
      resolution: {integrity: sha512-FPNgJMgnWVl/KhRTIhG3KL3A4Om63Rn4YKXc9/uHY7SzLcvqLJLc/h7UBWJwduXvv7K18t5NpxHR6XgXn4sjWw==}
      cpu: [arm64]
-@@ -25247,6 +25814,16 @@ snapshots:
+@@ -25247,6 +25817,16 @@ snapshots:
  
    '@mixmark-io/domino@2.2.0': {}
  
@@ -964,7 +967,7 @@ index 5f38bae3561846058531c3fcc1092df01b012024..3f69fcff5a397d858c3746c61688e817
    '@modelcontextprotocol/client@2.2.0':
      dependencies:
        '@modelcontextprotocol/core': 2.2.0
-@@ -25257,10 +25834,21 @@ snapshots:
+@@ -25257,10 +25837,21 @@ snapshots:
        pkce-challenge: 5.0.1
        zod: 4.4.3
  
@@ -986,7 +989,7 @@ index 5f38bae3561846058531c3fcc1092df01b012024..3f69fcff5a397d858c3746c61688e817
    '@modelcontextprotocol/node@2.0.0(@modelcontextprotocol/server@2.2.0)(hono@4.13.7)':
      dependencies:
        '@hono/node-server': 1.19.17(hono@4.13.7)
-@@ -25312,6 +25900,11 @@ snapshots:
+@@ -25312,6 +25903,11 @@ snapshots:
        - supports-color
        - zod
  
@@ -998,7 +1001,7 @@ index 5f38bae3561846058531c3fcc1092df01b012024..3f69fcff5a397d858c3746c61688e817
    '@modelcontextprotocol/server@2.2.0':
      dependencies:
        '@modelcontextprotocol/core': 2.2.0
-@@ -26017,6 +26610,13 @@ snapshots:
+@@ -26017,6 +26613,13 @@ snapshots:
      dependencies:
        defer-to-connect: 2.0.1
  
@@ -1012,7 +1015,7 @@ index 5f38bae3561846058531c3fcc1092df01b012024..3f69fcff5a397d858c3746c61688e817
    '@tanstack/react-virtual@3.14.10(react-dom@18.3.1(react@18.3.1))(react@18.3.1)':
      dependencies:
        '@tanstack/virtual-core': 3.17.8
-@@ -30537,6 +31137,8 @@ snapshots:
+@@ -30537,6 +31140,8 @@ snapshots:
  
    shebang-regex@3.0.0: {}
  

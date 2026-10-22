@@ -66,7 +66,8 @@
     "react": "^18.2.0",
     "@deepseek-ai/dsh-session": "workspace:*",
     "@deepseek-ai/dsh-client-ui-layout": "workspace:*",
-    "react-dom": "^18.2.0"
+    "react-dom": "^18.2.0",
+    "@deepseek-ai/dsh-client-ui-renderer": "workspace:*"
   },
   "peerDependenciesMeta": {
     "@deepseek-ai/dsh": {
@@ -115,7 +116,8 @@
     "tsdown": "^0.22.2",
     "typescript": "^6.0.3",
     "vitest": "^4.1.11",
-    "@deepseek-ai/dsh-client-ui-layout": "workspace:*"
+    "@deepseek-ai/dsh-client-ui-layout": "workspace:*",
+    "@deepseek-ai/dsh-client-ui-renderer": "workspace:*"
   },
   "private": true
 }
