@@ -87,7 +87,7 @@ node apps/product-desktop/skills/harness-company-publish/scripts/publish-company
 
 专家不再预留社区文件名；发布仍检查资源格式、归属、摘要及实际共享目录内的重名。ID 或名称冲突只标记相关专家不可调用，其余专家和技能继续加载，不自动调用另一份同名说明。
 
-第三方版本、来源提交和完整本地修改见 [vendor 清单](../../../vendor/README.md)。升级插件时对照 `upstream.json`，重新应用公司来源与 UI 修改，运行原插件测试、公司 Loader 测试、桌面构建和 `verify:upstream`。服务端必须先于新桌面部署 `/api/v1/company-content`；目录尚未发布时返回空内容，个人内容不受影响。
+内建模块的原始版本与来源提交见 [vendor 清单](../../../vendor/README.md)，后续产品改动由本仓库 Git 历史记录。合入社区更新时对照各模块的 `upstream.json`，保留公司来源与产品 UI，运行模块测试、公司 Loader 测试、桌面构建和 `verify:upstream`。服务端必须先于新桌面部署 `/api/v1/company-content`；目录尚未发布时返回空内容，个人内容不受影响。
 
 专家入口文件的发布与插件读取上限统一为 128 KiB，读取元数据仍按块限量进行。插件不再包含产品预置专家，桌面与服务端无需同步社区保留 ID 清单。
 
