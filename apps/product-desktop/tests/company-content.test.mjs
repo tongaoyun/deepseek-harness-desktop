@@ -8,16 +8,14 @@ import { inspectCompanyContent } from '../skills/harness-company-publish/scripts
 test('inspects standard native files without publishing or embedding credentials', async t => {
   const root = await mkdtemp(join(tmpdir(), 'company-publish-'))
   t.after(() => rm(root, { recursive: true, force: true }))
-  await writeFile(join(root, 'release.json'), JSON.stringify({ version: '1.0.0' }))
+  await writeFile(join(root, '.publication.json'), '{}')
   await mkdir(join(root, 'skills/orders'), { recursive: true })
   await writeFile(join(root, 'skills/orders/SKILL.md'), '---\nname: orders\ndescription: Company orders\n---\nUse the configured tools.')
-  await mkdir(join(root, 'experts/operations'), { recursive: true })
-  await writeFile(join(root, 'experts/operations/orders.md'), '---\nname: 订单专家\ndescription: 处理订单\n---\nUse the order skill.')
   const release = await inspectCompanyContent(root)
   assert.equal(release.version, '1.0.0')
-  assert.deepEqual(Object.keys(release.files).sort(), ['experts/operations/orders.md', 'skills/orders/SKILL.md'])
+  assert.deepEqual(Object.keys(release.files).sort(), ['skills/orders/SKILL.md'])
   assert.match(release.sha256, /^[a-f0-9]{64}$/u)
-  await symlink(join(root, 'release.json'), join(root, 'skills/orders/private.json'))
+  await symlink(join(root, '.publication.json'), join(root, 'skills/orders/private.json'))
   await assert.rejects(inspectCompanyContent(root), /Symbolic links/u)
   await rm(join(root, 'skills/orders/private.json'))
   await writeFile(join(root, 'skills/orders/SKILL.md'), 'no metadata')
@@ -43,7 +41,7 @@ const release = (version, texts) => {
   return { version, files, sha256: contentDigest(files) }
 }
 const withBase = (incoming, current, resource) => ({ ...incoming, baseResources: {
-  [resource]: contentDigest(Object.fromEntries(Object.entries(current.files).filter(([path]) => path === resource || path.startsWith(`${resource}/`)))),
+  [resource.startsWith('experts/') ? 'experts/' + resource.split('/').at(-1).replace(/\.md$/u, '') : resource]: contentDigest(Object.fromEntries(Object.entries(current.files).filter(([path]) => path === resource || path.startsWith(`${resource}/`)))),
 } })
 async function privateRoot(t) {
   const path = await mkdtemp(join(tmpdir(), 'company-publisher-'))
@@ -52,7 +50,7 @@ async function privateRoot(t) {
 }
 async function materialize(path, value) {
   await mkdir(path, { recursive: true })
-  await writeFile(join(path, 'release.json'), JSON.stringify({ version: value.version, ...(value.baseResources ? { baseResources: value.baseResources } : {}) }))
+  await writeFile(join(path, '.publication.json'), JSON.stringify({ ...(value.baseResources ? { baseResources: value.baseResources } : {}) }))
   for (const [file, encoded] of Object.entries(value.files)) {
     const target = join(path, file)
     await mkdir(join(target, '..'), { recursive: true })
@@ -83,10 +81,9 @@ test('merges an updated skill as a complete directory while retaining other comp
   })
   const incoming = withBase(release('1.0.1', { 'skills/orders/SKILL.md': skill('orders', 'New instructions') }), current, 'skills/orders')
   const plan = planPublication(current, incoming, SITE)
-  assert.equal(plan.release.files['skills/finance/SKILL.md'], current.files['skills/finance/SKILL.md'])
-  assert.equal(plan.release.files['experts/operations/orders.md'], current.files['experts/operations/orders.md'])
-  assert.deepEqual(plan.changes, { added: [], modified: ['skills/orders/SKILL.md'], removed: ['skills/orders/references/stale.txt'], unchanged: 2 })
-  assert.equal(plan.baseline.version, '1.0.0')
+  assert.deepEqual(Object.keys(plan.resource.files), ['skills/orders/SKILL.md'])
+  assert.deepEqual(plan.changes, { added: [], modified: ['skills/orders/SKILL.md'], removed: ['skills/orders/references/stale.txt'], unchanged: 0 })
+  assert.match(plan.expectedSha256, /^[a-f0-9]{64}$/u)
 })
 
 test('standalone publication rejects YAML the native provider cannot load without changing files', async t => {
@@ -108,12 +105,11 @@ test('edits retain their resource baseline and reject concurrent changes to that
   const directory = join(root, 'edit')
   await exportCompanyResource(current, 'skills/orders', directory)
   await writeFile(join(directory, 'skills/orders/SKILL.md'), skill('orders', 'My edit'))
-  const manifest = JSON.parse(await readFile(join(directory, 'release.json'), 'utf8'))
-  manifest.version = '1.0.1'
-  await writeFile(join(directory, 'release.json'), JSON.stringify(manifest))
+  const manifest = JSON.parse(await readFile(join(directory, '.publication.json'), 'utf8'))
+  await writeFile(join(directory, '.publication.json'), JSON.stringify(manifest))
   const incoming = await inspectCompanyContent(directory)
   const unrelated = release('1.0.2', { 'skills/orders/SKILL.md': skill('orders'), 'skills/orders/references/release.json': '{"resource":true}', 'skills/finance/SKILL.md': skill('finance') })
-  assert.equal(Object.keys(planPublication(unrelated, incoming, SITE).release.files).length, 3)
+  assert.equal(Object.keys(planPublication(unrelated, incoming, SITE).resource.files).length, 2)
   const concurrent = release('1.0.2', { 'skills/orders/SKILL.md': skill('orders', 'Somebody else edited') })
   assert.throws(() => planPublication(concurrent, incoming, SITE), { code: 'EDIT_CONFLICT' })
   assert.throws(() => planPublication(null, incoming, SITE), { code: 'EDIT_CONFLICT' })
@@ -131,15 +127,17 @@ test('deletion requires a complete named resource and cannot expand from an empt
   const empty = release('1.0.1', {})
   assert.throws(() => planPublication(current, empty, SITE), { code: 'NO_CHANGES' })
   const plan = planPublication(current, empty, SITE, ['skills/orders'])
-  assert.deepEqual(Object.keys(plan.release.files), ['skills/finance/SKILL.md'])
+  assert.deepEqual(plan.resource.files, {})
+  assert.equal(plan.resourceKey, 'skills/orders')
+  assert.equal(plan.operation, 'delete')
   for (const path of ['skills/*', '../skills/orders', 'skills/orders/SKILL.md']) assert.throws(() => planPublication(current, empty, SITE, [path]), { code: 'INVALID_RESOURCE' })
   assert.throws(() => planPublication(current, empty, SITE, ['skills/missing']), { code: 'RESOURCE_NOT_FOUND' })
-  assert.deepEqual(planPublication(current, empty, SITE, ['skills/orders', 'skills/finance']).release.files, {})
+  assert.throws(() => planPublication(current, empty, SITE, ['skills/orders', 'skills/finance']), { code: 'ONE_RESOURCE_REQUIRED' })
 })
 
-test('same version changes, cross-category expert collisions and file-directory collisions are rejected', () => {
+test('resource hashes replace manual global versions; cross-category expert collisions and file-directory collisions are rejected', () => {
   const current = release('1.0.0', { 'experts/operations/orders.md': expert('Old') })
-  assert.throws(() => planPublication(current, release('1.0.0', { 'skills/orders/SKILL.md': skill('orders') }), SITE), { code: 'VERSION_REQUIRED' })
+  assert.equal(planPublication(current, release('1.0.0', { 'skills/orders/SKILL.md': skill('orders') }), SITE).resourceKey, 'skills/orders')
   assert.throws(() => planPublication(current, release('1.0.1', { 'experts/finance/orders.md': expert('New') }), SITE))
   assert.throws(() => planPublication(null, release('1.0.1', { 'skills/orders/SKILL.md': skill('orders'), 'skills/orders/path': 'file', 'skills/orders/path/child': 'child' }), SITE), /文件与目录路径冲突/u)
   assert.throws(() => planPublication(null, release('1.0.1', { 'skills/orders/SKILL.md': skill('orders'),
@@ -158,42 +156,44 @@ test('plans cannot be overwritten or used after bytes have changed', async t => 
   await assert.rejects(readPublicationPlan(path, hash), { code: 'PLAN_CHANGED' })
 })
 
-test('preflight conflict or a different configured server sends no write', async () => {
+function publishedSnapshot(resource, current = null) {
+  const files = { ...(current?.files ?? {}) }
+  for (const path of Object.keys(files)) if (resource.resourceKey.startsWith('skills/') ? path.startsWith(resource.resourceKey + '/') : path.endsWith('/' + resource.resourceKey.slice(8) + '.md')) delete files[path]
+  Object.assign(files, resource.files)
+  return { version: '1.0.0', files, sha256: contentDigest(files) }
+}
+test('resource conflicts or a different configured server send no write', async () => {
   const plan = planPublication(null, release('1.0.0', { 'skills/orders/SKILL.md': skill('orders') }), SITE)
-  let reads = 0, writes = 0
-  const client = { url: SITE, current: async () => { reads++; return release('1.0.1', {}) }, publish: async () => { writes++ } }
+  let writes = 0
+  const client = { url: SITE, current: async () => release('1.0.0', { 'skills/orders/SKILL.md': skill('orders', 'Other edit') }), publish: async () => { writes++ } }
   await assert.rejects(publishPlan({ ...client, url: 'https://other.invalid' }, plan), { code: 'SERVER_MISMATCH' })
-  assert.equal(reads, 0)
   await assert.rejects(publishPlan(client, plan), { code: 'PUBLICATION_CONFLICT' })
   assert.equal(writes, 0)
 })
-
-test('successful publication is verified and an exact repeated plan sends no additional write', async () => {
+test('unrelated publications do not block a resource plan and repeated plans send no write', async () => {
   const plan = planPublication(null, release('1.0.0', { 'skills/orders/SKILL.md': skill('orders') }), SITE)
-  let current = release('0.0.0', {}), writes = 0
-  current.version = '0'
-  const client = { url: SITE, current: async () => current, publish: async (candidate, expected) => { assert.equal(expected, '0'); writes++; current = candidate; return candidate } }
+  let current = release('2.0.0', { 'skills/finance/SKILL.md': skill('finance') }), writes = 0
+  const client = { url: SITE, current: async () => current, publish: async (candidate, expected) => { assert.equal(expected, ''); writes++; current = publishedSnapshot(candidate, current); return candidate } }
   assert.equal((await publishPlan(client, plan)).published, true)
   assert.equal((await publishPlan(client, plan)).alreadyCurrent, true)
   assert.equal(writes, 1)
+  assert.equal(Object.keys(current.files).length, 2)
 })
-
-test('a committed write with a lost reply is recovered by reading without another POST', async () => {
+test('a committed write with a lost reply is verified without another POST', async () => {
   const plan = planPublication(null, release('1.0.0', { 'skills/orders/SKILL.md': skill('orders') }), SITE)
-  let current = { version: '0', sha256: contentDigest({}), files: {} }, writes = 0
-  const client = { url: SITE, current: async () => current, publish: async candidate => { writes++; current = candidate; throw new PublicationError('REQUEST_UNCONFIRMED', 'timeout') } }
+  let current = null, writes = 0
+  const client = { url: SITE, current: async () => current, publish: async candidate => { writes++; current = publishedSnapshot(candidate); throw new PublicationError('REQUEST_UNCONFIRMED', 'timeout') } }
   assert.equal((await publishPlan(client, plan)).recovered, true)
   assert.equal(writes, 1)
-  current = { version: '0', sha256: contentDigest({}), files: {} }
+  current = null
   client.publish = async () => { writes++; throw new PublicationError('REQUEST_UNCONFIRMED', 'timeout') }
   await assert.rejects(publishPlan(client, plan), { code: 'REQUEST_UNCONFIRMED' })
   assert.equal(writes, 2)
 })
-
-test('an old idempotent release receipt is not reported as the current version', async () => {
+test('an outdated resource receipt is not reported as current', async () => {
   const plan = planPublication(null, release('1.0.0', { 'skills/orders/SKILL.md': skill('orders') }), SITE)
   let reads = 0
-  const client = { url: SITE, current: async () => ++reads === 1 ? { version: '0', sha256: contentDigest({}), files: {} } : release('2.0.0', {}), publish: async () => plan.release }
+  const client = { url: SITE, current: async () => ++reads === 1 ? null : release('2.0.0', {}), publish: async () => plan.resource }
   await assert.rejects(publishPlan(client, plan), { code: 'VERSION_NOT_CURRENT' })
 })
 
@@ -257,9 +257,9 @@ test('standalone skill runs outside the workspace, publishes through real HTTP a
     for await (const chunk of req) body += chunk
     const candidate = JSON.parse(body)
     writes++
-    if (candidate.expectedVersion !== (current?.version ?? '0')) { res.writeHead(409).end(); return }
-    current = { version: candidate.version, sha256: candidate.sha256, files: candidate.files }
-    payload(current)
+    if (candidate.expectedSha256 !== '') { res.writeHead(409).end(); return }
+    current = publishedSnapshot(candidate, current)
+    payload(candidate)
   })
   t.after(async () => { server.closeAllConnections(); await new Promise((resolve, reject) => server.close(error => error ? reject(error) : resolve())) })
   server.listen(0, '127.0.0.1')
@@ -281,7 +281,7 @@ test('standalone skill runs outside the workspace, publishes through real HTTP a
   assert.equal(repeated.code, 0, repeated.stderr)
   assert.equal(JSON.parse(repeated.stdout).alreadyCurrent, true)
   assert.equal(writes, 1)
-  assert.equal(current.sha256, JSON.parse(await readFile(planPath, 'utf8')).release.sha256)
+  assert.equal(current.sha256, JSON.parse(await readFile(planPath, 'utf8')).resource.sha256)
   const status = await command(tool, ['current', '--config', config], root)
   assert.equal(status.code, 0, status.stderr)
   const exported = await command(tool, ['export', 'skills/orders', '--out', join(root, 'exported'), '--config', config], root)
@@ -294,42 +294,29 @@ test('standalone skill runs outside the workspace, publishes through real HTTP a
   assert.equal((await readFile(planPath, 'utf8')).includes(token), false)
 })
 
-test('two concurrent publishers cannot both activate plans against the same baseline', async () => {
-  const a = planPublication(null, release('1.0.0', { 'skills/orders/SKILL.md': skill('orders') }), SITE)
-  const b = planPublication(null, release('1.0.1', { 'skills/finance/SKILL.md': skill('finance') }), SITE)
-  let reads = 0, unblock
-  const ready = new Promise(resolve => { unblock = resolve })
-  let current = { version: '0', sha256: contentDigest({}), files: {} }, writes = 0
-  const client = { url: SITE,
-    current: async () => {
-      const value = current
-      if (++reads <= 2) { if (reads === 2) unblock(); await ready }
-      return value
-    },
-    publish: async (candidate, expected) => {
-      writes++
-      if (current.version !== expected) throw new PublicationError('PUBLICATION_CONFLICT', 'race')
-      current = candidate
-      return candidate
-    },
-  }
-  const results = await Promise.allSettled([publishPlan(client, a), publishPlan(client, b)])
-  assert.equal(writes, 2)
-  assert.equal(results.filter(result => result.status === 'fulfilled').length, 1)
-  assert.equal(results.find(result => result.status === 'rejected').reason.code, 'PUBLICATION_CONFLICT')
-  assert.equal(Object.keys(current.files).length, 1)
+test('delete plans use a resource hash and verify its removal independently', async () => {
+  let current = release('1.0.0', { 'skills/orders/SKILL.md': skill('orders'), 'skills/finance/SKILL.md': skill('finance') })
+  const plan = planPublication(current, release('1.0.0', {}), SITE, ['skills/orders'])
+  let writes = 0
+  const client = { url: SITE, current: async () => current, remove: async (key, hash) => {
+    assert.equal(key, 'skills/orders'); assert.equal(hash, plan.expectedSha256); writes++
+    current = release('2.0.0', { 'skills/finance/SKILL.md': skill('finance') })
+  } }
+  assert.equal((await publishPlan(client, plan)).published, true)
+  assert.equal((await publishPlan(client, plan)).alreadyCurrent, true)
+  assert.equal(writes, 1)
 })
 
-test('reclassifying an exported expert requires explicit removal and preserves its edit baseline', async t => {
+test('reclassifying an exported expert retains its identity and preserves its edit baseline', async t => {
   const root = await privateRoot(t)
   const current = release('1.0.0', { 'experts/operations/orders.md': expert('Original') })
   const incoming = withBase(release('1.0.1', { 'experts/finance/orders.md': expert('Moved') }), current, 'experts/operations/orders.md')
   await materialize(join(root, 'source'), incoming)
   const inspected = await inspectCompanyContent(join(root, 'source'))
-  const plan = planPublication(current, inspected, SITE, ['experts/operations/orders.md'])
-  assert.deepEqual(Object.keys(plan.release.files), ['experts/finance/orders.md'])
+  const plan = planPublication(current, inspected, SITE)
+  assert.deepEqual(Object.keys(plan.resource.files), ['experts/finance/orders.md'])
   const concurrent = release('1.0.2', { 'experts/operations/orders.md': expert('Another edit') })
-  assert.throws(() => planPublication(concurrent, inspected, SITE, ['experts/operations/orders.md']), { code: 'EDIT_CONFLICT' })
+  assert.throws(() => planPublication(concurrent, inspected, SITE), { code: 'EDIT_CONFLICT' })
 })
 
 test('source limits reject oversized ordinary files before reading their contents', async t => {
@@ -347,7 +334,7 @@ test('HTTP 502 after commit is verified by reading and never retried as a write'
   const plan = planPublication(null, release('1.0.0', { 'skills/orders/SKILL.md': skill('orders') }), SITE)
   let current = null, writes = 0
   const client = publisherClient({ url: SITE, token: 'dummy' }, async (_url, options) => {
-    if (options.method === 'POST') { writes++; current = plan.release; return new Response('upstream unavailable', { status: 502 }) }
+    if (options.method === 'POST') { writes++; current = publishedSnapshot(plan.resource); return new Response('upstream unavailable', { status: 502 }) }
     return Response.json({ success: true, data: current })
   })
   assert.equal((await publishPlan(client, plan)).recovered, true)
