@@ -12,6 +12,7 @@ const messageKeys: Readonly<Record<string, DeepSeekHarnessProductKey>> = {
   EXTENSION_REQUEST_TIMEOUT: 'extensionRequestTimeout',
   EXTENSION_PRIVATE_CONFIGURATION_INVALID: 'invalidPrivateConfiguration',
   CONNECTOR_DISCOVERY_FAILED: 'connectorDiscoveryFailed',
+  CONNECTOR_STARTUP_FAILED: 'connectorRuntimeUnavailable',
   CONNECTOR_AUTHORIZATION_REQUIRED: 'connectorProviderAuthorizationRequired',
   CONNECTOR_CONFIGURATION_REQUIRED: 'privateValuesRequired',
   CONNECTOR_SAVE_PENDING: 'connectorSavePending',

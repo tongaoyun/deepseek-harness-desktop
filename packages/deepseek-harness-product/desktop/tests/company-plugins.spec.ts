@@ -23,7 +23,9 @@ import WebServer from '@deepseek-ai/dsh-host-webserver'
 import { contentDigest } from '@deepseek-harness/product/company-content'
 import * as Agency from '@michengai/dsh-agency-agents'
 const AGENCY_LIBRARY_SERVICE = 'agencyAgentsLibrary'
-interface AgencyExpertLibrary { catalog(): Promise<{ experts: readonly { slug: string; company?: boolean; division: string }[] }> }
+interface AgencyExpertLibrary {
+  catalog(): Promise<{ experts: readonly { slug: string; company?: boolean; division: string; conflict?: boolean }[] }>
+}
 import { installCompanyContent } from '../src/company-content.ts'
 import { nativeExtensionPatches } from '../src/native-extensions.ts'
 import { CompanyContent } from '@deepseek-harness/product-runtime/company-content'
@@ -33,7 +35,7 @@ declare module '@deepseek-ai/cordis' {
   interface Context { agencyAgentsLibrary: AgencyExpertLibrary; agencyAgentsPersona: Agency.AgencyPersonaSource }
 }
 
-it.each([{ published: false, refresh: false }, { published: true, refresh: false }, { published: true, refresh: true }])('loads native company catalogs and isolates refreshed content (%j)', async ({ published, refresh }) => {
+it.each([{ published: false, refresh: false, collision: false }, { published: true, refresh: false, collision: false }, { published: true, refresh: true, collision: false }, { published: true, refresh: false, collision: true }])('loads native company catalogs and isolates refreshed content (%j)', async ({ published, refresh, collision }) => {
   const home = mkdtempSync(join(tmpdir(), 'company-profile-'))
   onTestFinished(() =>{  rmSync(home, { recursive: true, force: true }) })
   vi.stubEnv('DSH_HOME', home)
@@ -42,6 +44,15 @@ it.each([{ published: false, refresh: false }, { published: true, refresh: false
     'skills/orders/SKILL.md': Buffer.from('---\nname: orders\ndescription: 查询公司订单\n---\nCompany order skill body.').toString('base64'),
     'experts/operations/orders.md': Buffer.from('---\nname: 公司订单专家\ndescription: 处理公司订单\n---\nCompany order expert persona.').toString('base64'),
   } : {}
+  if (published) {
+    files['experts/operations/long-header.md'] = Buffer.from(
+      `---\nname: Long published expert\ndescription: ${'a'.repeat(70 * 1024)}\n---\nPublished long-header persona.`).toString('base64')
+  }
+  if (collision) {
+    for (const [slug, name] of [['chief-executive-officer', '冲突公司专家'], ['duplicate-one', '同名专家'], ['duplicate-two', '同名专家']]) {
+      files[`experts/operations/${slug}.md`] = Buffer.from(`---\nname: ${name}\ndescription: 冲突专家\n---\nMust not execute.`).toString('base64')
+    }
+  }
   const release = published ? { version: '1.0.0', sha256: contentDigest(files), files } : null
   const roots = await installCompanyContent(join(home, 'company-content'), 'employee-fixture', release, new AbortController().signal)
   let remote: unknown = release
@@ -85,6 +96,7 @@ it.each([{ published: false, refresh: false }, { published: true, refresh: false
   const profile: ProfileContext = { name: 'test', startedBundles: [], dir: directory,
     patchPath: join(directory, 'cordis.patch.yml'), installAnchor: fileURLToPath(new URL('../package.json', import.meta.url)),
     cwd: home, home, overlays: [], telemetryDisabledEnv: undefined }
+  let pinCount = 0
   let holdPins = false
   const pendingPins: AbortSignal[] = []
   const ctx = await boot('test', join(directory, 'cordis.yml'), readProfilePatches('test', profile), (ctx) => {
@@ -99,6 +111,7 @@ it.each([{ published: false, refresh: false }, { published: true, refresh: false
           if (method === 'runtime.companyContent.refresh') { await sync.refresh(); return sync.read() }
           if (method === 'runtime.companyContent.pin' && payload && typeof payload === 'object' && 'sessionId' in payload
             && typeof payload.sessionId === 'string' && 'started' in payload && typeof payload.started === 'boolean') {
+            pinCount++
             if (holdPins) {
               if (!signal) throw new Error('Company pin requires cancellation')
               pendingPins.push(signal)
@@ -124,9 +137,19 @@ it.each([{ published: false, refresh: false }, { published: true, refresh: false
   const expert = catalog.experts.find(expert => expert.slug === 'orders')
   expect(expert?.company).toBe(published ? true : undefined)
   if (published) {
+    expect(catalog.experts.find(expert => expert.slug === 'long-header')?.company).toBe(true)
     expect(expert?.division).toBe('operations')
     const persona = ctx.get(Agency.AGENCY_PERSONA_SERVICE)
     expect((await persona!.getPrompt('orders', 'operations', 'zh')).prompt).toContain('Company order expert persona.')
+  }
+  if (collision) {
+    const conflicts = catalog.experts.filter(expert => expert.conflict)
+    expect(conflicts.filter(expert => expert.slug === 'chief-executive-officer')).toHaveLength(2)
+    expect(conflicts.map(expert => expert.slug)).toEqual(expect.arrayContaining(['duplicate-one', 'duplicate-two']))
+    const persona = ctx.get(Agency.AGENCY_PERSONA_SERVICE)!
+    for (const expert of conflicts) await expect(persona.getPrompt(expert.slug, expert.division, 'zh')).rejects.toThrow()
+    const healthy = catalog.experts.find(expert => !expert.company && !expert.conflict)!
+    expect((await persona.getPrompt(healthy.slug, healthy.division, 'zh')).prompt.length).toBeGreaterThan(0)
   }
   expect((await ctx.skills.list()).some(skill => skill.name === 'orders')).toBe(published)
   if (published) expect((await ctx.skills.get('orders'))?.content).toContain('Company order skill body.')
@@ -168,6 +191,9 @@ it.each([{ published: false, refresh: false }, { published: true, refresh: false
     const task = await ctx.agents.create({ sessionId: SessionId('cancel-company-plugin'), agentOptions: { provider: 'fixture', model: 'fixture' } })
     onTestFinished(() => task.dispose())
     const persona = ctx.get(Agency.AGENCY_PERSONA_SERVICE)!
+    const beforeRead = pinCount
+    expect((await persona.getPrompt('orders', 'operations', 'zh', task.agent.id)).prompt).toContain('Company order expert persona.')
+    expect(pinCount - beforeRead).toBe(1)
     const actions: Record<string, (signal: AbortSignal) => Promise<unknown>> = {
       'skill-list': signal => ctx.skills.list({ scope: task.agent, signal }),
       'skill-read': signal => ctx.skills.get('orders', { scope: task.agent, signal }),

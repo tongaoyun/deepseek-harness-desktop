@@ -13,37 +13,67 @@ async function privateDirectory(path: string): Promise<void> {
 }
 
 async function verifyCache(directory: string, release: CompanyContentRelease, signal: AbortSignal): Promise<void> {
-  const expected = new Map(Object.entries(release.files))
-  const directories = new Set(['', 'skills', 'experts'])
-  for (const path of expected.keys()) {
-    const parts = path.split('/')
-    for (let index = 1; index < parts.length; index++) directories.add(parts.slice(0, index).join('/'))
-  }
-  const walk = async (relative: string): Promise<void> => {
+  await readCache(directory, release.version, release.sha256, signal)
+}
+
+/** Read each file once; bounded batches join all I/O before returning a failure. */
+async function readCache(directory: string, version: string, sha256: string, signal: AbortSignal): Promise<void> {
+  const files: Record<string, string> = {}
+  const directories = new Set<string>()
+  const paths = ['']
+  let bytes = 0, fileCount = 0
+  let metadata: unknown
+  const maxEntries = COMPANY_CONTENT_MAX_FILES * Math.ceil(COMPANY_CONTENT_MAX_PATH_LENGTH / 2) + 3
+  const visit = async (relative: string): Promise<void> => {
     signal.throwIfAborted()
-    const stat = await lstat(join(directory, relative))
-    if (stat.isSymbolicLink()) throw new Error('公司内容缓存路径不安全')
-    if (stat.isDirectory()) {
-      if (!directories.has(relative)) throw new Error('公司内容缓存包含未知目录')
-      for (const child of await readdir(join(directory, relative))) await walk(relative ? `${relative}/${child}` : child)
+    if (relative.length > COMPANY_CONTENT_MAX_PATH_LENGTH) throw new Error('公司内容缓存路径过长')
+    const path = join(directory, relative)
+    const info = await lstat(path)
+    if (info.isSymbolicLink()) throw new Error('公司内容缓存路径不安全')
+    if (info.isDirectory()) {
+      directories.add(relative)
+      for (const child of await readdir(path)) {
+        if (paths.length >= maxEntries) throw new Error('公司内容缓存文件过多')
+        paths.push(relative ? `${relative}/${child}` : child)
+      }
       return
     }
-    if (!stat.isFile()) throw new Error('公司内容缓存已损坏')
+    if (!info.isFile()) throw new Error('公司内容缓存已损坏')
     if (relative === 'release.json') {
-      if (stat.size > 512) throw new Error('公司内容缓存已损坏')
-      const metadata: unknown = JSON.parse(await readFile(join(directory, relative), { encoding: 'utf8', signal }))
-      if (typeof metadata !== 'object' || metadata === null || !('sha256' in metadata) || metadata.sha256 !== release.sha256) throw new Error('公司内容缓存已损坏')
+      if (info.size > 512) throw new Error('公司内容缓存已损坏')
+      metadata = JSON.parse(await readFile(path, { encoding: 'utf8', signal }))
       return
     }
-    const encoded = expected.get(relative)
-    if (encoded === undefined) throw new Error('公司内容缓存已损坏')
-    const data = Buffer.from(encoded, 'base64')
-    if (stat.size !== data.length || !(await readFile(join(directory, relative), { signal })).equals(data)) throw new Error('公司内容缓存已损坏')
-    expected.delete(relative)
+    bytes += info.size
+    if (++fileCount > COMPANY_CONTENT_MAX_FILES || bytes > COMPANY_CONTENT_MAX_BYTES) throw new Error('公司内容缓存已损坏')
+    const data = await readFile(path, { signal })
+    if (data.length !== info.size) throw new Error('公司内容缓存已损坏')
+    files[relative] = data.toString('base64')
   }
-  await walk('')
-  if (expected.size) throw new Error('公司内容缓存已损坏')
-  await lstat(join(directory, 'release.json'))
+  // This is an I/O concurrency ceiling, not a cached permission or content result.
+  for (let index = 0; index < paths.length;) {
+    const batch = paths.slice(index, index + 8)
+    index += batch.length
+    const results = await Promise.allSettled(batch.map(visit))
+    for (const result of results) if (result.status === 'rejected') throw result.reason
+  }
+  signal.throwIfAborted()
+  if (typeof metadata !== 'object' || metadata === null || !('sha256' in metadata) || metadata.sha256 !== sha256
+    || !('version' in metadata) || typeof metadata.version !== 'string') throw new Error('公司内容缓存已损坏')
+  let release: CompanyContentRelease
+  try {
+    release = version === '0' && fileCount === 0 ? companyContentRelease(null)
+      : companyContentRelease({ version, sha256, files })
+  } catch (cause) { throw new Error('公司内容缓存已损坏', { cause }) }
+  if (release.sha256 !== sha256) throw new Error('公司内容缓存已损坏')
+  const expectedDirectories = new Set(['', 'skills', 'experts'])
+  for (const path of Object.keys(files)) {
+    const parts = path.split('/')
+    for (let index = 1; index < parts.length; index++) expectedDirectories.add(parts.slice(0, index).join('/'))
+  }
+  if (directories.size !== expectedDirectories.size || [...directories].some(path => !expectedDirectories.has(path))) {
+    throw new Error('公司内容缓存包含未知或缺失目录')
+  }
 }
 
 /** Stage a complete release without overwriting files held by a running Host.
@@ -109,32 +139,7 @@ export async function restoreCompanyContent(root: string, employeeId: string, ve
   await privateDirectory(root)
   await privateDirectory(employee)
   const directory = join(employee, sha256)
-  const files: Record<string, string> = {}
-  let bytes = 0, entries = 0, fileCount = 0
-  // Each one-character path segment requires a separator; valid releases can exceed 4,096 directories.
-  const maxEntries = COMPANY_CONTENT_MAX_FILES * Math.ceil(COMPANY_CONTENT_MAX_PATH_LENGTH / 2) + 3
-  const walk = async (relative: string): Promise<void> => {
-    signal.throwIfAborted()
-    if (relative.length > COMPANY_CONTENT_MAX_PATH_LENGTH) throw new Error('公司内容缓存路径过长')
-    const path = join(directory, relative)
-    const info = await lstat(path)
-    if (info.isSymbolicLink()) throw new Error('公司内容缓存路径不安全')
-    if (info.isDirectory()) {
-      for (const child of await readdir(path)) {
-        if (++entries > maxEntries) throw new Error('公司内容缓存文件过多')
-        await walk(relative ? `${relative}/${child}` : child)
-      }
-    } else if (relative !== 'release.json') {
-      bytes += info.size
-      if (!info.isFile() || ++fileCount > COMPANY_CONTENT_MAX_FILES || bytes > COMPANY_CONTENT_MAX_BYTES) throw new Error('公司内容缓存已损坏')
-      files[relative] = (await readFile(path, { signal })).toString('base64')
-    } else if (!info.isFile() || info.size > 512) throw new Error('公司内容缓存已损坏')
-  }
-  await walk('')
-  const release = version === '0' && Object.keys(files).length === 0 ? companyContentRelease(null)
-    : companyContentRelease({ version, sha256, files })
-  if (release.sha256 !== sha256) throw new Error('公司内容缓存已损坏')
-  await verifyCache(directory, release, signal)
+  await readCache(directory, version, sha256, signal)
   return { version, sha256, skillsRoot: join(directory, 'skills'), expertsRoot: join(directory, 'experts') }
 }
 

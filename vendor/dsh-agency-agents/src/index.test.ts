@@ -322,6 +322,20 @@ describe('loadCatalog', () => {
     expect(map.has('backend-architect-with-memory')).toBe(false)
   })
 
+  it('loads published expert metadata beyond 64 KiB and keeps the 128 KiB bound', async () => {
+    await mkdir(join(dir, 'engineering'), { recursive: true })
+    const description = '中'.repeat(24 * 1_024)
+    await writeFile(join(dir, 'engineering', 'long-header.md'),
+      `---\nname: Long header\ndescription: ${description}\n---\nExpert instructions.`)
+    await writeFile(join(dir, 'engineering', 'oversized-header.md'),
+      `---\nname: Oversized\ndescription: ${'a'.repeat(128 * 1_024)}\n---\nBody.`)
+    const catalog = await loadCatalog(dir, ['engineering'])
+    expect(catalog.get('long-header')?.description).toBe(description)
+    expect(catalog.has('oversized-header')).toBe(false)
+    await expect(createAgencyPersonaSource(dir, ['engineering']).getPrompt('long-header', 'engineering', 'en'))
+      .resolves.toEqual({ prompt: 'Expert instructions.' })
+  })
+
   it('未配置的分区不会参与名册加载', async () => {
     await mkdir(join(dir, 'marketing'), { recursive: true })
     await mkdir(join(dir, 'integrations', 'mcp-memory'), { recursive: true })

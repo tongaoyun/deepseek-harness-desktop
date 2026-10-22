@@ -3659,12 +3659,12 @@
     {
       "path": "src/index.test.ts",
       "before": "e7b6d6e0f8037f6155eb90bf642790706a3f2765553b4cc0743a8a381e04fbce",
-      "after": "4e2e9f15466ed46ddb528ce4b86cade2fa3113a9ae5976c82c3f49dc67397470"
+      "after": "598a03d9e7d7b7e25bf52accebe87b724adc3d041534e32f16641df5ea4fc514"
     },
     {
       "path": "src/index.ts",
       "before": "1461dd96a2f5450fa36f6ac56ee9e1a95a268b8205e9493c0761500a8da46a2c",
-      "after": "bf4977bcc46c6f171e8c715f53878b23a6cf2f8d47f08d6a7e641afa551e22d6"
+      "after": "23264c3f74d1050cb92c09847e58d60fadd40cd97b92009f1771af078b298faa"
     },
     {
       "path": "src/plugin-update-runtime.d.ts",

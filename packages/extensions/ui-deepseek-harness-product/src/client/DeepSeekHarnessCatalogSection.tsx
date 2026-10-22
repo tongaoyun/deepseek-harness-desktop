@@ -92,7 +92,7 @@ export function DeepSeekHarnessCatalogSection(props: CatalogSectionProps): React
     }
   }
 
-  const refresh = async (): Promise<void> => {
+  const refresh = async (reconnect = false): Promise<void> => {
     const scope = catalogReads.current
     const currentGeneration = cancelReads(scope)
     const api = productApi()
@@ -114,6 +114,8 @@ export function DeepSeekHarnessCatalogSection(props: CatalogSectionProps): React
         return
       }
       setAuthRequired(false)
+      if (currentGeneration !== scope.generation) return
+      if (reconnect && catalog === 'connectors') await read(api, 'connectors.refresh', {}, undefined, scope)
       if (currentGeneration !== scope.generation) return
       const catalogValue = await read(api, METHODS[catalog], undefined, undefined, scope)
       if (currentGeneration !== scope.generation) return
@@ -280,7 +282,7 @@ export function DeepSeekHarnessCatalogSection(props: CatalogSectionProps): React
           onClose={() => { setCategoryMenuOpen(false) }}
           anchor={<button className={css.categoryButton} type="button" aria-label={t('categoryFilter')} onClick={() => { setCategoryMenuOpen(value => !value) }}>
             {categoryFilter === 'all' ? t('allCategories') : localizedCategory(categoryFilter, t)}<IconChevronDownOutlineRegular size={14} /></button>} />
-        <Button variant="ghost" aria-label={t('refresh')} disabled={loading} onClick={() => { void refresh() }}><IconRefreshOutlineRegular size={16} /></Button>
+        <Button variant="ghost" aria-label={t('refresh')} disabled={loading} onClick={() => { void refresh(true) }}><IconRefreshOutlineRegular size={16} /></Button>
       </div>}
       {authRequired && <Button variant="primary" disabled={authPending} onClick={() => { void signIn() }}>{t('signIn')}</Button>}
       {authError && <p role="alert">{t('loadFailed')}</p>}

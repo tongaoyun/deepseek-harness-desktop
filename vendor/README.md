@@ -88,7 +88,7 @@ To update a vendored package from upstream:
 各目录 `upstream.json` 记录原文件 SHA-256；`local-changes.json` 逐文件记录增加、修改和删除，包含修改后的哈希，供审查和升级核对。技能与专家仍通过官方 Skill Provider、工具及子代理运行。
 
 - 两个 `package.json` 改为私有工作区依赖及 `1.2.9-company.1`；构建配置输出 Host/Client 两面并保留稳定客户端模块 ID。专家插件补充源码所需图标依赖。
-- 专家 `src/index.ts` 删除独立更新注册，读取公司目录并拒绝社区 ID 冲突，按公司实际分类读取固定说明；空公司目录正常加载。`src/expert-contract.ts` 和客户端视图传播公司来源，`src/client/index.ts` 增加公司筛选并移除外部链接、重复反馈和更新按钮；`src/client/locales.ts` 统一“专家套件”名称。`locale/zh.json` 同步名称。
+- 专家 `src/index.ts` 删除独立更新注册，读取公司目录，将与内置专家相同 ID 或名称及公司目录内的重名标记为冲突，仅阻止相关专家调用，不使整份目录加载失败，按公司实际分类读取固定说明；提示词读取再次检查冲突，禁止回退到另一份同名专家。专家元数据读取上限与公司入口发布的 128 KiB 对齐，保留分块读取和超限拒绝，避免合法长文件发布后无法加载。公司目录允许将重名交由既有名册冲突投影处理，内置目录的严格校验保持原样；空公司目录正常加载。回归见产品 `company-plugins.spec.ts` 的真实 Loader/profile 冲突组合。`src/expert-contract.ts` 和客户端视图传播公司来源，`src/client/index.ts` 增加公司筛选并移除外部链接、重复反馈和更新按钮；`src/client/locales.ts` 统一“专家套件”名称。`locale/zh.json` 同步名称。
 - 技能 `src/index.ts` 删除独立更新注册；`src/core.ts` 登记只读公司来源并纳入原生来源排序；`src/client.ts` 增加公司来源文案、移除外部链接、重复反馈和独立更新；`locale/zh.json` 同步名称。
 - 两插件的 `plugin-updater`、`plugin-update-*` 源文件及专属测试删除。专家现有测试更新工作区依赖、套件名称和已删除入口，DOM 断言使用宿主当前组件，移除面向旧全局 CLI 布局的宿主模块探测，配置直接使用固定工作区的 Schemastery volatile，YAML 使用声明依赖，可选专家团由当前装配解析。对应旧布局测试删除，真实 Loader/profile 测试覆盖固定装配。
 - 产品协议以类型依赖提供可选公司内容源。专家 `src/index.ts` 按 Session 读取不可变公司目录；远程声明、服务与客户端读取支持后台检查，`src/client/catalog.ts` 合并请求并拒绝旧响应覆盖。技能 `src/types.ts`、`src/core.ts`、`src/host-types.ts` 和 `src/index.ts` 为目录读取及 Agent Provider 传递固定根目录与单次调用取消信号；专家名册及说明读取传递工具取消信号，客户端路由和页面支持先本地后同步、失败保留及重试。原插件测试夹具提供当前官方执行上下文；真实 Loader 与无密钥快照验证版本隔离、记录和卸载。

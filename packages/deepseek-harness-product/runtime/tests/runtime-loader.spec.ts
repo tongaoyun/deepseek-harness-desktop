@@ -405,18 +405,40 @@ it('loads native skills with authorized MCP and exact knowledge scope, replays a
   await ctx.loader.root.update([]); await ctx.loader.await()
   catalogInvalid = true
   await mount()
-  const blocked = await create('invalid-connector-catalog')
+  const degraded = await create('invalid-connector-catalog')
   const errors: unknown[] = []
-  ctx.on('agent/error', ({ error }) => { errors.push(error) })
+  const stopErrors = ctx.on('agent/error', ({ error }) => { errors.push(error) })
   const modelRequests = adapter.requests.length
-  blocked.agent.followup(createUserMessage({ content: [{ type: 'text', text: 'Continue.' }], source: { kind: 'user' } }))
-  await vi.waitFor(() => { expect(errors).toHaveLength(1) })
-  expect(errors[0]).toMatchObject({ code: 'CONNECTOR_STARTUP_FAILED', retryable: true })
-  expect(adapter.requests).toHaveLength(modelRequests)
-  expect(ctx.tools.schemas(blocked.agent).map(tool => tool.name)).not.toContain(ordersRead)
-  await blocked.dispose()
-  await ctx.loader.root.update([]); await ctx.loader.await()
+  degraded.agent.followup(createUserMessage({ content: [{ type: 'text', text: 'Continue.' }], source: { kind: 'user' } }))
+  await vi.waitFor(() => { expect(adapter.requests.length).toBeGreaterThan(modelRequests) })
+  expect(errors).toEqual([])
+  expect(JSON.stringify(adapter.requests.at(-1)?.messages)).toContain('Enterprise connector catalog is unavailable.')
+  expect(ctx.tools.schemas(degraded.agent).map(tool => tool.name)).not.toContain(ordersRead)
+  expect(await request(90, 'connectors.refresh')).toMatchObject({ failure: { code: 'CONNECTOR_STARTUP_FAILED', retryable: true } })
+  expect(ctx.tools.schemas(degraded.agent).map(tool => tool.name)).not.toContain(ordersRead)
   catalogInvalid = false
+  expect(typeof (await request(91, 'connectors.refresh', { ids: ['erp'] })).error).toBe('string')
+  expect(await request(92, 'connectors.refresh')).toMatchObject({ result: { connectedIds: ['erp'], unavailableIds: ['broken'] } })
+  expect(ctx.tools.schemas(degraded.agent).map(tool => tool.name)).toContain(ordersRead)
+  await ctx.tools.execute({ name: ordersWrite, arguments: {}, callId: ToolCallId('recovered-write'), signal: new AbortController().signal })
+  expect(decisions.at(-1)).toBe('ask')
+  await ctx.tools.execute({ name: undeclared, arguments: {}, callId: ToolCallId('recovered-undeclared'), signal: new AbortController().signal })
+  expect(decisions.at(-1)).toBe('deny')
+  catalogPending = true
+  const cancelledRefresh = request(93, 'connectors.refresh')
+  await vi.waitFor(() => { expect(pendingCatalog).toBeDefined() })
+  const cancelledCatalog = pendingCatalog!
+  emitMessage({ type: 'extension-control-cancel', namespace: 'product', requestId: 93 })
+  expect(await cancelledRefresh).toMatchObject({ failure: { code: 'PRODUCT_REQUEST_CANCELLED' } })
+  expect(cancelled).toContain(cancelledCatalog)
+  expect(ctx.tools.schemas(degraded.agent).map(tool => tool.name)).not.toContain(ordersRead)
+  catalogPending = false
+  pendingCatalog = undefined
+  expect(await request(94, 'connectors.refresh')).toMatchObject({ result: { connectedIds: ['erp'] } })
+  stopErrors()
+  await degraded.dispose()
+  await ctx.loader.root.update([]); await ctx.loader.await()
+  expect(ctx.tools.schemas().map(tool => tool.name)).not.toContain(ordersRead)
   await mount()
   companyBindingMissing = true
   const unavailable = await create('missing-company-binding', events)
@@ -447,6 +469,13 @@ it('loads native skills with authorized MCP and exact knowledge scope, replays a
   pendingRequest = undefined
   const unloadingRequest = request(3, 'tasks.capabilities.prepare', { knowledgeBaseIds: ['policy'] })
   await vi.waitFor(() => { expect(pendingRequest).toBeDefined() })
+  catalogPending = true
+  const unloadingConnectorRefresh = request(95, 'connectors.refresh')
+  await vi.waitFor(() => { expect(pendingCatalog).toBeDefined() })
+  const unloadingCatalog = pendingCatalog!
+  const readsBeforeQueued = catalogReads
+  const queuedRefresh = request(96, 'connectors.refresh')
+  emitMessage({ type: 'extension-control-cancel', namespace: 'product', requestId: 96 })
   companyPinPending = true
   const unloadingCompanyCheck = expect(restoredCompanyContent.forSession(restored.agent.id)).rejects.toThrow('unloaded')
   await vi.waitFor(() => { expect(pendingPins).toHaveLength(4) })
@@ -457,6 +486,11 @@ it('loads native skills with authorized MCP and exact knowledge scope, replays a
   companyPinPending = false
   // Plugin release joins the operation but deliberately sends no response to a closed IPC owner.
   void unloadingRequest
+  void unloadingConnectorRefresh
+  void queuedRefresh
+  expect(cancelled).toContain(unloadingCatalog)
+  expect(catalogReads).toBe(readsBeforeQueued)
+  pendingCatalog = undefined
   expect(cancelled).toContain(pendingRequest)
   expect(process.listenerCount('message')).toBe(before)
   expect(ctx.tools.schemas(restored.agent).map(tool => tool.name)).not.toContain(ordersRead)

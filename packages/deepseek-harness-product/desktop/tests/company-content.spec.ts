@@ -3,11 +3,11 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { expect, it, onTestFinished, vi } from 'vitest'
 import { contentDigest } from '@deepseek-harness/product/company-content'
-import { installCompanyContent } from '../src/company-content.ts'
+import { installCompanyContent, restoreCompanyContent } from '../src/company-content.ts'
 
 vi.mock('node:fs/promises', async (original) => {
   const fs = await original<typeof import('node:fs/promises')>()
-  return { ...fs, rename: vi.fn(fs.rename) }
+  return { ...fs, rename: vi.fn(fs.rename), readFile: vi.fn(fs.readFile) }
 })
 
 async function fixture() {
@@ -87,4 +87,26 @@ it('verifies the winning directory after a Windows rename collision and cleans s
   await expect(installCompanyContent(root, 'windows-race', release('new'), signal)).rejects.toThrow()
   const [employee] = await readdir(root)
   expect(await readdir(join(root, employee!))).toEqual([release().sha256])
+})
+
+it('reads each cache file once per check and still detects later changes', async () => {
+  const root = await fixture(), signal = new AbortController().signal
+  const value = release()
+  const installed = await installCompanyContent(root, 'a', value, signal)
+  for (let check = 0; check < 2; check++) {
+    vi.mocked(readFile).mockClear()
+    expect(await restoreCompanyContent(root, 'a', value.version, value.sha256, signal)).toEqual(installed)
+    expect(readFile).toHaveBeenCalledTimes(2)
+  }
+  await writeFile(join(installed.skillsRoot, 'orders/SKILL.md'), 'changed')
+  await expect(restoreCompanyContent(root, 'a', value.version, value.sha256, signal)).rejects.toThrow('损坏')
+})
+
+it('reuses identical content under a new version without rewriting the immutable cache', async () => {
+  const root = await fixture(), signal = new AbortController().signal
+  const value = release()
+  const first = await installCompanyContent(root, 'a', value, signal)
+  const next = await installCompanyContent(root, 'a', { ...value, version: '2.0.0' }, signal)
+  expect(next).toEqual({ ...first, version: '2.0.0' })
+  expect(await restoreCompanyContent(root, 'a', next.version, next.sha256, signal)).toEqual(next)
 })
