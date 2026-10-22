@@ -574,7 +574,6 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     ownerPropsReferences: [
       'SessionId',
       'SessionPendingInteraction',
-      'SessionSnapshot',
     ],
     standardProps: [
       'useRemoteAccess: (action: RemoteEndpoint) => boolean',
@@ -1151,7 +1150,6 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     ],
     ownerPropsReferences: [
       'InputState',
-      'SessionSnapshot',
     ],
     standardProps: [
       'useRemoteAccess: (action: RemoteEndpoint) => boolean',
@@ -1240,6 +1238,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     slotInject: '',
     declaredBy: 'an entry in \'conversation.composer.bar\' (client-ui-conversation), so it exists while that entry is mounted',
     occupants: [
+      '@deepseek-harness/product-experts (props) => React.createElement(AgentsButton, { ...props, … id \'agency-agents\'',
       '@deepseek-harness/product-ui TaskKnowledgeInput id \'product-knowledge\'',
     ],
     replaceRisk: 'none',
@@ -2306,7 +2305,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
       'useSessionAccess: (sessionId: SessionId, action: RemoteEndpoint) => boolean',
       'useWorkspaceAccess: (workspaceId: WorkspaceId, action: RemoteEndpoint) => boolean',
     ],
-    keyDomain: 'open: any string the owner dispatches (no compile-time key set), already taken: conversation',
+    keyDomain: 'open: any string the owner dispatches (no compile-time key set), already taken: conversation, deepseek-harness-experts, deepseek-harness-skills',
     hookContext: '',
     slotInject: '',
     declaredBy: 'an entry in \'root\' (client-ui-layout), so it exists while that entry is mounted',
@@ -2314,7 +2313,8 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
       'client-ui-conversation ConversationPanel key \'conversation\'',
       'client-ui-plugin-manager PluginManagerPage',
       'client-ui-schedule TaskManagerPage',
-      '@deepseek-harness/product-ui ExtensionPage',
+      '@deepseek-harness/product-experts (props) => React.createElement(\'div\', { className: \'produ… key \'deepseek-harness-experts\'',
+      '@deepseek-harness/product-skills props => h(\'div\', { className: \'product-capability-page\' … key \'deepseek-harness-skills\'',
       '@deepseek-harness/product-ui Component',
     ],
     replaceRisk: 'shadows-shipped-ui',

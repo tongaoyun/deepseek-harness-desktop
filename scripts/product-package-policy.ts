@@ -16,6 +16,8 @@ export interface ProductPackagePolicy {
  * Optional integrations may be reached by an optional bundle without becoming default capabilities.
  */
 export const PRODUCT_PACKAGE_POLICY: Readonly<Record<string, ProductPackagePolicy>> = {
+  'packages/deepseek-harness-product/experts': { category: 'product', reason: 'Builtin personal and shared experts using official delegation and Settings.' },
+  'packages/deepseek-harness-product/skills': { category: 'product', reason: 'Builtin skill management using official Skill Providers.' },
   'packages/deepseek-harness-product/product': {
     category: 'product', reason: 'Product protocol and server gateway loaded by the independent Desktop assembly.',
   },

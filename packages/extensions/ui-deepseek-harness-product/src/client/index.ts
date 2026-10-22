@@ -22,7 +22,8 @@ import {
 import {
   CAPABILITY_PANELS, EXTENSION_PANELS, CapabilitiesHeading, createCapabilityChildIcon,
 } from './DeepSeekHarnessCapabilitiesNavigation.tsx'
-import { ExtensionPage, type ExtensionPageInjected } from './ExtensionPage.tsx'
+import * as Experts from '@deepseek-harness/product-experts/client'
+import * as Skills from '@deepseek-harness/product-skills/client'
 import { DeepSeekHarnessSettingsMenu } from './DeepSeekHarnessSettingsMenu.tsx'
 import { createHarnessActions } from './harness-actions.ts'
 import { TaskKnowledgeInput } from './TaskKnowledgeInput.tsx'
@@ -41,6 +42,8 @@ const PANEL_COMPONENTS = {
 /** Register DeepSeekHarness capability navigation in the official Harness sidebar. */
 export function apply(ctx: ClientContext): void {
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'deepseek-harness-product: dictionaries')
+  ctx.plugin(Experts)
+  ctx.plugin(Skills)
   registerKnowledgeToolResults(ctx)
   const carrier = (globalThis as { dshDesktop?: { protocolVersion?: number; updates?: { check(): Promise<void> } } }).dshDesktop
   const updates = carrier?.protocolVersion === 1 ? carrier.updates : undefined
@@ -78,16 +81,6 @@ export function apply(ctx: ClientContext): void {
   }, CapabilitiesHeading))
 
   for (const [index, panel] of EXTENSION_PANELS.entries()) {
-    ctx.slots.inject('main', () => ctx.slots.register({
-      name: 'main', key: panel.id, locale: NS,
-      inject: (): ExtensionPageInjected => ({
-        sectionId: panel.sectionId, close: () => { ctx.layout.selectPanel(null) },
-        hooks: { available: {
-          getSnapshot: () => ctx.slots.entries('settings.section').some(entry => entry.options.id === panel.sectionId),
-          subscribe: listener => ctx.slots.subscribe('settings.section', listener),
-        } },
-      }),
-    }, ExtensionPage))
     ctx.slots.inject('sidebar.panellist', () => ctx.slots.register({
       name: 'sidebar.panellist', id: panel.id, order: -39 + index, locale: NS,
       label: () => t(panel.labelKey),

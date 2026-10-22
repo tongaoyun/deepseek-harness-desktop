@@ -20,8 +20,8 @@ export const CAPABILITY_PANELS = [
 export type CapabilityPanel = typeof CAPABILITY_PANELS[number]
 
 export const EXTENSION_PANELS = [
-  { id: 'deepseek-harness-experts' as MainPanelId, sectionId: 'agency-agents', labelKey: 'expertKits', icon: IconAgentPresetOutlineRegular },
-  { id: 'deepseek-harness-skills' as MainPanelId, sectionId: 'skills-manager', labelKey: 'skills', icon: IconDeliverDocRegular },
+  { id: 'deepseek-harness-experts' as MainPanelId, labelKey: 'expertKits', icon: IconAgentPresetOutlineRegular },
+  { id: 'deepseek-harness-skills' as MainPanelId, labelKey: 'skills', icon: IconDeliverDocRegular },
 ] as const
 
 /** Label the extension panels without adding an interactive navigation layer. */

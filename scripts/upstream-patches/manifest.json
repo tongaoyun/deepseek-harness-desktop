@@ -115,7 +115,7 @@
         {
           "path": "scripts/product-package-policy.ts",
           "before": "607d8f9ac14b0345fb97b6b2cec45eda38b2bc4c6b61d1740d12950dd69e5b7c",
-          "after": "95591d914e480c330e28144e332cb9118f0e86a6dfbd8c89fa538ea9eb0638c0"
+          "after": "9065e51302be61a348639e0e9abaf832d9bfa38281f81961ffed7230dd5f7970"
         },
         {
           "path": "scripts/verify-product-use.spec.ts",
@@ -143,7 +143,7 @@
         "apps/desktop/tests/project-manager.spec.ts",
         "apps/desktop/tests/profile-mcp.spec.ts",
         "packages/boot/plugin-manager/tests/manager.spec.ts",
-        "packages/deepseek-harness-product/desktop/tests/native-extensions.spec.ts",
+        "packages/deepseek-harness-product/desktop/tests/builtin-capabilities.spec.ts",
         "apps/desktop/tests/web-document.spec.ts"
       ],
       "files": [
@@ -770,7 +770,7 @@
         {
           "path": ".gitattributes",
           "before": "946bed079ec10d6ce1fe3fc3d76e42a9587548135f0f4a7500d77303d9cbd398",
-          "after": "3476fc6a6f4a56007194d4734f8eaadb297ce349176bd15686ae7d87dfafc7d8"
+          "after": "2331dd3f6d3b209b7b9c69a5502caf8499ae0d257e5507c0b05fab3c000f673a"
         },
         {
           "path": ".gitignore",
@@ -795,7 +795,7 @@
         {
           "path": "pnpm-lock.yaml",
           "before": "4637cca3b89c4c8d5a147321710e597aa62ec2444a3772ab542be5690893dfe4",
-          "after": "cb6fea780a9ac106534e75b2439304ca73fcdddc1c842e005ec5cf15b9a32ea1"
+          "after": "f891beda9b7c7e75ce124c5baa01235e912603992af07cf31a221b5c5000d6d5"
         },
         {
           "path": "scripts/check-workspace-constraints.spec.ts",
@@ -840,7 +840,7 @@
         {
           "path": "pnpm-workspace.yaml",
           "before": "3c624c26e58ab02ffc8d653bb8a9e8767a63fe0576bc0dbfaa3a5e43f88d973b",
-          "after": "a70f4fc9148fb07fdb1a90aef95ef5942375c09f5aebba9c45945942ce734292"
+          "after": "36635090dc774dfc6dbdb32791ab3e100503056abc24791654ff94c89f022395"
         }
       ],
       "diff": "workspace-integration.patch"
@@ -912,12 +912,12 @@
         {
           "path": "docs/config-catalog.md",
           "before": "1dd99a4488550d8ea6e303adfeb01abc41be7cfffa94708658e32ea5a2c5c015",
-          "after": "8f6f1ff3e1b8d107ffb5533ebcb5b37747d9387b8a0b2ff109bdec7eaf815e13"
+          "after": "4fa627aaf618751e248502c14c4ef38ca99b64914b9ab455a3e2ce230d1b7beb"
         },
         {
           "path": "docs/config-catalog.zh.md",
           "before": "df509dde710b613d454b3ed01f6b76ec3d3f5f96321e1a4c52ab5471ee2d3e2e",
-          "after": "548294793a62f4ee4a2fa44d7ff1192c0640aecb91f072606835a2cfc8136b42"
+          "after": "70939b525f14439e5909f608b63bac2af652b85b1db2e6d7cb8dfa3e302ee5c9"
         },
         {
           "path": "docs/event-producer-consumer.md",
@@ -987,7 +987,7 @@
         {
           "path": "packages/extensions/cordis-client-runner/src/client/slot-catalog.ts",
           "before": "f8e09d2e99335793434ca39fb65beefbbecbd0573d235bafd10e81131035d330",
-          "after": "07de98ac714dea3996cad7e7ba2993ffdfd0d743602f71760635f2254a61a4fb"
+          "after": "622268e01bd3ed716ba0a94e5a8fa7e5271b0069122b7e5989b2b6f4cbcc3387"
         },
         {
           "path": "packages/extensions/tool-cordis/src/api-catalog.ts",
@@ -997,7 +997,7 @@
         {
           "path": "packages/preset/agent-preset/skills/cordis-composition-reference/references/packages.md",
           "before": "dce58b653277bbcd25cf245178916e5f7b06e558382bb98a566f00b63318474c",
-          "after": "cd52e0dc3257493a6b6da64e18e48926584412cc59e6c361d1ee17c0539ed302"
+          "after": "4297ac3da5b637fddf83fd87eb9b0afcf106b1ae3b6105386b59aa3b4bf5de0b"
         },
         {
           "path": "scripts/doc-standard.spec.ts",
@@ -1370,7 +1370,7 @@
         {
           "path": "scripts/translation-pairing.manifest.json",
           "before": "9944a604474c609318ec2793512661aa0dfc67f124d6789df4f285e8c5910153",
-          "after": "602617f0fe2a2e0fac3ae0ac89da12bffac1d6a0eddd74ef35816555d283ccae"
+          "after": "1edb89a19f6dd75c513080e406a709a95830fc508388f5bf577f227fb2fae57a"
         },
         {
           "path": "scripts/verify-package-readme-limitations.ts",
@@ -1583,7 +1583,7 @@
     },
     {
       "id": "company-plugin-vendor-documentation",
-      "purpose": "完整登记产品预装社区插件的固定源码来源、依赖装配、公司内容入口和本地差异；官方 profile 不引入产品插件。",
+      "purpose": "记录社区专家与技能源码迁入独立产品包后的来源、许可与维护方式，测试数据单独保存，不再作为可独立安装的预装插件发布。",
       "tests": [
         "packages/deepseek-harness-product/desktop/tests/company-plugins.spec.ts",
         "scripts/upstream-boundaries.spec.ts"
@@ -1592,31 +1592,24 @@
         {
           "path": "vendor/README.md",
           "before": "463f0475336df70f35805c60ea897b94d15cdd295595d8a50074dedd4555d311",
-          "after": "39619d0435813039cdc4764be8690a87fd02d3d71a7f9e170e699917aa24426a"
+          "after": "1282073359d218318e692c491a79754b001d541e6134146b6b775d9028909213"
         }
       ],
       "diff": "company-plugin-vendor-documentation.patch"
     },
     {
-      "id": "profile-plugin-replacement",
-      "purpose": "通用 profile 插件替换参数 replace：name 保持匹配条件，替换模块来源同时保留原条目 ID、配置、停用及隔离设置；拒绝空名称和分组替换。产品通过该公开补丁加载随软件提供的插件，防止已有 profile 的同名 npm 安装覆盖公司分支。 defaults 插入层先于用户覆盖；配置编辑器持久化替换前的稳定包名，支持新装、已有配置、修改、重启及模块路径升级。 CLI 配置和 schema 导出使用相同的默认插入顺序。",
+      "id": "profile-default-insertion",
+      "purpose": "通用 profile 默认插入层先于用户覆盖，配置编辑器与 CLI 使用相同顺序；产品固定内建模块使用该层保存个人配置，不再保留旧插件替换机制。",
       "tests": [
-        "packages/boot/app-boot/tests/plugin-replacement.spec.ts",
-        "packages/deepseek-harness-product/desktop/tests/native-extensions.spec.ts",
         "packages/deepseek-harness-product/desktop/tests/company-plugins.spec.ts",
-        "packages/boot/plugin-market/tests/replacement-configuration.spec.ts",
+        "packages/deepseek-harness-product/desktop/tests/builtin-capabilities.spec.ts",
         "apps/cli/tests/default-plugin-dump.spec.ts"
       ],
       "files": [
         {
           "path": "vendor/include/src/index.ts",
           "before": "50005dcc3b35cb8e18e33ee157567aa14210b932fb25e22506d31aee25e59428",
-          "after": "08996ab14c179e5c3c0673c60242470e704d10456c2fff7600abc6320e18a8e8"
-        },
-        {
-          "path": "packages/boot/app-boot/tests/plugin-replacement.spec.ts",
-          "before": null,
-          "after": "37a4df6e9d6d94c6f4412adb01dbfb0c0ba31b59366574561d65fb765b67d163"
+          "after": "23fc56b13b7d5143f0abac18102166c0dfa64a0e8ee4d4a4fcdcaaca00f53701"
         },
         {
           "path": "packages/boot/app-boot/src/profile-context.ts",
@@ -1626,12 +1619,7 @@
         {
           "path": "packages/boot/config-editor/src/index.ts",
           "before": "34a0b17d43446f8e35d4a35de0da2fd0f93673a3dc925956a6abfa4d8ffcbf33",
-          "after": "1b95a7f3d9af33736b7c2b17b74cfdf5a827d7c4d4cac82fea15193bfd16c6c0"
-        },
-        {
-          "path": "packages/boot/plugin-market/tests/replacement-configuration.spec.ts",
-          "before": null,
-          "after": "711bb09e3674046979dca563c54ee7fe3e217956bc26f15842ac4e0f8b7d6c5a"
+          "after": "2d15fa9d6efc2a187594ec63e735a0b151a5190266f3d7b1f8d2a1cc97000eff"
         },
         {
           "path": "apps/cli/src/dump-config.ts",
@@ -1641,10 +1629,10 @@
         {
           "path": "apps/cli/tests/default-plugin-dump.spec.ts",
           "before": null,
-          "after": "f04c72d127bd56e2c7cdb52f87050d970067d4224dd178cad2049ee90acdd249"
+          "after": "910b37a9ce89852d84e91bc0b1e45bbf120a3bbe9b456fbbab8f13ee16a376ff"
         }
       ],
-      "diff": "profile-plugin-replacement.patch"
+      "diff": "profile-default-insertion.patch"
     },
     {
       "id": "repository-file-list-capacity",
@@ -1708,6 +1696,33 @@
         }
       ],
       "diff": "desktop-owned-host-http.patch"
+    },
+    {
+      "id": "product-builtin-capabilities-integration",
+      "purpose": "将专家与技能作为产品内建模块统一装配；仅登记依赖布局、生成目录和原有源码断言门禁基线的迁移差异，不修改官方执行循环。 原社区实现迁移后沿用此前 vendor 的 lint 范围；新增配置读取、提交出口及装配测试仍由仓库 lint 检查，源码均经过独立严格类型检查。",
+      "tests": [
+        "packages/extensions/ui-deepseek-harness-product/tests/builtin-capabilities.client.spec.ts",
+        "packages/deepseek-harness-product/desktop/tests/company-plugins.spec.ts",
+        "packages/deepseek-harness-product/desktop/tests/builtin-capabilities.spec.ts"
+      ],
+      "files": [
+        {
+          "path": "scripts/no-unknown-casts.baseline.json",
+          "before": "fd85277f4e3c906f2c3de6d47880ae447c39e4c439f3c29f2bae83ecf76ff99b",
+          "after": "e2149b377a7ab803767450fb272be1065152467617ad5b88f1015dce5c0d4c6b"
+        },
+        {
+          "path": ".oxlintrc.json",
+          "before": "b285b45af907c2c40455fcf394270d5a35a95d1999da0475ea5eb99afa200393",
+          "after": "ad7e396fbbaa994ddce7df33391f1eb5aee241a81d51c4683b042a824ce9750d"
+        },
+        {
+          "path": ".oxlintrc.staged.json",
+          "before": "05356dceba62c7ad25d987be23eb3bc6550d84099dcb9a1962ffa8b77b9bac00",
+          "after": "8ef7b2365e76378b55898368f2fb024e90b8833665f6ee460fc1298047e2600b"
+        }
+      ],
+      "diff": "product-builtin-capabilities-integration.patch"
     }
   ]
 }

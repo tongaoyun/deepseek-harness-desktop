@@ -2,7 +2,7 @@ import { mkdtemp, mkdir, writeFile, symlink, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { afterEach, expect, it, vi } from 'vitest'
-import { exportSkill } from '../../../../vendor/dsh-skills-manager/lib/core.js'
+import { exportSkill } from '@deepseek-harness/product-skills/submission'
 
 let directory = ''
 afterEach(async () => { vi.unstubAllEnvs(); if (directory) await rm(directory, { recursive: true, force: true }) })

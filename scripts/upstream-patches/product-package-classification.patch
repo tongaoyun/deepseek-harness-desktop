@@ -1,5 +1,5 @@
 diff --git a/scripts/product-package-policy.ts b/scripts/product-package-policy.ts
-index 802ce76f48b6d5178c908ff7eaccc15dc9189ae2..7e94424930e28def245fc95e0f5182d8919510f9 100644
+index 802ce76f48b6d5178c908ff7eaccc15dc9189ae2..3a86bb2f72a7e955decdbbac233e8985f8e1b704 100644
 --- a/scripts/product-package-policy.ts
 +++ b/scripts/product-package-policy.ts
 @@ -1,7 +1,7 @@
@@ -11,10 +11,12 @@ index 802ce76f48b6d5178c908ff7eaccc15dc9189ae2..7e94424930e28def245fc95e0f5182d8
  
  /** One explicitly maintained package role and its reason. */
  export interface ProductPackagePolicy {
-@@ -16,6 +16,18 @@ export interface ProductPackagePolicy {
+@@ -16,6 +16,20 @@ export interface ProductPackagePolicy {
   * Optional integrations may be reached by an optional bundle without becoming default capabilities.
   */
  export const PRODUCT_PACKAGE_POLICY: Readonly<Record<string, ProductPackagePolicy>> = {
++  'packages/deepseek-harness-product/experts': { category: 'product', reason: 'Builtin personal and shared experts using official delegation and Settings.' },
++  'packages/deepseek-harness-product/skills': { category: 'product', reason: 'Builtin skill management using official Skill Providers.' },
 +  'packages/deepseek-harness-product/product': {
 +    category: 'product', reason: 'Product protocol and server gateway loaded by the independent Desktop assembly.',
 +  },

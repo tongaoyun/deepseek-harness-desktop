@@ -72,7 +72,7 @@ description: "认证产品桌面用户，管理凭据、原生操作与产品资
 
 ## 原生扩展
 
-产品 profile 预装源码固定的 `@michengai/dsh-agency-agents` 与 `@michengai/dsh-skills-manager`。启动准备读取官方 profile，只补充缺失插件，保留已有配置及停用状态；同插件重复或预留 ID 冲突会明确报错。第三方插件界面同时通过侧栏“扩展能力”和官方设置入口访问。公司内容启动同步、发布与限制见[公司专家与技能](../../../apps/product-desktop/docs/company-content.md)。自建技能和套件的制品、创作和安装链路已移除，连接器与知识库仍由独立产品包提供。
+产品 profile 固定装配内建专家套件和技能模块，产品 UI 直接注册主页面，不通过设置页面转接。两个模块不声明独立插件安装包，代码随桌面统一更新；官方 profile 不加载。专家个人配置身份和本机技能文件保留，不读取旧导入备份。公司内容同步与发布见[公司专家与技能](../../../apps/product-desktop/docs/company-content.md)。
 
 公司内容由 `CompanyContentSync` 在主进程合并与节流请求；启动和页面打开先显示本地目录，后台校验更新。每位员工的目录指针、不可变文件及 Session 版本绑定独立保存，关闭时取消并等待所有在途操作。使用与发布见[公司内容说明](../../../apps/product-desktop/docs/company-content.md)。
 

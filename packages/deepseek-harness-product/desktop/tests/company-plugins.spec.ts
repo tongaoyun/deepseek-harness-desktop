@@ -1,5 +1,5 @@
 /** Company files enter the native catalogs through a real file-backed Loader profile. */
-import { mkdirSync, mkdtempSync, writeFileSync, rmSync } from 'node:fs'
+import { mkdtempSync, writeFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { fileURLToPath } from 'node:url'
 import { join } from 'node:path'
@@ -21,13 +21,18 @@ import AgentLoop from '@deepseek-ai/dsh-agent-loop'
 import Llm, { ToolCallId } from '@deepseek-ai/dsh-llm'
 import WebServer from '@deepseek-ai/dsh-host-webserver'
 import { contentDigest } from '@deepseek-harness/product/company-content'
-import * as Agency from '@michengai/dsh-agency-agents'
+import * as Agency from '@deepseek-harness/product-experts'
 const AGENCY_LIBRARY_SERVICE = 'agencyAgentsLibrary'
 interface AgencyExpertLibrary {
-  catalog(): Promise<{ experts: readonly { slug: string; name: string; company?: boolean; division: string; conflict?: boolean }[] }>
+  catalog(): Promise<{
+    experts: readonly { slug: string; name: string; company?: boolean; custom?: boolean; division: string; conflict?: boolean }[]
+    revision: number
+    enabled: string[]
+  }>
+  saveCustom(input: { name: string; description: string; division: string; prompt: string }, enabled: boolean, revision: number): ReturnType<AgencyExpertLibrary['catalog']>
 }
 import { installCompanyContent } from '../src/company-content.ts'
-import { nativeExtensionPatches } from '../src/native-extensions.ts'
+import { builtinCapabilityPatches } from '../src/builtin-capabilities.ts'
 import { CompanyContent } from '@deepseek-harness/product-runtime/company-content'
 import { CompanyContentSync } from '../src/company-content-sync.ts'
 
@@ -78,20 +83,12 @@ it.each([{ published: false, refresh: false, collision: false }, { published: tr
     { id: 'agents', name: 'cordis:agents' }, { id: 'loop', name: 'cordis:loop', config: { agents: [] } },
     { id: 'company', name: 'cordis:company' },
     { id: 'web', name: 'cordis:web', config: { host: '127.0.0.1', port: 0 } },
-    { id: 'agency-agents', name: '@michengai/dsh-agency-agents' },
-    { id: 'manager', name: '@michengai/dsh-skills-manager' },
   ]
-  for (const name of ['@michengai/dsh-agency-agents', '@michengai/dsh-skills-manager']) {
-    const installed = join(directory, 'node_modules', name)
-    mkdirSync(installed, { recursive: true })
-    writeFileSync(join(installed, 'package.json'), JSON.stringify({ name, version: '1.2.8', type: 'module', exports: './index.js' }))
-    writeFileSync(join(installed, 'index.js'), 'throw new Error("profile-installed community plugin must not load")\n')
-  }
-  writeFileSync(join(directory, 'cordis.patch.yml'), JSON.stringify([{ insert: rows }]))
-  const bundled = nativeExtensionPatches({ directory, installAnchor: fileURLToPath(new URL('../package.json', import.meta.url)) })
-  // The remote entry is covered by desktop startup; this catalog fixture supplies no remote registry.
-  const patches = bundled.filter(patch => !('insert' in patch))
-  writeFileSync(join(directory, 'cordis.patch.yml'), JSON.stringify([{ insert: rows }, ...patches]))
+  // Use the same fixed product modules as Desktop; the fixture supplies no Typert registry.
+  const capabilities = builtinCapabilityPatches().map(patch => ({
+    defaults: patch.defaults, insert: patch.insert.filter(entry => entry.id !== 'agency-agents-remote'),
+  }))
+  writeFileSync(join(directory, 'cordis.patch.yml'), JSON.stringify([{ insert: rows }, ...capabilities]))
   writeFileSync(join(directory, 'cordis.yml'), '[]\n')
   const profile: ProfileContext = { name: 'test', startedBundles: [], dir: directory,
     patchPath: join(directory, 'cordis.patch.yml'), installAnchor: fileURLToPath(new URL('../package.json', import.meta.url)),
@@ -263,3 +260,42 @@ it.each([{ published: false, refresh: false, collision: false }, { published: tr
   await ctx.loader.await()
   expect(ctx.get(AGENCY_LIBRARY_SERVICE)).toBeUndefined()
 }, 30_000)
+
+it('restores personal experts through the builtin profile and official Settings after restart', async () => {
+  const home = mkdtempSync(join(tmpdir(), 'builtin-personal-profile-'))
+  onTestFinished(() => { rmSync(home, { recursive: true, force: true }) })
+  vi.stubEnv('DSH_HOME', home)
+  onTestFinished(() => { vi.unstubAllEnvs() })
+  const directory = join(home, 'profile')
+  initProfile(directory, [])
+  writeFileSync(join(directory, 'cordis.yml'), '[]\n')
+  writeFileSync(join(directory, 'cordis.patch.yml'), JSON.stringify([
+    { insert: [{ id: 'editor', name: 'cordis:editor' }, { id: 'settings', name: 'cordis:settings' },
+      { id: 'tools', name: 'cordis:tools' }, { id: 'prompt', name: 'cordis:prompt' },
+      { id: 'web', name: 'cordis:web', config: { host: '127.0.0.1', port: 0 } }] },
+  ]))
+  const profile: ProfileContext = { name: 'test', startedBundles: [], dir: directory,
+    patchPath: join(directory, 'cordis.patch.yml'), installAnchor: fileURLToPath(new URL('../package.json', import.meta.url)),
+    cwd: home, home, overlays: builtinCapabilityPatches().map(patch => ({ ...patch, insert: patch.insert.filter(entry => entry.id === 'agency-agents') })), telemetryDisabledEnv: undefined }
+  const start = () => boot('test', join(directory, 'cordis.yml'), readProfilePatches('test', profile), (ctx) => {
+    ctx.provide('profileContext', profile)
+    ctx.provide('subagents', { getProvider: () => ({ capabilities: {} }) })
+    Object.assign(ctx.loader.builtins, { editor: ConfigEditor, settings: Settings, tools: Tools, prompt: SystemPrompt, web: WebServer })
+  })
+  const first = await start()
+  onTestFinished(() => first.fiber.dispose())
+  await first.loader.await()
+  const library = first.get(AGENCY_LIBRARY_SERVICE)
+  if (!library) throw new Error('Builtin expert library missing')
+  const before = await library.catalog()
+  const saved = await library.saveCustom({ name: '个人审查专家', description: 'review fixture', division: 'engineering', prompt: 'Personal review instructions.' }, true, before.revision)
+  await first.fiber.dispose()
+  const second = await start()
+  onTestFinished(() => second.fiber.dispose())
+  await second.loader.await()
+  const restored = await second.get(AGENCY_LIBRARY_SERVICE)?.catalog()
+  expect(restored).toMatchObject({ experts: saved.experts, enabled: saved.enabled })
+  const expert = saved.experts.find((item: { custom?: boolean }) => item.custom)
+  if (!expert) throw new Error('Saved personal expert missing')
+  expect((await second.get(Agency.AGENCY_PERSONA_SERVICE)?.getPrompt(expert.slug, 'engineering', 'zh'))?.prompt).toContain('Personal review instructions.')
+})
