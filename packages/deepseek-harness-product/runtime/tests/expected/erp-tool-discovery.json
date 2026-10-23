@@ -1,0 +1,158 @@
+{
+  "catalogTools": 300,
+  "initialErpTools": 0,
+  "discoveredErpTools": 2,
+  "baselineSchemaBytes": 91399,
+  "discoveredSchemaBytes": 605,
+  "initialDiscoverySchemaBytes": 1496,
+  "selectedSchemaBytesIncludingDiscovery": 2100,
+  "successfulReadCalls": 5,
+  "successfulWriteCalls": 1,
+  "approvalOutcomes": [
+    "rejected",
+    "allowed-once",
+    "rejected"
+  ],
+  "sessionIsolated": true,
+  "parallelDiscoveryIsolated": true,
+  "resumedFromNativeJsonl": true,
+  "recoveredBeforeNextRequestHeader": true,
+  "discoverySchema": {
+    "name": "connector_search_tools",
+    "description": "Load business tools into this conversation before calling them. For tool references in skills or experts, use connectorId and toolNames for exact lookup; all must be available or none are loaded. Otherwise use concise operation keywords in query; lexical search cannot infer synonyms. Supply queryVariants for synonyms or Chinese/English translations, and retry with different terms if needed. Check returned descriptions before calling tools. Never combine search and exact lookup. This performs no business operation.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "query": {
+          "type": "string",
+          "description": "Concise business operation keywords, at most 200 characters, e.g. 取消订单. A connector name alone does not match tools. Omit for exact lookup."
+        },
+        "queryVariants": {
+          "type": "array",
+          "description": "Up to 4 alternative keyword expressions for the same operation, e.g. [\"cancel order\", \"void order\"]. Each expression is at most 200 characters. Omit for exact lookup.",
+          "items": {
+            "type": "string"
+          }
+        },
+        "limit": {
+          "type": "integer",
+          "description": "Search matches, 1–8; default 8. Omit for exact lookup."
+        },
+        "connectorId": {
+          "type": "string",
+          "description": "Exact connector ID from the skill, expert, or search result. Use with toolNames; omit query, queryVariants and limit."
+        },
+        "toolNames": {
+          "type": "array",
+          "description": "Exact original MCP tool names, case-sensitive, 1–8 distinct names. Do not use generated callable names.",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  },
+  "searchEvidence": [
+    {
+      "query": "撤销交易",
+      "queryVariants": [
+        "取消订单",
+        "cancel order"
+      ],
+      "toolNames": [
+        "orders_write"
+      ]
+    },
+    {
+      "query": "ERP取消订单",
+      "toolNames": [
+        "orders_write"
+      ]
+    },
+    {
+      "query": "orders_read_07",
+      "toolNames": [
+        "orders_read_07"
+      ]
+    },
+    {
+      "query": "ERP",
+      "toolNames": []
+    },
+    {
+      "query": "id",
+      "toolNames": []
+    },
+    {
+      "query": "撤销交易",
+      "toolNames": []
+    }
+  ],
+  "exactContent": {
+    "tools": [
+      {
+        "name": "mcp__erp_d24f1f61__orders_read_07",
+        "connector": "ERP",
+        "connectorId": "erp",
+        "toolName": "orders_read_07",
+        "version": "1.0.0",
+        "description": "订单查询业务明细，操作编号 7。返回业务状态和更新时间。",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "recordId": {
+              "type": "string",
+              "description": "业务记录 ID"
+            }
+          },
+          "required": [
+            "recordId"
+          ],
+          "additionalProperties": false
+        }
+      },
+      {
+        "name": "mcp__erp_d24f1f61__finance_write",
+        "connector": "ERP",
+        "connectorId": "erp",
+        "toolName": "finance_write",
+        "version": "1.0.0",
+        "description": "财务修改业务记录，操作编号 49。返回业务状态和更新时间。",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "recordId": {
+              "type": "string",
+              "description": "业务记录 ID"
+            }
+          },
+          "required": [
+            "recordId"
+          ],
+          "additionalProperties": false
+        }
+      }
+    ]
+  },
+  "exactReferencesAtomic": true,
+  "exactReferencesKeepApproval": true,
+  "exactReferencesResume": true,
+  "exactConnectorIdentity": true,
+  "exactCapacityAtomic": true,
+  "exactNetworkFailurePreserved": true,
+  "cancelledDiscoveryAddsNoTools": true,
+  "changedDefinitionBlocksModelRequest": true,
+  "disposalRemovesDiscoveryEffects": true,
+  "refreshKeepsCatalogPrivate": true,
+  "richResultsAfterRefresh": true,
+  "corruptHistoryBlocksDirectExecution": true,
+  "dynamicToolsRequireDiscovery": true,
+  "childFilterRespected": true,
+  "nativeResourcesAndInstructions": true,
+  "ptcDiscoveryAndResume": true,
+  "oversizedResultsAddNoTools": true,
+  "rejectedResultsAddNoTools": true,
+  "corruptHistoryIsolated": true,
+  "unloadCancelsDiscovery": true,
+  "unpinnedHistoryBlocked": true
+}

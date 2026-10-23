@@ -1,3 +1,4 @@
+import { ProductLoading } from './ProductLoading.tsx'
 /** Paginated destination browsing owns its reads rather than borrowing the sidebar cache. */
 import { useEffect, useState, type ReactNode } from 'react'
 import { Button, IconChevronLeftOutlineRegular, IconChevronRightOutlineRegular, IconFolderOpenOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives'
@@ -55,7 +56,7 @@ export function KnowledgeFolderPicker({ knowledgeBaseId, label, value, disabled,
     </nav>
     {failure !== undefined ? <p role="alert" className={css.catalogError}>{productErrorMessage(failure, t, 'knowledgeFoldersFailed')}
       <Button size="sm" onClick={() => { setRetry(number => number + 1) }}>{t('retry')}</Button></p>
-      : !current || location.loading ? <p role="status">{t('loading')}</p> : <>
+      : !current || location.loading ? <ProductLoading label={t('loading')} /> : <>
         <div className={css.knowledgeFolderPickerRows}>{current.data?.items.map(folder => <button type="button" key={folder.id}
           className={css.knowledgeWorkspaceTreeRow} onClick={() => { onChange(folder.id) }}>
           <IconFolderOpenOutlineRegular size={16} /><span className={css.knowledgeWorkspaceTreeLabel}>{folder.name}</span>

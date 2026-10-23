@@ -37,6 +37,7 @@ function fixture(operation: typeof cases[number], result: () => Promise<unknown>
     useWorkspaces: unusedSlot, useResource: unusedSlot, useAccess: unusedSlot, renderFactorySlot: unusedSlot,
   }
   const view = render(<operation.Panel t={t} {...actions} />)
+  fireEvent.click(screen.getByRole('tab', { name: zh.mineExtensions }))
   const label = operation.action === 'delete' ? zh.deleteResource : zh.submitShared
   return { ...view, invoke, cancel, label,
     changeEmployee: () => { employeeId = 'employee-two'; listener?.({ type: 'session.changed', payload: { authenticated: true, employeeId } }) },

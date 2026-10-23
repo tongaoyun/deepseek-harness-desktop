@@ -1,3 +1,4 @@
+import { ProductLoading } from './ProductLoading.tsx'
 /** Manual documents, website imports, and folders use explicit idempotent save operations. */
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { Button, Modal } from '@deepseek-ai/dsh-client-ui-primitives'
@@ -43,7 +44,7 @@ export function KnowledgeEditor(props: KnowledgeEditorProps): ReactNode {
   const recovery = useKnowledgeSaveRecovery(scope)
   if (!recovery.ready) return <Modal open title={t('knowledgeRecoveryTitle')} closeLabel={t('close')} onClose={props.onClose}>
     {recovery.error ? <><p role="alert">{t('knowledgeRecoveryFailed')}</p>
-      <Button onClick={() => { void recovery.reload() }}>{t('retry')}</Button></> : <p role="status">{t('loading')}</p>}
+      <Button onClick={() => { void recovery.reload() }}>{t('retry')}</Button></> : <ProductLoading label={t('loading')} />}
   </Modal>
   return <KnowledgeEditorForm {...props} restored={recovery.draft} recovery={recovery.recovery} />
 }
@@ -209,7 +210,7 @@ function KnowledgeEditorForm({ knowledgeBaseId, target, onClose, onSaved, t, res
         onChange={(event) => { change(setUrl, event.currentTarget.value) }} /></label>}
       {target.kind === 'markdown' && <label>{t('knowledgeMarkdownContent')}<textarea value={content} disabled={pending || loading || unconfirmed || !editable}
         onChange={(event) => { change(setContent, event.currentTarget.value) }} /></label>}
-      {loading && <p role="status" className={css.catalogStatus}>{t('loading')}</p>}
+      {loading && <ProductLoading label={t('loading')} />}
       {error && <p role="alert" className={css.catalogError}>{error}</p>}
       {unconfirmed && <p role="status" className={css.catalogStatus}>{t('knowledgeSaveUnconfirmed')}</p>}
       {close.blocked && pending && <p role="status" className={css.catalogStatus}>{t('knowledgeWaitForSave')}</p>}

@@ -1,7 +1,7 @@
 /** 自定义专家界面词条，合并到现有 agency 命名空间。 */
 export const customZh = {
   'custom.nameConflict': '名称冲突', 'custom.nameConflictHint': '部分专家名称冲突，已暂停召唤。请编辑冲突的自定义专家名称或删除它；共享专家名称冲突请调整共享内容。',
-  'custom.submitCompany': '提交共享',
+  'custom.submitCompany': '提交发布',
   'custom.new': '新建专家', 'custom.edit': '编辑专家', 'custom.copy': '复制为自定义',
   'custom.source': '我的',
   'custom.name': '专家名称', 'custom.description': '一句话简介', 'custom.division': '分类',
@@ -33,7 +33,7 @@ export const customZh = {
 } as const
 export const customEn = {
   'custom.nameConflict': 'Name conflict', 'custom.nameConflictHint': 'Conflicting experts cannot be summoned. Rename or delete the custom expert; for base catalog conflicts, update the external directory.',
-  'custom.submitCompany': 'Submit for sharing',
+  'custom.submitCompany': 'Submit for publication',
   'custom.new': 'New expert', 'custom.edit': 'Edit expert', 'custom.copy': 'Create custom copy',
   'custom.source': 'Mine',
   'custom.name': 'Expert name', 'custom.description': 'Short description', 'custom.division': 'Category',

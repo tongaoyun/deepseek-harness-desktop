@@ -1,3 +1,4 @@
+import { ProductLoading } from './ProductLoading.tsx'
 /** Conversation-owned knowledge selection, committed once through task preparation. */
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { useEffect, useRef, useState } from 'react'
@@ -66,7 +67,7 @@ export function TaskKnowledgeSelector({
   useEffect(() => {
     if (capabilities === undefined || consumedRequests.current === openRequests || pending) return
     consumedRequests.current = openRequests
-    setSelected([...ids]); setQuery(''); setFailed(''); setOpen(true)
+    setSelected([...ids]); setQuery(''); setFailed(''); setLoading(true); setOpen(true)
   }, [openRequests, selectionKey, capabilities === undefined, pending])
   useEffect(() => {
     if (!open && identity === '') return
@@ -107,7 +108,7 @@ export function TaskKnowledgeSelector({
         return <span className={css.taskKnowledgeReference} key={id}>
           <Tooltip label={label} side="top"><button className={css.knowledgeReferenceName} type="button"
             aria-label={label} aria-haspopup="dialog" aria-expanded={open} disabled={pending}
-            onClick={() => { setSelected([...ids]); setQuery(''); setFailed(''); setOpen(true) }}>
+            onClick={() => { setSelected([...ids]); setQuery(''); setFailed(''); setLoading(true); setOpen(true) }}>
             <IconDatabaseOutlineRegular size={14} /><span>{label}</span>
           </button></Tooltip>
           {<Tooltip label={t('removeKnowledgeReference', { name: label })} side="top">
@@ -127,7 +128,7 @@ export function TaskKnowledgeSelector({
         <input type="search" placeholder={t('knowledgeSelectionSearch')} value={query} onChange={(event) => { setQuery(event.currentTarget.value) }} />
       </label>
       <div className={css.knowledgeSelectionList} aria-busy={loading}>
-        {loading ? <p className={css.catalogStatus}>{t('loading')}</p>
+        {loading ? <ProductLoading label={t('loading')} />
           : loadFailed ? <div className={css.knowledgeSelectionError}><p role="alert" className={css.catalogError}>{loadError}</p>
             <Button variant="outline" size="sm" onClick={() => { setRevision(value => value + 1) }}>{t('retry')}</Button></div>
             : filtered.length === 0 ? <p className={css.catalogStatus}>{t(query.trim() === '' ? 'empty' : 'noSearchResults')}</p>

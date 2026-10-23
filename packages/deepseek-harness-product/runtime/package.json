@@ -45,6 +45,7 @@
     "@deepseek-ai/dsh-settings": "workspace:*",
     "@deepseek-ai/dsh-llm": "workspace:*",
     "@deepseek-ai/dsh-tool-workspace-dependencies": "workspace:*",
+    "@deepseek-ai/dsh-scope": "workspace:*",
     "@deepseek-ai/dsh-tools": "workspace:*",
     "@deepseek-ai/dsh-system-prompt": "workspace:*",
     "@deepseek-ai/dsh-skill-office": "workspace:*",
@@ -54,6 +55,11 @@
     "@deepseek-harness/product": "workspace:*"
   },
   "devDependencies": {
+    "@deepseek-ai/dsh-mcp-resources": "workspace:*",
+    "@deepseek-ai/dsh-ptc-runtime-node": "workspace:*",
+    "@deepseek-ai/dsh-subprocess-local": "workspace:*",
+    "@deepseek-ai/dsh-sandbox-local": "workspace:*",
+    "@deepseek-ai/dsh-sandbox-policy": "workspace:*",
     "@deepseek-ai/libreoffice-kit": "^0.1.5",
     "@deepseek-ai/dsh-user-approval": "workspace:*",
     "@deepseek-ai/dsh-fs-local": "workspace:*",

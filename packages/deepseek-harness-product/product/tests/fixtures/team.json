@@ -1,0 +1,49 @@
+{
+  "team": {
+    "name": "订单诊断专家团",
+    "description": "联合排查订单与库存问题",
+    "tags": [
+      "订单"
+    ],
+    "goal": "核对订单与库存",
+    "constraints": "只读分析",
+    "deliveryRequirements": "给出证据与建议",
+    "members": [
+      {
+        "expertSlug": "member-1",
+        "duty": "分工1",
+        "instructions": "核对数据口径并报告异常"
+      },
+      {
+        "expertSlug": "member-2",
+        "duty": "分工2",
+        "instructions": "核对数据口径并报告异常"
+      }
+    ],
+    "examples": [
+      "分析今天的订单异常"
+    ],
+    "coordinatorMode": "template",
+    "coordinatorTemplateId": "general",
+    "coordinatorTemplateVersion": 1,
+    "coordinatorPrompt": ""
+  },
+  "experts": [
+    {
+      "key": "member-1",
+      "name": "专家1",
+      "description": "分析业务异常",
+      "division": "operations",
+      "emoji": "🧩",
+      "prompt": "固定成员说明1。仅使用已配置且有权限的工具。"
+    },
+    {
+      "key": "member-2",
+      "name": "专家2",
+      "description": "分析业务异常",
+      "division": "operations",
+      "emoji": "🧩",
+      "prompt": "固定成员说明2。仅使用已配置且有权限的工具。"
+    }
+  ]
+}

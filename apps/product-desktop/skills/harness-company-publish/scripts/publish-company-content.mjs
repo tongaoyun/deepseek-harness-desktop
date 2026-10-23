@@ -71,15 +71,15 @@ export async function inspectCompanyContent(directory) {
   }
   for (const entry of await readdir(root, { withFileTypes: true })) {
     if (entry.name === '.publication.json' || entry.name === '.DS_Store' && entry.isFile()) continue
-    if (!['experts', 'skills'].includes(entry.name)) fail('UNEXPECTED_FILE', '根目录只能包含 experts、skills 和导出的 .publication.json。')
+    if (!['experts', 'skills', 'teams'].includes(entry.name)) fail('UNEXPECTED_FILE', '根目录只能包含 experts、skills、teams 和导出的 .publication.json。')
     await walk(join(root, entry.name))
   }
   const release = validateRelease({ version: '1.0.0', sha256: contentDigest(files), files })
   if (manifest.baseResources !== undefined && (typeof manifest.baseResources !== 'object' || manifest.baseResources === null
     || Array.isArray(manifest.baseResources) || Object.entries(manifest.baseResources).some(([path, hash]) => {
-      return !/^(?:skills|experts)\/[a-z0-9]+(?:-[a-z0-9]+)*$/u.test(path) || typeof hash !== 'string' || !/^[a-f0-9]{64}$/u.test(hash)
+      return !/^(?:skills|experts|teams)\/[a-z0-9]+(?:-[a-z0-9]+)*$/u.test(path) || typeof hash !== 'string' || !/^[a-f0-9]{64}$/u.test(hash)
     }))) fail('INVALID_MANIFEST', '编辑来源摘要无效，请重新导出资源。')
-  if (resourceKeys(files).length > 1) fail('ONE_RESOURCE_REQUIRED', '每次只发布一个技能或专家套件。')
+  if (resourceKeys(files).length > 1) fail('ONE_RESOURCE_REQUIRED', '每次只发布一个技能、专家或专家团。')
   return { ...release, baseResources: manifest.baseResources ?? {} }
 }
 
@@ -173,17 +173,19 @@ function diffFiles(before, after) {
 }
 
 function resourceKey(path) {
+  if (/^teams\/[a-z0-9]+(?:-[a-z0-9]+)*\.json$/u.test(path)) return path.slice(0, -5)
+  if (/^teams\/[a-z0-9]+(?:-[a-z0-9]+)*$/u.test(path)) return path
   if (/^skills\/[a-z0-9]+(?:-[a-z0-9]+)*$/u.test(path)) return path
   if (/^experts\/[a-z0-9]+(?:-[a-z0-9]+)*$/u.test(path)) return path
   if (/^experts\/[a-z][a-z0-9-]*\/[a-z0-9]+(?:-[a-z0-9]+)*\.md$/u.test(path)) return 'experts/' + path.split('/').at(-1).slice(0, -3)
-  fail('INVALID_RESOURCE', '资源必须是 skills/<名称> 或 experts/<名称>。')
+  fail('INVALID_RESOURCE', '资源必须是 skills/<名称>、experts/<名称> 或 teams/<名称>。')
 }
 function resourceKeys(files) {
   return [...new Set(Object.keys(files).map(path => resourceKey(path.startsWith('skills/') ? path.split('/').slice(0, 2).join('/') : path)))].sort()
 }
 function selectedFiles(files, resource) {
   const key = resourceKey(resource)
-  return Object.fromEntries(Object.entries(files).filter(([path]) => key.startsWith('skills/') ? path.startsWith(key + '/') : path.startsWith('experts/') && path.endsWith('/' + key.slice(8) + '.md')))
+  return Object.fromEntries(Object.entries(files).filter(([path]) => key.startsWith('teams/') ? path === key + '.json' : key.startsWith('skills/') ? path.startsWith(key + '/') : path.startsWith('experts/') && path.endsWith('/' + key.slice(8) + '.md')))
 }
 function resourcePaths(files, resource) {
   const paths = Object.keys(selectedFiles(files, resource))
@@ -216,7 +218,7 @@ export function planPublication(current, incoming, url, removals = []) {
   const baseline = validateRelease(current), update = validateRelease(incoming)
   const keys = [...new Set([...resourceKeys(update.files), ...removals.map(resourceKey)])]
   if (!keys.length) fail('NO_CHANGES', '没有待发布的资源。')
-  if (keys.length !== 1) fail('ONE_RESOURCE_REQUIRED', '每次只发布或删除一个技能或专家套件。')
+  if (keys.length !== 1) fail('ONE_RESOURCE_REQUIRED', '每次只发布或删除一个技能、专家或专家团。')
   const key = keys[0], files = selectedFiles(update.files, key), before = selectedFiles(baseline.files, key)
   if (removals.length && Object.keys(files).length) fail('CONTRADICTORY_CHANGE', '同一资源不能同时删除和更新。')
   if (removals.length && !Object.keys(before).length) fail('RESOURCE_NOT_FOUND', '指定的公司资源不存在。')

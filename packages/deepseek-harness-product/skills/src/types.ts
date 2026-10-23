@@ -81,10 +81,10 @@ export interface ManagerState {
     sources: Record<string, boolean>;
     disabledSkills: Record<string, string[]>;
     enabledSkills: Record<string, string[]>;
-    /** 每个来源自己的列表分类。旧状态文件可以没有这两个字段。 */
+    /** 每个来源自己的列表分类。 */
     categories: Record<string, SkillCategory[]>;
     categoryMembers: Record<string, Record<string, string>>;
-    /** 每个来源、分类（空字符串代表未分类）里的手动排序；旧状态文件可以缺省。 */
+    /** 每个来源、分类（空字符串代表未分类）里的手动排序。 */
     categoryOrder: Record<string, Record<string, string[]>>;
 }
 export interface PolicyResult {
@@ -183,8 +183,8 @@ export interface InstallSource extends RepositorySource {
     commit: string | null;
 }
 export interface InstallRecord {
-    /** Missing in legacy records: defaults to DSH. */
-    root?: RepositoryRoot;
+    /** 固定安装位置；恢复、更新和卸载不得推测位置。 */
+    root: RepositoryRoot;
     /** 安装到已登记工作区时保存的项目根；缺省表示用户目录。更新、回滚、卸载都按它定位。 */
     workspace?: string;
     id: string;
@@ -206,21 +206,21 @@ export interface InstallRecord {
 export interface CatalogInstallRecord {
     id: string;
     name: string;
-    /** 旧记录缺少位置时保留，但不猜测其安装归属。 */
-    root?: RepositoryRoot;
+    /** 固定安装位置，与内容摘要一起保存。 */
+    root: RepositoryRoot;
     workspace?: string;
     /** 回收站中的副本不会把后来创建的同名技能认作原安装。 */
     trashId?: string;
     restoreFingerprint?: string;
     /** 文件落盘前记录精确摘要，确认失败后只恢复完全匹配的副本。 */
-    complete?: boolean;
-    files?: FileDigest[];
+    complete: boolean;
+    files: FileDigest[];
 }
 export interface RepositoryState {
     version: number;
     repositories: Repository[];
     installs: InstallRecord[];
-    catalogInstalls?: (CatalogInstallRecord | string)[];
+    catalogInstalls: CatalogInstallRecord[];
 }
 export interface RepositoryInput {
     url?: string;

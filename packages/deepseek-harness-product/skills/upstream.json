@@ -29,5 +29,19 @@
     "src/plugin-update-model.ts": "4d02880bf5f1fb8c0f4f7260ccd17a804041d35ac186a01e2b067438639dec1e",
     "src/destination-types.ts": "acdc970bbd19b345f23d902c59395cf0a5d667704a3d8984fcc6a37e1204fbda",
     "src/source-select.ts": "fdaa38d5923e8844939c4abe552c1dbf3170fa149fc853fb4ef369057d1512fa"
-  }
+  },
+  "selectedFixes": [
+    {
+      "commit": "03e3364dfea59db4958f3f10bef04a6a33e91bf0",
+      "scope": "Reject non-ASCII name truncation and invalid provider candidates"
+    },
+    {
+      "commit": "19f275fdd49de58510b233c7f07a55c5c68895e4",
+      "scope": "Allow revoking recorded permissions after skill content disappears or becomes invalid"
+    },
+    {
+      "commit": "54467051bcde9d2aa316a86be90e380b6cef043f",
+      "scope": "Resolve API requests beneath the page base for reverse proxies"
+    }
+  ]
 }

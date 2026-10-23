@@ -3,7 +3,7 @@
   - button "Close"
   - banner:
     - heading "Order management" [level=1]
-    - text: Industry data Shared
+    - text: Business systems Shared
   - paragraph: Orders, inventory, and fulfillment
   - heading "Connection status" [level=2]
   - term: Status

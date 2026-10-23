@@ -1,6 +1,6 @@
 ---
 name: harness-company-publish
-description: 创建、修改、校验并发布公司 DeepSeek Harness 专家套件和技能，让全公司桌面同步使用。适用于要求将原生专家或 SKILL.md 发布到公司的任务；不负责发布桌面软件、插件代码、连接器或知识库。
+description: 创建、修改、校验并发布公司 DeepSeek Harness 专家、专家团和技能，让全公司桌面同步使用。适用于要求将原生专家、完整专家团或 SKILL.md 发布到公司的任务；不负责发布桌面软件、插件代码、连接器或知识库。
 ---
 
 # 公司专家与技能发布
@@ -19,15 +19,16 @@ description: 创建、修改、校验并发布公司 DeepSeek Harness 专家套�
 
 ## 编写与修改
 
-每次只处理一个技能或专家，使用原生目录，不需要自定义版本清单：
+每次只处理一个技能、专家或专家团，使用原生目录，不需要自定义版本清单：
 
 ```text
-experts/operations/orders.md       # 专家；或下面的单项技能
+experts/orders/orders.md       # 专家；或下面的单项技能
 skills/orders/SKILL.md
 skills/orders/references/policy.md
+teams/order-diagnosis.json     # 或一个完整专家团（包含全部成员说明）
 ```
 
-专家 Markdown 与 SKILL.md 使用 `---` frontmatter，`name`、`description` 为非空单行字符串，正文非空。技能 name 与目录名一致；专家按文件名识别身份，分类不参与身份。技能必须带齐资源，更新完整替换该技能目录，省略的旧资源会删除并出现在差异里，其他资源不变。每项最多 2048 文件、32 MiB，入口 Markdown 最多 128 KiB；不接受链接、非法路径、目录大小写冲突。
+专家 Markdown 与 SKILL.md 使用 `---` frontmatter，`name`、`description` 为非空单行字符串，正文非空。技能 name 与目录名一致；专家按文件名识别身份，分类不参与身份。优先使用桌面的跨境 ERP 场景分类，如订单 `orders`、商品 `catalog`、采购 `supply-chain`、仓储 `warehouse`、物流 `logistics`、财务 `finance`；完整目录见仓库的 `apps/product-desktop/docs/company-content.md`。技能必须带齐资源，更新完整替换该技能目录，省略的旧资源会删除并出现在差异里，其他资源不变。每项最多 2048 文件、32 MiB，入口 Markdown 最多 128 KiB；不接受链接、非法路径、目录大小写冲突。
 
 修改已有资源先查询、导出：
 
@@ -48,7 +49,7 @@ node TOOL plan /private/work/content --out /private/work/new-plan.json
 
 `plan` 只读取服务端，输出目标资源的新增、修改、移除差异、预期摘要及 confirmation。计划只包含该项资源，保存在私有目录，不提交 Git 或贴到对话。核对技能旧资源移除项，不能把发布一个资源扩大为修改其他资源。
 
-明确删除时对空目录生成计划，追加 `--remove skills/orders` 或 `--remove experts/orders`。每次只删除一个完整资源，不支持通配符或单独删除 SKILL.md；空目录不会清空公司目录。删除使用资源摘要检查，历史分发快照保留。
+明确删除时对空目录生成计划，追加 `--remove skills/orders` 、`--remove experts/orders` 或 `--remove teams/order-diagnosis`。每次只删除一个完整资源，不支持通配符或单独删除 SKILL.md；空目录不会清空公司目录。删除使用资源摘要检查，历史分发快照保留。
 
 已有发布授权且差异与请求一致后，使用这次 plan 输出的完整摘要：
 
@@ -67,3 +68,7 @@ node TOOL publish /private/work/new-plan.json --confirm <confirmation>
 - PUBLICATION_DENIED：停止需要此权限的操作，报告配置或权限问题，不借用员工令牌、其他服务凭据或浏览器会话。
 
 交付说明资源标识、内容摘要和服务端核实结果。员工打开专家套件或技能页面后自动同步，成功检查间隔默认 60 秒；现有会话继续使用原固定版本，新会话使用更新后的内容。不要声称所有设备已同步，除非有相应设备证据。
+
+### 专家团
+
+`teams/<稳定标识>.json` 包含 `team` 和 `experts`，不带本机团队 ID。`team` 的 `members[].expertSlug` 使用包内键 `member-1`～`member-8`；`experts` 每项包含 `key`、`name`、`description`、`division`、`emoji`、`prompt`。必须包含 2～8 位不同成员及其完整说明，禁止只引用发布者本机专家。主理人字段与桌面团队编辑器一致；模板版本固定为 1，使用自定义模式时须提供主理人正文。完整示例从控制中心“专家套件 → 专家团 → 下载示例”获取。文件上限 2 MiB，更新与删除整个团队原子进行，保留旧会话的固定内容。

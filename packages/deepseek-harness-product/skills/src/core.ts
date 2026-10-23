@@ -1,4 +1,4 @@
-import type { SkillRoot, RepositoryDestination, RootInput, Diagnostic, OperationError, CodedError, Log, DiscoveredEntry, SkillEntry, ParsedSkill, Scan, ManagerState, SkillCategory, PolicyResult, Policy, SkillItem, ViewItem, RootView, SkillView, ScopeOptions, MutationOptions, RenameOptions, UploadInput, CreateInput, ImportCandidate, ImportPending, ImportConflict, ImportFailure, ImportResult } from "./types.ts";
+import type { SkillRoot, RepositoryDestination, RootInput, Diagnostic, OperationError, CodedError, Log, DiscoveredEntry, SkillEntry, ParsedSkill, Scan, ManagerState, PolicyResult, Policy, SkillItem, ViewItem, RootView, SkillView, ScopeOptions, MutationOptions, RenameOptions, UploadInput, CreateInput, ImportCandidate, ImportPending, ImportConflict, ImportFailure, ImportResult } from "./types.ts";
 // dsh-skills-manager core —— 纯 Node 技能文件管理核心（仅 ZIP 解压使用 fflate，可独立单测）
 //
 // 覆盖 DSH 用户级与活动 Session 项目级技能根：
@@ -8,7 +8,7 @@ import type { SkillRoot, RepositoryDestination, RootInput, Diagnostic, Operation
 //   - 前端展示 name、description 与启停状态，不做格式检查或自动修复
 //
 // 所有函数返回普通结果对象，业务校验失败返回 { ok: false, error, code?, params? }；
-// error 保持中文原文（兼容性红线），code 为点分小写业务错误码，params 供前端词典占位符替换；
+// error 保持中文原文，code 为点分小写业务错误码，params 供前端词典占位符替换；
 // 系统异常（fs ENOENT 等）透传 String(e.message)，不加 code。
 // 文件写入错误由路由返回给调用方。
 
@@ -34,11 +34,11 @@ import {
 /** Portable lowercase resource identifier pattern. */
 const KEBAB_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 // 项目来源集中定义，路径校验、策略身份和展示共用，避免新增目录只可见却不可加载。
-// 两种作用域共用 Agent 顺序；兼容目录紧跟主目录，不扫描项目根的普通资源目录。
+// 两种作用域共用 Agent 顺序；各来源共用固定顺序，不扫描项目根的普通资源目录。
 const EXTERNAL_SOURCE_ORDER = [
   "company",
   "ccswitch", "codex", "claude", "gemini", "opencode", "cursor", "copilot",
-  "windsurf", "windsurf-user", "trae", "trae-cn", "openclaw", "clawdbot",
+  "windsurf", "windsurf-user", "trae", "trae-cn", "openclaw",
   "roo", "codebuddy", "workbuddy", "qoder", "qoder-cn", "lingma",
 ];
 function rankSources<T extends {key: string; native?: boolean; rank?: number; localeKey?: string}>(sources: T[], startRank: number) {
@@ -133,7 +133,7 @@ export function userRoots(companySkillsRoot = process.env.DSH_COMPANY_SKILLS_ROO
   return rankSources([
     ...companySkillsRoot ? [{
       key: "company", path: companySkillsRoot, label: "公司技能",
-      localeKey: "root.company", mutable: false, toggleable: true, native: false, rank: 550,
+      localeKey: "company", mutable: false, toggleable: true, native: false, rank: 550,
     }] : [],
     {
       key: "dsh",
@@ -274,17 +274,6 @@ export function userRoots(companySkillsRoot = process.env.DSH_COMPANY_SKILLS_ROO
         "skills",
       ),
       label: "OpenClaw",
-      mutable: false,
-      toggleable: true,
-      native: false,
-    },
-    {
-      key: "clawdbot",
-      path: join(
-        process.env.DSH_CLAWDBOT_HOME || join(homedir(), ".clawdbot"),
-        "skills",
-      ),
-      label: "OpenClaw 旧目录",
       mutable: false,
       toggleable: true,
       native: false,
@@ -882,16 +871,12 @@ export function entryPath(root: string, name: string) {
   return isSameOrDescendant(rootPath, path) && rootPath !== path ? path : null;
 }
 
-function isDshRoot(root: RootInput) {
-  return typeof root === "string" && resolve(root) === resolve(dshRootPath());
-}
-
 // ── 命名规整 ────────────────────────────────────────────────────────────────
 
-/** 尽量把任意名称规整为 kebab-case；无法生成合法名称时返回空串。 */
+/** 规整 ASCII 名称；非 ASCII 名称不能截断成另一个技能名。 */
 export function toKebab(s: string) {
   let t = String(s).trim();
-  if (t === "") return "";
+  if (t === "" || /[^\x00-\x7F]/.test(t)) return "";
   t = t.replace(/([a-z0-9])([A-Z])/g, "$1-$2"); // camelCase 边界
   t = t.toLowerCase();
   t = t.replace(/[\s_.]+/g, "-");
@@ -1223,6 +1208,14 @@ export async function resolveEntry(root: RootInput, name: string): Promise<Disco
   }
 }
 
+function hostAcceptableSkillName(name: string): string | undefined {
+  const trimmed = name.trim();
+  if (!trimmed || trimmed.startsWith(".") || trimmed.length > MAX_ENTRY_NAME_LENGTH ||
+    /[\\/:*?"<>|\0]/.test(trimmed) || /[. ]$/.test(trimmed)) return undefined;
+  const normalized = KEBAB_RE.test(trimmed) ? trimmed : toKebab(trimmed);
+  return KEBAB_RE.test(normalized) ? normalized : undefined;
+}
+
 function entryOf(name: string, kind: string, docPath: string, doc: Pick<ParsedSkill, "map" | "hasFrontmatter">) {
   const declaredName = doc.map.name !== undefined ? unquote(doc.map.name) : "";
   const description =
@@ -1235,6 +1228,7 @@ function entryOf(name: string, kind: string, docPath: string, doc: Pick<ParsedSk
     (doc.map["disable-model-invocation"] === undefined ||
       modelValue !== undefined) &&
     (doc.map["user-invocable"] === undefined || userValue !== undefined);
+  const acceptableName = hostAcceptableSkillName(declaredName);
   const diagnostics = [];
   if (!doc.hasFrontmatter)
     diagnostics.push({
@@ -1243,7 +1237,7 @@ function entryOf(name: string, kind: string, docPath: string, doc: Pick<ParsedSk
     });
   if (doc.hasFrontmatter && !declaredName)
     diagnostics.push({ level: "error", code: "diagnostic.name.missing" });
-  else if (declaredName && !KEBAB_RE.test(toKebab(declaredName)))
+  else if (declaredName && acceptableName === undefined)
     diagnostics.push({
       level: "error",
       code: "diagnostic.name.invalid",
@@ -1268,7 +1262,7 @@ function entryOf(name: string, kind: string, docPath: string, doc: Pick<ParsedSk
     hasFrontmatter: doc.hasFrontmatter,
     // 结构合法的条目保留在管理目录；非法调用策略继续阻断两类调用。
     loadable:
-      doc.hasFrontmatter && description !== "" && KEBAB_RE.test(KEBAB_RE.test(declaredName) ? declaredName : toKebab(declaredName)),
+      doc.hasFrontmatter && description !== "" && acceptableName !== undefined,
     diagnostics,
   };
 }
@@ -1457,8 +1451,7 @@ function failClosedManagerState() {
   return state;
 }
 
-function validPolicyLists(value: unknown, allowMissing = false) {
-  if (value === undefined && allowMissing) return true;
+function validPolicyLists(value: unknown) {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
   for (const [key, list] of Object.entries(value)) {
     if (
@@ -1488,7 +1481,7 @@ function validManagerStateDocument(value: ManagerState) {
     return false;
   if (
     !validPolicyLists(value.disabledSkills) ||
-    !validPolicyLists(value.enabledSkills, true)
+    !validPolicyLists(value.enabledSkills)
   )
     return false;
   for (const root of userRoots()) {
@@ -1505,7 +1498,10 @@ function validManagerStateDocument(value: ManagerState) {
   for (const [key, flag] of Object.entries(value.sources)) {
     if (PROJECT_ROOT_KEY_RE.test(key) && typeof flag !== "boolean") return false;
   }
-  const enabledSkills = value.enabledSkills || {};
+  for (const field of ["categories", "categoryMembers", "categoryOrder"] as const) {
+    if (!value[field] || typeof value[field] !== "object" || Array.isArray(value[field])) return false;
+  }
+  const enabledSkills = value.enabledSkills;
   for (const key of new Set([
     ...Object.keys(value.disabledSkills),
     ...Object.keys(enabledSkills),
@@ -1515,32 +1511,6 @@ function validManagerStateDocument(value: ManagerState) {
       return false;
   }
   return true;
-}
-
-/** 仅对可识别的 version 1 状态补齐新增只读来源键，其余结构仍交由严格校验失败关闭。 */
-function migrateManagerStateDocument(value: ManagerState) {
-  if (
-    !value ||
-    typeof value !== "object" ||
-    Array.isArray(value) ||
-    value.version !== 1
-  )
-    return value;
-  // version 1 没有记录引入来源的版本，只有确曾新增的来源允许补缺。
-  // 原有 agents/codex/claude/gemini/opencode 字段缺失仍表示损坏配置。
-  const addedSources = ["ccswitch", "cursor", "copilot", "windsurf", "windsurf-user", "trae", "trae-cn", "openclaw", "clawdbot", "roo", "codebuddy", "workbuddy", "qoder", "qoder-cn", "lingma"];
-  for (const key of addedSources) {
-    for (const field of ["sources", "disabledSkills", "enabledSkills"] as const) {
-      if (
-        value[field] &&
-        typeof value[field] === "object" &&
-        !Array.isArray(value[field]) &&
-        value[field][key] === undefined
-      )
-        value[field][key] = field === "sources" ? true : [];
-    }
-  }
-  return value;
 }
 
 function normalizeManagerState(value: ManagerState) {
@@ -1645,8 +1615,7 @@ function normalizeCategoryOrder(value: ManagerState["categoryOrder"] | undefined
 export async function readManagerState(): Promise<PolicyResult> {
   try {
     const raw = await fs.readFile(managerStatePath(), "utf8");
-    // 旧版状态迁移与下方 schema 校验仍是磁盘数据的信任边界。
-    const parsed = migrateManagerStateDocument(JSON.parse(raw) as ManagerState);
+    const parsed = JSON.parse(raw) as ManagerState;
     if (!validManagerStateDocument(parsed))
       throw codedError("invalid manager state schema", "error.state.invalid");
     return {
@@ -1789,6 +1758,16 @@ async function checkedPolicyRootDefinition(root: RootInput): Promise<SkillRoot |
 }
 
 async function applyPolicySkillEnabled(definition: SkillRoot, name: string, enabled: boolean, state: ManagerState) {
+  const disabled = new Set(state.disabledSkills[definition.key] || []);
+  const explicitlyEnabled = new Set(state.enabledSkills[definition.key] || []);
+  // 已登记的调用权限可以撤销，不依赖源文件仍存在或仍能解析。
+  if (!enabled && (explicitlyEnabled.has(name) || disabled.has(name))) {
+    explicitlyEnabled.delete(name);
+    disabled.add(name);
+    state.disabledSkills[definition.key] = [...disabled].sort();
+    state.enabledSkills[definition.key] = [...explicitlyEnabled].sort();
+    return { root: definition.key, name, enabled: false };
+  }
   const resolved = await resolveEntry(definition, name);
   if (resolved === null)
     return {
@@ -1831,8 +1810,6 @@ async function applyPolicySkillEnabled(definition: SkillRoot, name: string, enab
       params: { name, action: enabled ? "enable" : "disable" },
     };
   }
-  const disabled = new Set(state.disabledSkills[definition.key] || []);
-  const explicitlyEnabled = new Set(state.enabledSkills[definition.key] || []);
   if (enabled) {
     disabled.delete(name);
     explicitlyEnabled.add(name);
@@ -2141,8 +2118,7 @@ function trashRootMetadata(definition: SkillRoot) {
 }
 
 async function restoreRootDefinition(metadata: TrashMetadata, options: MutationOptions = {}): Promise<SkillRoot | OperationError | null | undefined> {
-  // version 1 entries predate scoped Trash and always belong to $DSH_HOME/skills.
-  if (!metadata.root) return rootByKey("dsh");
+  if (!metadata.root) return { ok: false, error: `回收站条目缺少来源: ${metadata.id}`, code: "error.trash.invalid", params: { id: metadata.id } };
   if (metadata.root.scope === "user" && rootByKey(metadata.root.key))
     return checkedWritableRootDefinition(rootByKey(metadata.root.key));
   if (
@@ -2610,7 +2586,7 @@ async function replaceWithCopy(source: string, dest: string, isDir: boolean, exi
     for (const item of backups.reverse()) {
       try {
         await fs.rename(item.backup, item.path);
-      } catch (caught) { const rollbackError = caught as CodedError;
+      } catch {
         rollbackFailures.push(item.backup);
       }
     }
@@ -2877,7 +2853,7 @@ function normalizeUploadPath(input: string) {
   const directory = raw.endsWith("/");
   const parts = raw
     .split("/")
-    .filter((part, index, all) =>
+    .filter((_part, index, all) =>
       directory && index === all.length - 1 ? false : true,
     );
   if (
@@ -3247,8 +3223,10 @@ export async function listProviderCandidates(options: ScopeOptions = {}) {
       policyResult.writable === false ||
       !policy.sourceEnabled;
     if (!needsOverlay) continue;
+    const candidateName = hostAcceptableSkillName(entry.declaredName);
+    if (candidateName === undefined) continue;
     candidates.push({
-      name: canonicalSkillName({ root, entry, policy }),
+      name: candidateName,
       description: entry.description,
       invocation: {
         modelInvocable: policy.modelInvocable,
@@ -3326,8 +3304,7 @@ export async function getProviderSkill(candidate: ProviderCandidate, options: Sc
     );
     const summary = entryOf(locator.entryName, entry.kind, entry.docPath, doc);
     if (!summary.loadable) return undefined;
-    const invocationName = KEBAB_RE.test(summary.declaredName) ? summary.declaredName : toKebab(summary.declaredName);
-    if (invocationName !== candidate.name && summary.declaredName !== candidate.name) return undefined;
+    if (hostAcceptableSkillName(summary.declaredName) !== candidate.name) return undefined;
     return {
       name: candidate.name,
       description: candidate.description,
@@ -3348,9 +3325,7 @@ export async function getProviderSkill(candidate: ProviderCandidate, options: Sc
 
 function canonicalSkillName(item: SkillItem) {
   const declared = item.entry.declaredName || "";
-  if (KEBAB_RE.test(declared)) return declared;
-  const kebab = toKebab(declared);
-  return kebab || declared || item.entry.name;
+  return hostAcceptableSkillName(declared) || declared || item.entry.name;
 }
 
 /** 真实路径去重后按声明名分组；管理页与当前工作区 provider 共用来源优先级。 */

@@ -1,3 +1,4 @@
+import { ProductLoading } from './ProductLoading.tsx'
 /** Original-file preview and retrieval passages use separate authorized reads. */
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { Button, IconCloseOutlineRegular, IconDownloadOutlineRegular, IconLinkOutlineRegular, MarkdownText, Modal } from '@deepseek-ai/dsh-client-ui-primitives'
@@ -73,7 +74,7 @@ export function KnowledgeDocumentReader({ knowledgeBaseId, documentId, sourceId,
         {...onAccessDenied === undefined ? {} : { onAccessDenied }} />
     </div></> : <>
     <p className={css.knowledgeLocator}>{t('knowledgeExtractedContent')}</p>
-    {loading && <p className={css.catalogStatus} role="status">{t('loading')}</p>}
+    {loading && <ProductLoading label={t('loading')} />}
     {error && <div><p className={css.catalogError} role="alert">{error}</p><Button variant="outline" size="sm"
       onClick={() => { setRevision(value => value + 1) }}>{t('retry')}</Button></div>}
     {source && <section className={css.knowledgePassage}>
@@ -176,7 +177,7 @@ function KnowledgeOriginalDocument({
   const failureText = useCallback((failure: unknown) => productErrorMessage(failure, t, 'knowledgePreviewFailed'), [t])
   if (metadataError) return <div><p role="alert" className={css.catalogError}>{metadataError}</p><Button variant="outline" size="sm"
     onClick={() => { setMetadataRevision(value => value + 1) }}>{t('retry')}</Button></div>
-  if (metadata === undefined || metadata.revision !== refreshRevision) return <p role="status" className={css.catalogStatus}>{t('loading')}</p>
+  if (metadata === undefined || metadata.revision !== refreshRevision) return <ProductLoading label={t('loading')} />
   const filename = metadata.value.sourceType === 'manual' && !/\.md$/iu.test(metadata.value.filename)
     ? `${metadata.value.filename}.md` : metadata.value.filename
   return renderFactorySlot('document.preview', { fileName: filename, read: readFile, renderOffice, revision: refreshRevision, failureText },

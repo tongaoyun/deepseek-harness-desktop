@@ -38,6 +38,10 @@
     "./company-content": {
       "types": "./lib/types/company-content.d.ts",
       "default": "./lib/company-content.js"
+    },
+    "./company-team": {
+      "types": "./lib/types/company-team.d.ts",
+      "default": "./lib/company-team.js"
     }
   },
   "scripts": {

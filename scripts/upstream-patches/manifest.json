@@ -753,7 +753,7 @@
     },
     {
       "id": "workspace-integration",
-      "purpose": "Workspace integration registers private external-namespace packages, their compiler programs and public exports, and product assembly commands. Official runtime manifests and sources have no product dependency. Product build configuration stays package-local. Repository reference scanning distinguishes lockfile artifact byte counts from commit references while retaining checks for references on the same line. 产品协议包声明 YAML 解析依赖，独立发布工具将其打包为无需安装依赖的校验产物；不引入官方运行时对产品包的依赖。",
+      "purpose": "Workspace integration registers private external-namespace packages, their compiler programs and public exports, and product assembly commands. Official runtime manifests and sources have no product dependency. Product build configuration stays package-local. Repository reference scanning distinguishes lockfile artifact byte counts from commit references while retaining checks for references on the same line. 产品协议包声明 YAML 解析依赖，独立发布工具将其打包为无需安装依赖的校验产物；不引入官方运行时对产品包的依赖。 产品运行时通过公开 Scope 与 MCP 资源、Node PTC 测试依赖验证连接器按需发现；只补充产品包依赖，不改官方执行循环。",
       "tests": [
         "scripts/check-workspace-constraints.spec.ts",
         "scripts/client-tsconfig.spec.ts",
@@ -764,7 +764,8 @@
         "packages/deepseek-harness-product/desktop/tests/inference-profile.spec.ts",
         "packages/extensions/ui-deepseek-harness-product/tests/KnowledgeToolResult.client.spec.tsx",
         "packages/deepseek-harness-product/runtime/tests/company-skill-format.spec.ts",
-        "apps/product-desktop/tests/company-content.test.mjs"
+        "apps/product-desktop/tests/company-content.test.mjs",
+        "packages/deepseek-harness-product/runtime/tests/erp-tool-discovery.spec.ts"
       ],
       "files": [
         {
@@ -795,7 +796,7 @@
         {
           "path": "pnpm-lock.yaml",
           "before": "4637cca3b89c4c8d5a147321710e597aa62ec2444a3772ab542be5690893dfe4",
-          "after": "2ecdf927636a61db957fc0d5fe8869c11e2a238e2675a526a57beac0109027e7"
+          "after": "c66530b7f132062e87ceaea4d88899dd90a4ebec92f2390fd1a1acb67d718212"
         },
         {
           "path": "scripts/check-workspace-constraints.spec.ts",
@@ -1699,7 +1700,7 @@
     },
     {
       "id": "product-builtin-capabilities-integration",
-      "purpose": "将专家与技能作为产品内建模块统一装配；仅登记依赖布局、生成目录和原有源码断言门禁基线的迁移差异，不修改官方执行循环。 原社区实现迁移后沿用此前 vendor 的 lint 范围；新增配置读取、提交出口及装配测试仍由仓库 lint 检查，源码均经过独立严格类型检查。",
+      "purpose": "将专家与技能作为产品内建模块统一装配；仅登记依赖布局、生成目录和原有源码断言门禁基线的迁移差异，不修改官方执行循环。 原社区实现迁移后沿用此前 vendor 的 lint 范围；新增配置读取、提交出口及装配测试仍由仓库 lint 检查，源码均经过独立严格类型检查。 移除已由真实 Cordis Context 测试夹具替代的产品类型断言基线条目，不扩大允许断言的范围。",
       "tests": [
         "packages/extensions/ui-deepseek-harness-product/tests/builtin-capabilities.client.spec.ts",
         "packages/deepseek-harness-product/desktop/tests/company-plugins.spec.ts",
@@ -1709,7 +1710,7 @@
         {
           "path": "scripts/no-unknown-casts.baseline.json",
           "before": "fd85277f4e3c906f2c3de6d47880ae447c39e4c439f3c29f2bae83ecf76ff99b",
-          "after": "e2149b377a7ab803767450fb272be1065152467617ad5b88f1015dce5c0d4c6b"
+          "after": "ed616ed86a56d768f070c0a46efe8fe581837084950677ba375995ca7683ebac"
         },
         {
           "path": ".oxlintrc.json",
@@ -1723,6 +1724,26 @@
         }
       ],
       "diff": "product-builtin-capabilities-integration.patch"
+    },
+    {
+      "id": "build-aggregate-declarations",
+      "purpose": "完整构建的 Host 聚合检查等待 Host bundle 生成公开类型声明，避免并行检查读到尚未生成或正在替换的声明。独立检查与无 bundle 的类型检查顺序保持不变。",
+      "tests": [
+        "scripts/build.spec.ts"
+      ],
+      "files": [
+        {
+          "path": "scripts/build.ts",
+          "before": "7a2d97b5cff04fd96cc20703133c5da00177cb4f92d2ab68413bf57a4f13ce65",
+          "after": "0350d4bbd2610009834c8cbb7d992283f24f5d55347ebca1e79a66c593d8f787"
+        },
+        {
+          "path": "scripts/build.spec.ts",
+          "before": "e14bb07763457ca45a39f490325c199a5c0554959471948806b9400931355b80",
+          "after": "fd16e7c7da4fbc556e4bbd0c263f82041543e7d5ef1d4dca842bcdc0ca466314"
+        }
+      ],
+      "diff": "build-aggregate-declarations.patch"
     }
   ]
 }

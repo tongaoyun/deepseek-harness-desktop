@@ -54,12 +54,12 @@ async function setCodingView(page: Page, enabled: boolean): Promise<void> {
 }
 
 const connectors = [
-  { id: 'erp', displayName: 'Order management', summary: 'Orders, inventory, and fulfillment', category: 'industry-data',
+  { id: 'erp', displayName: 'Order management', summary: 'Orders, inventory, and fulfillment', category: 'business-systems',
     availabilityStatus: 'AVAILABLE', authMode: 'employee-bearer', status: 'ACTIVE', tools: [
       { name: 'orders_read', displayName: 'Read orders', description: 'Query order status and totals.', access: 'READ' },
       { name: 'orders_update', displayName: 'Update orders', description: 'Change order delivery details.', access: 'WRITE' },
     ] },
-  { id: 'crm', displayName: 'Customer workspace', summary: 'Customer profiles and sales activity', category: 'industry-data',
+  { id: 'crm', displayName: 'Customer workspace', summary: 'Customer profiles and sales activity', category: 'business-systems',
     availabilityStatus: 'AUTHORIZATION_REQUIRED', authMode: 'oauth', authorizationStatus: 'REQUIRED', tools: [] },
 ]
 const organizationKnowledge = [

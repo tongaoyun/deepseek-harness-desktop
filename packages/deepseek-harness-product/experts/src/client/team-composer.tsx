@@ -132,7 +132,7 @@ export function TeamMenu(props: {
             {snapshot ? tx("搜索并启用一个专家团。") : tx("正在加载…")}
           </p>)}
       </div>
-      {detail && (<TeamDetails team={detail} experts={experts} close={() => setDetail(null)} onSelect={(example) => void pick(detail, example)}/>)}
+      {detail && (<TeamDetails team={detail} experts={experts} engine={snapshot?.engine} close={() => setDetail(null)} onSelect={(example) => void pick(detail, example)}/>)}
       {confirm && (<TeamConfirm title={tx("启用专家团")} label={tx("启用团队及所需成员")} onCancel={() => setConfirm(null)} onConfirm={() => {
                 const value = confirm;
                 setConfirm(null);

@@ -39,6 +39,7 @@ export const expertSummarySchema = z.object({
   description: z.string(), descriptionEn: z.string(),
   emoji: z.string(), division: z.string(), divisionZh: z.string(),
   company: z.boolean().optional(),
+  teamMember: z.boolean().optional(),
   conflict: z.boolean().optional(),
   custom: z.boolean().default(false), avatar: z.number().int().min(0).max(35).optional(),
 })

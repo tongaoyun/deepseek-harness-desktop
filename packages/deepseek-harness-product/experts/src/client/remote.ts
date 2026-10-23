@@ -9,6 +9,7 @@ import { AGENCY_AGENTS_DESCRIPTORS } from '../remote-contract.ts'
 import type { CatalogSnapshot, CustomExpertInput } from '../expert-contract.ts'
 
 export interface AgencyTeamsRemote {
+  exportTeam(id: string, expectedRevision: number): Promise<RemoteResult<{ resourceKey: string; files: Record<string, string> }>>
   getTeams(): Promise<RemoteResult<TeamSnapshot>>
   saveTeam(team: TeamInput, enabled: boolean, expectedRevision: number): Promise<RemoteResult<TeamSnapshot>>
   setTeamEnabled(id: string, enabled: boolean, expectedRevision: number): Promise<RemoteResult<TeamSnapshot>>
@@ -37,6 +38,7 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
     getPrompt: (slug: string, division: string) => Promise<RemoteResult<AgencyAgentsPrompt>>
   }
   interface TypertRemoteMap {
+    'agencyAgents/exportTeam': AgencyTeamsRemote['exportTeam']
     'agencyAgents/getTeams': AgencyTeamsRemote['getTeams']
     'agencyAgents/saveTeam': AgencyTeamsRemote['saveTeam']
     'agencyAgents/setTeamEnabled': AgencyTeamsRemote['setTeamEnabled']

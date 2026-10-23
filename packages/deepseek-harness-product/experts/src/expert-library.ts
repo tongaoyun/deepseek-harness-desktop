@@ -10,7 +10,7 @@ import { ZH_DIVISION } from './names.ts'
 export const AGENCY_LIBRARY_SERVICE = 'agencyAgentsLibrary'
 export interface AgencySettings { enabled: string[]; customExperts?: CustomExpert[]; customTeams?: ExpertTeam[]; enabledTeams?: string[] }
 
-/** 兼容只有 enabled 的旧配置；内容与启用状态在同一 namespace 原子持久化。 */
+/** 个人内容与启用状态在同一 namespace 原子持久化；新安装默认为空。 */
 export const agencySettingsSchema = schema.object({
   enabled: schema.array(schema.string()).default([]),
   customExperts: schema.array(schema.any()).default([]),
@@ -75,7 +75,7 @@ export function createExpertLibrary(
     division: expert.division, divisionZh: ZH_DIVISION[expert.division] ?? expert.division,
     avatar: expert.avatar, custom: true,
   })
-  const overlaps = (a: ExpertSummary, b: ExpertSummary): boolean => a.slug === b.slug || [a.name, a.nameEn].some(name => [b.name, b.nameEn].some(other => normalizeName(name) === normalizeName(other)))
+  const overlaps = (a: ExpertSummary, b: ExpertSummary): boolean => a.slug === b.slug || !a.teamMember && !b.teamMember && [a.name, a.nameEn].some(name => [b.name, b.nameEn].some(other => normalizeName(name) === normalizeName(other)))
   // 只校验当前编辑对象，其他已有冲突不能阻断逐个修复。
   const assertUnique = (expert: ExpertSummary, others: readonly ExpertSummary[]): void => {
     if (others.some(other => overlaps(expert, other))) throw customError('duplicate', locale())

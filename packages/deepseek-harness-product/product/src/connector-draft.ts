@@ -58,6 +58,10 @@ export type ConnectorDeviceConfigurationSnapshot = Readonly<z.infer<typeof Conne
 /** Validate confirmation that the selected connector version was configured on this device. */
 export const ConnectorConfigurationSaveResultSchema = z.object({ id, version, configured: z.literal(true) })
 
+/** Validate the Host's explicit reconnect result without treating partial failure as success. */
+export const ConnectorRefreshResultSchema = z.object({ connectedIds: z.array(z.string().min(1)),
+  unavailableIds: z.array(z.string().min(1)) }).strict()
+
 /** Confirm deletion of a server resource identified independently of its historical versions. */
 export const ExtensionRemovalResultSchema = z.object({ id, removed: z.literal(true) })
 /** Confirm submission of the requested immutable resource version for shared review. */

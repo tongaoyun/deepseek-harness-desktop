@@ -1,6 +1,7 @@
 {
   "compilerOptions": {
     "target": "ES2022",
+    "jsx": "react-jsx",
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
     "lib": [
@@ -17,10 +18,13 @@
       "node",
       "react"
     ],
-    "allowImportingTsExtensions": true
+    "allowImportingTsExtensions": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true
   },
   "include": [
     "src/**/*.ts",
-    "test/types/**/*.ts"
+    "test/types/**/*.ts",
+    "tests/**/*.tsx"
   ]
 }

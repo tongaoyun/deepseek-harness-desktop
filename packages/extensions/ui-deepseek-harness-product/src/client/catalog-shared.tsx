@@ -85,14 +85,11 @@ export const METHODS = {
 } as const
 
 export const CATEGORY_KEYS: Readonly<Record<string, DeepSeekHarnessProductKey>> = {
-  'industry-data': 'categoryIndustryData',
-  'recommended-system': 'categoryRecommendedSystem',
-  'communication-collaboration': 'categoryCommunicationCollaboration',
-  'project-management': 'categoryProjectManagement',
-  'knowledge-documents': 'categoryKnowledgeDocuments',
-  'design-creative': 'categoryDesignCreative',
-  'schedule-productivity': 'categoryScheduleProductivity',
-  'maps-travel': 'categoryMapsTravel',
+  'business-systems': 'categoryBusinessSystems',
+  'ecommerce-platforms': 'categoryEcommercePlatforms',
+  collaboration: 'categoryCollaboration',
+  'data-analysis': 'categoryDataAnalysis',
+  'development-operations': 'categoryDevelopmentOperations',
   other: 'categoryOther',
 }
 

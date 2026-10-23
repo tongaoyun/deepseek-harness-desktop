@@ -1,4 +1,5 @@
 /** Company releases contain data for native plugins, never plugin executables or credentials. */
+import { publishedTeamDocument } from './company-team.ts'
 import { createHash } from 'node:crypto'
 import { isCollection, parseDocument, visit } from 'yaml'
 
@@ -39,7 +40,7 @@ export function companyContentRelease(value: unknown): CompanyContentRelease {
   for (const [path, encoded] of Object.entries(value.files)) {
     if (typeof encoded !== 'string' || encoded.length > Math.ceil(COMPANY_CONTENT_MAX_BYTES / 3) * 4
       || path.length > COMPANY_CONTENT_MAX_PATH_LENGTH
-      || !(expertPath.test(path) || skillPath.test(path))
+      || !(expertPath.test(path) || skillPath.test(path) || /^teams\/[a-z0-9]+(?:-[a-z0-9]+)*\.json$/u.test(path))
       || path.split('/').some(part => ['', '.', '..'].includes(part) || part.endsWith('.')
         || /^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\..*)?$/iu.test(part))
       || paths.has(path.toLowerCase())) throw new Error('公司内容包含非法路径或文件')
@@ -78,6 +79,8 @@ export function companyContentRelease(value: unknown): CompanyContentRelease {
         if (values.length !== 1 || !value || /^[|>\[\{]/u.test(value)) throw new Error('请填写单行名称和简介')
       }
     }
+    if (path.startsWith('teams/') && path.length > 91) throw new Error('专家团标识最多 80 个字符')
+    if (path.startsWith('teams/')) publishedTeamDocument(new TextDecoder('utf-8', { fatal: true }).decode(data))
     files[path] = encoded
   }
   for (const path of Object.keys(files)) {

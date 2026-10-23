@@ -1,10 +1,13 @@
+import { createTestContext } from '../tests/context.ts'
+import { createActivationProbe } from '../tests/activation-probe.ts'
+import { publishedTeamDocument } from '@deepseek-harness/product/company-team'
 import { TEST_TEAMS } from './fixtures/teams.ts'
 import { fileURLToPath } from 'node:url'
 import { describe, it, expect, vi } from 'vitest'
 import type { NativeTeamService } from './team-engine.ts'
 import { Context } from '@deepseek-ai/cordis'
 import type { SettingsNamespace } from '@deepseek-ai/dsh-settings'
-import { apply, DEFAULT_DIVISIONS } from './index.ts'
+import { apply } from './index.ts'
 import AgencyAgentsRemote from './remote.ts'
 import { MemorySettings } from './settings-memory.ts'
 class TestSettings extends MemorySettings {
@@ -32,14 +35,16 @@ function volatileConfig(settings: TestSettings) {
 describe('专家团宿主与远端集成', () => {
   it('个人团队创建、启用、主理人规则、三人委派、子会话隔离与停用', async () => {
     const settings = new TestSettings(new Context())
-    settings.restore({ 'agency-agents': { enabled: [] } })
+    settings.restore({ 'agency-agents': { enabled: [] }, locale: { preference: 'zh' } })
+    settings.register('locale', value => value)
     const services = new Map<string, unknown>()
     const tools = new Map<
       string,
       { execute(args: unknown, exec?: unknown): Promise<unknown> }
     >()
     const starts: Record<string, unknown>[] = []
-    const ctx = {
+    const probe = createActivationProbe()
+    const ctx = createTestContext({
       settings,
       effect: () => () => {},
       inject: (_deps: unknown, callback: (ctx: unknown) => void) =>
@@ -56,13 +61,14 @@ describe('专家团宿主与远端集成', () => {
         }) => tools.set(tool.name, tool),
       },
       systemPrompt: { section: () => {} },
-      on: () => () => undefined,
+      on: probe.on,
       subagents: {
         getProvider: () => ({
-          capabilities: { persona: true, toolFilter: true },
+          capabilities: { agentOptions: true, agentPreset: true, outputSchema: true, depthLimit: true },
         }),
-        start: async (_provider: string, options: Record<string, unknown>) => {
-          starts.push(options)
+        startActivation: async (spec: { childId: string; request: Record<string, unknown>; label: string }) => {
+          probe.create(spec)
+          starts.push({ ...spec.request, label: spec.label })
           return {
             result: Promise.resolve({
               output: [{ type: 'text', text: '租赁建议' }],
@@ -72,8 +78,8 @@ describe('专家团宿主与远端集成', () => {
           }
         },
       },
-    } as unknown as Context
-    apply(ctx, { root: fileURLToPath(new URL('../../../../vendor/product-expert-fixtures/agency-agents', import.meta.url)), provider: 'spawn', divisions: DEFAULT_DIVISIONS, ...volatileConfig(settings) } as never)
+    })
+    apply(ctx, { root: fileURLToPath(new URL('../../../../vendor/product-expert-fixtures/agency-agents', import.meta.url)), provider: 'spawn', divisions: ['product', 'design', 'engineering'], ...volatileConfig(settings) } as never)
     const remote = new AgencyAgentsRemote(ctx)
     expect((await remote.getTeams()).teams).toEqual([])
     const { id: _fixtureId, ...firstDraft } = TEST_TEAMS[0]
@@ -87,6 +93,17 @@ describe('专家团宿主与远端集成', () => {
       }
     }
     const team = initial.teams[0]
+    const exported = await remote.exportTeam(team.id, initial.revision)
+    expect(exported.resourceKey).toMatch(/^teams\//)
+    const document = publishedTeamDocument(Buffer.from(Object.values(exported.files)[0], 'base64').toString('utf8'))
+    expect(document.experts).toHaveLength(team.members.length)
+    expect(document.team.members.map(member => member.expertSlug)).toEqual(document.experts.map(expert => expert.key))
+    expect(JSON.stringify(document)).not.toContain(team.members[0].expertSlug)
+    await expect(remote.exportTeam(team.id, initial.revision + 1)).rejects.toThrow('已更新')
+    let companyRevision = 0
+    services.set('companyContent', { read: async () => ({ sha256: String(companyRevision++) }) })
+    await expect(remote.exportTeam(team.id, initial.revision)).rejects.toThrow('已更新')
+    services.delete('companyContent')
     const enabled = await remote.setTeamEnabled(team.id, true, initial.revision)
     expect(enabled.enabledExperts).toEqual(
       expect.arrayContaining(team.members.map((m) => m.expertSlug)),
@@ -118,10 +135,13 @@ describe('专家团宿主与远端集成', () => {
     )
     expect(starts).toHaveLength(3)
     expect(starts.map(start => start.label)).toEqual(team.members.map(member => catalog.experts.find(expert => expert.slug === member.expertSlug)!.name))
-    for (const start of starts) {
-      expect(start.persona).toEqual(expect.any(String))
+    expect(probe.sections).toHaveLength(3)
+    expect(probe.restrictions).toHaveLength(3)
+    expect(probe.listening).toBe(0)
+    for (const [index, start] of starts.entries()) {
+      expect(probe.sections[index]?.text).toEqual(expect.any(String))
       expect(start.prompt).toEqual([{ type: 'text', text: expect.stringContaining('交接给主理人') }])
-      expect(start.toolFilter).toMatchObject({
+      expect(probe.restrictions[index]).toMatchObject({
         deny: expect.arrayContaining([
           'summon_expert_team',
           'summon_expert',

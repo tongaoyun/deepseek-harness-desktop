@@ -1,12 +1,12 @@
 import { useTeamLocale, localizedExperts } from './team-locale.ts';
 import { LibraryEditorFooter } from './library-ui.tsx';
 import React from 'react';
-import { effectiveCoordinator, TEAM_PROMPTS, teamInputSchema, type TeamInput, type TeamSnapshot, } from '../team-contract.ts';
+import { effectiveCoordinator, teamInputSchema, type TeamInput, type TeamSnapshot, } from '../team-contract.ts';
 import type { ExpertSummary } from '../expert-contract.ts';
 import { Button, Input } from './plugin-ui.ts';
 import { SegmentedControl } from '@deepseek-ai/dsh-client-ui-primitives';
 import { CategorySelect } from './category-select.ts';
-import { EN_DIVISION, ZH_DIVISION } from '../names.ts';
+import { EXPERT_DIVISION_ORDER, EN_DIVISION, ZH_DIVISION } from '../names.ts';
 import { TeamDialog, TeamConfirm, Avatar, IconPlus, IconTrash, IconRefresh, IconSearch, } from './team-shared.tsx';
 import { TeamDetails } from './team-ui.tsx';
 import { filterTeamMemberCandidates, type TeamMemberPickerStatus } from './team-member-picker.ts';
@@ -34,8 +34,7 @@ function MemberPicker(props: {
 }) {
     const names = props.locale === 'en' ? EN_DIVISION : ZH_DIVISION
     const options = React.useMemo(() => {
-        const values = [...new Set(props.experts.map((expert) => expert.division))]
-        values.sort((left, right) => (names[left] ?? left).localeCompare(names[right] ?? right, props.locale))
+        const values = [...new Set([...EXPERT_DIVISION_ORDER, ...props.experts.map((expert) => expert.division)])]
         return [{ value: '', label: props.tx("全部分类") }, ...values.map((value) => ({ value, label: names[value] ?? value }))]
     }, [props.experts, props.locale, names, props.tx])
     const matches = filterTeamMemberCandidates(props.experts, {
@@ -71,7 +70,7 @@ function MemberPicker(props: {
         <div className="aag-field aag-field-source">
           <CategorySelect id="agt-picker-source" value={props.source} label={props.tx("来源")} onChange={(value) => props.onSource(value === 'company' || value === 'custom' ? value : 'all')} options={[
             { value: 'all', label: props.tx("全部来源") },
-            { value: 'company', label: props.tx("团队共享") },
+            { value: 'company', label: props.tx("市场") },
             { value: 'custom', label: props.tx("我的") },
           ]}/>
         </div>

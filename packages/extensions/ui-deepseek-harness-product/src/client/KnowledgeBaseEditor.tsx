@@ -1,3 +1,4 @@
+import { ProductLoading } from './ProductLoading.tsx'
 /** Create a personal library using ownership computed by the server. */
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { Button, Modal } from '@deepseek-ai/dsh-client-ui-primitives'
@@ -25,7 +26,7 @@ export function KnowledgeBaseEditor(props: KnowledgeBaseEditorProps): ReactNode 
   const { t } = props
   if (!recovery.ready) return <Modal open title={t('knowledgeRecoveryTitle')} closeLabel={t('close')} onClose={props.onClose}>
     {recovery.error ? <><p role="alert">{t('knowledgeRecoveryFailed')}</p>
-      <Button onClick={() => { void recovery.reload() }}>{t('retry')}</Button></> : <p role="status">{t('loading')}</p>}
+      <Button onClick={() => { void recovery.reload() }}>{t('retry')}</Button></> : <ProductLoading label={t('loading')} />}
   </Modal>
   return <KnowledgeBaseEditorForm {...props} restored={recovery.draft} recovery={recovery.recovery} />
 }

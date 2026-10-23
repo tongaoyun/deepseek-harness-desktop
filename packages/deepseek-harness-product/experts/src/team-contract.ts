@@ -1,64 +1,12 @@
 import { z } from 'zod'
+import { teamText } from './team-i18n.ts'
 import { TEAM_PROMPTS_EN } from './team-prompts-en.ts'
 import { TEAM_PROMPTS } from './team-prompts.ts'
 export { TEAM_PROMPTS }
-const text = (max: number) =>
-  z
-    .string()
-    .trim()
-    .min(1)
-    .refine((value) => Array.from(value).length <= max)
-export const TEAM_CUSTOM_ID =
-  /^team-custom-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u
-export const teamMemberSchema = z
-  .object({ expertSlug: text(128), duty: text(100), instructions: text(2000) })
-  .strict()
-export const teamInputSchema = z
-  .object({
-    id: z
-      .string()
-      .regex(TEAM_CUSTOM_ID)
-      .optional(),
-    name: text(40).refine((value) => !/[@\r\n\u0000-\u001f]/u.test(value)),
-    description: text(160),
-    tags: z.array(text(16)).max(3),
-    goal: text(2000),
-    constraints: z.string().trim().max(2000),
-    deliveryRequirements: text(2000),
-    members: z
-      .array(teamMemberSchema)
-      .min(2)
-      .max(8)
-      .refine(
-        (items) =>
-          new Set(items.map((item) => item.expertSlug)).size === items.length,
-      ),
-    examples: z.array(text(1000)).min(1).max(3),
-    coordinatorMode: z.enum(['template', 'custom']),
-    coordinatorTemplateId: z.enum([
-      'general',
-      'product',
-      'technical',
-      'content',
-      'data',
-      'research',
-    ]),
-    coordinatorTemplateVersion: z.literal(1),
-    coordinatorPrompt: z
-      .string()
-      .refine((value) => Array.from(value).length <= 12000),
-  })
-  .strict()
-  .refine(
-    (value) =>
-      value.coordinatorMode !== 'custom' ||
-      value.coordinatorPrompt.trim().length > 0,
-  )
-export type TeamInput = z.infer<typeof teamInputSchema>
-export type ExpertTeam = TeamInput & { id: string }
-export const teamSchema = teamInputSchema.and(
-  z.object({ id: z.string().regex(TEAM_CUSTOM_ID) }),
-)
+import { teamSchema, sharedTeamSchema } from '@deepseek-harness/product/company-team'
+export { TEAM_CUSTOM_ID, teamMemberSchema, teamInputSchema, teamSchema } from '@deepseek-harness/product/company-team'
+export type { TeamInput, ExpertTeam } from '@deepseek-harness/product/company-team'
+import type { TeamInput, ExpertTeam } from '@deepseek-harness/product/company-team'
 export const teamEngineStatusSchema = z.object({
   state: z.enum(['unsupported', 'disabled', 'enabled']),
   mode: z.enum(['subagent', 'native']),
@@ -66,8 +14,9 @@ export const teamEngineStatusSchema = z.object({
   recommendation: z.string(),
 })
 export type TeamEngineStatus = z.infer<typeof teamEngineStatusSchema>
+export const executableTeamSchema = z.union([teamSchema, sharedTeamSchema]).transform((value): ExpertTeam => value)
 export const teamSnapshotSchema = z.object({
-  teams: z.array(teamSchema),
+  teams: z.array(executableTeamSchema),
   enabledTeams: z.array(z.string()),
   enabledExperts: z.array(z.string()),
   revision: z.number().int().min(0),
@@ -79,3 +28,14 @@ export const effectiveCoordinator = (team: TeamInput, locale: 'zh' | 'en' = 'zh'
   team.coordinatorMode === 'custom'
     ? team.coordinatorPrompt
     : (locale === 'en' ? TEAM_PROMPTS_EN : TEAM_PROMPTS)[team.coordinatorTemplateId]
+
+/** Prefer exact IDs; a name shared by multiple enabled teams must never pick an arbitrary team. */
+export function resolveEnabledTeam(snapshot: TeamSnapshot, query: string, locale: 'zh' | 'en'): ExpertTeam {
+  const teams = snapshot.teams.filter(team => snapshot.enabledTeams.includes(team.id))
+  const exact = teams.find(team => team.id === query)
+  if (exact) return exact
+  const matches = teams.filter(team => team.name === query)
+  if (matches.length > 1) throw new Error(teamText(locale, '存在同名专家团，请使用专家团标识重新选择。'))
+  if (!matches[0]) throw new Error(teamText(locale, '专家团未启用或不存在。'))
+  return matches[0]
+}

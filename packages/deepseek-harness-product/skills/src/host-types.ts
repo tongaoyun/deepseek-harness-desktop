@@ -2,7 +2,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { CompanyContentSource } from '@deepseek-harness/product/protocol';
 import type { CreateInput, ScopeOptions } from './types.ts';
 import type { ProviderCandidate, createSkill, getProviderSkill } from './core.ts';
-/** 七版宿主实际使用的最小服务契约，兼容旧版可选服务与返回值。 */
+/** 产品技能模块使用的宿主服务契约。 */
 export interface ProviderControl {
     invalidate: () => void;
     signal?: AbortSignal;
@@ -13,30 +13,28 @@ interface SkillProvider {
     get: (candidate: ProviderCandidate, options?: ScopeOptions) => ReturnType<typeof getProviderSkill>;
 }
 interface Skills {
-    invalidate?: () => void;
     registerProvider: (factory: (control: ProviderControl) => SkillProvider) => (() => void);
 }
 interface Session {
-    id?: string;
-    header?: {
-        id?: string;
+    id: string;
+    header: {
         cwd?: string;
         agentPreset?: string;
     };
 }
-/** 宿主登记的工作区；只读 list，字段名在各版本里可能是 path 或 cwd。 */
+/** 当前宿主登记的工作区；路径只取公开的 path 字段。 */
 interface WorkspaceRegistry {
-    list?: () => Iterable<{ id?: unknown; path?: unknown; cwd?: unknown; title?: unknown }>;
+    list: () => Iterable<{ path: string }>;
 }
 interface Sessions {
     list: () => Session[];
-    get?: (id: string) => Session | undefined;
+    get: (id: string) => Session | undefined;
 }
 export interface Agent {
     id: string;
     ctx: {
         skills?: Skills;
-        get?: (key: 'skills') => Skills | undefined;
+        get: (key: 'skills') => Skills | undefined;
     };
 }
 interface Services {
@@ -46,27 +44,12 @@ interface Services {
     agents: {
         list: () => Agent[];
     };
-    desktopProfiles: {
-        current?: {
-            name: string;
-            dir: string;
-        };
-    };
-    desktopPnpm: {
-        runPlugin: (args: string[], directory: string) => {
-            done: Promise<{
-                exitCode: number;
-            }>;
-        };
-    };
 }
 export interface HostContext {
-    get?: <K extends keyof Services>(key: K) => Services[K] | undefined;
-    sessions?: Sessions;
+    get: <K extends keyof Services>(key: K) => Services[K] | undefined;
+    sessions: Sessions;
     skills: Skills;
-    webRuntime: {
-        trustedHosts?: string[];
-    };
+    root: { webStartup?: { trustedHosts: string[] } };
     webServer: {
         register: (route: {
             kind: string;
@@ -78,14 +61,14 @@ export interface HostContext {
         warn: (message: string) => void;
     };
     effect: (effect: () => (() => void) | void, label: string) => unknown;
-    emit?: (event: string, ...args: unknown[]) => unknown;
-    on?: {
+    emit: (event: string, ...args: unknown[]) => unknown;
+    on: {
         (event: 'agent/created' | 'agent/disposed', handler: (event: {
             agent: Agent;
-        }) => void): (() => void) | void;
+        }) => void): (() => void);
         (event: 'tools/pre-execute', handler: (execution: {
             name: string;
-        }, next: () => unknown) => unknown): (() => void) | void;
+        }, next: () => unknown) => unknown): (() => void);
     };
     tools?: {
         register: (tool: {
@@ -108,19 +91,4 @@ export interface HostContext {
             };
         }) => () => void;
     };
-}
-export interface UpdateOptions {
-    endpoint: string;
-    packageName: string;
-    manifestUrl: URL;
-}
-export interface UpdateTarget {
-    profileName: string;
-    profileDir: string;
-    cliEntry?: string;
-    desktopPnpm?: Services['desktopPnpm'];
-    packageManager?: { command: string; args: readonly string[]; env?: NodeJS.ProcessEnv };
-    pluginManager?: { installBundle(spec: string): Promise<{ application?: string; error?: { message?: string }; packageResult?: { output?: string } }> };
-    officialDesktop: boolean;
-    canAutoUpdate: boolean;
 }

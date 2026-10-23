@@ -1,0 +1,6 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`bounds a large catalog, expands full descriptions and searches tools beyond the visible batch 1`] = `
+"订单能力 124只读order.tool_124完整说明 124
+需要保留的注意事项"
+`;

@@ -6,6 +6,7 @@ import type { DeepSeekHarnessProductKey } from '../locales.ts'
 import css from '../DeepSeekHarnessProduct.module.css'
 import { localDetail, knowledgeScopeLabel, type ProductItem } from './catalog-shared.tsx'
 import { KnowledgeDocuments } from './KnowledgeDocuments.tsx'
+import { ProductLoading } from './ProductLoading.tsx'
 import { KnowledgeBaseEditor } from './KnowledgeBaseEditor.tsx'
 import { useKnowledgeRequests } from './knowledge-data.ts'
 import { productErrorMessage } from './product-errors.ts'
@@ -91,7 +92,8 @@ export function KnowledgeWorkspace({ entries, loading, refreshRevision = 0, erro
           </button>{scope === 'PERSONAL' && !authRequired && error === undefined && <Tooltip label={t('knowledgeCreatePersonalBase')}>
             <button type="button" className={css.iconButton} aria-label={t('knowledgeCreatePersonalBase')} disabled={loading}
               onClick={() => { setCreating(true) }}><IconPlusOutlineRegular size={15} /></button></Tooltip>}</h2>
-          {!collapsed.has(scope) && (values.length === 0 ? <p className={css.knowledgeLibraryEmpty}>{loading ? t('loading') : t('empty')}</p>
+          {!collapsed.has(scope) && (values.length === 0 ? <div className={css.knowledgeLibraryEmpty}>
+            {loading && entries.length === 0 ? <ProductLoading label={t('loading')} /> : t('empty')}</div>
             : [...groups].map(([name, group]) => <div key={name}>
               {name && <h3 className={css.knowledgeDepartmentHeading}>{name}</h3>}
               {group.map(entry => renderLibrary(entry, children, openLibrary))}
@@ -131,7 +133,7 @@ export function KnowledgeWorkspace({ entries, loading, refreshRevision = 0, erro
         <aside className={css.knowledgeWorkspaceNavigation} id="knowledge-workspace-navigation" data-knowledge-navigation>{navigation(null)}</aside>
         <main className={css.knowledgeWorkspaceMain} data-knowledge-content>
           <div className={css.knowledgeWorkspaceEmpty}>
-            {loading ? <p role="status">{t('loading')}</p>
+            {loading ? <ProductLoading label={t('loading')} />
               : authRequired ? <div className={css.authEmptyState} role="status" aria-live="polite">
                 <div className={css.authEmptyCopy}><strong>{authPending ? t('authWaiting') : authError ? t('authFailedTitle') : t('authTitle')}</strong>
                   <span>{t('authRequired')}</span>{authError && <span role="alert">{t('signInFailed')}</span>}</div>

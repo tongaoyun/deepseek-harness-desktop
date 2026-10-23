@@ -1,51 +1,27 @@
-/** 分区目录名 → 中文分区名。 */
-export const ZH_DIVISION: Readonly<Record<string, string>> = {
-  academic: '学术',
-  company: '公司经营',
-  design: '设计',
-  engineering: '工程',
-  finance: '金融',
-  'game-development': '游戏开发',
-  gis: '地理信息',
-  healthcare: '医疗健康',
-  hr: '人力资源',
-  legal: '法务',
-  marketing: '市场营销',
-  'paid-media': '付费媒体',
-  product: '产品',
-  'project-management': '项目管理',
-  research: '研究',
-  sales: '销售',
-  security: '安全',
-  'spatial-computing': '空间计算',
-  specialized: '专业',
-  support: '支持',
-  'supply-chain': '供应链',
-  testing: '测试',
-}
+/** 跨境电商 ERP 的业务分类；筛选、编辑和专家团选人使用相同顺序。 */
+export const EXPERT_CATEGORIES = [
+  { id: 'orders', zh: '订单与售后', en: 'Orders & After-sales' },
+  { id: 'catalog', zh: '商品与刊登', en: 'Products & Listings' },
+  { id: 'supply-chain', zh: '采购与供应链', en: 'Procurement & Supply Chain' },
+  { id: 'warehouse', zh: '库存与仓储', en: 'Inventory & Warehousing' },
+  { id: 'logistics', zh: '物流与履约', en: 'Logistics & Fulfillment' },
+  { id: 'finance', zh: '财务与对账', en: 'Finance & Reconciliation' },
+  { id: 'marketplace', zh: '平台与店铺', en: 'Platforms & Stores' },
+  { id: 'marketing', zh: '运营与增长', en: 'Operations & Growth' },
+  { id: 'analytics', zh: '数据与经营分析', en: 'Data & Business Analytics' },
+  { id: 'product', zh: '产品与设计', en: 'Product & Design' },
+  { id: 'engineering', zh: '研发与集成', en: 'Engineering & Integration' },
+  { id: 'testing', zh: '测试与运维', en: 'Quality & Operations' },
+  { id: 'support', zh: '实施与客户支持', en: 'Implementation & Customer Support' },
+  { id: 'company', zh: '企业协作', en: 'Enterprise Collaboration' },
+  { id: 'specialized', zh: '其他', en: 'Other' },
+] as const
 
-/** 分区目录名 → 英文分区名。 */
-export const EN_DIVISION: Readonly<Record<string, string>> = {
-  academic: 'Academic',
-  company: 'Company Leadership',
-  design: 'Design',
-  engineering: 'Engineering',
-  finance: 'Finance',
-  'game-development': 'Game Development',
-  gis: 'GIS',
-  healthcare: 'Healthcare',
-  hr: 'Human Resources',
-  legal: 'Legal',
-  marketing: 'Marketing',
-  'paid-media': 'Paid Media',
-  product: 'Product',
-  'project-management': 'Project Management',
-  research: 'Research',
-  sales: 'Sales',
-  security: 'Security',
-  'spatial-computing': 'Spatial Computing',
-  specialized: 'Specialized',
-  support: 'Support',
-  'supply-chain': 'Supply Chain',
-  testing: 'Testing',
-}
+/** 企业分类的固定展示顺序，目录可补充自定义分类。 */
+export const EXPERT_DIVISION_ORDER = EXPERT_CATEGORIES.map(category => category.id)
+
+/** 分类目录名到中文显示名。 */
+export const ZH_DIVISION: Readonly<Record<string, string>> = Object.fromEntries(EXPERT_CATEGORIES.map(category => [category.id, category.zh]))
+
+/** 分类目录名到英文显示名。 */
+export const EN_DIVISION: Readonly<Record<string, string>> = Object.fromEntries(EXPERT_CATEGORIES.map(category => [category.id, category.en]))

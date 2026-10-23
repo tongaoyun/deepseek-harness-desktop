@@ -61,7 +61,7 @@ it.each(['resolve', 'reject'] as const)('ignores a late refresh %s after the con
   const view = render(<ConnectorDetail product={localDetail(items([descriptor])[0]!)} onCatalogChanged={refresh} t={t} />)
   await act(async () => { fireEvent.click(screen.getByRole('button', { name: zh.revokeAuthorization })) })
   expect(refresh).toHaveBeenCalledOnce()
-  expect(screen.getByRole('status').textContent).toBe(zh.loading)
+  expect(screen.getByRole('status', { name: zh.loading }).textContent).toBe('')
   expect(screen.queryByRole('button', { name: zh.revokeAuthorization })).toBeNull()
   expect(screen.queryByRole('button', { name: zh.configureDevice })).toBeNull()
   expect(screen.queryByRole('heading', { name: zh.connectorTools })).toBeNull()

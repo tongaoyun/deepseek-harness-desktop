@@ -1,0 +1,12 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`专家团执行方式说明 > 保留真实的执行模式和原因，包括已启用但受深度限制的情况 1`] = `
+[
+  "<details class="aag-note agt-engine"><summary>默认执行方式：普通子代理</summary><p>当前宿主未检测到兼容的 Agent Team 能力，使用普通子代理。</p><p>执行前会再次检查当前会话的可用能力，实际方式以本次召唤结果为准。</p></details>",
+  "<details class="aag-note agt-engine"><summary>默认执行方式：普通子代理</summary><p>Agent Team 服务或当前会话工具尚未就绪。</p><p>建议在插件页开启 Agent Team 的 Host 与 Web 层，并重新加载会话；未开启也可继续使用普通专家团。</p><p>执行前会再次检查当前会话的可用能力，实际方式以本次召唤结果为准。</p></details>",
+  "<details class="aag-note agt-engine"><summary>默认执行方式：原生智能体团队</summary><p>Agent Team 已启用，使用原生团队协作。</p><p>执行前会再次检查当前会话的可用能力，实际方式以本次召唤结果为准。</p></details>",
+  "<details class="aag-note agt-engine"><summary>默认执行方式：普通子代理</summary><p>原生 Agent Team 暂不支持本插件配置的深度限制，本次使用普通子代理以保留该限制。</p><p>执行前会再次检查当前会话的可用能力，实际方式以本次召唤结果为准。</p></details>",
+]
+`;
+
+exports[`专家团执行方式说明 > 语言切换后重新翻译服务端返回的原因 1`] = `"<details class="aag-note agt-engine"><summary>Default execution mode：Standard subagents</summary><p>Agent Team services or conversation tools are not ready.</p><p>Enable the Host and Web layers of Agent Team in Plugins, then reload the conversation. Standard expert teams also work without it.</p><p>The current conversation’s capabilities are checked again before execution. The invocation result records the actual mode.</p></details>"`;

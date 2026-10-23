@@ -1,9 +1,10 @@
 import { localizeTeamTool } from './team-tool-locale.ts'
+import { readCompanyTeams } from './company-teams.ts'
 import { PersonaError } from './persona-error.ts'
 import { teamText } from './team-i18n.ts'
 import { teamCollaboration } from './team-collaboration.ts'
 import { createTeamLibrary, AGENCY_TEAM_SERVICE } from './team-library.ts'
-import { effectiveCoordinator } from './team-contract.ts'
+import { effectiveCoordinator, resolveEnabledTeam } from './team-contract.ts'
 import { executeTeam, TEAM_TASK_MAX_CHARS, type TeamMemberRun } from './team-runtime.ts'
 /**
  * Agency Experts — a summonable specialist roster for DSH.
@@ -15,10 +16,8 @@ import { executeTeam, TEAM_TASK_MAX_CHARS, type TeamMemberRun } from './team-run
  *   - `summon_expert(expert, task)` delegate a task to a subagent whose
  *     persona is that expert's, through the `ctx.subagents` spawn provider.
  *
- * A summoned expert does NOT replace the parent's persona: on DSH 0.2.1-rc.1
- * the child gets a scoped `deployment:persona-prefix` (and a tool denylist) on
- * `agent/created` after `startActivation`. 0.2.0-rc.1 and 0.2.0-rc.2 still pass
- * start-time `persona` / `toolFilter` through `ctx.subagents.start`.
+ * A summoned expert does NOT replace the parent's persona: the child gets a scoped `deployment:persona-prefix` (and a tool denylist) on
+ * `agent/created` after `startActivation`.
  *
  * Strict `{{...}}` interpolation runs over every system-prompt section, so any
  * complete brace group inside expert prose would throw at assembly. A
@@ -42,7 +41,7 @@ import { randomUUID } from 'node:crypto'
 import { open, readdir, readFile, stat } from 'node:fs/promises'
 import { join } from 'node:path'
 import { TextDecoder } from 'node:util'
-import { ZH_DIVISION } from './names.ts'
+import { EXPERT_DIVISION_ORDER, ZH_DIVISION } from './names.ts'
 import { createHostLocaleReader, formatHost, localizedExpertDescription, localizedExpertName, matchDivision, renderExpertList, renderSummonResults, type LocaleId } from './i18n.ts'
 import { isLiveValue, readAgencySettings, expertSettingsNamespace } from './settings.ts'
 import { AGENCY_LIBRARY_SERVICE, createExpertLibrary, type AgencySettings } from './expert-library.ts'
@@ -51,30 +50,7 @@ export const name = 'agency-agents'
 export const inject = ['tools', 'subagents', 'systemPrompt', 'settings', 'webServer']
 
 /** 初始分类顺序；实际团队分类可由目录补充。 */
-export const DEFAULT_DIVISIONS = [
-  'academic',
-  'company',
-  'design',
-  'engineering',
-  'finance',
-  'game-development',
-  'gis',
-  'healthcare',
-  'hr',
-  'legal',
-  'marketing',
-  'paid-media',
-  'product',
-  'project-management',
-  'research',
-  'sales',
-  'security',
-  'spatial-computing',
-  'specialized',
-  'support',
-  'supply-chain',
-  'testing',
-]
+export const DEFAULT_DIVISIONS = [...EXPERT_DIVISION_ORDER]
 
 /** 描述截断上限，避免无过滤列出全量智能体时 token 开销过大。 */
 const DESCRIPTION_LIMIT = 120
@@ -194,6 +170,7 @@ export function toSummonItemResult(query: unknown, result: { expert: string; ans
 interface Expert {
   readonly slug: string
   readonly company?: boolean
+  readonly teamMember?: boolean
   readonly name: string
   readonly nameEn: string
   readonly description: string
@@ -594,7 +571,7 @@ export function apply(ctx: Context, config: Config): void {
   const companySource = ctx.get('companyContent') as CompanyContentSource | undefined
   const basePersonaSource = catalogRoot === undefined ? undefined : createAgencyPersonaSource(catalogRoot, config.divisions)
   let experts = new Map<string, Expert>()
-  const companyCatalogs = new Map<string, Promise<{ experts: Map<string, Expert>; divisions: string[] }>>()
+  const companyCatalogs = new Map<string, Promise<{ experts: Map<string, Expert>; divisions: string[]; teams: Awaited<ReturnType<typeof readCompanyTeams>> }>>()
   let loadError: string | null = null
   const ready = (catalogRoot === undefined ? Promise.resolve(new Map<string, Expert>()) : loadCatalog(catalogRoot, config.divisions, activeLocale())).then(base => { experts = base })
     .catch((error: unknown) => { loadError = String(error) })
@@ -614,7 +591,12 @@ export function apply(ctx: Context, config: Config): void {
         for (const [slug, expert] of company) {
           company.set(slug, { ...expert, company: true })
         }
-        return { experts: company, divisions }
+        const teams = await readCompanyTeams(root)
+        for (const [slug, expert] of teams.experts) {
+          if (company.has(slug)) throw new Error(teamTx('公司专家标识与专家团成员冲突'))
+          company.set(slug, expert)
+        }
+        return { experts: company, divisions, teams }
       })
       companyCatalogs.set(root, pending)
     }
@@ -650,7 +632,7 @@ export function apply(ctx: Context, config: Config): void {
   const library = createExpertLibrary(() => readSummaries(), store, divisions, activeLocale)
   const catalogForSession = (sessionId?: string, signal?: AbortSignal) => sessionId === undefined ? library.catalog()
     : createExpertLibrary(() => readSummaries(sessionId, signal), store, divisions, activeLocale).catalog()
-  const teamLibrary = createTeamLibrary(() => library.catalog(), {
+  const teamLibrary = createTeamLibrary(catalogForSession, {
     read: () => settingsSource(),
     revision: () => {
       const descriptor = ctx.settings.describe().find(item => item.ns === settingsNamespace)
@@ -658,7 +640,10 @@ export function apply(ctx: Context, config: Config): void {
       return descriptor.revision
     },
     mutate: (ops, revision) => ctx.settings.mutate(settingsNamespace, ops, revision),
-  }, activeLocale)
+  }, activeLocale, async (sessionId, signal) => {
+    const root = await companyRoot(sessionId, signal)
+    return root ? (await companyCatalog(root)).teams.teams : []
+  })
   ctx.reflect.provide(AGENCY_TEAM_SERVICE, teamLibrary)
   ctx.reflect.provide('agencyAgentsTeamEngine', () => resolveTeamEngine(ctx, undefined, maxDepth).status)
   ctx.on?.('tools/pre-execute', async (exec, next) => {
@@ -696,6 +681,11 @@ export function apply(ctx: Context, config: Config): void {
         const catalog = await createExpertLibrary(() => readRootSummaries(root), store, divisions, activeLocale).catalog()
         if (catalog.experts.some(expert => expert.slug === slug && expert.conflict)) {
           throw new Error(formatHost(locale, 'error.expertAmbiguous', { query: slug, candidates: slug }))
+        }
+        const member = company.teams.experts.get(slug)
+        if (member) {
+          if (member.division !== division) throw new PersonaError('PERSONA_NOT_FOUND', locale)
+          return { prompt: member.prompt }
         }
         if (company.experts.has(slug)) return readExpertPrompt(root, slug, division, company.divisions)
       }
@@ -748,7 +738,7 @@ export function apply(ctx: Context, config: Config): void {
       const hasFilter = query !== ''
       const locale = activeLocale()
       const catalog = await catalogForSession(exec.agent?.id, exec.signal)
-      const groups = groupByDivision(catalog.experts.filter(expert => !expert.conflict), hasFilter, locale)
+      const groups = groupByDivision(catalog.experts.filter(expert => !expert.conflict && !expert.teamMember), hasFilter, locale)
       if (hasFilter) {
         const filtered = groups.filter((g) => matchDivision(query, g.division))
         return { divisions: filtered, total: filtered.reduce((n, g) => n + g.count, 0) }
@@ -811,65 +801,35 @@ export function apply(ctx: Context, config: Config): void {
 
   async function startSubagentRun(providerName: string, options: ExpertSubagentStart): Promise<SubagentRunHandle> {
     const { persona, toolFilter, label, signal, prompt, parent, maxDepth } = options
-    const service = ctx.subagents as unknown as {
-      start?: (name: string, request: SubagentStartRequest & { persona?: string; toolFilter?: { deny: string[] } }) => Promise<SubagentRun>
-      startActivation?: (spec: {
-        provider: string
-        label: string
-        childId?: ReturnType<typeof SessionId>
-        request: Omit<SubagentStartRequest, 'label' | 'signal'>
-        signal: AbortSignal
-        delivery: 'parent' | 'caller'
-      }) => Promise<SubagentRunHandle>
-      on?: Context['on']
-    }
-    // DSH 0.2.0-rc.1 / 0.2.0-rc.2: start-time persona / toolFilter.
     const runSignal = signal ?? new AbortController().signal
-    if (typeof service.start === 'function') {
-      return service.start(providerName, {
-        label,
-        prompt,
-        parent,
+    const childId = SessionId(randomUUID())
+    const stopCreated = ctx.on('agent/created', (event: { agent: { id: string; ctx: Context } }) => {
+      if (event.agent.id !== childId) return undefined
+      const childCtx = event.agent.ctx
+      childCtx.systemPrompt.section({
+        name: PERSONA_PREFIX_SECTION,
+        order: childCtx.systemPrompt.getSectionOrder('DEPLOYMENT_PERSONA_PREFIX'),
+        text: persona,
+      })
+      childCtx.tools.restrict(toolFilter)
+      return undefined
+    })
+    try {
+      return await ctx.subagents.startActivation({
+        provider: providerName,
+        label: label ?? providerName,
+        childId,
+        request: {
+          parent,
+          prompt,
+          ...(maxDepth === undefined ? {} : { maxDepth }),
+        },
         signal: runSignal,
-        ...(maxDepth === undefined ? {} : { maxDepth }),
-        persona,
-        toolFilter,
+        delivery: 'caller',
       })
+    } finally {
+      stopCreated()
     }
-    // DSH 0.2.1-rc.1: startActivation + scoped persona / tools.restrict on agent/created.
-    if (typeof service.startActivation === 'function') {
-      const childId = SessionId(randomUUID())
-      const stopCreated = ctx.on('agent/created', (event: { agent: { id: string; ctx: Context } }) => {
-        if (event.agent.id !== childId) return undefined
-        const childCtx = event.agent.ctx
-        if (childCtx.systemPrompt) {
-          childCtx.systemPrompt.section({
-            name: PERSONA_PREFIX_SECTION,
-            order: childCtx.systemPrompt.getSectionOrder('DEPLOYMENT_PERSONA_PREFIX'),
-            text: persona,
-          })
-        }
-        if (childCtx.tools) childCtx.tools.restrict(toolFilter)
-        return undefined
-      })
-      try {
-        return await service.startActivation({
-          provider: providerName,
-          label: label ?? providerName,
-          childId,
-          request: {
-            parent,
-            prompt,
-            ...(maxDepth === undefined ? {} : { maxDepth }),
-          },
-          signal: runSignal,
-          delivery: 'caller',
-        })
-      } finally {
-        stopCreated()
-      }
-    }
-    throw new Error(formatHost(activeLocale(), 'error.subagentsUnavailable'))
   }
 
   async function runExpert(query: unknown, task: unknown, exec: ToolRunContext): Promise<{ expert: string; answer: string }> {
@@ -879,14 +839,8 @@ export function apply(ctx: Context, config: Config): void {
     if (exec.agent === undefined) throw new Error(formatHost(locale, 'error.summonRequiresAgent'))
     const provider = ctx.subagents.getProvider(config.provider)
     if (provider === undefined) throw new Error(formatHost(locale, 'error.providerMissing', { provider: config.provider }))
-    const caps = provider.capabilities as { persona?: boolean; toolFilter?: boolean; depthLimit?: boolean }
-    // 0.2.0-rc.1 / 0.2.0-rc.2 still advertise persona/toolFilter; 0.2.1-rc.1 drops them.
-    if (caps.persona !== undefined || caps.toolFilter !== undefined) {
-      if (!caps.persona) throw new Error(formatHost(locale, 'error.providerNoPersona', { provider: config.provider }))
-      if (!caps.toolFilter) throw new Error(formatHost(locale, 'error.providerNoToolFilter', { provider: config.provider }))
-    }
-    if (maxDepth !== undefined && !caps.depthLimit) throw new Error(formatHost(locale, 'error.providerNoMaxDepth', { provider: config.provider }))
-    const expert = resolveExpert((await catalogForSession(exec.agent.id, exec.signal)).experts.filter(expert => !expert.conflict), query, locale)
+    if (maxDepth !== undefined && !provider.capabilities.depthLimit) throw new Error(formatHost(locale, 'error.providerNoMaxDepth', { provider: config.provider }))
+    const expert = resolveExpert((await catalogForSession(exec.agent.id, exec.signal)).experts.filter(expert => !expert.conflict && !expert.teamMember), query, locale)
     if (!enabledSet().has(expert.slug)) throw new Error(formatHost(locale, 'error.expertDisabled', { name: localizedExpertName(expert, locale) }))
     const { prompt: persona } = await personaSource.getPrompt(expert.slug, expert.division, locale, exec.agent.id, exec.signal)
     const run = await startSubagentRun(config.provider, {
@@ -989,15 +943,13 @@ const teamOutput = { schema: { type: 'object' as const, additionalProperties: fa
         report?: unknown;
     }) => [{ type: 'text' as const, text: String(value.report ?? '') }] };
 ctx.tools.register(localizeTeamTool(defineTool({ name: 'list_expert_teams', description: teamTx("列出已启用专家团。召唤前使用 get_expert_team 读取主理人规则及成员分工。"), parameters: {}, output: teamOutput,
-    async execute(_args, exec) { requireParent(exec); const snapshot = await teamLibrary.snapshot(); return { report: JSON.stringify(snapshot.teams.filter(t => snapshot.enabledTeams.includes(t.id)).map(t => ({ id: t.id, name: t.name, description: t.description }))) }; }, }), activeLocale));
+    async execute(_args, exec) { requireParent(exec); const snapshot = await teamLibrary.snapshot(exec.agent?.id, exec.signal); return { report: JSON.stringify(snapshot.teams.filter(t => snapshot.enabledTeams.includes(t.id)).map(t => ({ id: t.id, name: t.name, description: t.description }))) }; }, }), activeLocale));
 ctx.tools.register(localizeTeamTool(defineTool({ name: 'get_expert_team', description: teamTx("读取已启用专家团的目标、分工和主理人提示词。当前主会话应先按该规则澄清任务，再调用 summon_expert_team，之后统一汇总。"),
     parameters: { team: { type: 'string', required: true, description: teamTx("专家团稳定标识或完整名称。") } }, output: teamOutput,
     async execute(args, exec) {
         requireParent(exec);
-        const snapshot = await teamLibrary.snapshot();
-        const team = snapshot.teams.find(t => t.id === args.team || t.name === args.team);
-        if (!team || !snapshot.enabledTeams.includes(team.id))
-            throw new Error(teamTx("专家团未启用或不存在。"));
+        const snapshot = await teamLibrary.snapshot(exec.agent?.id, exec.signal);
+        const team = resolveEnabledTeam(snapshot, String(args.team), activeLocale());
         const engine = resolveTeamEngine(ctx, exec.agent, maxDepth).status;
         return { report: JSON.stringify({ ...team, engine, coordinator: effectiveCoordinator(team, activeLocale()), collaboration: teamCollaboration(team, activeLocale()), revision: snapshot.revision, instruction: teamTx("确认目标与评审范围后立即将简报传给 summon_expert_team，相关资料路径可直接交给专家阅读，主理人不要预先读完整个项目。只有确实无法确定评审对象时才询问；用户已明确整体评审后不再反复确认。若 engine.recommendation 非空，简短建议开启 Agent Team，但不阻断普通调用、不自行修改配置。原生模式返回的是启动确认，必须等待实际成员结论后才汇总。") }) };
     },
@@ -1006,12 +958,10 @@ ctx.tools.register(localizeTeamTool(defineTool({ name: 'summon_expert_team', des
     parameters: { team: { type: 'string', required: true, description: teamTx("专家团稳定标识或完整名称。") }, task: { type: 'string', required: true, description: teamTx("目标、约束和文件路径。不要粘贴源码、CSS、HTML 或带引号的代码，否则工具参数会变成非法 JSON。最多{0}字。") } }, output: teamOutput,
     async execute(args, exec) {
         requireParent(exec);
-        const [snapshot, catalog] = await Promise.all([teamLibrary.snapshot(), catalogForSession(exec.agent!.id, exec.signal)]);
+        const [snapshot, catalog] = await Promise.all([teamLibrary.snapshot(exec.agent!.id, exec.signal), catalogForSession(exec.agent!.id, exec.signal)]);
         if (snapshot.revision !== catalog.revision)
             throw new Error(teamTx("名册已更新，请重新读取专家团。"));
-        const team = snapshot.teams.find(t => t.id === args.team || t.name === args.team);
-        if (!team || !snapshot.enabledTeams.includes(team.id))
-            throw new Error(teamTx("专家团未启用或不存在。"));
+        const team = resolveEnabledTeam(snapshot, String(args.team), activeLocale());
         const engine = resolveTeamEngine(ctx, exec.agent, maxDepth);
         const locale = activeLocale();
         if (engine.status.mode === 'native' && engine.service) {
@@ -1021,11 +971,8 @@ ctx.tools.register(localizeTeamTool(defineTool({ name: 'summon_expert_team', des
             return { report: JSON.stringify({ ...result, engine: engine.status }) };
         }
         const provider = ctx.subagents.getProvider(config.provider);
-        const teamCaps = provider?.capabilities as { persona?: boolean; toolFilter?: boolean; depthLimit?: boolean } | undefined
-        // 0.2.0-rc.1 / 0.2.0-rc.2 仍声明 persona/toolFilter；0.2.1-rc.1 不再声明，身份改在 agent/created 写入。
-        const legacyTeamCaps = teamCaps !== undefined && (teamCaps.persona !== undefined || teamCaps.toolFilter !== undefined)
-        if (!provider || (legacyTeamCaps && (!teamCaps?.persona || !teamCaps.toolFilter)) || (maxDepth !== undefined && !teamCaps?.depthLimit))
-            throw new Error(teamTx("当前子代理服务不支持专家团所需的身份、工具过滤或深度限制。"));
+        if (!provider || (maxDepth !== undefined && !provider.capabilities.depthLimit))
+            throw new Error(teamTx("当前子代理服务不支持专家团所需的深度限制。"));
         const result = await executeTeam({ team, locale, experts: catalog.experts, enabled: catalog.enabled, task: String(args.task ?? ''), revision: snapshot.revision, signal: exec.signal,
             readPersona: async (expert) => (await personaSource.getPrompt(expert.slug, expert.division, locale, exec.agent!.id, exec.signal)).prompt,
             run: async (member: TeamMemberRun) => {

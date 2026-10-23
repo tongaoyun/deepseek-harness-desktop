@@ -33,15 +33,12 @@ export const zhHost = {
   'error.taskRequired': '专家任务不能为空',
   'error.taskLimit': '专家任务过长（{length} 个字符，上限 {max}）。请压缩为摘要（目标、约束和文件路径）后重试，不要粘贴源码。',
   'error.providerMissing': '子代理 provider "{provider}" 未注册',
-  'error.providerNoPersona': '子代理 provider "{provider}" 不支持专家人格',
-  'error.providerNoToolFilter': '子代理 provider "{provider}" 无法阻止递归专家委派',
   'error.providerNoMaxDepth': '子代理 provider "{provider}" 不支持 maxDepth',
   'error.expertRun': '专家运行以 "{reason}" 结束{detail}',
   'error.partialOutput': '\n部分输出：\n{text}',
   'error.maxDepth': 'agency-agents 配置 maxDepth 必须是正安全整数',
   'error.settingsMissing': 'agency-agents 设置区尚未注册',
   'error.settingsLiveUnsupported': '当前宿主没有可实时更新的 agency-agents 配置字段，插件无法保存启用名单。',
-  'error.subagentsUnavailable': '当前宿主 subagents 服务未提供可用的子代理启动方法 (start / startActivation)。',
   'error.personaSourceUnavailable': '专家提示词服务尚未就绪，请稍后重试。',
   'list.empty': '暂无可用专家。',
   'list.emptyDivision': '没有匹配分区 "{division}" 的专家。',
@@ -74,15 +71,12 @@ export const enHost = {
   'error.taskRequired': 'The expert task must not be empty',
   'error.taskLimit': 'The expert task is too long ({length} characters, limit {max}). Summarize as goal, constraints, and file paths, then retry. Do not paste source code.',
   'error.providerMissing': 'subagent provider "{provider}" is not registered',
-  'error.providerNoPersona': 'subagent provider "{provider}" does not support expert personas',
-  'error.providerNoToolFilter': 'subagent provider "{provider}" cannot prevent recursive expert delegation',
   'error.providerNoMaxDepth': 'subagent provider "{provider}" does not support maxDepth',
   'error.expertRun': 'expert run ended with "{reason}"{detail}',
   'error.partialOutput': '\nPartial output:\n{text}',
   'error.maxDepth': 'agency-agents config maxDepth must be a positive safe integer',
   'error.settingsMissing': 'agency-agents settings section is not registered',
   'error.settingsLiveUnsupported': 'This host has no live-updating agency-agents config fields, so the plugin cannot save the enabled list.',
-  'error.subagentsUnavailable': 'The host subagents service has no available launch method (start / startActivation).',
   'error.personaSourceUnavailable': 'The expert prompt service is not ready. Try again shortly.',
   'list.empty': 'No experts available.',
   'list.emptyDivision': 'No experts matched division "{division}".',
@@ -91,9 +85,11 @@ export const enHost = {
   'list.expertFailed': 'Failed: {error}',
 } satisfies Record<HostKey, string>
 
-/** 将未知值收成 zh / en；只有显式 en 才走英文。 */
+/** 只有明确的中文语言标记使用中文，其余遵循 Harness 的英文默认值。 */
 export function resolveHostLocale(value: unknown): LocaleId {
-  return value === 'en' ? 'en' : 'zh'
+  if (typeof value !== 'string') return 'en'
+  const tag = value.trim().toLowerCase()
+  return tag === 'zh' || tag.startsWith('zh-') ? 'zh' : 'en'
 }
 
 /** 按当前语言格式化宿主文案。 */
@@ -106,7 +102,7 @@ export function formatHost(locale: LocaleId, key: HostKey, params?: Record<strin
   return text
 }
 
-/** 从宿主 locale.preference 读取语言，缺失或异常时回退 zh。实时值在 describe() 里，get() 能直接取当前快照。 */
+/** 从宿主 locale.preference 读取语言，缺失或异常时使用默认英文。 */
 export function readHostLocale(ctx: {
   settings?: {
     get?: (ns: SettingsNamespace) => unknown
@@ -127,7 +123,7 @@ export function readHostLocale(ctx: {
       : undefined
     return resolveHostLocale(preference)
   } catch {
-    return 'zh'
+    return 'en'
   }
 }
 

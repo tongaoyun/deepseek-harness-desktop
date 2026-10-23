@@ -35,6 +35,7 @@ class FixtureAdapter extends LlmAdapter {
     this.requests.push(request)
     const calls = [
       { id: 'read-native-skill', name: 'skill', arguments: '{"name":"policy-review"}' },
+      { id: 'discover-orders', name: 'connector_search_tools', arguments: '{"connectorId":"erp","toolNames":["orders_read","orders_write"]}' },
       { id: 'read-orders', name: ordersRead, arguments: '{}' },
       { id: 'retrieve-policy', name: 'knowledge_search', arguments: '{"query":"policy","limit":2}' },
       { id: 'read-policy-source', name: 'knowledge_read', arguments: '{"sourceId":"source"}' },
@@ -113,7 +114,9 @@ it('loads native skills with authorized MCP and exact knowledge scope, replays a
     headers: { Authorization: relayCredential }, tools: [{ name: 'orders_read', access: readAccess }, { name: 'orders_write', access: 'WRITE' }] })
   const skillRoot = join(root, 'skills', 'policy-review')
   await mkdir(skillRoot, { recursive: true })
-  await writeFile(join(skillRoot, 'SKILL.md'), '---\nname: policy-review\ndescription: Compare policy evidence.\n---\nCompare retrieved policy before reporting.\n')
+  await writeFile(join(skillRoot, 'SKILL.md'), '---\nname: policy-review\ndescription: Compare policy evidence.\n---\n'
+    + 'Compare retrieved policy before reporting.\n'
+    + 'Before reading orders, call connector_search_tools with {"connectorId":"erp","toolNames":["orders_read","orders_write"]}.\n')
   let companyBindingMissing = false
   let companyCacheInvalid = false
   let companyPinPending = false
@@ -223,10 +226,10 @@ it('loads native skills with authorized MCP and exact knowledge scope, replays a
   try {
     await vi.waitFor(() => {
       expect(brokenStartupPending).toBe(true)
-      expect(ctx.tools.schemas().map(tool => tool.name)).toContain(ordersWrite)
+      expect(ctx.tools.schemas().map(tool => tool.name)).not.toContain(ordersWrite)
     })
     await ctx.tools.execute({ name: ordersWrite, arguments: {}, callId: ToolCallId('startup-write'), signal: new AbortController().signal })
-    expect(decisions.at(-1)).toBe('ask')
+    expect(decisions.at(-1)).toBe('deny')
     expect(mcpCalls).toEqual([])
   } finally {
     holdBrokenStartup = false
@@ -260,14 +263,14 @@ it('loads native skills with authorized MCP and exact knowledge scope, replays a
   const sharedRequests = [...mcpRequests]
   const sibling = await create('sibling-session')
   const child = await create('child-session', undefined, handle.agent)
-  expect(ctx.tools.schemas(sibling.agent).map(tool => tool.name)).toContain(ordersRead)
-  expect(ctx.tools.schemas(child.agent).map(tool => tool.name)).toContain(ordersRead)
+  expect(ctx.tools.schemas(sibling.agent).map(tool => tool.name)).not.toContain(ordersRead)
+  expect(ctx.tools.schemas(child.agent).map(tool => tool.name)).not.toContain(ordersRead)
   await sibling.dispose()
   await child.dispose()
-  expect(ctx.tools.schemas(handle.agent).map(tool => tool.name)).toContain(ordersRead)
+  expect(ctx.tools.schemas(handle.agent).map(tool => tool.name)).not.toContain(ordersRead)
   expect(catalogReads).toBe(1)
   expect(mcpRequests).toEqual(sharedRequests)
-  expect(ctx.tools.schemas(handle.agent).map(tool => tool.name)).toContain(ordersRead)
+  expect(ctx.tools.schemas(handle.agent).map(tool => tool.name)).not.toContain(ordersRead)
   expect(ctx.tools.schemas(handle.agent).map(tool => tool.name)).not.toContain(publicToolName(connectorServerName('broken'), 'orders_read'))
   handle.agent.followup(createUserMessage({ content: [{ type: 'text', text: 'Find policy.' }], source: { kind: 'user' } }))
   await vi.waitFor(() => { expect(handle.agent.session.snapshotEvents().some(event => event.type === 'turn/end')).toBe(true) }, { timeout: 10000 })
@@ -362,7 +365,7 @@ it('loads native skills with authorized MCP and exact knowledge scope, replays a
   await execute(ordersWrite); expect(decisions.at(-1)).toBe('ask')
   await execute(undeclared); expect(decisions.at(-1)).toBe('deny')
   await ctx.tools.execute({ name: ordersWrite, arguments: {}, callId: ToolCallId('workspace-write'), signal: new AbortController().signal })
-  expect(decisions.at(-1)).toBe('ask')
+  expect(decisions.at(-1)).toBe('deny')
   connectorVersion = '2.0.0'
   expect((await execute(ordersRead)).isError).toBe(true)
   connectorVersion = '1.0.0'; connectorReady = false
@@ -386,7 +389,7 @@ it('loads native skills with authorized MCP and exact knowledge scope, replays a
   mcpAvailable = false
   const requestsBeforeCreate = [...mcpRequests]
   const reused = await create('reuse-offline-connection')
-  expect(ctx.tools.schemas(reused.agent).map(tool => tool.name)).toContain(ordersRead)
+  expect(ctx.tools.schemas(reused.agent).map(tool => tool.name)).not.toContain(ordersRead)
   expect(catalogReads).toBe(2)
   expect(mcpRequests).toEqual(requestsBeforeCreate)
   await reused.dispose()
@@ -419,8 +422,10 @@ it('loads native skills with authorized MCP and exact knowledge scope, replays a
   catalogInvalid = false
   expect(typeof (await request(91, 'connectors.refresh', { ids: ['erp'] })).error).toBe('string')
   expect(await request(92, 'connectors.refresh')).toMatchObject({ result: { connectedIds: ['erp'], unavailableIds: ['broken'] } })
+  expect(ctx.tools.schemas(degraded.agent).map(tool => tool.name)).not.toContain(ordersRead)
+  await ctx.tools.execute({ agent: degraded.agent, name: 'connector_search_tools', arguments: { query: 'orders', limit: 2 }, callId: ToolCallId('discover-recovered'), signal: new AbortController().signal })
   expect(ctx.tools.schemas(degraded.agent).map(tool => tool.name)).toContain(ordersRead)
-  await ctx.tools.execute({ name: ordersWrite, arguments: {}, callId: ToolCallId('recovered-write'), signal: new AbortController().signal })
+  await ctx.tools.execute({ name: ordersWrite, arguments: {}, agent: degraded.agent, callId: ToolCallId('recovered-write'), signal: new AbortController().signal })
   expect(decisions.at(-1)).toBe('ask')
   await ctx.tools.execute({ name: undeclared, arguments: {}, callId: ToolCallId('recovered-undeclared'), signal: new AbortController().signal })
   expect(decisions.at(-1)).toBe('deny')
@@ -431,7 +436,7 @@ it('loads native skills with authorized MCP and exact knowledge scope, replays a
   emitMessage({ type: 'extension-control-cancel', namespace: 'product', requestId: 93 })
   expect(await cancelledRefresh).toMatchObject({ failure: { code: 'PRODUCT_REQUEST_CANCELLED' } })
   expect(cancelled).toContain(cancelledCatalog)
-  expect(ctx.tools.schemas(degraded.agent).map(tool => tool.name)).not.toContain(ordersRead)
+  expect((await ctx.tools.execute({ agent: degraded.agent, name: ordersRead, arguments: {}, callId: ToolCallId('cancelled-refresh-read'), signal: new AbortController().signal })).isError).toBe(true)
   catalogPending = false
   pendingCatalog = undefined
   expect(await request(94, 'connectors.refresh')).toMatchObject({ result: { connectedIds: ['erp'] } })
