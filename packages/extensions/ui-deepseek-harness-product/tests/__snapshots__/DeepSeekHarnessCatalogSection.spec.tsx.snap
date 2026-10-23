@@ -1,0 +1,13 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`DeepSeekHarness capability navigation > shows all categories in enterprise order and retains a way to clear a disappearing category 1`] = `
+[
+  "全部分类",
+  "业务系统",
+  "电商平台",
+  "协同办公",
+  "数据分析",
+  "开发运维",
+  "其他",
+]
+`;

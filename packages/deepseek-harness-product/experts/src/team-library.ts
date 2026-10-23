@@ -12,9 +12,10 @@ import {
 } from './team-contract.ts'
 export const AGENCY_TEAM_SERVICE = 'agencyAgentsTeams'
 export function createTeamLibrary(
-  catalog: () => Promise<CatalogSnapshot>,
+  catalog: (sessionId?: string, signal?: AbortSignal) => Promise<CatalogSnapshot>,
   store: ExpertSettingsStore,
   locale: () => TeamLocale = () => 'zh',
+  companyTeams: (sessionId?: string, signal?: AbortSignal) => Promise<ExpertTeam[]> = async () => [],
 ) {
   const tx = (key: string) => teamText(locale(), key)
   const read = () => ({
@@ -40,19 +41,19 @@ export function createTeamLibrary(
       throw new Error(tx('团队成员已删除或名称冲突，请替换后重试。'))
   }
   const library = {
-    async snapshot(): Promise<TeamSnapshot> {
-      const all = await catalog()
+    async snapshot(sessionId?: string, signal?: AbortSignal): Promise<TeamSnapshot> {
+      const [all, shared] = await Promise.all([catalog(sessionId, signal), companyTeams(sessionId, signal)])
       // 读取名册期间可能有其他窗口写入，不能混用两个修订的配置。
       check(all.revision)
       return {
-        teams: teams(),
+        teams: [...shared, ...teams()],
         enabledTeams: read().enabled,
         enabledExperts: all.enabled,
         revision: all.revision,
       }
     },
     async get(id: string): Promise<ExpertTeam> {
-      const team = teams().find((team) => team.id === id)
+      const team = [...await companyTeams(), ...teams()].find((team) => team.id === id)
       if (!team) throw new Error(tx('专家团不存在，请重新选择。'))
       return team
     },

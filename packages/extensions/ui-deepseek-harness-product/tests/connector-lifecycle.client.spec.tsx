@@ -86,7 +86,9 @@ it('keeps a new connector identity and private input after an invalid receipt un
   const onSaved = vi.fn()
   render(<ConnectorEditor onClose={vi.fn()} onSaved={onSaved} t={t} />)
   fireEvent.change(screen.getByLabelText(zh.mcpServerName), { target: { value: 'My connector' } })
+  fireEvent.change(screen.getByLabelText(zh.connectorSummary), { target: { value: '  查询订单和库存  ' } })
   fireEvent.change(screen.getByLabelText(zh.mcpCommand), { target: { value: 'node server.js' } })
+  fireEvent.change(screen.getByLabelText(zh.connectorCategory), { target: { value: 'ecommerce-platforms' } })
   fireEvent.change(screen.getByLabelText(`${zh.configurationKey} 1`), { target: { value: 'API_KEY' } })
   fireEvent.change(screen.getByLabelText('值 1'), { target: { value: 'device-only-value' } })
   fireEvent.click(screen.getByRole('button', { name: zh.addMcp }))
@@ -94,6 +96,9 @@ it('keeps a new connector identity and private input after an invalid receipt un
   expect(onSaved).not.toHaveBeenCalled()
   expect(screen.getByLabelText<HTMLInputElement>('值 1').value).toBe('device-only-value')
   const firstSave = invoke.mock.calls.find(call => call[1] === 'extensions.save')?.[2]
+  expect(ConnectorDraftSchema.parse(firstSave).category).toBe('ecommerce-platforms')
+  expect(ConnectorDraftSchema.parse(firstSave).summary).toBe('查询订单和库存')
+  expect(screen.getByLabelText<HTMLTextAreaElement>(zh.connectorSummary).value).toBe('  查询订单和库存  ')
   valid = true
   fireEvent.click(screen.getByRole('button', { name: zh.addMcp }))
   await act(async () => {})

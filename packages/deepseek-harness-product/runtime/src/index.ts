@@ -1,6 +1,8 @@
+import z from '@deepseek-ai/schemastery'
 import type { Context } from '@deepseek-ai/cordis'
 import { assertProductPayload, type ProductTaskCapabilityRequest } from '@deepseek-harness/product/protocol'
 import { ProductError, productFailure } from '@deepseek-harness/product/errors'
+import type { DiscoveryOptions } from './connector-discovery.ts'
 import { ProductData } from './data.ts'
 import { CompanyContent } from './company-content.ts'
 import { DeepSeekHarnessProductIpc } from './deepseek-harness-product-ipc.ts'
@@ -10,9 +12,15 @@ import { renderKnowledgeOffice } from './knowledge-preview.ts'
 
 export { inject }
 export const name = 'product-runtime'
+export interface Config { readonly connectorDiscovery?: DiscoveryOptions }
+export const Config = z.object({ connectorDiscovery: z.object({
+  maxResults: z.number().step(1).min(1).max(50).default(8),
+  maxLoadedTools: z.number().step(1).min(1).max(500).default(64),
+  maxResultBytes: z.number().step(1).min(1024).max(1_048_576).default(32_768),
+}) })
 
 /** Loader entry owns process listeners, bridge requests, and all runtime registrations. */
-export async function apply(ctx: Context): Promise<void> {
+export async function apply(ctx: Context, config: Config = {}): Promise<void> {
   ctx.effect(() => {
     if (ctx.loader.builtins['product-task-capabilities'] !== undefined) throw new Error('Product task prompt is already registered')
     ctx.loader.builtins['product-task-capabilities'] = CapabilityPrompt
@@ -66,7 +74,7 @@ export async function apply(ctx: Context): Promise<void> {
     for (const operation of operations.values()) operation.controller.abort(new Error('Product plugin unloaded'))
     await Promise.allSettled([...operations.values()].map(operation => operation.settled))
   }, 'product-runtime.ipc')
-  await mountRuntime(ctx, { product, publishControl: (value) => { control = value } })
+  await mountRuntime(ctx, { product, connectorDiscovery: config.connectorDiscovery ?? {}, publishControl: (value) => { control = value } })
 }
 
 function sessionId(payload: Record<string, unknown>): string | undefined {

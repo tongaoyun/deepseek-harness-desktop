@@ -8,7 +8,7 @@ import { managerHomePath, userRoots, checkedRepositoryRootDefinition, projectRoo
 
 const hash = (bytes: string | Uint8Array) => createHash("sha256").update(bytes).digest("hex");
 const repositoryInstallKeys = new Set(["dsh", "agents"]);
-/** 只解析 DSH 与公共 Agent。缺省和旧记录都属于 DSH。 */
+/** 新安装默认使用 DSH；已保存记录必须带固定位置。 */
 export function repositoryInstallRoot(key: unknown = "dsh") {
   const normalized = key === undefined ? "dsh" : key;
   if (typeof normalized !== "string" || !repositoryInstallKeys.has(normalized)) throw failure("技能安装位置无效");
@@ -34,8 +34,9 @@ export async function recordInstallRoot(record: { root?: unknown; workspace?: st
 }
 const targetIdentity = (path: string) => process.platform === "win32" ? resolve(path).toLowerCase() : resolve(path);
 export const installationSourceKey = (rootPath: string, name: string) => JSON.stringify([targetIdentity(rootPath), name]);
-/** 请求明确选择副本；旧请求只可命中唯一用户级记录，不猜第一条。 */
+/** 管理请求必须明确选择用户级或项目级副本，不推测位置。 */
 export async function selectInstallRecord(records: InstallRecord[], input: SkillRequest, registered: string[] | undefined, missing: string) {
+  if (input.root === undefined && input.workspace === undefined) throw failure("请明确选择安装位置");
   let workspace: string | undefined;
   if (input.workspace !== undefined) {
     if (input.root !== undefined && input.root !== "dsh") throw failure("工作区只能管理项目 DSH skills");
@@ -44,7 +45,7 @@ export async function selectInstallRecord(records: InstallRecord[], input: Skill
     workspace = (target as { root: { projectRoot: string } }).root.projectRoot;
   } else if (input.root !== undefined) repositoryInstallRoot(input.root);
   const matches = records.filter(record => record.id === input.id && record.path === input.path && record.complete && !record.trashId &&
-    (workspace !== undefined ? record.workspace !== undefined && targetIdentity(record.workspace) === targetIdentity(workspace) : record.workspace === undefined && (input.root === undefined || (record.root || "dsh") === input.root)));
+    (workspace !== undefined ? record.workspace !== undefined && targetIdentity(record.workspace) === targetIdentity(workspace) : record.workspace === undefined && (input.root === undefined || record.root === input.root)));
   if (matches.length !== 1) throw failure(matches.length ? "安装记录不唯一，请明确选择安装位置" : missing);
   return matches[0];
 }
@@ -96,7 +97,7 @@ export function createRepositoryUpdater({ read, write, repository, download, ser
     let entries: Archive | undefined, next: FileDigest[], commit: string | null;
     if (input.rollback === true) {
       const backup = record.backup!;
-      if (!/^[a-f0-9-]{36}$/.test(backup?.key || "") || backup.record?.name !== record.name || backup.record?.id !== id || backup.record?.path !== path || (backup.record.root || "dsh") !== (record.root || "dsh") || (backup.record.workspace ?? "") !== (record.workspace ?? "") || !/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/.test(backup.record?.commit || "") || !Array.isArray(backup.record?.files)) throw failure("没有有效的上一版备份");
+      if (!/^[a-f0-9-]{36}$/.test(backup?.key || "") || backup.record?.name !== record.name || backup.record?.id !== id || backup.record?.path !== path || backup.record.root !== record.root || (backup.record.workspace ?? "") !== (record.workspace ?? "") || !/^[a-f0-9]{64}$/.test(backup.record?.commit || "") || !Array.isArray(backup.record?.files)) throw failure("没有有效的上一版备份");
       entries = await readSkillTree(join(managerHomePath(), "repository-backups", backup.key)); next = fileIndex(entries);
       if (signature(next) !== backup.fingerprint) throw failure("备份内容已变化，拒绝回退");
       commit = backup.record.commit;
@@ -110,7 +111,7 @@ export function createRepositoryUpdater({ read, write, repository, download, ser
         if (signature(fileIndex(entries)) !== signature(next)) throw failure("下载内容与预览版本不同，请重新检查更新");
       }
     }
-    const token = hash(JSON.stringify({ id, path, root: record.root || "dsh", workspace: record.workspace ?? null, commit, current, next, rollback: input.rollback === true }));
+    const token = hash(JSON.stringify({ id, path, root: record.root, workspace: record.workspace ?? null, commit, current, next, rollback: input.rollback === true }));
     return { data, record, target, entries, next, current, token, commit, localModified: signature(current) !== signature(record.files), changes: changesBetween(current, next) };
   }
   async function replace(input: SkillRequest, rollback = false) {
@@ -159,7 +160,7 @@ export function createRepositoryUpdater({ read, write, repository, download, ser
       try {
         const root = await recordInstallRoot(record, index.registered, record.workspace === undefined ? undefined : await index.load());
         const realRoot = await fs.realpath(root.path);
-        result[installationSourceKey(realRoot, record.name)] = { ...parsed, id: record.id, path: record.path, commit: record.commit, root: record.root || "dsh", ...(record.workspace ? { workspace: record.workspace } : {}) };
+        result[installationSourceKey(realRoot, record.name)] = { ...parsed, id: record.id, path: record.path, commit: record.commit, root: record.root, ...(record.workspace ? { workspace: record.workspace } : {}) };
       } catch { /* 失效或未登记项目的记录不能挂到任何同名技能上。 */ }
     }
     return result;

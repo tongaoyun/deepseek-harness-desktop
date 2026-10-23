@@ -1,3 +1,5 @@
+import { createTestContext } from '../tests/context.ts'
+import { createActivationProbe } from '../tests/activation-probe.ts'
 import { fileURLToPath } from 'node:url'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { readFileSync } from 'node:fs'
@@ -6,7 +8,6 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import type { SessionId } from '@deepseek-ai/dsh-client-connection/client'
-import type { TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
 import z from '@deepseek-ai/schemastery'
 import { Config, SUMMON_EXPERTS_CONCURRENCY, SUMMON_EXPERTS_MAX, SUMMON_TASK_MAX_CHARS, apply, inject, loadCatalog, createAgencyPersonaSource, mapPool, parseFrontmatter, resolveCatalogRoot, resolveExpert, sanitize, stripBom, toSummonItemResult, truncate, unquote, validateSummonSpecs } from './index.ts'
 import AgencyAgentsRemote, { readExpertPrompt, readLocalizedExpertPrompt } from './remote.ts'
@@ -67,9 +68,9 @@ describe('Config', () => {
     expect(resolved).not.toHaveProperty('maxDepth')
   })
 
-  it('默认加载 research 分区', () => {
+  it('默认提供跨境 ERP 业务分类', () => {
     const resolved = z.resolve({}, Config, {})[0] as { divisions: string[] }
-    expect(resolved.divisions).toContain('research')
+    expect(resolved.divisions).toEqual(['orders', 'catalog', 'supply-chain', 'warehouse', 'logistics', 'finance', 'marketplace', 'marketing', 'analytics', 'product', 'engineering', 'testing', 'support', 'company', 'specialized'])
   })
 
   it('宿主插件声明 settings 依赖，避免工具读取 locale 时被 Cordis 拒绝', () => {
@@ -83,6 +84,9 @@ describe('Config', () => {
 })
 
 describe('官方实时设置读取', () => {
+  it.each([{ enabled: ['valid', 1] }, { customExperts: [null] }, { customTeams: ['broken'] }, { enabledTeams: 'all' }])(
+    '拒绝无效设置，不静默丢弃字段 %j', config => { expect(() => readAgencySettings(config)).toThrow() },
+  )
   it('拒绝格式无效的个人专家', () => {
     expect(() => readAgencySettings({ enabled: [], customExperts: [{ slug: 'bad' }] })).toThrow()
   })
@@ -372,11 +376,11 @@ describe('summon_expert', () => {
 
   it('资源释放失败时向调用方抛出异常', async () => {
     const tools: unknown[] = []
-    const ctx = {
+    const ctx = createTestContext({
       tools: { register: (tool: unknown) => tools.push(tool) },
       subagents: {
-        getProvider: () => ({ capabilities: { persona: true, toolFilter: true, depthLimit: true } }),
-        start: async () => ({
+        getProvider: () => ({ capabilities: { agentOptions: true, agentPreset: true, outputSchema: true, depthLimit: true } }),
+        startActivation: async () => ({
           result: Promise.resolve({ output: [{ type: 'text', text: 'done' }], stopReason: 'completed' }),
           dispose: async () => { throw new Error('dispose failed') },
         }),
@@ -388,7 +392,7 @@ describe('summon_expert', () => {
         cb({ settings: { register: () => ({ get: () => ({ enabled: ['reviewer'] }), watch: () => () => {} }) }, effect: () => () => {} })
       },
       reflect: { provide: () => undefined },
-    } as unknown as Context
+    })
 
     applyOnHost(ctx, { root: dir, provider: 'spawn', divisions: ['engineering'] })
     const summon = tools.find((tool) => (tool as { name?: string }).name === 'summon_expert') as {
@@ -398,15 +402,15 @@ describe('summon_expert', () => {
     await expect(summon.execute({ expert: 'reviewer', task: 'review' }, { agent: {} })).rejects.toThrow('dispose failed')
   })
 
-  it('新版宿主通过 startActivation 按 caller 模式运行并转发取消信号', async () => {
+  it('原生 startActivation 按 caller 模式运行并转发取消信号', async () => {
     const tools: unknown[] = []
     const controller = new AbortController()
     let activationSpec: Record<string, any> | undefined
     let disposed = false
-    const ctx = {
+    const ctx = createTestContext({
       tools: { register: (tool: unknown) => tools.push(tool) },
       subagents: {
-        getProvider: () => ({ capabilities: { persona: true, toolFilter: true, depthLimit: true } }),
+        getProvider: () => ({ capabilities: { agentOptions: true, agentPreset: true, outputSchema: true, depthLimit: true } }),
         startActivation: async (spec: Record<string, any>) => {
           activationSpec = spec
           return {
@@ -423,7 +427,7 @@ describe('summon_expert', () => {
         cb({ settings: { register: () => ({ get: () => ({ enabled: ['reviewer'] }), watch: () => () => {} }) }, effect: () => () => {} })
       },
       reflect: { provide: () => undefined },
-    } as unknown as Context
+    })
 
     applyOnHost(ctx, { root: dir, provider: 'spawn', divisions: ['engineering'] })
     const summon = tools.find((tool) => (tool as { name?: string }).name === 'summon_expert') as {
@@ -444,7 +448,7 @@ describe('summon_expert', () => {
     expect(disposed).toBe(true)
   })
 
-  it('新版宿主在发布后收到父取消时立即 dispose 子代理', async () => {
+  it('子代理发布后收到父取消时立即 dispose 子代理', async () => {
     const tools: unknown[] = []
     const controller = new AbortController()
     const stopReason = new Error('parent stopped')
@@ -454,10 +458,10 @@ describe('summon_expert', () => {
     let disposeCalls = 0
     const published = new Promise<void>(resolve => { markPublished = resolve })
     const waiting = new Promise<void>(resolve => { markWaiting = resolve })
-    const ctx = {
+    const ctx = createTestContext({
       tools: { register: (tool: unknown) => tools.push(tool) },
       subagents: {
-        getProvider: () => ({ capabilities: { persona: true, toolFilter: true, depthLimit: true } }),
+        getProvider: () => ({ capabilities: { agentOptions: true, agentPreset: true, outputSchema: true, depthLimit: true } }),
         startActivation: async () => {
           markPublished()
           return {
@@ -477,7 +481,7 @@ describe('summon_expert', () => {
         cb({ settings: { register: () => ({ get: () => ({ enabled: ['reviewer'] }), watch: () => () => {} }) }, effect: () => () => {} })
       },
       reflect: { provide: () => undefined },
-    } as unknown as Context
+    })
 
     applyOnHost(ctx, { root: dir, provider: 'spawn', divisions: ['engineering'] })
     const summon = tools.find((tool) => (tool as { name?: string }).name === 'summon_expert') as {
@@ -505,13 +509,15 @@ describe('summon_expert', () => {
 
   it('空 maxDepth 不透传给 provider，且子代理不能浏览或递归召唤花名册', async () => {
     const tools: unknown[] = []
+    const probe = createActivationProbe()
     let startOptions: Record<string, unknown> | undefined
-    const ctx = {
+    const ctx = createTestContext({
       tools: { register: (tool: unknown) => tools.push(tool) },
       subagents: {
-        getProvider: () => ({ capabilities: { persona: true, toolFilter: true, depthLimit: true } }),
-        start: async (_provider: string, options: Record<string, unknown>) => {
-          startOptions = options
+        getProvider: () => ({ capabilities: { agentOptions: true, agentPreset: true, outputSchema: true, depthLimit: true } }),
+        startActivation: async (spec: { childId: string; request: Record<string, unknown>; label: string }) => {
+          probe.create(spec)
+          startOptions = { ...spec.request, label: spec.label }
           return {
             result: Promise.resolve({ output: [{ type: 'text', text: 'done' }], stopReason: 'completed' }),
             dispose: async () => undefined,
@@ -519,13 +525,13 @@ describe('summon_expert', () => {
         },
       },
       systemPrompt: { section: () => undefined },
-      on: () => () => undefined,
+      on: probe.on,
       settings: alphaSettings(['reviewer']),
       inject: (_deps: unknown, cb: (sctx: unknown) => void) => {
         cb({ settings: { register: () => ({ get: () => ({ enabled: ['reviewer'] }), watch: () => () => {} }) }, effect: () => () => {} })
       },
       reflect: { provide: () => undefined },
-    } as unknown as Context
+    })
 
     applyOnHost(ctx, { root: dir, provider: 'spawn', divisions: ['engineering'], maxDepth: null as unknown as number })
     const summon = tools.find((tool) => (tool as { name?: string }).name === 'summon_expert') as {
@@ -533,20 +539,24 @@ describe('summon_expert', () => {
     }
 
     await expect(summon.execute({ expert: 'reviewer', task: 'review' }, { agent: {} })).resolves.toEqual({ expert: 'Reviewer', answer: 'done' })
-    expect(startOptions).toMatchObject({ label: 'Reviewer', toolFilter: { deny: ['summon_expert', 'summon_experts', 'list_experts', 'list_expert_teams', 'get_expert_team', 'summon_expert_team'] } })
+    expect(startOptions).toMatchObject({ label: 'Reviewer' })
+    expect(probe.restrictions).toEqual([{ deny: ['summon_expert', 'summon_experts', 'list_experts', 'list_expert_teams', 'get_expert_team', 'summon_expert_team'] }])
+    expect(probe.listening).toBe(0)
     expect(startOptions).not.toHaveProperty('maxDepth')
   })
 
   it('中文界面展示正文经安全处理后与实际召唤 persona 一致', async () => {
     const tools: unknown[] = []
+    const probe = createActivationProbe()
     let startOptions: Record<string, unknown> | undefined
     let promptSource: { getPrompt(slug: string, division: string, locale: 'zh' | 'en'): Promise<{ prompt: string }> } | undefined
-    const ctx = {
+    const ctx = createTestContext({
       tools: { register: (tool: unknown) => tools.push(tool) },
       subagents: {
-        getProvider: () => ({ capabilities: { persona: true, toolFilter: true, depthLimit: true } }),
-        start: async (_provider: string, options: Record<string, unknown>) => {
-          startOptions = options
+        getProvider: () => ({ capabilities: { agentOptions: true, agentPreset: true, outputSchema: true, depthLimit: true } }),
+        startActivation: async (spec: { childId: string; request: Record<string, unknown>; label: string }) => {
+          probe.create(spec)
+          startOptions = { ...spec.request, label: spec.label }
           return {
             result: Promise.resolve({ output: [{ type: 'text', text: 'done' }], stopReason: 'completed' }),
             dispose: async () => undefined,
@@ -554,7 +564,7 @@ describe('summon_expert', () => {
         },
       },
       systemPrompt: { section: () => undefined },
-      on: () => () => undefined,
+      on: probe.on,
       settings: alphaSettings(['chief-executive-officer'], 'zh'),
       inject: (_deps: unknown, cb: (sctx: unknown) => void) => {
         cb({ settings: { register: () => ({ get: () => ({ enabled: ['chief-executive-officer'] }), watch: () => () => {} }) }, effect: () => () => {} })
@@ -565,7 +575,7 @@ describe('summon_expert', () => {
           return undefined
         },
       },
-    } as unknown as Context
+    })
 
     applyOnHost(ctx, { root: fileURLToPath(new URL('../../../../vendor/product-expert-fixtures/agency-agents-zh', import.meta.url)), provider: 'spawn', divisions: ['company'] })
     const summon = tools.find((tool) => (tool as { name?: string }).name === 'summon_expert') as {
@@ -575,7 +585,8 @@ describe('summon_expert', () => {
 
     const displayed = await promptSource!.getPrompt('chief-executive-officer', 'company', 'zh')
     expect(displayed.prompt).toContain('首席执行官')
-    expect(startOptions?.persona).toBe(sanitize(displayed.prompt))
+    expect(probe.sections[0]?.text).toBe(sanitize(displayed.prompt))
+    expect(startOptions).not.toHaveProperty("persona")
   })
 
   it('只向父会话注入花名册协议', () => {
@@ -678,25 +689,23 @@ describe('summon_expert', () => {
   })
 
   it.each([
-    ['expert personas', { persona: false, toolFilter: true, depthLimit: true }, undefined, formatHost('zh', 'error.providerNoPersona', { provider: 'spawn' })],
-    ['toolFilter', { persona: true, toolFilter: false, depthLimit: true }, undefined, formatHost('zh', 'error.providerNoToolFilter', { provider: 'spawn' })],
-    ['maxDepth', { persona: true, toolFilter: true, depthLimit: false }, 1, formatHost('zh', 'error.providerNoMaxDepth', { provider: 'spawn' })],
+    ['maxDepth', { agentOptions: true, agentPreset: true, outputSchema: true, depthLimit: false }, 1, formatHost('zh', 'error.providerNoMaxDepth', { provider: 'spawn' })],
   ])('provider 缺少 %s 能力时给出明确错误', async (_capability, capabilities, maxDepth, message) => {
     const tools: unknown[] = []
-    const ctx = {
+    const ctx = createTestContext({
       tools: { register: (tool: unknown) => tools.push(tool) },
       subagents: {
         getProvider: () => ({ capabilities }),
-        start: async () => { throw new Error('must not start') },
+        startActivation: async () => { throw new Error('must not start') },
       },
       systemPrompt: { section: () => undefined },
       on: () => () => undefined,
-      settings: alphaSettings(['reviewer']),
+      settings: alphaSettings(['reviewer'], 'zh'),
       inject: (_deps: unknown, cb: (sctx: unknown) => void) => {
         cb({ settings: { register: () => ({ get: () => ({ enabled: ['reviewer'] }), watch: () => () => {} }) }, effect: () => () => {} })
       },
       reflect: { provide: () => undefined },
-    } as unknown as Context
+    })
 
     applyOnHost(ctx, { root: dir, provider: 'spawn', divisions: ['engineering'], ...(maxDepth === undefined ? {} : { maxDepth }) })
     const summon = tools.find((tool) => (tool as { name?: string }).name === 'summon_expert') as {
@@ -708,20 +717,20 @@ describe('summon_expert', () => {
 
   it('单条召唤拒绝空任务与超长任务，与批量上限一致', async () => {
     const tools: unknown[] = []
-    const ctx = {
+    const ctx = createTestContext({
       tools: { register: (tool: unknown) => tools.push(tool) },
       subagents: {
-        getProvider: () => ({ capabilities: { persona: true, toolFilter: true, depthLimit: true } }),
-        start: async () => { throw new Error('provider start reached') },
+        getProvider: () => ({ capabilities: { agentOptions: true, agentPreset: true, outputSchema: true, depthLimit: true } }),
+        startActivation: async () => { throw new Error('provider start reached') },
       },
       systemPrompt: { section: () => undefined },
       on: () => () => undefined,
-      settings: alphaSettings(['reviewer']),
+      settings: alphaSettings(['reviewer'], 'zh'),
       inject: (_deps: unknown, cb: (sctx: unknown) => void) => {
         cb({ settings: { register: () => ({ get: () => ({ enabled: ['reviewer'] }), watch: () => () => {} }) }, effect: () => () => {} })
       },
       reflect: { provide: () => undefined },
-    } as unknown as Context
+    })
 
     applyOnHost(ctx, { root: dir, provider: 'spawn', divisions: ['engineering'] })
     const summon = tools.find((tool) => (tool as { name?: string }).name === 'summon_expert') as {
@@ -736,23 +745,23 @@ describe('summon_expert', () => {
 
   it('非 completed 的专家运行会返回部分输出以便排障', async () => {
     const tools: unknown[] = []
-    const ctx = {
+    const ctx = createTestContext({
       tools: { register: (tool: unknown) => tools.push(tool) },
       subagents: {
-        getProvider: () => ({ capabilities: { persona: true, toolFilter: true, depthLimit: true } }),
-        start: async () => ({
+        getProvider: () => ({ capabilities: { agentOptions: true, agentPreset: true, outputSchema: true, depthLimit: true } }),
+        startActivation: async () => ({
           result: Promise.resolve({ output: [{ type: 'text', text: 'partial result' }], stopReason: 'cancelled' }),
           dispose: async () => undefined,
         }),
       },
       systemPrompt: { section: () => undefined },
       on: () => () => undefined,
-      settings: alphaSettings(['reviewer']),
+      settings: alphaSettings(['reviewer'], 'zh'),
       inject: (_deps: unknown, cb: (sctx: unknown) => void) => {
         cb({ settings: { register: () => ({ get: () => ({ enabled: ['reviewer'] }), watch: () => () => {} }) }, effect: () => () => {} })
       },
       reflect: { provide: () => undefined },
-    } as unknown as Context
+    })
 
     applyOnHost(ctx, { root: dir, provider: 'spawn', divisions: ['engineering'] })
     const summon = tools.find((tool) => (tool as { name?: string }).name === 'summon_expert') as {
@@ -956,24 +965,29 @@ describe('AgencyAgentsRemote（Host↔Client 读写链路）', () => {
 })
 
 describe('宿主 i18n', () => {
-  it('zh/en 词条 key 对齐，且只有显式 en 才切换语言', () => {
+  it('zh/en 词条 key 对齐，仅明确的中文标记使用中文，未设置语言时使用英文', () => {
     expect(Object.keys(zh).sort()).toEqual(Object.keys(en).sort())
     expect(Object.keys(zhHost).sort()).toEqual(Object.keys(enHost).sort())
     expect(Object.hasOwn(zh, 'group.count')).toBe(false)
     expect(resolveHostLocale('en')).toBe('en')
     expect(resolveHostLocale('zh')).toBe('zh')
-    expect(resolveHostLocale('en-US')).toBe('zh')
-    expect(readHostLocale({})).toBe('zh')
+    expect(resolveHostLocale('en-US')).toBe('en')
+    expect(resolveHostLocale('zh-CN')).toBe('zh')
+    expect(resolveHostLocale(' ZH-tw ')).toBe('zh')
+    expect(resolveHostLocale('fr')).toBe('en')
+    expect(resolveHostLocale(null)).toBe('en')
+    expect(resolveHostLocale('')).toBe('en')
+    expect(readHostLocale({})).toBe('en')
     expect(readHostLocale({ settings: { get: () => ({ preference: 'en' }) } })).toBe('en')
     expect(readHostLocale({ settings: { describe: () => [{ ns: 'locale', value: { preference: 'en' } }] } })).toBe('en')
     expect(zh['settings.nav']).toBe('专家')
     expect(en['settings.nav']).toBe('Experts')
-    expect(readHostLocale({ settings: { get: () => { throw new Error('missing') } } })).toBe('zh')
+    expect(readHostLocale({ settings: { get: () => { throw new Error('missing') } } })).toBe('en')
     expect(readHostLocale({
       get settings(): never {
         throw new Error('cannot get property "settings" without inject')
       },
-    })).toBe('zh')
+    })).toBe('en')
   })
 
   it('中英词条占位符一致，筛选空态跟随「全部」译文', () => {
@@ -1003,8 +1017,8 @@ describe('宿主 i18n', () => {
 
   it('分区查询同时认 key、中文名和英文名', () => {
     expect(matchDivision('engineering', 'engineering')).toBe(true)
-    expect(matchDivision(' 工程 ', 'engineering')).toBe(true)
-    expect(matchDivision('Game Development', 'game-development')).toBe(true)
+    expect(matchDivision(' 研发与集成 ', 'engineering')).toBe(true)
+    expect(matchDivision('Orders & After-sales', 'orders')).toBe(true)
     expect(matchDivision('en', 'engineering')).toBe(false)
   })
 
@@ -1018,9 +1032,9 @@ describe('宿主 i18n', () => {
       total: 1,
     }
     expect(renderExpertList('zh', {}, value)).toContain('1 位专家，覆盖 1 个分区：')
-    expect(renderExpertList('zh', {}, value)).toContain('## 工程（1）')
+    expect(renderExpertList('zh', {}, value)).toContain('## 研发与集成（1）')
     expect(renderExpertList('en', {}, value)).toContain('1 experts across 1 divisions:')
-    expect(renderExpertList('en', {}, value)).toContain('## Engineering (1)')
+    expect(renderExpertList('en', {}, value)).toContain('## Engineering & Integration (1)')
     expect(renderExpertList('zh', {}, { divisions: [], total: 0 })).toBe(formatHost('zh', 'list.empty'))
     expect(renderExpertList('en', { division: 'security' }, { divisions: [], total: 0 })).toBe(formatHost('en', 'list.emptyDivision', { division: 'security' }))
   })
@@ -1202,13 +1216,10 @@ describe('专家库目标稿样式契约', () => {
     expect(CARD_SETTINGS_CSS).toContain('-webkit-line-clamp:3')
   })
 
-  it('分类筛选覆盖全部原始分区，专家卡片默认两列且保持紧凑', () => {
-    const expectedDivisions = new Set(ROSTER.map((expert) => expert.division))
+  it('空目录也展示跨境 ERP 分类，业务流程优先且其他收尾', () => {
     const values = expertDivisionFilterValues()
-    expect(values[0]).toBe('')
-    expect(values.at(-1)).toBe('academic')
-    expect(values).toHaveLength(expectedDivisions.size + 1)
-    expect(new Set(values.slice(1))).toEqual(expectedDivisions)
+    expect(values).toEqual(['', 'orders', 'catalog', 'supply-chain', 'warehouse', 'logistics', 'finance', 'marketplace', 'marketing', 'analytics', 'product', 'engineering', 'testing', 'support', 'company', 'specialized'])
+    expect(new Set(values).size).toBe(values.length)
     expect(CARD_SETTINGS_CSS).toContain('.aag-expert-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr))')
     expect(CARD_SETTINGS_CSS).not.toContain('width:80px;height:107px')
     expect(CARD_SETTINGS_CSS).toContain('min-height:32px')
@@ -1265,8 +1276,8 @@ describe('@ 菜单分组标题本地化', () => {
   })
 
   it('按当前语言返回分区显示名，未知分区回退原值', () => {
-    expect(inputTriggerSourceName('design', 'zh')).toBe('设计')
-    expect(inputTriggerSourceName('design', 'en')).toBe('Design')
+    expect(inputTriggerSourceName('product', 'zh')).toBe('产品与设计')
+    expect(inputTriggerSourceName('product', 'en')).toBe('Product & Design')
     expect(inputTriggerSourceName('custom', 'zh')).toBe('custom')
   })
 
@@ -1423,7 +1434,7 @@ describe('@ 菜单分组标题本地化', () => {
     const calls: string[] = []
 
     const resolved = resolveReferenceInsertionTarget({
-      list: { getSnapshot: () => ({ current: 'current-session' as SessionId }) },
+      list: { getSnapshot: () => ({ byId: { 'current-session': { id: 'current-session' as SessionId, retainedBy: { mainView: 1 } } } }) },
       binding: (id: string) => {
         calls.push(id)
         return { ctx: actx }
@@ -1436,7 +1447,7 @@ describe('@ 菜单分组标题本地化', () => {
     expect(calls).toEqual(['current-session'])
   })
 
-  it('alpha.2 无 current 时按 retainedBy.mainView 反查主视图会话', () => {
+  it('按 retainedBy.mainView 反查主视图会话', () => {
     expect(resolveTargetSessionId({
       list: {
         getSnapshot: () => ({
@@ -1450,14 +1461,6 @@ describe('@ 菜单分组标题本地化', () => {
     expect(resolveTargetSessionId({
       list: { getSnapshot: () => ({ byId: { parked: { retainedBy: {} } } }) },
     })).toBeUndefined()
-    expect(resolveTargetSessionId({
-      list: {
-        getSnapshot: () => ({
-          current: 'legacy' as SessionId,
-          byId: { main: { id: 'main-view' as SessionId, retainedBy: { mainView: 1 } } },
-        }),
-      },
-    })).toBe('legacy')
     expect(resolveTargetSessionId({
       list: {
         getSnapshot: () => ({
@@ -1597,9 +1600,22 @@ describe('list_experts 语言切换', () => {
     expect(prompt).toContain('不要把源码、CSS、HTML 或带引号的代码写进工具参数')
   })
 
-  it('默认中文：可用中文分区名筛选，并返回中文名和简介', async () => {
+  it('未设置语言时模型可见的专家列表使用英文', async () => {
     const { list } = install()
-    const result = await list.execute({ division: '工程' }, { agent: undefined })
+    const result = await list.execute({ division: 'engineering' }, { agent: undefined })
+    expect(result.divisions[0]?.experts).toEqual([
+      { name: 'Code Reviewer', emoji: '🔍', description: 'English intro' },
+    ])
+    expect(list.output.render({ division: 'engineering' }, result)[0]?.text).toMatchInlineSnapshot(`
+      "1 experts across 1 divisions:
+      ## Engineering & Integration (1)
+      - 🔍 Code Reviewer — English intro"
+    `)
+  })
+
+  it('明确设置中文后可用中文分区名筛选，并返回中文名和简介', async () => {
+    const { list } = install('zh')
+    const result = await list.execute({ division: '研发与集成' }, { agent: undefined })
     expect(result).toMatchObject({
       divisions: [{
         division: 'engineering',
@@ -1607,7 +1623,7 @@ describe('list_experts 语言切换', () => {
       }],
       total: 1,
     })
-    expect(list.output.render({ division: '工程' }, result)[0]?.text).toContain('## 工程（1）')
+    expect(list.output.render({ division: '研发与集成' }, result)[0]?.text).toContain('## 研发与集成（1）')
   })
 
   it('settings locale=en 时返回英文名和简介，分区标题用英文', async () => {
@@ -1616,7 +1632,7 @@ describe('list_experts 语言切换', () => {
     expect(result.divisions[0]?.experts).toEqual([
       { name: 'Code Reviewer', emoji: '🔍', description: 'English intro' },
     ])
-    expect(list.output.render({ division: 'engineering' }, result)[0]?.text).toContain('## Engineering (1)')
+    expect(list.output.render({ division: 'engineering' }, result)[0]?.text).toContain('## Engineering & Integration (1)')
   })
 })
 
@@ -1688,11 +1704,11 @@ describe('summon_experts', () => {
 
   it('一名专家失败时仍返回其余成功结果', async () => {
     const tools: unknown[] = []
-    const ctx = {
+    const ctx = createTestContext({
       tools: { register: (tool: unknown) => tools.push(tool) },
       subagents: {
-        getProvider: () => ({ capabilities: { persona: true, toolFilter: true, depthLimit: true } }),
-        start: async (_provider: string, options: { label?: string }) => {
+        getProvider: () => ({ capabilities: { agentOptions: true, agentPreset: true, outputSchema: true, depthLimit: true } }),
+        startActivation: async (options: { label?: string }) => {
           if (options.label === 'Historian') {
             return {
               result: Promise.resolve({ output: [{ type: 'text', text: 'partial' }], stopReason: 'cancelled' }),
@@ -1707,12 +1723,12 @@ describe('summon_experts', () => {
       },
       systemPrompt: { section: () => undefined },
       on: () => () => undefined,
-      settings: alphaSettings(['reviewer', 'historian']),
+      settings: alphaSettings(['reviewer', 'historian'], 'zh'),
       inject: (_deps: unknown, cb: (sctx: unknown) => void) => {
         cb({ settings: { register: () => ({ get: () => ({ enabled: ['reviewer', 'historian'] }), watch: () => () => {} }) }, effect: () => () => {} })
       },
       reflect: { provide: () => undefined },
-    } as unknown as Context
+    })
 
     applyOnHost(ctx, { root: dir, provider: 'spawn', divisions: ['engineering'] })
     const summon = tools.find((tool) => (tool as { name?: string }).name === 'summon_experts') as {

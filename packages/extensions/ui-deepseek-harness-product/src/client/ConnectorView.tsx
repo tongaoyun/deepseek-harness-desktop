@@ -1,12 +1,14 @@
+import { ProductLoading } from './ProductLoading.tsx'
 import type { ReactNode } from 'react'
 import { useEffect, useRef, useState } from 'react'
-import { Button, IconChevronRightOutlineRegular, IconLinkOutlineRegular, Modal } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Button, IconLinkOutlineRegular, Modal } from '@deepseek-ai/dsh-client-ui-primitives'
 import { parseConnectorAuthorization, parseConnectorAuthorizationLaunch, ConnectorConfigurationSaveResultSchema, ConnectorDeviceConfigurationSchema, type ConnectorDeviceConfigurationSnapshot } from '@deepseek-harness/product/connector-draft'
 import { type DeepSeekHarnessProductKey } from '../locales.ts'
 import css from '../DeepSeekHarnessProduct.module.css'
 import { productApi, type ProductApi } from './product-api.ts'
 import { productErrorMessage } from './product-errors.ts'
 import { type ProductDetail, AUTHORIZATION_TIMEOUT_MS, AUTHORIZATION_POLL_INTERVAL_MS, nextProductRequestId, abortableDelay, DetailIdentity } from './catalog-shared.tsx'
+import { ConnectorTools } from './ConnectorTools.tsx'
 
 export function ConnectorDetailModal({ detail: product, onCatalogChanged, managementActions, onClose, t }: {
   readonly managementActions?: ReactNode
@@ -126,7 +128,7 @@ export function ConnectorDetail({ product, onCatalogChanged, t }: {
   return <>
     {(managedAuthorization || product.canConfigure === true) && <section className={css.connectorSection}>
       <h2>{t('connectorConfiguration')}</h2>
-      {refreshState === 'pending' && <p role="status">{t('loading')}</p>}
+      {refreshState === 'pending' && <ProductLoading label={t('loading')} />}
       {refreshState === 'failed' && <div className={css.detailActions}>
         <span className={css.catalogError} role="alert">{t('connectorRefreshFailed')}</span>
         <Button variant="outline" size="sm" onClick={() => { void refreshCatalog() }}>{t('refresh')}</Button>
@@ -160,18 +162,7 @@ export function ConnectorDetail({ product, onCatalogChanged, t }: {
           && <span>{t('writeCapabilityCount').replace('{count}', String(writeTools.length))}</span>}
       </div>}
       {product.tools.length === 0 ? <p className={css.catalogStatus}>{t('empty')}</p>
-        : <details className={css.detailDisclosure}>
-          <summary><span>{t('viewConnectorTools').replace('{count}', String(product.tools.length))}</span>
-            <IconChevronRightOutlineRegular size={14} /></summary>
-          <div className={css.disclosureBody}><ul className={css.detailToolList}>{product.tools.map(tool =>
-            <li key={tool.name}><div className={css.toolRow}>
-              <span className={css.toolCopy}><strong>{tool.displayName}</strong>
-                {tool.description !== undefined && <span>{tool.description}</span>}</span>
-              <span className={css.toolPermission} data-access={tool.access}>
-                {tool.access === 'READ' ? t('readOnlyLabel') : t('writeLabel')}
-              </span>
-            </div></li>)}</ul></div>
-        </details>}
+        : <ConnectorTools key={`${product.id}:${product.version}`} tools={product.tools} t={t} />}
     </section>}
   </>
 }
@@ -243,7 +234,7 @@ function ConnectorDeviceConfiguration({ product, onClose, onSaved, t }: {
     footer={<Button variant="primary" disabled={!configuration || pending} onClick={() => { void save() }}>
       {pending ? t('connectingConnector') : t('saveConnector')}</Button>}>
     {error && <p className={css.catalogError} role="alert">{error}</p>}
-    {!configuration && (error ? <Button variant="outline" onClick={() => { void load() }}>{t('retry')}</Button> : <p role="status">{t('loading')}</p>)}
+    {!configuration && (error ? <Button variant="outline" onClick={() => { void load() }}>{t('retry')}</Button> : <ProductLoading label={t('loading')} />)}
     {configuration && <div className={`${css.editorForm} ${css.connectorForm}`}>
       <label className={css.editorField}><span>{t(configuration.transport === 'stdio' ? 'connectorExecutable' : 'connectorEndpoint')}</span>
         <input readOnly value={configuration.transport === 'stdio'

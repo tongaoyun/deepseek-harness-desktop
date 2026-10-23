@@ -110,3 +110,15 @@ it('reuses identical content under a new version without rewriting the immutable
   expect(next).toEqual({ ...first, version: '2.0.0' })
   expect(await restoreCompanyContent(root, 'a', next.version, next.sha256, signal)).toEqual(next)
 })
+
+it('restores the entire team file from its immutable release without replacing old content', async () => {
+  const root = await fixture(), signal = new AbortController().signal
+  const document = await readFile(new URL('../../experts/tests/fixtures/team.json', import.meta.url), 'utf8')
+  const files = { 'teams/orders.json': Buffer.from(document).toString('base64') }
+  const first = await installCompanyContent(root, 'alice', { version: '1.0.0', sha256: contentDigest(files), files }, signal)
+  const updated = { 'teams/orders.json': Buffer.from(document.replaceAll('固定成员说明', '新版成员说明')).toString('base64') }
+  const latest = await installCompanyContent(root, 'alice', { version: '2.0.0', sha256: contentDigest(updated), files: updated }, signal)
+  expect(first.expertsRoot).not.toBe(latest.expertsRoot)
+  expect(await restoreCompanyContent(root, 'alice', first.version, first.sha256, signal)).toEqual(first)
+  expect(await readFile(join(first.expertsRoot, '..', 'teams/orders.json'), 'utf8')).toBe(document)
+})

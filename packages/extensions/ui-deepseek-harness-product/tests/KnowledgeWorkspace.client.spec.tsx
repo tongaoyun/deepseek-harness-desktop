@@ -410,6 +410,110 @@ it('cancels a missing filtered file recheck when switching libraries and ignores
   } finally { vi.useRealTimers() }
 })
 
+it('uses named loading indicators instead of transient loading or empty copy throughout page entry', async () => {
+  const folderResponse = deferred()
+  const documentResponse = deferred()
+  transport(async method => method === 'knowledge.folders.list' ? folderResponse.promise : documentResponse.promise)
+  const view = render(<KnowledgeWorkspace {...props} entries={[]} loading />)
+  expect(parts(view.container).content.getByRole('status', { name: zh.loading })).toBeDefined()
+  expect(view.container.textContent).not.toContain(zh.loading)
+  expect(view.container.textContent).not.toContain(zh.empty)
+  view.rerender(<KnowledgeWorkspace {...props} />)
+  expect(parts(view.container).content.getByRole('status', { name: zh.loading })).toBeDefined()
+  expect(view.container.textContent).not.toContain(zh.loading)
+  expect(parts(view.container).navigation.queryByText(zh.knowledgeNoFolders)).toBeNull()
+  expect(parts(view.container).content.queryByText(zh.knowledgeNoMaterials)).toBeNull()
+  await act(async () => { folderResponse.resolve(folders) })
+  expect(parts(view.container).content.getByRole('status', { name: zh.loading })).toBeDefined()
+  expect(view.container.textContent).not.toContain(zh.loading)
+  expect(parts(view.container).content.queryByText(zh.knowledgeNoMaterials)).toBeNull()
+  await act(async () => { documentResponse.resolve(page([documentRow('personal')])) })
+  await parts(view.container).content.findByRole('button', { name: '业务规范.md' })
+  expect(parts(view.container).content.queryByRole('status', { name: zh.loading })).toBeNull()
+})
+
+it('retains an already known empty department while the library directory refreshes', async () => {
+  transport(async method => method === 'knowledge.folders.list' ? folders : page([documentRow('personal')]))
+  const view = render(<KnowledgeWorkspace {...props} />)
+  await parts(view.container).content.findByRole('button', { name: '业务规范.md' })
+  const noDepartment = { ...props, entries: entries.filter(entry => entry.scope !== 'DEPARTMENT') }
+  view.rerender(<KnowledgeWorkspace {...noDepartment} />)
+  const department = within(parts(view.container).navigation.getByRole('region', { name: zh.scopeDepartment }))
+  const empty = department.getByText(zh.empty)
+  view.rerender(<KnowledgeWorkspace {...noDepartment} loading />)
+  expect(department.getByText(zh.empty)).toBe(empty)
+  expect(department.queryByRole('status', { name: zh.loading })).toBeNull()
+})
+
+it.each(['catalog', 'materials'] as const)('keeps the current table and folder tree mounted during a slow %s refresh', async (source) => {
+  const response = deferred()
+  let refreshing = false
+  transport(async (method, payload) => {
+    if (refreshing) await response.promise
+    return method === 'knowledge.folders.list' ? folders : page([documentRow(String(payload.knowledgeBaseId))])
+  })
+  const view = render(<KnowledgeWorkspace {...props} />)
+  const { navigation, content } = parts(view.container)
+  const file = await content.findByRole('button', { name: '业务规范.md' })
+  const folder = await navigation.findByRole('button', { name: '业务制度' })
+  const childFolder = content.getByRole('button', { name: '业务制度' })
+  refreshing = true
+  if (source === 'catalog') view.rerender(<KnowledgeWorkspace {...props} refreshRevision={1} />)
+  else fireEvent.click(content.getByRole('button', { name: zh.refresh }))
+  expect(content.getByRole('button', { name: '业务规范.md' })).toBe(file)
+  expect(navigation.getByRole('button', { name: '业务制度' })).toBe(folder)
+  expect(content.getByRole('button', { name: '业务制度' })).toBe(childFolder)
+  expect(navigation.queryByText(zh.loading)).toBeNull()
+  await act(async () => { response.resolve(undefined) })
+  await waitFor(() => { expect(content.getByRole('button', { name: zh.refresh }).hasAttribute('disabled')).toBe(false) })
+  expect(content.getByRole('button', { name: '业务规范.md' })).toBe(file)
+  expect(navigation.getByRole('button', { name: '业务制度' })).toBe(folder)
+})
+
+it('keeps an empty library stable while refreshing without flashing a loading placeholder', async () => {
+  const response = deferred()
+  let refreshing = false
+  transport(async () => {
+    if (refreshing) await response.promise
+    return page([])
+  })
+  const view = render(<KnowledgeWorkspace {...props} />)
+  const { navigation, content } = parts(view.container)
+  const empty = await content.findByText(zh.knowledgeNoMaterials)
+  const noFolders = await navigation.findByText(zh.knowledgeNoFolders)
+  refreshing = true
+  view.rerender(<KnowledgeWorkspace {...props} refreshRevision={1} />)
+  expect(content.getByText(zh.knowledgeNoMaterials)).toBe(empty)
+  expect(navigation.getByText(zh.knowledgeNoFolders)).toBe(noFolders)
+  expect(content.queryByText(zh.loading)).toBeNull()
+  expect(navigation.queryByText(zh.loading)).toBeNull()
+  await act(async () => { response.resolve(undefined) })
+  expect(content.getByText(zh.knowledgeNoMaterials)).toBe(empty)
+})
+
+it('does not restore cached folders while retrying after an access revocation', async () => {
+  let phase: 'initial' | 'denied' | 'retry' = 'initial'
+  const response = deferred()
+  transport(async (method, payload) => {
+    if (phase === 'retry') await response.promise
+    if (phase === 'denied') throw new ProductError('KNOWLEDGE_ACCESS_REVOKED', 'private diagnostic', false)
+    return method === 'knowledge.folders.list' ? folders : page([documentRow(String(payload.knowledgeBaseId))])
+  })
+  const view = render(<KnowledgeWorkspace {...props} />)
+  await parts(view.container).content.findByRole('button', { name: '业务规范.md' })
+  phase = 'denied'
+  view.rerender(<KnowledgeWorkspace {...props} refreshRevision={1} />)
+  await waitFor(() => { expect(parts(view.container).content.getByRole('alert').textContent).toContain(zh.knowledgeAccessRevoked) })
+  phase = 'retry'
+  fireEvent.click(parts(view.container).content.getByRole('button', { name: zh.refresh }))
+  for (const region of [parts(view.container).navigation, parts(view.container).content]) {
+    expect(region.queryByRole('button', { name: '业务制度' })).toBeNull()
+    expect(region.queryByRole('button', { name: '业务规范.md' })).toBeNull()
+  }
+  await act(async () => { response.resolve(undefined) })
+  await parts(view.container).content.findByRole('button', { name: '业务规范.md' })
+})
+
 it('reloads folder branches on explicit refresh and discards externally removed folders', async () => {
   let removed = false
   const api = transport(async method => method === 'knowledge.folders.list'
@@ -422,7 +526,7 @@ it('reloads folder branches on explicit refresh and discards externally removed 
   removed = true
   fireEvent.click(content.getByRole('button', { name: zh.refresh }))
   await navigation.findByRole('button', { name: '保留目录' })
-  expect(navigation.queryByRole('button', { name: '删除目录' })).toBeNull()
+  await waitFor(() => { expect(navigation.queryByRole('button', { name: '删除目录' })).toBeNull() })
   expect(api.invoke.mock.calls.filter(call => call[1] === 'knowledge.folders.list')).toHaveLength(4)
   fireEvent.click(navigation.getByRole('button', { name: '保留目录' }))
   await waitFor(() => { expect(api.invoke).toHaveBeenCalledWith('product', 'knowledge.documents.list',

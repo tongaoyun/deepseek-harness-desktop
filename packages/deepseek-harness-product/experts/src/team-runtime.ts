@@ -2,7 +2,7 @@ import { teamText } from './team-i18n.ts';
 import type { ExpertSummary } from './expert-contract.ts';
 import { localizedExpertName, type LocaleId } from './i18n.ts';
 import { teamCollaboration } from './team-collaboration.ts';
-import { effectiveCoordinator, teamSchema, type ExpertTeam, } from './team-contract.ts';
+import { effectiveCoordinator, executableTeamSchema, type ExpertTeam, } from './team-contract.ts';
 export interface TeamMemberRun {
     slug: string;
     name: string;
@@ -25,7 +25,7 @@ export async function executeTeam(args: {
 }) {
     const tx = (key: string, values?: readonly unknown[]) => teamText(args.locale ?? 'zh', key, values);
 
-    const team = structuredClone(teamSchema.parse(args.team));
+    const team = structuredClone(executableTeamSchema.parse(args.team));
     const experts = structuredClone(args.experts).map(expert => ({ ...expert, name: localizedExpertName(expert, args.locale ?? 'zh') }));
     const task = args.task.trim();
     if (!task || Array.from(task).length > TEAM_TASK_MAX_CHARS)

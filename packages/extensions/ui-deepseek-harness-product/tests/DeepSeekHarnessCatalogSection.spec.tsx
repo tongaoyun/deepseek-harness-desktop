@@ -34,7 +34,10 @@ function installProductApi(api: Partial<ProductApi> & Pick<ProductApi, 'invoke'>
         const result = await (method === 'auth.getSession' ? api.getSession?.() ?? Promise.resolve({ authenticated: true })
           : preview(method, payload, (operation, input) => requestId === undefined
             ? api.invoke(operation, input) : api.invoke(operation, input, requestId)))
-        return { ok: true, result: method === 'knowledge.documents.preview' ? originalFromFixture(result) : result }
+        // Existing visible catalog fixtures represent published releases. Individual tests override this for drafts.
+        const catalogResult = method === 'connectors.list' && Array.isArray(result)
+          ? result.map((entry: Record<string, unknown>) => ({ visibility: entry.canEdit === true ? 'PERSONAL' : 'COMPANY', reviewStatus: 'PUBLISHED', ...entry })) : result
+        return { ok: true, result: method === 'knowledge.documents.preview' ? originalFromFixture(result) : catalogResult }
       } catch (error) { return { ok: false, failure: productFailure(error) } }
     },
     cancel: (_namespace: string, requestId: string) => api.cancel?.(requestId),
@@ -57,6 +60,61 @@ function castClientContext(value: object): ClientContext {
 }
 
 describe('DeepSeekHarness capability navigation', () => {
+  it.each([false, true])('keeps connector content mounted during refresh (empty: %s)', async (empty) => {
+    const initial = deferred<unknown>()
+    const reconnect = deferred<unknown>()
+    const entries = empty ? [] : [{ id: 'erp', name: 'ERP', category: 'business-systems' }]
+    let loaded = false
+    installProductApi({ invoke: async (method) => {
+      if (method === 'connectors.refresh') return reconnect.promise
+      return loaded ? entries : initial.promise
+    } })
+    render(<ConnectorsPanel t={t} {...actions()} />)
+    expect(screen.getByRole('status', { name: zh.loading }).textContent).toBe('')
+    expect(screen.queryByText(zh.loading)).toBeNull()
+    expect(screen.queryByText(zh.noConnectors)).toBeNull()
+    expect(screen.queryByRole('tabpanel')).toBeNull()
+    loaded = true
+    await act(async () => { initial.resolve(entries) })
+    const panel = screen.getByRole('tabpanel')
+    const content = empty ? screen.getByText(zh.noConnectors) : screen.getByRole('heading', { name: /业务系统/ })
+
+    fireEvent.click(screen.getByRole('button', { name: zh.refresh }))
+    expect(screen.getByRole('tabpanel')).toBe(panel)
+    expect(panel.getAttribute('aria-busy')).toBe('true')
+    expect(panel.contains(content)).toBe(true)
+    expect(screen.queryByText(zh.loading)).toBeNull()
+    expect(screen.getByRole('status', { name: zh.loading }).closest('button')).toBe(screen.getByRole('button', { name: zh.refresh }))
+
+    await act(async () => { reconnect.resolve({ connectedIds: ['erp'], unavailableIds: [] }) })
+    expect(panel.getAttribute('aria-busy')).toBe('false')
+    expect(panel.contains(content)).toBe(true)
+    expect(screen.queryByRole('status')).toBeNull()
+  })
+
+  it('keeps unpublished personal releases out of the marketplace and published owned releases in both scopes', async () => {
+    const entries = [
+      { id: 'shared', name: 'Published shared', canEdit: false, visibility: 'COMPANY', reviewStatus: 'PUBLISHED' },
+      { id: 'owned', name: 'Published owned', canEdit: true, visibility: 'PERSONAL', reviewStatus: 'PUBLISHED' },
+      ...['DRAFT', 'SUBMITTED', 'REJECTED'].map(status => ({ id: status, name: `Personal ${status}`, canEdit: true, visibility: 'PERSONAL', reviewStatus: status })),
+    ]
+    installProductApi({ invoke: async () => entries })
+    render(<ConnectorsPanel t={t} {...actions()} />)
+    await screen.findByRole('button', { name: /Published shared/ })
+    expect(screen.getByRole('tab', { name: zh.extensionMarket, selected: true })).toBeTruthy()
+    expect(screen.getByRole('button', { name: /Published owned/ })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: /Personal DRAFT/ })).toBeNull()
+    expect(screen.queryByRole('button', { name: /Personal SUBMITTED/ })).toBeNull()
+    expect(screen.queryByRole('button', { name: /Personal REJECTED/ })).toBeNull()
+    fireEvent.click(screen.getByRole('tab', { name: zh.mineExtensions }))
+    expect(screen.queryByRole('button', { name: /Published shared/ })).toBeNull()
+    for (const name of ['Published owned', 'Personal DRAFT', 'Personal SUBMITTED', 'Personal REJECTED']) {
+      expect(screen.getByRole('button', { name: new RegExp(name) })).toBeTruthy()
+    }
+    fireEvent.click(screen.getByRole('tab', { name: zh.extensionMarket }))
+    expect(screen.queryByRole('button', { name: /Personal DRAFT/ })).toBeNull()
+  })
+
   it('refreshes Host connector tools only on explicit refresh and keeps failures retryable', async () => {
     let unavailable = true
     const invoke = vi.fn(async (method: string) => {
@@ -79,7 +137,7 @@ describe('DeepSeekHarness capability navigation', () => {
     expect(invoke.mock.calls.filter(([method]) => method === 'connectors.refresh')).toHaveLength(2)
   })
 
-  it('opens personal connectors after saving and keeps shared connectors under All', async () => {
+  it('opens personal connectors after saving and keeps published connectors in the marketplace', async () => {
     const shared = { id: 'shared-mcp', name: 'Shared MCP', version: '1.0.0', visibility: 'COMPANY', canEdit: false }
     const invoke = vi.fn(async (method: string, payload?: unknown) => {
       if (method === 'connectors.list') return [shared]
@@ -97,8 +155,33 @@ describe('DeepSeekHarness capability navigation', () => {
     const mine = screen.getByRole('tab', { name: zh.mineExtensions })
     expect(mine.getAttribute('aria-selected')).toBe('true')
     expect(screen.getByRole('tabpanel').getAttribute('aria-labelledby')).toBe(mine.id)
-    fireEvent.click(screen.getByRole('tab', { name: zh.connectorFilterAll }))
+    fireEvent.click(screen.getByRole('tab', { name: zh.extensionMarket }))
     expect(screen.getByRole('button', { name: new RegExp(shared.name) })).toBeTruthy()
+  })
+
+  it('reports partial reconnect failures by name without hiding working connectors and clears them after retry', async () => {
+    let available = false
+    const entries = [{ id: 'erp', name: 'ERP' }, { id: 'crm', name: 'CRM' }]
+    installProductApi({ invoke: async method => method === 'connectors.refresh'
+      ? { connectedIds: available ? ['erp', 'crm'] : ['erp'], unavailableIds: available ? [] : ['crm'] } : entries })
+    render(<ConnectorsPanel t={t} {...actions()} />)
+    await screen.findByRole('button', { name: /ERP/ })
+    fireEvent.click(screen.getByRole('button', { name: zh.refresh }))
+    expect((await screen.findByRole('alert')).textContent).toBe(zh.connectorPartialRefreshFailed.replace('{names}', 'CRM'))
+    expect(screen.getByRole('button', { name: /ERP/ })).toBeTruthy()
+    expect(screen.getByRole('button', { name: /CRM/ })).toBeTruthy()
+    available = true
+    fireEvent.click(screen.getByRole('button', { name: zh.refresh }))
+    await waitFor(() => { expect(screen.queryByRole('alert')).toBeNull(); expect(screen.getByRole('button', { name: /ERP/ })).toBeTruthy() })
+  })
+
+  it('does not report malformed reconnect results as successful refreshes', async () => {
+    installProductApi({ invoke: async method => method === 'connectors.refresh' ? {} : [{ id: 'erp', name: 'ERP' }] })
+    render(<ConnectorsPanel t={t} {...actions()} />)
+    await screen.findByRole('button', { name: /ERP/ })
+    fireEvent.click(screen.getByRole('button', { name: zh.refresh }))
+    await screen.findByRole('alert')
+    expect(screen.getByRole<HTMLButtonElement>('button', { name: zh.refresh }).disabled).toBe(false)
   })
   it('configures private values for a shared connector without editing its resource or version', async () => {
     const entry = { id: 'shared-orders', name: '共享订单连接器', version: '1.0.0', visibility: 'COMPANY',
@@ -401,7 +484,7 @@ describe('DeepSeekHarness capability navigation', () => {
       { id: 'missing', name: 'Uncategorized MCP' },
       { id: 'custom', name: 'Custom MCP', category: 'unregistered' },
       { id: 'other', name: 'Other MCP', category: 'other' },
-      { id: 'erp', name: 'ERP MCP', category: 'industry-data' },
+      { id: 'erp', name: 'ERP MCP', category: 'business-systems' },
     ] })
     render(<ConnectorsPanel t={t} {...actions()} />)
     await screen.findByRole('button', { name: /Uncategorized MCP/ })
@@ -415,14 +498,90 @@ describe('DeepSeekHarness capability navigation', () => {
     expect(screen.queryByRole('button', { name: /ERP MCP/ })).toBeNull()
   })
 
-  it('keeps All and Mine mutually exclusive during keyboard navigation', async () => {
+  it('shows all categories in enterprise order and retains a way to clear a disappearing category', async () => {
+    let entries = [
+      { id: 'git', name: 'Git MCP', category: 'development-operations' },
+      { id: 'erp', name: 'ERP MCP', category: 'business-systems' },
+      { id: 'shop', name: 'Shop MCP', category: 'ecommerce-platforms' },
+    ]
+    installProductApi({ invoke: async method => method === 'connectors.refresh'
+      ? { connectedIds: entries.map(entry => entry.id), unavailableIds: [] } : entries })
+    render(<ConnectorsPanel t={t} {...actions()} />)
+    await screen.findByRole('button', { name: /ERP MCP/ })
+    fireEvent.click(screen.getByRole('button', { name: zh.categoryFilter }))
+    expect(screen.getAllByRole('menuitem').map(item => item.textContent)).toMatchSnapshot()
+    expect(screen.getByRole('menuitem', { name: zh.categoryDataAnalysis })).toBeTruthy()
+    fireEvent.click(screen.getByRole('menuitem', { name: zh.categoryEcommercePlatforms }))
+    entries = [{ id: 'erp', name: 'ERP MCP', category: 'business-systems' }]
+    fireEvent.click(screen.getByRole('button', { name: zh.refresh }))
+    await waitFor(() => { expect(screen.queryByRole('button', { name: /Shop MCP/ })).toBeNull() })
+    fireEvent.click(screen.getByRole('button', { name: zh.categoryFilter }))
+    fireEvent.click(screen.getByRole('menuitem', { name: zh.allCategories }))
+    expect(screen.getByRole('button', { name: /ERP MCP/ })).toBeTruthy()
+    expect(screen.getByRole('button', { name: zh.categoryFilter }).textContent).toBe(zh.allCategories)
+  })
+
+  it('keeps all categories selectable with one populated category and allows clearing an empty selection', async () => {
+    installProductApi({ invoke: async () => [{ id: 'erp', name: 'ERP MCP', category: 'business-systems' }] })
+    render(<ConnectorsPanel t={t} {...actions()} />)
+    await screen.findByRole('button', { name: /ERP MCP/ })
+    expect(screen.getByRole('region', { name: zh.categoryBusinessSystems })).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: zh.categoryFilter }))
+    expect(screen.getAllByRole('menuitem')).toHaveLength(7)
+    fireEvent.click(screen.getByRole('menuitem', { name: zh.categoryDataAnalysis }))
+    expect(screen.queryByRole('button', { name: /ERP MCP/ })).toBeNull()
+    expect(screen.getByText(zh.noSearchResults)).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: zh.categoryFilter }))
+    fireEvent.click(screen.getByRole('menuitem', { name: zh.allCategories }))
+    expect(screen.getByRole('button', { name: /ERP MCP/ })).toBeTruthy()
+  })
+
+  it('clears the category when switching to Mine and keeps all categories selectable', async () => {
+    installProductApi({ invoke: async () => [
+      { id: 'erp', name: 'ERP MCP', category: 'business-systems' },
+      { id: 'shop', name: 'My shop MCP', category: 'ecommerce-platforms', canEdit: true },
+    ] })
+    render(<ConnectorsPanel t={t} {...actions()} />)
+    await screen.findByRole('button', { name: /ERP MCP/ })
+    fireEvent.click(screen.getByRole('button', { name: zh.categoryFilter }))
+    fireEvent.click(screen.getByRole('menuitem', { name: zh.categoryBusinessSystems }))
+    fireEvent.click(screen.getByRole('tab', { name: zh.mineExtensions }))
+    expect(screen.getByRole('button', { name: /My shop MCP/ })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: /ERP MCP/ })).toBeNull()
+    expect(screen.getByRole('button', { name: zh.categoryFilter }).textContent).toBe(zh.allCategories)
+    fireEvent.click(screen.getByRole('button', { name: zh.categoryFilter }))
+    expect(screen.getAllByRole('menuitem')).toHaveLength(7)
+    expect(screen.getByRole('menuitem', { name: zh.categoryBusinessSystems })).toBeTruthy()
+  })
+
+  it('searches translated categories and clears an empty selection without leaving Mine', async () => {
+    installProductApi({ invoke: async () => [
+      { id: 'erp', name: 'ERP MCP', category: 'business-systems', canEdit: true },
+      { id: 'docs', name: 'Docs MCP', category: 'collaboration' },
+    ] })
+    render(<ConnectorsPanel t={t} {...actions()} />)
+    await screen.findByRole('button', { name: /ERP MCP/ })
+    fireEvent.change(screen.getByRole('searchbox', { name: zh.search }), { target: { value: zh.categoryBusinessSystems } })
+    expect(screen.getByRole('button', { name: /ERP MCP/ })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: /Docs MCP/ })).toBeNull()
+    fireEvent.click(screen.getByRole('tab', { name: zh.mineExtensions }))
+    fireEvent.click(screen.getByRole('button', { name: zh.categoryFilter }))
+    fireEvent.click(screen.getByRole('menuitem', { name: zh.categoryCollaboration }))
+    fireEvent.click(screen.getByRole('button', { name: zh.clearConnectorFilters }))
+    expect(screen.getByRole('tab', { name: zh.mineExtensions, selected: true })).toBeTruthy()
+    expect(screen.getByRole<HTMLInputElement>('searchbox', { name: zh.search }).value).toBe('')
+    expect(screen.getByRole('button', { name: /ERP MCP/ })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: /Docs MCP/ })).toBeNull()
+  })
+
+  it('keeps Marketplace and Mine mutually exclusive during keyboard navigation', async () => {
     installProductApi({ invoke: async () => [
       { id: 'shared', name: 'Shared MCP', status: 'ready', ready: true, authMode: 'none' },
       { id: 'personal', name: 'Personal MCP', status: 'needs-configuration', canEdit: true },
     ] })
     render(<ConnectorsPanel t={t} {...actions()} />)
     await screen.findByRole('button', { name: /Shared MCP/ })
-    fireEvent.keyDown(screen.getByRole('tab', { name: zh.connectorFilterAll }), { key: 'End' })
+    fireEvent.keyDown(screen.getByRole('tab', { name: zh.extensionMarket }), { key: 'End' })
     expect(screen.getByRole('tab', { selected: true }).textContent).toBe(zh.mineExtensions)
     expect(screen.queryByRole('button', { name: /Shared MCP/ })).toBeNull()
     expect(screen.getByRole('button', { name: /Personal MCP/ })).toBeTruthy()
@@ -431,19 +590,19 @@ describe('DeepSeekHarness capability navigation', () => {
     expect(screen.getByRole('button', { name: /Personal MCP/ })).toBeTruthy()
     expect(screen.getAllByRole('tab')).toHaveLength(2)
     fireEvent.keyDown(screen.getByRole('tab', { selected: true }), { key: 'Home' })
-    expect(screen.getByRole('tab', { selected: true }).textContent).toBe(zh.connectorFilterAll)
+    expect(screen.getByRole('tab', { selected: true }).textContent).toBe(zh.extensionMarket)
     expect(screen.getByRole('button', { name: /Personal MCP/ })).toBeTruthy()
   })
 
   it('presents business tools without directory status or technical connection facts', async () => {
     const invoke = vi.fn(async (): Promise<unknown> => [
-      { id: 'erp', name: 'erp-mcp', displayName: 'ERP 连接器', summary: '订单数据', category: 'industry-data',
+      { id: 'erp', name: 'erp-mcp', displayName: 'ERP 连接器', summary: '订单数据', category: 'business-systems',
         status: 'ready', scope: 'COMPANY', transport: 'stdio', version: '0.4.0',
         tools: [
           { name: 'orders_read', displayName: '查询订单', description: '读取订单', access: 'READ' },
           { name: 'orders_update', displayName: '更新订单', description: '修改订单', access: 'WRITE' },
         ], authMode: 'employee-bearer' },
-      { id: 'docs', name: '文档', summary: '企业文档', category: 'knowledge-documents', status: 'ready',
+      { id: 'docs', name: '文档', summary: '企业文档', category: 'collaboration', status: 'ready',
         tools: [] },
     ])
     installProductApi({
@@ -451,8 +610,8 @@ describe('DeepSeekHarness capability navigation', () => {
     })
 
     render(<ConnectorsPanel t={t} {...actions()} />)
-    expect(await screen.findByRole('region', { name: zh.categoryIndustryData })).not.toBeNull()
-    expect(screen.getByRole('region', { name: zh.categoryKnowledgeDocuments })).not.toBeNull()
+    expect(await screen.findByRole('region', { name: zh.categoryBusinessSystems })).not.toBeNull()
+    expect(screen.getByRole('region', { name: zh.categoryCollaboration })).not.toBeNull()
     expect(screen.getByRole('button', { name: zh.categoryFilter })).not.toBeNull()
     expect(screen.getByText(zh.allCategories)).not.toBeNull()
     const results = document.querySelector('#deepseek-harness-catalog-results')
@@ -467,7 +626,7 @@ describe('DeepSeekHarness capability navigation', () => {
     expect(screen.queryByText('erp-mcp')).toBeNull()
 
     fireEvent.click(screen.getByRole('button', { name: zh.categoryFilter }))
-    fireEvent.click(screen.getByRole('menuitem', { name: zh.categoryIndustryData }))
+    fireEvent.click(screen.getByRole('menuitem', { name: zh.categoryBusinessSystems }))
     expect(screen.getByText('ERP 连接器')).not.toBeNull()
     expect(screen.queryByText('文档')).toBeNull()
 
@@ -484,9 +643,11 @@ describe('DeepSeekHarness capability navigation', () => {
     fireEvent.click(screen.getByText(zh.viewConnectorTools.replace('{count}', '2')))
     expect(capability?.open).toBe(true)
     expect(screen.getByText('查询订单', { selector: 'strong' })).not.toBeNull()
-    expect(screen.getByText(zh.readOnlyLabel)).not.toBeNull()
-    expect(screen.getByText(zh.writeLabel)).not.toBeNull()
-    expect(screen.queryByText('orders_read')).toBeNull()
+    expect(screen.getByText(zh.readOnlyLabel, { selector: 'span[data-access="READ"]' })).not.toBeNull()
+    expect(screen.getByText(zh.writeLabel, { selector: 'span[data-access="WRITE"]' })).not.toBeNull()
+    expect(screen.getByText('orders_read').closest('details')?.open).toBe(false)
+    fireEvent.click(screen.getByText('查询订单', { selector: 'strong' }))
+    expect(screen.getByText('orders_read').closest('details')?.open).toBe(true)
     expect(screen.queryByText(zh.transportStdio)).toBeNull()
   })
 

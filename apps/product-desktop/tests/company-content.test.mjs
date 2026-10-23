@@ -57,6 +57,28 @@ async function materialize(path, value) {
     await writeFile(target, Buffer.from(encoded, 'base64'))
   }
 }
+
+test('expert teams inspect, export and update as one self-contained company resource', async t => {
+  const root = await privateRoot(t)
+  const json = await readFile(new URL('../../../packages/deepseek-harness-product/experts/tests/fixtures/team.json', import.meta.url), 'utf8')
+  const current = release('1.0.0', { 'teams/order-review.json': json, 'skills/orders/SKILL.md': skill('orders') })
+  const directory = join(root, 'team-edit')
+  await exportCompanyResource(current, 'teams/order-review.json', directory)
+  const content = JSON.parse(json)
+  content.team.goal = '检查订单异常并给出处理建议'
+  await writeFile(join(directory, 'teams/order-review.json'), JSON.stringify(content))
+  const incoming = await inspectCompanyContent(directory)
+  const plan = planPublication(current, incoming, SITE)
+  assert.equal(plan.resourceKey, 'teams/order-review')
+  assert.deepEqual(Object.keys(plan.resource.files), ['teams/order-review.json'])
+  assert.deepEqual(plan.changes.modified, ['teams/order-review.json'])
+  assert.equal(plan.changes.removed.length, 0)
+  const concurrent = release('1.0.1', { 'teams/order-review.json': JSON.stringify({ ...content, team: { ...content.team, goal: '其他员工已更新' } }) })
+  assert.throws(() => planPublication(concurrent, incoming, SITE), { code: 'EDIT_CONFLICT' })
+  content.experts.pop()
+  await writeFile(join(directory, 'teams/order-review.json'), JSON.stringify(content))
+  await assert.rejects(inspectCompanyContent(directory), /专家团/u)
+})
 async function command(script, args, cwd, extraEnv = {}) {
   const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !/TOKEN|SECRET|PASSWORD|KEY|COMPANY_CONTENT/u.test(key)))
   const child = spawn(process.execPath, [script, ...args], { cwd, env: { ...env, ...extraEnv }, stdio: ['ignore', 'pipe', 'pipe'] })

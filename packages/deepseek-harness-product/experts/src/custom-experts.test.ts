@@ -1,3 +1,5 @@
+import { createTestContext } from '../tests/context.ts'
+import { createActivationProbe } from '../tests/activation-probe.ts'
 import { LibraryEditorFooter } from './client/library-ui.tsx'
 import { loadEditorReview, continueEditorReview } from "./client/editor-review.ts";
 import { describe, expect, it, vi } from "vitest";
@@ -19,7 +21,8 @@ import {
 } from "./expert-contract.ts";
 import { expertSettingsNamespace } from "./settings.ts";
 import { MemorySettings } from "./settings-memory.ts";
-import { apply } from "./index.ts";
+import { apply, DEFAULT_DIVISIONS } from "./index.ts";
+import { EXPERT_CATEGORIES } from "./names.ts";
 import AgencyAgentsRemote from "./remote.ts";
 import { acceptCatalog, refreshCatalog } from "./client/catalog.ts";
 import { acceptTeams, refreshTeams, subscribeTeams, teamState } from "./client/team-cache.ts";
@@ -93,13 +96,25 @@ function setup(
         settings.describe().find((item) => item.ns === ns)!.revision,
       mutate: (ops, revision) => settings.mutate(ns, ops, revision),
     },
-    ["engineering", "specialized"],
+    DEFAULT_DIVISIONS,
     () => "zh",
   );
   return { settings, library };
 }
 
 describe("自定义专家 Host 存储", () => {
+  it.each(EXPERT_CATEGORIES)("企业分类 $zh 支持保存、启用和重启读取", async category => {
+    const { library, settings } = setup();
+    const before = await library.catalog();
+    const created = await library.saveCustom({ ...input, division: category.id }, true, before.revision);
+    const expert = created.experts.find(item => item.custom)!;
+    expect(expert).toMatchObject({ division: category.id, divisionZh: category.zh });
+    expect(created.enabled).toContain(expert.slug);
+    const restored = setup(settings.disk);
+    expect((await restored.library.getCustom(expert.slug)).division).toBe(category.id);
+    expect((await restored.library.catalog()).experts.find(item => item.slug === expert.slug)).toEqual(expert);
+  });
+
   it("无旧记录时清理不访问尚未注册或已卸载的设置区", async () => {
     const revision = vi.fn(() => { throw new Error("namespace unavailable"); });
     const mutate = vi.fn();
@@ -287,7 +302,8 @@ describe("真实 Host 与 Remote 集成", () => {
       { execute(args: unknown, exec?: unknown): Promise<unknown> }
     >();
     const starts: Record<string, unknown>[] = [];
-    const ctx = {
+    const probe = createActivationProbe();
+    const ctx = createTestContext({
       settings,
       effect: () => () => {},
       inject: (_deps: unknown, callback: (ctx: unknown) => void) =>
@@ -304,13 +320,14 @@ describe("真实 Host 与 Remote 集成", () => {
         }) => tools.set(tool.name, tool),
       },
       systemPrompt: { section: () => {} },
-      on: () => () => undefined,
+      on: probe.on,
       subagents: {
         getProvider: () => ({
-          capabilities: { persona: true, toolFilter: true },
+          capabilities: { agentOptions: true, agentPreset: true, outputSchema: true, depthLimit: true },
         }),
-        start: async (_provider: string, options: Record<string, unknown>) => {
-          starts.push(options);
+        startActivation: async (spec: { childId: string; request: Record<string, unknown>; label: string }) => {
+          probe.create(spec);
+          starts.push({ ...spec.request, label: spec.label });
           return {
             result: Promise.resolve({
               output: [{ type: "text", text: "租赁建议" }],
@@ -320,7 +337,7 @@ describe("真实 Host 与 Remote 集成", () => {
           };
         },
       },
-    } as unknown as Context;
+    });
     apply(ctx, { root: "", provider: "spawn", divisions: ["engineering"], ...volatileConfig(settings) } as never);
     const remote = new AgencyAgentsRemote(ctx);
     const initial = await remote.getCatalog(false);
@@ -341,10 +358,11 @@ describe("真实 Host 与 Remote 集成", () => {
     ).toEqual({ expert: input.name, answer: "租赁建议" });
     expect(starts).toHaveLength(1);
     expect(starts[0]).toMatchObject({
-      persona: input.prompt,
       label: input.name,
-      toolFilter: { deny: ["summon_expert", "summon_experts", "list_experts", "list_expert_teams", "get_expert_team", "summon_expert_team"] },
     });
+    expect(probe.sections[0]?.text).toBe(input.prompt);
+    expect(probe.restrictions).toEqual([{ deny: ["summon_expert", "summon_experts", "list_experts", "list_expert_teams", "get_expert_team", "summon_expert_team"] }]);
+    expect(probe.listening).toBe(0);
     const disabled = await remote.setEnabled([], saved.revision);
     await expect(
       tools

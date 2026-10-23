@@ -9,6 +9,7 @@ import css from '../DeepSeekHarnessProduct.module.css'
 import { formatDate, type ProductDetail } from './catalog-shared.tsx'
 import { isKnowledgeAccessDenied, knowledgeDocument, knowledgeFolder, knowledgePage, useKnowledgeRequests, type KnowledgeDocument, type KnowledgeFolder, type KnowledgePage } from './knowledge-data.ts'
 import { KnowledgeDocumentReader } from './KnowledgeDocumentReader.tsx'
+import { ProductLoading } from './ProductLoading.tsx'
 import { KnowledgeEditor, type KnowledgeEditorTarget } from './KnowledgeEditor.tsx'
 import { useKnowledgeFolderLocation } from './knowledge-folder-location.ts'
 import { KnowledgeFolderPicker } from './KnowledgeFolderPicker.tsx'
@@ -54,7 +55,7 @@ function KnowledgeDocumentsScope({ product, renderNavigation, onNavigate, refres
   const request = useKnowledgeRequests()
   const browseId = useId()
   const [data, setData] = useState<KnowledgePage<KnowledgeDocument>>()
-  const [materialFolderPage, setMaterialFolderPage] = useState<{ key: string; value: KnowledgePage<KnowledgeFolder> }>()
+  const [materialFolderPage, setMaterialFolderPage] = useState<{ key: string; selection: string; value: KnowledgePage<KnowledgeFolder> }>()
   const [folderError, setFolderError] = useState('')
   const [folderId, setFolderId] = useState<string | null | undefined>(null)
   const [expandedFolders, setExpandedFolders] = useState<ReadonlySet<string>>(new Set())
@@ -96,7 +97,7 @@ function KnowledgeDocumentsScope({ product, renderNavigation, onNavigate, refres
   }, [request, product.id])
   const denyAccess = useCallback(() => {
     accessOperation.current.abort()
-    setAccessDenied(true); setData(undefined); setReader(undefined); setLoading(false)
+    setAccessDenied(true); setData(undefined); setMaterialFolderPage(undefined); setReader(undefined); setLoading(false)
     setEditor(undefined); setConfirmation(undefined); setMove(undefined); setBatch(undefined)
     setUploadsOpen(false); setUploads([]); setSelectedIds(new Set())
   }, [])
@@ -105,7 +106,7 @@ function KnowledgeDocumentsScope({ product, renderNavigation, onNavigate, refres
   }, [denyAccess, t])
   useEffect(() => {
     accessOperation.current.abort(); accessOperation.current = new AbortController()
-    setData(undefined); setAccessDenied(false)
+    setAccessDenied(false)
   }, [refreshRevision])
   const availableData = accessDenied ? undefined : data
   const breadcrumbFolderId = reader ? reader.folderId : folderId
@@ -137,8 +138,11 @@ function KnowledgeDocumentsScope({ product, renderNavigation, onNavigate, refres
     return () => { controller.abort() }
   }, [canManage, recoverUpload, readAccessDenied, t, uploadRecoveryRevision, refreshRevision])
   const canOpenExternal = globalThis.location.protocol === 'dsh-app:' && globalThis.location.hostname === 'app'
-  const folderSelectionKey = JSON.stringify([folderId === undefined ? 'all-materials' : folderId, page, Boolean(search || format || status), folderRevision, refreshRevision])
+  // Refresh invalidates requests, while displayed rows remain scoped to their location and filters.
+  const materialSelectionKey = JSON.stringify([folderId === undefined ? 'all-materials' : folderId, page, search, format, status])
+  const folderSelectionKey = JSON.stringify([materialSelectionKey, folderRevision, refreshRevision])
   const materialFolders = accessDenied || materialFolderPage?.key !== folderSelectionKey ? undefined : materialFolderPage.value
+  const displayedFolders = accessDenied || materialFolderPage?.selection !== materialSelectionKey ? undefined : materialFolderPage.value
   useEffect(() => {
     if (!canManage) { setEditor(undefined); setConfirmation(undefined); setMove(undefined); setBatch(undefined); setUploadsOpen(false) }
   }, [canManage])
@@ -147,16 +151,16 @@ function KnowledgeDocumentsScope({ product, renderNavigation, onNavigate, refres
     if (accessDenied) return
     const controller = new AbortController()
     const signal = AbortSignal.any([controller.signal, accessOperation.current.signal])
-    setFolderError(''); setError(''); setData(undefined); setLoading(true)
+    setFolderError(''); setError(''); setLoading(true)
     if (folderId === undefined || search || format || status) {
-      setMaterialFolderPage({ key: folderSelectionKey, value: { items: [], page, size: 20, total: 0 } })
+      setMaterialFolderPage({ key: folderSelectionKey, selection: materialSelectionKey, value: { items: [], page, size: 20, total: 0 } })
     } else {
       void request('knowledge.folders.list', { knowledgeBaseId: product.id, parentId: folderId, page, size: 20 }, signal)
         .then((value) => {
           if (signal.aborted) return
           const result = knowledgePage(value, knowledgeFolder)
           if (result.items.some(folder => folder.parentId !== folderId || folder.id === folderId)) throw new Error('Invalid knowledge folder branch')
-          setMaterialFolderPage({ key: folderSelectionKey, value: result })
+          setMaterialFolderPage({ key: folderSelectionKey, selection: materialSelectionKey, value: result })
         }).catch((failure: unknown) => {
           if (signal.aborted) return
           setFolderError(productErrorMessage(failure, t, 'knowledgeFoldersFailed'))
@@ -165,7 +169,7 @@ function KnowledgeDocumentsScope({ product, renderNavigation, onNavigate, refres
         })
     }
     return () => { controller.abort() }
-  }, [request, product.id, folderSelectionKey, accessDenied, denyAccess, t])
+  }, [request, product.id, folderSelectionKey, materialSelectionKey, accessDenied, denyAccess, t])
   useEffect(() => {
     if (accessDenied || materialFolders === undefined) return
     const controller = new AbortController()
@@ -279,11 +283,11 @@ function KnowledgeDocumentsScope({ product, renderNavigation, onNavigate, refres
     setQuery(''); setSearch(''); setFormat(''); setStatus(''); setPage(1); setData(undefined)
   }
   const openReader = (row: KnowledgeDocument) => { if (!accessDenied) { setReader(row); onNavigate?.() } }
-  const materialTotal = (availableData?.total ?? 0) + (materialFolders?.total ?? 0)
+  const materialTotal = (availableData?.total ?? 0) + (displayedFolders?.total ?? 0)
   const pages = Math.max(1, Math.ceil(materialTotal / 20))
   const currentFolder = reader ? undefined : location.trail?.at(-1)
   const breadcrumbTrail = location.trail ?? []
-  const childFolders = materialFolders?.items ?? []
+  const childFolders = displayedFolders?.items ?? []
   const selectableDocuments = canManage ? (availableData?.items ?? []).filter(row => row.status !== 'DELETING' && !deleted.includes(row.id)) : []
   const selectedDocuments = selectableDocuments.filter(row => selectedIds.has(row.id))
   const allSelected = selectableDocuments.length > 0 && selectedDocuments.length === selectableDocuments.length
@@ -389,7 +393,7 @@ function KnowledgeDocumentsScope({ product, renderNavigation, onNavigate, refres
       <Tooltip label={t('refresh')}><button type="button" className={css.iconButton} disabled={loading || pending}
         aria-label={t('refresh')} onClick={() => {
           accessOperation.current.abort(); accessOperation.current = new AbortController()
-          setData(undefined); setAccessDenied(false); setRevision(value => value + 1)
+          setAccessDenied(false); setRevision(value => value + 1)
           setFolderRevision(value => value + 1)
           setUploadRecoveryRevision(value => value + 1)
         }}><IconRefreshOutlineRegular size={16} /></button></Tooltip>
@@ -446,8 +450,9 @@ function KnowledgeDocumentsScope({ product, renderNavigation, onNavigate, refres
           </tr>
         })}</tbody>
       </table>}
-      {!accessDenied && !folderError && (loading || materialFolders === undefined) && availableData === undefined && <p role="status" className={css.catalogStatus}>{t('loading')}</p>}
-      {!loading && !folderError && !error && availableData?.items.length === 0 && childFolders.length === 0
+      {!accessDenied && !folderError && (loading || materialFolders === undefined) && availableData === undefined
+        && <div className={css.knowledgeMaterialsEmpty}><ProductLoading label={t('loading')} /></div>}
+      {!folderError && !error && availableData?.items.length === 0 && displayedFolders?.total === 0
         && <div className={css.knowledgeMaterialsEmpty}>
           <IconFolderOpenOutlineRegular size={30} /><strong>{t(search || format || status ? 'noSearchResults' : 'knowledgeNoMaterials')}</strong>
           <span>{t(search || format || status ? 'knowledgeFilterEmptyHint'
@@ -488,7 +493,7 @@ function KnowledgeDocumentsScope({ product, renderNavigation, onNavigate, refres
           <nav className={css.knowledgeWorkspaceBreadcrumb} aria-label={t('knowledgeLocation')}>
             <button type="button" onClick={() => { selectFolder(null) }}>{product.name}</button>
             {breadcrumbFolderId === undefined && <><IconChevronRightOutlineRegular size={14} /><span aria-current={reader ? undefined : 'page'}>{t('knowledgeAllMaterials')}</span></>}
-            {location.loading && <span role="status">{t('loading')}</span>}
+            {location.loading && <ProductLoading label={t('loading')} />}
             {location.failure !== undefined && <span role="alert" className={css.catalogError}>{productErrorMessage(location.failure, t, 'knowledgeFoldersFailed')}</span>}
             {breadcrumbTrail.map(folder => <span key={folder.id} className={css.knowledgeBreadcrumbPart}>
               <IconChevronRightOutlineRegular size={14} /><button type="button" aria-current={!reader && folder.id === folderId ? 'page' : undefined}
@@ -663,12 +668,14 @@ function KnowledgeFolderBranch(props: {
   const request = useKnowledgeRequests()
   const [page, setPage] = useState(1)
   const [retry, setRetry] = useState(0)
-  const [result, setResult] = useState<KnowledgePage<KnowledgeFolder>>()
+  const [folderPage, setFolderPage] = useState<{ key: string; value: KnowledgePage<KnowledgeFolder> }>()
+  const selectionKey = JSON.stringify([baseId, parentId, page])
+  const result = folderPage?.key === selectionKey ? folderPage.value : undefined
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   useEffect(() => {
     const controller = new AbortController()
-    setLoading(true); setError(''); setResult(undefined)
+    setLoading(true); setError('')
     void request('knowledge.folders.list', { knowledgeBaseId: baseId, parentId, page, size: 20 }, controller.signal)
       .then((value) => {
         if (controller.signal.aborted) return
@@ -676,18 +683,18 @@ function KnowledgeFolderBranch(props: {
         const last = Math.max(1, Math.ceil(result.total / result.size))
         if (page > last) { setPage(last); return }
         if (result.items.some(folder => folder.parentId !== parentId || folder.id === parentId)) throw new Error('Invalid knowledge folder branch')
-        setResult(result)
+        setFolderPage({ key: selectionKey, value: result })
       }).catch((failure: unknown) => {
         if (controller.signal.aborted) return
         setError(productErrorMessage(failure, t, 'knowledgeFoldersFailed'))
         if (isKnowledgeAccessDenied(failure)) onAccessDenied(failure)
       }).finally(() => { if (!controller.signal.aborted) setLoading(false) })
     return () => { controller.abort() }
-  }, [request, baseId, parentId, page, retry, revision, onAccessDenied, t])
+  }, [request, baseId, parentId, page, selectionKey, retry, revision, onAccessDenied, t])
   const pages = Math.max(1, Math.ceil((result?.total ?? 0) / 20))
   return <div aria-busy={loading}>
-    {loading && <p role="status">{t('loading')}</p>}
-    {!loading && !error && result?.total === 0 && <p className={css.knowledgeFolderEmpty}>{t('knowledgeNoFolders')}</p>}
+    {loading && result === undefined && <ProductLoading label={t('loading')} />}
+    {!error && result?.total === 0 && <p className={css.knowledgeFolderEmpty}>{t('knowledgeNoFolders')}</p>}
     {error && <p role="alert" className={css.catalogError}>{error}<Button size="sm" onClick={() => { setRetry(value => value + 1) }}>{t('retry')}</Button></p>}
     {result?.items.map((folder) => {
       const expanded = props.expanded.has(folder.id)

@@ -5,6 +5,8 @@
 declare module '@deepseek-ai/dsh-client-ui-primitives' {
   import type { ButtonHTMLAttributes, InputHTMLAttributes, ReactElement, ReactNode } from 'react'
 
+  export function StateDot(props: { state: 'done' | 'warning' | 'ongoing' | 'error' | 'idle'; size?: number | undefined; className?: string | undefined; appearance?: 'dot' | 'step' }): ReactElement
+
   export type ButtonVariant = 'primary' | 'ghost' | 'outline' | 'toolbar'
   export function Button(props: {
     variant?: ButtonVariant

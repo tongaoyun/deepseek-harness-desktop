@@ -1,3 +1,4 @@
+import { z } from 'zod'
 import type { SettingsNamespace } from '@deepseek-ai/dsh-settings'
 import { validateAgencySettings, type AgencySettings } from './expert-library.ts'
 
@@ -16,11 +17,11 @@ function unwrapLive(value: unknown): unknown {
 }
 
 function stringList(value: unknown): string[] {
-  return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : []
+  return z.array(z.string()).default([]).parse(value)
 }
 
 function objectList(value: unknown): unknown[] {
-  return Array.isArray(value) ? value.filter(item => item !== null && typeof item === 'object') : []
+  return z.array(z.unknown()).default([]).parse(value)
 }
 
 /** 从插件配置读取启用名单。volatile 引用每次调用都重新取值，并复制冻结快照。 */

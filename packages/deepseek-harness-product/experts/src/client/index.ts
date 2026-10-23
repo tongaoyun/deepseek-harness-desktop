@@ -1,8 +1,7 @@
 import { Button, Input } from './plugin-ui.ts'
-import { SegmentedControl, SegmentedTabs } from '@deepseek-ai/dsh-client-ui-primitives'
+import { SegmentedControl, SegmentedTabs, StateDot } from '@deepseek-ai/dsh-client-ui-primitives'
 import { LibraryCard } from './library-ui.tsx'
 import { IconPlus } from './team-shared.tsx'
-import { Button as PrimitiveButton, type ButtonVariant } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { AgencyTeamsRemote } from './remote.ts'
 import { TeamsPanel, unwrap, type TeamRemote } from './team-ui.tsx'
 import { TEAM_CSS } from './team-style.ts'
@@ -20,14 +19,14 @@ import type { SessionId } from '@deepseek-ai/dsh-client-connection/client'
 import type { InputTriggerSource, ReferenceInsert, TokenSpan } from '@deepseek-ai/dsh-client-ui-input-trigger/client'
 // Type-only: 拉入 api-remotes 的 ctx.remote 合并（client 侧 TypertClientRemote）。
 import type {} from '@deepseek-ai/dsh-api-remotes/client'
-import type { PropsLocale, TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
+import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type { RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
 // Type-only: 拉入 ctx.locale 的 Context merge（跨插件协作只走服务，不做值导入）。
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
-import { ZH_DIVISION, EN_DIVISION } from '../names.ts'
+import { EXPERT_DIVISION_ORDER, ZH_DIVISION, EN_DIVISION } from '../names.ts'
 import { EXPERT_AVATAR_URLS } from './avatars.ts'
 import { zh, en, type AgencyKey } from './locales.ts'
 import { TYPERT_REMOTE, type AgencyAgentsEnabledState, type AgencyAgentsPrompt } from './remote.ts'
@@ -108,22 +107,17 @@ function Search(props: LineIconProps): React.ReactElement {
 type ClientContext = CordisClientContext
 
 
-const DIVISION_ORDER = [
-  'company', 'design', 'engineering', 'finance', 'game-development', 'gis',
-  'healthcare', 'hr', 'legal', 'marketing', 'paid-media', 'product', 'project-management',
-  'research', 'sales', 'security', 'spatial-computing', 'specialized', 'support', 'testing',
-  'supply-chain', 'academic',
-]
+const DIVISION_ORDER = EXPERT_DIVISION_ORDER
 
 type AvatarCategory = 'development' | 'design' | 'product' | 'research' | 'writing'
 
-/** 头像只按视觉领域分池，设置页筛选始终使用完整的 22 个原始分区。 */
+/** 头像只按视觉领域分池，目录筛选使用企业业务分类。 */
 const AVATAR_CATEGORY_DIVISIONS: Readonly<Record<AvatarCategory, ReadonlySet<string>>> = {
-  development: new Set(['engineering', 'game-development', 'gis', 'security', 'spatial-computing', 'testing']),
-  design: new Set(['design']),
-  product: new Set(['company', 'hr', 'product', 'project-management', 'sales', 'supply-chain', 'support']),
-  research: new Set(['academic', 'finance', 'healthcare', 'legal', 'research']),
-  writing: new Set(['marketing', 'paid-media', 'specialized']),
+  development: new Set(['engineering', 'testing']),
+  design: new Set(['product', 'catalog']),
+  product: new Set(['orders', 'supply-chain', 'warehouse', 'logistics', 'marketplace', 'support', 'company']),
+  research: new Set(['finance', 'analytics']),
+  writing: new Set(['marketing', 'specialized']),
 }
 
 interface ExpertView {
@@ -138,6 +132,7 @@ interface ExpertView {
   readonly descriptionEn: string
   readonly conflict?: boolean
   readonly company?: boolean
+  readonly teamMember?: boolean
   readonly custom?: boolean
   readonly avatar?: number
 }
@@ -219,7 +214,7 @@ export function filterExperts<T extends ExpertSearchable>(
   return list.filter((expert) => (division === '' || expert.division === division) && matchExpertQuery(expert, options.query ?? ''))
 }
 
-/** 设置页分类筛选值：空值表示全部，其余完整保留所有原始分区。 */
+/** 目录分类筛选值：空值表示全部，企业分类按业务流程排列。 */
 export function expertDivisionFilterValues(): string[] {
   return ['', ...DIVISION_ORDER]
 }
@@ -335,7 +330,7 @@ export function inputTriggerSourceId(division: string): string {
   return `${PLUGIN_ID}:${division}`
 }
 
-/** 专家引用使用宿主内置代理图标。宿主不认识 appearance 时会忽略该字段，仍显示默认 @ 标记。 */
+/** 专家引用使用宿主内置代理图标。 */
 export interface ExpertReference extends ReferenceInsert {
   readonly appearance: 'session'
 }
@@ -350,7 +345,6 @@ export function buildExpertReference(
     source: inputTriggerSourceId(expert.division),
     ref: expert.slug,
     label: name,
-    // 0.2.0-rc 的输入触发类型尚未声明该字段；认识它的宿主渲染为内置代理图标。
     appearance: 'session',
     clipboardText: formatExpertMentionInsertion(name),
   }
@@ -389,6 +383,7 @@ export const SETTINGS_CSS = `
 .aag-settings-links{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 .aag-settings-links>span[data-mpi-check]{display:inline-flex;align-items:center}
 .aag-title{margin:0;font-size:20px;line-height:28px;font-weight:650;letter-spacing:-.2px}
+.aag-read-loading{display:flex;align-items:center;min-height:40px;color:var(--dsw-alias-label-tertiary)}
 .aag-note{overflow:hidden;color:var(--dsw-alias-label-secondary);font-size:12px;line-height:18px;text-overflow:ellipsis;white-space:nowrap}
 .aag-error{color:var(--dsw-alias-state-error-primary);font-size:13px;line-height:20px}
 .aag-filters{display:flex;align-items:flex-end;gap:10px;width:100%;min-width:0;max-width:100%}
@@ -574,16 +569,14 @@ export interface ReferenceInsertionTarget {
 
 /** 会话列表快照里能用来回退「当前主视图」的字段。 */
 export interface ReferenceSessionListSnapshot {
-  /** 0.2.0-rc.1 / 0.2.0-rc.2：全局当前会话。0.2.1-rc.1 已删除。 */
-  readonly current?: SessionId
-  /** 0.2.1-rc.1：主视图由 `retainedBy.mainView` 标记，不再有 `current`。 */
+  /** 主视图由 `retainedBy.mainView` 标记，不再有 `current`。 */
   readonly byId?: Readonly<Record<string, {
     readonly id?: SessionId
     readonly retainedBy?: { readonly mainView?: number }
   }>>
 }
 
-/** 从当前或指定会话取得输入机；兼容未向工具栏 slot 注入 sessionId 的宿主版本。 */
+/** 取得指定会话或主视图的输入机。 */
 export interface ReferenceSessionAccess {
   readonly list?: {
     getSnapshot(): ReferenceSessionListSnapshot
@@ -592,14 +585,13 @@ export interface ReferenceSessionAccess {
   binding?(id: SessionId): { readonly ctx: CordisClientContext } | undefined
 }
 
-/** slot 未给 sessionId 时：0.2.0-rc.1 / 0.2.0-rc.2 认 `current`，0.2.1-rc.1 按主视图 retain 反查。 */
+/** 全局目录入口没有 sessionId 时，按主视图 retain 查找目标。 */
 export function resolveTargetSessionId(
   sessions: ReferenceSessionAccess,
   sessionId?: SessionId,
 ): SessionId | undefined {
   if (sessionId !== undefined) return sessionId
   const snapshot = sessions.list?.getSnapshot()
-  if (snapshot?.current !== undefined) return snapshot.current
   if (snapshot?.byId === undefined) return undefined
   const match = Object.entries(snapshot.byId).find(([, session]) => (session.retainedBy?.mainView ?? 0) > 0)
   return match === undefined ? undefined : match[1].id ?? match[0] as SessionId
@@ -834,7 +826,7 @@ export function AgentsButton(props: ButtonProps): React.ReactElement {
     }
   }
 
-  const matches = sortExpertsByEnabled(filterExperts(catalog.experts, { query })
+  const matches = sortExpertsByEnabled(filterExperts(catalog.experts.filter(expert => !expert.teamMember), { query })
     .filter(expert => normalizeExpertQuery(query) !== '' || catalog.enabled.has(expert.slug)), catalog.enabled)
   const searching = normalizeExpertQuery(query) !== ''
   if (searching) matches.sort((a, b) => {
@@ -976,7 +968,9 @@ function ExpertCardWindow(props: {
 
 function ExpertCardsSettings(props: PropsLocale<'agency'> & {
   sharedHeader?: boolean
-  onSummary?: (value: { total: number; enabled: number }) => void
+  source: 'custom' | 'company'
+  onSourceChange: (source: 'custom' | 'company') => void
+  onSummary?: (value: { source: 'custom' | 'company'; total: number; enabled: number } | null) => void
   remote: AgencyAgentsRemoteApi
   getActive: () => 'zh' | 'en'
   onEnabledChange?: (enabled: ReadonlySet<string>) => void
@@ -986,8 +980,10 @@ function ExpertCardsSettings(props: PropsLocale<'agency'> & {
   React.useEffect(() => () => { reloadEpoch.current++ }, [props.remote])
   const [state, setState] = React.useState<EnabledState | null>(cached.revision < 0 ? null : cached)
   React.useEffect(() => {
-    props.onSummary?.({ total: state?.experts.length ?? 0, enabled: state?.enabled.size ?? 0 })
-  }, [state?.experts.length, state?.enabled.size, props.onSummary])
+    if (state === null) { props.onSummary?.(null); return }
+    const mine = state.experts.filter(expert => !expert.teamMember && (props.source === 'company' ? expert.company : expert.custom)) ?? []
+    props.onSummary?.({ source: props.source, total: mine.length, enabled: mine.filter(expert => state?.enabled.has(expert.slug)).length })
+  }, [state?.experts, state?.enabled, props.source, props.onSummary])
   const [initialOrder, setInitialOrder] = React.useState<ReadonlyArray<string> | null>(cached.revision < 0 ? null : sortExpertsByEnabled(cached.experts, cached.enabled).map(expert => expert.slug))
   const [error, setError] = React.useState<string | null>(null)
   const [query, setQuery] = React.useState('')
@@ -997,7 +993,7 @@ function ExpertCardsSettings(props: PropsLocale<'agency'> & {
   const promptLock = React.useRef(false)
   const saving = React.useRef(false)
   const [isSaving, setIsSaving] = React.useState(false)
-  const [source, setSource] = React.useState<'custom' | 'company'>('company')
+  const { source, onSourceChange } = props
   const [editor, setEditor] = React.useState<{ expert?: CustomExpertInput; enabled: boolean; revision: number } | null>(null)
   const [deleting, setDeleting] = React.useState<ExpertView | null>(null)
   const [deleteError, setDeleteError] = React.useState<string | null>(null)
@@ -1144,58 +1140,47 @@ function ExpertCardsSettings(props: PropsLocale<'agency'> & {
         if (request === reloadEpoch.current) setError(cause instanceof Error ? cause.message : String(cause))
       })
     } }, props.t('company.retry'))))
-  if (state === null) {
-    nodes.push(React.createElement('div', { key: 'loading', className: 'aag-note' }, props.t('settings.loading')))
-  } else {
+  {
+    const experts = state?.experts ?? []
+    const enabled = state?.enabled ?? new Set<string>()
     const ordered = initialOrder === null
-      ? sortExpertsByEnabled(state.experts, state.enabled)
-      : sortExpertsByOrder(state.experts, initialOrder)
-    const filtered = filterExperts(ordered.filter(expert => source === 'company' ? expert.company === true : expert.custom), { query, division })
-      .filter(expert => status === '' || state.enabled.has(expert.slug) === (status === 'enabled'))
-    const enabledCount = state.enabled.size
-    const total = state.experts.length
-    if (state.experts.some(expert => expert.conflict)) nodes.push(React.createElement('div', { key: 'conflicts', className: 'aag-error', role: 'alert' }, props.t('custom.nameConflictHint')))
+      ? sortExpertsByEnabled(experts, enabled)
+      : sortExpertsByOrder(experts, initialOrder)
+    const filtered = filterExperts(ordered.filter(expert => !expert.teamMember && (source === 'company' ? expert.company === true : expert.custom)), { query, division })
+      .filter(expert => status === '' || enabled.has(expert.slug) === (status === 'enabled'))
+    const enabledCount = enabled.size
+    const total = experts.length
+    if (experts.some(expert => expert.conflict)) nodes.push(React.createElement('div', { key: 'conflicts', className: 'aag-error', role: 'alert' }, props.t('custom.nameConflictHint')))
     const hasFilter = normalizeExpertQuery(query) !== '' || division !== '' || status !== ''
-    const resetFilters = (): void => { setSource('company'); setQuery(''); setDivision(''); setStatus('') }
+    const resetFilters = (): void => { setQuery(''); setDivision(''); setStatus('') }
     if (!props.sharedHeader) nodes.push(React.createElement('div', { key: 'toolbar', className: 'aag-toolbar' },
       React.createElement('div', { className: 'aag-title-row' },
         React.createElement('h2', { className: 'aag-title' }, props.t('settings.title')),
         null),
       React.createElement('div', { style: { display: 'flex', gap: '8px', alignItems: 'center' } },
         React.createElement('span', { className: 'aag-header-stat' },
-          React.createElement('strong', null, total),
+          React.createElement('strong', null, state === null ? '—' : total),
           props.t(total === 1 ? 'summary.total.one' : 'summary.total.other', { count: total })),
         React.createElement('span', { className: 'aag-header-stat' },
           props.t('summary.enabledPrefix'),
-          React.createElement('strong', null, enabledCount)))))
-    const filterActions = React.createElement('div', { className: 'aag-filter-actions' },
+          React.createElement('strong', null, state === null ? '—' : enabledCount)))))
+    const filterActions = source === 'custom' ? React.createElement('div', { className: 'aag-filter-actions' },
       React.createElement(Button, {
-        className: 'aag-icon-btn',
+        type: 'primary',
         size: 'small',
-        disabled: isSaving,
-        'aria-label': props.t('custom.new'),
-        title: props.t('custom.new'),
-        icon: React.createElement(IconPlus, { 'aria-hidden': true }),
+        disabled: isSaving || state === null,
+        icon: React.createElement(IconPlus, { size: 16, 'aria-hidden': true }),
         onClick: () => openEditor(),
-      }))
+      }, props.t('custom.new'))) : null
     if (notice !== null) nodes.push(React.createElement('div', { key: 'notice', className: 'aag-custom-notice', role: 'status' }, notice))
     nodes.push(React.createElement('div', { key: 'filters', className: 'aag-filters aag-card-filters' },
-      React.createElement('div', { className: 'aag-field aag-field-source' },
-        React.createElement(CategorySelect, {
-          id: 'aag-filter-source', value: source, label: props.t('settings.filter.source'),
-          onChange: (value) => setSource(value === 'custom' ? 'custom' : 'company'),
-          options: [
-            { value: 'company', label: props.t('settings.source.company') },
-            { value: 'custom', label: props.t('custom.source') },
-          ],
-        })),
       React.createElement('div', { className: 'aag-field aag-field-category' },
         React.createElement(CategorySelect, {
           id: 'aag-filter-category',
           value: division,
           label: props.t('settings.filter.category'),
           onChange: setDivision,
-          options: [...new Set([...expertDivisionFilterValues(), ...state.experts.map(expert => expert.division)])].map((value) => ({
+          options: [...new Set([...expertDivisionFilterValues(), ...experts.map(expert => expert.division)])].map((value) => ({
             value,
             label: value === '' ? props.t('settings.filter.allCategories') : inputTriggerSourceName(value, props.getActive()),
           })),
@@ -1219,16 +1204,17 @@ function ExpertCardsSettings(props: PropsLocale<'agency'> & {
             onChange: (event: React.ChangeEvent<HTMLInputElement>) => setQuery(event.currentTarget.value),
           }))),
       filterActions))
-    if (filtered.length === 0) {
+    if (state === null && error === null) {
+      nodes.push(React.createElement('div', { key: 'loading', role: 'status', 'aria-label': props.t('settings.loading'), className: 'aag-read-loading' }, React.createElement(StateDot, { state: 'ongoing', size: 14 })))
+    } else if (state !== null && filtered.length === 0) {
       nodes.push(React.createElement('div', { key: 'empty', className: 'aag-empty' },
-        React.createElement('div', null, source === 'custom' && !hasFilter ? props.t('custom.emptyTitle') : props.t('settings.empty', { all: props.t('settings.filter.allCategories') })),
+        React.createElement('div', null, !hasFilter ? props.t(source === 'custom' ? 'custom.emptyTitle' : 'settings.market.empty') : props.t('settings.empty', { all: props.t('settings.filter.allCategories') })),
         source === 'custom' && !hasFilter ? React.createElement('p', { className: 'aag-note' }, props.t('custom.emptyHint')) : null,
-        source === 'custom' && !hasFilter ? React.createElement(Button, { type: 'primary', onClick: () => openEditor() }, props.t('custom.new')) : null,
         hasFilter ? React.createElement(Button, { onClick: resetFilters }, props.t('settings.empty.reset')) : null))
-    } else {
+    } else if (state !== null) {
       nodes.push(React.createElement(ExpertCardWindow, {
         key: 'cards', items: filtered, resetKey: `${source}\0${division}\0${status}\0${query}`, render: (expert: ExpertView) => {
-        const enabled = state.enabled.has(expert.slug)
+        const isEnabled = enabled.has(expert.slug)
         const avatar = EXPERT_AVATAR_URLS[expert.custom ? expert.avatar ?? 0 : expertAvatarIndexForDivision(expert.slug, expert.division)] ?? EXPERT_AVATAR_URLS[0]
         return React.createElement(LibraryCard, {
           key: expert.slug,
@@ -1240,12 +1226,12 @@ function ExpertCardsSettings(props: PropsLocale<'agency'> & {
             expert.company ? React.createElement('span', { className: 'aag-custom-badge' }, props.t('settings.source.company')) : expert.custom ? React.createElement('span', { className: 'aag-custom-badge' }, props.t('custom.source')) : null
           ),
           description: displayDescription(expert, props.getActive()),
-          enabled, disabled: isSaving || expert.conflict === true,
+          enabled: isEnabled, disabled: isSaving || expert.conflict === true,
           enabledLabel: props.t('settings.enabled'), disabledLabel: props.t('settings.disabled'),
           toggle: () => toggle(expert.slug),
           moreItems: [
-            { id: 'edit', label: props.t(expert.custom ? 'custom.edit' : 'custom.copy'), icon: React.createElement(expert.custom ? EditIcon : Copy, { size: 16, strokeWidth: 1.7, 'aria-hidden': true }), disabled: isSaving, onSelect: () => openEditor(expert) },
-            ...(expert.custom && 'dshDesktop' in globalThis ? [{ id: 'submit-company', label: props.t('custom.submitCompany'), disabled: isSaving, onSelect: () => {
+            { id: 'edit', label: props.t(expert.custom ? 'custom.edit' : 'custom.copy'), icon: React.createElement(expert.custom ? EditIcon : Copy, { size: 16, strokeWidth: 1.7, 'aria-hidden': true }), disabled: isSaving || state === null, onSelect: () => openEditor(expert) },
+            ...(expert.custom && 'dshDesktop' in globalThis ? [{ id: 'submit-company', label: props.t('custom.submitCompany'), disabled: isSaving || state === null, onSelect: () => {
               document.dispatchEvent(new CustomEvent('dsh:company-content-submit', { cancelable: true, detail: {
                 kind: 'expert', name: expert.name, prepare: async (signal: AbortSignal) => {
                   const result = await props.remote.getCustomExpert(expert.slug)
@@ -1259,7 +1245,7 @@ function ExpertCardsSettings(props: PropsLocale<'agency'> & {
                 },
               } }))
             } }] : []),
-            ...(expert.custom ? [{ id: 'delete', label: props.t('custom.delete'), icon: React.createElement(TrashIcon, { size: 16, strokeWidth: 1.7, 'aria-hidden': true }), danger: true, disabled: isSaving, onSelect: () => { setDeleting(expert); setDeleteError(null) } }] : []),
+            ...(expert.custom ? [{ id: 'delete', label: props.t('custom.delete'), icon: React.createElement(TrashIcon, { size: 16, strokeWidth: 1.7, 'aria-hidden': true }), danger: true, disabled: isSaving || state === null, onSelect: () => { setDeleting(expert); setDeleteError(null) } }] : []),
           ],
           actions: React.createElement('button', { type: 'button', className: 'aag-card-action', title: props.t('settings.viewPromptTitle'), 'aria-label': props.t('settings.viewPromptTitle'), 'aria-haspopup': 'dialog', onClick: (event: React.MouseEvent<HTMLButtonElement>) => viewPrompt(expert, event.currentTarget) },
             React.createElement(Eye, { size: 18, strokeWidth: 1.7, 'aria-hidden': true }), React.createElement('span', { className: 'aag-card-action-text' }, props.t('settings.viewPrompt'))),
@@ -1270,9 +1256,9 @@ function ExpertCardsSettings(props: PropsLocale<'agency'> & {
   return React.createElement('section', { className: 'aag-section', id: 'aag-expert-source-panel' }, nodes,
     editor === null || state === null ? null : React.createElement(CustomExpertEditor, {
       ...editor, remote: props.remote, t: props.t, locale: props.getActive(),
-      divisions: [...new Set([...Object.keys(ZH_DIVISION), ...state.experts.map(expert => expert.division)])],
+      divisions: [...new Set([...EXPERT_DIVISION_ORDER, ...state.experts.map(expert => expert.division)])],
       onClose: () => setEditor(null), onSaved: (catalog: CatalogSnapshot) => {
-        accept(catalog); setEditor(null); setSource('custom'); setQuery(''); setDivision(''); setStatus(''); setNotice(props.t('custom.saved'))
+        accept(catalog); setEditor(null); onSourceChange('custom'); setQuery(''); setDivision(''); setStatus(''); setNotice(props.t('custom.saved'))
       },
     }),
     deleting === null ? null : React.createElement(CustomDeleteDialog, {
@@ -1283,35 +1269,42 @@ function ExpertCardsSettings(props: PropsLocale<'agency'> & {
     }))
 }
 
-export function AgencySettingsPanel(props: React.ComponentProps<typeof ExpertCardsSettings> & { prepareTeamSelection(): (team: ExpertTeam, example?: string) => boolean | Promise<boolean> }) {
+export function AgencySettingsPanel(props: Omit<React.ComponentProps<typeof ExpertCardsSettings>, 'source' | 'onSourceChange'> & { prepareTeamSelection(): (team: ExpertTeam, example?: string) => boolean | Promise<boolean> }) {
   const tx = (key: string) => teamText(props.getActive(), key)
+  const [source, setSource] = React.useState<'custom' | 'company'>('company')
   const [view, setView] = React.useState<'experts' | 'teams'>('experts')
-  const [expertSummary, setExpertSummary] = React.useState({ total: 0, enabled: 0 })
-  const [teamSummary, setTeamSummary] = React.useState({ total: 0, enabled: 0 })
-  const tabLabel = (icon: React.ReactElement, name: string, total: number, enabled: number) => React.createElement(React.Fragment, null,
+  const [expertSummary, setExpertSummary] = React.useState<{ source: 'custom' | 'company'; total: number; enabled: number } | null>(null)
+  const [teamSummary, setTeamSummary] = React.useState<{ source: 'custom' | 'company'; total: number; enabled: number } | null>(null)
+  const tabLabel = (icon: React.ReactElement, name: string, total: number | undefined, enabled: number | undefined) => React.createElement(React.Fragment, null,
     icon,
     name,
-    React.createElement('span', { className: 'aag-tab-count', 'aria-hidden': true }, React.createElement('strong', null, total)),
-    React.createElement('span', { className: 'aag-tab-count', 'aria-hidden': true }, props.t('summary.enabledPrefix'), React.createElement('strong', null, enabled)),
+    React.createElement('span', { className: 'aag-tab-count', 'aria-hidden': true }, React.createElement('strong', null, total ?? '—')),
+    React.createElement('span', { className: 'aag-tab-count', 'aria-hidden': true }, props.t('summary.enabledPrefix'), React.createElement('strong', null, enabled ?? '—')),
   )
   const navigation = React.createElement(SegmentedTabs, {
     className: 'aag-library-tabs', label: tx('专家库类型'), value: view,
     onChange: (value) => { if (value === 'experts' || value === 'teams') setView(value) },
     items: [
-      { value: 'experts' as const, id: 'aag-library-tab-experts', panelId: 'aag-library-panel-experts', label: tabLabel(expertIcon(), tx('专家'), expertSummary.total, expertSummary.enabled) },
-      { value: 'teams' as const, id: 'aag-library-tab-teams', panelId: 'aag-library-panel-teams', label: tabLabel(teamTabIcon(), tx('专家团'), teamSummary.total, teamSummary.enabled) },
+      { value: 'experts' as const, id: 'aag-library-tab-experts', panelId: 'aag-library-panel-experts', label: tabLabel(expertIcon(), tx('专家'), expertSummary?.source === source ? expertSummary.total : undefined, expertSummary?.source === source ? expertSummary.enabled : undefined) },
+      { value: 'teams' as const, id: 'aag-library-tab-teams', panelId: 'aag-library-panel-teams', label: tabLabel(teamTabIcon(), tx('专家团'), teamSummary?.source === source ? teamSummary.total : undefined, teamSummary?.source === source ? teamSummary.enabled : undefined) },
     ],
   })
   // 两个名册都保持挂载，切换时不丢失筛选，也不重新等待第一次加载。
   return React.createElement('section', { className: 'aag-section aag-library-shell' },
     React.createElement('header', { className: 'aag-toolbar' }, React.createElement('div', { className: 'aag-title-row' },
       React.createElement('h2', { className: 'aag-title' }, props.t('settings.title')), null)),
-    React.createElement('div', { className: 'aag-library-navigation' }, navigation),
-    React.createElement('div', { id: 'aag-library-panel-experts', hidden: view !== 'experts' }, React.createElement(ExpertCardsSettings, { ...props, sharedHeader: true, onSummary: setExpertSummary })),
-    React.createElement('div', { id: 'aag-library-panel-teams', hidden: view !== 'teams' }, React.createElement(TeamLocaleContext.Provider, { value: props.getActive() }, React.createElement(TeamsPanel, {
-      remote: props.remote as TeamRemote, sharedHeader: true, onSummary: setTeamSummary, prepareSelect: props.prepareTeamSelection,
-      onExpertsChanged: () => { void readEnabled(props.remote).then(value => props.onEnabledChange?.(value.enabled)) },
-    }))))
+    React.createElement('p', { className: 'aag-note' }, props.t('settings.market.hint')),
+    React.createElement(SegmentedTabs, { className: 'aag-market-tabs', label: props.t('settings.scope'), value: source, onChange: (value) => { if (value === 'company' || value === 'custom') setSource(value) }, items: [
+      { value: 'company', id: 'aag-tab-market', panelId: 'aag-catalog-panel', label: props.t('settings.source.company') },
+      { value: 'custom', id: 'aag-tab-mine', panelId: 'aag-catalog-panel', label: props.t('custom.source') },
+    ] }),
+    React.createElement('div', { id: 'aag-catalog-panel', role: 'tabpanel', 'aria-labelledby': source === 'company' ? 'aag-tab-market' : 'aag-tab-mine' },
+      React.createElement('div', { className: 'aag-library-navigation' }, navigation),
+      React.createElement('div', { id: 'aag-library-panel-experts', role: 'tabpanel', 'aria-labelledby': 'aag-library-tab-experts', hidden: view !== 'experts' }, React.createElement(ExpertCardsSettings, { ...props, source, onSourceChange: (next) => { setSource(next); setView('experts') }, sharedHeader: true, onSummary: setExpertSummary })),
+      React.createElement('div', { id: 'aag-library-panel-teams', role: 'tabpanel', 'aria-labelledby': 'aag-library-tab-teams', hidden: view !== 'teams' }, React.createElement(TeamLocaleContext.Provider, { value: props.getActive() }, React.createElement(TeamsPanel, {
+        remote: props.remote as TeamRemote, source, active: view === 'teams', onSaved: () => setSource('custom'), sharedHeader: true, onSummary: setTeamSummary, prepareSelect: props.prepareTeamSelection,
+        onExpertsChanged: () => { void readEnabled(props.remote).then(value => props.onEnabledChange?.(value.enabled)) },
+      })))))
 }
 export const inject = ['slots', 'inputTriggers', 'locale', 'remote', 'sessions', 'conversation']
 
@@ -1504,7 +1497,7 @@ export async function apply(ctx: ClientContext): Promise<() => Promise<void>> {
           ...(i === 0 ? { warm: () => refreshEnabledForMentions() } : {}),
           lexicon: () => enabledForMentions === undefined
             ? undefined
-            : buildExpertMentionLexicon(catalogState(remote).experts.filter((expert) => expert.division === div), enabledForMentions, getActive()),
+            : buildExpertMentionLexicon(catalogState(remote).experts.filter((expert) => !expert.teamMember && expert.division === div), enabledForMentions, getActive()),
           subscribeLexicon: (_session, listener) => {
             lexiconListeners.add(listener)
             return () => { lexiconListeners.delete(listener) }

@@ -1,15 +1,17 @@
-import { adoptSharedRevision, catalogState } from './catalog.ts';
+import { StateDot } from '@deepseek-ai/dsh-client-ui-primitives';
+import { adoptSharedRevision, catalogState, refreshCatalog, subscribeCatalog } from './catalog.ts';
 import { acceptTeams, refreshTeams, subscribeTeams, teamState } from './team-cache.ts';
 import { useTeamLocale, localizedExperts } from './team-locale.ts';
 import { LibraryCard } from './library-ui.tsx';
 import { Button, Input } from './plugin-ui.ts';
 import { CategorySelect } from './category-select.ts';
 import React from 'react';
-import { effectiveCoordinator, type ExpertTeam, type TeamInput, type TeamSnapshot, } from '../team-contract.ts';
+import { effectiveCoordinator, type ExpertTeam, type TeamInput, type TeamSnapshot, type TeamEngineStatus, } from '../team-contract.ts';
+import { TeamExecution } from './team-execution.tsx';
 import type { ExpertSummary } from '../expert-contract.ts';
 import type { AgencyCatalogRemote, AgencyTeamsRemote } from './remote.ts';
 import { TeamEditor } from './team-editor.tsx';
-import { TeamDialog, TeamConfirm, TeamAvatars, MemberList, Avatar, teamIssue, IconUsers, IconFileText, IconPlus, IconArrowRight, IconBulb, IconCopy, IconSend, IconSearch, IconEye, IconTrash, } from './team-shared.tsx';
+import { TeamDialog, TeamConfirm, TeamAvatars, MemberList, teamIssue, IconUsers, IconFileText, IconPlus,  IconBulb, IconCopy, IconSend, IconSearch, IconEye, IconTrash, } from './team-shared.tsx';
 export { TEAM_CSS } from './team-style.ts';
 export type TeamRemote = AgencyCatalogRemote & AgencyTeamsRemote;
 export async function unwrap<T>(promise: Promise<{
@@ -29,6 +31,7 @@ export async function unwrap<T>(promise: Promise<{
 export function TeamDetails(props: {
     team: ExpertTeam;
     experts: readonly ExpertSummary[];
+    engine?: TeamEngineStatus | undefined;
     close(): void;
     onSelect?(example?: string): void;
     onCopy?(): void;
@@ -52,7 +55,7 @@ export function TeamDetails(props: {
             </div>)}
           </div>
           <p>
-            {tx("我的专家团")} ·{' '}
+            {tx(props.team.company ? "市场专家团" : "我的专家团")} ·{' '}
             {props.team.members.length}{tx("位专家")}</p>
           <div className="agt-row">
             {props.onSelect && (<Button type="primary" onClick={() => props.onSelect?.()}>
@@ -64,6 +67,7 @@ export function TeamDetails(props: {
         </div>
       </header>
       <p className="agt-description">{props.team.description}</p>
+      <TeamExecution engine={props.engine} locale={locale}/>
       <section>
         <h3>
           <IconBulb />{tx("团队帮你做")}</h3>
@@ -104,23 +108,29 @@ export function TeamDetails(props: {
 }
 export function TeamsPanel(props: {
     remote: TeamRemote;
+    source?: 'company' | 'custom';
+    active?: boolean;
+    onSaved?(): void;
     prepareSelect?(): (team: ExpertTeam, example?: string) => boolean | Promise<boolean>;
     onSelect?(team: ExpertTeam, example?: string): boolean | Promise<boolean>;
     onExpertsChanged?(): void;
     headerLinks?: React.ReactNode;
     sharedHeader?: boolean;
     onSummary?: (value: {
+        source: 'company' | 'custom';
         total: number;
         enabled: number;
-    }) => void;
+    } | null) => void;
     title?: string;
 }) {
     const { locale, tx } = useTeamLocale();
 
     const [snapshot, setSnapshot] = React.useState<TeamSnapshot | null>(() => teamState(props.remote));
     React.useEffect(() => {
-        props.onSummary?.({ total: snapshot?.teams.length ?? 0, enabled: snapshot?.enabledTeams.length ?? 0 });
-    }, [snapshot?.teams.length, snapshot?.enabledTeams.length, props.onSummary]);
+        if (snapshot === null) { props.onSummary?.(null); return; }
+        const teams = snapshot.teams.filter(team => Boolean('company' in team && team.company) === (props.source === 'company')) ?? [];
+        props.onSummary?.({ source: props.source === 'company' ? 'company' : 'custom', total: teams.length, enabled: teams.filter(team => snapshot?.enabledTeams.includes(team.id)).length });
+    }, [snapshot, props.source, props.onSummary]);
     const [rawExperts, setExperts] = React.useState<ExpertSummary[]>(() => {
         const catalog = catalogState(props.remote);
         return catalog.revision < 0 ? [] : [...catalog.experts];
@@ -162,6 +172,18 @@ export function TeamsPanel(props: {
             unsubscribe();
         };
     }, [props.remote]);
+    React.useEffect(() => subscribeCatalog(props.remote, () => {
+        const known = catalogState(props.remote);
+        if (known.revision >= 0) setExperts([...known.experts]);
+    }), [props.remote]);
+    React.useEffect(() => {
+        if (!props.active) return;
+        let live = true;
+        void refreshCatalog(props.remote, props.source === 'company').then(() => {
+            if (live) return load();
+        }).catch(cause => { if (live) setError(cause instanceof Error ? cause.message : tx("加载失败。")); });
+        return () => { live = false; };
+    }, [props.active, props.source, props.remote]);
     const load = async () => {
         const generation = ++sequence.current;
         try {
@@ -244,7 +266,7 @@ export function TeamsPanel(props: {
     };
     const copy = (team: ExpertTeam) => {
         setDetails(null);
-        const { id: _id, ...value } = team;
+        const { id: _id, company: _company, ...value } = team;
         setEditor({
             value: {
                 ...structuredClone(value),
@@ -254,7 +276,7 @@ export function TeamsPanel(props: {
             revision: snapshot!.revision,
         });
     };
-    const filtered = snapshot?.teams.filter((team) => (!status ||
+    const filtered = snapshot?.teams.filter((team) => Boolean('company' in team && team.company) === (props.source === 'company') && (!status ||
             snapshot.enabledTeams.includes(team.id) === (status === 'enabled')) &&
         `${team.name} ${team.description} ${team.members.map((m) => experts.find((e) => e.slug === m.expertSlug)?.name ?? '').join(' ')}`
             .toLowerCase()
@@ -270,8 +292,8 @@ export function TeamsPanel(props: {
           {!props.sharedHeader && <h2 className="aag-title">{props.title ?? tx("专家团")}</h2>}
           {!props.sharedHeader && props.headerLinks}
           <span className="aag-header-stat">
-            <strong>{snapshot?.teams.length ?? 0}</strong>{tx("个专家团")}</span>
-          <span className="aag-header-stat">{tx("已启用")}<strong>{snapshot?.enabledTeams.length ?? 0}</strong>
+            <strong>{snapshot?.teams.length ?? '—'}</strong>{tx("个专家团")}</span>
+          <span className="aag-header-stat">{tx("已启用")}<strong>{snapshot?.enabledTeams.length ?? '—'}</strong>
           </span>
         </div>
       </div>}
@@ -289,27 +311,25 @@ export function TeamsPanel(props: {
             <Input id="aag-team-search" className="aag-search" aria-label={tx("搜索专家团")} placeholder={tx("搜索团队、用途或成员")} value={query} autoComplete="off" spellCheck={false} prefix={<IconSearch size={16}/>} onChange={(event) => setQuery(event.target.value)}/>
           </div>
         </div>
-        <div className="aag-filter-actions">
+        {props.source !== 'company' && <div className="aag-filter-actions">
           <Button
-            className="aag-icon-btn"
+            type="primary"
             size="small"
             disabled={!snapshot || busy}
-            aria-label={tx("新建专家团")}
-            title={tx("新建专家团")}
-            icon={<IconPlus />}
+            icon={<IconPlus size={16} aria-hidden="true" />}
             onClick={() => setEditor({ enabled: false, revision: snapshot!.revision })}
-          />
-        </div>
+          >{tx("新建专家团")}</Button>
+        </div>}
       </div>
       {error && (<div className="aag-error" role="alert">
           {error}
           <button type="button" onClick={() => void load()}>{tx("刷新重试")}</button>
         </div>)}
-      {snapshot?.engine?.state === 'disabled' && (<p className="aag-note" role="note">{tx(snapshot.engine.recommendation)}</p>)}
+      <TeamExecution engine={snapshot?.engine} locale={locale}/>
       {notice && (<p role="status" className="aag-custom-notice">
           {notice}
         </p>)}
-      {!snapshot && !error && <p role="status">{tx("正在加载专家团…")}</p>}
+      {!snapshot && !error && <div role="status" aria-label={tx("正在加载专家团…")} className="aag-read-loading"><StateDot state="ongoing" size={14} /></div>}
       <div className="aag-expert-grid aag-team-grid">
         {filtered.map((team) => {
             const issue = teamIssue(team, experts, snapshot!.enabledExperts);
@@ -319,8 +339,18 @@ export function TeamsPanel(props: {
                 </div>} metadata={tx("{0} 位专家", [team.members.length])} description={enabled && issue
                     ? `${team.description} ${tx(issue)}`
                     : team.description} enabled={enabled} disabled={busy} enabledLabel={tx("已启用")} disabledLabel={tx("已停用")} toggle={() => void change(team, 'enable')} moreItems={[
-                    { id: 'edit', label: tx("编辑专家团"), icon: <IconCopy size={16} />, disabled: busy, onSelect: () => edit(team) },
-                    { id: 'delete', label: tx("删除专家团"), icon: <IconTrash size={16} />, danger: true, disabled: busy, onSelect: () => void change(team, 'delete') },
+                    ...(team.company ? [{ id: 'copy', label: tx("复制并自定义"), disabled: busy, onSelect: () => copy(team) }] : [
+                      { id: 'edit', label: tx("编辑专家团"), icon: <IconCopy size={16} />, disabled: busy, onSelect: () => edit(team) },
+                      ...('dshDesktop' in globalThis ? [{ id: 'submit', label: tx("提交发布"), disabled: busy, onSelect: () => {
+                        document.dispatchEvent(new CustomEvent('dsh:company-content-submit', { cancelable: true, detail: {
+                          name: team.name, prepare: async (signal: AbortSignal) => {
+                            const value = await unwrap(props.remote.exportTeam(team.id, snapshot!.revision));
+                            signal.throwIfAborted(); return value;
+                          },
+                        } }));
+                      } }] : []),
+                      { id: 'delete', label: tx("删除专家团"), icon: <IconTrash size={16} />, danger: true, disabled: busy, onSelect: () => void change(team, 'delete') },
+                    ]),
                 ]} actions={<>
                   <button type="button" className="aag-card-action" title={tx("查看详情")} aria-label={tx("查看详情")} aria-haspopup="dialog" onClick={() => setDetails(team)}>
                     <IconEye size={18}/><span className="aag-card-action-text">{tx("查看详情")}</span></button>
@@ -330,19 +360,20 @@ export function TeamsPanel(props: {
       {snapshot && !filtered.length && (<div className="aag-empty">
           <IconUsers size={40}/>
           <h3>{tx("没有找到专家团")}</h3>
-          <p>{tx("换个关键词，或创建自己的专家团。")}</p>
-          <Button onClick={() => {
+          <p>{tx(props.source === 'company' ? "审核发布后的专家团会展示在这里。" : "换个关键词，或创建自己的专家团。")}</p>
+          {(query || status) && <Button onClick={() => {
                 setQuery('');
-            }}>{tx("清除筛选")}</Button>
+                setStatus('');
+            }}>{tx("清除筛选")}</Button>}
         </div>)}
-      {details && (<TeamDetails team={details} experts={experts} close={() => setDetails(null)} onCopy={() => copy(details)} onSelect={(example) => void change(details, 'select', example)} onEdit={() => {
+      {details && (<TeamDetails team={details} experts={experts} engine={snapshot?.engine} close={() => setDetails(null)} onCopy={() => copy(details)} onSelect={(example) => void change(details, 'select', example)} onEdit={details.company ? undefined : () => {
                     setEditor({
                         value: details,
                         enabled: snapshot!.enabledTeams.includes(details.id),
                         revision: snapshot!.revision,
                     });
                     setDetails(null);
-                }} onDelete={() => void change(details, 'delete')}/>)}
+                }} onDelete={details.company ? undefined : () => void change(details, 'delete')}/>)}
       {editor && (<TeamEditor initial={editor.value} experts={experts} enabled={editor.enabled} enabledExperts={snapshot!.enabledExperts} close={() => setEditor(null)} refresh={async () => {
                 const latest = await unwrap(props.remote.getTeams());
                 accept(latest);
@@ -354,6 +385,7 @@ export function TeamsPanel(props: {
                 accept(next);
                 setEditor(null);
                 setNotice(tx("专家团配置已保存。"));
+                props.onSaved?.();
             }}/>)}
       {confirm && (<TeamConfirm title={confirm.action === 'delete' ? tx("删除专家团？") : tx("启用团队成员")} description={confirm.action === 'delete'
                 ? tx("删除“{0}”的配置，保留成员专家和历史会话。", [confirm.team.name]) : tx("同时启用：{0}。停用团队时不会停用成员。", [confirm.team.members

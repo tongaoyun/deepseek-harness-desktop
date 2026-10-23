@@ -151,6 +151,14 @@ it.each([{ published: false, refresh: false, collision: false }, { published: tr
     const healthy = catalog.experts.find(expert => expert.slug === 'orders')!
     expect((await persona.getPrompt(healthy.slug, healthy.division, 'zh')).prompt.length).toBeGreaterThan(0)
   }
+  const catalogResponse = await fetch(`http://127.0.0.1:${ctx.webServer.port}/api/dsh-skills-manager/state`, {
+    signal: AbortSignal.timeout(5_000),
+  })
+  expect(catalogResponse.status).toBe(200)
+  const skillCatalog = z.object({ data: z.object({ roots: z.array(z.object({ key: z.string(), localeKey: z.string().optional(),
+    skills: z.array(z.object({ name: z.string() })) })) }) }).parse(await catalogResponse.json())
+  expect(skillCatalog.data.roots.find(root => root.key === 'company')).toMatchObject({ localeKey: 'company',
+    skills: published ? [expect.objectContaining({ name: 'orders' })] : [] })
   expect((await ctx.skills.list()).some(skill => skill.name === 'orders')).toBe(published)
   if (published) expect((await ctx.skills.get('orders'))?.content).toContain('Company order skill body.')
   if (published) {

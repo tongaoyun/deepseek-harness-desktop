@@ -9,7 +9,7 @@ import { items, localDetail } from '../src/client/catalog-shared.tsx'
 import { zh } from '../src/locales.ts'
 
 const t = makeTranslate(zh, commonZh)
-const descriptor = { id: 'erp', name: 'ERP 连接器', version: '1.0.0', authMode: 'oauth', authorizationStatus: 'AUTHORIZED', tools: [] }
+const descriptor = { visibility: 'COMPANY', reviewStatus: 'PUBLISHED', id: 'erp', name: 'ERP 连接器', version: '1.0.0', authMode: 'oauth', authorizationStatus: 'AUTHORIZED', tools: [] }
 const launch = { connectorId: 'erp', status: 'PENDING', authorizationUrl: 'https://auth.example.test/', state: 'state-private', expiresAt: 2_000_000_000 }
 function unusedSlot(): never { throw new Error('Authorization does not read this slot') }
 const actions = {

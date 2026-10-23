@@ -80,5 +80,11 @@
     "src/client/team-member-picker.ts": "c97e5340bbba2a4ea1476ab9d26b65f25850063149de9a9c47438ce79fce3fd2",
     "src/client/catalog.ts": "916e3be0e964271b5009ae52f12053485afdbc30f43f5d68886d468298cdfa57",
     "src/client/task-examples.ts": "92273f6b88d6470d23ede0d8d20aa0ed6ac65e1b9fe6e6c4aca72d9f2d5e4286"
-  }
+  },
+  "selectedFixes": [
+    {
+      "commit": "1d3487f5cf590c6ec3267163c875b58f6639e478",
+      "scope": "Use English when no explicit Chinese locale is selected"
+    }
+  ]
 }

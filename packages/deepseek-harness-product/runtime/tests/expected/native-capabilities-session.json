@@ -1,17 +1,17 @@
 {
   "tools": [
+    "connector_search_tools",
     "knowledge_destinations",
     "knowledge_read",
     "knowledge_save",
     "knowledge_search",
     "mcp__erp_d24f1f61__orders_read",
     "mcp__erp_d24f1f61__orders_write",
-    "mcp__erp_d24f1f61__undeclared",
     "skill"
   ],
   "companyVersion": "Company content version: 1.0.0; SHA-256: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.",
   "skillCatalog": "<available_skills>\\n- `policy-review`: Compare policy evidence.\\n</available_skills>",
-  "loadedSkill": "<skill_content name=\"policy-review\">\n<skill_resources>\nBase directory for this skill: <HOME>/skills/policy-review\nResolve relative paths mentioned by this skill against the base directory before using them. Load referenced resources only as needed.\n</skill_resources>\n\n<skill_instructions>\nCompare retrieved policy before reporting.\n</skill_instructions>\n</skill_content>",
+  "loadedSkill": "<skill_content name=\"policy-review\">\n<skill_resources>\nBase directory for this skill: <HOME>/skills/policy-review\nResolve relative paths mentioned by this skill against the base directory before using them. Load referenced resources only as needed.\n</skill_resources>\n\n<skill_instructions>\nCompare retrieved policy before reporting.\nBefore reading orders, call connector_search_tools with {\"connectorId\":\"erp\",\"toolNames\":[\"orders_read\",\"orders_write\"]}.\n</skill_instructions>\n</skill_content>",
   "retrieval": [
     {
       "query": "policy",
@@ -30,7 +30,13 @@
     [
       {
         "type": "text",
-        "text": "<skill_content name=\"policy-review\">\n<skill_resources>\nBase directory for this skill: <HOME>/skills/policy-review\nResolve relative paths mentioned by this skill against the base directory before using them. Load referenced resources only as needed.\n</skill_resources>\n\n<skill_instructions>\nCompare retrieved policy before reporting.\n</skill_instructions>\n</skill_content>"
+        "text": "<skill_content name=\"policy-review\">\n<skill_resources>\nBase directory for this skill: <HOME>/skills/policy-review\nResolve relative paths mentioned by this skill against the base directory before using them. Load referenced resources only as needed.\n</skill_resources>\n\n<skill_instructions>\nCompare retrieved policy before reporting.\nBefore reading orders, call connector_search_tools with {\"connectorId\":\"erp\",\"toolNames\":[\"orders_read\",\"orders_write\"]}.\n</skill_instructions>\n</skill_content>"
+      }
+    ],
+    [
+      {
+        "type": "text",
+        "text": "{\"tools\":[{\"name\":\"mcp__erp_d24f1f61__orders_read\",\"connector\":\"Orders\",\"connectorId\":\"erp\",\"toolName\":\"orders_read\",\"version\":\"1.0.0\",\"description\":\"\",\"parameters\":{\"type\":\"object\",\"properties\":{}}},{\"name\":\"mcp__erp_d24f1f61__orders_write\",\"connector\":\"Orders\",\"connectorId\":\"erp\",\"toolName\":\"orders_write\",\"version\":\"1.0.0\",\"description\":\"\",\"parameters\":{\"type\":\"object\",\"properties\":{}}}]}"
       }
     ],
     [

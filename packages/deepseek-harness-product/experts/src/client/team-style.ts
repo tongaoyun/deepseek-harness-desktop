@@ -1,5 +1,7 @@
 /** 团队仅补充成员和主理人字段布局；基础控件统一复用专家页 aag 样式。 */
 export const TEAM_CSS = `
+.agt-engine summary{cursor:pointer;color:var(--dsw-alias-label-secondary)}
+.agt-engine p{margin:6px 0;color:var(--dsw-alias-label-secondary)}
 .aag-team-grid .aag-card-description{min-height:80px;-webkit-line-clamp:unset}
 .aag-library-navigation{display:flex;align-items:center;justify-content:space-between;gap:16px}.aag-library-navigation>.aag-library-tabs{flex:1;width:100%;min-width:0;display:grid!important;height:32px;box-sizing:border-box;padding:2px!important;border:0!important;border-radius:var(--dsw-radius-sm,8px)!important;box-shadow:inset 0 0 0 .5px var(--dsw-alias-border-l2)!important;background:var(--dsw-alias-bg-layer-1)!important}
 .aag-library-tabs>span[aria-hidden="true"]{inset:2px auto 2px 2px!important;width:calc((100% - 4px)/2)!important;border-radius:calc(var(--dsw-radius-sm,8px) - 2px)!important;border:0.5px solid var(--dsw-alias-border-l3,rgba(255,255,255,.12))!important;background:var(--dsw-alias-bg-layer-3,rgba(255,255,255,.08))!important;box-shadow:none!important}
@@ -8,7 +10,7 @@ export const TEAM_CSS = `
 .aag-library-tabs [role=tab] svg{width:14px;height:14px;flex:none}
 .aag-library-tabs [role=tab]:hover{color:var(--dsw-alias-label-primary,inherit)!important}
 .aag-library-tabs [role=tab][aria-selected=true]{color:var(--dsw-alias-label-primary,inherit)!important;font-weight:600!important}
-.aag-library-tabs .aag-tab-count{display:inline-flex;align-items:baseline;gap:3px;margin-left:6px;color:var(--dsw-alias-label-tertiary);font-size:12px;font-weight:400;line-height:18px;white-space:nowrap}.aag-library-tabs .aag-tab-count strong{color:var(--dsw-alias-label-primary);font-weight:600}
+.aag-library-tabs .aag-tab-count{display:inline-flex;align-items:baseline;gap:3px;margin-left:6px;color:var(--dsw-alias-label-tertiary);font-size:12px;font-weight:400;line-height:18px;white-space:nowrap}.aag-library-tabs .aag-tab-count strong{display:inline-block;min-width:2ch;font-variant-numeric:tabular-nums;color:var(--dsw-alias-label-primary);font-weight:600}
 .aag-library-shell>.aag-section,.aag-library-shell>div>.aag-section{padding-bottom:0;min-width:0}
 .aag-team-avatar{width:44px;height:44px;position:relative}
 .agt-stack{display:flex;align-items:center;flex-shrink:0}

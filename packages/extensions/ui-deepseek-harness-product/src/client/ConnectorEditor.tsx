@@ -1,3 +1,4 @@
+import { ProductLoading } from './ProductLoading.tsx'
 /** Personal MCP configuration, with write-only local secrets. */
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { randomUUID } from '@deepseek-ai/dsh-util-crypto'
@@ -5,7 +6,7 @@ import { Button, IconCloseOutlineRegular, IconDeliverDocRegular, IconPlusOutline
 import { ConnectorEditorSnapshotSchema, ConnectorDraftSchema, ConnectorSaveResultSchema, type ConnectorDraft } from '@deepseek-harness/product/connector-draft'
 import type { DeepSeekHarnessProductKey } from '../locales.ts'
 import css from '../DeepSeekHarnessProduct.module.css'
-import { items, nextProductRequestId, type ProductItem } from './catalog-shared.tsx'
+import { CATEGORY_KEYS, items, nextProductRequestId, type ProductItem } from './catalog-shared.tsx'
 import { productApi } from './product-api.ts'
 import { productErrorMessage } from './product-errors.ts'
 import { connectorCommand, connectorCommandText, connectorConfigurations, connectorVariables } from './connector-configuration.ts'
@@ -159,7 +160,7 @@ export function ConnectorEditor({ onClose, onSaved, editing, t }: {
         else if (parsed.length > 1 && parsed[selected]) applyJson(parsed[selected])
         else parse()
       }}>{pending ? t('connectingConnector') : mode === 'json' ? t('applyConfiguration') : t(editing ? 'saveConnector' : 'addMcp')}</Button></div>}>
-    {loading && <p role="status">{t('loading')}</p>}
+    {loading && <ProductLoading label={t('loading')} />}
     {error && <p role="alert" className={css.catalogError}>{error}</p>}
     {!loading && !ready && <Button variant="outline" onClick={() => { void load() }}>{t('retry')}</Button>}
     {ready && <>
@@ -182,6 +183,14 @@ export function ConnectorEditor({ onClose, onSaved, editing, t }: {
             setDraft(({ oauthProviderId: _oauthProviderId, ...previous }) => ({ ...previous, transport: value, url: '', command: '', arguments: [] }))
           }}><option value="stdio">{t('stdioTransport')}</option><option value="streamable-http">{t('httpTransport')}</option></select></label>
         {field('name', 'mcpServerName', t('connectorNamePlaceholder'), true)}
+        <label className={css.editorField}><span>{t('connectorSummary')} <span className={css.optionalMark}>{t('optionalField')}</span></span>
+          <textarea aria-label={t('connectorSummary')} maxLength={300} rows={2} disabled={pending}
+            placeholder={t('connectorSummaryPlaceholder')} value={draft.summary}
+            onChange={(event) => { update('summary', event.currentTarget.value) }} /></label>
+        <label className={css.editorField}><span>{t('connectorCategory')}</span><select aria-label={t('connectorCategory')}
+          value={draft.category} disabled={pending} onChange={(event) => { update('category', event.currentTarget.value) }}>
+          {Object.entries(CATEGORY_KEYS).map(([value, key]) => <option key={value} value={value}>{t(key)}</option>)}
+        </select></label>
         {draft.transport === 'streamable-http' ? <>
           {providers.length > 0 && <label className={css.editorField}><span>{t('authentication')}</span><select aria-label={t('authentication')}
             value={draft.oauthProviderId ?? ''} disabled={pending} onChange={(event) => {

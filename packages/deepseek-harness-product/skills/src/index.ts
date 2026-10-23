@@ -241,19 +241,18 @@ function notifyChatCatalog(ctx: HostContext, invalidateSkills?: () => void) {
     /* 目录缓存失效失败不影响已完成的文件操作 */
   }
   try {
-    if (typeof ctx.emit === "function") ctx.emit("commands/change");
+    ctx.emit("commands/change");
   } catch {
     /* 命令目录刷新失败不影响已完成的文件操作 */
   }
   try {
-    const sessions = typeof ctx.get === "function" ? ctx.get("sessions") : undefined;
-    const list = sessions && typeof sessions.list === "function" ? sessions.list() : [];
+    const list = ctx.sessions.list();
     for (const session of list) {
-      const id = session && (session.id ?? session.header?.id);
+      const id = session.id;
       const preset = session && session.header && typeof session.header.agentPreset === "string"
         ? session.header.agentPreset
         : undefined;
-      if (id == null || !preset || typeof ctx.emit !== "function") continue;
+      if (!preset) continue;
       // Web `/` 技能菜单缓存在 dsh-client-ui-skill，只在 agent-preset/selected 时失效；
       // skills/change 未进入官方转发白名单，只能借用这条已转发事件。
       ctx.emit("agent-preset/selected", id, preset);
@@ -269,10 +268,10 @@ function notifyChatCatalog(ctx: HostContext, invalidateSkills?: () => void) {
  */
 function registeredWorkspacePaths(ctx: HostContext): string[] | undefined {
   try {
-    const registry = typeof ctx.get === "function" ? ctx.get("workspaceRegistry") : undefined;
-    if (!registry || typeof registry.list !== "function") return undefined;
+    const registry = ctx.get("workspaceRegistry");
+    if (!registry) return undefined;
     return [...registry.list()].flatMap((item) => {
-      const path = item?.path ?? item?.cwd;
+      const path = item.path;
       return typeof path === "string" && path.trim() ? [path.trim()] : [];
     });
   } catch {
@@ -283,10 +282,7 @@ function registeredWorkspacePaths(ctx: HostContext): string[] | undefined {
 /** 仅从客户端当前选中的已知 Session 解析工作目录；缺失或失效时不回退其他会话。 */
 function activeSessionCwds(ctx: HostContext, sessionId: unknown) {
   if (typeof sessionId !== "string" || !sessionId.trim()) return [];
-  const sessions = ctx.sessions || (typeof ctx.get === "function" ? ctx.get("sessions") : undefined);
-  if (!sessions) return [];
-  const session = typeof sessions.get === "function" ? sessions.get(sessionId) :
-    (typeof sessions.list === "function" ? sessions.list() : []).find((item) => (item.id ?? item.header?.id) === sessionId);
+  const session = ctx.sessions.get(sessionId);
   const cwd = session?.header?.cwd;
   return typeof cwd === "string" && cwd.trim() ? [cwd.trim()] : [];
 }
@@ -316,17 +312,14 @@ function externalSkillProvider(control: ProviderControl, invalidators: Set<() =>
  * layer so disabled shared skills cannot fall through to that native provider.
  */
 function registerAgentSkillProviders(ctx: HostContext, invalidators: Set<() => void>) {
-  if (typeof ctx.on !== "function") return () => {};
   const registrations = new Map<string, () => void>();
 
   const install = (agent: Agent) => {
     if (!agent || registrations.has(agent.id)) return;
     const agentCtx = agent.ctx;
-    const skills = agentCtx && typeof agentCtx.get === "function"
-      ? agentCtx.get("skills")
-      : agentCtx && agentCtx.skills;
+    const skills = agentCtx.get("skills");
     if (!skills || typeof skills.registerProvider !== "function") return;
-    const companySource = ctx.get?.("companyContent");
+    const companySource = ctx.get("companyContent");
     const dispose = skills.registerProvider((control) => externalSkillProvider(control, invalidators,
       companySource ? async (signal) => (await companySource.forSession(agent.id, signal)).skillsRoot : undefined));
     registrations.set(agent.id, dispose);
@@ -341,7 +334,7 @@ function registerAgentSkillProviders(ctx: HostContext, invalidators: Set<() => v
 
   const stopCreated = ctx.on("agent/created", ({ agent }) => install(agent));
   const stopDisposed = ctx.on("agent/disposed", ({ agent }) => uninstall(agent));
-  const agents = typeof ctx.get === "function" ? ctx.get("agents") : undefined;
+  const agents = ctx.get("agents");
   if (agents && typeof agents.list === "function") {
     for (const agent of agents.list()) install(agent);
   }
@@ -359,22 +352,8 @@ function registerAgentSkillProviders(ctx: HostContext, invalidators: Set<() => v
 function apply(ctx: HostContext) {
   const log = makeLog();
   const repositories = createRepositoryManager({ log, registeredWorkspaces: () => registeredWorkspacePaths(ctx) });
-  const getTrustedHosts = () => {
-    try {
-      const rawCtx = ctx as unknown as Record<string, unknown>;
-      // Cordis context proxy throws "cannot get property X without inject" on rawCtx.webRuntime or rawCtx.get
-      // Check root properties or safe get without throwing
-      const root = (rawCtx.root || rawCtx) as Record<string, unknown>;
-      const candidate = root.webRuntime || root.webStartup;
-      if (candidate && typeof candidate === "object" && Array.isArray((candidate as { trustedHosts?: unknown }).trustedHosts)) {
-        return (candidate as { trustedHosts: string[] }).trustedHosts;
-      }
-    } catch {
-      // ignore
-    }
-    return [];
-  };
-  const companySource = ctx.get?.("companyContent");
+  const getTrustedHosts = () => ctx.root.webStartup?.trustedHosts ?? [];
+  const companySource = ctx.get("companyContent");
 
   const providerInvalidators = new Set<() => void>();
   const invalidateSkills = () => {
@@ -420,7 +399,7 @@ function apply(ctx: HostContext) {
         return { card: "generic", title: "Create DSH skill", kind: "edit", rawInput: args && args.name ? String(args.name) : undefined };
       },
     }), "skills-manager create_skill tool");
-    if (typeof ctx.on === "function") ctx.on("tools/pre-execute", (exec, next) => {
+    ctx.on("tools/pre-execute", (exec, next) => {
       if (exec && exec.name === "create_skill") return Promise.resolve({ kind: "ask", reason: "Create a new skill under DSH_HOME/skills" });
       return next();
     });

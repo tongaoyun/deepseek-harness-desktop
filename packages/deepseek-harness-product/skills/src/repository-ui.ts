@@ -1,3 +1,4 @@
+import { StateDot } from '@deepseek-ai/dsh-client-ui-primitives';
 type RepositoryAction = "add" | "remove" | "refresh" | "detail" | "install" | "uninstall" | "preview" | "update" | "rollback";
 import type * as React from 'react';
 import type { ApiCall, ApiRoutes, Translate, ModalProps, SourceSelectProps } from './client-types.ts';
@@ -6,10 +7,9 @@ import type { WorkspaceRow } from './core.ts';
 import type { InstallSource, Diagnostic, RepositoryRoot, RepositoryDestination } from './types.ts';
 type RepoView = ApiRoutes['/repositories']['repositories'][number];
 type RepoCopy = { installedRoot: RepositoryRoot | null; installedWorkspace?: string; tracked?: boolean; status: string; updateAvailable?: boolean; canRollback?: boolean; canUninstall?: boolean };
-type RepoSkill = RepoView['skills'][number] & { installations?: RepoCopy[] };
+type RepoSkill = RepoView['skills'][number];
 type CopyTarget = { root?: RepositoryRoot; workspace?: string };
 type Feedback = {error?: boolean; payload?: unknown; key?: string; name?: string; text?: string};
-type InstallRoot = RepositoryRoot;
 type Installation = Feedback & CopyTarget & {id: string; path: string; pending?: boolean; action?: 'install' | 'uninstall'};
 type CatalogCopy = { id: string; name: string; installedRoot: RepositoryRoot; installedWorkspace?: string; canUninstall?: boolean };
 type RepoModal = {type: 'add' | 'manage'} | {type: 'remove'; repo: RepoView} | {type: 'install' | 'uninstall'; repo: RepoView; skill: RepoSkill; copy?: RepoCopy} | {type: 'detail'; repo: RepoView; detail?: ApiRoutes['/repositories/detail']; loading?: boolean; failed?: boolean} | {type: 'catalog-detail'; detail?: ApiRoutes['/catalog/detail']; loading?: boolean; failed?: boolean} | {type: 'catalog-install'; target: CatalogTarget} | {type: 'catalog-uninstall'; copy: CatalogCopy} | {type: 'review' | 'rollback'; repo: RepoView; skill: RepoSkill; copy: RepoCopy; detail: ApiRoutes['/repositories/preview']};
@@ -18,9 +18,6 @@ import type { CodedError } from "./types.ts";
 // 仓库页复用宿主技能面板组件；只在进入页签时读取本地目录缓存。
 export const repositoryLocales = {
   zh: {
-    "repo.catalog.unknownLocation": "位置未知",
-    "repo.catalog.reassociate": "选择位置并重关联安装",
-    "repo.catalog.unknownHint": "有旧目录安装记录位置未知；找到对应技能后可选择位置重关联安装。",
     "repo.catalog.loadMore": "再加载 10 条",
     "repo.catalog.installRefreshWarning": "技能已安装并启用，但列表刷新失败。请重新打开发现页；不要重复安装。",
     "repo.catalog.uninstallRefreshWarning": "技能已移入回收站，但列表刷新失败。请刷新技能列表或重新打开设置页；不要重复卸载。",
@@ -37,13 +34,10 @@ export const repositoryLocales = {
     "repo.empty": "还没有技能仓库，添加一个公开 GitHub 仓库开始。", "repo.noSkills": "没有匹配的技能。可刷新仓库或调整筛选。",
     "repo.url": "仓库地址", "repo.ref": "分支或标签（可选）", "repo.directory": "技能子目录（可选）", "repo.defaultBranch": "留空使用默认分支", "repo.defaultBranchLabel": "默认分支", "repo.directoryHint": "例如 skills，留空扫描整个仓库",
     "repo.remove": "移除仓库", "repo.removeHint": "仅移除仓库订阅，已安装的技能会保留。", "repo.removeConfirm": "确认移除", "repo.cancel": "取消", "repo.close": "关闭", "repo.loading": "处理中…", "repo.success": "操作完成", "repo.installHint": "技能可能包含脚本，请先查看说明并确认信任来源。安装会保留资源文件，不会执行脚本。", "repo.commit": "扫描版本", "repo.notScanned": "尚未扫描", "repo.updated": "上次刷新",
-    "error.repo.tooLarge": "仓库归档超过 32 MiB，请选择较小的技能仓库；子目录筛选不会缩小下载量。", "error.repo.installState": "技能文件已保留，但来源状态未确认。请恢复磁盘写入后重新打开仓库页，系统会校验文件并恢复记录。", "error.repo.capacity": "安装来源状态超过 16 MiB。请先清理不需要的回收记录或旧身份，仍有效的安装副本会保留。",
+    "error.repo.tooLarge": "仓库归档超过 32 MiB，请选择较小的技能仓库；子目录筛选不会缩小下载量。", "error.repo.installState": "技能文件已保留，但来源状态未确认。请恢复磁盘写入后重新打开仓库页，系统会校验文件并恢复记录。", "error.repo.capacity": "安装来源状态超过 16 MiB。请先清理不需要的回收记录，仍有效的安装副本会保留。",
     "error.repo.invalid": "仓库地址、路径或内容无效，请检查输入及仓库大小。", "error.repo.network": "仓库访问失败，请检查网络或稍后重试。上次列表已保留。", "error.repo.state": "仓库状态文件损坏或无法读取，请保留文件并修复后重试。", "error.repo.conflict": "同名技能已存在或安装失败，本地文件未被覆盖。", "error.repo.enableState": "技能文件已撤销，但启用状态无法写入。请恢复磁盘写入后重试安装。",
   },
   en: {
-    "repo.catalog.unknownLocation": "Location unknown",
-    "repo.catalog.reassociate": "Choose destination and reinstall to reassociate",
-    "repo.catalog.unknownHint": "Some legacy catalog installs have unknown locations. Find the skill and choose a destination to reinstall and reassociate.",
     "repo.catalog.loadMore": "Load 10 more",
     "repo.catalog.installRefreshWarning": "Installed and enabled, but the list could not refresh. Reopen Discover Skills; do not install again.",
     "repo.catalog.uninstallRefreshWarning": "Moved to trash, but the list could not refresh. Refresh the skill list or reopen Settings; do not uninstall again.",
@@ -60,7 +54,7 @@ export const repositoryLocales = {
     "repo.empty": "No repositories yet. Add a public GitHub repository to get started.", "repo.noSkills": "No matching skills. Refresh the repository or adjust your filters.",
     "repo.url": "Repository URL", "repo.ref": "Branch or tag (optional)", "repo.directory": "Skill subdirectory (optional)", "repo.defaultBranch": "Leave empty for the default branch", "repo.defaultBranchLabel": "default branch", "repo.directoryHint": "For example: skills. Leave empty to scan the repository.",
     "repo.remove": "Remove repository", "repo.removeHint": "This removes the subscription only. Installed skills are kept.", "repo.removeConfirm": "Confirm removal", "repo.cancel": "Cancel", "repo.close": "Close", "repo.loading": "Working…", "repo.success": "Completed", "repo.installHint": "Skills may include scripts. Read the instructions and trust the source before installing. Resources are copied; scripts are not executed.", "repo.commit": "Snapshot version", "repo.notScanned": "Not scanned yet", "repo.updated": "Last refreshed",
-    "error.repo.tooLarge": "Repository archive exceeds 32 MiB. Choose a smaller repository; a subdirectory filter does not reduce the download size.", "error.repo.installState": "Skill files were preserved but source tracking could not be saved. Restore disk write access and reopen Repositories to verify files and recover the record.", "error.repo.capacity": "Source tracking exceeds 16 MiB. Remove unneeded Trash records or legacy identities first. Active installation copies are kept.",
+    "error.repo.tooLarge": "Repository archive exceeds 32 MiB. Choose a smaller repository; a subdirectory filter does not reduce the download size.", "error.repo.installState": "Skill files were preserved but source tracking could not be saved. Restore disk write access and reopen Repositories to verify files and recover the record.", "error.repo.capacity": "Source tracking exceeds 16 MiB. Remove unneeded Trash records first. Active installation copies are kept.",
     "error.repo.invalid": "Invalid repository URL, path or contents. Check the input and repository size.", "error.repo.network": "Repository request failed. Check your connection or retry later. The previous catalog was kept.", "error.repo.state": "Repository state is corrupt or unreadable. Preserve the file and repair it before retrying.", "error.repo.conflict": "A skill with this name exists or installation failed. Local files were not overwritten.", "error.repo.enableState": "The copied skill was removed because its enabled state could not be saved. Restore disk write access and install again.",
   },
 };
@@ -124,6 +118,7 @@ type ClawHubApiSearchResponse = { results?: ClawHubApiSearchResult[] };
 
 export function createRepositoryUI({ react, Modal, Input, Button, SourceSelect, destination, api, headers, translateError, getLocale }: Dependencies) {
   const h = react.createElement;
+  const readLoading = (label: string) => h("div", { role: "status", "aria-label": label, className: "dssm-read-loading" }, h(StateDot, { state: "ongoing", size: 14 }));
   function foldChevron(open: boolean) {
     return h("svg", { className: "dssm-fold-chevron" + (open ? " is-open" : ""), viewBox: "0 0 16 16", width: 12, height: 12, fill: "none", stroke: "currentColor", strokeWidth: 1.5, "aria-hidden": true }, h("path", { d: "M4 6l4 4 4-4", strokeLinecap: "round", strokeLinejoin: "round" }));
   }
@@ -143,6 +138,8 @@ export function createRepositoryUI({ react, Modal, Input, Button, SourceSelect, 
     const [modal, setModal] = react.useState<RepoModal | null>(null);
     const [destination, setDestination] = react.useState<DestinationValue>(defaultDestination());
     const [workspaces, setWorkspaces] = react.useState<WorkspaceRow[]>([]);
+    const [workspacesLoading, setWorkspacesLoading] = react.useState(true);
+    const [repoLoaded, setRepoLoaded] = react.useState(false);
     const [subsource, setSubsource] = react.useState<'github' | 'skillsh' | 'clawhub'>('github');
     const [catalogQuery, setCatalogQuery] = react.useState("");
     const [catalogSort, setCatalogSort] = react.useState("");
@@ -150,7 +147,6 @@ export function createRepositoryUI({ react, Modal, Input, Button, SourceSelect, 
     const [catalogItems, setCatalogItems] = react.useState<CatalogSkillItem[]>([]);
     const [catalogInstallIds, setCatalogInstallIds] = react.useState<string[]>([]);
     const [catalogCopies, setCatalogCopies] = react.useState<CatalogCopy[]>([]);
-    const [catalogUnknownIds, setCatalogUnknownIds] = react.useState<string[]>([]);
     const [catalogWarnings, setCatalogWarnings] = react.useState<Array<{id: string; code: string; error: string}>>([]);
     const [catalogHasMore, setCatalogHasMore] = react.useState(true);
     const [catalogLoading, setCatalogLoading] = react.useState(false);
@@ -180,22 +176,14 @@ export function createRepositoryUI({ react, Modal, Input, Button, SourceSelect, 
       const data = await api("/repositories");
       if (mounted.current) {
         const roots = (data.installRoots || []).filter(root => root.key === "dsh" || root.key === "agents");
-        setRepos(data.repositories || []); setInstallRoots(roots); setCatalogInstallIds(data.catalogInstalls || []); setCatalogCopies(data.catalogCopies || []);
-        setCatalogUnknownIds(data.catalogUnknownIds || []); setCatalogWarnings(data.catalogWarnings || []);
+        setRepoLoaded(true); setRepos(data.repositories); setInstallRoots(roots); setCatalogInstallIds(data.catalogInstalls); setCatalogCopies(data.catalogCopies);
+        setCatalogWarnings(data.catalogWarnings);
         if (destination.scope === 'user' && !roots.some(root => root.key === destination.location && root.available))
           setDestination({ ...destination, location: roots.find(root => root.available)?.key || 'dsh' });
         // 工作区列表只读登记信息，失败不影响仓库列表本身。
-        api('/workspaces').then(listed => { if (mounted.current) setWorkspaces(listed.items || []); }).catch(() => undefined);
+        setWorkspacesLoading(true);
+        api('/workspaces').then(listed => { if (mounted.current) setWorkspaces(listed.items || []); }).catch(() => undefined).finally(() => { if (mounted.current) setWorkspacesLoading(false); });
       }
-    }
-    function destinationName(root: Pick<RepositoryDestination, 'key' | 'label' | 'localeKey'>) {
-      if (root.key === 'dsh' || root.key === 'agents') return t(root.key === 'dsh' ? 'repo.rootDsh' : 'repo.rootAgents');
-      const key = 'root.' + (root.localeKey || root.key), name = t(key);
-      return name === key ? root.label : name;
-    }
-    function installedDestination(key: RepositoryRoot) {
-      const root = installRoots.find(root => root.key === key);
-      return root ? destinationName(root) : t('root.' + key);
     }
     function copyTarget(copy: RepoCopy): CopyTarget | null {
       if (copy.installedWorkspace) {
@@ -236,7 +224,7 @@ export function createRepositoryUI({ react, Modal, Input, Button, SourceSelect, 
     function sortCopies<T extends { installedWorkspace?: string }>(copies: T[]): T[] {
       return copies.slice().sort((left, right) => Number(!!left.installedWorkspace) - Number(!!right.installedWorkspace));
     }
-    function copiesOf(skill: RepoSkill): RepoCopy[] { return sortCopies((skill.installations ?? (skill.installedRoot ? [skill] : [])).filter(copy => copy.tracked === true)); }
+    function copiesOf(skill: RepoSkill): RepoCopy[] { return sortCopies(skill.installations.filter(copy => copy.tracked === true)); }
     function message(error: unknown) {
       const item = error as Diagnostic & {message?: string};
       const translated = translateError(t, error) || item.message || String(error);
@@ -736,7 +724,7 @@ export function createRepositoryUI({ react, Modal, Input, Button, SourceSelect, 
             let footer: React.ReactNode;
             if (modal.type === 'install') body = h('div', { className: 'dssm-repo-panel', 'aria-busy': busy },
               h('div', { className: 'dssm-name' }, modal.skill.name),
-              h(DestinationPicker, { t, value: destination, disabled: busy, allowAgents: true, workspaces, userDestinations: installRoots,
+              h(DestinationPicker, { t, value: destination, disabled: busy, allowAgents: true, workspaces, loading: workspacesLoading, userDestinations: installRoots,
                 onChange: (next: Partial<DestinationValue>) => { if (!locked.current) setDestination({ ...destination, ...next }); } }),
               h('p', { className: 'dssm-note' }, t('repo.installLocationsHint')),
               h('p', { className: 'dssm-note' }, t('repo.installHint')),
@@ -771,10 +759,10 @@ export function createRepositoryUI({ react, Modal, Input, Button, SourceSelect, 
               footer = h(react.Fragment, null, button("repo.cancel", () => setModal({ type: "manage" })), button("repo.removeConfirm", () => perform(async () => { await post("remove", { id: (modal as Extract<RepoModal, {type: "remove"}>).repo.id }); if (source === (modal as Extract<RepoModal, {type: "remove"}>).repo.id) setSource(""); setModal({ type: "manage" }); }), true, false, true));
             }
       if (modal.type === "catalog-detail" && modal.detail) body = h("div", { className: "dssm-repo-panel" }, h("div", { className: "dssm-name" }, modal.detail.name), h("p", { className: "dssm-desc" }, modal.detail.description), h("div", { className: "dssm-detail-path" }, modal.detail.origin), h("p", { className: "dssm-note" }, t("repo.installHint")), h(Input.TextArea, { readOnly: true, value: modal.detail.body || "", autoSize: { minRows: 6, maxRows: 16 } }));
-      if (modal.type === "catalog-detail" && !modal.detail) body = h("div", { role: "status", className: "dssm-repo-panel" }, modal.loading ? t("repo.detailLoading") : null, modal.failed ? feedbackNode : null);
+      if (modal.type === "catalog-detail" && !modal.detail) body = h("div", { role: "status", className: "dssm-repo-panel" }, modal.loading ? readLoading(t("repo.detailLoading")) : null, modal.failed ? feedbackNode : null);
       if (modal.type === "catalog-install") body = h("div", { className: "dssm-repo-panel", "aria-busy": busy },
         h("div", { className: "dssm-name" }, modal.target.name),
-        h(DestinationPicker, { t, value: destination, disabled: busy, allowAgents: true, workspaces, userDestinations: installRoots, onChange: (next: Partial<DestinationValue>) => { if (!locked.current) setDestination({ ...destination, ...next }); } }),
+        h(DestinationPicker, { t, value: destination, disabled: busy, allowAgents: true, workspaces, loading: workspacesLoading, userDestinations: installRoots, onChange: (next: Partial<DestinationValue>) => { if (!locked.current) setDestination({ ...destination, ...next }); } }),
         h("p", { className: "dssm-note" }, t("repo.installLocationsHint")),
         h("p", { className: "dssm-note" }, t("repo.installHint")),
         busy ? h("div", { role: "status", "aria-live": "polite" }, t("repo.installProgress")) : null, feedbackNode,
@@ -789,7 +777,7 @@ export function createRepositoryUI({ react, Modal, Input, Button, SourceSelect, 
         footer = h(react.Fragment, null, button('repo.cancel', close), button(busy ? 'repo.uninstalling' : 'repo.confirmUninstall', confirmCatalogUninstall, true, false, true));
       }
       if (modal.type === "detail" && modal.detail) body = h("div", { className: "dssm-repo-panel" }, h("div", { className: "dssm-name" }, modal.detail.name), h("p", { className: "dssm-desc" }, modal.detail.description), h("div", { className: "dssm-detail-path" }, modal.repo.owner + "/" + modal.repo.name + " · " + modal.detail.path), h("div", { className: "dssm-repo-metadata" }, t("repo.commit") + " · " + modal.detail.commit), h("p", { className: "dssm-note" }, t("repo.installHint")), h(Input.TextArea, { readOnly: true, value: modal.detail.body || "", autoSize: { minRows: 6, maxRows: 16 } }));
-      if (modal.type === "detail" && !modal.detail) body = h("div", { role: "status", className: "dssm-repo-panel" }, modal.loading ? t("repo.detailLoading") : null, modal.failed ? feedbackNode : null);
+      if (modal.type === "detail" && !modal.detail) body = h("div", { role: "status", className: "dssm-repo-panel" }, modal.loading ? readLoading(t("repo.detailLoading")) : null, modal.failed ? feedbackNode : null);
       dialog = h(Modal, { title: t("repo." + (modal.type === "catalog-detail" ? "detail" : modal.type === "catalog-install" ? "install" : modal.type === "catalog-uninstall" ? "uninstall" : modal.type === "remove" ? "remove" : modal.type)), description, footer, closeLabel: t("repo.close"), onClose: close }, body);
     }
 
@@ -810,12 +798,11 @@ export function createRepositoryUI({ react, Modal, Input, Button, SourceSelect, 
                         if (mounted.current && refreshed.some(result => result.status === "rejected")) setFeedback({ key: "repo.catalog.uninstallRefreshWarning", name: copy.name });
           }, false);
         }
-        function renderCatalogActions(id: string, unknown: boolean, openDetail: () => void, openInstall: () => void) {
+        function renderCatalogActions(id: string, openDetail: () => void, openInstall: () => void) {
           const copies = catalogCopiesOf(id);
           return h("div", { className: "dssm-repo-actions" },
             rowIcon("repo.detail", openDetail),
-            unknown && !copies.length ? h("span", { className: "dssm-note", role: "status" }, t("repo.catalog.unknownLocation")) : null,
-            copies.length ? rowIcon("repo.installElsewhere", openInstall) : catalogInstalled(id) ? h("span", { className: "dssm-catalog-installed", role: "status" }, t("repo.installed")) : rowIcon(unknown ? "repo.catalog.reassociate" : "repo.install", openInstall));
+            copies.length ? rowIcon("repo.installElsewhere", openInstall) : catalogInstalled(id) ? h("span", { className: "dssm-catalog-installed", role: "status" }, t("repo.installed")) : rowIcon("repo.install", openInstall));
         }
         function renderCatalogLocations(id: string) {
           const copies = catalogCopiesOf(id);
@@ -832,7 +819,6 @@ export function createRepositoryUI({ react, Modal, Input, Button, SourceSelect, 
     const catalogList = catalogSort === "installs" ? filteredCatalogItems.slice().sort((left, right) => (right.installs || 0) - (left.installs || 0)) :
       catalogSort === "name" ? filteredCatalogItems.slice().sort((left, right) => left.name.localeCompare(right.name)) : filteredCatalogItems;
     const renderCatalogItem = (item: CatalogSkillItem) => {
-      const unknown = catalogUnknownIds.includes(`clawhub:${item.owner}/${item.slug}`);
       const metadata = [
         item.source,
         item.downloads === undefined ? null : item.downloads.toLocaleString() + " " + t("repo.catalog.downloads"),
@@ -846,7 +832,7 @@ export function createRepositoryUI({ react, Modal, Input, Button, SourceSelect, 
                   item.description ? h("div", { className: "dssm-repo-description", title: item.description }, item.description) : null,
                   h("div", { className: "dssm-meta-origin" }, metadata)
                 ),
-                renderCatalogActions(`clawhub:${item.owner}/${item.slug}`, unknown, () => openCatalogDetail({ catalog: "clawhub", owner: item.owner, slug: item.slug, name: item.name }), () => openCatalogInstall({ catalog: "clawhub", owner: item.owner, slug: item.slug, name: item.name }))
+                renderCatalogActions(`clawhub:${item.owner}/${item.slug}`, () => openCatalogDetail({ catalog: "clawhub", owner: item.owner, slug: item.slug, name: item.name }), () => openCatalogInstall({ catalog: "clawhub", owner: item.owner, slug: item.slug, name: item.name }))
               ),
               renderCatalogLocations(`clawhub:${item.owner}/${item.slug}`)
             );
@@ -854,7 +840,7 @@ export function createRepositoryUI({ react, Modal, Input, Button, SourceSelect, 
     const catalogView = h("div", { className: "dssm-catalog-list", onWheel: onCatalogWheel },
       catalogList.map(renderCatalogItem),
       !catalogList.length && !catalogLoading && !catalogError ? h("div", { className: "dssm-empty" }, t("repo.catalog.empty")) : null,
-      catalogLoading ? h("div", { className: "dssm-catalog-loading", role: "status", "aria-live": "polite" }, h("span", { className: "dssm-repo-spinner", "aria-hidden": true }), catalogItems.length ? t("repo.catalog.loadingMore") : t("repo.catalog.loading")) : null,
+      catalogLoading ? readLoading(t(catalogItems.length ? "repo.catalog.loadingMore" : "repo.catalog.loading")) : null,
       catalogError ? h("div", { className: "dssm-feedback dssm-error", role: "alert" }, t("repo.catalog.loadError"), h(PrimitiveButton, { variant: "ghost", size: "sm", onClick: () => { void loadClawHubPage(); } }, t("repo.catalog.retry"))) : null,
       subsource === "clawhub" && !catalogQuery.trim() && catalogHasMore && !catalogError ? h("div", { className: "dssm-catalog-sentinel", ref: catalogSentinel, "aria-hidden": true }) : null,
       subsource === "clawhub" && !catalogQuery.trim() && catalogHasMore && !catalogError && !catalogLoading ? h("div", { className: "dssm-catalog-loading" }, h(PrimitiveButton, { variant: "ghost", size: "sm", onClick: () => { void loadClawHubPage(false, true); } }, t("repo.catalog.loadMore"))) : null
@@ -862,7 +848,7 @@ export function createRepositoryUI({ react, Modal, Input, Button, SourceSelect, 
     const clawhubSearchView = h("div", { className: "dssm-catalog-list" },
       clawhubSearchItems.map(renderCatalogItem),
       catalogQuery.trim() && !clawhubSearchItems.length && !clawhubSearchLoading && !clawhubSearchError ? h("div", { className: "dssm-empty" }, t("repo.catalog.searchEmpty")) : null,
-      clawhubSearchLoading ? h("div", { className: "dssm-note", role: "status", "aria-live": "polite" }, t("repo.catalog.searchLoading")) : null,
+      clawhubSearchLoading ? readLoading(t("repo.catalog.searchLoading")) : null,
       clawhubSearchError ? h("div", { className: "dssm-feedback dssm-error", role: "alert" }, t("repo.catalog.searchError"), h(PrimitiveButton, { variant: "ghost", size: "sm", onClick: () => { void fetchClawHubSearch(catalogQuery.trim()); } }, t("repo.catalog.retry"))) : null
     );
 
@@ -874,7 +860,6 @@ export function createRepositoryUI({ react, Modal, Input, Button, SourceSelect, 
         const skillshView = h("div", { className: "dssm-catalog-list" },
           skillshVisible.map(item => {
             const skillshId = `skillsh:${item.source}/${item.skillId}`;
-            const unknown = catalogUnknownIds.includes(skillshId);
             const metadata = [item.source, item.installs === undefined ? null : item.installs.toLocaleString() + " " + t("repo.catalog.installs")].filter(Boolean).join(" · ");
             return h("div", { key: item.id, className: "dssm-repo-row" },
               h("div", { className: "dssm-repo-head" },
@@ -882,18 +867,18 @@ export function createRepositoryUI({ react, Modal, Input, Button, SourceSelect, 
                   h("div", { className: "dssm-name" }, item.name),
                   h("div", { className: "dssm-meta-origin" }, metadata)
                 ),
-                renderCatalogActions(skillshId, unknown, () => openCatalogDetail({ catalog: "skillsh", source: item.source, skillId: item.skillId, name: item.name }), () => openCatalogInstall({ catalog: "skillsh", source: item.source, skillId: item.skillId, name: item.name }))
+                renderCatalogActions(skillshId, () => openCatalogDetail({ catalog: "skillsh", source: item.source, skillId: item.skillId, name: item.name }), () => openCatalogInstall({ catalog: "skillsh", source: item.source, skillId: item.skillId, name: item.name }))
               ),
               renderCatalogLocations(skillshId)
             );
           }),
           skillshQuery.trim() && !skillshVisible.length && !skillshLoading && !skillshError ? h("div", { className: "dssm-empty" }, t("repo.catalog.skillshEmpty")) : null,
-          skillshLoading ? h("div", { className: "dssm-note", role: "status", "aria-live": "polite" }, t("repo.catalog.skillshLoading")) : null,
+          skillshLoading ? readLoading(t("repo.catalog.skillshLoading")) : null,
           skillshError ? h("div", { className: "dssm-feedback dssm-error", role: "alert" }, t("repo.catalog.skillshError"), h(PrimitiveButton, { variant: "ghost", size: "sm", onClick: () => { void fetchSkillshResults(skillshQuery.trim()); } }, t("repo.catalog.retry"))) : null
         );
 
     const subsourceToolbar = h("div", { className: "dssm-subsources" },
-      h("button", { type: "button", className: "dssm-subsource-btn" + (subsource === "github" ? " on" : ""), "aria-pressed": subsource === "github", onClick: () => selectSubsource("github") }, t("repo.subsource.github") + " (" + repos.length + ")"),
+      h("button", { type: "button", className: "dssm-subsource-btn" + (subsource === "github" ? " on" : ""), "aria-pressed": subsource === "github", onClick: () => selectSubsource("github") }, t("repo.subsource.github") + " (" + (repoLoaded ? repos.length : "—") + ")"),
       h("button", { type: "button", className: "dssm-subsource-btn" + (subsource === "clawhub" ? " on" : ""), "aria-pressed": subsource === "clawhub", onClick: () => selectSubsource("clawhub") }, t("repo.subsource.clawhub")),
       h("button", { type: "button", className: "dssm-subsource-btn" + (subsource === "skillsh" ? " on" : ""), "aria-pressed": subsource === "skillsh", onClick: () => selectSubsource("skillsh") }, t("repo.subsource.skillsh"))
     );
@@ -916,10 +901,9 @@ export function createRepositoryUI({ react, Modal, Input, Button, SourceSelect, 
       subsourceToolbar,
       subsource === "github" ? h("p", { className: "dssm-desc" }, t("repo.hint")) : subsource === "clawhub" && !catalogQuery.trim() ? h("p", { className: "dssm-desc" }, t("repo.subsource.catalogNote")) : null,
       filtersRow,
-      catalogUnknownIds.length ? h("div", { className: "dssm-note", role: "status" }, t("repo.catalog.unknownHint")) : null,
       catalogWarnings.map(warning => h("div", { key: warning.id, className: "dssm-feedback dssm-error", role: "alert" }, warning.id + " · " + message(warning))),
       feedbackNode, !modal ? refreshProgress : null, busy && !refreshing ? h("div", { className: "dssm-note", role: "status" }, t("repo.loading")) : null,
-      subsource === "github" ? (repos.length ? groups : h("div", { className: "dssm-empty" }, t("repo.empty"))) :
+      subsource === "github" ? (!repoLoaded ? (feedback ? null : readLoading(t("repo.loading"))) : repos.length ? groups : h("div", { className: "dssm-empty" }, t("repo.empty"))) :
         subsource === "skillsh" ? skillshView : catalogQuery.trim() ? clawhubSearchView : catalogView,
       h("p", { className: "dssm-note" }, t("repo.footer")), dialog);
     return { actions, content, focusSource: (origin: InstallSource, name: string) => { setSource(origin.id); setQuery(name); setStatus(""); setExpanded({ [origin.id]: true }); } };

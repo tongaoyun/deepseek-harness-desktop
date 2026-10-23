@@ -1,3 +1,4 @@
+import { publishedTeamSchema } from '@deepseek-harness/product/company-team'
 import { AGENCY_TEAM_SERVICE, type AgencyTeamLibrary } from './team-library.ts'
 import { nativeTeamMemberName } from './team-engine.ts'
 import { teamText } from './team-i18n.ts'
@@ -65,6 +66,31 @@ export default class AgencyAgentsRemote extends TypertRemoteService {
     const engine = this.ctx.get('agencyAgentsTeamEngine') as (() => TeamEngineStatus) | undefined
     const nativeMembers = Object.fromEntries(snapshot.teams.flatMap(team => team.members.map(member => [nativeTeamMemberName(team.id, member.expertSlug), member.expertSlug])))
     return { ...snapshot, nativeMembers, ...(engine ? { engine: engine() } : {}) }
+  }
+
+  /** Export one saved personal team with concrete member personas; no private slug escapes. */
+  @Remote('exportTeam')
+  async exportTeam(id: string, expectedRevision: number): Promise<{ resourceKey: string; files: Record<string, string> }> {
+    const company = this.ctx.get('companyContent') as CompanyContentSource | undefined
+    const companyVersion = await company?.read()
+    const snapshot = await this.teams().snapshot()
+    const team = snapshot.teams.find(item => item.id === id && !('company' in item && item.company))
+    if (!team || snapshot.revision !== expectedRevision) throw new Error(teamText(readHostLocale(this.ctx), '专家团已更新，请刷新后提交'))
+    const catalog = await this.library().catalog()
+    const experts = await Promise.all(team.members.map(async (member, index) => {
+      const expert = catalog.experts.find(item => item.slug === member.expertSlug && !item.conflict)
+      if (!expert) throw new Error(teamText(readHostLocale(this.ctx), '专家团成员已删除或冲突，请修复后提交'))
+      return { key: `member-${index + 1}`, name: expert.name, description: expert.description,
+        division: expert.division, emoji: expert.emoji,
+        prompt: (await personaSource(this.ctx).getPrompt(expert.slug, expert.division, readHostLocale(this.ctx))).prompt }
+    }))
+    const latest = await this.teams().snapshot()
+    if (latest.revision !== expectedRevision || (await company?.read())?.sha256 !== companyVersion?.sha256) throw new Error(teamText(readHostLocale(this.ctx), '专家团已更新，请刷新后提交'))
+    const { id: _id, ...definition } = team
+    const content = publishedTeamSchema.parse({ team: { ...definition,
+      members: team.members.map((member, index) => ({ ...member, expertSlug: `member-${index + 1}` })) }, experts })
+    const key = 'teams/' + id.slice('team-custom-'.length)
+    return { resourceKey: key, files: { [key + '.json']: Buffer.from(JSON.stringify(content)).toString('base64') } }
   }
 
   /**

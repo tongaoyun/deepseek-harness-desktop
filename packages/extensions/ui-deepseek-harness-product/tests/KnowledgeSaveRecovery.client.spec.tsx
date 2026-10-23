@@ -170,7 +170,7 @@ it.each(['markdown', 'url', 'base', 'folder'] as const)('contains unreadable rec
     expect(sessionStorage.getItem(key)).not.toBeNull()
     holdIdentity = true
     fireEvent.click(screen.getByRole('button', { name: zh.retry }))
-    expect(screen.getByRole('status').textContent).toBe(zh.loading)
+    expect(screen.getByRole('status', { name: zh.loading }).textContent).toBe('')
     expect(screen.queryByRole('button', { name: zh.retry })).toBeNull()
     expect(screen.queryByRole('textbox')).toBeNull()
     expect(writes).toHaveLength(0)

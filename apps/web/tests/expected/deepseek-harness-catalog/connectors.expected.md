@@ -1,6 +1,6 @@
 - tabpanel "All":
-  - region "Industry data":
-    - heading "Industry data 2" [level=2]
+  - region "Business systems":
+    - heading "Business systems 2" [level=2]
     - list:
       - listitem:
         - button "Order management Orders, inventory, and fulfillment Connected"

@@ -4,6 +4,9 @@ import type { Context } from '@deepseek-ai/cordis'
 import type { PresetDefinition } from '@deepseek-ai/dsh-agent-preset-registry'
 import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
 import * as McpClient from '@deepseek-ai/dsh-mcp-client'
+import Tools from '@deepseek-ai/dsh-tools'
+import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
+import { installConnectorDiscovery, discoveryOptions, type DiscoveryOptions, type ConnectorCatalog } from './connector-discovery.ts'
 import type {} from '@deepseek-ai/dsh-session-query'
 import type { ProductTaskCapabilityRequest, ProductTaskCapabilityResult, ProductTaskCapabilities } from '@deepseek-harness/product/protocol'
 import { ProductError } from '@deepseek-harness/product/errors'
@@ -22,10 +25,12 @@ export interface DeepSeekHarnessRuntimeControl {
 }
 export interface Config {
   readonly product: Pick<DeepSeekHarnessProductIpc, 'invoke'>
+  readonly connectorDiscovery?: DiscoveryOptions
   readonly publishControl: (control: DeepSeekHarnessRuntimeControl | undefined) => void
 }
 /** Register knowledge selection and authorized enterprise tools for native Agents, including subagents. */
 export async function apply(ctx: Context, config: Config): Promise<void> {
+  const discovery = discoveryOptions.parse(config.connectorDiscovery ?? {})
   await ctx.plugin(KnowledgeLibrary, { product: config.product })
   const visibleKnowledge = async (signal?: AbortSignal) => {
     const value = await config.product.invoke('knowledge.bases.list', undefined, signal)
@@ -51,6 +56,10 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
     },
   })
   const connectors: Connector[] = []
+  let catalog: ConnectorCatalog | undefined
+  let privatePrompt: SystemPrompt | undefined
+  let connectorInstructions = ''
+  installConnectorDiscovery(ctx, config.product, () => catalog, discovery)
   let connectorStatus = 'Enterprise connector catalog is loading. Its tools are unavailable.'
   const lifetime = new AbortController()
   const abortConnectors = () => { lifetime.abort(new Error('Product runtime unloaded')) }
@@ -59,13 +68,16 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
   }, { global: true })
   installConnectorPolicy(ctx, connectors, config.product)
   ctx.effect(() => ctx.systemPrompt.section({ name: 'enterprise-connectors', order: 450,
-    interpolate: false, text: () => connectorStatus }), 'product-connectors.status')
+    interpolate: false, text: () => connectorStatus + '\n' + connectorInstructions }), 'product-connectors.status')
   let fiber: ReturnType<Context['plugin']> | undefined
   let refreshQueue: Promise<unknown> = Promise.resolve()
   const refreshConnectors: DeepSeekHarnessRuntimeControl['refreshConnectors'] = (signal) => {
     const combined = AbortSignal.any([lifetime.signal, ...signal === undefined ? [] : [signal]])
     const operation = refreshQueue.catch(() => undefined).then(async () => {
       combined.throwIfAborted()
+      catalog = undefined
+      privatePrompt = undefined
+      connectorInstructions = ''
       await fiber?.dispose()
       fiber = undefined
       connectors.length = 0
@@ -75,10 +87,17 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
       const current = ctx.plugin({ name: 'product-connectors', async apply(owner: Context) {
         const selected = parseConnectorCatalog(await config.product.invoke('connectors.list', undefined, combined))
         combined.throwIfAborted()
-        // Policies must be installed before any native MCP client exposes tools.
+        // Cordis service isolation keeps MCP catalog changes outside the Agent tool registry.
+        // Native MCP resources retain their existing shared provider and original execution path.
+        const background = owner.isolate('tools').isolate('systemPrompt')
+        const prompt = background.plugin(SystemPrompt, { includeHarnessIdentity: false })
+        await prompt
+        const tools = prompt.ctx.plugin(Tools, { mode: 'native' })
+        await tools
         connectors.push(...selected)
         const connected = await Promise.all(selected.map(async (connector) => {
-          const child = owner.plugin({ name: McpClient.name, inject: McpClient.inject, apply: McpClient.apply }, connectorConfig(connector))
+          const child = tools.ctx.plugin({ name: McpClient.name, inject: McpClient.inject, apply: McpClient.apply },
+            connectorConfig(connector))
           try { await child; return connector }
           catch {
             await child.dispose()
@@ -90,6 +109,8 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
         combined.throwIfAborted()
         available = connected.filter(connector => connector !== undefined)
         unavailable = selected.filter(connector => !available.includes(connector))
+        catalog = { tools: tools.ctx.tools, connectors: available }
+        privatePrompt = prompt.ctx.systemPrompt
       } })
       fiber = current
       const cancel = () => { void current.dispose() }
@@ -98,12 +119,16 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
         combined.throwIfAborted()
         await current
         combined.throwIfAborted()
+        await updateConnectorInstructions(combined)
         connectorStatus = `Enterprise connector versions: ${JSON.stringify(available.map(({ id, version }) => ({ id, version })))}`
           + (unavailable.length === 0 ? '' : `\nUnavailable enterprise connectors: ${JSON.stringify(unavailable.map(({ id, name }) => ({ id, name })))}. Their tools could not connect. If needed, explain the missing capability and ask the user to refresh the connector page; do not claim their operations succeeded.`)
         return { connectedIds: available.map(({ id }) => id), unavailableIds: unavailable.map(({ id }) => id) }
       } catch (error) {
         await current.dispose()
         if (fiber === current) fiber = undefined
+        catalog = undefined
+        privatePrompt = undefined
+        connectorInstructions = ''
         connectors.length = 0
         connectorStatus = 'Enterprise connector catalog is unavailable. No enterprise connector tools are available. If needed, explain the missing capability and ask the user to refresh the connector page; do not claim their operations succeeded.'
         combined.throwIfAborted()
@@ -116,12 +141,21 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
     refreshQueue = operation
     return operation
   }
-  ctx.effect(() => async () => { abortConnectors(); await refreshQueue.catch(() => undefined) }, 'product-runtime.connectors')
+  const updateConnectorInstructions = async (signal: AbortSignal) => {
+    const source = privatePrompt
+    if (!source) return
+    const assembly = await source.assemble({ signal })
+    signal.throwIfAborted()
+    if (source === privatePrompt) connectorInstructions = assembly.sections.filter(section => section.name.startsWith('mcp:'))
+      .map(section => section.text).join('\n\n')
+  }
+  ctx.effect(() => async () => { catalog = undefined; abortConnectors(); await refreshQueue.catch(() => undefined) }, 'product-runtime.connectors')
   // Connector failure is reported in the model-visible, logged prompt, not as a global execution guard.
   await refreshConnectors().catch((error: unknown) => { lifetime.signal.throwIfAborted(); ctx.logger.warn(String(error)) })
   ctx.on('agent-preset/resolve-selection', async (agent, _requested, next) => tasks.resolveSelection(agent.session.id, await next()))
   ctx.on('agent/pre-step', async ({ agent, signal }, next) => {
     await tasks.validate(ctx.agentPresets.composedPreset(agent.ctx), signal)
+    await updateConnectorInstructions(signal)
     return next()
   })
   config.publishControl({ readCapabilities: request => tasks.read(request),
@@ -151,9 +185,14 @@ function installConnectorPolicy(
   product: Config['product'],
 ): void {
   ctx.on('tools/pre-execute', async (exec, next) => {
-    const policy = connectorToolPolicy(connectors, exec.name)
+    const resourceServer = ['list_mcp_resources', 'list_mcp_resource_templates', 'read_mcp_resource'].includes(exec.name)
+      && typeof exec.arguments === 'object' && exec.arguments !== null && 'server' in exec.arguments
+      ? exec.arguments.server : undefined
+    const resourceConnector = connectors.find(value => connectorServerName(value.id) === resourceServer)
+    const policy = resourceConnector ? 'read-only' : connectorToolPolicy(connectors, exec.name)
     if (policy === 'unrelated') return next()
-    const connector = connectors.find(value => connectorToolPolicy([value], exec.name) !== 'unrelated')
+    if (!ctx.tools.get(exec.name, exec.agent)) return { kind: 'deny' as const, reason: 'Discover this connector tool in the current conversation before calling it.' }
+    const connector = resourceConnector ?? connectors.find(value => connectorToolPolicy([value], exec.name) !== 'unrelated')
     if (connector === undefined) return { kind: 'deny' as const, reason: 'Connector definition is missing.' }
     const live = parseConnectorCatalog(await product.invoke('connectors.list', { ids: [connector.id] }, exec.signal))
     const current = live.find(value => value.id === connector.id && value.transport === connector.transport)
@@ -162,7 +201,7 @@ function installConnectorPolicy(
     }
     if (current.version !== connector.version) return { kind: 'deny' as const,
       reason: 'This connector configuration changed. Refresh the connector page to use the updated connector.' }
-    const livePolicy = connectorToolPolicy([current], exec.name)
+    const livePolicy = resourceConnector ? 'read-only' : connectorToolPolicy([current], exec.name)
     if (policy === 'undeclared' || livePolicy === 'undeclared' || livePolicy === 'unrelated') return { kind: 'deny' as const,
       reason: 'This connector tool is not declared in the enterprise catalog.' }
     if (policy === 'read-only' && livePolicy === 'read-only') return next()

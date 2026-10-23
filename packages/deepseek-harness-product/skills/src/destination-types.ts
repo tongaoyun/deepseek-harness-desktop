@@ -21,6 +21,7 @@ export interface DestinationPickerProps {
   /** 创建与导入入口不开放 Shared Agent。 */
   allowAgents: boolean;
   disabled?: boolean;
+  loading?: boolean;
 }
 export type DestinationPickerComponent = React.ComponentType<DestinationPickerProps>;
 /** 注入给各入口的一套选择器能力，保证三处共用同一实现。 */

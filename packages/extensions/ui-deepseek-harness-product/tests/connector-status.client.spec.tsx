@@ -16,8 +16,8 @@ it('shows tools without a redundant connection section for company connectors', 
   ] }])[0]!
   render(<ConnectorDetail product={localDetail(entry)} t={t} onCatalogChanged={async () => {}} />)
   expect(screen.queryByRole('heading', { name: zh.connectorConfiguration })).toBeNull()
-  expect(screen.getByText(zh.readOnlyLabel)).toBeTruthy()
-  expect(screen.getByText(zh.writeLabel)).toBeTruthy()
+  expect(screen.getByText(zh.readOnlyLabel, { selector: 'span[data-access="READ"]' })).toBeTruthy()
+  expect(screen.getByText(zh.writeLabel, { selector: 'span[data-access="WRITE"]' })).toBeTruthy()
   expect(screen.queryByText(/已配置|就绪|待配置|停用|不可用|已连接/)).toBeNull()
 })
 

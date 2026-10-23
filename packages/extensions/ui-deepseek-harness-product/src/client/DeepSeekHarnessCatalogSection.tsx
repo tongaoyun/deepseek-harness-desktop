@@ -1,8 +1,8 @@
 import type { PropsLocale, PropsRuntime, PropsRenderFactories } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ReactNode } from 'react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Button, IconChevronDownOutlineRegular, IconLinkOutlineRegular, IconPlusOutlineRegular, IconRefreshOutlineRegular, IconSearchOutlineRegular, Menu, Modal } from '@deepseek-ai/dsh-client-ui-primitives'
-import { ExtensionRemovalResultSchema, ExtensionSubmissionResultSchema } from '@deepseek-harness/product/connector-draft'
+import { Button, IconChevronDownOutlineRegular, IconLinkOutlineRegular, IconPlusOutlineRegular, IconRefreshOutlineRegular, IconSearchOutlineRegular, Menu, Modal, StateDot } from '@deepseek-ai/dsh-client-ui-primitives'
+import { ConnectorRefreshResultSchema, ExtensionRemovalResultSchema, ExtensionSubmissionResultSchema } from '@deepseek-harness/product/connector-draft'
 import { NS, type DeepSeekHarnessProductKey } from '../locales.ts'
 import css from '../DeepSeekHarnessProduct.module.css'
 import { productApi, type ProductApi } from './product-api.ts'
@@ -30,13 +30,15 @@ export function DeepSeekHarnessCatalogSection(props: CatalogSectionProps): React
   const [entries, setEntries] = useState<readonly ProductItem[]>([])
   const [knowledgeRevision, setKnowledgeRevision] = useState(0)
   const [loading, setLoading] = useState(true)
+  const [catalogLoaded, setCatalogLoaded] = useState(false)
   const [authRequired, setAuthRequired] = useState(false)
   const [authPending, setAuthPending] = useState(false)
   const [authError, setAuthError] = useState(false)
   const [error, setError] = useState<string>()
+  const [unavailableConnectorIds, setUnavailableConnectorIds] = useState<readonly string[]>([])
   const [query, setQuery] = useState('')
   const [categoryFilter, setCategoryFilter] = useState('all')
-  const [connectorFilter, setConnectorFilter] = useState<'all' | 'mine'>('all')
+  const [connectorFilter, setConnectorFilter] = useState<'market' | 'mine'>('market')
   const [categoryMenuOpen, setCategoryMenuOpen] = useState(false)
   const [selected, setSelected] = useState<ProductDetail>()
   const [editor, setEditor] = useState<{ connector?: { id: string; version: string } }>()
@@ -66,6 +68,8 @@ export function DeepSeekHarnessCatalogSection(props: CatalogSectionProps): React
     writes.current.clear()
     setIdentityRevision(value => value + 1)
     setEntries([])
+    setCatalogLoaded(false)
+    setUnavailableConnectorIds([])
     setSelected(undefined)
     setEditor(undefined); setConfirmation(undefined)
     setManagementPending(false); setManagementError(undefined)
@@ -103,6 +107,7 @@ export function DeepSeekHarnessCatalogSection(props: CatalogSectionProps): React
     }
     setLoading(true)
     setError(undefined)
+    if (reconnect) setUnavailableConnectorIds([])
     setAuthError(false)
     try {
       const session = await api.getSession()
@@ -115,11 +120,14 @@ export function DeepSeekHarnessCatalogSection(props: CatalogSectionProps): React
       }
       setAuthRequired(false)
       if (currentGeneration !== scope.generation) return
-      if (reconnect && catalog === 'connectors') await read(api, 'connectors.refresh', {}, undefined, scope)
+      const reconnected = reconnect && catalog === 'connectors'
+        ? ConnectorRefreshResultSchema.parse(await read(api, 'connectors.refresh', {}, undefined, scope)) : undefined
       if (currentGeneration !== scope.generation) return
       const catalogValue = await read(api, METHODS[catalog], undefined, undefined, scope)
       if (currentGeneration !== scope.generation) return
       setEntries(items(catalogValue))
+      setCatalogLoaded(true)
+      if (reconnected) setUnavailableConnectorIds(reconnected.unavailableIds)
       if (catalog === 'knowledge') setKnowledgeRevision(value => value + 1)
     } catch (error: unknown) {
       if (currentGeneration !== scope.generation) return
@@ -155,11 +163,13 @@ export function DeepSeekHarnessCatalogSection(props: CatalogSectionProps): React
   }
 
   useEffect(() => {
+    setCatalogLoaded(false)
     setQuery('')
     setCategoryFilter('all')
-    setConnectorFilter('all')
+    setConnectorFilter('market')
     setEditor(undefined)
     setCategoryMenuOpen(false)
+    setUnavailableConnectorIds([])
     setSelected(undefined)
     setConfirmation(undefined)
     setManagementPending(false)
@@ -188,12 +198,18 @@ export function DeepSeekHarnessCatalogSection(props: CatalogSectionProps): React
   }, [catalog])
 
 
-  const filteredEntries = useMemo(() => entries.filter(entry =>
-    (connectorFilter !== 'mine' || entry.canEdit === true)
-    && (categoryFilter === 'all' || connectorCategory(entry) === categoryFilter)
-    && normalizedSearch(entry).includes(query.trim().toLowerCase())), [entries, connectorFilter, categoryFilter, query])
-  const groupedEntries = [...Map.groupBy(filteredEntries, entry => localizedCategory(connectorCategory(entry), t))]
-  const categories = [...new Set(entries.map(connectorCategory))].sort()
+  const scopeEntries = useMemo(() => entries.filter(entry => connectorFilter === 'market'
+    ? entry.reviewStatus === 'PUBLISHED' : entry.canEdit === true), [entries, connectorFilter])
+  const filteredEntries = useMemo(() => scopeEntries.filter(entry =>
+    (categoryFilter === 'all' || connectorCategory(entry) === categoryFilter)
+    && `${normalizedSearch(entry)}\n${localizedCategory(connectorCategory(entry), t)}`.toLocaleLowerCase()
+      .includes(query.trim().toLocaleLowerCase())), [scopeEntries, categoryFilter, query, t])
+  const categories = Object.keys(CATEGORY_KEYS)
+  const groupedEntries = categories.map(category => [localizedCategory(category, t),
+    filteredEntries.filter(entry => connectorCategory(entry) === category)] as const).filter(([, rows]) => rows.length > 0)
+  const selectConnectorFilter = (filter: 'market' | 'mine') => {
+    setConnectorFilter(filter); setCategoryFilter('all'); setCategoryMenuOpen(false)
+  }
   const closeDetail = () => { cancelReads(); setSelected(undefined) }
   const refreshConnectorDetails = async (): Promise<void> => {
     const api = productApi()
@@ -259,19 +275,19 @@ export function DeepSeekHarnessCatalogSection(props: CatalogSectionProps): React
       </header>
       {!authRequired && error === undefined && <div className={css.catalogTabs}
         role="tablist" aria-label={t('connectorFilter')}>
-        {(['all', 'mine'] as const).map((id, index, tabs) => <button key={id} type="button" role="tab"
+        {(['market', 'mine'] as const).map((id, index, tabs) => <button key={id} type="button" role="tab"
           id={`product-connectors-tab-${id}`} aria-selected={connectorFilter === id}
           aria-controls="deepseek-harness-catalog-results" tabIndex={(connectorFilter === id) ? 0 : -1}
-          onClick={() => { setConnectorFilter(id) }} onKeyDown={(event) => {
-            const next = event.key === 'Home' ? 'all' : event.key === 'End' ? 'mine'
+          onClick={() => { selectConnectorFilter(id) }} onKeyDown={(event) => {
+            const next = event.key === 'Home' ? 'market' : event.key === 'End' ? 'mine'
               : event.key === 'ArrowLeft' ? tabs[(index + tabs.length - 1) % tabs.length]
                 : event.key === 'ArrowRight' ? tabs[(index + 1) % tabs.length] : undefined
             if (next === undefined) return
             event.preventDefault()
-            setConnectorFilter(next)
+            selectConnectorFilter(next)
             event.currentTarget.parentElement?.querySelector<HTMLButtonElement>(`#product-connectors-tab-${next}`)?.focus()
           }}>
-          {t(id === 'all' ? 'connectorFilterAll' : 'mineExtensions')}
+          {t(id === 'market' ? 'extensionMarket' : 'mineExtensions')}
         </button>)}
       </div>}
       {!authRequired && <div className={css.catalogToolbar}>
@@ -280,17 +296,26 @@ export function DeepSeekHarnessCatalogSection(props: CatalogSectionProps): React
         <Menu open={categoryMenuOpen} items={[{ id: 'all', label: t('allCategories') }, ...categories.map(id => ({ id, label: localizedCategory(id, t) }))]}
           selectedId={categoryFilter} portal onSelect={(id) => { setCategoryFilter(id); setCategoryMenuOpen(false) }}
           onClose={() => { setCategoryMenuOpen(false) }}
-          anchor={<button className={css.categoryButton} type="button" aria-label={t('categoryFilter')} onClick={() => { setCategoryMenuOpen(value => !value) }}>
+          anchor={<button className={css.categoryButton} type="button" aria-label={t('categoryFilter')} aria-haspopup="menu" aria-expanded={categoryMenuOpen}
+            onClick={() => { setCategoryMenuOpen(value => !value) }}>
             {categoryFilter === 'all' ? t('allCategories') : localizedCategory(categoryFilter, t)}<IconChevronDownOutlineRegular size={14} /></button>} />
-        <Button variant="ghost" aria-label={t('refresh')} disabled={loading} onClick={() => { void refresh(true) }}><IconRefreshOutlineRegular size={16} /></Button>
+        <Button variant="ghost" aria-label={t('refresh')} aria-busy={loading} disabled={loading} onClick={() => { void refresh(true) }}>
+          {loading ? <span role="status" aria-label={t('loading')}><StateDot state="ongoing" size={16} /></span> : <IconRefreshOutlineRegular size={16} />}
+        </Button>
       </div>}
       {authRequired && <Button variant="primary" disabled={authPending} onClick={() => { void signIn() }}>{t('signIn')}</Button>}
       {authError && <p role="alert">{t('loadFailed')}</p>}
       {error && <p className={css.catalogError} role="alert">{error}</p>}
-      {loading && <p role="status">{t('loading')}</p>}
-      {!loading && !authRequired && !error && <div id="deepseek-harness-catalog-results" role="tabpanel"
+      {!authRequired && !error && unavailableConnectorIds.length > 0 && <p className={css.catalogWarning} role="alert">
+        {t('connectorPartialRefreshFailed').replace('{names}', unavailableConnectorIds
+          .map(id => entries.find(entry => entry.id === id)?.label ?? id).join('、'))}</p>}
+      {catalogLoaded && !authRequired && !error && <div id="deepseek-harness-catalog-results" role="tabpanel" aria-busy={loading}
         aria-labelledby={`product-connectors-tab-${connectorFilter}`}>
-        {filteredEntries.length === 0 && <p className={css.catalogStatus}>{t(query ? 'noSearchResults' : 'empty')}</p>}
+        {filteredEntries.length === 0 && <div className={css.catalogStatus}>
+          <p>{t(query.trim() || categoryFilter !== 'all' ? 'noSearchResults' : connectorFilter === 'mine' ? 'noPersonalConnectors' : 'noConnectors')}</p>
+          {(query.trim() || categoryFilter !== 'all') && <Button variant="ghost" size="sm"
+            onClick={() => { setQuery(''); setCategoryFilter('all') }}>{t('clearConnectorFilters')}</Button>}
+        </div>}
         {groupedEntries.map(([group, rows]) => <section className={css.catalogGroup} aria-label={group} key={group}>
           <h2 className={css.groupTitle}>{group}<span>{rows.length}</span></h2>
           <ul className={css.catalogGrid} data-catalog="connectors">
@@ -312,7 +337,7 @@ export function DeepSeekHarnessCatalogSection(props: CatalogSectionProps): React
         onClose={closeDetail} onCatalogChanged={refreshConnectorDetails}
         managementActions={selected && managementActions(selected)} t={t} />
       {editor && <ConnectorEditor key={identityRevision} editing={editor.connector} onClose={() => { setEditor(undefined) }}
-        onSaved={() => { setEditor(undefined); setConnectorFilter('mine'); void refresh() }}
+        onSaved={() => { setEditor(undefined); selectConnectorFilter('mine'); void refresh() }}
         t={t} />}
       <Modal open={confirmation !== undefined} onClose={() => { if (!managementPending) setConfirmation(undefined) }}
         title={confirmation?.action === 'delete' ? t('resourceDeleteTitle').replace('{name}', confirmation.name) : t('submitResourceTitle')} closeLabel={t('close')}

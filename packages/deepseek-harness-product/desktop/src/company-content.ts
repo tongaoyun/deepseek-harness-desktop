@@ -66,7 +66,7 @@ async function readCache(directory: string, version: string, sha256: string, sig
       : companyContentRelease({ version, sha256, files })
   } catch (cause) { throw new Error('公司内容缓存已损坏', { cause }) }
   if (release.sha256 !== sha256) throw new Error('公司内容缓存已损坏')
-  const expectedDirectories = new Set(['', 'skills', 'experts'])
+  const expectedDirectories = new Set(['', 'skills', 'experts', ...(Object.keys(files).some(path => path.startsWith('teams/')) ? ['teams'] : [])])
   for (const path of Object.keys(files)) {
     const parts = path.split('/')
     for (let index = 1; index < parts.length; index++) expectedDirectories.add(parts.slice(0, index).join('/'))

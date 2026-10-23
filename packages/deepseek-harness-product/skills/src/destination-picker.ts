@@ -1,13 +1,13 @@
 import type * as React from "react";
 import type { SourceSelectProps, Translate } from "./client-types.ts";
 import type { WorkspaceRow } from "./core.ts";
-import type { DestinationKit, DestinationValue, DestinationPickerProps, UserDestination } from "./destination-types.ts";
+import type { DestinationKit, DestinationValue, DestinationPickerProps } from "./destination-types.ts";
 
-export type { DestinationKit, DestinationValue, UserDestination } from "./destination-types.ts";
+export type { DestinationKit, DestinationValue } from "./destination-types.ts";
 
 export const defaultDestination = (): DestinationValue => ({ scope: "user", location: "dsh", workspace: "" });
 
-/** 请求体只带必要字段：用户目录沿用旧的 root；工作区只带 workspace，位置固定为项目 DSH。 */
+/** 请求体只带必要字段：用户目录带 root；工作区只带 workspace，位置固定为项目 DSH。 */
 export function destinationPayload(value: DestinationValue): { root?: "dsh" | "agents"; workspace?: string } {
   if (value.scope === "workspace") return { workspace: value.workspace };
   return { root: value.location === "agents" ? "agents" : "dsh" };
@@ -72,7 +72,7 @@ interface Dependencies {
 /** 创建、导入、仓库安装共用的目标选择器：范围、工作区下拉、位置、写入预览。 */
 export function createDestinationPicker({ react, SourceSelect, translateError }: Dependencies) {
   const h = react.createElement;
-  return function DestinationPicker({ t, value, onChange, workspaces, userDestinations, allowAgents, disabled }: DestinationPickerProps) {
+  return function DestinationPicker({ t, value, onChange, workspaces, userDestinations, allowAgents, disabled, loading = false }: DestinationPickerProps) {
     const inWorkspace = value.scope === "workspace";
     const chosen = workspaces.find((row) => !!row.registeredPaths[0] && row.registeredPaths[0] === value.workspace);
     const scopeOptions = [
@@ -121,7 +121,7 @@ export function createDestinationPicker({ react, SourceSelect, translateError }:
             onChange: (next: string) => { if (!disabled && (next === "workspace" || next === "user")) onChange(next === "workspace" ? { scope: "workspace", location: "dsh" } : { scope: "user", workspace: "" }); },
           })),
         second),
-      inWorkspace && workspaces.length === 0 ? h("p", { className: "dssm-feedback dssm-warning", role: "status" }, t("dest.empty")) : null,
+      inWorkspace && !loading && workspaces.length === 0 ? h("p", { className: "dssm-feedback dssm-warning", role: "status" }, t("dest.empty")) : null,
       inWorkspace && workspaces.length > 0 && !chosen ? h("p", { className: "dssm-note" }, t("dest.pickFirst")) : null,
       path ? h("code", { className: "dssm-destination-path" }, path) : null,
       // 不可用的位置在下拉里置灰，原因与路径写在这里，用户才知道为什么选不了。

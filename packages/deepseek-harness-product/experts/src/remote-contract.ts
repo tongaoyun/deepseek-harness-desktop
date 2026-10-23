@@ -49,6 +49,9 @@ export const AGENCY_AGENTS_DESCRIPTORS = [
     id: `@deepseek-harness/product-experts#agencyAgents/${method}`, service: 'agencyAgents', namespace: 'agencyAgents', method,
     invocation: { kind: 'direct' }, parameters, result: strictCodec('AgencyTeamsSnapshot', teamSnapshotSchema),
   })),
+  { id: '@deepseek-harness/product-experts#agencyAgents/exportTeam', service: 'agencyAgents', namespace: 'agencyAgents', method: 'exportTeam',
+    invocation: { kind: 'direct' }, parameters: [jsonParameter('id', 'string', z.string().min(1).max(128)), revisionParameter],
+    result: strictCodec('CompanyTeamSubmission', z.object({ resourceKey: z.string(), files: z.record(z.string(), z.string()) }).strict()) },
   catalogMethod('getCatalog', [jsonParameter('refreshCompany', 'boolean', z.boolean())]),
   catalogMethod('saveCustomExpert', [
     jsonParameter('expert', 'CustomExpertInput', customExpertInputSchema),
