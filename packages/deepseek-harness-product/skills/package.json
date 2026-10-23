@@ -64,7 +64,7 @@
     "@deepseek-ai/dsh-tools": "workspace:*",
     "@deepseek-ai/dsh-web-app": "workspace:*",
     "@types/node": "^22.20.1",
-    "react": "18.3.1",
+    "react": "19.3.0",
     "react-dom": "18.3.1",
     "typescript": "^6.0.3",
     "@deepseek-ai/dsh-client-ui-layout": "workspace:*",
