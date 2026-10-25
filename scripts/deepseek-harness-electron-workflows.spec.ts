@@ -68,7 +68,7 @@ describe('DeepSeekHarness Electron workflows', () => {
       expect(jobs).toHaveLength(1)
       expect(jobs[0]?.['runs-on']).toBe('ci-node')
       for (const step of jobs[0]?.steps ?? []) {
-        if (step.uses !== undefined) expect(step.uses).toMatch(/^http:\/\/192\.168\.2\.66:3300\/instudio\//u)
+        if (step.uses !== undefined) expect(step.uses).toMatch(/^http:\/\/192\.168\.2\.67:30330\/instudio\//u)
       }
     }
   })

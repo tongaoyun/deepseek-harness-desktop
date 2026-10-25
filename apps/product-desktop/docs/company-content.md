@@ -58,14 +58,14 @@ skills/orders/references/policy.md
 
 完整技能及安装器随 `deepseek-harness-desktop` 仓库维护，不需要手工分发 ZIP。给同事仓库地址，让其使用的 Codex 或 Claude 执行：
 
-> 从 http://192.168.2.66:3300/instudio/deepseek-harness-desktop 安装公司内容发布技能，按 apps/product-desktop/docs/company-content.md 的“仓库安装与更新”操作，安装到我当前使用的工具。
+> 从 http://192.168.2.67:30330/instudio/deepseek-harness-desktop 安装公司内容发布技能，按 apps/product-desktop/docs/company-content.md 的“仓库安装与更新”操作，安装到我当前使用的工具。
 
 #### 仓库安装与更新
 
 前提是可以读取公司 Gitea 仓库，并已安装 Node.js 22.19+。全新检出即可安装，不需要 pnpm、桌面依赖或构建产物。AI 可使用浅层稀疏检出，只下载发布工具及文档：
 
 ```sh
-git clone --depth 1 --filter=blob:none --sparse http://192.168.2.66:3300/instudio/deepseek-harness-desktop.git harness-company-tools
+git clone --depth 1 --filter=blob:none --sparse http://192.168.2.67:30330/instudio/deepseek-harness-desktop.git harness-company-tools
 cd harness-company-tools
 git sparse-checkout set apps/product-desktop/scripts apps/product-desktop/skills apps/product-desktop/docs
 node apps/product-desktop/scripts/install-company-content-skill.mjs --client codex

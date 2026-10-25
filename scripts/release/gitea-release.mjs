@@ -28,7 +28,7 @@ const password = process.env.GITEA_PASSWORD?.trim()
 if ((token === undefined || token === '') && (username === undefined || username === '' || password === undefined || password === '')) {
   throw new Error('GITEA_TOKEN or GITEA_USERNAME/GITEA_PASSWORD is required')
 }
-const api = (process.env.GITEA_API_URL ?? 'http://192.168.2.66:3300/api/v1').replace(/\/$/u, '')
+const api = (process.env.GITEA_API_URL ?? 'http://192.168.2.67:30330/api/v1').replace(/\/$/u, '')
 const repository = process.env.GITEA_REPOSITORY ?? process.env.GITHUB_REPOSITORY ?? 'instudio/deepseek-harness-desktop'
 const tag = process.env.GITEA_RELEASE_TAG ?? `desktop-v${version}`
 const name = process.env.GITEA_RELEASE_NAME ?? `DeepSeek Harness ${version}`
