@@ -23,7 +23,7 @@ jobs:
         - /data/ci-cache/pnpm/deepseek-harness-desktop-electron:/pnpm-store
     steps:
       - name: Checkout
-        uses: http://192.168.2.66:3300/instudio/checkout@v4
+        uses: http://192.168.2.67:30330/instudio/checkout@v4
       - name: Fetch stored Harness baseline
         run: |
           UPSTREAM_TAG="$(cat UPSTREAM_TAG)"
