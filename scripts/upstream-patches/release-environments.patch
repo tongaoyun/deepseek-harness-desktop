@@ -163,7 +163,7 @@ index 591147578b79a6fe3f7aa410a531245574d438ba..533e50dbdd997a2f1eac7127cbdaaa1a
    const name = deployment === 'test' ? 'DSH_DESKTOP_MANDATORY_UPDATE_TEST_ORIGIN' : 'DSH_DESKTOP_MANDATORY_UPDATE_PROD_ORIGIN'
    const selected = origin(environment[name], name)
 diff --git a/apps/desktop/tests/desktop-auto-update-environment.spec.ts b/apps/desktop/tests/desktop-auto-update-environment.spec.ts
-index 9fbe629c8950cc3ef4abfe5d43d7ecc12fd943ff..c7cb27d428a1ea28f76a2d037eefcd1c6434035b 100644
+index 9fbe629c8950cc3ef4abfe5d43d7ecc12fd943ff..a1a311e2be22a8b1999603faf5dc7116e25ce235 100644
 --- a/apps/desktop/tests/desktop-auto-update-environment.spec.ts
 +++ b/apps/desktop/tests/desktop-auto-update-environment.spec.ts
 @@ -58,6 +58,54 @@ describe('desktop auto-update environment', () => {

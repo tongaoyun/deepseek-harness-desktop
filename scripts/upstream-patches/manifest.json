@@ -711,7 +711,7 @@
         {
           "path": "apps/desktop/tests/desktop-auto-update-environment.spec.ts",
           "before": "1784802d4bf6987475534bdcba0a55c031467016b5693cbbb90acb29e7858a8a",
-          "after": "6e37f785a8f29546b49f0d3c2356a1a71d7762e676f5fe0fa8619ea587bb6626"
+          "after": "6971ba614d5a08a323ad95a9e70c4c5b709b9d7bbd90f662ebb75c127fffc531"
         },
         {
           "path": "apps/desktop/tests/desktop-package-environment.spec.ts",
