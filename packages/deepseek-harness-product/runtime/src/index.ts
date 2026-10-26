@@ -12,7 +12,11 @@ import { renderKnowledgeOffice } from './knowledge-preview.ts'
 
 export { inject }
 export const name = 'product-runtime'
-export interface Config { readonly connectorDiscovery?: DiscoveryOptions }
+/** Product runtime configuration. */
+export interface Config {
+  /** Limits for connector discovery results and tools loaded by one Session. */
+  readonly connectorDiscovery?: DiscoveryOptions
+}
 export const Config = z.object({ connectorDiscovery: z.object({
   maxResults: z.number().step(1).min(1).max(50).default(8),
   maxLoadedTools: z.number().step(1).min(1).max(500).default(64),

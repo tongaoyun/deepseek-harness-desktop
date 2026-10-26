@@ -61,7 +61,7 @@ Loader 配置 `connectorDiscovery` 可设置单次结果数 `maxResults`（默�
 
 #### 模型看到的内容
 
-模型初始看到连接器搜索入口和所选知识库的检索工具，搜索后仅增加匹配的原生 MCP 定义；查询、范围与结果通过官方 Session 记录。原生技能由官方 Skill Provider 按需加载。公司技能和专家说明按 Session 固定版本，子会话继承父会话；版本与哈希通过官方上下文快照记录到日志。
+模型初始看到 `connector_search_tools` 和所选知识库的检索工具，搜索后仅增加匹配的原生 MCP 定义；查询、范围与结果通过官方 Session 记录。原生技能由官方 Skill Provider 按需加载。公司技能和专家说明按 Session 固定版本，子会话继承父会话；版本与哈希通过官方上下文快照记录到日志。
 
 #### Token 影响
 

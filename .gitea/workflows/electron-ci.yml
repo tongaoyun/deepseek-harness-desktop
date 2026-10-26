@@ -63,6 +63,7 @@ jobs:
           pnpm exec tsc --noEmit -p packages/deepseek-harness-product/experts/tsconfig.json
           pnpm exec tsc --noEmit -p packages/deepseek-harness-product/skills/tsconfig.json
           pnpm exec vitest run --config packages/deepseek-harness-product/experts/vitest.config.ts
+          pnpm exec vitest run --config packages/deepseek-harness-product/skills/vitest.config.ts
           node --test apps/product-desktop/tests/company-content.test.mjs
           pnpm run typecheck
           pnpm run rescope-vendor:check

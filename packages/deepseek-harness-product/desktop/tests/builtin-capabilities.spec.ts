@@ -12,10 +12,10 @@ it('mounts fixed Host modules and keeps their content configuration identity', (
 })
 
 it.each(['experts', 'skills'])('does not advertise %s as an installable client plugin', (module) => {
-  const manifest = JSON.parse(readFileSync(new URL(`../../${module}/package.json`, import.meta.url), 'utf8'))
-  expect(manifest.private).toBe(true)
-  expect(manifest.dsh).toBeUndefined()
-  expect(manifest.exports['./cordis.patch.yml']).toBeUndefined()
+  const manifest: unknown = JSON.parse(readFileSync(new URL(`../../${module}/package.json`, import.meta.url), 'utf8'))
+  expect(manifest).toHaveProperty('private', true)
+  expect(manifest).not.toHaveProperty('dsh')
+  expect(manifest).not.toHaveProperty(['exports', './cordis.patch.yml'])
 })
 
 it('ships the builtin browser pages without Node-only require shims', () => {
