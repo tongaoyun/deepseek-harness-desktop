@@ -171,15 +171,17 @@ const processBoundTests = [
   'packages/workflow/workflow-ptc/tests/workflow-ptc.spec.ts',
 ]
 
-// Claude Code's test-kit module names, served by the mods bridge's test support so the example mods' tests import them unchanged.
-const claudeCodeTestingAliases = {
+// Test-only sources preserve standalone product build boundaries and the example mods' test-kit imports.
+const testingAliases = {
   'claude-code/testing': fileURLToPath(new URL('./packages/experimental/claude-code-mods/tests/support/claude-code-testing.ts', import.meta.url)),
   'claude-code': fileURLToPath(new URL('./packages/experimental/claude-code-mods/tests/support/claude-code.ts', import.meta.url)),
+  '@deepseek-harness/product-experts/client': fileURLToPath(new URL('./packages/deepseek-harness-product/experts/src/client/index.ts', import.meta.url)),
+  '@deepseek-harness/product-skills/client': fileURLToPath(new URL('./packages/deepseek-harness-product/skills/src/client.ts', import.meta.url)),
 }
 
 export default defineConfig({
   plugins: [pathsPlugin(), standardDecoratorPlugin()],
-  resolve: { alias: claudeCodeTestingAliases },
+  resolve: { alias: testingAliases },
   test: {
     ...localWorkerBudget,
     setupFiles: ['./scripts/test-proxy-environment.ts', './scripts/test-dom-environment.ts'],
@@ -191,7 +193,7 @@ export default defineConfig({
     projects: [
       {
         plugins: [pathsPlugin(), standardDecoratorPlugin()],
-        resolve: { alias: claudeCodeTestingAliases },
+        resolve: { alias: testingAliases },
         test: {
           name: 'thread-safe',
           execArgv: vitestExecArgv,
@@ -211,7 +213,7 @@ export default defineConfig({
       },
       {
         plugins: [pathsPlugin(), standardDecoratorPlugin()],
-        resolve: { alias: claudeCodeTestingAliases },
+        resolve: { alias: testingAliases },
         test: {
           name: 'process-bound',
           execArgv: vitestExecArgv,

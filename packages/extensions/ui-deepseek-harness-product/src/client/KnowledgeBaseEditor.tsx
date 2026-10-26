@@ -8,7 +8,7 @@ import css from '../DeepSeekHarnessProduct.module.css'
 import { items } from './catalog-shared.tsx'
 import { useKnowledgeRequests } from './knowledge-data.ts'
 import { isKnowledgeSaveUnconfirmed, productErrorMessage } from './product-errors.ts'
-import { useKnowledgeEditorClose } from './useKnowledgeEditorClose.ts'
+import { useEditorCloseGuard } from './useEditorCloseGuard.ts'
 import { useKnowledgeSaveRecovery, type KnowledgeSaveDraft } from './knowledge-save-recovery.ts'
 
 interface KnowledgeBaseEditorProps {
@@ -50,7 +50,7 @@ function KnowledgeBaseEditorForm({ onClose, onCreated, t, restored, recovery }: 
     } catch (failure) { if (!operation.current.controller.signal.aborted) setError(productErrorMessage(failure, t, 'knowledgeRecoveryFailed')) }
     finally { if (!operation.current.controller.signal.aborted) setPending(false) }
   }
-  const close = useKnowledgeEditorClose(!unconfirmed && name !== '', pending,
+  const close = useEditorCloseGuard(!unconfirmed && name !== '', pending,
     () => {
       if (unconfirmed) { void suspend(); return }
       try { recovery.clear(); onClose() }

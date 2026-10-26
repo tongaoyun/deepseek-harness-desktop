@@ -8,7 +8,7 @@ import css from '../DeepSeekHarnessProduct.module.css'
 import { knowledgeDocument, knowledgeFolder, useKnowledgeRequests, type KnowledgeDocument, type KnowledgeFolder } from './knowledge-data.ts'
 import { KnowledgeFolderPicker } from './KnowledgeFolderPicker.tsx'
 import { isKnowledgeSaveUnconfirmed, productErrorMessage } from './product-errors.ts'
-import { useKnowledgeEditorClose } from './useKnowledgeEditorClose.ts'
+import { useEditorCloseGuard } from './useEditorCloseGuard.ts'
 import { useKnowledgeSaveRecovery, type KnowledgeSaveDraft } from './knowledge-save-recovery.ts'
 
 /** A manager's create or edit action captured before opening the form. */
@@ -82,7 +82,7 @@ function KnowledgeEditorForm({ knowledgeBaseId, target, onClose, onSaved, t, res
     } catch (failure) { if (!operation.current.controller.signal.aborted) setError(productErrorMessage(failure, t, 'knowledgeRecoveryFailed')) }
     finally { if (!operation.current.controller.signal.aborted) setPending(false) }
   }
-  const close = useKnowledgeEditorClose(!unconfirmed && (restored !== undefined || title !== baseline.current.title
+  const close = useEditorCloseGuard(!unconfirmed && (restored !== undefined || title !== baseline.current.title
     || content !== baseline.current.content
     || url !== baseline.current.url || parentId !== baseline.current.parentId), pending,
   () => {

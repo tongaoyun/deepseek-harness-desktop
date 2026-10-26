@@ -5,14 +5,8 @@
     - heading "Order management" [level=1]
     - text: Business systems Shared
   - paragraph: Orders, inventory, and fulfillment
-  - heading "Connection status" [level=2]
-  - term: Status
-  - definition: Unavailable
-  - term: Authorization status
-  - definition: Authorization expired
-  - term: Authentication
-  - definition: OAuth
-  - button "Reauthorize"
+  - heading "Configuration and authorization" [level=2]
+  - button "Reconnect account"
   - heading "Business capabilities" [level=2]
   - text: 1 read-only, no confirmation 1 write, confirmation required
   - group: View capabilities (2)

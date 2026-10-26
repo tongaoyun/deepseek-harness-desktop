@@ -1,14 +1,14 @@
-/** Close protection for unsaved knowledge drafts and unresolved save operations. */
+/** Close protection for unsaved editor drafts and unresolved save operations. */
 import { useEffect, useState } from 'react'
 
-/** Guard every modal dismissal and document unload while a knowledge edit is unresolved.
- * @param dirty Whether the current values differ from the loaded document.
+/** Guard every modal dismissal and document unload while an edit is unresolved.
+ * @param dirty Whether the current values differ from the loaded form.
  * @param saving Whether a save or local suspension is pending.
  * @param onClose Dismiss the editor after an explicit discard or an unchanged edit.
  * @param unconfirmed Protect window unload for an unsuspended write; omitted for confirmed edits.
  * @returns Confirmation state and guarded close commands.
  */
-export function useKnowledgeEditorClose(dirty: boolean, saving: boolean, onClose: () => void, unconfirmed = false): {
+export function useEditorCloseGuard(dirty: boolean, saving: boolean, onClose: () => void, unconfirmed = false): {
   readonly confirming: boolean
   readonly blocked: boolean
   readonly requestClose: () => void

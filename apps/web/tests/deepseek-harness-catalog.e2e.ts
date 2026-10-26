@@ -456,6 +456,7 @@ it('keeps native themes and responsive catalogs while using official details and
         return { kind: 'CURRENT_SESSION', presetId: 'standard', capabilities, dependencyChecks: [] }
       }
       case 'connectors.list': return [...connectorCatalog, ...personalResources.filter(row => row.kind === 'connector')]
+      case 'connectors.refresh': return { connectedIds: connectorCatalog.map(row => row.id), unavailableIds: [] }
       case 'extensions.save': {
         if (failSave) { failSave = false; throw new Error('Transient fixture save failure') }
         personalResources.push({ ...payload, headers: {}, environment: {}, canEdit: true, canSubmit: true, canDelete: true, visibility: 'PERSONAL', reviewStatus: 'DRAFT' })
@@ -616,10 +617,10 @@ it('keeps native themes and responsive catalogs while using official details and
 
   await snapshot('extension-navigation', 'nav[aria-label="Global panels"]')
 
-  for (const [label, sectionId] of [['Expert kits', 'agency-agents'], ['Skills', 'skills-manager']] as const) {
+  for (const [label, heading] of [['Expert kits', 'Expert Kits'], ['Skills', 'Skills']] as const) {
     await page.getByRole('button', { name: label, exact: true }).click()
-    const unavailable = page.locator(`[data-extension-page="${sectionId}"]`).getByRole('alert')
-    await unavailable.getByText('This extension page is unavailable. Enable the plugin in Settings and try again.', { exact: true }).waitFor()
+    await page.getByRole('heading', { name: heading, exact: true }).waitFor()
+    expect(await page.getByText('This extension page is unavailable. Enable the plugin in Settings and try again.', { exact: true }).count()).toBe(0)
     expect(await page.getByRole('dialog', { name: 'Settings', exact: true }).count()).toBe(0)
   }
   await page.locator(`[data-row-key="session:${originalSession}"]`).click()
@@ -653,10 +654,11 @@ it('keeps native themes and responsive catalogs while using official details and
   await page.locator('ul[data-catalog="connectors"]').waitFor()
   await snapshot('connector-directory', '[class*="catalogPage"]')
   const beforeFilter = calls.filter(method => method === 'tasks.capabilities.prepare').length
-  await page.getByRole('tab', { name: 'Connected 1', exact: true }).click()
+  await page.getByRole('tab', { name: 'Mine', exact: true }).click()
+  expect(await page.getByText('Order management', { exact: true }).count()).toBe(0)
   expect(await page.getByText('Customer workspace', { exact: true }).count()).toBe(0)
   expect(calls.filter(method => method === 'tasks.capabilities.prepare')).toHaveLength(beforeFilter)
-  await page.getByRole('tab', { name: 'Connected 1', exact: true }).press('ArrowLeft')
+  await page.getByRole('tab', { name: 'Mine', exact: true }).press('ArrowLeft')
   await page.getByText('Customer workspace', { exact: true }).waitFor()
   await page.getByRole('button', { name: /Order management Orders/ }).click()
   const connectorDialog = page.getByRole('dialog', { name: 'Connector details' })
