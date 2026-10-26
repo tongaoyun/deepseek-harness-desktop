@@ -1168,6 +1168,11 @@ for (const { mode, installed, surface } of desktopCarriers) {
           const source = { sourceId: 'policy-source', documentId: 'document-1', filename: 'Order review.md',
             content: 'Check order totals before changing delivery details.', locator: 'Section 1' }
           response.end(JSON.stringify({ success: true, data: path === '/api/v1/knowledge-searches' ? [source] : source }))
+        } else if (/^\/api\/v1\/connectors\/[^/]+\/configuration-template$/u.test(path)) {
+          const connector = catalogRows['/api/v1/connectors']!.find(row => 'id' in row && row.id === path.split('/')[4])
+          if (!connector) response.statusCode = 404
+          response.end(JSON.stringify(connector ? { success: true, data: connector }
+            : { success: false, errCode: 'CONNECTOR_NOT_FOUND' }))
         } else if (path === '/api/v1/connectors/erp/mcp') {
           void (async () => {
             const chunks: Buffer[] = []
@@ -1727,10 +1732,17 @@ for (const { mode, installed, surface } of desktopCarriers) {
           .toMatchObject({ basePresetId: 'standard', knowledgeBaseIds: ['policy'] })
         await page.getByRole('button', { name: /^(Connectors|连接器)$/, exact: true }).click()
         await page.getByRole('button', { name: /Order management/ }).waitFor()
-        await page.getByText(/^(Needs configuration|待配置)$/, { exact: true }).waitFor()
-        const connectedCatalog = page.getByRole('tab', { name: /^(Connected|已连接)\s*1$/ })
-        await connectedCatalog.click()
+        await page.getByRole('button', { name: /Device configuration missing/ }).waitFor()
+        expect(await invoke('connectors.list')).toEqual(expect.arrayContaining([
+          expect.objectContaining({ id: 'erp', ready: true }),
+          expect.objectContaining({ id: 'local-unconfigured', ready: false }),
+        ]))
+        await page.getByRole('tab', { name: /^(Mine|我的)$/, exact: true }).click()
+        await page.getByText(/^(No personal connectors yet\. Use Add to create one\.|还没有自己创建的连接器，可通过“添加”创建。)$/, { exact: true }).waitFor()
+        expect(await page.getByRole('button', { name: /Order management/ }).count()).toBe(0)
         expect(await page.getByRole('button', { name: /Device configuration missing/ }).count()).toBe(0)
+        await page.getByRole('tab', { name: /^(Marketplace|市场)$/, exact: true }).click()
+        await page.getByRole('button', { name: /Device configuration missing/ }).waitFor()
         await page.getByRole('button', { name: /Order management/ }).click()
         expect(await page.getByRole('dialog').getByRole('checkbox').count()).toBe(0)
         await expect.poll(() => invoke('tasks.capabilities.read', { sessionId }))
