@@ -68,7 +68,12 @@ export default class AgencyAgentsRemote extends TypertRemoteService {
     return { ...snapshot, nativeMembers, ...(engine ? { engine: engine() } : {}) }
   }
 
-  /** Export one saved personal team with concrete member personas; no private slug escapes. */
+  /**
+   * Export one saved personal team with concrete member personas; no private slug escapes.
+   * @param id - Personal team identifier.
+   * @param expectedRevision - Revision read before preparing the submission.
+   * @returns Resource key and Base64-encoded files for company review.
+   */
   @Remote('exportTeam')
   async exportTeam(id: string, expectedRevision: number): Promise<{ resourceKey: string; files: Record<string, string> }> {
     const company = this.ctx.get('companyContent') as CompanyContentSource | undefined

@@ -42,9 +42,9 @@ describe('DeepSeekHarness Electron workflows', () => {
     for (const module of ['experts', 'skills']) {
       const check = `pnpm exec tsc --noEmit -p packages/deepseek-harness-product/${module}/tsconfig.json`
       expect(command).toContain(check)
+      expect(command).toContain(`pnpm exec vitest run --config packages/deepseek-harness-product/${module}/vitest.config.ts`)
       expect(command.indexOf('pnpm run build:artifacts\n')).toBeLessThan(command.indexOf(check))
     }
-    expect(command).toContain('pnpm exec vitest run --config packages/deepseek-harness-product/experts/vitest.config.ts')
     expect(command).toContain('node --test apps/product-desktop/tests/company-content.test.mjs')
     expect(command).toContain('pnpm run typecheck\n')
     expect(command).not.toContain('pnpm run build:lib:host')

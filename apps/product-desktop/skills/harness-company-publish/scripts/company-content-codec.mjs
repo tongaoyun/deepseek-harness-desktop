@@ -3718,12 +3718,15 @@ function superRefine(fn, params) {
 //#endregion
 //#region lib/types/company-team.js
 const text = (max) => string().trim().min(1).refine((value) => Array.from(value).length <= max);
+/** UUID-based identifiers accepted for editable personal teams. */
 const TEAM_CUSTOM_ID = /^team-custom-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
+/** Member identity, duty, and instructions in an editable team. */
 const teamMemberSchema = object({
 	expertSlug: text(128),
 	duty: text(100),
 	instructions: text(2e3)
 }).strict();
+/** Validated personal-team settings, including unique members and coordinator selection. */
 const teamInputSchema = object({
 	id: string().regex(TEAM_CUSTOM_ID).optional(),
 	name: text(40).refine((value) => !/[@\u0000-\u001f]/u.test(value)),
@@ -3751,6 +3754,7 @@ teamInputSchema.safeExtend({
 	id: string().regex(/^team-shared-[a-z0-9]+(?:-[a-z0-9]+)*$/u),
 	company: literal(true)
 });
+/** Company release document embeds every referenced member persona. */
 const publishedTeamSchema = object({
 	team: teamInputSchema.safeExtend({ id: never().optional() }),
 	experts: array(object({
@@ -3768,7 +3772,11 @@ const publishedTeamSchema = object({
 		message: "专家团必须包含每位成员的固定说明，不能引用本机私有专家"
 	});
 });
-/** Parse bounded UTF-8 JSON only after release path and digest validation. */
+/**
+* Parse bounded UTF-8 JSON only after release path and digest validation.
+* @param text - Decoded release document.
+* @returns Validated team with its embedded member personas.
+*/
 function publishedTeamDocument(text) {
 	if (new TextEncoder().encode(text).length > 2 * 1024 * 1024) throw new Error("专家团发布文件最多 2 MiB");
 	return publishedTeamSchema.parse(JSON.parse(text));

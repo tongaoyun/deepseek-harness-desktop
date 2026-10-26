@@ -4590,7 +4590,7 @@ export interface Config {
 
 - `inject`: `tools` · `subagents` · `systemPrompt` · `settings` · `webServer`
 - `refs`: `Volatile` (`@deepseek-ai/cordis`)
-- `source`: [`packages/deepseek-harness-product/experts/src/index.ts:207`](../packages/deepseek-harness-product/experts/src/index.ts)
+- `source`: [`packages/deepseek-harness-product/experts/src/index.ts:184`](../packages/deepseek-harness-product/experts/src/index.ts)
 
 ```ts config-catalog
 /** Plugin config: the persona root, the subagent provider, and the divisions to scan. */
@@ -4614,6 +4614,25 @@ export interface Config {
 }
 ```
 <!-- END GENERATED config-catalog:@deepseek-harness/product-experts -->
+
+<!-- BEGIN GENERATED config-catalog:@deepseek-harness/product-runtime -->
+<a id="deepseek-harnessproduct-runtime"></a>
+
+## `@deepseek-harness/product-runtime`
+
+- `refs`: `z` (`zod`)
+- `source`: [`packages/deepseek-harness-product/runtime/src/index.ts:16`](../packages/deepseek-harness-product/runtime/src/index.ts)
+
+```ts config-catalog
+/** Product runtime configuration. */
+export interface Config {
+  /** Limits for connector discovery results and tools loaded by one Session. */
+  readonly connectorDiscovery?: DiscoveryOptions
+}
+
+export type DiscoveryOptions = z.input<typeof discoveryOptions>
+```
+<!-- END GENERATED config-catalog:@deepseek-harness/product-runtime -->
 
 ## Loadable plugins with no config
 
@@ -4729,7 +4748,6 @@ These load from a `cordis.yml` entry with no `config:` block; they declare no co
 | `@deepseek-ai/dsh-user-questions` | — | [`packages/interaction/user-questions/src/index.ts`](../packages/interaction/user-questions/src/index.ts) |
 | `@deepseek-ai/dsh-webhook` | `agents` · `agentDefaultModel` · `agentPresets` · `permissionPresets` · `sessionTitle` · `workspaceRegistry` | [`packages/experimental/webhook/src/index.ts`](../packages/experimental/webhook/src/index.ts) |
 | `@deepseek-ai/dsh-workspace` | `storageDomain` · `sessionPersistence` | [`packages/workspace/workspace/src/index.ts`](../packages/workspace/workspace/src/index.ts) |
-| `@deepseek-harness/product-runtime` | — | [`packages/deepseek-harness-product/runtime/src/index.ts`](../packages/deepseek-harness-product/runtime/src/index.ts) |
 | `@deepseek-harness/product-ui` | — | [`packages/extensions/ui-deepseek-harness-product/src/index.ts`](../packages/extensions/ui-deepseek-harness-product/src/index.ts) |
 <!-- END GENERATED config-catalog:no-config -->
 

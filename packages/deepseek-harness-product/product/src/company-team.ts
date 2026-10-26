@@ -6,11 +6,14 @@ const text = (max: number) =>
     .trim()
     .min(1)
     .refine(value => Array.from(value).length <= max)
+/** UUID-based identifiers accepted for editable personal teams. */
 export const TEAM_CUSTOM_ID =
   /^team-custom-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u
+/** Member identity, duty, and instructions in an editable team. */
 export const teamMemberSchema = z
   .object({ expertSlug: text(128), duty: text(100), instructions: text(2000) })
   .strict()
+/** Validated personal-team settings, including unique members and coordinator selection. */
 export const teamInputSchema = z
   .object({
     id: z
@@ -52,8 +55,11 @@ export const teamInputSchema = z
       value.coordinatorMode !== 'custom' ||
       value.coordinatorPrompt.trim().length > 0,
   )
+/** Editable personal-team settings. */
 export type TeamInput = z.infer<typeof teamInputSchema>
+/** Saved team with an identity and optional company ownership marker. */
 export type ExpertTeam = TeamInput & { id: string; company?: boolean }
+/** Saved personal team with its required identifier. */
 export const teamSchema = teamInputSchema.and(
   z.object({ id: z.string().regex(TEAM_CUSTOM_ID) }),
 )
@@ -63,6 +69,7 @@ export const sharedTeamSchema = teamInputSchema.safeExtend({
   id: z.string().regex(/^team-shared-[a-z0-9]+(?:-[a-z0-9]+)*$/u),
   company: z.literal(true),
 })
+/** Company release document embeds every referenced member persona. */
 export const publishedTeamSchema = z.object({
   team: teamInputSchema.safeExtend({ id: z.never().optional() }),
   experts: z.array(z.object({
@@ -78,8 +85,13 @@ export const publishedTeamSchema = z.object({
     ctx.addIssue({ code: 'custom', message: '专家团必须包含每位成员的固定说明，不能引用本机私有专家' })
   }
 })
+/** Validated company team and its fixed member personas. */
 export type PublishedTeam = z.infer<typeof publishedTeamSchema>
-/** Parse bounded UTF-8 JSON only after release path and digest validation. */
+/**
+ * Parse bounded UTF-8 JSON only after release path and digest validation.
+ * @param text - Decoded release document.
+ * @returns Validated team with its embedded member personas.
+ */
 export function publishedTeamDocument(text: string): PublishedTeam {
   if (new TextEncoder().encode(text).length > 2 * 1024 * 1024) throw new Error('专家团发布文件最多 2 MiB')
   return publishedTeamSchema.parse(JSON.parse(text))

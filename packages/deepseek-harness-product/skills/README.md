@@ -19,7 +19,7 @@ description: "产品桌面的内建技能模块。"
 <a id="assembly"></a>
 ## 装配与维护
 
-Host 模块通过产品 profile 固定装配，普通 ESM 客户端模块合入产品 UI 的浏览器产物；不声明独立安装包。根目录 `pnpm run build:artifacts` 完成构建，本目录 `tsconfig.json` 检查源码。官方 profile 不加载产品模块。
+Host 模块通过产品 profile 固定装配，普通 ESM 客户端模块合入产品 UI 的浏览器产物；不声明独立安装包。根目录 `pnpm run build:artifacts` 完成构建，本目录 `tsconfig.json` 检查源码。 CI 通过 `pnpm exec vitest run --config packages/deepseek-harness-product/skills/vitest.config.ts` 同时执行源码和页面行为测试。官方 profile 不加载产品模块。
 
 原始来源摘要见 [upstream.json](upstream.json)，保留 [Apache-2.0 许可](LICENSE)。代码由本仓库维护，社区更新选择性合入，不整包替换。团队内容的格式和发布入口见[公司内容说明](../../../apps/product-desktop/docs/company-content.md)。
 

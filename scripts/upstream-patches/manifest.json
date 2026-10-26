@@ -913,22 +913,22 @@
         {
           "path": "docs/config-catalog.md",
           "before": "1dd99a4488550d8ea6e303adfeb01abc41be7cfffa94708658e32ea5a2c5c015",
-          "after": "4fa627aaf618751e248502c14c4ef38ca99b64914b9ab455a3e2ce230d1b7beb"
+          "after": "20ab7e19e5a13608bdda813f3ebba9736b278d115c2e35a297c7d5bedf7f2e1f"
         },
         {
           "path": "docs/config-catalog.zh.md",
           "before": "df509dde710b613d454b3ed01f6b76ec3d3f5f96321e1a4c52ab5471ee2d3e2e",
-          "after": "70939b525f14439e5909f608b63bac2af652b85b1db2e6d7cb8dfa3e302ee5c9"
+          "after": "ea06a86cd8e0290a3ab3a0958e8605fe86819d419968d3e1bb7d9a55e064affb"
         },
         {
           "path": "docs/event-producer-consumer.md",
           "before": "d9c072884a46f3fbeb1f5d1c8d7a5750101aa244ff1aeb4f603c01639af8b7c5",
-          "after": "031338852d65ea45b2a6276bf38cf886a9f0e7d8e5bb1257408a8117f19057ec"
+          "after": "883c2d4137e982b680b7dee4d61e2c59256795194c4f10e2e8a97433adf401c8"
         },
         {
           "path": "docs/event-producer-consumer.zh.md",
           "before": "7d69de177a12cd40bf378da47ada45acf4a623747c100dd1af873e5248225495",
-          "after": "1f5d2544ae6be9ac4c050217198b993ab61c7b34cf965522b17fc1baa8eb3cb6"
+          "after": "b6f3d8f7c9f3c66ea8b7796922b3c219064176d6e59214dd2451291fe2655bc2"
         },
         {
           "path": "docs/persistence-changes/2026-10-09-product-installed-skill-attribution.i18n.yaml",
@@ -998,7 +998,7 @@
         {
           "path": "packages/preset/agent-preset/skills/cordis-composition-reference/references/packages.md",
           "before": "dce58b653277bbcd25cf245178916e5f7b06e558382bb98a566f00b63318474c",
-          "after": "4297ac3da5b637fddf83fd87eb9b0afcf106b1ae3b6105386b59aa3b4bf5de0b"
+          "after": "484726c44636cbbc90bac995020562148ef6a8061188a78e0449475e910e3db7"
         },
         {
           "path": "scripts/doc-standard.spec.ts",

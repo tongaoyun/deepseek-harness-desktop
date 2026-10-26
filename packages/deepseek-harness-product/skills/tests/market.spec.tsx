@@ -12,6 +12,10 @@ import type { RootView, SkillView } from '../src/types.ts'
 
 afterEach(() => { cleanup(); document.querySelector('base')?.remove(); vi.unstubAllGlobals() })
 
+function requestUrl(input: Parameters<typeof fetch>[0]): string {
+  return typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
+}
+
 function skill(name: string): SkillView {
   return { name, declaredName: name, description: `${name}说明`, kind: 'directory', path: `/skills/${name}`,
     modelInvocable: true, userInvocable: true, invocationPolicyValid: true, hasFrontmatter: true, loadable: true,
@@ -92,7 +96,7 @@ it('loads the embedded skills page through a reverse-proxy path prefix', async (
   fireEvent.click(screen.getByRole('tab', { name: '我的' }))
   fireEvent.click(screen.getByRole('tab', { name: '项目技能' }))
   await screen.findByText('还没有已登记的工作区。请先在侧栏添加工作区。')
-  const urls = vi.mocked(fetch).mock.calls.map(([url]) => String(url))
+  const urls = vi.mocked(fetch).mock.calls.map(([url]) => requestUrl(url))
   expect(urls).toContain('https://harness.test/traefik/harness/api/dsh-skills-manager/state')
   expect(urls).toContain('https://harness.test/traefik/harness/api/dsh-skills-manager/workspaces')
   expect(urls.every(url => url.startsWith('https://harness.test/traefik/harness/api/dsh-skills-manager/'))).toBe(true)
@@ -109,8 +113,10 @@ it.each([true, false])('only permits revocation for a broken skill with recorded
   expect(toggle.disabled).toBe(!recorded)
   if (recorded) {
     fireEvent.click(toggle)
-    await waitFor(() => expect(vi.mocked(fetch).mock.calls.some(([url, options]) =>
-      String(url).endsWith('/api/dsh-skills-manager/disable') && options?.body === JSON.stringify({ root: 'dsh', name: 'audit-orders' }))).toBe(true))
+    await waitFor(() => {
+      expect(vi.mocked(fetch).mock.calls.some(([url, options]) =>
+        requestUrl(url).endsWith('/api/dsh-skills-manager/disable') && options?.body === JSON.stringify({ root: 'dsh', name: 'audit-orders' }))).toBe(true)
+    })
   }
 })
 
@@ -156,7 +162,7 @@ it.each([false, true])('preserves loaded project skills and empty results while 
   let finish!: () => void
   const gate = new Promise<void>((resolve) => { finish = resolve })
   vi.mocked(fetch).mockImplementation(async (input) => {
-    const url = String(input)
+    const url = requestUrl(input)
     if (refreshing && (url.endsWith('/workspaces') || url.endsWith('/workspace-skills'))) await gate
     return new Response(JSON.stringify({ ok: true, data: url.endsWith('/workspaces') ? { items: entries }
       : url.endsWith('/workspace-skills') ? { roots: empty ? [] : [root('dsh', [skill('项目技能')])] } : data }))
