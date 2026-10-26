@@ -1786,6 +1786,21 @@
         }
       ],
       "diff": "desktop-asar-placeholders.patch"
+    },
+    {
+      "id": "product-client-test-resolution",
+      "purpose": "产品内建专家与技能客户端在源码测试中直接解析到各自源码，避免依赖独立构建产物，同时保留产品打包的独立编译边界。",
+      "tests": [
+        "packages/extensions/ui-deepseek-harness-product/tests/builtin-capabilities.client.spec.ts"
+      ],
+      "files": [
+        {
+          "path": "vitest.config.ts",
+          "before": "25e0a4d485e98a93428bb4b4271c310dc2755f54dd4723ad6ac6f49f7cf4438a",
+          "after": "7177bbd0a9ed81876b22c02dd79380d2f3d55f0456ab90f8820674d6d4ff4d96"
+        }
+      ],
+      "diff": "product-client-test-resolution.patch"
     }
   ]
 }

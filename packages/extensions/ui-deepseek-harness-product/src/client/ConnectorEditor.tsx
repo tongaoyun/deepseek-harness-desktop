@@ -10,6 +10,7 @@ import { CATEGORY_KEYS, items, nextProductRequestId, type ProductItem } from './
 import { productApi } from './product-api.ts'
 import { productErrorMessage } from './product-errors.ts'
 import { connectorCommand, connectorCommandText, connectorConfigurations, connectorVariables } from './connector-configuration.ts'
+import { useEditorCloseGuard } from './useEditorCloseGuard.ts'
 
 type Pair = { key: string; value: string }
 const pairs = (value: Record<string, string>): Pair[] => Object.entries(value).map(([key, value]) => ({ key, value }))
@@ -20,7 +21,7 @@ const configuration = (rows: readonly Pair[]): Record<string, string> => {
   return Object.fromEntries(active.map(row => [row.key.trim(), row.value]))
 }
 
-/** Configure HTTP or stdio manually or from standard MCP JSON; saving only discovers tools. */
+/** Configure HTTP or stdio with guarded drafts; saving only discovers tools. */
 export function ConnectorEditor({ onClose, onSaved, editing, t }: {
   readonly editing?: { readonly id: string; readonly version: string } | undefined
   readonly onClose: () => void
@@ -44,6 +45,13 @@ export function ConnectorEditor({ onClose, onSaved, editing, t }: {
   const [pending, setPending] = useState(false)
   const [loading, setLoading] = useState(editing !== undefined)
   const [ready, setReady] = useState(editing === undefined)
+  const values = JSON.stringify([draft, headers, environment, command, timeout, json])
+  const baseline = useRef(values)
+  const close = useEditorCloseGuard(values !== baseline.current, pending, onClose)
+  const inputs = [draft, headers, environment, command, timeout, json, mode, pending, close.confirming]
+  const clipboardInputs = useRef<readonly unknown[]>(inputs)
+  if (inputs.some((value, index) => value !== clipboardInputs.current[index])) clipboardInputs.current = inputs
+  const clipboardRequest = useRef(0)
   const lifecycle = useRef(new AbortController())
   const invoke = async (method: string, payload: unknown, timeoutMs?: number, signal = lifecycle.current.signal): Promise<unknown> => {
     signal.throwIfAborted()
@@ -85,8 +93,12 @@ export function ConnectorEditor({ onClose, onSaved, editing, t }: {
     setDraft(previous => ({ ...previous, [key]: value }))
   }
   const applyJson = (value: ConnectorDraft, loaded = false): void => {
-    setDraft(editing && !loaded ? { ...value, id: editing.id, version: draft.version } : value); setHeaders(pairs(value.headers)); setEnvironment(pairs(value.environment).length ? pairs(value.environment) : [{ key: '', value: '' }])
-    setCommand(connectorCommandText(value)); setTimeout(String(value.timeoutSeconds)); setMode('manual'); setError(undefined)
+    const nextDraft = editing && !loaded ? { ...value, id: editing.id, version: draft.version } : value
+    const nextHeaders = pairs(value.headers), nextEnvironment = pairs(value.environment).length ? pairs(value.environment) : [{ key: '', value: '' }]
+    const nextCommand = connectorCommandText(value), nextTimeout = String(value.timeoutSeconds)
+    if (loaded) baseline.current = JSON.stringify([nextDraft, nextHeaders, nextEnvironment, nextCommand, nextTimeout, json])
+    setDraft(nextDraft); setHeaders(nextHeaders); setEnvironment(nextEnvironment)
+    setCommand(nextCommand); setTimeout(nextTimeout); setMode('manual'); setError(undefined)
   }
   const parse = (): void => {
     try {
@@ -128,11 +140,14 @@ export function ConnectorEditor({ onClose, onSaved, editing, t }: {
       placeholder={placeholder} onChange={(event) => { update(key, event.currentTarget.value) }} /></label>
   const paste = async (set: (rows: Pair[]) => void, rows: Pair[]): Promise<void> => {
     const signal = lifecycle.current.signal
+    const captured = clipboardInputs.current, request = ++clipboardRequest.current
+    const current = () => !signal.aborted && request === clipboardRequest.current && captured === clipboardInputs.current
     try {
       const text = await navigator.clipboard.readText()
+      if (!current()) return
       const value = connectorVariables(text)
-      if (!signal.aborted) { set(pairs({ ...configuration(rows), ...value })); setError(undefined) }
-    } catch { if (!signal.aborted) setError(t('connectorPasteFailed')) }
+      set(pairs({ ...configuration(rows), ...value })); setError(undefined)
+    } catch { if (current()) setError(t('connectorPasteFailed')) }
   }
   const privateRows = (rows: Pair[], set: (rows: Pair[]) => void, label: DeepSeekHarnessProductKey): ReactNode =>
     <section className={css.configurationSection} aria-label={t(label)}>
@@ -153,63 +168,66 @@ export function ConnectorEditor({ onClose, onSaved, editing, t }: {
       <Button className={css.addVariable} variant="ghost" size="sm" disabled={pending} onClick={() => { set([...rows, { key: '', value: '' }]) }}>
         <IconPlusOutlineRegular size={14} />{t(label === 'privateEnvironment' ? 'addVariable' : 'addConfigurationEntry')}</Button>
     </section>
-  return <Modal open onClose={() => { if (!pending) onClose() }} title={t(editing ? 'editConnector' : 'addMcpServer')} closeLabel={t('close')} className={css.connectorEditorModal as string}
+  return <Modal open onClose={close.requestClose} title={t(editing ? 'editConnector' : 'addMcpServer')} closeLabel={t('close')} className={css.connectorEditorModal as string}
     contentClassName={css.connectorEditorContent as string} footer={<div className={css.connectorFooter}>
-      <Button variant="primary" disabled={pending || !ready} onClick={() => {
+      {close.confirming ? <><Button variant="ghost" onClick={close.keepEditing}>{t('knowledgeKeepEditing')}</Button>
+        <Button variant="primary" onClick={close.discard}>{t('knowledgeDiscardDraft')}</Button></> : <Button variant="primary" disabled={pending || !ready} onClick={() => {
         if (mode === 'manual') void save()
         else if (parsed.length > 1 && parsed[selected]) applyJson(parsed[selected])
         else parse()
-      }}>{pending ? t('connectingConnector') : mode === 'json' ? t('applyConfiguration') : t(editing ? 'saveConnector' : 'addMcp')}</Button></div>}>
-    {loading && <ProductLoading label={t('loading')} />}
-    {error && <p role="alert" className={css.catalogError}>{error}</p>}
-    {!loading && !ready && <Button variant="outline" onClick={() => { void load() }}>{t('retry')}</Button>}
-    {ready && <>
-      <div className={css.editorTabs} role="tablist" aria-label={t('createConnector')}>
-        {(['manual', 'json'] as const).map(value => <button type="button" role="tab" aria-selected={mode === value} key={value}
-          disabled={pending || loading} onClick={() => { setMode(value); setError(undefined) }}>{t(value === 'manual' ? 'manualConfiguration' : 'jsonConfiguration')}</button>)}
-      </div>
-      {mode === 'json' ? <div className={`${css.editorForm} ${css.connectorForm}`}>
-        <label className={css.editorField}><span>{t('mcpJsonConfiguration')}</span><textarea aria-label={t('mcpJsonConfiguration')}
-          className={css.codeInput} rows={12} value={json} onChange={(event) => { setJson(event.currentTarget.value); setParsed([]) }}
-          placeholder={t('mcpJsonPlaceholder')} /></label>
-        {parsed.length > 1 && <label className={css.editorField}><span>{t('selectMcpServer')}</span><select aria-label={t('selectMcpServer')}
-          value={selected} onChange={(event) => { setSelected(Number(event.currentTarget.value)) }}>
-          {parsed.map((value, index) => <option key={index} value={index}>{value.name}</option>)}</select></label>}
-      </div> : <div className={`${css.editorForm} ${css.connectorForm}`}>
-        <label className={css.editorField}><span>{t('mcpServerType')}</span><select aria-label={t('mcpServerType')} value={draft.transport} disabled={pending}
-          onChange={(event) => {
-            const value = event.currentTarget.value === 'stdio' ? 'stdio' : 'streamable-http'
-            setHeaders([]); setEnvironment([{ key: '', value: '' }]); setCommand(''); setError(undefined)
-            setDraft(({ oauthProviderId: _oauthProviderId, ...previous }) => ({ ...previous, transport: value, url: '', command: '', arguments: [] }))
-          }}><option value="stdio">{t('stdioTransport')}</option><option value="streamable-http">{t('httpTransport')}</option></select></label>
-        {field('name', 'mcpServerName', t('connectorNamePlaceholder'), true)}
-        <label className={css.editorField}><span>{t('connectorSummary')} <span className={css.optionalMark}>{t('optionalField')}</span></span>
-          <textarea aria-label={t('connectorSummary')} maxLength={300} rows={2} disabled={pending}
-            placeholder={t('connectorSummaryPlaceholder')} value={draft.summary}
-            onChange={(event) => { update('summary', event.currentTarget.value) }} /></label>
-        <label className={css.editorField}><span>{t('connectorCategory')}</span><select aria-label={t('connectorCategory')}
-          value={draft.category} disabled={pending} onChange={(event) => { update('category', event.currentTarget.value) }}>
-          {Object.entries(CATEGORY_KEYS).map(([value, key]) => <option key={value} value={value}>{t(key)}</option>)}
-        </select></label>
-        {draft.transport === 'streamable-http' ? <>
-          {providers.length > 0 && <label className={css.editorField}><span>{t('authentication')}</span><select aria-label={t('authentication')}
-            value={draft.oauthProviderId ?? ''} disabled={pending} onChange={(event) => {
-              const id = event.currentTarget.value; setHeaders([]); setEnvironment([])
-              setDraft(({ oauthProviderId: _oauthProviderId, ...previous }) => ({ ...previous, ...(id ? { oauthProviderId: id } : {}) }))
-            }}><option value="">{t('localAuthentication')}</option>{providers.map(provider => <option key={provider.id} value={provider.id}>{provider.label} · {t('oauthAuthentication')}</option>)}</select></label>}
-          {!draft.oauthProviderId && <>{field('url', 'connectorEndpoint', 'https://example.com/mcp', true)}{privateRows(headers, setHeaders, 'privateHeaders')}</>}
-        </> : <>
-          <label className={css.editorField}><span>{t('mcpCommand')}<span className={css.requiredMark} aria-hidden="true">*</span></span>
-            <textarea aria-label={t('mcpCommand')} required className={css.codeInput} disabled={pending} rows={3}
-              placeholder={t('mcpCommandPlaceholder')} value={command}
-              onChange={(event) => { setCommand(event.currentTarget.value) }} /></label>
-          {privateRows(environment, setEnvironment, 'privateEnvironment')}
-        </>}
-        {!draft.oauthProviderId && <label className={css.editorField}><span>{t('connectorTimeout')} <span className={css.optionalMark}>{t('optionalField')}</span></span>
-          <div className={css.timeoutInput}><input aria-label={t('connectorTimeout')} type="number" min={1} max={600} step={1} placeholder="60"
-            disabled={pending} value={timeout} onChange={(event) => { setTimeout(event.currentTarget.value) }} /><span>{t('seconds')}</span></div>
-        </label>}
-      </div>}
+      }}>{pending ? t('connectingConnector') : mode === 'json' ? t('applyConfiguration') : t(editing ? 'saveConnector' : 'addMcp')}</Button>}</div>}>
+    {close.confirming ? <p>{t('knowledgeDiscardDraftConfirmation')}</p> : <>
+      {loading && <ProductLoading label={t('loading')} />}
+      {error && <p role="alert" className={css.catalogError}>{error}</p>}
+      {!loading && !ready && <Button variant="outline" onClick={() => { void load() }}>{t('retry')}</Button>}
+      {ready && <>
+        <div className={css.editorTabs} role="tablist" aria-label={t('createConnector')}>
+          {(['manual', 'json'] as const).map(value => <button type="button" role="tab" aria-selected={mode === value} key={value}
+            disabled={pending || loading} onClick={() => { setMode(value); setError(undefined) }}>{t(value === 'manual' ? 'manualConfiguration' : 'jsonConfiguration')}</button>)}
+        </div>
+        {mode === 'json' ? <div className={`${css.editorForm} ${css.connectorForm}`}>
+          <label className={css.editorField}><span>{t('mcpJsonConfiguration')}</span><textarea aria-label={t('mcpJsonConfiguration')}
+            className={css.codeInput} rows={12} value={json} onChange={(event) => { setJson(event.currentTarget.value); setParsed([]) }}
+            placeholder={t('mcpJsonPlaceholder')} /></label>
+          {parsed.length > 1 && <label className={css.editorField}><span>{t('selectMcpServer')}</span><select aria-label={t('selectMcpServer')}
+            value={selected} onChange={(event) => { setSelected(Number(event.currentTarget.value)) }}>
+            {parsed.map((value, index) => <option key={index} value={index}>{value.name}</option>)}</select></label>}
+        </div> : <div className={`${css.editorForm} ${css.connectorForm}`}>
+          <label className={css.editorField}><span>{t('mcpServerType')}</span><select aria-label={t('mcpServerType')} value={draft.transport} disabled={pending}
+            onChange={(event) => {
+              const value = event.currentTarget.value === 'stdio' ? 'stdio' : 'streamable-http'
+              setHeaders([]); setEnvironment([{ key: '', value: '' }]); setCommand(''); setError(undefined)
+              setDraft(({ oauthProviderId: _oauthProviderId, ...previous }) => ({ ...previous, transport: value, url: '', command: '', arguments: [] }))
+            }}><option value="stdio">{t('stdioTransport')}</option><option value="streamable-http">{t('httpTransport')}</option></select></label>
+          {field('name', 'mcpServerName', t('connectorNamePlaceholder'), true)}
+          <label className={css.editorField}><span>{t('connectorSummary')} <span className={css.optionalMark}>{t('optionalField')}</span></span>
+            <textarea aria-label={t('connectorSummary')} maxLength={300} rows={2} disabled={pending}
+              placeholder={t('connectorSummaryPlaceholder')} value={draft.summary}
+              onChange={(event) => { update('summary', event.currentTarget.value) }} /></label>
+          <label className={css.editorField}><span>{t('connectorCategory')}</span><select aria-label={t('connectorCategory')}
+            value={draft.category} disabled={pending} onChange={(event) => { update('category', event.currentTarget.value) }}>
+            {Object.entries(CATEGORY_KEYS).map(([value, key]) => <option key={value} value={value}>{t(key)}</option>)}
+          </select></label>
+          {draft.transport === 'streamable-http' ? <>
+            {providers.length > 0 && <label className={css.editorField}><span>{t('authentication')}</span><select aria-label={t('authentication')}
+              value={draft.oauthProviderId ?? ''} disabled={pending} onChange={(event) => {
+                const id = event.currentTarget.value; setHeaders([]); setEnvironment([])
+                setDraft(({ oauthProviderId: _oauthProviderId, ...previous }) => ({ ...previous, ...(id ? { oauthProviderId: id } : {}) }))
+              }}><option value="">{t('localAuthentication')}</option>{providers.map(provider => <option key={provider.id} value={provider.id}>{provider.label} · {t('oauthAuthentication')}</option>)}</select></label>}
+            {!draft.oauthProviderId && <>{field('url', 'connectorEndpoint', 'https://example.com/mcp', true)}{privateRows(headers, setHeaders, 'privateHeaders')}</>}
+          </> : <>
+            <label className={css.editorField}><span>{t('mcpCommand')}<span className={css.requiredMark} aria-hidden="true">*</span></span>
+              <textarea aria-label={t('mcpCommand')} required className={css.codeInput} disabled={pending} rows={3}
+                placeholder={t('mcpCommandPlaceholder')} value={command}
+                onChange={(event) => { setCommand(event.currentTarget.value) }} /></label>
+            {privateRows(environment, setEnvironment, 'privateEnvironment')}
+          </>}
+          {!draft.oauthProviderId && <label className={css.editorField}><span>{t('connectorTimeout')} <span className={css.optionalMark}>{t('optionalField')}</span></span>
+            <div className={css.timeoutInput}><input aria-label={t('connectorTimeout')} type="number" min={1} max={600} step={1} placeholder="60"
+              disabled={pending} value={timeout} onChange={(event) => { setTimeout(event.currentTarget.value) }} /><span>{t('seconds')}</span></div>
+          </label>}
+        </div>}
+      </>}
     </>}
   </Modal>
 }

@@ -9,6 +9,7 @@ import { productApi, type ProductApi } from './product-api.ts'
 import { productErrorMessage } from './product-errors.ts'
 import { type ProductDetail, AUTHORIZATION_TIMEOUT_MS, AUTHORIZATION_POLL_INTERVAL_MS, nextProductRequestId, abortableDelay, DetailIdentity } from './catalog-shared.tsx'
 import { ConnectorTools } from './ConnectorTools.tsx'
+import { useEditorCloseGuard } from './useEditorCloseGuard.ts'
 
 export function ConnectorDetailModal({ detail: product, onCatalogChanged, managementActions, onClose, t }: {
   readonly managementActions?: ReactNode
@@ -179,6 +180,9 @@ function ConnectorDeviceConfiguration({ product, onClose, onSaved, t }: {
   const [timeout, setTimeout] = useState(60)
   const [error, setError] = useState<string>()
   const [pending, setPending] = useState(false)
+  const dirty = Object.values(headers).some(value => value !== '') || Object.values(environment).some(value => value !== '')
+    || configuration !== undefined && timeout !== configuration.timeoutSeconds
+  const close = useEditorCloseGuard(dirty, pending, onClose)
   const lifecycle = useRef(new AbortController())
   const invoke = async (method: string, input: unknown, signal: AbortSignal): Promise<unknown> => {
     signal.throwIfAborted()
@@ -229,21 +233,25 @@ function ConnectorDeviceConfiguration({ product, onClose, onSaved, t }: {
         placeholder={t(configuration?.configured ? 'privateValueRetained' : 'configurationValue')}
         onChange={(event) => { set({ ...values, [key]: event.currentTarget.value }) }} /></label>)}
   </section>
-  return <Modal open onClose={() => { if (!pending) onClose() }} title={t('configureDevice')} closeLabel={t('close')}
+  return <Modal open onClose={close.requestClose} title={t('configureDevice')} closeLabel={t('close')}
     className={css.connectorDeviceModal as string} contentClassName={css.connectorEditorContent as string}
-    footer={<Button variant="primary" disabled={!configuration || pending} onClick={() => { void save() }}>
-      {pending ? t('connectingConnector') : t('saveConnector')}</Button>}>
-    {error && <p className={css.catalogError} role="alert">{error}</p>}
-    {!configuration && (error ? <Button variant="outline" onClick={() => { void load() }}>{t('retry')}</Button> : <ProductLoading label={t('loading')} />)}
-    {configuration && <div className={`${css.editorForm} ${css.connectorForm}`}>
-      <label className={css.editorField}><span>{t(configuration.transport === 'stdio' ? 'connectorExecutable' : 'connectorEndpoint')}</span>
-        <input readOnly value={configuration.transport === 'stdio'
-          ? [configuration.command, ...configuration.arguments].join(' ') : configuration.url} /></label>
-      {fields(configuration.headers, headers, setHeaders, 'privateHeaders')}
-      {fields(configuration.environment, environment, setEnvironment, 'privateEnvironment')}
-      <label className={css.editorField}><span>{t('connectorTimeout')}</span>
-        <input type="number" min={1} max={600} aria-label={t('connectorTimeout')} disabled={pending} value={timeout}
-          onChange={(event) => { setTimeout(Number(event.currentTarget.value)) }} /></label>
-    </div>}
+    footer={close.confirming ? <><Button variant="ghost" onClick={close.keepEditing}>{t('knowledgeKeepEditing')}</Button>
+      <Button variant="primary" onClick={close.discard}>{t('knowledgeDiscardDraft')}</Button></>
+      : <Button variant="primary" disabled={!configuration || pending} onClick={() => { void save() }}>
+        {pending ? t('connectingConnector') : t('saveConnector')}</Button>}>
+    {close.confirming ? <p>{t('knowledgeDiscardDraftConfirmation')}</p> : <>
+      {error && <p className={css.catalogError} role="alert">{error}</p>}
+      {!configuration && (error ? <Button variant="outline" onClick={() => { void load() }}>{t('retry')}</Button> : <ProductLoading label={t('loading')} />)}
+      {configuration && <div className={`${css.editorForm} ${css.connectorForm}`}>
+        <label className={css.editorField}><span>{t(configuration.transport === 'stdio' ? 'connectorExecutable' : 'connectorEndpoint')}</span>
+          <input readOnly value={configuration.transport === 'stdio'
+            ? [configuration.command, ...configuration.arguments].join(' ') : configuration.url} /></label>
+        {fields(configuration.headers, headers, setHeaders, 'privateHeaders')}
+        {fields(configuration.environment, environment, setEnvironment, 'privateEnvironment')}
+        <label className={css.editorField}><span>{t('connectorTimeout')}</span>
+          <input type="number" min={1} max={600} aria-label={t('connectorTimeout')} disabled={pending} value={timeout}
+            onChange={(event) => { setTimeout(Number(event.currentTarget.value)) }} /></label>
+      </div>}
+    </>}
   </Modal>
 }
