@@ -1744,6 +1744,27 @@
         }
       ],
       "diff": "build-aggregate-declarations.patch"
+    },
+    {
+      "id": "desktop-archive-diagnostics",
+      "purpose": "保留完整 ASAR 校验，报告最多十项封装差异，并使用真实 builder 遍历和 manifest 转换验证封装内容。",
+      "tests": [
+        "apps/desktop/tests/windows-asar-unpack.spec.ts",
+        "apps/desktop/tests/runtime-manifests.spec.ts"
+      ],
+      "files": [
+        {
+          "path": "apps/desktop/scripts/verify-runtime-archive.ts",
+          "before": "5627d1ee12a28445284d4fcb0b5bff668e0261429bf26cf1e0c379a62c7b35a6",
+          "after": "a870e05d80f71d77c80697fa4b7078ece5469db672f3540f7f860dd3b5031039"
+        },
+        {
+          "path": "apps/desktop/tests/windows-asar-unpack.spec.ts",
+          "before": "26c6aab1ad73b685b6723281f0c5d93f1fbce7a63adca3172c8b1103b1e4816b",
+          "after": "53d5b9378a21e41dc1200c46c51a06429f5cc9909f976becb68e4b802313f0a8"
+        }
+      ],
+      "diff": "desktop-archive-diagnostics.patch"
     }
   ]
 }
