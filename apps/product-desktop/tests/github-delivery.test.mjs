@@ -7,11 +7,30 @@ import yaml from 'js-yaml'
 import { artifactManifest, githubBuildVersion } from '../scripts/github-package.mjs'
 import { gitPushFailureCode, githubSyncRequest, PACKAGE_WORKFLOW, selectPackagingWorkflow, synchronizeDesktop } from '../scripts/sync-github.mjs'
 import { selectInstaller } from '../scripts/test-installed.mjs'
+import { apply as recordHostModules } from './fixtures/desktop-module-diagnostics.mjs'
 
 const commit = 'a'.repeat(40)
 const tag = 'dsh-v0.2.1-alpha.2'
 const repository = 'example/harness-desktop'
 const identity = { PACKAGE_SOURCE_SHA: commit, GITHUB_RUN_NUMBER: '23', GITHUB_RUN_ATTEMPT: '2' }
+
+test('Host diagnostics retain builtin module identities in workspace and installed layouts', t => {
+  const directory = mkdtempSync(join(tmpdir(), 'harness-module-diagnostics-'))
+  t.after(() => rmSync(directory, { recursive: true, force: true }))
+  for (const base of [
+    'file:///workspace/packages/deepseek-harness-product/',
+    'file:///Applications/Harness.app/Contents/Resources/app.asar/node_modules/@deepseek-harness/product-',
+    'file:///C:/Harness/resources/app.asar/node_modules/@deepseek-harness/product-',
+  ]) {
+    const modules = ['experts/lib/remote.js', 'experts/lib/index.js', 'skills/lib/index.js'].map(path => base + path)
+    const root = {}
+    const output = join(directory, 'modules.json')
+    recordHostModules({ root, effect: setup => setup(), appReady: { onReady: ready => ready() },
+      loader: { ctx: { root }, internal: { loadCache: new Map([...modules, 'file:///unrelated/lib/index.js'].map(url => [url, {}])) },
+        entries: () => [] } }, { output })
+    assert.deepEqual(JSON.parse(readFileSync(output, 'utf8')), { modules, loaderSharesRoot: true, includes: [] })
+  }
+})
 
 test('installed acceptance rejects missing, ambiguous and non-native installer output', async () => {
   const directory = mkdtempSync(join(tmpdir(), 'harness-installer-selection-'))
