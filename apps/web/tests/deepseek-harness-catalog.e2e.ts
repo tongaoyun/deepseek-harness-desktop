@@ -55,12 +55,12 @@ async function setCodingView(page: Page, enabled: boolean): Promise<void> {
 
 const connectors = [
   { id: 'erp', displayName: 'Order management', summary: 'Orders, inventory, and fulfillment', category: 'business-systems',
-    availabilityStatus: 'AVAILABLE', authMode: 'employee-bearer', status: 'ACTIVE', tools: [
+    visibility: 'COMPANY', reviewStatus: 'PUBLISHED', availabilityStatus: 'AVAILABLE', authMode: 'employee-bearer', status: 'ACTIVE', tools: [
       { name: 'orders_read', displayName: 'Read orders', description: 'Query order status and totals.', access: 'READ' },
       { name: 'orders_update', displayName: 'Update orders', description: 'Change order delivery details.', access: 'WRITE' },
     ] },
   { id: 'crm', displayName: 'Customer workspace', summary: 'Customer profiles and sales activity', category: 'business-systems',
-    availabilityStatus: 'AUTHORIZATION_REQUIRED', authMode: 'oauth', authorizationStatus: 'REQUIRED', tools: [] },
+    visibility: 'COMPANY', reviewStatus: 'PUBLISHED', availabilityStatus: 'AUTHORIZATION_REQUIRED', authMode: 'oauth', authorizationStatus: 'REQUIRED', tools: [] },
 ]
 const organizationKnowledge = [
   { id: 'personal-notes', name: 'Personal notes', scope: 'PERSONAL', companyId: 'fixture-company', ownerEmployeeId: 'fixture-employee', ownerName: 'Fixture user', canRead: true, canManage: true },
@@ -1022,11 +1022,11 @@ for (const { mode, installed, surface } of desktopCarriers) {
       onTestFinished(() => model.close())
       const catalogRows: Record<string, object[]> = {
         '/api/v1/connectors': [{ id: 'erp', version: '1.0.0', name: 'Order management', displayName: 'Order management',
-          status: 'ready', ready: true, authorizationStatus: 'AUTHORIZED', authMode: 'employee-bearer',
+          visibility: 'COMPANY', reviewStatus: 'PUBLISHED', status: 'ready', ready: true, authorizationStatus: 'AUTHORIZED', authMode: 'employee-bearer',
           transport: 'streamable-http', url: '/api/v1/connectors/erp/mcp', arguments: [], headers: {}, environment: {},
           tools: [{ name: 'orders_read', access: 'READ' }] },
         { id: 'local-unconfigured', version: '1.0.0', name: 'Device configuration missing',
-          status: 'needs-configuration', ready: false, authorizationStatus: 'AUTHORIZED', authMode: 'none',
+          visibility: 'COMPANY', reviewStatus: 'PUBLISHED', status: 'needs-configuration', ready: false, authorizationStatus: 'AUTHORIZED', authMode: 'none',
           transport: 'stdio', command: 'fixture-unconfigured', arguments: [], headers: {}, environment: {}, tools: [] }],
         '/api/v1/knowledge-bases': [...organizationKnowledge,
           { id: 'policy', name: 'Operations playbook', scope: 'COMPANY', companyId: 'fixture-company', ownerName: 'Fixture company', referenceKey: 'company:policy', canRead: true, canManage: false }],
