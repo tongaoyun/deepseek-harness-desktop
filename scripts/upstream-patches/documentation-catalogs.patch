@@ -486,7 +486,7 @@ index 870fa1c996ba569f882a7cb70e62f0bd655c64af..e4630a876520302e23235f1543bdece6
  
  | 包 | 职责 | `ctx` 键 |
 diff --git a/docs/config-catalog.md b/docs/config-catalog.md
-index 60484ba7953302ab8c0e47f86b203796862fdca7..5589e6616f7933c8f03528e0e75dbc755d3153a4 100644
+index 60484ba7953302ab8c0e47f86b203796862fdca7..4643758281bfcd8e44717d06f7baac0406278b8e 100644
 --- a/docs/config-catalog.md
 +++ b/docs/config-catalog.md
 @@ -139,7 +139,7 @@ export type Config = PresetDefinition
@@ -525,7 +525,7 @@ index 60484ba7953302ab8c0e47f86b203796862fdca7..5589e6616f7933c8f03528e0e75dbc75
    toolCallTimeoutMs: number
    /** Fail plugin activation when the initial connection or tool synchronization fails. */
    failOnStartupError: boolean
-@@ -4583,6 +4583,38 @@ export interface Config {
+@@ -4583,6 +4583,57 @@ export interface Config {
  ```
  <!-- END GENERATED config-catalog:@deepseek-ai/dsh-workspace-changes -->
  
@@ -536,7 +536,7 @@ index 60484ba7953302ab8c0e47f86b203796862fdca7..5589e6616f7933c8f03528e0e75dbc75
 +
 +- `inject`: `tools` · `subagents` · `systemPrompt` · `settings` · `webServer`
 +- `refs`: `Volatile` (`@deepseek-ai/cordis`)
-+- `source`: [`packages/deepseek-harness-product/experts/src/index.ts:207`](../packages/deepseek-harness-product/experts/src/index.ts)
++- `source`: [`packages/deepseek-harness-product/experts/src/index.ts:184`](../packages/deepseek-harness-product/experts/src/index.ts)
 +
 +```ts config-catalog
 +/** Plugin config: the persona root, the subagent provider, and the divisions to scan. */
@@ -561,19 +561,37 @@ index 60484ba7953302ab8c0e47f86b203796862fdca7..5589e6616f7933c8f03528e0e75dbc75
 +```
 +<!-- END GENERATED config-catalog:@deepseek-harness/product-experts -->
 +
++<!-- BEGIN GENERATED config-catalog:@deepseek-harness/product-runtime -->
++<a id="deepseek-harnessproduct-runtime"></a>
++
++## `@deepseek-harness/product-runtime`
++
++- `refs`: `z` (`zod`)
++- `source`: [`packages/deepseek-harness-product/runtime/src/index.ts:16`](../packages/deepseek-harness-product/runtime/src/index.ts)
++
++```ts config-catalog
++/** Product runtime configuration. */
++export interface Config {
++  /** Limits for connector discovery results and tools loaded by one Session. */
++  readonly connectorDiscovery?: DiscoveryOptions
++}
++
++export type DiscoveryOptions = z.input<typeof discoveryOptions>
++```
++<!-- END GENERATED config-catalog:@deepseek-harness/product-runtime -->
++
  ## Loadable plugins with no config
  
  These load from a `cordis.yml` entry with no `config:` block; they declare no configuration API.
-@@ -4697,6 +4729,8 @@ These load from a `cordis.yml` entry with no `config:` block; they declare no co
+@@ -4697,6 +4748,7 @@ These load from a `cordis.yml` entry with no `config:` block; they declare no co
  | `@deepseek-ai/dsh-user-questions` | — | [`packages/interaction/user-questions/src/index.ts`](../packages/interaction/user-questions/src/index.ts) |
  | `@deepseek-ai/dsh-webhook` | `agents` · `agentDefaultModel` · `agentPresets` · `permissionPresets` · `sessionTitle` · `workspaceRegistry` | [`packages/experimental/webhook/src/index.ts`](../packages/experimental/webhook/src/index.ts) |
  | `@deepseek-ai/dsh-workspace` | `storageDomain` · `sessionPersistence` | [`packages/workspace/workspace/src/index.ts`](../packages/workspace/workspace/src/index.ts) |
-+| `@deepseek-harness/product-runtime` | — | [`packages/deepseek-harness-product/runtime/src/index.ts`](../packages/deepseek-harness-product/runtime/src/index.ts) |
 +| `@deepseek-harness/product-ui` | — | [`packages/extensions/ui-deepseek-harness-product/src/index.ts`](../packages/extensions/ui-deepseek-harness-product/src/index.ts) |
  <!-- END GENERATED config-catalog:no-config -->
  
  ## Seam packages (not directly loadable)
-@@ -4798,4 +4832,7 @@ Imported as libraries by other packages; a `cordis.yml` cannot load them.
+@@ -4798,4 +4850,7 @@ Imported as libraries by other packages; a `cordis.yml` cannot load them.
  | `@deepseek-ai/dsh-util-values` | — | [`packages/util/values/src/index.ts`](../packages/util/values/src/index.ts) |
  | `@deepseek-ai/dsh-util-workspace-path` | — | [`packages/util/workspace-path/src/index.ts`](../packages/util/workspace-path/src/index.ts) |
  | `@deepseek-ai/dsh-win32-process` | — | [`packages/subprocess/win32-process/src/index.ts`](../packages/subprocess/win32-process/src/index.ts) |
@@ -582,7 +600,7 @@ index 60484ba7953302ab8c0e47f86b203796862fdca7..5589e6616f7933c8f03528e0e75dbc75
 +| `@deepseek-harness/product-skills` | — | [`packages/deepseek-harness-product/skills/src/index.ts`](../packages/deepseek-harness-product/skills/src/index.ts) |
  <!-- END GENERATED config-catalog:library -->
 diff --git a/docs/config-catalog.zh.md b/docs/config-catalog.zh.md
-index 846065001058b837f0218fe1d72e3e74acf4ca33..009ef2d4e0991a45995ab8ab17dc43152c5c2d07 100644
+index 846065001058b837f0218fe1d72e3e74acf4ca33..05476724d73178f23f879ede8ea5624dbb2517b3 100644
 --- a/docs/config-catalog.zh.md
 +++ b/docs/config-catalog.zh.md
 @@ -141,7 +141,7 @@ export type Config = PresetDefinition
@@ -621,7 +639,7 @@ index 846065001058b837f0218fe1d72e3e74acf4ca33..009ef2d4e0991a45995ab8ab17dc4315
    toolCallTimeoutMs: number
    /** Fail plugin activation when the initial connection or tool synchronization fails. */
    failOnStartupError: boolean
-@@ -4585,6 +4585,38 @@ export interface Config {
+@@ -4585,6 +4585,57 @@ export interface Config {
  ```
  <!-- END GENERATED config-catalog:@deepseek-ai/dsh-workspace-changes -->
  
@@ -632,7 +650,7 @@ index 846065001058b837f0218fe1d72e3e74acf4ca33..009ef2d4e0991a45995ab8ab17dc4315
 +
 +- `inject`: `tools` · `subagents` · `systemPrompt` · `settings` · `webServer`
 +- `refs`: `Volatile` (`@deepseek-ai/cordis`)
-+- `source`: [`packages/deepseek-harness-product/experts/src/index.ts:207`](../packages/deepseek-harness-product/experts/src/index.ts)
++- `source`: [`packages/deepseek-harness-product/experts/src/index.ts:184`](../packages/deepseek-harness-product/experts/src/index.ts)
 +
 +```ts config-catalog
 +/** Plugin config: the persona root, the subagent provider, and the divisions to scan. */
@@ -657,19 +675,37 @@ index 846065001058b837f0218fe1d72e3e74acf4ca33..009ef2d4e0991a45995ab8ab17dc4315
 +```
 +<!-- END GENERATED config-catalog:@deepseek-harness/product-experts -->
 +
++<!-- BEGIN GENERATED config-catalog:@deepseek-harness/product-runtime -->
++<a id="deepseek-harnessproduct-runtime"></a>
++
++## `@deepseek-harness/product-runtime`
++
++- `refs`: `z` (`zod`)
++- `source`: [`packages/deepseek-harness-product/runtime/src/index.ts:16`](../packages/deepseek-harness-product/runtime/src/index.ts)
++
++```ts config-catalog
++/** Product runtime configuration. */
++export interface Config {
++  /** Limits for connector discovery results and tools loaded by one Session. */
++  readonly connectorDiscovery?: DiscoveryOptions
++}
++
++export type DiscoveryOptions = z.input<typeof discoveryOptions>
++```
++<!-- END GENERATED config-catalog:@deepseek-harness/product-runtime -->
++
  ## 无配置的可加载插件
  
  这些插件通过 `cordis.yml` 中不含 `config:` 块的条目加载；它们未声明任何配置接口。
-@@ -4699,6 +4731,8 @@ export interface Config {
+@@ -4699,6 +4750,7 @@ export interface Config {
  | `@deepseek-ai/dsh-user-questions` | — | [`packages/interaction/user-questions/src/index.ts`](../packages/interaction/user-questions/src/index.ts) |
  | `@deepseek-ai/dsh-webhook` | `agents` · `agentDefaultModel` · `agentPresets` · `permissionPresets` · `sessionTitle` · `workspaceRegistry` | [`packages/experimental/webhook/src/index.ts`](../packages/experimental/webhook/src/index.ts) |
  | `@deepseek-ai/dsh-workspace` | `storageDomain` · `sessionPersistence` | [`packages/workspace/workspace/src/index.ts`](../packages/workspace/workspace/src/index.ts) |
-+| `@deepseek-harness/product-runtime` | — | [`packages/deepseek-harness-product/runtime/src/index.ts`](../packages/deepseek-harness-product/runtime/src/index.ts) |
 +| `@deepseek-harness/product-ui` | — | [`packages/extensions/ui-deepseek-harness-product/src/index.ts`](../packages/extensions/ui-deepseek-harness-product/src/index.ts) |
  <!-- END GENERATED config-catalog:no-config -->
  
  ## Seam 包（不可直接加载）
-@@ -4800,4 +4834,7 @@ export interface Config {
+@@ -4800,4 +4852,7 @@ export interface Config {
  | `@deepseek-ai/dsh-util-values` | — | [`packages/util/values/src/index.ts`](../packages/util/values/src/index.ts) |
  | `@deepseek-ai/dsh-util-workspace-path` | — | [`packages/util/workspace-path/src/index.ts`](../packages/util/workspace-path/src/index.ts) |
  | `@deepseek-ai/dsh-win32-process` | — | [`packages/subprocess/win32-process/src/index.ts`](../packages/subprocess/win32-process/src/index.ts) |
@@ -678,7 +714,7 @@ index 846065001058b837f0218fe1d72e3e74acf4ca33..009ef2d4e0991a45995ab8ab17dc4315
 +| `@deepseek-harness/product-skills` | — | [`packages/deepseek-harness-product/skills/src/index.ts`](../packages/deepseek-harness-product/skills/src/index.ts) |
  <!-- END GENERATED config-catalog:library -->
 diff --git a/docs/event-producer-consumer.md b/docs/event-producer-consumer.md
-index 3d1bbaf9878f8f29970d693a4776eb5c1f985128..0b63cba0ecafac7c409bb963375f5d6138a17ed9 100644
+index 3d1bbaf9878f8f29970d693a4776eb5c1f985128..b7f6ed2623d20d5d472580642cd3390bf2577594 100644
 --- a/docs/event-producer-consumer.md
 +++ b/docs/event-producer-consumer.md
 @@ -9,15 +9,16 @@ This matrix shows which packages dispatch each harness-owned event and which pac
@@ -690,8 +726,9 @@ index 3d1bbaf9878f8f29970d693a4776eb5c1f985128..0b63cba0ecafac7c409bb963375f5d61
 +| `agent-preset/selected` | `emit` | [`packages/preset/agent-preset-registry/src/types.ts:75`](../packages/preset/agent-preset-registry/src/types.ts) | [`agent-preset-registry`](../packages/preset/agent-preset-registry) (`emit`) | `remotes` |
  | `agent/assistant-stream` | `emit` | [`packages/core/agent/src/runtime-types.ts:363`](../packages/core/agent/src/runtime-types.ts) | [`agent-loop`](../packages/core/agent-loop) (`emit`) | [`headless`](../packages/bundle/headless), `session-controller` |
 -| `agent/created` | `serial` | [`packages/core/agent/src/runtime-types.ts:261`](../packages/core/agent/src/runtime-types.ts) | [`agent`](../packages/core/agent) (`serial`) | `agent-team`, `browser-use-runtime`, `claude-code-mods`, [`file-reference-local`](../packages/context/file-reference-local), [`goal`](../packages/goal/goal), [`goal-round-driver`](../packages/goal/goal-round-driver), [`hooks-claude-code`](../packages/experimental/hooks-claude-code), [`hooks-codex`](../packages/experimental/hooks-codex), [`loader-smoke`](../packages/test-support/loader-smoke), `session-controller`, `tool-agent-team`, [`tool-subagent`](../packages/subagent/tool-subagent) |
+-| `agent/disposed` | `emit` | [`packages/core/agent/src/runtime-types.ts:270`](../packages/core/agent/src/runtime-types.ts) | [`agent`](../packages/core/agent) (`events.dispatch`) | [`agent-loop`](../packages/core/agent-loop), `claude-code-mods`, [`file-reference-local`](../packages/context/file-reference-local), [`goal-round-driver`](../packages/goal/goal-round-driver), `session-controller`, [`subagent`](../packages/subagent/subagent), `tool-agent-team`, [`tool-subagent`](../packages/subagent/tool-subagent) |
 +| `agent/created` | `serial` | [`packages/core/agent/src/runtime-types.ts:261`](../packages/core/agent/src/runtime-types.ts) | [`agent`](../packages/core/agent) (`serial`) | `agent-team`, `browser-use-runtime`, `claude-code-mods`, [`file-reference-local`](../packages/context/file-reference-local), [`goal`](../packages/goal/goal), [`goal-round-driver`](../packages/goal/goal-round-driver), [`hooks-claude-code`](../packages/experimental/hooks-claude-code), [`hooks-codex`](../packages/experimental/hooks-codex), [`loader-smoke`](../packages/test-support/loader-smoke), `runtime`, `session-controller`, `tool-agent-team`, [`tool-subagent`](../packages/subagent/tool-subagent) |
- | `agent/disposed` | `emit` | [`packages/core/agent/src/runtime-types.ts:270`](../packages/core/agent/src/runtime-types.ts) | [`agent`](../packages/core/agent) (`events.dispatch`) | [`agent-loop`](../packages/core/agent-loop), `claude-code-mods`, [`file-reference-local`](../packages/context/file-reference-local), [`goal-round-driver`](../packages/goal/goal-round-driver), `session-controller`, [`subagent`](../packages/subagent/subagent), `tool-agent-team`, [`tool-subagent`](../packages/subagent/tool-subagent) |
++| `agent/disposed` | `emit` | [`packages/core/agent/src/runtime-types.ts:270`](../packages/core/agent/src/runtime-types.ts) | [`agent`](../packages/core/agent) (`events.dispatch`) | [`agent-loop`](../packages/core/agent-loop), `claude-code-mods`, [`file-reference-local`](../packages/context/file-reference-local), [`goal-round-driver`](../packages/goal/goal-round-driver), `runtime`, `session-controller`, [`subagent`](../packages/subagent/subagent), `tool-agent-team`, [`tool-subagent`](../packages/subagent/tool-subagent) |
  | `agent/error` | `emit` | [`packages/core/agent/src/runtime-types.ts:393`](../packages/core/agent/src/runtime-types.ts) | [`agent-loop`](../packages/core/agent-loop) (`emit`) | [`acp`](../packages/acp/acp), [`deepseek-account`](../packages/credentials/deepseek-account), [`goal-round-driver`](../packages/goal/goal-round-driver), [`headless`](../packages/bundle/headless), `server`, `session-controller`, [`session-telemetry`](../packages/session/session-telemetry), [`subagent`](../packages/subagent/subagent) |
  | `agent/inbox/claimed` | `emit` | [`packages/core/agent/src/runtime-types.ts:299`](../packages/core/agent/src/runtime-types.ts) | [`agent-loop`](../packages/core/agent-loop) (`emit`) | [`acp`](../packages/acp/acp), [`goal-round-driver`](../packages/goal/goal-round-driver), [`subagent`](../packages/subagent/subagent), [`tool-jobs`](../packages/jobs/tool-jobs), [`user-questions`](../packages/interaction/user-questions) |
  | `agent/inbox/discarded` | `emit` | [`packages/core/agent/src/runtime-types.ts:307`](../packages/core/agent/src/runtime-types.ts) | [`agent-loop`](../packages/core/agent-loop) (`emit`) | [`goal-round-driver`](../packages/goal/goal-round-driver), [`subagent`](../packages/subagent/subagent), [`user-questions`](../packages/interaction/user-questions) |
@@ -720,7 +757,7 @@ index 3d1bbaf9878f8f29970d693a4776eb5c1f985128..0b63cba0ecafac7c409bb963375f5d61
  | `internal/status` | - | [`agent`](../packages/core/agent), `inspector`, `translator`, [`web`](../packages/web/web) |
  | `internal/update` | - | [`app-boot`](../packages/boot/app-boot) |
 diff --git a/docs/event-producer-consumer.zh.md b/docs/event-producer-consumer.zh.md
-index 213180e82e28bdc61af7b84ad80ef389b641bd4b..531caa05fef764bbdca56fa400064293936b1034 100644
+index 213180e82e28bdc61af7b84ad80ef389b641bd4b..c21cebcc53f66b6f534f551ef7bd8948b601dbd2 100644
 --- a/docs/event-producer-consumer.zh.md
 +++ b/docs/event-producer-consumer.zh.md
 @@ -11,15 +11,16 @@
@@ -732,8 +769,9 @@ index 213180e82e28bdc61af7b84ad80ef389b641bd4b..531caa05fef764bbdca56fa400064293
 +| `agent-preset/selected` | `emit` | [`packages/preset/agent-preset-registry/src/types.ts:75`](../packages/preset/agent-preset-registry/src/types.ts) | [`agent-preset-registry`](../packages/preset/agent-preset-registry) (`emit`) | `remotes` |
  | `agent/assistant-stream` | `emit` | [`packages/core/agent/src/runtime-types.ts:363`](../packages/core/agent/src/runtime-types.ts) | [`agent-loop`](../packages/core/agent-loop) (`emit`) | [`headless`](../packages/bundle/headless), `session-controller` |
 -| `agent/created` | `serial` | [`packages/core/agent/src/runtime-types.ts:261`](../packages/core/agent/src/runtime-types.ts) | [`agent`](../packages/core/agent) (`serial`) | `agent-team`, `browser-use-runtime`, `claude-code-mods`, [`file-reference-local`](../packages/context/file-reference-local), [`goal`](../packages/goal/goal), [`goal-round-driver`](../packages/goal/goal-round-driver), [`hooks-claude-code`](../packages/experimental/hooks-claude-code), [`hooks-codex`](../packages/experimental/hooks-codex), [`loader-smoke`](../packages/test-support/loader-smoke), `session-controller`, `tool-agent-team`, [`tool-subagent`](../packages/subagent/tool-subagent) |
+-| `agent/disposed` | `emit` | [`packages/core/agent/src/runtime-types.ts:270`](../packages/core/agent/src/runtime-types.ts) | [`agent`](../packages/core/agent) (`events.dispatch`) | [`agent-loop`](../packages/core/agent-loop), `claude-code-mods`, [`file-reference-local`](../packages/context/file-reference-local), [`goal-round-driver`](../packages/goal/goal-round-driver), `session-controller`, [`subagent`](../packages/subagent/subagent), `tool-agent-team`, [`tool-subagent`](../packages/subagent/tool-subagent) |
 +| `agent/created` | `serial` | [`packages/core/agent/src/runtime-types.ts:261`](../packages/core/agent/src/runtime-types.ts) | [`agent`](../packages/core/agent) (`serial`) | `agent-team`, `browser-use-runtime`, `claude-code-mods`, [`file-reference-local`](../packages/context/file-reference-local), [`goal`](../packages/goal/goal), [`goal-round-driver`](../packages/goal/goal-round-driver), [`hooks-claude-code`](../packages/experimental/hooks-claude-code), [`hooks-codex`](../packages/experimental/hooks-codex), [`loader-smoke`](../packages/test-support/loader-smoke), `runtime`, `session-controller`, `tool-agent-team`, [`tool-subagent`](../packages/subagent/tool-subagent) |
- | `agent/disposed` | `emit` | [`packages/core/agent/src/runtime-types.ts:270`](../packages/core/agent/src/runtime-types.ts) | [`agent`](../packages/core/agent) (`events.dispatch`) | [`agent-loop`](../packages/core/agent-loop), `claude-code-mods`, [`file-reference-local`](../packages/context/file-reference-local), [`goal-round-driver`](../packages/goal/goal-round-driver), `session-controller`, [`subagent`](../packages/subagent/subagent), `tool-agent-team`, [`tool-subagent`](../packages/subagent/tool-subagent) |
++| `agent/disposed` | `emit` | [`packages/core/agent/src/runtime-types.ts:270`](../packages/core/agent/src/runtime-types.ts) | [`agent`](../packages/core/agent) (`events.dispatch`) | [`agent-loop`](../packages/core/agent-loop), `claude-code-mods`, [`file-reference-local`](../packages/context/file-reference-local), [`goal-round-driver`](../packages/goal/goal-round-driver), `runtime`, `session-controller`, [`subagent`](../packages/subagent/subagent), `tool-agent-team`, [`tool-subagent`](../packages/subagent/tool-subagent) |
  | `agent/error` | `emit` | [`packages/core/agent/src/runtime-types.ts:393`](../packages/core/agent/src/runtime-types.ts) | [`agent-loop`](../packages/core/agent-loop) (`emit`) | [`acp`](../packages/acp/acp), [`deepseek-account`](../packages/credentials/deepseek-account), [`goal-round-driver`](../packages/goal/goal-round-driver), [`headless`](../packages/bundle/headless), `server`, `session-controller`, [`session-telemetry`](../packages/session/session-telemetry), [`subagent`](../packages/subagent/subagent) |
  | `agent/inbox/claimed` | `emit` | [`packages/core/agent/src/runtime-types.ts:299`](../packages/core/agent/src/runtime-types.ts) | [`agent-loop`](../packages/core/agent-loop) (`emit`) | [`acp`](../packages/acp/acp), [`goal-round-driver`](../packages/goal/goal-round-driver), [`subagent`](../packages/subagent/subagent), [`tool-jobs`](../packages/jobs/tool-jobs), [`user-questions`](../packages/interaction/user-questions) |
  | `agent/inbox/discarded` | `emit` | [`packages/core/agent/src/runtime-types.ts:307`](../packages/core/agent/src/runtime-types.ts) | [`agent-loop`](../packages/core/agent-loop) (`emit`) | [`goal-round-driver`](../packages/goal/goal-round-driver), [`subagent`](../packages/subagent/subagent), [`user-questions`](../packages/interaction/user-questions) |
@@ -13508,7 +13546,7 @@ index be3e31626359ec9607789b83000f7e3128a425ea..cdd3f1549f33c78522a5fdac41103890
    {
      name: 'PresetOption',
 diff --git a/packages/preset/agent-preset/skills/cordis-composition-reference/references/packages.md b/packages/preset/agent-preset/skills/cordis-composition-reference/references/packages.md
-index eee345a99c533b7ebb5355acd65509d9055b2ce4..70965e5fb8be0c9276c78b9a1a5c844e1940d3e0 100644
+index eee345a99c533b7ebb5355acd65509d9055b2ce4..d782e8635debb995131d1db8b94d4bbc29c2276c 100644
 --- a/packages/preset/agent-preset/skills/cordis-composition-reference/references/packages.md
 +++ b/packages/preset/agent-preset/skills/cordis-composition-reference/references/packages.md
 @@ -167,6 +167,13 @@ Every package below exports a Cordis plugin that a bundle patch can name in a Lo
@@ -13520,7 +13558,7 @@ index eee345a99c533b7ebb5355acd65509d9055b2ce4..70965e5fb8be0c9276c78b9a1a5c844e
 +| Package | Config | Description |
 +|---|---|---|
 +| `@deepseek-harness/product-experts` | yes | Harness 内建专家套件模块 |
-+| `@deepseek-harness/product-runtime` | no | undefined |
++| `@deepseek-harness/product-runtime` | yes | undefined |
 +
  ## deliverables
  
