@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
@@ -235,6 +235,14 @@ test('writes credential-free identities only after all required installers exist
     writeFileSync(join(directory, 'Other.dmg'), 'duplicate')
     assert.throws(() => artifactManifest(directory, 'mac-arm64', commit, '0.2.1'), /Expected one/u)
   } finally { rmSync(directory, { recursive: true, force: true }) }
+})
+
+test('hosted verification references existing tests after product migrations', () => {
+  const source = readFileSync(new URL('../../../.github/workflows/product-desktop-package.yml', import.meta.url), 'utf8')
+  const paths = [...source.matchAll(/\b((?:apps|packages|scripts)\/[\w./-]+(?:\.spec\.(?:ts|tsx)|\.test\.mjs|\.e2e\.ts))\b/gu)]
+    .map(match => match[1])
+  assert.ok(paths.length > 10)
+  for (const path of paths) assert.ok(existsSync(new URL(`../../../${path}`, import.meta.url)), `Missing hosted test: ${path}`)
 })
 
 test('uses native hosted development runners or explicitly configured signing machines without publishing credentials', () => {
