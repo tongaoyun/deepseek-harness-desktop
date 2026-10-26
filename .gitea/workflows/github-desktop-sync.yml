@@ -45,6 +45,9 @@ jobs:
           HTTPS_PROXY: ${{ secrets.DESKTOP_GITHUB_PROXY_URL }}
           NODE_USE_ENV_PROXY: '1'
         run: |
+          # The Runner can reach npm directly; keep GitHub traffic on the configured proxy.
+          export NO_PROXY="${NO_PROXY:-${no_proxy:-localhost,127.0.0.1,::1}},registry.npmjs.org"
+          export no_proxy="$NO_PROXY"
           npm install -g pnpm@11.28.5 --prefer-offline --no-audit --fund=false --registry=https://registry.npmjs.org/
           pnpm config set store-dir /pnpm-store
           pnpm install --frozen-lockfile --prefer-offline --registry=https://registry.npmjs.org/
