@@ -32,7 +32,7 @@ node apps/product-desktop/scripts/sync-github.mjs --repository OWNER/deepseek-ha
 
 下载仓库须先初始化默认分支，至少有一条提交。空仓库可以接收 Release 草稿附件，但无法完成发布；先确认仓库初始化，再启动大文件构建及上传。
 
-GitHub 和 Gitea 先创建草稿，每个文件上传后重新下载，核对大小与 SHA-256，全部通过才发布。不替换身份或内容不同的文件及 tag，不删除旧下载。两个服务依次发布，第二个失败时第一个可能已可见。
+GitHub 和 Gitea 先创建草稿，每个文件上传后重新下载，核对大小与 SHA-256，全部通过才发布。不替换身份或内容不同的文件及 tag。两个服务依次发布，第二个失败时第一个可能已可见。旧版本遵循下方[保留规则](#产物与保留)。
 
 上传中断保留已校验草稿。只有重新核对为未完成的草稿 `starter` 附件才可删除后重传；完整附件直接校验，状态不明或权限失败则停止。tag 查询 404 时分页查找草稿，重复 tag 拒绝。
 
@@ -93,4 +93,8 @@ DSH_DESKTOP_MANDATORY_UPDATE_ENABLED=0
 
 三平台先运行已构建的官方及产品 profile，再验证安装后的完整应用；失败阻止发布。成功构建生成安装包、blockmap 和平台 `build-manifest.json`，发布端汇总源码、版本、平台、大小及 SHA-256，并生成 `SHA256SUMS.txt`。
 
-Actions 安装包保留一天，截图与 JSON 验收报告保留十四天，Release 文件不自动过期。日志及 Actions 产物遵循源码仓库可见性。归档 Host 启动回归必须在产品 bootstrap 编译后、安装包上传前运行，不能依赖 runner 缓存。
+Actions 安装包保留一天，截图与 JSON 验收报告保留十四天。日志及 Actions 产物遵循源码仓库可见性。归档 Host 启动回归必须在产品 bootstrap 编译后、安装包上传前运行，不能依赖 runner 缓存。
+
+Gitea Release 和两个 GitHub 下载仓库分别保留最新两个已发布版本，开发预发布与原生更新渠道分别计数；按发布时间排序，每个版本完整保留 Windows x64、macOS ARM64、macOS Intel 安装包及 ZIP、blockmap、更新清单和校验文件。草稿不计数、不自动删除。回收仅处理产品交付版本标签，保留源码 Git tag；有安装文件的旧版本须在两个保留版本均含三平台安装包时才可删除，权限或元数据异常会停止清理。
+
+“桌面 Release 回收”工作流每日北京时间 09:00 执行，使用与发布相同的互斥组。手动运行默认只预览，开启 `apply` 才删除；不重新打包或发布桌面。Gitea 软件包的保留规则不适用于 Release 附件。

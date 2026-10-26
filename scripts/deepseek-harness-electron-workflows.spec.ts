@@ -29,10 +29,10 @@ function workflow(name: string): Workflow {
 }
 
 describe('DeepSeekHarness Electron workflows', () => {
-  it('keeps only internal CI and manual GitHub synchronization workflows', () => {
+  it('keeps internal CI, manual GitHub synchronization and scheduled release retention workflows', () => {
     const files = readdirSync(resolve(import.meta.dirname, '..', '.gitea', 'workflows'))
       .filter(name => /\.ya?ml$/u.test(name)).sort()
-    expect(files).toEqual(['electron-ci.yml', 'github-desktop-sync.yml'])
+    expect(files).toEqual(['desktop-release-retention.yml', 'electron-ci.yml', 'github-desktop-sync.yml'])
   })
 
   it('builds product and bundled plugin artifacts before their contract checks', () => {

@@ -1,0 +1,45 @@
+name: 桌面 Release 回收
+
+on:
+  schedule:
+    - cron: '0 1 * * *'
+  workflow_dispatch:
+    inputs:
+      apply:
+        description: 执行清理（关闭时只预览）
+        required: false
+        type: boolean
+        default: false
+
+concurrency:
+  group: github-desktop-sync
+  cancel-in-progress: false
+
+jobs:
+  retention:
+    runs-on: ci-node
+    timeout-minutes: 20
+    container:
+      image: ci-node:1.0.0
+    steps:
+      - name: Checkout retention code
+        uses: http://192.168.2.67:30330/instudio/checkout@v4
+      - name: Verify retention behavior
+        run: node --test apps/product-desktop/tests/release-retention.test.mjs
+      - name: Retain two desktop versions per channel
+        env:
+          GITEA_API_URL: http://192.168.2.67:30330/api/v1
+          GITEA_REPOSITORY: instudio/deepseek-harness-desktop
+          GITEA_USERNAME: ${{ secrets.RELEASE_USERNAME }}
+          GITEA_PASSWORD: ${{ secrets.RELEASE_CREDENTIAL }}
+          GITHUB_DESKTOP_TOKEN: ${{ secrets.DESKTOP_GITHUB_TOKEN }}
+          GITHUB_DOWNLOAD_REPOSITORIES: ${{ vars.DESKTOP_GITHUB_DOWNLOAD_REPOSITORY }},${{ vars.DESKTOP_INTERNAL_DOWNLOAD_REPOSITORY }}
+          HTTPS_PROXY: ${{ secrets.DESKTOP_GITHUB_PROXY_URL }}
+          NODE_USE_ENV_PROXY: '1'
+          RETENTION_APPLY: ${{ github.event_name == 'schedule' || inputs.apply == true || inputs.apply == 'true' }}
+        run: |
+          if [ "$RETENTION_APPLY" = "true" ]; then
+            node apps/product-desktop/scripts/release-retention.mjs --apply
+          else
+            node apps/product-desktop/scripts/release-retention.mjs
+          fi
