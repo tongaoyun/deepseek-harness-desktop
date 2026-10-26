@@ -1148,7 +1148,12 @@ for (const { mode, installed, surface } of desktopCarriers) {
             response.end(JSON.stringify({ success: true, data: contents.items, pageIndex: page,
               pageSize: size, totalCount: contents.total, totalPages: Math.ceil(contents.total / size) }))
           } else if (parts[7] === 'preview' && parts[8] === 'metadata') {
-            response.end(JSON.stringify({ success: true, data: knowledgeDocuments(baseId).find(row => row.id === parts[6]) }))
+            const original = knowledgeOriginal(parts[6] ?? '', largePreview)
+            response.end(JSON.stringify({ success: true, data: {
+              ...knowledgeDocuments(baseId).find(row => row.id === parts[6]),
+              sizeBytes: original.data.byteLength,
+              contentVersion: createHash('sha256').update(original.data).digest('hex'),
+            } }))
           } else if (parts[7] === 'preview' || parts[7] === 'download') {
             const original = knowledgeOriginal(parts[6] ?? '', largePreview)
             response.setHeader('content-type', original.mediaType)
@@ -1222,6 +1227,16 @@ for (const { mode, installed, surface } of desktopCarriers) {
           } finally { await rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }) }
         }
       })
+      // Native file protection compares authoritative metadata with streamed bytes.
+      for (const documentId of ['document-1', 'document-2', 'document-3', 'document-4']) {
+        const url = `${origin}/api/v1/knowledge-bases/personal-notes/documents/${documentId}/preview`
+        const metadata = z.object({ data: z.object({ sizeBytes: z.number(), contentVersion: z.string() }) })
+          .parse(await (await fetch(`${url}/metadata`)).json()).data
+        const bytes = new Uint8Array(await (await fetch(url)).arrayBuffer())
+        expect(metadata, `Native preview fixture ${documentId} must describe its streamed bytes`).toMatchObject({
+          sizeBytes: bytes.byteLength, contentVersion: createHash('sha256').update(bytes).digest('hex'),
+        })
+      }
       const electronExecutable: unknown = installed ?? createRequire(join(REPO_ROOT, 'apps/desktop/package.json'))('electron')
       if (typeof electronExecutable !== 'string') throw new Error('Electron executable is unavailable')
       if (installed !== undefined) {
