@@ -49,5 +49,22 @@ export async function verifyRuntimeArchive(archivePath: string, expected: Deskto
     if (!entry.isFile() || !unpacked.has(path)) throw new Error(`desktop runtime: unexpected unpacked entry ${path}`)
   }
   files.sort((a, b) => a.path < b.path ? -1 : a.path > b.path ? 1 : 0)
-  if (JSON.stringify(files) !== JSON.stringify(expected.files)) throw new Error('desktop runtime: ASAR integrity verification failed')
+  if (JSON.stringify(files) !== JSON.stringify(expected.files)) {
+    const actual = new Map(files.map(file => [file.path, file]))
+    const sealed = new Map(expected.files.map(file => [file.path, file]))
+    const differences: string[] = []
+    for (const file of expected.files) {
+      const archived = actual.get(file.path)
+      if (archived === undefined) differences.push(`missing ${file.path}`)
+      else if (JSON.stringify(archived) !== JSON.stringify(file)) differences.push(`changed ${file.path}`)
+      if (differences.length === 10) break
+    }
+    if (differences.length < 10) {
+      for (const file of files) {
+        if (!sealed.has(file.path)) differences.push(`extra ${file.path}`)
+        if (differences.length === 10) break
+      }
+    }
+    throw new Error(`desktop runtime: ASAR integrity verification failed (sealed=${expected.files.length}, archived=${files.length}): ${differences.join('; ')}`)
+  }
 }

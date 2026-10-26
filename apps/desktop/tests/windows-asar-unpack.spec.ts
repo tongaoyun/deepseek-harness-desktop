@@ -5,7 +5,8 @@ import { dirname, join } from 'node:path'
 import type { Stats } from 'node:fs'
 import { Arch, Packager, type BeforePackContext, type Configuration } from 'app-builder-lib'
 import { WinPackager } from 'app-builder-lib/out/winPackager.js'
-import { getFileMatchers } from 'app-builder-lib/out/fileMatcher.js'
+import { getFileMatchers, type FileMatcher } from 'app-builder-lib/out/fileMatcher.js'
+import { computeFileSets, transformFiles } from 'app-builder-lib/out/util/appFileCopier.js'
 import { readAsar } from 'app-builder-lib/out/asar/asar.js'
 import { afterEach, expect, it, vi } from 'vitest'
 import { prepareWindowsAsarUnpack, verifyWindowsAsarUnpack } from '../scripts/windows-asar-unpack.mjs'
@@ -13,6 +14,7 @@ import { createElectronBuilderConfig } from '../scripts/electron-builder-config.
 import { verifyRuntimeArchive } from '../scripts/verify-runtime-archive.ts'
 import { DESKTOP_HOST_PROTOCOL_VERSION } from '../src/host-protocol.ts'
 import { inventoryDesktopRuntime, type DesktopRuntimeDescriptor } from '../src/runtime-tree.ts'
+import { prepareRuntimeManifests } from '../scripts/prepare-runtime-manifests.ts'
 
 vi.mock('../scripts/windows-sign.mjs', async importOriginal => ({
   ...await importOriginal<typeof import('../scripts/windows-sign.mjs')>(),
@@ -38,6 +40,14 @@ const { AsarPackager } = require('app-builder-lib/out/asar/asarUtil.js') as {
   AsarPackager: new (packager: object, configuration: object) => {
     pack(files: { src: string; destination: string; files: string[]; metadata: Map<string, Stats> }[]): Promise<void>
   }
+}
+const { createTransformer } = require('app-builder-lib/out/fileTransformer.js') as {
+  createTransformer: (root: string, config: object, extraMetadata: undefined) =>
+  (path: string) => Promise<string | null> | null
+}
+const { getMainFileMatchers } = require('app-builder-lib/out/fileMatcher.js') as {
+  getMainFileMatchers: (root: string, destination: string, expand: (value: string) => string,
+    options: object, packager: BeforePackContext['packager'], out: string, compile: boolean) => FileMatcher[]
 }
 const roots: string[] = []
 const cleanups: (() => Promise<void>)[] = []
@@ -275,6 +285,26 @@ it('verifies archived bytes against the preparation descriptor', async () => {
   await expect(verifyRuntimeArchive(archive, expected)).resolves.toBeUndefined()
   await writeFile(join(input.resources, 'app.asar.unpacked/dsh/node_modules/foo/native.node'), 'tampered')
   await expect(verifyRuntimeArchive(archive, expected)).rejects.toThrow('ASAR integrity')
+})
+
+it('preserves sealed runtime files through the production builder traversal and transformer', async () => {
+  const input = await fixture(false)
+  const manifest = join(input.source, 'node_modules/foo/package.json')
+  await writeFile(manifest, JSON.stringify({ name: 'foo', version: '1.0.0', scripts: { test: 'test' },
+    bugs: 'https://example.com', keywords: ['fixture'] }))
+  await prepareRuntimeManifests(input.source)
+  const expected = await seal(input)
+  const destination = join(input.resources, 'app')
+  const packager = input.context.packager
+  Object.defineProperty(packager.info, 'buildResourcesDir', { value: join(input.appDir, 'build') })
+  const matchers = getMainFileMatchers(input.appDir, destination, value => value,
+    {}, packager, dirname(input.resources), false)
+  const fileSets = await computeFileSets(matchers, null, packager, false)
+  const transform = createTransformer(input.appDir, {}, undefined)
+  for (const fileSet of fileSets) await transformFiles(transform, fileSet)
+  await new AsarPackager(packager, { defaultDestination: destination, resourcePath: input.resources,
+    options: {}, unpackPattern: (file: string) => file.endsWith('.node') }).pack(fileSets)
+  await expect(verifyRuntimeArchive(join(input.resources, 'app.asar'), expected)).resolves.toBeUndefined()
 })
 
 it.each(['sharedPackages', 'release', 'files'] as const)('rejects changed archived descriptor %s', async (field) => {
