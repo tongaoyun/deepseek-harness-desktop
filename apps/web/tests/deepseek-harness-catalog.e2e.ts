@@ -25,6 +25,8 @@ import { pdfFixture } from '../../../packages/client/ui-sidebar-documentpreview/
 import { realOfficeBytes } from './office-fixture.ts'
 import { closeElectronAcceptance } from '../../product-desktop/scripts/close-electron.mjs'
 import { prepareNativeProductUpdate, type NativeProductUpdateQualification } from '../../product-desktop/tests/native-product-update.mjs'
+import { DeepSeekHarnessApiClient } from '@deepseek-harness/product'
+import { CompanyContentSync } from '../../../packages/deepseek-harness-product/desktop/src/company-content-sync.ts'
 
 const packageDir = join(REPO_ROOT, 'packages/extensions/ui-deepseek-harness-product')
 const expectedDir = fileURLToPath(new URL('./expected/deepseek-harness-catalog', import.meta.url))
@@ -1050,6 +1052,8 @@ for (const { mode, installed, surface } of desktopCarriers) {
         } else if (path === '/api/v1/bootstrap') {
           response.end(JSON.stringify({ success: true, data: { modelApiKey: 'fixture-model-key',
             endpoints: { litellm: model.baseURL + '/v1' }, models: ['deepseek-v4-flash'] } }))
+        } else if (path === '/api/v1/company-content') {
+          response.end(JSON.stringify({ success: true, data: null }))
         } else if (path === '/api/v1/device-capabilities' || path === '/api/v1/device-capabilities/presence') {
           void fixtureRequestBody(request).then((body) => {
             deviceReports.push(body)
@@ -1227,6 +1231,13 @@ for (const { mode, installed, surface } of desktopCarriers) {
           } finally { await rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }) }
         }
       })
+      // New native Sessions must confirm company content before their first model step.
+      const companyApi = new DeepSeekHarnessApiClient({ baseUrl: origin, getSessionToken: () => secret })
+      const company = new CompanyContentSync({ root: join(root, 'company-fixture-check'), employeeId: 'fixture-employee',
+        refreshIntervalMs: 1000, load: signal => companyApi.request('/api/v1/company-content', { signal }) })
+      onTestFinished(() => company.close())
+      await company.prepare()
+      expect(await company.pin({ sessionId: 'fixture-first-turn', started: false })).toMatchObject({ version: '0' })
       // Native file protection compares authoritative metadata with streamed bytes.
       for (const documentId of ['document-1', 'document-2', 'document-3', 'document-4']) {
         const url = `${origin}/api/v1/knowledge-bases/personal-notes/documents/${documentId}/preview`
