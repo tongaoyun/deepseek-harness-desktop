@@ -46,11 +46,18 @@ async function descendants(parent) {
   return result
 }
 
-async function dialogWithButton(application, name, timeout = 120_000) {
+/**
+ * Select only the shell-owned confirmation, even when the product status has the same action label.
+ * @param application Native window owner.
+ * @param name Expected confirmation button.
+ * @param timeout Bounded dialog readiness wait.
+ * @returns Matching update-dialog document.
+ */
+export async function dialogWithButton(application, name, timeout = 120_000) {
   let matching
   await expect.poll(async () => {
     for (const page of application.windows()) {
-      if (page.isClosed()) continue
+      if (page.isClosed() || page.url() !== 'dsh-app://shell/update-dialog.html') continue
       const visible = await page.getByRole('button', { name, exact: true }).isVisible()
         .catch(error => { if (page.isClosed()) return false; throw error })
       if (visible) { matching = page; return true }

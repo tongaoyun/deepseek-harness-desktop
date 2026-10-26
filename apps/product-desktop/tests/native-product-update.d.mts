@@ -1,5 +1,15 @@
 import type { ElectronApplication, Page } from 'playwright'
 
+interface UpdateDialogWindow {
+  isClosed(): boolean
+  url(): string
+  getByRole(role: 'button', options: { name: string | RegExp; exact: true }): { isVisible(): Promise<boolean> }
+}
+
+/** Select the shell-owned confirmation instead of a same-label product status action. */
+export function dialogWithButton<P extends UpdateDialogWindow>(application: { windows(): P[] },
+  name: string | RegExp, timeout?: number): Promise<P>
+
 /** Two private versions of the complete product, using its native update UI and installer. */
 export interface NativeProductUpdateQualification {
   readonly initialVersion: string

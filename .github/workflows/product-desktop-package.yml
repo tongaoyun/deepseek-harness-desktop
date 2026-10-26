@@ -128,7 +128,7 @@ jobs:
       - name: Test acceptance process cleanup
         run: node --test apps/product-desktop/tests/acceptance-process.test.mjs apps/product-desktop/tests/office-process-diagnostics.test.mjs
       - name: Test Electron close lifecycle
-        run: pnpm exec vitest run apps/product-desktop/tests/close-electron.spec.ts apps/product-desktop/tests/office-fixture.spec.ts
+        run: pnpm exec vitest run apps/product-desktop/tests/close-electron.spec.ts apps/product-desktop/tests/office-fixture.spec.ts apps/product-desktop/tests/native-update-dialog.spec.ts
       - name: Test upstream boundaries
         run: pnpm exec vitest run scripts/upstream-boundaries.spec.ts
       - name: Test product sidecar
