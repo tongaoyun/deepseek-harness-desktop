@@ -1761,10 +1761,31 @@
         {
           "path": "apps/desktop/tests/windows-asar-unpack.spec.ts",
           "before": "26c6aab1ad73b685b6723281f0c5d93f1fbce7a63adca3172c8b1103b1e4816b",
-          "after": "53d5b9378a21e41dc1200c46c51a06429f5cc9909f976becb68e4b802313f0a8"
+          "after": "9d6fbdae9d3a35df5c3a93c0c27a24b4af7e621e76483d7d0b406d039afd0d37"
         }
       ],
       "diff": "desktop-archive-diagnostics.patch"
+    },
+    {
+      "id": "desktop-asar-placeholders",
+      "purpose": "在封装运行时清单前剔除 ASAR 固定忽略的 .gitkeep 空目录占位文件，保留实际图标资源和全部内容完整性校验。",
+      "tests": [
+        "apps/desktop/tests/runtime-file-policy.spec.ts",
+        "apps/desktop/tests/windows-asar-unpack.spec.ts"
+      ],
+      "files": [
+        {
+          "path": "apps/desktop/scripts/runtime-file-policy.ts",
+          "before": "4f2daa3210c983d9cd8f1f0947382cd51b7a181dc50a51f59944f78a62c18940",
+          "after": "85db8527011c97b89b32e612cd4794e284304cde59565bca0504c50ef7b18599"
+        },
+        {
+          "path": "apps/desktop/tests/runtime-file-policy.spec.ts",
+          "before": "ec729b67ca487a03be9cce40070cdd7fbd79bc179ab5cf715379065121fd9003",
+          "after": "951cf51623b1125912372dcd03615b0381c2cc72427a1c42bedc9890ed5294f0"
+        }
+      ],
+      "diff": "desktop-asar-placeholders.patch"
     }
   ]
 }

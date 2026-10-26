@@ -13,6 +13,7 @@ it('omits development artifacts while preserving executable modules, assets and 
   const source = join(root, 'source')
   const output = join(root, 'output')
   const removed = [
+    '@tabler/icons/categories/.gitkeep', '@tabler/icons/icons/.gitkeep',
     'example/index.d.ts', 'example/index.d.mts', 'example/index.d.cts',
     'example/index.js.map', 'example/index.mjs.map', 'example/index.cjs.map',
     'example/style.css.map', 'example/index.d.ts.map', 'example/index.d.mts.map',
@@ -49,6 +50,7 @@ it('omits development artifacts while preserving executable modules, assets and 
     '@mixmark-io/domino/lib/HTMLParser.js', '@mixmark-io/domino/lib/EntityParser.js',
     '@mixmark-io/domino/LICENSE', '@mixmark-io/domino/package.json',
     'example/.yarn/runtime.cjs', '@mixmark-io/domino/.yarn-data.json',
+    'example/.gitkeep.json', 'example/.hidden-runtime',
     '@img/sharp-win32-x64/lib/libvips-42.dll',
     '@deepseek-ai/libreoffice-kit-win32-x64/bin/libreoffice-kit.exe',
     '@deepseek-ai/libreoffice-kit-win32-x64/sources/core-source.json',

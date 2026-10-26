@@ -1,7 +1,7 @@
-import { chmod, lstat, mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from 'node:fs/promises'
+import { chmod, cp, lstat, mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
-import { dirname, join } from 'node:path'
+import { dirname, join, relative } from 'node:path'
 import type { Stats } from 'node:fs'
 import { Arch, Packager, type BeforePackContext, type Configuration } from 'app-builder-lib'
 import { WinPackager } from 'app-builder-lib/out/winPackager.js'
@@ -15,6 +15,7 @@ import { verifyRuntimeArchive } from '../scripts/verify-runtime-archive.ts'
 import { DESKTOP_HOST_PROTOCOL_VERSION } from '../src/host-protocol.ts'
 import { inventoryDesktopRuntime, type DesktopRuntimeDescriptor } from '../src/runtime-tree.ts'
 import { prepareRuntimeManifests } from '../scripts/prepare-runtime-manifests.ts'
+import { desktopRuntimeFileExclusion } from '../scripts/runtime-file-policy.ts'
 
 vi.mock('../scripts/windows-sign.mjs', async importOriginal => ({
   ...await importOriginal<typeof import('../scripts/windows-sign.mjs')>(),
@@ -289,6 +290,15 @@ it('verifies archived bytes against the preparation descriptor', async () => {
 
 it('preserves sealed runtime files through the production builder traversal and transformer', async () => {
   const input = await fixture(false)
+  const installed = join(input.root, 'installed')
+  for (const path of ['@tabler/icons/categories/.gitkeep', '@tabler/icons/icons/.gitkeep', '@tabler/icons/icons/runtime.svg']) {
+    await mkdir(dirname(join(installed, path)), { recursive: true })
+    await writeFile(join(installed, path), path.endsWith('.gitkeep') ? '' : '<svg/>')
+  }
+  await cp(installed, join(input.source, 'node_modules'), {
+    recursive: true, dereference: true,
+    filter: path => desktopRuntimeFileExclusion(relative(installed, path), { platform: 'win32', arch: 'x64' }, 'win32-x64') === undefined,
+  })
   const manifest = join(input.source, 'node_modules/foo/package.json')
   await writeFile(manifest, JSON.stringify({ name: 'foo', version: '1.0.0', scripts: { test: 'test' },
     bugs: 'https://example.com', keywords: ['fixture'] }))
