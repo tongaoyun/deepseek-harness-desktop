@@ -133,7 +133,8 @@ export class DesktopSupport {
       ]
       const signature = JSON.stringify({ payload, capabilities })
       const now = Date.now()
-      if (signature !== this.reportSignature || now - this.lastFullReport >= this.options.policy.reportIntervalMs) {
+      const elapsed = performance.now()
+      if (signature !== this.reportSignature || elapsed - this.lastFullReport >= this.options.policy.reportIntervalMs) {
         const result: unknown = await api.request('/api/v1/device-capabilities', { method: 'POST',
           headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...payload, capabilities }), signal })
         signal.throwIfAborted()
@@ -141,7 +142,7 @@ export class DesktopSupport {
           || typeof result.createdAt !== 'string' || !Number.isFinite(Date.parse(result.createdAt))) {
           throw new ProductError('INVALID_SERVER_RESPONSE', 'Device report receipt is missing', true)
         }
-        this.reportSignature = signature; this.lastFullReport = now
+        this.reportSignature = signature; this.lastFullReport = elapsed
         this.state = { status: 'READY', lastSeenAt: result.createdAt, capabilitiesReportedAt: result.createdAt }
       } else {
         await api.requestNoContent('/api/v1/device-capabilities/presence', { method: 'POST',

@@ -46,7 +46,7 @@ export function KnowledgeEditor(props: KnowledgeEditorProps): ReactNode {
     {recovery.error ? <><p role="alert">{t('knowledgeRecoveryFailed')}</p>
       <Button onClick={() => { void recovery.reload() }}>{t('retry')}</Button></> : <ProductLoading label={t('loading')} />}
   </Modal>
-  return <KnowledgeEditorForm {...props} restored={recovery.draft} recovery={recovery.recovery} />
+  return <KnowledgeEditorForm key={scope} {...props} restored={recovery.draft} recovery={recovery.recovery} />
 }
 
 /** Preserve content and retry identity; suspended saves can be resumed without repeating a new write.

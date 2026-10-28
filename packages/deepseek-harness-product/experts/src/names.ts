@@ -20,8 +20,14 @@ export const EXPERT_CATEGORIES = [
 /** 企业分类的固定展示顺序，目录可补充自定义分类。 */
 export const EXPERT_DIVISION_ORDER = EXPERT_CATEGORIES.map(category => category.id)
 
-/** 分类目录名到中文显示名。 */
-export const ZH_DIVISION: Readonly<Record<string, string>> = Object.fromEntries(EXPERT_CATEGORIES.map(category => [category.id, category.zh]))
+function divisionLabels(locale: 'zh' | 'en'): Readonly<Record<string, string>> {
+  const labels = Object.fromEntries(EXPERT_CATEGORIES.map(category => [category.id, category[locale]]))
+  Object.setPrototypeOf(labels, null)
+  return labels
+}
 
-/** 分类目录名到英文显示名。 */
-export const EN_DIVISION: Readonly<Record<string, string>> = Object.fromEntries(EXPERT_CATEGORIES.map(category => [category.id, category.en]))
+/** 分类目录名到中文显示名；自定义分类不匹配对象原型属性。 */
+export const ZH_DIVISION = divisionLabels('zh')
+
+/** 分类目录名到英文显示名；自定义分类不匹配对象原型属性。 */
+export const EN_DIVISION = divisionLabels('en')

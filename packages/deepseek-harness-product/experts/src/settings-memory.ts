@@ -1,4 +1,5 @@
-import type { SettingsPathOp } from '@deepseek-ai/dsh-settings'
+import { SettingsConflictError, type SettingsDescriptor, type SettingsPathOp } from '@deepseek-ai/dsh-settings'
+import { expertSettingsNamespace } from './settings.ts'
 
 type SettingsSchema = (value: any) => unknown
 type SettingsValidate = (value: any) => void
@@ -49,8 +50,11 @@ export class MemorySettings {
     return this.registrations.get(ns)?.resolved
   }
 
-  describe(): Array<{ ns: string; revision: number }> {
-    return [...this.registrations.entries()].map(([ns, registration]) => ({ ns, revision: registration.revision }))
+  describe(): SettingsDescriptor[] {
+    return [...this.registrations.entries()].map(([ns, registration]) => ({
+      ns: expertSettingsNamespace(ns), revision: registration.revision, autoGenerate: false, schema: {},
+      value: structuredClone(registration.resolved), applies: 'live',
+    }))
   }
 
   mutate(ns: string, ops: readonly SettingsPathOp[], expectedRevision?: number): Promise<void> {
@@ -59,7 +63,7 @@ export class MemorySettings {
       const registration = this.registrations.get(ns)
       if (registration === undefined) throw new Error(`settings namespace "${ns}" is not registered`)
       if (expectedRevision !== undefined && expectedRevision !== registration.revision) {
-        throw new Error(`settings conflict: expected ${expectedRevision}, actual ${registration.revision}`)
+        throw new SettingsConflictError(expertSettingsNamespace(ns), expectedRevision, registration.revision)
       }
       const section = { ...(this.section(ns) ?? {}) }
       for (const op of ops) applyPath(section, op)

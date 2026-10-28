@@ -1,3 +1,5 @@
+import { deadline } from '@deepseek-ai/dsh-timeout';
+import { discardSkillResponse, readSkillResponse } from './response-bytes.ts';
 import { parseSkillDoc } from "./core.ts";
 
 const IDENTIFIER = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
@@ -8,6 +10,7 @@ const MAX_FILES = 100;
 
 type CatalogRequest = { catalog?: unknown; owner?: unknown; slug?: unknown; source?: unknown; skillId?: unknown };
 
+/** Exact public catalog identity validated before download. */
 export type CatalogIdentity =
   | { catalog: "clawhub"; owner: string; slug: string }
   | { catalog: "skillsh"; source: string; skillId: string };
@@ -17,8 +20,8 @@ export type CatalogPackage = { name: string; zip?: string; entries?: { path: str
 
 type FetchLike = typeof fetch;
 
-function catalogError(message: string, statusCode: number, code: string) {
-  return Object.assign(new Error(message), { statusCode, code });
+function catalogError(message: string, statusCode: number, code: string, options?: ErrorOptions) {
+  return Object.assign(new Error(message, options), { statusCode, code });
 }
 
 function identifier(value: unknown) {
@@ -56,34 +59,6 @@ export function catalogUrls(input: CatalogRequest) {
   throw catalogError("目录技能标识无效", 400, "error.catalog.identity");
 }
 
-async function readBounded(response: Response, limit: number) {
-  const declared = Number(response.headers.get("content-length"));
-  if (Number.isFinite(declared) && declared > limit) {
-    await response.body?.cancel().catch(() => undefined);
-    throw catalogError("目录技能内容过大", 502, "error.catalog.response");
-  }
-  const reader = response.body?.getReader();
-  if (!reader) return new Uint8Array();
-  const chunks: Uint8Array[] = [];
-  let size = 0;
-  try {
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      size += value.byteLength;
-      if (size > limit) {
-        throw catalogError("目录技能内容过大", 502, "error.catalog.response");
-      }
-      chunks.push(value);
-    }
-  } catch (error) {
-    await reader.cancel().catch(() => undefined);
-    if (error instanceof Error && "code" in error && error.code === "error.catalog.response" && "statusCode" in error && error.statusCode === 502) throw error;
-    throw catalogError("目录技能响应无效或读取中断", 502, "error.catalog.response");
-  } finally { reader.releaseLock(); }
-  return Buffer.concat(chunks, size);
-}
-
 function parseFilesJson(bytes: Uint8Array) {
   let payload: unknown;
   try {
@@ -107,25 +82,40 @@ function skillDocSummary(markdown: string) {
   return { name, description, body: parsed.body };
 }
 
-async function fetchFixed(url: string, fetchImpl: FetchLike, accept: string) {
+async function fetchFixed(url: string, fetchImpl: FetchLike, accept: string, limit: number, signal?: AbortSignal) {
+  using active = deadline(signal, 15_000, 'SKILLS_CATALOG_TIMEOUT');
+  active.signal.throwIfAborted();
   let response: Response;
-  try { response = await fetchImpl(url, { headers: { accept }, redirect: "error", signal: AbortSignal.timeout(15_000) }); }
-  catch { throw catalogError("目录技能暂时无法读取", 502, "error.catalog.upstream"); }
-  if (!response.ok) throw catalogError("目录技能暂时无法读取", 502, "error.catalog.upstream");
-  return response;
+  try { response = await fetchImpl(url, { headers: { accept }, redirect: "error", signal: active.signal }); }
+  catch (cause) { throw catalogError("目录技能暂时无法读取", 502, "error.catalog.upstream", { cause }); }
+  if (!response.ok) {
+    discardSkillResponse(response);
+    throw catalogError("目录技能暂时无法读取", 502, "error.catalog.upstream");
+  }
+  const sizeError = catalogError("目录技能内容过大", 502, "error.catalog.response");
+  try { return await readSkillResponse(response, limit, active.signal, sizeError); }
+  catch (cause) {
+    if (cause === sizeError) throw cause;
+    throw catalogError("目录技能响应无效或读取中断", 502, "error.catalog.response", { cause });
+  }
 }
 
-export async function readCatalogSkill(input: CatalogRequest, fetchImpl: FetchLike = fetch): Promise<CatalogDetail> {
+/** Read one fixed catalog document under the request lifetime and a local deadline.
+ * @param input - Validated catalog identity; arbitrary URLs are not accepted.
+ * @param fetchImpl - Fetch transport, defaulting to the Host's fetch.
+ * @param signal - Caller cancellation; when absent only the local deadline applies.
+ * @returns Complete validated metadata and body, or a catalog operation failure.
+ */
+export async function readCatalogSkill(input: CatalogRequest, fetchImpl: FetchLike = fetch, signal?: AbortSignal): Promise<CatalogDetail> {
   const urls = catalogUrls(input);
   if (input.catalog === "clawhub") {
-    const response = await fetchFixed(urls.detail, fetchImpl, "text/markdown, text/plain");
-    const markdown = new TextDecoder().decode(await readBounded(response, MAX_TEXT_BYTES));
+    const bytes = await fetchFixed(urls.detail, fetchImpl, "text/markdown, text/plain", MAX_TEXT_BYTES, signal);
+    const markdown = new TextDecoder().decode(bytes);
     const parsed = skillDocSummary(markdown);
     if (!parsed.name || !parsed.description) throw catalogError("目录技能说明无效", 502, "error.catalog.response");
     return { name: parsed.name, description: parsed.description, body: parsed.body, origin: urls.origin };
   }
-  const response = await fetchFixed(urls.download, fetchImpl, "application/json");
-  const payload = parseFilesJson(await readBounded(response, MAX_TEXT_BYTES));
+  const payload = parseFilesJson(await fetchFixed(urls.download, fetchImpl, "application/json", MAX_TEXT_BYTES, signal));
   const document = payload.files?.find(file => file.path === "SKILL.md" && typeof file.contents === "string");
   if (!document || typeof document.contents !== "string") throw catalogError("目录技能说明无效", 502, "error.catalog.response");
   const parsed = skillDocSummary(document.contents);
@@ -133,16 +123,20 @@ export async function readCatalogSkill(input: CatalogRequest, fetchImpl: FetchLi
   return { name: parsed.name, description: parsed.description, body: parsed.body, origin: urls.origin };
 }
 
-export async function loadCatalogPackage(input: CatalogRequest, fetchImpl: FetchLike = fetch): Promise<CatalogPackage> {
+/** Download complete installable content without accepting truncated archives.
+ * @param input - Fixed public catalog identity.
+ * @param fetchImpl - Fetch transport, defaulting to the Host's fetch.
+ * @param signal - Caller cancellation; when absent only each download's local deadline applies.
+ * @returns Complete package bytes or files; failures do not install content.
+ */
+export async function loadCatalogPackage(input: CatalogRequest, fetchImpl: FetchLike = fetch, signal?: AbortSignal): Promise<CatalogPackage> {
   const urls = catalogUrls(input);
   if (input.catalog === "clawhub") {
-    const response = await fetchFixed(urls.download, fetchImpl, "application/zip");
-    const bytes = await readBounded(response, MAX_ARCHIVE_BYTES);
-    const detail = await readCatalogSkill(input, fetchImpl);
+    const bytes = await fetchFixed(urls.download, fetchImpl, "application/zip", MAX_ARCHIVE_BYTES, signal);
+    const detail = await readCatalogSkill(input, fetchImpl, signal);
     return { name: detail.name, zip: Buffer.from(bytes).toString("base64") };
   }
-  const response = await fetchFixed(urls.download, fetchImpl, "application/json");
-  const payload = parseFilesJson(await readBounded(response, MAX_ARCHIVE_BYTES));
+  const payload = parseFilesJson(await fetchFixed(urls.download, fetchImpl, "application/json", MAX_ARCHIVE_BYTES, signal));
   if (!Array.isArray(payload.files) || !payload.files.length || payload.files.length > MAX_FILES) throw catalogError("目录技能文件无效或过多", 502, "error.catalog.response");
   const entries = payload.files.map(file => {
     if (typeof file.path !== "string" || !SAFE_PATH.test(file.path) || typeof file.contents !== "string") throw catalogError("目录技能包含非法文件路径", 502, "error.catalog.response");

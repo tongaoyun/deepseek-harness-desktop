@@ -3067,7 +3067,7 @@ export interface Config {
 
 ## `@deepseek-ai/dsh-skill`
 
-- `source`: [`packages/skill/skill/src/index.ts:278`](../packages/skill/skill/src/index.ts)
+- `source`: [`packages/skill/skill/src/index.ts:279`](../packages/skill/skill/src/index.ts)
 
 ```ts config-catalog
 /** Skill registry configuration. */
@@ -4592,7 +4592,7 @@ export interface Config {
 
 - `inject`: `tools` · `subagents` · `systemPrompt` · `settings` · `webServer`
 - `refs`: `Volatile` (`@deepseek-ai/cordis`)
-- `source`: [`packages/deepseek-harness-product/experts/src/index.ts:184`](../packages/deepseek-harness-product/experts/src/index.ts)
+- `source`: [`packages/deepseek-harness-product/experts/src/index.ts:188`](../packages/deepseek-harness-product/experts/src/index.ts)
 
 ```ts config-catalog
 /** Plugin config: the persona root, the subagent provider, and the divisions to scan. */
@@ -4750,6 +4750,7 @@ export type DiscoveryOptions = z.input<typeof discoveryOptions>
 | `@deepseek-ai/dsh-user-questions` | — | [`packages/interaction/user-questions/src/index.ts`](../packages/interaction/user-questions/src/index.ts) |
 | `@deepseek-ai/dsh-webhook` | `agents` · `agentDefaultModel` · `agentPresets` · `permissionPresets` · `sessionTitle` · `workspaceRegistry` | [`packages/experimental/webhook/src/index.ts`](../packages/experimental/webhook/src/index.ts) |
 | `@deepseek-ai/dsh-workspace` | `storageDomain` · `sessionPersistence` | [`packages/workspace/workspace/src/index.ts`](../packages/workspace/workspace/src/index.ts) |
+| `@deepseek-harness/product-skills` | `skills` · `tools` · `sessions` · `typert` | [`packages/deepseek-harness-product/skills/src/index.ts`](../packages/deepseek-harness-product/skills/src/index.ts) |
 | `@deepseek-harness/product-ui` | — | [`packages/extensions/ui-deepseek-harness-product/src/index.ts`](../packages/extensions/ui-deepseek-harness-product/src/index.ts) |
 <!-- END GENERATED config-catalog:no-config -->
 
@@ -4854,5 +4855,4 @@ export type DiscoveryOptions = z.input<typeof discoveryOptions>
 | `@deepseek-ai/dsh-win32-process` | — | [`packages/subprocess/win32-process/src/index.ts`](../packages/subprocess/win32-process/src/index.ts) |
 | `@deepseek-harness/product` | — | [`packages/deepseek-harness-product/product/src/index.ts`](../packages/deepseek-harness-product/product/src/index.ts) |
 | `@deepseek-harness/product-desktop` | — | [`packages/deepseek-harness-product/desktop/src/index.ts`](../packages/deepseek-harness-product/desktop/src/index.ts) |
-| `@deepseek-harness/product-skills` | — | [`packages/deepseek-harness-product/skills/src/index.ts`](../packages/deepseek-harness-product/skills/src/index.ts) |
 <!-- END GENERATED config-catalog:library -->

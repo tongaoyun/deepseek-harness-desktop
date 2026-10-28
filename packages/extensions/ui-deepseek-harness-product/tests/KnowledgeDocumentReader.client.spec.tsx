@@ -231,3 +231,104 @@ it.each([
   await expect(readKnowledgeFile(request, { knowledgeBaseId: 'policy', documentId: 'doc-1' }, new AbortController().signal)).rejects.toThrow()
   expect(request).toHaveBeenLastCalledWith('knowledge.documents.preview.close', { transferId: 'malformed' })
 })
+
+it('preserves access revocation when closing the failed preview also fails', async () => {
+  const readError = new ProductError('KNOWLEDGE_ACCESS_REVOKED', 'Permission changed', false)
+  const closeError = new Error('close transport disconnected')
+  const warning = vi.spyOn(console, 'warn').mockImplementation(() => {})
+  const request = vi.fn(async (method: string) => {
+    if (method.endsWith('.open')) return { transferId: 'revoked', mediaType: 'text/plain', byteLength: 1, maxBytes: 50, chunkSize: 2 }
+    if (method.endsWith('.read')) throw readError
+    throw closeError
+  })
+  try {
+    await expect(readKnowledgeFile(request, { knowledgeBaseId: 'policy', documentId: 'doc-1' }, new AbortController().signal))
+      .rejects.toBe(readError)
+    await waitFor(() => { expect(warning).toHaveBeenCalledWith('Knowledge preview cleanup failed', closeError) })
+    expect(request).toHaveBeenLastCalledWith('knowledge.documents.preview.close', { transferId: 'revoked' })
+  } finally { warning.mockRestore() }
+})
+
+it('does not delay reader cancellation behind a stalled close request', async () => {
+  const closing = Promise.withResolvers<unknown>()
+  const controller = new AbortController()
+  const reason = new Error('Reader closed')
+  const request = vi.fn(async (method: string) => {
+    if (method.endsWith('.open')) {
+      controller.abort(reason)
+      return { transferId: 'cancelled', mediaType: 'text/plain', byteLength: 1, maxBytes: 50, chunkSize: 2 }
+    }
+    return closing.promise
+  })
+  let error: unknown
+  const result = readKnowledgeFile(request, { knowledgeBaseId: 'policy', documentId: 'doc-1' }, controller.signal)
+    .catch((failure: unknown) => { error = failure })
+  try {
+    await waitFor(() => { expect(error).toBe(reason) }, { timeout: 200 })
+    expect(request.mock.calls.map(row => row[0])).toEqual(['knowledge.documents.preview.open', 'knowledge.documents.preview.close'])
+  } finally {
+    closing.resolve({ closed: true })
+    await result
+  }
+})
+
+it('does not report preview success when normal transfer cleanup fails', async () => {
+  const error = new Error('cleanup failed')
+  const request = vi.fn(async (method: string) => {
+    if (method.endsWith('.open')) return { transferId: 'empty', mediaType: 'text/plain', byteLength: 0, maxBytes: 50, chunkSize: 2 }
+    throw error
+  })
+  await expect(readKnowledgeFile(request, { knowledgeBaseId: 'policy', documentId: 'doc-1' }, new AbortController().signal))
+    .rejects.toBe(error)
+})
+
+it('reports revoked access to the owning view even if failed-preview cleanup disconnects', async () => {
+  const warning = vi.spyOn(console, 'warn').mockImplementation(() => {})
+  const denied = vi.fn()
+  const readError = new ProductError('KNOWLEDGE_ACCESS_REVOKED', 'Private permission details', false)
+  const closeError = new Error('cleanup disconnected')
+  let revoked = false
+  const bytes = Uint8Array.from(new TextEncoder().encode('原来的预览内容'))
+  const invoke = vi.fn(async (_namespace: string, method: string) => {
+    if (method.endsWith('.previewMetadata')) return { ok: true, result: originalMetadata('policy', 'doc-1') }
+    if (method.endsWith('.open')) return { ok: true, result: {
+      transferId: 'reader-transfer', mediaType: 'text/plain', byteLength: bytes.byteLength, maxBytes: 100, chunkSize: 100,
+    } }
+    if (method.endsWith('.read')) {
+      if (revoked) throw readError
+      return { ok: true, result: { data: bytes, offset: 0, eof: true } }
+    }
+    if (revoked) throw closeError
+    return { ok: true, result: { closed: true } }
+  })
+  vi.stubGlobal('dshDesktop', { extensions: { invoke, cancel: vi.fn() } })
+  try {
+    const view = render(<KnowledgeDocumentReader {...props} onAccessDenied={denied} refreshRevision={0} />)
+    await screen.findByText('原来的预览内容')
+    revoked = true
+    view.rerender(<KnowledgeDocumentReader {...props} onAccessDenied={denied} refreshRevision={1} />)
+    const alert = await screen.findByRole('alert')
+    expect(alert.textContent).toContain('KNOWLEDGE_ACCESS_REVOKED')
+    expect(alert.textContent).toMatchInlineSnapshot('"所选知识库已失去访问权限，请刷新并重新选择。 (KNOWLEDGE_ACCESS_REVOKED)"')
+    expect(denied).toHaveBeenCalledExactlyOnceWith(readError)
+    expect(screen.queryByText('原来的预览内容')).toBeNull()
+    expect(screen.queryByText('Private permission details')).toBeNull()
+    expect(warning).toHaveBeenCalledWith('Knowledge preview cleanup failed', closeError)
+  } finally { warning.mockRestore() }
+})
+
+it('does not deliver completed bytes after cancellation during the close acknowledgement', async () => {
+  const closing = Promise.withResolvers<unknown>()
+  const controller = new AbortController()
+  const reason = new Error('Reader changed')
+  const request = vi.fn(async (method: string) => {
+    if (method.endsWith('.open')) return { transferId: 'empty', mediaType: 'text/plain', byteLength: 0, maxBytes: 50, chunkSize: 2 }
+    return closing.promise
+  })
+  const result = readKnowledgeFile(request, { knowledgeBaseId: 'policy', documentId: 'doc-1' }, controller.signal)
+    .catch((failure: unknown) => failure)
+  await waitFor(() => { expect(request).toHaveBeenCalledTimes(2) })
+  controller.abort(reason)
+  closing.resolve({ closed: true })
+  expect(await result).toBe(reason)
+})

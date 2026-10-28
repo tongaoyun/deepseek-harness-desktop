@@ -93,16 +93,9 @@ export const CATEGORY_KEYS: Readonly<Record<string, DeepSeekHarnessProductKey>> 
   other: 'categoryOther',
 }
 
-export let productRequestSequence = 0
-
 export const AUTHORIZATION_TIMEOUT_MS = 60_000
 
 export const AUTHORIZATION_POLL_INTERVAL_MS = 1_000
-
-export function nextProductRequestId(): string {
-  productRequestSequence += 1
-  return `deepseek-harness-ui-${Date.now().toString(36)}-${productRequestSequence.toString(36)}`
-}
 
 export function abortableDelay(milliseconds: number, signal: AbortSignal): Promise<void> {
   if (signal.aborted) return Promise.reject(new Error('operation cancelled'))
@@ -180,9 +173,15 @@ export function knowledgeScopeLabel(value: string, t: (key: DeepSeekHarnessProdu
   return key === undefined ? value : t(key)
 }
 
+/** Translate fixed connector categories, grouping other server labels under Other.
+ * @param value Server-owned category identifier.
+ * @param t Product locale dictionary.
+ * @returns The localized category or Other label.
+ */
 export function localizedCategory(value: string, t: (key: DeepSeekHarnessProductKey) => string): string {
-  const key = CATEGORY_KEYS[value.toLocaleLowerCase()]
-  return key === undefined ? t('categoryOther') : t(key)
+  const category = value.toLocaleLowerCase()
+  const key = Object.hasOwn(CATEGORY_KEYS, category) ? CATEGORY_KEYS[category] : undefined
+  return t(key ?? 'categoryOther')
 }
 
 export function itemMetadata(item: ProductItem, t: (key: DeepSeekHarnessProductKey) => string): readonly string[] {

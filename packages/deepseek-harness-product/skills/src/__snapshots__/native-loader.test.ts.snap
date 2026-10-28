@@ -1,0 +1,13 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`keeps current native policies when loading cached external candidates and disposes the manager 1`] = `
+{
+  "content": "Restricted body",
+  "description": "Restricted body",
+  "invocation": {
+    "modelInvocable": false,
+    "userInvocable": false,
+  },
+  "name": "audit-orders",
+}
+`;

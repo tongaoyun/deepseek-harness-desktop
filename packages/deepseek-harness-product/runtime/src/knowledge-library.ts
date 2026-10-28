@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto'
 import type { Context } from '@deepseek-ai/cordis'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import type { DeepSeekHarnessProductIpc } from './deepseek-harness-product-ipc.ts'
-import type { ProductRuntimeMethod } from '@deepseek-harness/product/protocol'
+import { scopedProductInvoker } from './data.ts'
 
 export const name = 'product-knowledge-library'
 export const inject = ['tools']
@@ -15,19 +15,8 @@ export interface Config { readonly product: Pick<DeepSeekHarnessProductIpc, 'inv
  * @param config Main-process transport.
  */
 export function apply(ctx: Context, config: Config): void {
-  const lifecycle = new AbortController()
-  const pending = new Set<Promise<unknown>>()
-  const invoke = (method: ProductRuntimeMethod, payload: unknown, signal: AbortSignal) => {
-    const combined = AbortSignal.any([signal, lifecycle.signal])
-    combined.throwIfAborted()
-    const operation = config.product.invoke(method, payload, combined)
-    pending.add(operation)
-    return operation.finally(() => { pending.delete(operation) })
-  }
-  ctx.effect(() => async () => {
-    lifecycle.abort(new Error('Knowledge library unloaded'))
-    await Promise.allSettled([...pending])
-  }, 'product-knowledge-library.requests')
+  const requests = scopedProductInvoker(config.product, 'Knowledge library unloaded')
+  ctx.effect(() => requests.dispose, 'product-knowledge-library.requests')
   ctx.on('tools/pre-execute', async (exec, next) => exec.name === 'knowledge_save'
     ? { kind: 'ask', reason: 'Save this task result as a searchable knowledge document.',
       displayReason: { en: 'Save this content to the knowledge base?', 'zh-CN': '将这份内容保存到知识库吗？' } }
@@ -51,7 +40,7 @@ export function apply(ctx: Context, config: Config): void {
         || !Number.isSafeInteger(size) || size < 1 || size > 100 || query.length > 200) {
         throw new Error('Invalid knowledge destination query')
       }
-      const result = await invoke('knowledge.bases.list', {}, exec.signal)
+      const result = await requests.invoke('knowledge.bases.list', {}, exec.signal)
       if (!Array.isArray(result)) throw new Error('Invalid knowledge destination response')
       const entries = result.flatMap((entry: unknown) => {
         if (typeof entry !== 'object' || entry === null || !('canManage' in entry) || entry.canManage !== true) return []
@@ -87,7 +76,7 @@ export function apply(ctx: Context, config: Config): void {
     async execute(args, exec) {
       if (exec.agent === undefined) throw new Error('Knowledge saving requires a Session')
       const operationId = createHash('sha256').update(`${exec.agent.session.id}:${exec.callId}`).digest('hex')
-      const result = await invoke('knowledge.documents.save', { ...args, operationId }, exec.signal)
+      const result = await requests.invoke('knowledge.documents.save', { ...args, operationId }, exec.signal)
       return { content: JSON.stringify({ document: result, message: 'Document saved; use its processing state to determine when retrieval is ready.' }) }
     },
   })), 'product-knowledge-library.save')

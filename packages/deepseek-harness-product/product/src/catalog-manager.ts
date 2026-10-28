@@ -170,5 +170,5 @@ export class ProductCatalogManager {
 }
 
 function isCatalogMethod(method: ProductMethod): method is CatalogMethod {
-  return method in CATALOG_ROUTES
+  return Object.hasOwn(CATALOG_ROUTES, method)
 }

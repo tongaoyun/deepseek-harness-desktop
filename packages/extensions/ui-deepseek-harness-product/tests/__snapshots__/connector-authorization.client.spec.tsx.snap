@@ -1,0 +1,9 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`ends authorization at its deadline while 'begin' is pending and ignores its late 'reject' during retry 1`] = `"授权未完成，请重试。"`;
+
+exports[`ends authorization at its deadline while 'begin' is pending and ignores its late 'resolve' during retry 1`] = `"授权未完成，请重试。"`;
+
+exports[`ends authorization at its deadline while 'status' is pending and ignores its late 'reject' during retry 1`] = `"授权未完成，请重试。"`;
+
+exports[`ends authorization at its deadline while 'status' is pending and ignores its late 'resolve' during retry 1`] = `"授权未完成，请重试。"`;

@@ -28,6 +28,7 @@ export function productOwned(path) {
     || path.startsWith('docs/upgrade-guide/v0.2.1-alpha.4/product-knowledge-references/')
     || path.startsWith('docs/upgrade-guide/v0.2.1-alpha.4/product-folder-rename/')
     || path.startsWith('docs/upgrade-guide/v0.2.1-rc.2/product-expert-kit-selection/')
+    || path.startsWith('docs/upgrade-guide/v0.2.1-rc.2/product-native-sidecar/')
     || path.startsWith('docs/persistence-changes/2026-10-13-product-expert-kit-instructions.')
     || path.startsWith('docs/persistence-changes/2026-10-20-retire-product-content.')
 }

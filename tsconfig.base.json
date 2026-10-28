@@ -35,6 +35,7 @@
       "@deepseek-harness/product": ["./packages/deepseek-harness-product/product/src/index.ts"],
             "@deepseek-harness/product/connector-draft": ["./packages/deepseek-harness-product/product/src/connector-draft.ts"],
       "@deepseek-harness/product/capabilities": ["./packages/deepseek-harness-product/product/src/capabilities.ts"],
+      "@deepseek-harness/product/company-team": ["./packages/deepseek-harness-product/product/src/company-team.ts"],
       "@deepseek-harness/product/company-content": ["./packages/deepseek-harness-product/product/src/company-content.ts"],
       "@deepseek-harness/product/errors": ["./packages/deepseek-harness-product/product/src/errors.ts"],
       "@deepseek-harness/product/catalog-manager": ["./packages/deepseek-harness-product/product/src/catalog-manager.ts"],
@@ -378,6 +379,10 @@
       "@deepseek-ai/dsh-compaction-image-offload/projection": ["./packages/compaction/compaction-image-offload/src/projection.ts"],
       "@deepseek-ai/dsh-session-format-catalog/message-projections": ["./packages/session/session-format-catalog/src/message-projections.ts"],
       "@deepseek-ai/dsh-native-command/types": ["./packages/util/native-command/src/types.ts"],
+      "@deepseek-ai/dsh-skill/types": ["./packages/skill/skill/src/types.ts"],
+      "@deepseek-ai/dsh-skill-filesystem/document": ["./packages/skill/skill-filesystem/src/document.ts"],
+      "@deepseek-harness/product-experts/types": ["./packages/deepseek-harness-product/experts/src/types.ts"],
+      "@deepseek-harness/product-skills/types": ["./packages/deepseek-harness-product/skills/src/types.ts"],
       // BEGIN generated package aliases — pnpm run gen-tsconfig-paths
       "@deepseek-ai/dsh-acp": ["./packages/acp/acp/src"],
       "@deepseek-ai/dsh-acp-app": ["./packages/bundle/acp-app/src"],

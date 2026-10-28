@@ -64,7 +64,6 @@
     "src/client/team-editor.tsx": "7fe68c762e99f02e0a64bfae424b8cfa807e87e7073a43cb396f99788afa2d0f",
     "src/client/custom-locales.ts": "6a4ce78b743905966abac0d61d3413f9855ed08ebf96c62a13afe66eace2ea88",
     "src/client/prompt-dialog.ts": "2c58be755d8eeb3dd2a588771c1be0eed21fda40e20f0b3dab17e2c17b4bd67e",
-    "src/client/escape-layer.ts": "ff66e1d05d3514489963c176ed32970d5c81362616da747b61bb2e41464b64bc",
     "src/client/library-ui.tsx": "46f6f61b75f6106dce13883d551b5da162a596a7bb8f7fcbb0e449d316c4480a",
     "src/client/team-cache.ts": "5d6673b5b6a5b836df4e192c5f7a52642aa5e216afe367483ed79da1d0ce07f6",
     "src/client/remote.ts": "bec7ac09a97c76be9f7733f1f834c43e1b2228df7656448917c03c82a1634b56",
@@ -85,6 +84,18 @@
     {
       "commit": "1d3487f5cf590c6ec3267163c875b58f6639e478",
       "scope": "Use English when no explicit Chinese locale is selected"
+    },
+    {
+      "commit": "7c9610af260dcf22c836441d97d3fab19abfe9cb",
+      "scope": "Adapt filtered bulk activation with explicit count confirmation and a revision-checked merge into the latest personal selection."
+    },
+    {
+      "commit": "4e7b200c1a9a6848a218d73e367e6348140a274d",
+      "scope": "Adapt conversational expert and team drafts, full previews, native human confirmation and prefilled personal editors. Use the current scoped transcript action instead of global draft polling or DOM navigation."
+    },
+    {
+      "commit": "ac409400157443aae3554924df84a4dcfb051502",
+      "scope": "Require originating Session and exact proposal identity, invalidate superseded drafts, expire after 15 minutes and allow one editor claim. Reject ambiguous member names and return candidates."
     }
   ]
 }

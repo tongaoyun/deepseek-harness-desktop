@@ -1,0 +1,9 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`loadCatalog > uses the same YAML metadata for incremental catalog reads and lazy prompt reads 1`] = `
+{
+  "description": "Reviews schemas and migrations.",
+  "emoji": "📘",
+  "name": "YAML Expert",
+}
+`;

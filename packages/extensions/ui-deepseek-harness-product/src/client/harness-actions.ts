@@ -1,4 +1,5 @@
 /** The only product client adapter to Harness Sessions, Presets, Workspaces, and drafts. */
+import { randomUUID } from '@deepseek-ai/dsh-util-crypto'
 import type { Context } from '@deepseek-ai/cordis'
 import { SessionId } from '@deepseek-ai/dsh-session/types'
 import type {} from '@deepseek-ai/dsh-api-session-controller/client'
@@ -7,16 +8,16 @@ import type {} from '@deepseek-ai/dsh-api-remotes/client'
 import type { DraftInput, DraftSnapshot } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {} from '@deepseek-ai/dsh-client-ui-workspace/client'
 import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
-import type { ProductTaskCapabilityRequest, ProductTaskCapabilityResult, ProductTaskCapabilities } from '@deepseek-harness/product/protocol'
+import type { ProductTaskCapabilityRequest, ProductTaskCapabilities } from '@deepseek-harness/product/protocol'
 import type { DeepSeekHarnessCatalogActions } from './DeepSeekHarnessCatalogSection.tsx'
 import type { AgentPresetRow } from '@deepseek-ai/dsh-agent-preset-registry/types'
 import { productApi, type ProductApi } from './product-api.ts'
-import { items, nextProductRequestId, type Catalog, type ProductItem } from './catalog-shared.tsx'
+import { items, type Catalog, type ProductItem } from './catalog-shared.tsx'
 import { CAPABILITY_PANELS } from './DeepSeekHarnessCapabilitiesNavigation.tsx'
 
 /** Adapt product selection to official task services.
  * @param ctx Client plugin context.
- * @returns Serialized capability actions that preserve the current draft on failure.
+ * @returns Serialized actions with cancellable Session acquisition, native failure details, and unchanged drafts on failure.
  */
 export function createHarnessActions(ctx: Context): DeepSeekHarnessCatalogActions & TaskModeActions {
   let pending: Promise<unknown> = Promise.resolve()
@@ -49,8 +50,8 @@ export function createHarnessActions(ctx: Context): DeepSeekHarnessCatalogAction
     lifecycle.abort(new Error('Product task actions were released'))
     await pending
   }, 'product-task.actions')
-  const serialize = (operation: (signal: AbortSignal) => Promise<void>) => {
-    const signal = AbortSignal.any([lifecycle.signal, identityLifecycle.signal])
+  const operationSignal = () => AbortSignal.any([lifecycle.signal, identityLifecycle.signal])
+  const serialize = (signal: AbortSignal, operation: (signal: AbortSignal) => Promise<void>) => {
     const result = pending.then(() => operation(signal))
     pending = result.catch((error: unknown) => { console.warn('Product task preparation failed', error) })
     return result
@@ -62,7 +63,7 @@ export function createHarnessActions(ctx: Context): DeepSeekHarnessCatalogAction
     if (api === undefined) throw new Error('Product bridge is unavailable')
     const combined = AbortSignal.any([lifecycle.signal, ...signal === undefined ? [] : [signal]])
     combined.throwIfAborted()
-    const requestId = nextProductRequestId()
+    const requestId = randomUUID()
     const abort = () =>{  api.cancel(requestId) }
     combined.addEventListener('abort', abort, { once: true })
     return api.invoke(method, payload, requestId).then((value) => {
@@ -70,12 +71,17 @@ export function createHarnessActions(ctx: Context): DeepSeekHarnessCatalogAction
       return value
     }).finally(() =>{  combined.removeEventListener('abort', abort) })
   }
-  const workspace = async (sessionId?: SessionId) => {
+  const workspace = async (signal: AbortSignal, sessionId?: SessionId) => {
+    signal.throwIfAborted()
     const items = ctx.workspaces.list.getSnapshot().items
     const selected = sessionId === undefined ? undefined : items.find(item => item.sessionIds.includes(sessionId))
-    const result = selected ?? items[0] ?? await ctx.workspaces.initializeDefault()
+    const result = selected ?? items[0] ?? await ctx.workspaces.initializeDefault(signal)
+    signal.throwIfAborted()
     if (result !== undefined) return result
-    const path = await ctx.uiWorkspace.pickDirectory()
+    const choice = await ctx.remote.directoryPicker.pick(signal)
+    signal.throwIfAborted()
+    if (!choice.ok) throw choice.error
+    const path = choice.value
     if (path === null) throw new Error('Workspace selection was canceled')
     return ctx.workspaces.create({ path })
   }
@@ -100,10 +106,10 @@ export function createHarnessActions(ctx: Context): DeepSeekHarnessCatalogAction
       ...request, ...current === undefined ? {} : { sessionId: current },
     }, signal)
     if (typeof value !== 'object' || value === null || !('presetId' in value) || typeof value.presetId !== 'string'
-      || !('kind' in value) || !['CURRENT_SESSION', 'NEW_SESSION'].includes(String(value.kind))) throw new Error('Invalid task preparation response')
-    const result = value as ProductTaskCapabilityResult
+      || !('kind' in value) || (value.kind !== 'CURRENT_SESSION' && value.kind !== 'NEW_SESSION')) throw new Error('Invalid task preparation response')
+    const result = { kind: value.kind, presetId: value.presetId }
     const newSession = async () => {
-      const item = await workspace(current)
+      const item = await workspace(signal, current)
       signal.throwIfAborted()
       return ctx.sessions.create({ workspaceId: item.workspaceId })
     }
@@ -117,8 +123,8 @@ export function createHarnessActions(ctx: Context): DeepSeekHarnessCatalogAction
       selected = await ctx.remote.agentPresets.select(sessionId, result.presetId)
       signal.throwIfAborted()
     }
-    if (!selected.ok) throw new Error(selected.error.message)
-    await ctx.sessions.using(sessionId, { source: 'gateway' }, (reference) => {
+    if (!selected.ok) throw selected.error
+    await ctx.sessions.using(sessionId, { source: 'gateway', signal }, (reference) => {
       signal.throwIfAborted()
       const input = ctx.conversation.input.for(reference.binding.ctx)
       if (sessionId !== current) {
@@ -132,12 +138,13 @@ export function createHarnessActions(ctx: Context): DeepSeekHarnessCatalogAction
     })
   }
   const enqueue = (request: ProductTaskCapabilityRequest, sessionId = currentSession()) => {
-    const source = sessionId === undefined ? undefined : ctx.sessions.retain(sessionId, { source: 'gateway' })
+    const signal = operationSignal()
+    const source = sessionId === undefined ? undefined : ctx.sessions.retain(sessionId, { source: 'gateway', signal })
     let navigation: AbortSignal
     try { navigation = ctx.layout.beginNavigation() }
     catch (error) { source?.release(); throw error }
     const captured = structuredClone({ ...request, ...sessionId === undefined ? {} : { sessionId } })
-    return serialize(async (signal) => {
+    return serialize(signal, async (signal) => {
       try { await source?.ready; await prepare(captured, signal, { navigation }) }
       finally { source?.release() }
     })
@@ -155,7 +162,7 @@ export function createHarnessActions(ctx: Context): DeepSeekHarnessCatalogAction
         ctx.remote.agentPresets.list(),
         readCapabilities(id),
       ])
-      if (!roster.ok) throw new Error(roster.error.message)
+      if (!roster.ok) throw roster.error
       const current = id === undefined ? undefined : ctx.sessions.list.getSnapshot().byId[id]?.projectionValues?.agentPreset
       const modeId = (capabilities.unavailable === undefined ? capabilities.basePresetId : roster.value.presets.find(row => row.isDefault)?.id) ?? (typeof current === 'string' && !current.startsWith('product-task-')
         ? current : roster.value.presets.find(row => row.isDefault)?.id)
@@ -168,8 +175,9 @@ export function createHarnessActions(ctx: Context): DeepSeekHarnessCatalogAction
     recoverCapabilities: sessionId => enqueue({ recoverCapabilities: true }, sessionId),
     retryCapabilities: (sessionId = currentSession()) => {
       if (sessionId === undefined) return Promise.reject(new Error('Task retry requires a Session'))
-      const source = ctx.sessions.retain(sessionId, { source: 'gateway' })
-      return serialize(async (signal) => {
+      const signal = operationSignal()
+      const source = ctx.sessions.retain(sessionId, { source: 'gateway', signal })
+      return serialize(signal, async (signal) => {
         try {
           await source.ready
           const presetId = ctx.sessions.list.getSnapshot().byId[sessionId]?.projectionValues?.agentPreset

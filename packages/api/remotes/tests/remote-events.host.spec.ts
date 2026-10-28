@@ -123,6 +123,14 @@ describe('Remote event Host source', () => {
       },
     })
 
+    ctx.emit('skills/change')
+    for (const stream of [first, second]) {
+      await expect(stream.next()).resolves.toEqual({
+        done: false,
+        value: { event: 'skills/change', args: [] },
+      })
+    }
+
     emitRaw(ctx, 'schedule/changed', [])
     await expect(first.next()).resolves.toEqual({
       done: false,

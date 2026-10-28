@@ -1,0 +1,29 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`preserves creation, policy, upload, export and trash through native dispatch; rejects invalid inputs 1`] = `
+{
+  "summary": {
+    "disabled": 1,
+    "total": 1,
+  },
+  "trashCount": 0,
+}
+`;
+
+exports[`rejects a late repository response after cancellation without replacing the last complete snapshot 1`] = `
+{
+  "body": "Original",
+  "commit": StringMatching /\\^\\[a-f0-9\\]\\{64\\}\\$/u,
+  "description": "Audit orders",
+  "documentHash": "a75265b7eeedcca170317de295e1cb36800f9383ead643aa131cedc13c3468d0",
+  "files": [
+    {
+      "hash": "a75265b7eeedcca170317de295e1cb36800f9383ead643aa131cedc13c3468d0",
+      "path": "SKILL.md",
+    },
+  ],
+  "name": "audit-orders",
+  "path": "skills/audit-orders",
+  "valid": true,
+}
+`;

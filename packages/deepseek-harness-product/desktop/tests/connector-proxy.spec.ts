@@ -194,3 +194,86 @@ it('does not start a connector after a cancelled catalog returns late', async ()
   await request
   expect(serveStdio).not.toHaveBeenCalled()
 })
+
+it.each(['idle', 'disconnect', 'shutdown'] as const)(
+  'cancels a stalled response reader on %s and awaits transport cleanup', async (mode) => {
+    const localFetch = globalThis.fetch
+    const entered = Promise.withResolvers<AbortSignal>()
+    const cleanup = Promise.withResolvers<undefined>()
+    const cancel = vi.fn(() => cleanup.promise)
+    let source: ReadableStreamDefaultController<Uint8Array> | undefined
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) { source = controller; controller.enqueue(new TextEncoder().encode('data: first\n\n')) },
+      cancel,
+    })
+    const forwarding = vi.spyOn(globalThis, 'fetch').mockImplementation(async (_input, init) => {
+      if (!init?.signal) throw new Error('No upstream cancellation signal')
+      entered.resolve(init.signal)
+      return new Response(body, { headers: { 'content-type': 'text/event-stream' } })
+    })
+    const connector = { id: 'stalled', version: '1.0.0', status: 'ready', transport: 'streamable-http',
+      url: 'https://connector.invalid/mcp', headers: {} }
+    const proxy = new ConnectorProxy(async () => [connector], undefined,
+      { responseTimeoutMs: 1000, streamIdleTimeoutMs: 1000 })
+    const caller = new AbortController()
+    onTestFinished(async () => {
+      caller.abort()
+      source?.error(new Error('Fixture shutdown'))
+      cleanup.resolve(undefined)
+      await proxy.close()
+      forwarding.mockRestore()
+    })
+    await proxy.start()
+    const [entry] = proxy.catalog([connector]) as typeof connector[]
+    if (!entry) throw new Error('No relay connector')
+    const response = await localFetch(entry.url, { headers: entry.headers, signal: caller.signal })
+    const received = response.text().catch((error: unknown) => error)
+    const signal = await entered.promise
+    const aborted = new Promise<void>((resolve) => {
+      signal.addEventListener('abort', () => { resolve() }, { once: true })
+    })
+    let closed = false
+    let closing: Promise<void> | undefined
+    if (mode === 'disconnect') caller.abort()
+    if (mode === 'shutdown') closing = proxy.close().then(() => { closed = true })
+    await aborted
+    await vi.waitFor(() => { expect(cancel).toHaveBeenCalledOnce() }, { timeout: 500 })
+    closing ??= proxy.close().then(() => { closed = true })
+    await new Promise<void>(resolve => setImmediate(resolve))
+    expect(closed).toBe(false)
+    cleanup.resolve(undefined)
+    await closing
+    expect(body.locked).toBe(false)
+    await received
+  },
+)
+
+it.each(['success', 'failure'] as const)('releases a late response after shutdown with cleanup %s', async (mode) => {
+  const localFetch = globalThis.fetch
+  const entered = Promise.withResolvers<undefined>()
+  const release = Promise.withResolvers<undefined>()
+  const cancel = vi.fn(async () => {
+    if (mode === 'failure') throw new Error('Private connector cleanup detail')
+  })
+  const body = new ReadableStream<Uint8Array>({ cancel })
+  const forwarding = vi.spyOn(globalThis, 'fetch').mockImplementation(async () => {
+    entered.resolve(undefined)
+    await release.promise
+    return new Response(body)
+  })
+  const connector = { id: 'late-http', version: '1.0.0', status: 'ready', transport: 'streamable-http',
+    url: 'https://connector.invalid/mcp', headers: {} }
+  const proxy = new ConnectorProxy(async () => [connector])
+  onTestFinished(async () => { release.resolve(undefined); await proxy.close(); forwarding.mockRestore() })
+  await proxy.start()
+  const [entry] = proxy.catalog([connector]) as typeof connector[]
+  if (!entry) throw new Error('No relay connector')
+  const received = localFetch(entry.url, { headers: entry.headers }).catch((error: unknown) => error)
+  await entered.promise
+  const closing = proxy.close()
+  release.resolve(undefined)
+  await closing
+  await received
+  expect(cancel).toHaveBeenCalledOnce()
+  expect(body.locked).toBe(false)
+})

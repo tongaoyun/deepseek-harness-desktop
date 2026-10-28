@@ -48,8 +48,8 @@ export function installNativeTeamNames(
           if (!(node instanceof Text)) continue
           const old = tracked.get(node)
           const text = old && node.data === old.shown ? old.original : node.data
-          if (text.trim() === 'lead' || old?.original.trim() === 'lead') {
-            const original = old?.original.trim() === 'lead' ? old.original : text
+          if (text.trim() === 'lead') {
+            const original = text
             if (seen.get(node) !== original) {
               seen.set(node, original)
               added = true
@@ -83,6 +83,7 @@ export function installNativeTeamNames(
   }
 
   const refresh = async () => {
+    if (disposed) return
     const current = ++generation
     try {
       const next = await loadLabels()

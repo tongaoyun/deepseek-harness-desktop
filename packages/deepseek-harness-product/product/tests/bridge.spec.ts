@@ -141,7 +141,32 @@ describe('DeepSeekHarnessProductBridge', () => {
     await expect(bridge.invoke('bootstrap.get')).rejects.toThrow('unsupported method')
   })
 
-  it('routes allowlisted native capabilities through the main-process dispatcher', async () => {
+  it.each([
+    'native.filesystem.list',
+    'native.filesystem.read',
+    'native.filesystem.write',
+    'native.secure-storage.get',
+    'native.secure-storage.set',
+    'native.secure-storage.delete',
+    'native.sqlite.query',
+    'native.sqlite.execute',
+    'native.dingtalk-auth.state',
+    'native.attachments.put',
+    'native.attachments.get',
+    'native.attachments.list',
+    'native.file-undo.record',
+    'native.file-undo.undo',
+    'native.image-preview.inspect',
+  ])('rejects retired %s before dispatching native work', async (method) => {
+    const nativeInvoke = vi.fn(async () => ({ ready: true }))
+    const bridge = new DeepSeekHarnessProductBridge({ nativeInvoke })
+    expect(isProductMethod(method)).toBe(false)
+    expect(isProductRuntimeMethod(method)).toBe(false)
+    await expect(bridge.invoke(method, {})).rejects.toThrow('unsupported method')
+    expect(nativeInvoke).not.toHaveBeenCalled()
+  })
+
+  it('routes device identity through the main-process dispatcher', async () => {
     const calls: Array<{ method: string; payload: unknown }> = []
     const bridge = new DeepSeekHarnessProductBridge({
       nativeInvoke: (method, payload) => { calls.push({ method, payload }); return Promise.resolve({ ready: true }) },

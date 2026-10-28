@@ -1005,13 +1005,7 @@
     "6dfe702b6cb8848eeb1d56c5af6ff723d84841aaa1d96790295db4ed70616c65": 1
   },
   "packages/deepseek-harness-product/experts/src/client/index.ts": {
-    "e53f3f91912e38ac194b7debba8833c85aa5ccd198e00c70a72e472d2a200d55": 3
-  },
-  "packages/deepseek-harness-product/experts/src/client/plugin-ui.test.ts": {
-    "7fe58280287ff63d40e979e72329f975e11015a95e9a8eec207a5a78748d3c89": 1
-  },
-  "packages/deepseek-harness-product/experts/src/client/plugin-ui.ts": {
-    "53f1197af19938d444b06ebf666a8751240d0b5e5ea13edf6100316d1bc5ede2": 1
+    "e53f3f91912e38ac194b7debba8833c85aa5ccd198e00c70a72e472d2a200d55": 1
   },
   "packages/deepseek-harness-product/experts/src/custom-experts.test.ts": {
     "0585ec2918d8249625edda41c017bc88bb5bd8538091ae218658e43a337e2caa": 1,
@@ -1030,14 +1024,10 @@
     "328dc85dbee5a76e873c5af08f3e5a619faaba3a05f395ad7c2047fffeb854f0": 1,
     "4ab4e8d448c31d611730fa18c0aa824ae5a4a71fb641a34fd4d3675881abaabe": 1,
     "6f3e9f7bcd39bda8c4a4a696db8f6c2d4b7dc3017a5fb62514dd9dfdadf86ec2": 1,
-    "781cb3ad2542065f2650d53d9a49c917108d454e5a3c0cc885a78511182a9818": 1,
     "8d9a28592219a5a70b213a7b7cfc9875d09f9d3fcb55a8f95ebe1e21b8dc0ea5": 1,
-    "9244f58f8435935db20ad71e058eb420cbde527a3fd18adcd62aeaa73c18d256": 1,
-    "9e9d4d68f89af2294b9ddd85cb289c6a3d3f6b20bbb4c6efa8363db23781379b": 1,
     "9ff85b5070cd26dc0e822ff6c925a928517281c2d9b074141071cc7bc036c469": 1,
     "c9da2bbd63d402c70f1ef8ac2bc892a22ad9fda0222c548916ee3399b2642ba4": 1,
     "da42f6c204aecbd12346284fc9afca45fc59abd5fd0c52859f0826c06ac45786": 1,
-    "e0198dd59dc2540d2001eebd3fc5f56593831cfaf240357be8eac6a63f494f11": 1,
     "f19a96d380180ca240aebce304b21d89add1fb34743d64d013cd70b820ad7504": 1
   },
   "packages/deepseek-harness-product/experts/src/index.ts": {

@@ -223,6 +223,9 @@
   // suffixes are mutually exclusive, so each aggregate excludes the other's
   // and the package test glob above needs no per-file entry.
   "exclude": [
+    // Imported expert/skill Host/Client sources share package compilers; their build hooks check all tests.
+    "packages/deepseek-harness-product/experts/tests/**",
+    "packages/deepseek-harness-product/skills/tests/**",
     "apps/desktop/tests/keyboard.spec.ts",
     "packages/client/*/src/**",
     "benchmarks/**/*.client.ts",

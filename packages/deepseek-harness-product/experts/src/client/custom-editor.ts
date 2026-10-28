@@ -1,10 +1,9 @@
 import { LibraryConfirm, LibraryEditorFooter } from './library-ui.tsx'
 import { Button, Input, Modal } from './plugin-ui.ts'
-import { useEscapeLayer } from './escape-layer.ts'
 import React from 'react'
 import { CategorySelect } from './category-select.ts'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
-import { customExpertInputSchema, DEFAULT_EXPERT_EMOJI, type CatalogSnapshot, type CustomExpertInput } from '../expert-contract.ts'
+import { customExpertInputSchema, isExpertConflict, DEFAULT_EXPERT_EMOJI, type CatalogSnapshot, type CustomExpertInput } from '../expert-contract.ts'
 import type { AgencyCatalogRemote } from './remote.ts'
 import { EXPERT_AVATAR_URLS } from './avatars.ts'
 import { EN_DIVISION, ZH_DIVISION } from '../names.ts'
@@ -24,7 +23,7 @@ export interface CustomEditorProps {
   readonly onClose: () => void
 }
 
-/** 右侧抽屉承载表单，确认层用独立弹窗，避免被抽屉挡住。 */
+/** 原生模态窗口承载表单，未保存修改由独立确认层保护。 */
 export function CustomExpertEditor(props: CustomEditorProps): React.ReactElement {
   const [initial, setInitial] = React.useState(() => ({
     ...props.expert,
@@ -47,7 +46,6 @@ export function CustomExpertEditor(props: CustomEditorProps): React.ReactElement
     if (JSON.stringify(draft) !== JSON.stringify(initial)) setDiscard(true)
     else props.onClose()
   }
-  useEscapeLayer(true, () => { if (discard) setDiscard(false); else close() })
   const set = (key: 'name' | 'description' | 'division' | 'prompt', value: string): void => {
     setDraft(current => ({ ...current, [key]: value }))
     setError(null)
@@ -82,11 +80,11 @@ export function CustomExpertEditor(props: CustomEditorProps): React.ReactElement
     setBusy(true)
     setError(null)
     void props.remote.saveCustomExpert(parsed.data, enabled, revision).then(result => {
-      if (!result.ok) throw new Error(result.error.message)
+      if (!result.ok) throw result.error
       props.onSaved(result.value)
     }).catch((cause: unknown) => {
       const message = cause instanceof Error ? cause.message : String(cause)
-      const conflict = /changed since it was read|其他窗口|another window/iu.test(message);
+      const conflict = isExpertConflict(cause);
       setNeedsReview(conflict);
       if (conflict) setReview(null);
       setError(conflict ? props.t("custom.conflict") : message);

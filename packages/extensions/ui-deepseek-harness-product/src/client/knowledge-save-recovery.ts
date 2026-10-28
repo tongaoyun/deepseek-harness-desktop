@@ -1,5 +1,5 @@
 /** Employee-scoped suspended knowledge edits retain their original write identity in this window. */
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { productApi } from './product-api.ts'
 import { knowledgeDocument, type KnowledgeDocument } from './knowledge-data.ts'
 import { ProductError } from '@deepseek-harness/product/errors'
@@ -38,20 +38,26 @@ function parse(value: string): KnowledgeSaveDraft {
 class KnowledgeSaveRecovery {
   private key: string | undefined
   constructor(private readonly scope: string) {}
-  private async identify(): Promise<string> {
+  private async identify(signal: AbortSignal): Promise<string> {
+    signal.throwIfAborted()
     const session = await productApi()?.getSession()
+    signal.throwIfAborted()
     if (session?.authenticated !== true || !session.employeeId) throw new Error('Employee identity is unavailable')
-    return this.key = `${prefix}${encodeURIComponent(session.employeeId)}.${this.scope}`
+    return `${prefix}${encodeURIComponent(session.employeeId)}.${this.scope}`
   }
-  async read(): Promise<KnowledgeSaveDraft | undefined> {
-    const key = await this.identify()
+  async read(signal: AbortSignal): Promise<KnowledgeSaveDraft | undefined> {
+    const key = await this.identify(signal)
+    signal.throwIfAborted()
     const value = sessionStorage.getItem(key)
-    return value === null ? undefined : parse(value)
+    const draft = value === null ? undefined : parse(value)
+    this.key = key
+    return draft
   }
   async suspend(draft: KnowledgeSaveDraft, signal: AbortSignal): Promise<void> {
-    const key = await this.identify()
+    const key = await this.identify(signal)
     signal.throwIfAborted()
     sessionStorage.setItem(key, JSON.stringify(draft))
+    this.key = key
   }
   clear(): void {
     if (this.key === undefined) return
@@ -60,7 +66,15 @@ class KnowledgeSaveRecovery {
   }
 }
 
+interface RecoveryState { readonly ready: boolean; readonly draft?: KnowledgeSaveDraft; readonly error?: unknown }
+
+function initialState(): RecoveryState {
+  try { return { ready: !Object.keys(sessionStorage).some(key => key.startsWith(prefix)) } }
+  catch (error) { return { ready: false, error } }
+}
+
 /** Restore a suspended edit before enabling a new write in the same library and action.
+ * Scope replacement and newer retries invalidate earlier reads, including their employee storage key.
  * @param scope Resource and action identity, excluding editable values.
  * @returns Loaded draft or storage/identity failure with explicit retry, and employee-bound suspension commands.
  */
@@ -71,23 +85,30 @@ export function useKnowledgeSaveRecovery(scope: string): {
   recovery: KnowledgeSaveRecovery
   reload: () => Promise<void>
 } {
-  const [recovery] = useState(() => new KnowledgeSaveRecovery(scope))
-  const [state, setState] = useState<{ ready: boolean; draft?: KnowledgeSaveDraft; error?: unknown }>(() => {
-    try { return { ready: !Object.keys(sessionStorage).some(key => key.startsWith(prefix)) } }
-    catch (error) { return { ready: false, error } }
-  })
-  const lifetime = useRef(true)
-  const load = async () => {
-    setState({ ready: false })
+  const owner = useMemo(() => ({ recovery: new KnowledgeSaveRecovery(scope), initial: initialState() }), [scope])
+  const [state, setState] = useState(() => ({ owner, value: owner.initial }))
+  const active = useRef<{ owner: typeof owner; controller: AbortController } | undefined>(undefined)
+  const load = useCallback(async () => {
+    if (active.current?.owner !== owner) return
+    active.current.controller.abort()
+    const controller = new AbortController()
+    active.current = { owner, controller }
+    setState({ owner, value: { ready: false } })
     try {
-      const draft = await recovery.read()
-      if (lifetime.current) setState({ ready: true, ...draft === undefined ? {} : { draft } })
-    } catch (error) { if (lifetime.current) setState({ ready: false, error }) }
-  }
+      const draft = await owner.recovery.read(controller.signal)
+      if (!controller.signal.aborted) setState({ owner, value: { ready: true, ...draft === undefined ? {} : { draft } } })
+    } catch (error) {
+      if (!controller.signal.aborted) setState({ owner, value: { ready: false, error } })
+    }
+  }, [owner])
   useEffect(() => {
-    lifetime.current = true
-    if (!state.ready && state.error === undefined) void load()
-    return () => { lifetime.current = false }
-  }, [recovery])
-  return { ...state, recovery, reload: load }
+    active.current = { owner, controller: new AbortController() }
+    if (!owner.initial.ready && owner.initial.error === undefined) void load()
+    return () => {
+      if (active.current?.owner !== owner) return
+      active.current.controller.abort()
+      active.current = undefined
+    }
+  }, [owner, load])
+  return { ...state.owner === owner ? state.value : owner.initial, recovery: owner.recovery, reload: load }
 }

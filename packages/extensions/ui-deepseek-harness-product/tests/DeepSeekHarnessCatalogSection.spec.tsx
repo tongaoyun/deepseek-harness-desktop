@@ -16,7 +16,7 @@ import {
 } from '../src/client/DeepSeekHarnessCapabilitiesNavigation.tsx'
 import { apply } from '../src/client/index.ts'
 import { DeepSeekHarnessSettingsMenu } from '../src/client/DeepSeekHarnessSettingsMenu.tsx'
-import { zh, type DeepSeekHarnessProductKey } from '../src/locales.ts'
+import { en, zh, type DeepSeekHarnessProductKey } from '../src/locales.ts'
 import { createPreviewFixture, originalFromFixture, originalMetadata, renderKnowledgePreview } from './knowledge-preview-fixture.client.tsx'
 
 afterEach(() => {
@@ -496,6 +496,20 @@ describe('DeepSeekHarness capability navigation', () => {
       expect(screen.getByRole('button', { name: new RegExp(name) })).toBeTruthy()
     }
     expect(screen.queryByRole('button', { name: /ERP MCP/ })).toBeNull()
+  })
+
+  it.each([
+    { category: 'constructor', locale: 'zh', messages: zh },
+    { category: '__proto__', locale: 'zh', messages: zh },
+    { category: 'constructor', locale: 'en', messages: en },
+    { category: '__proto__', locale: 'en', messages: en },
+  ])('shows Other in connector details for the custom category $category ($locale)', async ({ category, messages }) => {
+    installProductApi({ invoke: async () => [{ id: 'custom', name: 'Custom MCP', category }] })
+    render(<ConnectorsPanel t={(key: DeepSeekHarnessProductKey): string => messages[key]} {...actions()} />)
+    fireEvent.click(await screen.findByRole('button', { name: /Custom MCP/ }))
+    const dialog = await screen.findByRole('dialog', { name: messages.connectorDetails })
+    expect(within(dialog).getByText(messages.categoryOther)).toBeTruthy()
+    expect(dialog.querySelector('header')?.textContent).toMatchSnapshot()
   })
 
   it('shows all categories in enterprise order and retains a way to clear a disappearing category', async () => {

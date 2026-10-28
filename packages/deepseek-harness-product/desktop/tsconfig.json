@@ -9,6 +9,9 @@
   ],
   "references": [
     {
+      "path": "../../util/timeout"
+    },
+    {
       "path": "../../subprocess/subprocess"
     },
     {

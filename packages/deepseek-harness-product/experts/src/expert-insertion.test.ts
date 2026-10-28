@@ -1,6 +1,6 @@
 import { TEST_TEAMS } from './fixtures/teams.ts'
-import { describe, expect, it } from 'vitest'
-import { insertExpertReference, matchExpertQuery, type ReferenceInsertionTarget } from './client/index.ts'
+import { describe, expect, it, vi } from 'vitest'
+import { expertDetectText, insertExpertReference, matchExpertQuery, type ReferenceInsertionTarget } from './client/index.ts'
 import { composerProjection } from './test-utils/composer-projection.ts'
 import { insertTeamReference, teamReference } from './client/team-reference.ts'
 
@@ -105,6 +105,50 @@ describe('选择专家时自动填入任务示例', () => {
     expect(insertExpertReference(target, reference, '示例任务', { start: 0, end: 3, draftRev: 4 })).toBe(true)
     await new Promise<void>(resolve => setTimeout(resolve, 0))
     expect(value.snapshot().draft).toBe('@专家 \n\n示例任务')
+  })
+  it('键盘引用提交后若草稿已清空，不把旧专家示例写入新草稿', async () => {
+    vi.useFakeTimers()
+    try {
+      const value = input('@UX')
+      const target = { ...value.target, insertReference: (ref: typeof reference, span: { start: number; end: number; draftRev: number }) => {
+        queueMicrotask(() => queueMicrotask(() => { value.target.insertReference(ref, span) }))
+        return true
+      } }
+      expect(insertExpertReference(target, reference, '旧专家示例', { start: 0, end: 3, draftRev: 4 })).toBe(true)
+      await Promise.resolve(); await Promise.resolve()
+      const selected = value.snapshot()
+      value.target.insertText?.('', { start: 0, end: expertDetectText(selected).length, draftRev: selected.draftRev })
+      await vi.runAllTimersAsync()
+      expect(value.snapshot().draft).toBe('')
+    } finally { vi.useRealTimers() }
+  })
+  it('团队示例追加前若草稿已变化，保留新正文并报告追加未完成', async () => {
+    vi.useFakeTimers()
+    try {
+      const value = input('原始正文')
+      expect(await insertTeamReference(value.target, TEST_TEAMS[0], '旧团队示例', undefined, 'zh', async () => true)).toBe(true)
+      const selected = value.snapshot()
+      value.target.insertText?.('新的任务', { start: 0, end: expertDetectText(selected).length, draftRev: selected.draftRev })
+      await vi.runAllTimersAsync()
+      expect({ draft: value.snapshot().draft, notices: value.notices }).toMatchInlineSnapshot(`
+        {
+          "draft": "新的任务",
+          "notices": [
+            "示例追加失败，草稿已保留。",
+          ],
+        }
+      `)
+    } finally { vi.useRealTimers() }
+  })
+  it('确认追加团队示例后，沿用本次原生引用修订保留正文并追加一次', async () => {
+    vi.useFakeTimers()
+    try {
+      const value = input('保留原始正文')
+      expect(await insertTeamReference(value.target, TEST_TEAMS[0], '团队示例', undefined, 'zh', async () => true)).toBe(true)
+      await vi.runAllTimersAsync()
+      expect(value.snapshot().draft).toBe('@专家 保留原始正文\n\n团队示例')
+      expect(value.notices).toEqual([])
+    } finally { vi.useRealTimers() }
   })
   it('示例写入失败时保留已成功插入的标签并提示，不要求重复选专家', () => {
     const value = input('', true)

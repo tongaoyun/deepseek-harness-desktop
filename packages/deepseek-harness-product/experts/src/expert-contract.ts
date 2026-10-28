@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { RemoteError } from '@deepseek-ai/dsh-typert-protocol'
 
 /** Host 与 Client 共用的自定义专家数据契约，不包含运行时服务依赖。 */
 export const DEFAULT_EXPERT_EMOJI = '🧩'
@@ -31,6 +32,7 @@ export const customExpertSchema = customExpertInputSchema.extend({
   deleted: z.boolean().optional(),
   wasEnabled: z.boolean().optional(),
 })
+/** Editable expert fields before product defaults and normalization are applied. */
 export type CustomExpertInput = z.input<typeof customExpertInputSchema>
 export type CustomExpert = z.output<typeof customExpertSchema>
 
@@ -48,6 +50,7 @@ export const catalogSnapshotSchema = z.object({
   experts: z.array(expertSummarySchema),
   enabled: z.array(z.string()), revision: z.number().int().min(0),
 })
+/** Revision-checked expert directory and enabled selection returned by the Host. */
 export type CatalogSnapshot = z.infer<typeof catalogSnapshotSchema>
 export const expertEditSchema = customExpertSchema.omit({ deleted: true, wasEnabled: true })
 
@@ -62,6 +65,28 @@ const messages = {
   conflict: ['专家配置已被其他窗口修改，请刷新后重试。', 'Expert settings were changed in another window. Refresh and try again.'],
 } as const
 export type CustomErrorKey = keyof typeof messages
-export function customError(key: CustomErrorKey, locale: 'zh' | 'en'): Error {
-  return new Error(messages[key][locale === 'en' ? 1 : 0])
+declare module '@deepseek-ai/dsh-typert-protocol' {
+  interface RemoteErrorDetailsMap { 'experts/conflict': Record<string, never> }
+}
+
+/** Refuse a stale personal settings write without changing committed content.
+ * @param message Localized diagnostic for the affected expert or team.
+ * @param options Original failure, when the Settings transaction detected the conflict.
+ * @returns Native Remote failure retained by Host and Client dispatch.
+ */
+export function expertConflict(message: string, options?: ErrorOptions): RemoteError<'experts/conflict'> {
+  return new RemoteError('experts/conflict', message, {}, options)
+}
+
+/** Identify a stale write independently of diagnostic wording and Error realm.
+ * @param error Caught failure from a personal expert or team operation.
+ * @returns Whether the caller must review current settings before another save.
+ */
+export function isExpertConflict(error: unknown): boolean {
+  return typeof error === 'object' && error !== null && 'code' in error && error.code === 'experts/conflict'
+}
+
+export function customError(key: CustomErrorKey, locale: 'zh' | 'en', options?: ErrorOptions): Error {
+  const message = messages[key][locale === 'en' ? 1 : 0]
+  return key === 'conflict' ? expertConflict(message, options) : new Error(message, options)
 }

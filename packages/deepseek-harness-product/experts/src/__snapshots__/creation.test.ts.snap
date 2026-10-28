@@ -1,0 +1,21 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`records the full expert draft and save instructions in en 1`] = `
+"### Draft: 审查专家
+审查代码
+**Category**: engineering
+
+> Read code and report actionable findings.
+
+Review this draft or request changes in chat. After confirmation, open the editor and click Save to add it to Mine. Company review is a separate action."
+`;
+
+exports[`records the full expert draft and save instructions in zh 1`] = `
+"### 草案: 审查专家
+审查代码
+**分类**: engineering
+
+> Read code and report actionable findings.
+
+请核对草案，可以继续在对话中修改。确认后打开编辑器，点击保存才会加入「我的」；提交公司审核仍需单独操作。"
+`;

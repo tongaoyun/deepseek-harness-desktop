@@ -1,10 +1,18 @@
+import { deadline } from '@deepseek-ai/dsh-timeout';
+import { discardSkillResponse, readSkillResponse } from './response-bytes.ts';
+
 export type ClawHubListOptions = { limit?: unknown; cursor?: unknown; sort?: unknown };
+/** Public, nonnegative catalog usage counts. */
 export type ClawHubStats = { downloads?: number; installs?: number; stars?: number };
+/** Validated public catalog entry. */
 export type ClawHubItem = { ownerHandle: string; slug: string; displayName: string; summary: string; stats?: ClawHubStats };
+/** Bounded catalog page and optional continuation cursor. */
 export type ClawHubPage = { items: ClawHubItem[]; nextCursor: string | null };
 
 export type ClawHubSearchOptions = { limit?: unknown };
+/** Validated catalog search entry with its source identity. */
 export type ClawHubSearchItem = ClawHubItem & { source: "clawhub"; id?: string; downloads?: number };
+/** Bounded and validated public catalog search results. */
 export type ClawHubSearchResponse = { results: ClawHubSearchItem[] };
 
 function record(value: unknown): Record<string, unknown> | undefined {
@@ -38,15 +46,21 @@ function skillItem(value: unknown): ClawHubItem | undefined {
   return item;
 }
 
-/** 固定官方搜索端点，query 仅作为编码后的 q 参数。 */
-export async function searchClawHub(query: string, options: ClawHubSearchOptions = {}, fetchImpl: typeof fetch = fetch): Promise<ClawHubSearchResponse> {
+/** Search the fixed official endpoint; query is an encoded parameter, never a URL.
+ * @param query - Nonempty bounded search text.
+ * @param options - Explicit result limit; omitted options use the catalog maximum.
+ * @param fetchImpl - Host fetch transport, or the supplied transport.
+ * @param signal - Caller cancellation; absent signals leave only the local deadline.
+ * @returns Validated bounded results, or a structured catalog failure.
+ */
+export async function searchClawHub(query: string, options: ClawHubSearchOptions = {}, fetchImpl: typeof fetch = fetch, signal?: AbortSignal): Promise<ClawHubSearchResponse> {
   const normalized = typeof query === "string" ? query.trim() : "";
   if (!normalized || normalized.length > 100 || !record(options)) throw catalogError("目录搜索参数无效", 400, "error.catalog.query");
   const limit = requestLimit(options.limit, 100);
   const url = new URL("https://clawhub.ai/api/v1/search");
   url.searchParams.set("q", normalized);
   url.searchParams.set("limit", String(limit));
-  const payload = await fetchJson(url, fetchImpl);
+  const payload = await fetchJson(url, fetchImpl, signal);
   if (!Array.isArray(payload.results)) throw catalogError("目录搜索响应无效", 502, "error.catalog.response");
   const results: ClawHubSearchItem[] = [];
   for (const value of payload.results) {
@@ -64,46 +78,33 @@ export async function searchClawHub(query: string, options: ClawHubSearchOptions
   return { results };
 }
 
-function catalogError(message: string, statusCode: number, code: string) {
-  return Object.assign(new Error(message), { statusCode, code });
+function catalogError(message: string, statusCode: number, code: string, options?: ErrorOptions) {
+  return Object.assign(new Error(message, options), { statusCode, code });
 }
 
-async function fetchJson(url: URL, fetchImpl: typeof fetch) {
+async function fetchJson(url: URL, fetchImpl: typeof fetch, signal?: AbortSignal) {
+  using active = deadline(signal, 10_000, 'SKILLS_CATALOG_TIMEOUT');
+  active.signal.throwIfAborted();
   let response: Response;
   try {
-    response = await fetchImpl(url, { headers: { accept: "application/json" }, redirect: "error", signal: AbortSignal.timeout(10_000) });
-  } catch {
+    response = await fetchImpl(url, { headers: { accept: "application/json" }, redirect: "error", signal: active.signal });
+  } catch (cause) {
+    throw catalogError("ClawHub 服务暂时不可用", 502, "error.catalog.upstream", { cause });
+  }
+  if (!response.ok) {
+    discardSkillResponse(response);
     throw catalogError("ClawHub 服务暂时不可用", 502, "error.catalog.upstream");
   }
-  if (!response.ok) throw catalogError("ClawHub 服务暂时不可用", 502, "error.catalog.upstream");
-  const maxBytes = 1 << 20;
-  if (Number(response.headers.get("content-length")) > maxBytes) {
-    await response.body?.cancel().catch(() => undefined);
-    throw catalogError("ClawHub 响应过大", 502, "error.catalog.response");
-  }
-  const reader = response.body?.getReader();
-  const chunks: Uint8Array[] = [];
-  let size = 0;
-  if (reader) {
-    try {
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        size += value.byteLength;
-        if (size > maxBytes) {
-          throw catalogError("ClawHub 响应过大", 502, "error.catalog.response");
-        }
-        chunks.push(value);
-      }
-    } catch (error) {
-      await reader.cancel().catch(() => undefined);
-      if (error instanceof Error && "code" in error && error.code === "error.catalog.response" && "statusCode" in error && error.statusCode === 502) throw error;
-      throw catalogError("ClawHub 响应无效或过大", 502, "error.catalog.response");
-    } finally { reader.releaseLock(); }
+  const sizeError = catalogError("ClawHub 响应过大", 502, "error.catalog.response");
+  let bytes: Buffer;
+  try { bytes = await readSkillResponse(response, 1 << 20, active.signal, sizeError); }
+  catch (cause) {
+    if (cause === sizeError) throw cause;
+    throw catalogError("ClawHub 响应无效或过大", 502, "error.catalog.response", { cause });
   }
   let payload: unknown;
-  try { payload = JSON.parse(Buffer.concat(chunks, size).toString("utf8")); }
-  catch { throw catalogError("ClawHub 响应不是有效 JSON", 502, "error.catalog.response"); }
+  try { payload = JSON.parse(bytes.toString("utf8")); }
+  catch (cause) { throw catalogError("ClawHub 响应不是有效 JSON", 502, "error.catalog.response", { cause }); }
   const object = record(payload);
   if (!object) throw catalogError("ClawHub 响应结构无效", 502, "error.catalog.response");
   return object;
@@ -116,8 +117,13 @@ function requestLimit(value: unknown, max: number) {
   return number;
 }
 
-/** 固定官方榜单端点；不接受调用方 URL。 */
-export async function listClawHub(options: ClawHubListOptions = {}, fetchImpl: typeof fetch = fetch): Promise<ClawHubPage> {
+/** Read the fixed official catalog page, without accepting caller URLs.
+ * @param options - Page limit, cursor and supported sort; absent options select the initial downloads page.
+ * @param fetchImpl - Host fetch transport, or the supplied transport.
+ * @param signal - Caller cancellation; absent signals leave only the local deadline.
+ * @returns Validated page and continuation cursor, or a structured catalog failure.
+ */
+export async function listClawHub(options: ClawHubListOptions = {}, fetchImpl: typeof fetch = fetch, signal?: AbortSignal): Promise<ClawHubPage> {
   if (!options || typeof options !== "object" || Array.isArray(options)) throw catalogError("目录查询参数无效", 400, "error.catalog.query");
   const limit = requestLimit(options.limit, 10);
   const sort = options.sort === undefined ? "downloads" : options.sort;
@@ -127,7 +133,7 @@ export async function listClawHub(options: ClawHubListOptions = {}, fetchImpl: t
   url.searchParams.set("sort", sort);
   url.searchParams.set("limit", String(limit));
   if (options.cursor !== undefined) url.searchParams.set("cursor", options.cursor);
-  const payload = await fetchJson(url, fetchImpl);
+  const payload = await fetchJson(url, fetchImpl, signal);
   if (!Array.isArray(payload.items)) throw catalogError("目录榜单响应无效", 502, "error.catalog.response");
   const nextCursor = payload.nextCursor;
   if (nextCursor !== undefined && nextCursor !== null && (typeof nextCursor !== "string" || nextCursor.length > 4096)) throw catalogError("目录分页响应无效", 502, "error.catalog.response");

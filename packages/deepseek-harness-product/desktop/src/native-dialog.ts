@@ -1,4 +1,5 @@
 /** Native dialogs can outlive IPC cancellation; late choices must not trigger work. */
+import { addAbortListener } from 'node:events'
 
 /** Await a native selection only while its owning request remains active.
  * @param open - Starts the main-owned native dialog.
@@ -8,22 +9,14 @@
 export function waitForNativeDialog<T>(open: () => Promise<T>, signal?: AbortSignal): Promise<T> {
   signal?.throwIfAborted()
   if (signal === undefined) return open()
-  return new Promise<T>((resolve, reject) => {
-    let settled = false
-    const finish = (complete: () => void): void => {
-      if (settled) return
-      settled = true
-      signal.removeEventListener('abort', onAbort)
-      complete()
-    }
-    const onAbort = (): void => { finish(() => { reject(dialogError(signal.reason)) }) }
-    signal.addEventListener('abort', onAbort, { once: true })
-    try {
-      void open().then((value) => { finish(() => { resolve(value) }) },
-        (error: unknown) => { finish(() => { reject(dialogError(error)) }) })
-    } catch (error) { finish(() => { reject(dialogError(error)) }) }
-    if (signal.aborted) onAbort()
-  })
+  return waitForChoice(open, signal)
+}
+
+async function waitForChoice<T>(open: () => Promise<T>, signal: AbortSignal): Promise<T> {
+  const cancelled = Promise.withResolvers<never>()
+  using _listener = addAbortListener(signal, () => { cancelled.reject(dialogError(signal.reason)) })
+  try { return await Promise.race([cancelled.promise, new Promise<T>((resolve) => { resolve(open()) })]) }
+  catch (error) { throw dialogError(error) }
 }
 
 function dialogError(reason: unknown): Error { return reason instanceof Error ? reason : new Error('Native dialog operation failed') }

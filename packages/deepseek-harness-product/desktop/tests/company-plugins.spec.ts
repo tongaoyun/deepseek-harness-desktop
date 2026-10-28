@@ -20,6 +20,10 @@ import Agents from '@deepseek-ai/dsh-agent'
 import AgentLoop from '@deepseek-ai/dsh-agent-loop'
 import Llm, { ToolCallId } from '@deepseek-ai/dsh-llm'
 import WebServer from '@deepseek-ai/dsh-host-webserver'
+import Typert from '@deepseek-ai/dsh-typert-registry'
+import Gateway from '@deepseek-ai/dsh-api-gateway'
+import Access from '@deepseek-ai/dsh-api-remote-access'
+import { Peer } from '@deepseek-ai/dsh-client-connection'
 import { contentDigest } from '@deepseek-harness/product/company-content'
 import * as Agency from '@deepseek-harness/product-experts'
 const AGENCY_LIBRARY_SERVICE = 'agencyAgentsLibrary'
@@ -61,9 +65,9 @@ it.each([{ published: false, refresh: false, collision: false }, { published: tr
   const release = published ? { version: '1.0.0', sha256: contentDigest(files), files } : null
   const roots = await installCompanyContent(join(home, 'company-content'), 'employee-fixture', release, new AbortController().signal)
   let remote: unknown = release
-  let now = Date.now()
+  let now = performance.now()
   if (refresh) {
-    vi.spyOn(Date, 'now').mockImplementation(() => now)
+    vi.spyOn(performance, 'now').mockImplementation(() => now)
     onTestFinished(() => { vi.restoreAllMocks() })
   }
   const sync = new CompanyContentSync({ root: join(home, 'company-content'), employeeId: 'employee-fixture', refreshIntervalMs: 1000,
@@ -82,12 +86,10 @@ it.each([{ published: false, refresh: false, collision: false }, { published: tr
     { id: 'projections', name: 'cordis:projections' }, { id: 'llm', name: 'cordis:llm' },
     { id: 'agents', name: 'cordis:agents' }, { id: 'loop', name: 'cordis:loop', config: { agents: [] } },
     { id: 'company', name: 'cordis:company' },
+    { id: 'typert', name: 'cordis:typert' }, { id: 'access', name: 'cordis:access' }, { id: 'gateway', name: 'cordis:gateway' },
     { id: 'web', name: 'cordis:web', config: { host: '127.0.0.1', port: 0 } },
   ]
-  // Use the same fixed product modules as Desktop; the fixture supplies no Typert registry.
-  const capabilities = builtinCapabilityPatches().map(patch => ({
-    defaults: patch.defaults, insert: patch.insert.filter(entry => entry.id !== 'agency-agents-remote'),
-  }))
+  const capabilities = builtinCapabilityPatches()
   writeFileSync(join(directory, 'cordis.patch.yml'), JSON.stringify([{ insert: rows }, ...capabilities]))
   writeFileSync(join(directory, 'cordis.yml'), '[]\n')
   const profile: ProfileContext = { name: 'test', startedBundles: [], dir: directory,
@@ -101,7 +103,8 @@ it.each([{ published: false, refresh: false, collision: false }, { published: tr
     // Cancellation must stop before a delegated task can start.
     ctx.provide('subagents', { getProvider: () => ({ capabilities: {} }), start: async () => { throw new Error('Unexpected delegated task') } })
     Object.assign(ctx.loader.builtins, { editor: ConfigEditor, settings: Settings, tools: Tools, prompt: SystemPrompt,
-      skills: Skills, sessions: Sessions, web: WebServer, query: SessionQuery, projections: SessionProjections,
+      skills: Skills, sessions: Sessions, web: WebServer, typert: Typert, gateway: Gateway, access: Access,
+      query: SessionQuery, projections: SessionProjections,
       llm: Llm, agents: Agents, loop: AgentLoop, company: { inject: ['sessions', 'sessionQuery', 'systemPrompt'], apply(owner: Context) {
         new CompanyContent(owner, { invoke: async (method, payload, signal) => {
           if (method === 'runtime.companyContent.read') return sync.read()
@@ -128,6 +131,10 @@ it.each([{ published: false, refresh: false, collision: false }, { published: tr
       } } })
   })
   onTestFinished(() => ctx.fiber.dispose())
+  const peer = new Peer(ctx, { principal: { kind: 'owner' } })
+  const invoke = (method: string, args: Record<string, unknown>) => ctx.typertGateway.invoke({
+    namespace: 'skillsManager', method, args, peer, signal: AbortSignal.timeout(5_000),
+  })
   const library = ctx.get(AGENCY_LIBRARY_SERVICE)
   expect(library).toBeDefined()
   const catalog = await library!.catalog()
@@ -151,48 +158,32 @@ it.each([{ published: false, refresh: false, collision: false }, { published: tr
     const healthy = catalog.experts.find(expert => expert.slug === 'orders')!
     expect((await persona.getPrompt(healthy.slug, healthy.division, 'zh')).prompt.length).toBeGreaterThan(0)
   }
-  const catalogResponse = await fetch(`http://127.0.0.1:${ctx.webServer.port}/api/dsh-skills-manager/state`, {
-    signal: AbortSignal.timeout(5_000),
-  })
-  expect(catalogResponse.status).toBe(200)
-  const skillCatalog = z.object({ data: z.object({ roots: z.array(z.object({ key: z.string(), localeKey: z.string().optional(),
-    skills: z.array(z.object({ name: z.string() })) })) }) }).parse(await catalogResponse.json())
-  expect(skillCatalog.data.roots.find(root => root.key === 'company')).toMatchObject({ localeKey: 'company',
+  const skillCatalog = z.object({ roots: z.array(z.object({ key: z.string(), localeKey: z.string().optional(),
+    skills: z.array(z.object({ name: z.string() })) })) }).parse(await invoke('readState', { scope: {}, refreshCompany: false }))
+  expect(skillCatalog.roots.find(root => root.key === 'company')).toMatchObject({ localeKey: 'company',
     skills: published ? [expect.objectContaining({ name: 'orders' })] : [] })
   expect((await ctx.skills.list()).some(skill => skill.name === 'orders')).toBe(published)
   if (published) expect((await ctx.skills.get('orders'))?.content).toContain('Company order skill body.')
   if (published) {
-    const endpoint = `http://127.0.0.1:${ctx.webServer.port}/api/dsh-skills-manager`
-    const mutate = async (action: string, body: object) => {
-      const response = await fetch(`${endpoint}/${action}`, {
-        method: 'POST', headers: { 'content-type': 'application/json', 'x-dsh-skills-manager': '1' },
-        body: JSON.stringify(body), signal: AbortSignal.timeout(5_000),
-      })
-      const result: unknown = await response.json()
-      expect(response.status).toBe(200)
-      expect(result).toHaveProperty('ok', true)
-    }
     for (const [name, flags, invocation] of [
       ['policy-manual-only', 'disable-model-invocation: true', { modelInvocable: false, userInvocable: true }],
       ['policy-model-only', 'user-invocable: false', { modelInvocable: true, userInvocable: false }],
       ['policy-invalid', 'disable-model-invocation: invalid', { modelInvocable: false, userInvocable: false }],
     ] as const) {
       const markdown = `---\nname: ${name}\ndescription: Invocation policy test\n${flags}\n---\nPolicy body.`
-      await mutate('upload', { entries: [{ path: `${name}/SKILL.md`, data: Buffer.from(markdown).toString('base64') }] })
-      await mutate('enable', { root: 'dsh', name })
+      await invoke('uploadSkill', { request: { entries: [{ path: `${name}/SKILL.md`, data: Buffer.from(markdown).toString('base64') }] } })
+      await invoke('setSkillEnabled', { target: { root: 'dsh', name }, enabled: true })
       expect((await ctx.skills.list()).find(skill => skill.name === name)?.invocation).toEqual(invocation)
-      await mutate('disable', { root: 'dsh', name })
+      await invoke('setSkillEnabled', { target: { root: 'dsh', name }, enabled: false })
       expect((await ctx.skills.list()).find(skill => skill.name === name)?.invocation)
         .toEqual({ modelInvocable: false, userInvocable: false })
-      await mutate('enable', { root: 'dsh', name })
+      await invoke('setSkillEnabled', { target: { root: 'dsh', name }, enabled: true })
       expect((await ctx.skills.list()).find(skill => skill.name === name)?.invocation).toEqual(invocation)
     }
-    const response = await fetch(`${endpoint}/state`, { signal: AbortSignal.timeout(5_000) })
-    const snapshot = z.object({ data: z.object({ roots: z.array(z.object({ key: z.string(),
+    const snapshot = z.object({ roots: z.array(z.object({ key: z.string(),
       skills: z.array(z.object({ name: z.string(), enabled: z.boolean().optional(), effectiveModelInvocable: z.boolean() })),
-    })) }) }).parse(await response.json())
-    expect(response.status).toBe(200)
-    expect(snapshot.data.roots.find(root => root.key === 'dsh')?.skills.find(skill => skill.name === 'policy-manual-only'))
+    })) }).parse(await invoke('readState', { scope: {}, refreshCompany: false }))
+    expect(snapshot.roots.find(root => root.key === 'dsh')?.skills.find(skill => skill.name === 'policy-manual-only'))
       .toMatchObject({ enabled: true, effectiveModelInvocable: false })
   }
   if (published && !refresh) {
@@ -293,6 +284,7 @@ it('restores personal experts through the builtin profile and official Settings 
   const first = await start()
   onTestFinished(() => first.fiber.dispose())
   await first.loader.await()
+  expect(first.settings.describe().find(item => item.ns === 'agency-agents')?.autoGenerate).toBe(false)
   const library = first.get(AGENCY_LIBRARY_SERVICE)
   if (!library) throw new Error('Builtin expert library missing')
   const before = await library.catalog()
@@ -301,6 +293,7 @@ it('restores personal experts through the builtin profile and official Settings 
   const second = await start()
   onTestFinished(() => second.fiber.dispose())
   await second.loader.await()
+  expect(second.settings.describe().find(item => item.ns === 'agency-agents')?.autoGenerate).toBe(false)
   const restored = await second.get(AGENCY_LIBRARY_SERVICE)?.catalog()
   expect(restored).toMatchObject({ experts: saved.experts, enabled: saved.enabled })
   const expert = saved.experts.find((item: { custom?: boolean }) => item.custom)

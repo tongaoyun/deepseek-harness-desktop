@@ -3,4 +3,4 @@ import tsconfigPaths from 'vite-tsconfig-paths'
 import { standardDecoratorPlugin } from '../../../vitest.shared.ts'
 
 export default defineConfig({ plugins: [standardDecoratorPlugin(), tsconfigPaths({ projects: ['./tsconfig.base.json'] })],
-  test: { include: ['packages/deepseek-harness-product/skills/src/**/*.test.ts', 'packages/deepseek-harness-product/skills/tests/**/*.spec.tsx'] } })
+  test: { include: ['packages/deepseek-harness-product/skills/src/**/*.test.ts', 'packages/deepseek-harness-product/skills/tests/**/*.spec.{ts,tsx}'] } })

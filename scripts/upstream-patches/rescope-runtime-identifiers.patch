@@ -52,7 +52,7 @@ index f05658ce64c50be84c61b447e3bcb00cf59ad2ae..21fe775a4ddc21ba8b3a75a865433e52
    it('classifies an insertion by its target form, so a duplicate is invalid', () => {
      expect(exactEditState(`log\n${ANCHOR}\n`, ANCHOR, INSERTED, 1)).toBe('pending')
 diff --git a/scripts/rescope-vendor.ts b/scripts/rescope-vendor.ts
-index e6292fb2a5a19230b71dc2a06f08a3617108ca2e..038cbc3d1e432beecd1b03599276c16ff8a976f5 100644
+index e6292fb2a5a19230b71dc2a06f08a3617108ca2e..e7beae05445bacc10df92a570b1c3d5399ce23ed 100644
 --- a/scripts/rescope-vendor.ts
 +++ b/scripts/rescope-vendor.ts
 @@ -89,14 +89,31 @@ const GENERIC_SKIPS: readonly GenericSkip[] = [
@@ -123,12 +123,18 @@ index e6292fb2a5a19230b71dc2a06f08a3617108ca2e..038cbc3d1e432beecd1b03599276c16f
  function classify(file: string): string {
    if (/^vendor\/[^/]+\/package\.json$/.test(file)) return 'vendor manifest name'
    if (file.endsWith('package.json')) return 'package.json dependencies'
-@@ -568,7 +598,7 @@ function main(): void {
+@@ -568,9 +598,12 @@ function main(): void {
    const mode = args.includes('--apply') ? 'apply' : args.includes('--check') ? 'check' : 'dry'
    const reverse = args.includes('--reverse')
    const all = patterns(reverse)
 -  const files = execFileSync('git', ['ls-files', '-z'], { cwd: root, encoding: 'utf8' })
 +  const files = execFileSync('git', ['ls-files', '-z'], { cwd: root, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 })
      .split('\0')
-     .filter(file => file !== '' && !isRescopeExcluded(file))
+-    .filter(file => file !== '' && !isRescopeExcluded(file))
++    // `git ls-files` keeps a path whose deletion is still unstaged.  A deleted
++    // source file has no text to rescope and must not make the check fail while
++    // the surrounding product change is being reviewed.
++    .filter(file => file !== '' && existsSync(resolve(root, file)) && !isRescopeExcluded(file))
  
+   const counts = new Map<string, { files: number; lines: number }>()
+   const failures: string[] = []

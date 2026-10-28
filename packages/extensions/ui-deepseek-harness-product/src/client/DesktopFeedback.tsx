@@ -5,7 +5,6 @@ import { randomUUID } from '@deepseek-ai/dsh-util-crypto'
 import type { DeepSeekHarnessProductKey } from '../locales.ts'
 import css from '../DeepSeekHarnessProduct.module.css'
 import { productApi } from './product-api.ts'
-import { nextProductRequestId } from './catalog-shared.tsx'
 import { productErrorMessage } from './product-errors.ts'
 
 /** Enterprise feedback entry; employee and device metadata are supplied only by main. */
@@ -77,7 +76,7 @@ export function DesktopFeedback({ open, onClose, t }: {
   const submit = async (): Promise<void> => {
     const api = productApi()
     if (!api || operation.current.request || !message.trim()) return
-    const request = nextProductRequestId(); operation.current.request = request
+    const request = randomUUID(); operation.current.request = request
     setPending(true); setError(''); setReceipt('')
     try {
       const attachments = await Promise.all(images.map(async file => ({ name: file.name, mediaType: file.type,

@@ -36,7 +36,17 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
   let closed = false
   const operations = new Map<number, { controller: AbortController; settled: Promise<unknown> }>()
   const send = (message: object) => {
-    if (!closed && process.connected) process.send?.(message)
+    if (closed || !process.connected) return
+    const failed = () => {
+      ctx.logger.error('Product control response could not reach Electron. The operation may have completed; reopen the page to inspect its state before retrying.')
+    }
+    if (process.send === undefined) { failed(); return }
+    try {
+      process.send(message, (error) => { if (error != null) failed() })
+    } catch (_error) {
+      // Sending a response cannot undo completed work or replay its operation.
+      failed()
+    }
   }
   const onMessage = (message: unknown): void => {
     if (product.handle(message)) return
@@ -64,7 +74,7 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
       if (message.method === 'tasks.capabilities.read') return control.readCapabilities(request)
       if (message.method === 'tasks.capabilities.prepare') return control.prepareCapabilities(request, controller.signal)
       throw new Error('Unsupported product runtime operation')
-    })().then((result) =>{  send({ type: 'extension-control', requestId, result }) },
+    })().then((result) => { send({ type: 'extension-control', requestId, result }) },
       (error: unknown) => { const failure = productFailure(error); send({ type: 'extension-control', requestId, error: failure.message, failure }) })
       .finally(() => { operations.delete(requestId as number) })
     operations.set(requestId as number, { controller, settled })

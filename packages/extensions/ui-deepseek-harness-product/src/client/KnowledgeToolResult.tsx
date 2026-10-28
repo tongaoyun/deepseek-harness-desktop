@@ -1,5 +1,5 @@
 /** Durable knowledge sources rendered through the official toolview slot. */
-import { useState, type ReactNode } from 'react'
+import { useCallback, useState, type ReactNode } from 'react'
 import { DisclosureRow, IconDatabaseOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { Context } from '@deepseek-ai/cordis'
 import type { ToolCallViewProps } from '@deepseek-ai/dsh-client-ui-tool/client'
@@ -7,6 +7,7 @@ import type { PropsLocale, PropsRenderFactories } from '@deepseek-ai/dsh-client-
 import { NS } from '../locales.ts'
 import css from '../DeepSeekHarnessProduct.module.css'
 import { KnowledgeDocumentReader } from './KnowledgeDocumentReader.tsx'
+import { productErrorMessage } from './product-errors.ts'
 
 type KnowledgeToolProps = Pick<ToolCallViewProps, 'toolName' | 'phase' | 'block' | 'useDisclosure'>
   & PropsLocale<typeof NS> & PropsRenderFactories
@@ -36,13 +37,18 @@ function sources(meta: unknown): readonly KnowledgeSource[] | undefined {
   return result
 }
 
-/** Render recorded sources, checking live access only when a reader opens.
+/** Render recorded sources and close live content when access is denied.
  * @param props Official tool call slice, disclosure hook, and product locale.
  * @returns A source disclosure and an authorized original-file reader.
  */
 export function KnowledgeToolResult({ toolName, phase, block, useDisclosure, renderFactorySlot, t }: KnowledgeToolProps): ReactNode {
   const { expanded, toggle } = useDisclosure()
   const [selected, setSelected] = useState<KnowledgeSource>()
+  const [readError, setReadError] = useState('')
+  const accessDenied = useCallback((failure: unknown) => {
+    setSelected(undefined)
+    setReadError(productErrorMessage(failure, t, 'knowledgeReadFailed'))
+  }, [t])
   const settled = phase === 'result' && 'kind' in block
   const failed = settled && block.isError
   const stopped = settled && block.error?.code === 'interrupted'
@@ -64,14 +70,15 @@ export function KnowledgeToolResult({ toolName, phase, block, useDisclosure, ren
         : entries.length === 0 ? <p className={css.catalogStatus}>{t('noSearchResults')}</p>
           : <ul className={css.knowledgeToolSources} aria-label={t('knowledgeToolSources')}>
             {entries.map(source => <li key={source.sourceId}>
-              <button type="button" className={css.knowledgeSourceLink} onClick={() => { setSelected(source) }}>{source.filename}</button>
+              <button type="button" className={css.knowledgeSourceLink} onClick={() => { setReadError(''); setSelected(source) }}>{source.filename}</button>
               <span>{source.knowledgeBaseName}</span>{source.locator && <span>{source.locator}</span>}
             </li>)}
           </ul>}
     </DisclosureRow>
+    {readError && <p className={css.catalogError} role="alert">{readError}</p>}
     {selected && <KnowledgeDocumentReader key={selected.sourceId} knowledgeBaseId={selected.knowledgeBaseId}
       sourceId={selected.sourceId} expectedDocumentId={selected.documentId} title={selected.filename} renderFactorySlot={renderFactorySlot}
-      onClose={() => { setSelected(undefined) }} t={t} />}
+      onAccessDenied={accessDenied} onClose={() => { setSelected(undefined) }} t={t} />}
   </div>
 }
 
