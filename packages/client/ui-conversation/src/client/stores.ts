@@ -56,26 +56,6 @@ export function readConversationDraft(sessionId: SessionId): DraftSnapshot {
 }
 
 /**
- * Persist explicit initialization before a target Session has a mounted store writer.
- * @param sessionId - Session-scoped persistence suffix.
- * @param draft - semantic document owned by the input model.
- * @throws when browser storage cannot retain the initialized draft.
- */
-export function writeInitializedConversationDraft(sessionId: SessionId, draft: DraftSnapshot): void {
-  if (typeof localStorage === 'undefined') return
-  const key = `${CONVERSATION_STORE_KEY}.${sessionId}`
-  const raw = localStorage.getItem(key)
-  let stored: unknown
-  if (raw !== null) {
-    try { stored = JSON.parse(raw) }
-    catch (_error: unknown) { /* Invalid persisted content has no View state to preserve. */ }
-  }
-  const previous = typeof stored === 'object' && stored !== null && !Array.isArray(stored)
-    ? stored : { view: null, viewRequest: null }
-  localStorage.setItem(key, JSON.stringify({ ...previous, draft }))
-}
-
-/**
  * Read the persisted View preference before the Slot store is materialized.
  * @param sessionId - Session-scoped persistence suffix.
  * @returns the preferred View id, or null when storage has no usable value.

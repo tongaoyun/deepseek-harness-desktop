@@ -1,7 +1,7 @@
 # Short names for the Web and Desktop application commands. The package.json
 # scripts they call stay the source of truth; docs/development.md documents both.
 .DEFAULT_GOAL := help
-.PHONY: help build clean web desktop dev-web dev-desktop product-desktop dev-product-desktop
+.PHONY: help build clean web desktop dev-web dev-desktop
 
 PNPM ?= pnpm
 ARGS ?=
@@ -13,8 +13,6 @@ help:
 	@echo "make desktop      pnpm run start:desktop   launch the built Desktop artifacts"
 	@echo "make dev-web      pnpm run dev:web         build, serve, and rebuild Web on source edits"
 	@echo "make dev-desktop  pnpm run dev:desktop     build, then launch Desktop"
-	@echo "make product-desktop     pnpm run start:product-desktop   launch the product Desktop artifacts"
-	@echo "make dev-product-desktop pnpm run dev:product-desktop     build, then launch product Desktop"
 	@echo "ARGS='--no-open --port 3081' forwards options to the launched application;"
 	@echo "the Web commands accept dsh web flags, the Desktop launcher accepts none."
 
@@ -35,9 +33,3 @@ dev-web:
 
 dev-desktop:
 	$(PNPM) run dev:desktop $(ARGS)
-
-product-desktop:
-	$(PNPM) run start:product-desktop $(ARGS)
-
-dev-product-desktop:
-	$(PNPM) run dev:product-desktop $(ARGS)

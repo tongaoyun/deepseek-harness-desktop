@@ -17,7 +17,6 @@ export function desktopRuntimeFileExclusion(
     return 'package-manager metadata'
   }
   const file = parts.at(-1)!
-  if (file === '.gitkeep') return 'empty-directory placeholder omitted by ASAR'
   if (/\.(?:[cm]?[jt]s|css)\.map$/u.test(file)) return 'source map'
   if (/\.d\.[cm]?ts$/u.test(file)) return 'TypeScript declaration'
   if (/\.tsbuildinfo$/u.test(file)) return 'TypeScript build cache'

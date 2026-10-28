@@ -1,7 +1,7 @@
 /** Non-default package roles retained outside the experimental group. */
 
 /** Product role that does not require a default runtime mount. */
-export type ProductPackageCategory = 'optional' | 'sdk' | 'build' | 'test' | 'web-distribution' | 'declarations' | 'product'
+export type ProductPackageCategory = 'optional' | 'sdk' | 'build' | 'test' | 'web-distribution' | 'declarations'
 
 /** One explicitly maintained package role and its reason. */
 export interface ProductPackagePolicy {
@@ -16,20 +16,7 @@ export interface ProductPackagePolicy {
  * Optional integrations may be reached by an optional bundle without becoming default capabilities.
  */
 export const PRODUCT_PACKAGE_POLICY: Readonly<Record<string, ProductPackagePolicy>> = {
-  'packages/deepseek-harness-product/experts': { category: 'product', reason: 'Builtin personal and shared experts using official delegation and Settings.' },
-  'packages/deepseek-harness-product/skills': { category: 'product', reason: 'Builtin skill management using official Skill Providers.' },
-  'packages/deepseek-harness-product/product': {
-    category: 'product', reason: 'Product protocol and server gateway loaded by the independent Desktop assembly.',
-  },
-  'packages/deepseek-harness-product/desktop': {
-    category: 'product', reason: 'Credential-owning Desktop extension loaded by the independent Product assembly.',
-  },
-  'packages/deepseek-harness-product/runtime': {
-    category: 'product', reason: 'Product Cordis runtime loaded by the independent Desktop profile.',
-  },
-  'packages/extensions/ui-deepseek-harness-product': {
-    category: 'product', reason: 'Product UI extension loaded by the independent Desktop profile and Web client.',
-  },
+  'packages/core/agent-tool-presentation': { category: 'optional', reason: 'Deprecated selector retained for existing executor configurations.' },
   'packages/browser-use/browser-use': { category: 'optional', reason: 'Service definition used by explicitly selected browser providers.' },
   'packages/computer-use/computer-use': { category: 'optional', reason: 'Service definition used by explicitly selected computer providers.' },
   'packages/lsp/lsp': { category: 'optional', reason: 'Service definition for deployment-configured language servers.' },
@@ -52,6 +39,7 @@ export const PRODUCT_PACKAGE_POLICY: Readonly<Record<string, ProductPackagePolic
   'packages/sdk/client': { category: 'sdk', reason: 'Published TypeScript embedding client runs in the consumer process.' },
   'packages/typert/generator': { category: 'build', reason: 'Build-time generation of type metadata.' },
   'packages/test-support/agent-loop-testkit': { category: 'test', reason: 'Published agent-loop test harness.' },
+  'packages/test-support/tool-testkit': { category: 'test', reason: 'Shared tool definition and execution fixtures for tests and benchmarks.' },
   'packages/test-support/client-runtime': { category: 'test', reason: 'Published browser plugin test harness.' },
   'packages/test-support/llm-mock-server': { category: 'test', reason: 'Published model-provider test server.' },
   'packages/test-support/llm-replay': { category: 'test', reason: 'Published recorded-model replay harness.' },

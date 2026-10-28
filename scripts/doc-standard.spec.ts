@@ -13,7 +13,6 @@ import { resolve, sep } from 'node:path'
 import { JSON_SCHEMA, load } from 'js-yaml'
 import { describe, expect, it } from 'vitest'
 import { readCurrentSessionFormatVersion } from './gen-session-format-catalog.ts'
-import { markdownValidationSource } from './markdown.ts'
 
 const root = resolve(import.meta.dirname, '..')
 const PACKAGE_README_GLOBS = [
@@ -56,12 +55,11 @@ const KIND_TEMPLATES: Readonly<Record<string, string>> = {
  * library; the check re-derives the entry shape so a stale entry fails loud.
  */
 const PACKAGE_LIBRARIES: Readonly<Record<string, string>> = {
-  'packages/deepseek-harness-product/product': 'Credential and catalog protocol library with injected adapters; no plugin entry.',
-  'packages/deepseek-harness-product/desktop': 'Trusted Electron extension factory; mounted by the shell rather than Cordis.',
-  'packages/experimental/cua': 'Shared CUA objects and installer consumed by platform providers; no plugin entry.',
+  'packages/util/file-drag': 'File naming and native transfer declarations without a plugin entry.',
   'packages/experimental/browser-use-runtime': 'Provider-owned browser resource management and MCP integration helpers; no plugin entry.',
   'packages/boot/app-boot': 'Boot library the app bins import; plain helper exports.',
   'packages/boot/cmdline': 'Command-line library the app bins import; plain module exports.',
+  'packages/util/official-bundles': 'Bundle-list data library the launcher and plugin manager import; plain constant exports.',
   'packages/client/store': 'Browser-side state primitives; plain function/type exports.',
   'packages/client/ui-primitives': 'Browser-side UI component library; plain component exports.',
   'packages/client/ui-slots': 'Browser-side slot-map declarations; plain type exports.',
@@ -70,6 +68,7 @@ const PACKAGE_LIBRARIES: Readonly<Record<string, string>> = {
   'packages/experimental/webworker-packer': 'Build-time VFS image packer and command library.',
   'packages/experimental/webworker-runtime': 'Browser worker runtime library with explicit host entry points.',
   'packages/experimental/hook-protocol': 'Shared wire-protocol library between the hook bridges.',
+  'packages/experimental/liveshare-protocol': 'Shared wire frames and identity contract; plain module exports with no plugin entry.',
   'packages/identity/anonymous-user-id': 'Harness-home identity helper with no plugin registration.',
   'packages/sandbox/sandbox-windows-acl': 'Windows ACL sandbox library consumed by sandbox-local.',
   'packages/sdk/client': 'Client-process library; the spawned runtime owns plugin behavior.',
@@ -85,6 +84,7 @@ const PACKAGE_LIBRARIES: Readonly<Record<string, string>> = {
   'packages/subprocess/win32-process': 'Low-level Win32 process and Job Object primitives.',
   'packages/test-support/session-snapshot': 'Test infrastructure; mounts nothing into a product composition.',
   'packages/test-support/agent-loop-testkit': 'Test helper library; mounts nothing into a product composition.',
+  'packages/test-support/tool-testkit': 'Tool fixture library; exports helpers without a plugin entry.',
   'packages/test-support/client-runtime': 'Browser-side test infrastructure.',
   'packages/test-support/llm-mock-server': 'Test server library; substitutes provider wire behavior.',
   'packages/test-support/loader-smoke': 'Test harness library; mounts nothing into a product composition.',
@@ -103,6 +103,7 @@ const PACKAGE_LIBRARIES: Readonly<Record<string, string>> = {
   'packages/util/native-command': 'Host-side subprocess runner utility.',
   'packages/util/output-retention': 'Zero-dependency retention utility.',
   'packages/util/package-manifest': 'Shared package manifest declarations with type-only exports.',
+  'packages/util/plugin-detail': 'Plugin detail document library.',
   'packages/util/plugin-market-index': 'Plugin market index validation library.',
   'packages/util/time': 'Zero-dependency time-zone canonicalization utility.',
   'packages/util/timeout': 'Zero-dependency timeout utility.',
@@ -159,8 +160,7 @@ function packageReadmeStructureErrors(file: string, source: string): string[] {
   const required = chinese
     ? [[/^## 概述$/m, '概述'], [/^## 目录$/m, '目录'], [/^#{2,3} 开发备注$/m, '开发备注']] as const
     : [[/^## Summary$/m, 'Summary'], [/^## Table of Contents$/m, 'Table of Contents'], [/^#{2,3} Dev Note$/m, 'Dev Note']] as const
-  const text = chinese || required.every(([pattern]) => pattern.test(source)) ? source : markdownValidationSource(source)
-  return required.flatMap(([pattern, label]) => pattern.test(text) ? [] : [`missing ${label}`])
+  return required.flatMap(([pattern, label]) => pattern.test(source) ? [] : [`missing ${label}`])
 }
 
 interface SessionFormatRelease {

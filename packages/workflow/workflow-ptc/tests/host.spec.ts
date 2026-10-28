@@ -36,6 +36,7 @@ async function setup(execute?: (bindings: HostBindings, spec: PtcRunSpec) => Pro
   await ctx.plugin(SessionStore)
   await ctx.plugin(AgentRegistry)
   await ctx.plugin(SessionProjections)
+  await ctx.plugin(AgentRegistry)
   await ctx.plugin(SandboxPolicy, { mode: 'read-only' })
   provideWorkingDirectoryFixture(ctx)
   await ctx.plugin(SubagentRuntime)

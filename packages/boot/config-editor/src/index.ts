@@ -2,12 +2,12 @@
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { isDeepStrictEqual } from 'node:util'
-import { Context, FiberState, Service, resolveConfig } from '@deepseek-ai/cordis'
+import { Context, FiberState, Service } from '@deepseek-ai/cordis'
 import { entryListSchema, type PatchOptions } from '@deepseek-ai/cordis-plugin-include'
 import yaml from 'js-yaml'
 import type { Entry, EntryOptions } from '@deepseek-ai/cordis-plugin-loader'
 import type {} from '@deepseek-ai/dsh-hmr'
-import { composeEntries, loadProfileDirectory, readBundlePatches, readProfilePatches, reconcileProfilePatches } from '@deepseek-ai/dsh-app-boot'
+import { composeEntries, loadProfileDirectory, readProfilePatches, reconcileProfilePatches } from '@deepseek-ai/dsh-app-boot'
 import { withFileLock, writeFileAtomic } from '@deepseek-ai/dsh-atomic-write'
 import { isMap, isSeq, parseDocument, Scalar, visit } from 'yaml'
 
@@ -54,7 +54,7 @@ export class ConfigEditor extends Service {
     const overridden = new Set(loaded.patches.filter(patch => patch.insert === undefined && Object.hasOwn(patch, 'config')).map(patch => patch.id))
     const composed = new Map<string, EntryOptions>()
     if (entries.some(entry => !overridden.has(entry.options.id))) {
-      for (const row of flatten(composeEntries([readBundlePatches('dsh', profile, loaded), loaded.patches]))) {
+      for (const row of flatten(composeEntries([...loaded.layers.map(layer => layer.patches), loaded.patches]))) {
         if (!composed.has(row.id)) composed.set(row.id, row)
       }
     }
@@ -75,7 +75,7 @@ export class ConfigEditor extends Service {
       const rest = { ...patch }; Reflect.deleteProperty(rest, 'config')
       return rest
     })
-    const row = flatten(composeEntries([readBundlePatches('dsh', this.ownerContext.profileContext, loaded), patches])).find(row => row.id === entry.options.id)
+    const row = flatten(composeEntries([...loaded.layers.map(layer => layer.patches), patches])).find(row => row.id === entry.options.id)
     return structuredClone((row?.config ?? {}) as Record<string, unknown>)
   }
 
@@ -96,14 +96,11 @@ export class ConfigEditor extends Service {
         await reconcileProfilePatches(this.ownerContext.root, beforePatches, 'dsh')
         if (!this.entries().includes(entry)) throw new Error('Configuration entry changed during reload')
         const current = structuredClone((entry.options.config ?? {}) as Record<string, unknown>)
-        const profile = this.ownerContext.profileContext
-        const loaded = loadProfileDirectory('dsh', profile.dir, profile.installAnchor)
-        const inherited = this.inherited(entry, loaded)
+        const inherited = this.inherited(entry, loadProfileDirectory('dsh', this.ownerContext.profileContext.dir, this.ownerContext.profileContext.installAnchor))
         const next = change(current, inherited)
         const fiber = entry.fiber
         if (fiber.state !== FiberState.ACTIVE) throw new Error('Configuration plugin is no longer active')
-        const resolved: unknown = fiber.ctx.waterfall(fiber, 'internal/config', next, () => next)
-        resolveConfig(fiber.runtime as NonNullable<typeof fiber.runtime>, resolved)
+        fiber.resolveConfig(next)
         let before: string
         try { before = await readFile(path, 'utf8') }
         catch (error) {
@@ -134,6 +131,8 @@ export class ConfigEditor extends Service {
           expression.tag = 'tag:yaml.org,2002:js'
           return expression
         } })
+        const profile = this.ownerContext.profileContext
+        const loaded = loadProfileDirectory('dsh', profile.dir, profile.installAnchor)
         const patches = readProfilePatches('dsh', profile, { ...loaded, patches: yaml.load(String(document), { schema: entryListSchema }) as PatchOptions[] })
         const effective = flatten(composeEntries([patches])).find(row => row.id === entry.options.id)
         if (!isDeepStrictEqual(effective?.config ?? {}, next)) {

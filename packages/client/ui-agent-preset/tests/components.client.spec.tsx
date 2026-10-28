@@ -26,15 +26,10 @@ const ROSTER_READY: AgentPresetSettingsState = {
   status: 'ready',
   error: null,
   options: [{ id: 'standard' }, { id: 'mine' }],
-  presets: [
-    { id: 'standard', isDefault: true, selectable: true, defaultable: true },
-    { id: 'mine', isDefault: false, selectable: true, defaultable: true },
-  ],
 }
 
 const SEAT_READY: AgentPresetSeatState = {
   current: 'standard',
-  currentUnavailable: false,
   options: [
     { id: 'standard' },
     { id: 'mine' },
@@ -91,9 +86,6 @@ function renderLabel(
   // The chip and the label read the same roster, metadata included.
   const store = createSnapshotStore<AgentPresetSettingsState>({
     ...ROSTER_READY, options: SEAT_READY.options, ...roster,
-    presets: roster.presets ?? (roster.options ?? SEAT_READY.options).map(option => ({
-      ...option, isDefault: false, selectable: true, defaultable: true,
-    })),
   })
   const sessions = createSnapshotStore({ byId: summary === undefined ? {} : { s1: summary } })
   const load = vi.fn(() => Promise.resolve())
@@ -104,19 +96,10 @@ function renderLabel(
     useAgentPresets: bindSnapshotSelector(store),
     t: (key: keyof typeof en) => en[key],
   } as unknown as AgentPresetLabelProps)} />)
-  return { load, view, store, sessions }
+  return { load, view }
 }
 
 describe('the new-session chip', () => {
-  it('labels a blocked composition without exposing its identity or marking a base mode', () => {
-    renderSeat({ current: 'product-task-damaged', currentUnavailable: true })
-
-    expect(screen.getByRole('button').textContent).toContain(en.compositionUnavailable)
-    expect(screen.queryByText('product-task-damaged')).toBeNull()
-    fireEvent.click(screen.getByRole('button'))
-    expect(screen.queryByRole('menuitemradio', { checked: true })).toBeNull()
-  })
-
   it.each([false, true])('offers Standard, Creator and custom presets with Developer tools %s', (enabled) => {
     const actions = renderSeat({ options: [
       { id: 'standard' }, { id: 'ptc' }, { id: 'minimal' }, { id: 'cordis' }, { id: 'mine' },
@@ -399,87 +382,6 @@ describe('the chip introduce cue', () => {
 })
 
 describe('the session-header label', () => {
-  it.each(['loading', 'error'] as const)('hides an unknown snapshot identity while the roster is %s', (status) => {
-    renderLabel({ blank: false, projectionValues: { agentPreset: 'product-task-new' } }, {
-      status, presets: [], options: [], error: status === 'error' ? 'Disconnected' : null,
-    })
-
-    expect(screen.getByTitle(en.headerHint).textContent).toBe(en.compositionUnavailable)
-    expect(screen.queryByText('product-task-new')).toBeNull()
-  })
-
-  it('hides a newly selected snapshot identity when its roster lookup fails', async () => {
-    const { load, sessions, store } = renderLabel({ blank: false, projectionValues: { agentPreset: 'standard' } })
-    await waitFor(() => { expect(load).toHaveBeenCalledTimes(1) })
-    await act(async () => {
-      sessions.set({ byId: { s1: { blank: false, projectionValues: { agentPreset: 'product-task-new' } } } })
-    })
-    await waitFor(() => { expect(load).toHaveBeenCalledTimes(2) })
-    await act(async () => { store.set({ ...store.getSnapshot(), status: 'error', error: 'Disconnected' }) })
-
-    expect(screen.getByTitle(en.headerHint).textContent).toBe(en.compositionUnavailable)
-    expect(screen.queryByText('product-task-new')).toBeNull()
-  })
-
-  it('shows a broken snapshot with a missing base as unavailable', () => {
-    renderLabel({ blank: false, projectionValues: { agentPreset: 'product-task-broken' } }, {
-      presets: [...ROSTER_READY.presets, {
-        id: 'product-task-broken', selectionBase: 'removed-mode', broken: 'Selection base is missing',
-        isDefault: false, selectable: false, defaultable: false,
-      }],
-    })
-
-    expect(screen.getByTitle(en.headerHint).textContent).toBe(en.compositionUnavailable)
-    expect(screen.queryByText('product-task-broken')).toBeNull()
-    expect(screen.queryByText('removed-mode')).toBeNull()
-  })
-
-  it('refreshes a newly selected composition after an older roster read settles', async () => {
-    const { load, store } = renderLabel({ blank: false, projectionValues: { agentPreset: 'new-snapshot' } }, {
-      status: 'loading',
-    })
-    expect(load).not.toHaveBeenCalled()
-    await act(async () => {
-      store.set({ ...store.getSnapshot(), status: 'ready' })
-    })
-    expect(load).toHaveBeenCalledTimes(1)
-    await act(async () => {
-      store.set({ ...store.getSnapshot(), presets: [
-        ...ROSTER_READY.presets,
-        { id: 'new-snapshot', isDefault: false, selectable: false, defaultable: false, selectionBase: 'standard' },
-      ] })
-    })
-
-    expect(screen.getByTitle(en.presetStandardDescription).textContent).toBe(en.presetStandardName)
-    expect(load).toHaveBeenCalledTimes(1)
-  })
-
-  it('labels an unnamed hidden composition as unavailable without choosing a base', () => {
-    renderLabel({ blank: false, projectionValues: { agentPreset: 'product-task-damaged' } }, {
-      presets: [
-        ...ROSTER_READY.presets,
-        { id: 'product-task-damaged', isDefault: false, selectable: false, defaultable: false },
-      ],
-    })
-
-    expect(screen.getByTitle(en.headerHint).textContent).toBe(en.compositionUnavailable)
-    expect(screen.queryByText('product-task-damaged')).toBeNull()
-    expect(screen.queryByText(en.presetStandardName)).toBeNull()
-  })
-
-  it('shows the selectable base of a hidden execution snapshot', () => {
-    renderLabel({ blank: false, projectionValues: { agentPreset: 'product-task-fixed' } }, {
-      presets: [
-        ...ROSTER_READY.presets,
-        { id: 'product-task-fixed', isDefault: false, selectable: false, defaultable: false, selectionBase: 'standard' },
-      ],
-    })
-
-    expect(screen.getByTitle(en.presetStandardDescription).textContent).toBe(en.presetStandardName)
-    expect(screen.queryByText('product-task-fixed')).toBeNull()
-    expect(screen.queryByRole('button')).toBeNull()
-  })
-
   it('names the preset the session runs, and never offers a switch', async () => {
     const { load } = renderLabel({
       blank: false,
@@ -498,14 +400,15 @@ describe('the session-header label', () => {
     expect(screen.getByTitle(en.headerHint).textContent).toBe('mine')
   })
 
-  it('shows an unavailable label until the roster resolves the recorded identity', () => {
+  it('shows the id until the roster resolves it', () => {
     renderLabel({
       blank: false,
       projectionValues: { agentPreset: 'standard' },
     }, { options: [] })
 
-    expect(screen.getByTitle(en.headerHint).textContent).toBe(en.compositionUnavailable)
-    expect(screen.queryByText('standard')).toBeNull()
+    // The session's own summary is the authority on which preset it runs; the
+    // roster only supplies the display name, and its arrival is a later frame.
+    expect(screen.getByTitle(en.headerHint).textContent).toBe('standard')
   })
 
   it('renders nothing, and reads no roster, when the session records no preset', async () => {

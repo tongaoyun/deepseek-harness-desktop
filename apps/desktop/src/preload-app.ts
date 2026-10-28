@@ -9,12 +9,23 @@ import { syncNativeTheme } from './preload-theme.ts'
 import { syncWindowsAppearance } from './preload-windows.ts'
 import { installMandatoryUpdateOverlay } from './preload-mandatory-overlay.ts'
 import { createDesktopBrowserBridge } from './preload-browser.ts'
-import { invokeExtension } from './extension-transport.ts'
+import type { FileDragHandle } from '@deepseek-ai/dsh-util-file-drag'
 
 function createProductApi(): DshDesktopProductApi {
   return {
     protocolVersion: 1,
     browser: createDesktopBrowserBridge(),
+    fileDrag: {
+      prepare: (source, requestId) => ipcRenderer.invoke(DESKTOP_IPC.fileDragPrepare, source, requestId) as
+        Promise<FileDragHandle | undefined>,
+      cancel: (requestId) => { void ipcRenderer.invoke(DESKTOP_IPC.fileDragCancel, requestId).catch((_error: unknown) => {
+        // Main-process shutdown cancels any remaining preparations.
+      }) },
+      start: handle => ipcRenderer.invoke(DESKTOP_IPC.fileDragStart, handle) as Promise<boolean>,
+      release: (handle) => { void ipcRenderer.invoke(DESKTOP_IPC.fileDragRelease, handle).catch((_error: unknown) => {
+        // Main-process shutdown also releases every prepared file.
+      }) },
+    },
     deviceInfo: () => ipcRenderer.invoke(DESKTOP_IPC.deviceInfo) as Promise<string>,
     keyboard: {
       closeWindow: revision => ipcRenderer.invoke(DESKTOP_IPC.shortcutsCloseWindow, revision) as Promise<void>,
@@ -50,24 +61,10 @@ function createProductApi(): DshDesktopProductApi {
     updates: {
       status: () => ipcRenderer.invoke(DESKTOP_IPC.updatesStatus) as Promise<DesktopUpdatePresentation>,
       open: () => ipcRenderer.invoke(DESKTOP_IPC.updatesOpen) as Promise<void>,
-      check: () => ipcRenderer.invoke(DESKTOP_IPC.updatesCheck) as Promise<void>,
       subscribe(listener) {
         const handle = (_event: Electron.IpcRendererEvent, state: DesktopUpdatePresentation): void => { listener(state) }
         ipcRenderer.on(DESKTOP_IPC.updatesPresentation, handle)
         return () => { ipcRenderer.off(DESKTOP_IPC.updatesPresentation, handle) }
-      },
-    },
-    extensions: {
-      invoke: (namespace, method, payload, requestId, timeoutMs) =>
-        invokeExtension((source, operation, input, id) => ipcRenderer.invoke(DESKTOP_IPC.extensionInvoke, source, operation, input, id),
-          (source, id) => { ipcRenderer.send(DESKTOP_IPC.extensionCancel, source, id) }, namespace, method, payload, requestId, timeoutMs),
-      cancel: (namespace, requestId) => { ipcRenderer.send(DESKTOP_IPC.extensionCancel, namespace, requestId) },
-      subscribe(namespace, listener) {
-        const handle = (_event: Electron.IpcRendererEvent, source: string, event: unknown): void => {
-          if (source === namespace) listener(event)
-        }
-        ipcRenderer.on(DESKTOP_IPC.extensionEvent, handle)
-        return () => { ipcRenderer.off(DESKTOP_IPC.extensionEvent, handle) }
       },
     },
   }
@@ -112,13 +109,7 @@ markDocumentPlatform()
 syncWindowFullscreen()
 syncNativeTheme()
 // Main-process IPC also verifies the owning window and top frame.
-const ownedApplication = location.protocol === `${SCHEME}:` && location.hostname === 'app' && process.isMainFrame
-if (ownedApplication) {
-  const productApi = createProductApi()
-  contextBridge.exposeInMainWorld('dshDesktop', productApi)
-} else {
-  contextBridge.exposeInMainWorld('dshDesktop', { protocolVersion: 1 })
-}
+contextBridge.exposeInMainWorld('dshDesktop', location.protocol === `${SCHEME}:` && location.hostname === 'app' && process.isMainFrame ? createProductApi() : { protocolVersion: 1 })
 
 if (location.protocol === `${SCHEME}:` && location.hostname === 'app') {
   contextBridge.exposeInMainWorld('__DSH_LOCALE__', {

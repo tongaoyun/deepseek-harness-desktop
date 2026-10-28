@@ -4,7 +4,6 @@ import { afterEach, expect, it, vi } from 'vitest'
 import { allowAllAccess, bindSnapshotSelector } from '@deepseek-ai/dsh-client-test-runtime'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import { Modal } from '@deepseek-ai/dsh-client-ui-primitives'
-import type { AgentPresetRow } from '@deepseek-ai/dsh-agent-preset-registry/types'
 import { AgentPresetSection, type AgentPresetSectionProps } from '../src/client/AgentPresetSection.tsx'
 import type { AgentPresetSectionState } from '../src/client/section-store.ts'
 import { en } from '../src/client/locales.ts'
@@ -13,16 +12,11 @@ const translations: ReadonlyMap<string, string> = new Map(Object.entries(en))
 function unusedHook(): never {
   throw new Error('This section does not read global slot sources')
 }
-type RowInput = Omit<AgentPresetRow, 'selectable' | 'defaultable'>
-  & Partial<Pick<AgentPresetRow, 'selectable' | 'defaultable'>>
-type ViewInput = Omit<Partial<AgentPresetSectionState>, 'rows'> & { rows?: readonly RowInput[] }
-const completeRow = (row: RowInput): AgentPresetRow => ({ selectable: true, defaultable: true, ...row })
-
-function view(partial: ViewInput = {}, startCreatorDraft?: () => void, outerClose?: () => void, enabled = true) {
-  const { rows = [{ id: 'standard', isDefault: true }, { id: 'mine', name: 'Mine', isDefault: false }], ...rest } = partial
+function view(partial: Partial<AgentPresetSectionState> = {}, startCreatorDraft?: () => void, outerClose?: () => void, enabled = true) {
   const developerTools = createSnapshotStore(enabled)
   const store = createSnapshotStore<AgentPresetSectionState>({ status: 'ready', error: null,
-    saving: false, rows: rows.map(completeRow), view: null, ...rest })
+    saving: false, rows: [{ id: 'standard', isDefault: true }, { id: 'mine', name: 'Mine', isDefault: false }],
+    view: null, ...partial })
   const actions = { load: vi.fn(async () => {}), view: vi.fn(async () => {}), closeView: vi.fn(), makeDefault: vi.fn(async () => {}),
     close: vi.fn() }
   const props: AgentPresetSectionProps = { ...actions,
@@ -293,7 +287,7 @@ it.each([false, true])('only offers a description tooltip when the card clips it
   const disconnect = vi.spyOn(ResizeObserver.prototype, 'disconnect')
   vi.useFakeTimers()
   view({ rows: [{ id: 'mine', isDefault: false, description: 'Preset description' }] })
-  fireEvent.mouseEnter(screen.getByText('Preset description'))
+  fireEvent.pointerEnter(screen.getByText('Preset description'))
   act(() => { vi.advanceTimersByTime(400) })
   expect(screen.queryByRole('tooltip')?.textContent ?? null).toBe(overflow ? 'Preset description' : null)
   cleanup()

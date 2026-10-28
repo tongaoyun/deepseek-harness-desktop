@@ -5,17 +5,13 @@ import type { ConfigFormSnapshot } from '@deepseek-ai/dsh-client-ui-settings/cli
 import type { AgentPresetRow } from '@deepseek-ai/dsh-agent-preset-registry/types'
 import { en } from '../src/client/locales.ts'
 
-type RowInput = Omit<AgentPresetRow, 'selectable' | 'defaultable'>
-  & Partial<Pick<AgentPresetRow, 'selectable' | 'defaultable'>>
-const completeRow = (row: RowInput): AgentPresetRow => ({ selectable: true, defaultable: true, ...row })
-
 function fixture() {
   const form = createSnapshotStore<ConfigFormSnapshot<{ selectedDefault: string }>>({
     status: 'ready', writable: true, revision: 7, value: { selectedDefault: 'minimal' }, base: {}, user: {},
   })
   const remote = { agentPresets: {
     list: vi.fn(async (): Promise<{ ok: true; value: { presets: AgentPresetRow[] } }> => ({
-      ok: true, value: { presets: [completeRow({ id: 'standard', isDefault: true })] },
+      ok: true, value: { presets: [{ id: 'standard', isDefault: true }] },
     })),
     read: vi.fn(async (id: string) => ({ ok: true as const, value: { agentPreset: id, name: 'Standard', content: '- name: fs\n' } })),
   }, settings: {
@@ -28,18 +24,6 @@ function fixture() {
 }
 
 describe('the preset roster', () => {
-  it('does not show historical snapshots in the new-session management roster', async () => {
-    const { controller, remote, state } = fixture()
-    remote.agentPresets.list.mockResolvedValueOnce({ ok: true, value: { presets: [
-      { id: 'standard', isDefault: true, selectable: true, defaultable: true },
-      { id: 'historical', isDefault: false, selectable: false, defaultable: false },
-    ] } } as never)
-
-    await controller.load()
-
-    expect(state().rows.map(row => row.id)).toEqual(['standard'])
-  })
-
   it('reads the roster once for simultaneous loads and surfaces failed reads', async () => {
     const { controller, remote, state } = fixture()
     await Promise.all([controller.load(), controller.load()])
@@ -120,7 +104,7 @@ describe('the preset roster', () => {
   it('skips blank-session synchronization when the roster marks no default', async () => {
     const { controller, remote } = fixture()
     const sync = vi.fn(async () => undefined)
-    remote.agentPresets.list.mockResolvedValueOnce({ ok: true, value: { presets: [completeRow({ id: 'standard', isDefault: false })] } })
+    remote.agentPresets.list.mockResolvedValueOnce({ ok: true, value: { presets: [{ id: 'standard', isDefault: false }] } })
 
     await controller.makeDefault('standard', sync)
 
@@ -135,13 +119,13 @@ describe('Coding Tools default reconciliation', () => {
     let rows: AgentPresetRow[] = [
       { id: 'standard', isDefault: defaultId === 'standard' },
       ...(defaultId === 'standard' ? [] : [{ id: defaultId, isDefault: true, ...(name === undefined ? {} : { name }) }]),
-    ].map(completeRow)
+    ]
     f.remote.agentPresets.list.mockImplementation(async () => ({ ok: true, value: { presets: rows } }))
     f.remote.settings.update.mockImplementation(async (_ns, patch) => {
       rows = rows.map(row => ({ ...row, isDefault: row.id === patch.selectedDefault }))
       return { ok: true, value: {} }
     })
-    return { ...f, rows: () => rows, setRows: (next: RowInput[]) => { rows = next.map(completeRow) } }
+    return { ...f, rows: () => rows, setRows: (next: AgentPresetRow[]) => { rows = next } }
   }
 
   it.each(['ptc', 'minimal'])('saves Standard instead of built-in %s with the accepted revision', async (id) => {

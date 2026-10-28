@@ -9,7 +9,6 @@ import { existsSync, readFileSync, readdirSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { JSON_SCHEMA, load } from 'js-yaml'
 import { fromMarkdown } from 'mdast-util-from-markdown'
-import { markdownValidationSource } from './markdown.ts'
 
 const ROOT = resolve(import.meta.dirname, '..')
 const GUIDE_ROOT = 'docs/upgrade-guide'
@@ -69,10 +68,7 @@ export function collectUpgradeGuideViolations(root: string): string[] {
       continue
     }
     if (name === 'guide.md' || name === 'guide.zh.md') {
-      const source = readFileSync(join(directory, file), 'utf8')
-      for (const violation of guideViolations(name === 'guide.md' ? markdownValidationSource(source) : source, LANGUAGES[name])) {
-        violations.push(`${path}: ${violation}`)
-      }
+      for (const violation of guideViolations(readFileSync(join(directory, file), 'utf8'), LANGUAGES[name])) violations.push(`${path}: ${violation}`)
     }
   }
   return violations

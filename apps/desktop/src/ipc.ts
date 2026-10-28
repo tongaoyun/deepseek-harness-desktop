@@ -3,7 +3,7 @@
 import type { DesktopKeyboardApi, DesktopShortcutsApi } from '@deepseek-ai/dsh-client-shortcuts/protocol'
 import type { IpcMainInvokeEvent } from 'electron'
 import type { DesktopBrowserBridge } from '@deepseek-ai/dsh-client-ui-sidebar-browser/types'
-import type { ExtensionResponse } from './extension-errors.ts'
+import type { DesktopFileDrag } from '@deepseek-ai/dsh-util-file-drag'
 
 /** IPC channel names kept private to the desktop application bundle. */
 export const DESKTOP_IPC = {
@@ -22,27 +22,27 @@ export const DESKTOP_IPC = {
   browserRelease: 'dsh-desktop:browser-release',
   browserOpenRequested: 'dsh-desktop:browser-open-requested',
   directoryPick: 'dsh-desktop:directory-pick',
+  fileDragPrepare: 'dsh-desktop:file-drag-prepare',
+  fileDragCancel: 'dsh-desktop:file-drag-cancel',
+  fileDragStart: 'dsh-desktop:file-drag-start',
+  fileDragRelease: 'dsh-desktop:file-drag-release',
   deviceInfo: 'dsh-desktop:device-info',
   localeBootstrap: 'dsh-desktop:locale-bootstrap',
   localeChanged: 'dsh-desktop:locale-changed',
   updatesStatus: 'dsh-desktop:updates-status',
   updatesOpen: 'dsh-desktop:updates-open',
-  updatesCheck: 'dsh-desktop:updates-check',
   updatesPresentation: 'dsh-desktop:updates-presentation',
   nativeThemeSet: 'dsh-desktop:native-theme-set',
   windowFullscreen: 'dsh-desktop:window-fullscreen',
   windowsAppearance: 'dsh-desktop:windows-appearance',
   windowsMenu: 'dsh-desktop:windows-menu',
-  extensionInvoke: 'dsh-desktop:extension-invoke',
-  extensionCancel: 'dsh-desktop:extension-cancel',
-  extensionEvent: 'dsh-desktop:extension-event',
 } as const
 
 /** Desktop release update state rendered by desktop-owned UI. */
-export type DesktopUpdatePreparationFailureKind = 'stop-failed' | 'tasks-changed' | 'tasks-unavailable'
+export type DesktopUpdatePreparationFailureKind = 'stop-failed' | 'tasks-changed' | 'tasks-unavailable' | 'fullscreen-timeout'
 
 export interface DesktopUpdateState {
-  readonly phase: 'idle' | 'unavailable' | 'checking' | 'available' | 'downloading' | 'verifying' | 'installing' | 'ready' | 'error'
+  readonly phase: 'idle' | 'checking' | 'available' | 'downloading' | 'verifying' | 'installing' | 'ready' | 'error'
   readonly version?: string
   readonly message?: string
   /** Main-owned diagnostics without subprocess output or credentials; hidden until expanded. */
@@ -64,6 +64,7 @@ export type DesktopUpdateFailureKind =
   | 'stop-failed'
   | 'tasks-changed'
   | 'tasks-unavailable'
+  | 'fullscreen-timeout'
 
 /** Semantic status content; actions open main-process confirmation dialogs only. */
 export interface DesktopUpdatePresentation {
@@ -77,6 +78,7 @@ export interface DesktopUpdatePresentation {
 export interface DshDesktopProductApi {
   readonly protocolVersion: 1
   readonly browser: DesktopBrowserBridge
+  readonly fileDrag: DesktopFileDrag
   readonly keyboard: DesktopKeyboardApi
   readonly shortcuts: DesktopShortcutsApi
   /**
@@ -87,14 +89,7 @@ export interface DshDesktopProductApi {
   readonly updates: {
     status(): Promise<DesktopUpdatePresentation>
     open(): Promise<void>
-    /** Check release metadata and request download approval before any transfer. */
-    check(): Promise<void>
     subscribe(listener: (state: DesktopUpdatePresentation) => void): () => void
-  }
-  readonly extensions: {
-    invoke(namespace: string, method: string, payload?: unknown, requestId?: string, timeoutMs?: number): Promise<ExtensionResponse>
-    cancel(namespace: string, requestId: string): void
-    subscribe(namespace: string, listener: (event: unknown) => void): () => void
   }
 }
 

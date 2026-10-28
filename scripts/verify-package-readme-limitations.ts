@@ -8,7 +8,7 @@
 
 import { existsSync, globSync, readFileSync } from 'node:fs'
 import { resolve, sep } from 'node:path'
-import { markdownHeadingLines, markdownProseLines, markdownValidationSource, parseMarkdown } from './markdown.ts'
+import { markdownHeadingLines, markdownProseLines, parseMarkdown } from './markdown.ts'
 
 const root = resolve(import.meta.dirname, '..')
 
@@ -50,7 +50,7 @@ for (const pkg of scannedPackages) {
     failures.push(`${readme}: package manifest has no sibling README with the \`${CANONICAL}\` section`)
     continue
   }
-  const source = markdownValidationSource(readFileSync(resolve(root, readme), 'utf8'))
+  const source = readFileSync(resolve(root, readme), 'utf8')
   const tree = parseMarkdown(source)
   const lines = markdownProseLines(source, tree)
   const headings = markdownHeadingLines(source, tree)

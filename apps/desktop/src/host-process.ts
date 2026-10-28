@@ -1,11 +1,11 @@
 /** Electron Node-mode child lifecycle for the shared Web application. */
 
-import { extensionFailure, extensionError, isExtensionFailure, type ExtensionFailure } from './extension-errors.ts'
 import { spawn, type ChildProcess } from 'node:child_process'
-import { realpathSync } from 'node:fs'
-import { basename, dirname, join } from 'node:path'
+import { join } from 'node:path'
+import { z } from 'zod'
 import type { PlatformSession } from '@deepseek-ai/dsh-deepseek-account'
 import { desktopNodeEnvironment } from './node-environment.ts'
+import { parsePluginOperationRecord, type PluginOperationRecord, type PluginOperationRunId } from '@deepseek-ai/dsh-plugin-manager/diagnostic'
 
 interface ReadyEvent {
   readonly type: 'ready'
@@ -25,20 +25,15 @@ interface PlatformSessionEvent {
   readonly session: PlatformSession | null
 }
 
-interface ExtensionInvokeEvent {
-  readonly type: 'extension-invoke'
-  readonly requestId: string
-  readonly namespace: string
-  readonly method: string
-  readonly payload?: unknown
-}
-
-interface ExtensionCancelEvent {
-  readonly type: 'extension-cancel'
-  readonly requestId: string
-}
-
-type DesktopHostEvent = ReadyEvent | FatalEvent | PlatformSessionEvent | ExtensionInvokeEvent | ExtensionCancelEvent | { readonly type: 'shutdown-complete' } | {
+type DesktopHostEvent = ReadyEvent | FatalEvent | PlatformSessionEvent | {
+  readonly type: 'starting'
+  readonly runId: PluginOperationRunId
+} | { readonly type: 'shutdown-complete' } | {
+  readonly type: 'file-drag-resource'
+  readonly requestId: number
+  readonly resource: { readonly path: string; readonly sha256: string; readonly size: number } | null
+  readonly error?: string
+} | {
   readonly type: 'update-tasks'
   readonly requestId: number
   readonly active: boolean
@@ -48,17 +43,6 @@ type DesktopHostEvent = ReadyEvent | FatalEvent | PlatformSessionEvent | Extensi
   readonly requestId: number
   readonly activeTasks: boolean
   readonly scheduledTasks: boolean
-  readonly error?: string
-} | {
-  readonly type: 'index-injections'
-  readonly requestId: number
-  readonly injections: readonly unknown[]
-  readonly error?: string
-} | {
-  readonly type: 'extension-control'
-  readonly failure?: ExtensionFailure
-  readonly requestId: number
-  readonly result?: unknown
   readonly error?: string
 }
 
@@ -74,15 +58,15 @@ export interface DesktopQuitInspection {
 /** Quit inspection deadline; a slower Host counts as unknown work and the shell asks before quitting. */
 export const QUIT_INSPECTION_DEADLINE_MS = 2_000
 
-/** Boot injection requests fail instead of returning a stale module graph. */
-export const INDEX_INJECTIONS_DEADLINE_MS = 10_000
-
 const MAX_HOST_DIAGNOSTIC_CHARS = 64 * 1024
+const runIdSchema = z.uuid()
 
 function isDesktopHostEvent(message: unknown): message is DesktopHostEvent {
   if (typeof message !== 'object' || message === null || !('type' in message)) return false
   const candidate = message as Record<string, unknown>
   switch (candidate.type) {
+    case 'starting':
+      return runIdSchema.safeParse(candidate.runId).success
     case 'shutdown-complete':
       return true
     case 'ready':
@@ -106,26 +90,21 @@ function isDesktopHostEvent(message: unknown): message is DesktopHostEvent {
           && (url.protocol === 'https:' || (url.protocol === 'http:' && ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname)))
       } catch { return false }
     }
-    case 'extension-invoke':
-      return typeof candidate.requestId === 'string' && candidate.requestId.length >= 8
-        && candidate.requestId.length <= 128 && typeof candidate.method === 'string'
-        && typeof candidate.namespace === 'string' && /^[a-z][a-z0-9-]{0,63}$/.test(candidate.namespace)
-    case 'extension-cancel':
-      return typeof candidate.requestId === 'string' && candidate.requestId.length >= 8
-        && candidate.requestId.length <= 128
     case 'fatal':
       return typeof candidate.message === 'string' && (candidate.diagnostic === undefined || typeof candidate.diagnostic === 'string')
     case 'update-tasks':
       return Number.isSafeInteger(candidate.requestId) && typeof candidate.active === 'boolean'
         && (candidate.error === undefined || typeof candidate.error === 'string')
+    case 'file-drag-resource': {
+      const resource = candidate.resource
+      return Number.isSafeInteger(candidate.requestId) && (candidate.error === undefined || typeof candidate.error === 'string')
+        && (resource === null || (typeof resource === 'object' && 'path' in resource && typeof resource.path === 'string'
+          && 'sha256' in resource && typeof resource.sha256 === 'string' && /^[a-f0-9]{64}$/u.test(resource.sha256)
+          && 'size' in resource && typeof resource.size === 'number' && Number.isSafeInteger(resource.size) && resource.size >= 0))
+    }
     case 'quit-inspection':
       return Number.isSafeInteger(candidate.requestId) && typeof candidate.activeTasks === 'boolean'
         && typeof candidate.scheduledTasks === 'boolean' && (candidate.error === undefined || typeof candidate.error === 'string')
-    case 'index-injections':
-      return Number.isSafeInteger(candidate.requestId) && Array.isArray(candidate.injections)
-        && (candidate.error === undefined || typeof candidate.error === 'string')
-    case 'extension-control':
-      return Number.isSafeInteger(candidate.requestId) && (candidate.error === undefined || typeof candidate.error === 'string')
     default:
       return false
   }
@@ -177,6 +156,7 @@ export class DesktopHostFatalError extends Error {
 
 /** One Web backend running under the Electron executable in Node mode. */
 export class DesktopHostProcess {
+  private runId: PluginOperationRunId | undefined
   private child: ChildProcess | undefined
   private readyResolve!: (ready: DesktopHostReady) => void
   private readyReject!: (error: Error) => void
@@ -194,7 +174,6 @@ export class DesktopHostProcess {
     resolve: (response: DesktopHostControlResponse) => void
     reject: (error: Error) => void
   }>()
-  private readonly extensionRequests = new Map<string, AbortController>()
 
   /**
    * @param node - Absolute Electron executable in Node mode.
@@ -207,6 +186,7 @@ export class DesktopHostProcess {
    *   `office-skills` resources fail Host startup.
    * @param packageManager - Bundled pnpm entry and Node launcher directory, scoped to package operations.
    * @param onPlatformSession - Private credential updates for embedded Platform views.
+   * @param onPluginOperation - Optional diagnostic sink; malformed records are ignored without failing the Host.
    */
   constructor(
     private readonly node: string,
@@ -219,7 +199,7 @@ export class DesktopHostProcess {
     private readonly packageManager?: { readonly pnpm: string; readonly nodeBin: string },
 
     private readonly onPlatformSession?: (session: PlatformSession | null) => void,
-    private readonly onExtensionInvoke?: (namespace: string, method: string, payload: unknown, signal: AbortSignal) => Promise<unknown>,
+    private readonly onPluginOperation?: (record: PluginOperationRecord) => void,
   ) {}
 
   /**
@@ -228,19 +208,14 @@ export class DesktopHostProcess {
    */
   async start(): Promise<DesktopHostReady> {
     if (this.child !== undefined) return this.readyPromise
-    // Profile resolution uses native real paths; the initial module imports must use the same archive identity.
-    const parent = dirname(this.runtimeDir)
-    const runtimeDir = basename(parent) === 'app.asar'
-      ? join(realpathSync.native(parent), basename(this.runtimeDir))
-      : realpathSync.native(this.runtimeDir)
-    const entry = join(runtimeDir, 'node_modules', '@deepseek-ai', 'dsh-desktop-host', 'lib', 'index.js')
+    const entry = join(this.runtimeDir, 'node_modules', '@deepseek-ai', 'dsh-desktop-host', 'lib', 'index.js')
     const child = spawn(this.node, [
       '--expose-internals',
       ...(this.inspectPort === undefined ? [] : [`--inspect=127.0.0.1:${String(this.inspectPort)}`]),
       entry,
-      runtimeDir,
+      this.runtimeDir,
       this.projectDir,
-      this.primaryRuntime ?? join(runtimeDir, '..', 'runtime', 'primary-runtime'),
+      this.primaryRuntime ?? join(this.runtimeDir, '..', 'runtime', 'primary-runtime'),
       ...this.packageManager === undefined ? [] : [this.packageManager.pnpm, this.packageManager.nodeBin],
     ], {
       cwd: this.projectDir,
@@ -252,33 +227,25 @@ export class DesktopHostProcess {
     child.stderr?.on('data', (chunk: string) => { this.stderr = (this.stderr + chunk).slice(-MAX_HOST_DIAGNOSTIC_CHARS) })
     child.stdout?.pipe(process.stdout)
     child.on('message', (message: unknown) => {
+      if (typeof message === 'object' && message !== null && 'type' in message && message.type === 'plugin-operation') {
+        const record = 'record' in message ? parsePluginOperationRecord(message.record) : undefined
+        if (record !== undefined && record.runId === this.runId) {
+          try { this.onPluginOperation?.(record) }
+          catch (_error) {
+            // Diagnostic persistence cannot invalidate the Host's business IPC channel.
+            console.error('desktop plugin operation diagnostic sink failed')
+          }
+        }
+        return
+      }
       if (!isDesktopHostEvent(message)) {
         this.fail(new Error('dsh desktop host sent an invalid IPC event'))
         child.kill('SIGTERM')
         return
       }
-      if (message.type === 'ready') this.readyResolve({ url: message.url, injections: message.injections })
+      if (message.type === 'starting') this.runId = message.runId
+      else if (message.type === 'ready') this.readyResolve({ url: message.url, injections: message.injections })
       else if (message.type === 'platform-session') this.onPlatformSession?.(message.session)
-      else if (message.type === 'extension-invoke') {
-        const controller = new AbortController()
-        this.extensionRequests.set(message.requestId, controller)
-        const answer = async (): Promise<void> => {
-          if (this.onExtensionInvoke === undefined) throw new Error('desktop extension bridge is unavailable')
-          const result = await this.onExtensionInvoke(message.namespace, message.method, message.payload, controller.signal)
-          await new Promise<void>((resolve, reject) => {
-            child.send({ type: 'extension-result', requestId: message.requestId, result }, (error) => {
-              if (error === null) resolve()
-              else reject(error)
-            })
-          })
-        }
-        void answer().catch((error: unknown) => {
-          if (!child.connected) return
-          child.send({ type: 'extension-result', requestId: message.requestId,
-            error: `desktop extension operation failed: ${message.method}`, failure: extensionFailure(error) })
-        }).finally(() => { this.extensionRequests.delete(message.requestId) })
-      }
-      else if (message.type === 'extension-cancel') this.extensionRequests.get(message.requestId)?.abort()
       else if (message.type === 'shutdown-complete') {
         if (this.stopping) this.shutdownCompleted = true
         else this.fail(new Error('dsh desktop host acknowledged an unrequested shutdown'))
@@ -287,8 +254,7 @@ export class DesktopHostProcess {
       else {
         const request = this.controlRequests.get(message.requestId)
         if (message.error === undefined) request?.resolve(message)
-        else request?.reject(message.type === 'extension-control' && isExtensionFailure(message.failure)
-          ? extensionError(message.failure) : new Error(message.error))
+        else request?.reject(new Error(message.error))
       }
     })
     child.once('error', (error) => { this.fail(error) })
@@ -310,7 +276,7 @@ export class DesktopHostProcess {
    * an unanswered drain fails at the control-request deadline without authorizing installation.
    */
   async updateTasks(action: 'inspect' | 'lock' | 'unlock'): Promise<boolean> {
-    const response = await this.control({ type: 'update-tasks', action }, 10_000, 'desktop update: task inspection timed out')
+    const response = await this.control({ type: 'update-tasks', action }, 10_000, 'desktop update: task inspection timed out', 'desktop update')
     if (response.type !== 'update-tasks') throw new Error('desktop update: Host answered with a different control response')
     return response.active
   }
@@ -321,68 +287,53 @@ export class DesktopHostProcess {
    * {@link QUIT_INSPECTION_DEADLINE_MS}, and the shell then asks before quitting.
    */
   async inspectQuit(): Promise<DesktopQuitInspection> {
-    const response = await this.control({ type: 'quit-inspection' }, QUIT_INSPECTION_DEADLINE_MS, 'desktop quit: inspection timed out')
+    const response = await this.control({ type: 'quit-inspection' }, QUIT_INSPECTION_DEADLINE_MS, 'desktop quit: inspection timed out', 'desktop quit')
     if (response.type !== 'quit-inspection') throw new Error('desktop quit: Host answered with a different control response')
     return { activeTasks: response.activeTasks, scheduledTasks: response.scheduledTasks }
   }
 
   /**
-   * Read the current Web module graph for one renderer boot or reload.
-   * @returns Current index injections; rejects if the Host is unavailable or misses the deadline.
+   * @param address - Session-scoped file reference.
+   * @param signal - preparation cancellation.
+   * @returns privately authorized local resource, or null when nonlocal.
    */
-  async readIndexInjections(): Promise<readonly unknown[]> {
-    const response = await this.control({ type: 'index-injections' }, INDEX_INJECTIONS_DEADLINE_MS,
-      'desktop boot: index injection request timed out')
-    if (response.type !== 'index-injections') throw new Error('desktop boot: Host answered with a different control response')
-    return response.injections
-  }
-
-  /** Invoke a configured extension through the correlated Host control channel.
-   * @param namespace - Configured extension namespace.
-   * @param method - Extension-owned operation name.
-   * @param payload - Operation input.
-   * @param signal - Optional caller cancellation.
-   * @param timeoutMs - Trusted caller deadline, 1 to 1800000 milliseconds; defaults to 60000.
-   * @returns Correlated extension result.
-   */
-  async requestExtension(namespace: string, method: string, payload?: unknown, signal?: AbortSignal, timeoutMs = 60_000): Promise<unknown> {
-    if (!Number.isInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 1_800_000) throw new Error('Invalid extension request timeout')
-    const response = await this.control({ type: 'extension-control', namespace, method, payload }, timeoutMs,
-      'desktop extension: preparation timed out', signal)
-    if (response.type !== 'extension-control') throw new Error('Unexpected extension response')
-    return response.result
+  async resolveDragResource(address: string, signal?: AbortSignal): Promise<
+    { readonly path: string; readonly sha256: string; readonly size: number } | null
+  > {
+    const response = await this.control({ type: 'file-drag-resource', address }, 12_000, 'File drag authorization timed out', 'file drag', signal)
+    if (response.type !== 'file-drag-resource') throw new Error('Host returned a different control response')
+    return response.resource
   }
 
   private async control(
-    request: { readonly type: 'update-tasks'; readonly action: 'inspect' | 'lock' | 'unlock' }
-      | { readonly type: 'quit-inspection' }
-      | { readonly type: 'index-injections' }
-      | { readonly type: 'extension-control'; readonly namespace: string; readonly method: string; readonly payload?: unknown },
-    deadlineMs: number, deadlineMessage: string, signal?: AbortSignal,
+    request: { readonly type: 'update-tasks'; readonly action: 'inspect' | 'lock' | 'unlock' } | { readonly type: 'quit-inspection' }
+      | { readonly type: 'file-drag-resource'; readonly address: string },
+    deadlineMs: number, deadlineMessage: string, operation: string, signal?: AbortSignal,
   ): Promise<DesktopHostControlResponse> {
-    signal?.throwIfAborted()
     const child = this.child
     if (child === undefined || !child.connected || this.failureReported || this.stopping) {
-      const owner = request.type === 'update-tasks' ? 'desktop update'
-        : request.type === 'quit-inspection' ? 'desktop quit'
-          : request.type === 'index-injections' ? 'desktop boot' : 'desktop extension'
-      throw new Error(`${owner}: Host is unavailable`)
+      throw new Error(`${operation}: Host is unavailable`)
     }
+    signal?.throwIfAborted()
     const requestId = this.nextControlId++
     let timer: ReturnType<typeof setTimeout> | undefined
-    let abort: (() => void) | undefined
+    const abort = (): void => {
+      if (request.type === 'file-drag-resource' && child.connected) child.send({ type: 'file-drag-cancel', requestId }, (_error) => {
+        // The request still rejects locally if the Host has disconnected.
+      })
+      const reason: unknown = signal?.reason
+      this.controlRequests.get(requestId)?.reject(reason instanceof Error ? reason : new Error(deadlineMessage))
+    }
     try {
       return await new Promise<DesktopHostControlResponse>((resolve, reject) => {
         this.controlRequests.set(requestId, { resolve, reject })
-        const cancel = () => { if (request.type === 'extension-control') child.send({ type: 'extension-control-cancel', namespace: request.namespace, requestId }) }
-        abort = () => { cancel(); reject(signal?.reason instanceof Error ? signal.reason : new Error('Desktop extension request cancelled')) }
+        timer = setTimeout(abort, deadlineMs)
         signal?.addEventListener('abort', abort, { once: true })
-        timer = setTimeout(() => { cancel(); reject(new Error(deadlineMessage)) }, deadlineMs)
         child.send({ ...request, requestId }, (error) => { if (error !== null) reject(error) })
       })
     } finally {
       clearTimeout(timer)
-      if (abort !== undefined) signal?.removeEventListener('abort', abort)
+      signal?.removeEventListener('abort', abort)
       this.controlRequests.delete(requestId)
     }
   }
@@ -416,8 +367,7 @@ export class DesktopHostProcess {
   }
 
   private fail(error: Error): void {
-    for (const controller of this.extensionRequests.values()) controller.abort()
-    this.extensionRequests.clear()
+    if (this.runId !== undefined) Object.assign(error, { hostRunId: this.runId })
     this.onPlatformSession?.(null)
     this.readyReject(error)
     for (const request of this.controlRequests.values()) request.reject(error)

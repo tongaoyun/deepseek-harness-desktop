@@ -213,43 +213,6 @@ it('imports reference chips on the first Hub shell and preserves them without an
   expect(b.hub.shellFor(b.binding).draftSnapshot).toEqual({ text: '', references: [] })
 })
 
-it('persists explicit semantic initialization before a view and restores it after Session release', async () => {
-  const b = await fixture('')
-  expect(b.hub.requestDraftInitialization(b.binding, { prompt: saved, clearPreviousDraft: true })).toBe('applied')
-  expect(JSON.parse(localStorage.getItem(b.key)!)).toEqual({ draft: saved, view: 'trajectory', viewRequest: null })
-  b.reference.release()
-  await vi.waitFor(() => {
-    expect(b.sessions.binding(b.id)).toBeUndefined()
-    expect(b.shell.requestDraftInitialization({ prompt: 'late write' })).toBe('blocked')
-  })
-  const reference = b.sessions.retain(b.id)
-  onTestFinished(() => { reference.release() })
-  await reference.ready
-  const restored = b.hub.shellFor(reference.binding)
-  expect(restored).not.toBe(b.shell)
-  expect(restored.draftSnapshot).toEqual(saved)
-  expect(restored.editor.getEditorState().read(() => $nodesOfType(ReferenceChipNode).length)).toBe(1)
-})
-
-it('keeps the persisted draft intact when initialization meets an in-flight submission', async () => {
-  const b = await fixture('unsent text')
-  const send = Promise.withResolvers<{ kind: 'success' }>()
-  b.ctx.provide('conversation', { sendSession: () => send.promise } as never)
-  b.shell.submit()
-  expect(b.hub.requestDraftInitialization(b.binding, { prompt: saved, clearPreviousDraft: true })).toBe('blocked')
-  expect(localStorage.getItem(b.key)).toBe(b.raw)
-  send.resolve({ kind: 'success' })
-})
-
-it('reports initialization persistence failure without changing the saved draft or View', async () => {
-  const b = await fixture('original')
-  const write = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new Error('storage is full') })
-  onTestFinished(() => { write.mockRestore() })
-  expect(() => b.hub.requestDraftInitialization(b.binding, { prompt: saved, clearPreviousDraft: true })).toThrow('storage is full')
-  expect(b.shell.draftSnapshot).toEqual({ text: 'original', references: [] })
-  expect(localStorage.getItem(b.key)).toBe(b.raw)
-})
-
 it('subscribes when a provider arrives and disconnects each withdrawn provider', async () => {
   const b = await fixture(saved)
   expect(b.shell.actions.insertText('/current', {

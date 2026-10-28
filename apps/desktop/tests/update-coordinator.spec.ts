@@ -47,7 +47,7 @@ describe('desktop release metadata', () => {
 const coordinators: InstanceType<typeof DesktopUpdateCoordinator>[] = []
 afterEach(() => { for (const item of coordinators.splice(0)) item.dispose() })
 
-function fixture(channel: 'nightly' | 'latest' = 'nightly', version = '1.1.0-alpha.1', enabled = true) {
+function fixture(channel: 'nightly' | 'latest' = 'nightly', version = '1.1.0-alpha.1') {
   const events = new EventEmitter()
   const checkForUpdates = vi.fn(async () => ({
     isUpdateAvailable: true,
@@ -66,31 +66,20 @@ function fixture(channel: 'nightly' | 'latest' = 'nightly', version = '1.1.0-alp
   const updater = Object.assign(events, { checkForUpdates, downloadUpdate, quitAndInstall }) as unknown as AppUpdater
   const coordinator = new DesktopUpdateCoordinator(
     (state) => { states.push(state); return state },
-    beforeRestart, updater, () => enabled, () => version, downloadResult, channel,
+    beforeRestart, updater, () => true, () => version, downloadResult, channel,
   )
   coordinators.push(coordinator)
   return { coordinator, updater, events, states, checkForUpdates, downloadUpdate, quitAndInstall, beforeRestart, downloadResult }
 }
 
 describe('desktop update coordinator', () => {
-  it('reports an unavailable update source without a network request or retryable failure', async () => {
-    const f = fixture('nightly', '1.1.0-alpha.1', false)
-    expect(await f.coordinator.check()).toEqual({ phase: 'unavailable' })
-    expect(await f.coordinator.check(true)).toEqual({ phase: 'unavailable' })
-    expect(f.coordinator.state).toEqual({ phase: 'unavailable' })
-    expect(f.states.every(state => state.phase === 'unavailable')).toBe(true)
-    expect(f.checkForUpdates).not.toHaveBeenCalled()
-    expect(f.downloadUpdate).not.toHaveBeenCalled()
-    expect(f.quitAndInstall).not.toHaveBeenCalled()
-  })
-
-  it('keeps safe preparation diagnostics separate and clears them on an explicit retry', async () => {
+  it.each(['stop-failed', 'fullscreen-timeout'] as const)('keeps safe %s diagnostics separate and clears them on an explicit retry', async (kind) => {
     const f = fixture()
     await f.coordinator.check()
     await f.coordinator.download('1.1.0-rc.2')
-    f.beforeRestart.mockRejectedValueOnce(new DesktopUpdatePreparationError('stop-failed', zh.updateStopFailed, 'exit 0; shutdown acknowledged false'))
+    f.beforeRestart.mockRejectedValueOnce(new DesktopUpdatePreparationError(kind, zh.updateStopFailed, 'exit 0; shutdown acknowledged false'))
     expect(await f.coordinator.install('1.1.0-rc.2')).toEqual({ phase: 'error', version: '1.1.0-rc.2',
-      failedOperation: 'install', preparationFailure: 'stop-failed', message: zh.updateStopFailed,
+      failedOperation: 'install', preparationFailure: kind, message: zh.updateStopFailed,
       technicalDetails: 'exit 0; shutdown acknowledged false' })
     expect(f.quitAndInstall).not.toHaveBeenCalled()
     f.beforeRestart.mockResolvedValueOnce(false)

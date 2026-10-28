@@ -130,7 +130,6 @@ export function ConversationContent(props: ConversationContentProps) {
         onClose: () => { setPickerOpen(false) },
       })}
       {renderSlot('conversation.hero.agentPreset', {})}
-      {renderSlot('conversation.hero.actions', {})}
       {sessionId === undefined ? null : <div className={css.heroOptions}>{renderSlot('conversation.hero.options', {})}</div>}
     </div>
   )

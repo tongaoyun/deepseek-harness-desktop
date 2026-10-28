@@ -23,7 +23,7 @@ export interface ProfileContext {
   readonly home: string
   /** Bundle packages used to start this process, before any persisted edits. */
   readonly startedBundles: readonly string[]
-  /** Parsed command-line overlays; default insertions precede profile edits, other patches follow home patches. */
+  /** Parsed command-line overlays, applied above profile and home patches. */
   readonly overlays: readonly PatchOptions[]
   /** Launch-time DSH_TELEMETRY_DISABLED value; any non-empty value opts out. */
   readonly telemetryDisabledEnv: string | undefined
@@ -54,17 +54,15 @@ export function resolveTelemetryPatch(disabledEnv: string | undefined, hasRow: b
   return { id: TELEMETRY_ROW_ID, disabled: true }
 }
 
-/** Read bundle patches and launcher default insertions, before the profile patch file.
+/** Read the selected bundles' patches, which apply before the profile patch file.
  * @param binName Diagnostic prefix for malformed or missing configuration.
  * @param context Data supplied by the profile launcher.
  * @param initialProfile Already loaded startup profile; omitted reads the current files.
- * @returns Bundle patches followed by launcher default insertions.
+ * @returns Bundle patches in application order.
  */
 export function readBundlePatches(binName: string, context: ProfileContext, initialProfile?: Profile): PatchOptions[] {
   const profile = initialProfile ?? loadProfileDirectory(binName, context.dir, context.installAnchor, { userLayer: false })
-  const defaults = context.overlays.filter(patch => patch.defaults === true)
-  if (defaults.some(patch => patch.insert === undefined)) throw new Error(`${binName}: default profile patches must insert entries`)
-  return [...profile.layers.flatMap(layer => layer.patches), ...defaults]
+  return profile.layers.flatMap(layer => layer.patches)
 }
 
 /** Read current bundle and user layers with the launch-time overlays.
@@ -78,7 +76,7 @@ export function readProfilePatches(binName: string, context: ProfileContext, ini
     ...readBundlePatches(binName, context, initialProfile),
     ...(initialProfile?.patches ?? loadOptionalPatches(binName, context.patchPath) ?? []),
     ...(loadOptionalPatches(binName, join(context.home, PROFILE_PATCH_FILENAME)) ?? []),
-    ...context.overlays.filter(patch => patch.defaults !== true),
+    ...context.overlays,
   ])
   const telemetryPatch = resolveTelemetryPatch(context.telemetryDisabledEnv,
     composeEntries([patches]).some(row => row.id === TELEMETRY_ROW_ID))
