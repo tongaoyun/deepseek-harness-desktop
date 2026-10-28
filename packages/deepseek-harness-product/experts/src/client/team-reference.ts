@@ -56,6 +56,10 @@ export async function insertTeamReference(target: ReferenceInsertionTarget | und
         setTimeout(() => {
             try {
                 const current = target.state.getSnapshot();
+                if (current.draftRev !== state.draftRev + 1) {
+                    target.notify?.('error', tx("示例追加失败，草稿已保留。"));
+                    return;
+                }
                 const text = expertDetectText(current);
                 if (!target.insertText?.(`\n\n${example}`, {
                     start: text.length,

@@ -486,7 +486,7 @@ index 870fa1c996ba569f882a7cb70e62f0bd655c64af..e4630a876520302e23235f1543bdece6
  
  | 包 | 职责 | `ctx` 键 |
 diff --git a/docs/config-catalog.md b/docs/config-catalog.md
-index 60484ba7953302ab8c0e47f86b203796862fdca7..4643758281bfcd8e44717d06f7baac0406278b8e 100644
+index 60484ba7953302ab8c0e47f86b203796862fdca7..665bde92f9d8774c1abbd14e786544a17cfe27be 100644
 --- a/docs/config-catalog.md
 +++ b/docs/config-catalog.md
 @@ -139,7 +139,7 @@ export type Config = PresetDefinition
@@ -525,6 +525,15 @@ index 60484ba7953302ab8c0e47f86b203796862fdca7..4643758281bfcd8e44717d06f7baac04
    toolCallTimeoutMs: number
    /** Fail plugin activation when the initial connection or tool synchronization fails. */
    failOnStartupError: boolean
+@@ -3065,7 +3065,7 @@ export interface Config {
+ 
+ ## `@deepseek-ai/dsh-skill`
+ 
+-- `source`: [`packages/skill/skill/src/index.ts:278`](../packages/skill/skill/src/index.ts)
++- `source`: [`packages/skill/skill/src/index.ts:279`](../packages/skill/skill/src/index.ts)
+ 
+ ```ts config-catalog
+ /** Skill registry configuration. */
 @@ -4583,6 +4583,57 @@ export interface Config {
  ```
  <!-- END GENERATED config-catalog:@deepseek-ai/dsh-workspace-changes -->
@@ -536,7 +545,7 @@ index 60484ba7953302ab8c0e47f86b203796862fdca7..4643758281bfcd8e44717d06f7baac04
 +
 +- `inject`: `tools` · `subagents` · `systemPrompt` · `settings` · `webServer`
 +- `refs`: `Volatile` (`@deepseek-ai/cordis`)
-+- `source`: [`packages/deepseek-harness-product/experts/src/index.ts:184`](../packages/deepseek-harness-product/experts/src/index.ts)
++- `source`: [`packages/deepseek-harness-product/experts/src/index.ts:188`](../packages/deepseek-harness-product/experts/src/index.ts)
 +
 +```ts config-catalog
 +/** Plugin config: the persona root, the subagent provider, and the divisions to scan. */
@@ -583,24 +592,24 @@ index 60484ba7953302ab8c0e47f86b203796862fdca7..4643758281bfcd8e44717d06f7baac04
  ## Loadable plugins with no config
  
  These load from a `cordis.yml` entry with no `config:` block; they declare no configuration API.
-@@ -4697,6 +4748,7 @@ These load from a `cordis.yml` entry with no `config:` block; they declare no co
+@@ -4697,6 +4748,8 @@ These load from a `cordis.yml` entry with no `config:` block; they declare no co
  | `@deepseek-ai/dsh-user-questions` | — | [`packages/interaction/user-questions/src/index.ts`](../packages/interaction/user-questions/src/index.ts) |
  | `@deepseek-ai/dsh-webhook` | `agents` · `agentDefaultModel` · `agentPresets` · `permissionPresets` · `sessionTitle` · `workspaceRegistry` | [`packages/experimental/webhook/src/index.ts`](../packages/experimental/webhook/src/index.ts) |
  | `@deepseek-ai/dsh-workspace` | `storageDomain` · `sessionPersistence` | [`packages/workspace/workspace/src/index.ts`](../packages/workspace/workspace/src/index.ts) |
++| `@deepseek-harness/product-skills` | `skills` · `tools` · `sessions` · `typert` | [`packages/deepseek-harness-product/skills/src/index.ts`](../packages/deepseek-harness-product/skills/src/index.ts) |
 +| `@deepseek-harness/product-ui` | — | [`packages/extensions/ui-deepseek-harness-product/src/index.ts`](../packages/extensions/ui-deepseek-harness-product/src/index.ts) |
  <!-- END GENERATED config-catalog:no-config -->
  
  ## Seam packages (not directly loadable)
-@@ -4798,4 +4850,7 @@ Imported as libraries by other packages; a `cordis.yml` cannot load them.
+@@ -4798,4 +4851,6 @@ Imported as libraries by other packages; a `cordis.yml` cannot load them.
  | `@deepseek-ai/dsh-util-values` | — | [`packages/util/values/src/index.ts`](../packages/util/values/src/index.ts) |
  | `@deepseek-ai/dsh-util-workspace-path` | — | [`packages/util/workspace-path/src/index.ts`](../packages/util/workspace-path/src/index.ts) |
  | `@deepseek-ai/dsh-win32-process` | — | [`packages/subprocess/win32-process/src/index.ts`](../packages/subprocess/win32-process/src/index.ts) |
 +| `@deepseek-harness/product` | — | [`packages/deepseek-harness-product/product/src/index.ts`](../packages/deepseek-harness-product/product/src/index.ts) |
 +| `@deepseek-harness/product-desktop` | — | [`packages/deepseek-harness-product/desktop/src/index.ts`](../packages/deepseek-harness-product/desktop/src/index.ts) |
-+| `@deepseek-harness/product-skills` | — | [`packages/deepseek-harness-product/skills/src/index.ts`](../packages/deepseek-harness-product/skills/src/index.ts) |
  <!-- END GENERATED config-catalog:library -->
 diff --git a/docs/config-catalog.zh.md b/docs/config-catalog.zh.md
-index 846065001058b837f0218fe1d72e3e74acf4ca33..05476724d73178f23f879ede8ea5624dbb2517b3 100644
+index 846065001058b837f0218fe1d72e3e74acf4ca33..f04a3544e2a2c009dc7af22ce1e11b14bfeb1964 100644
 --- a/docs/config-catalog.zh.md
 +++ b/docs/config-catalog.zh.md
 @@ -141,7 +141,7 @@ export type Config = PresetDefinition
@@ -639,6 +648,15 @@ index 846065001058b837f0218fe1d72e3e74acf4ca33..05476724d73178f23f879ede8ea5624d
    toolCallTimeoutMs: number
    /** Fail plugin activation when the initial connection or tool synchronization fails. */
    failOnStartupError: boolean
+@@ -3067,7 +3067,7 @@ export interface Config {
+ 
+ ## `@deepseek-ai/dsh-skill`
+ 
+-- `source`: [`packages/skill/skill/src/index.ts:278`](../packages/skill/skill/src/index.ts)
++- `source`: [`packages/skill/skill/src/index.ts:279`](../packages/skill/skill/src/index.ts)
+ 
+ ```ts config-catalog
+ /** Skill registry configuration. */
 @@ -4585,6 +4585,57 @@ export interface Config {
  ```
  <!-- END GENERATED config-catalog:@deepseek-ai/dsh-workspace-changes -->
@@ -650,7 +668,7 @@ index 846065001058b837f0218fe1d72e3e74acf4ca33..05476724d73178f23f879ede8ea5624d
 +
 +- `inject`: `tools` · `subagents` · `systemPrompt` · `settings` · `webServer`
 +- `refs`: `Volatile` (`@deepseek-ai/cordis`)
-+- `source`: [`packages/deepseek-harness-product/experts/src/index.ts:184`](../packages/deepseek-harness-product/experts/src/index.ts)
++- `source`: [`packages/deepseek-harness-product/experts/src/index.ts:188`](../packages/deepseek-harness-product/experts/src/index.ts)
 +
 +```ts config-catalog
 +/** Plugin config: the persona root, the subagent provider, and the divisions to scan. */
@@ -697,24 +715,24 @@ index 846065001058b837f0218fe1d72e3e74acf4ca33..05476724d73178f23f879ede8ea5624d
  ## 无配置的可加载插件
  
  这些插件通过 `cordis.yml` 中不含 `config:` 块的条目加载；它们未声明任何配置接口。
-@@ -4699,6 +4750,7 @@ export interface Config {
+@@ -4699,6 +4750,8 @@ export interface Config {
  | `@deepseek-ai/dsh-user-questions` | — | [`packages/interaction/user-questions/src/index.ts`](../packages/interaction/user-questions/src/index.ts) |
  | `@deepseek-ai/dsh-webhook` | `agents` · `agentDefaultModel` · `agentPresets` · `permissionPresets` · `sessionTitle` · `workspaceRegistry` | [`packages/experimental/webhook/src/index.ts`](../packages/experimental/webhook/src/index.ts) |
  | `@deepseek-ai/dsh-workspace` | `storageDomain` · `sessionPersistence` | [`packages/workspace/workspace/src/index.ts`](../packages/workspace/workspace/src/index.ts) |
++| `@deepseek-harness/product-skills` | `skills` · `tools` · `sessions` · `typert` | [`packages/deepseek-harness-product/skills/src/index.ts`](../packages/deepseek-harness-product/skills/src/index.ts) |
 +| `@deepseek-harness/product-ui` | — | [`packages/extensions/ui-deepseek-harness-product/src/index.ts`](../packages/extensions/ui-deepseek-harness-product/src/index.ts) |
  <!-- END GENERATED config-catalog:no-config -->
  
  ## Seam 包（不可直接加载）
-@@ -4800,4 +4852,7 @@ export interface Config {
+@@ -4800,4 +4853,6 @@ export interface Config {
  | `@deepseek-ai/dsh-util-values` | — | [`packages/util/values/src/index.ts`](../packages/util/values/src/index.ts) |
  | `@deepseek-ai/dsh-util-workspace-path` | — | [`packages/util/workspace-path/src/index.ts`](../packages/util/workspace-path/src/index.ts) |
  | `@deepseek-ai/dsh-win32-process` | — | [`packages/subprocess/win32-process/src/index.ts`](../packages/subprocess/win32-process/src/index.ts) |
 +| `@deepseek-harness/product` | — | [`packages/deepseek-harness-product/product/src/index.ts`](../packages/deepseek-harness-product/product/src/index.ts) |
 +| `@deepseek-harness/product-desktop` | — | [`packages/deepseek-harness-product/desktop/src/index.ts`](../packages/deepseek-harness-product/desktop/src/index.ts) |
-+| `@deepseek-harness/product-skills` | — | [`packages/deepseek-harness-product/skills/src/index.ts`](../packages/deepseek-harness-product/skills/src/index.ts) |
  <!-- END GENERATED config-catalog:library -->
 diff --git a/docs/event-producer-consumer.md b/docs/event-producer-consumer.md
-index 3d1bbaf9878f8f29970d693a4776eb5c1f985128..b7f6ed2623d20d5d472580642cd3390bf2577594 100644
+index 3d1bbaf9878f8f29970d693a4776eb5c1f985128..8a351ef979660ad7e9e9050a8587d1a1e7606430 100644
 --- a/docs/event-producer-consumer.md
 +++ b/docs/event-producer-consumer.md
 @@ -9,15 +9,16 @@ This matrix shows which packages dispatch each harness-owned event and which pac
@@ -738,6 +756,15 @@ index 3d1bbaf9878f8f29970d693a4776eb5c1f985128..b7f6ed2623d20d5d472580642cd3390b
  | `agent/request` | `waterfall` | [`packages/core/agent/src/runtime-types.ts:337`](../packages/core/agent/src/runtime-types.ts) | [`agent-loop`](../packages/core/agent-loop) (`waterfall`) | [`agent`](../packages/core/agent), [`webhook`](../packages/experimental/webhook) |
  | `agent/request-error` | `waterfall` | [`packages/core/agent/src/runtime-types.ts:353`](../packages/core/agent/src/runtime-types.ts) | [`agent-loop`](../packages/core/agent-loop) (`waterfall`) | [`compaction-basic`](../packages/compaction/compaction-basic), [`compaction-image-offload`](../packages/compaction/compaction-image-offload), [`llm-retry`](../packages/llm/llm-retry) |
  | `agent/status` | `emit` | [`packages/core/agent/src/runtime-types.ts:280`](../packages/core/agent/src/runtime-types.ts) | [`agent-loop`](../packages/core/agent-loop) (`emit`) | [`acp`](../packages/acp/acp), `agent-team`, [`compaction-basic`](../packages/compaction/compaction-basic), [`goal-round-driver`](../packages/goal/goal-round-driver), `server`, `session-controller` |
+@@ -67,7 +68,7 @@ This matrix shows which packages dispatch each harness-owned event and which pac
+ | `session/event` | `emit` | [`packages/core/session/src/index.ts:74`](../packages/core/session/src/index.ts) | [`session`](../packages/core/session) (`events.dispatch`) | [`acp`](../packages/acp/acp), [`agent-instructions`](../packages/context/agent-instructions), [`agent-loop`](../packages/core/agent-loop), [`agent-preset-registry`](../packages/preset/agent-preset-registry), `agent-team`, `claude-code-mods`, [`compaction-basic`](../packages/compaction/compaction-basic), [`file-reference-local`](../packages/context/file-reference-local), `file-upload`, [`goal`](../packages/goal/goal), [`goal-round-driver`](../packages/goal/goal-round-driver), [`headless`](../packages/bundle/headless), [`loader-smoke`](../packages/test-support/loader-smoke), `product-analytics`, [`ptc-runtime-node`](../packages/ptc-runtime/ptc-runtime-node), `server`, `session-controller`, [`session-persistence-jsonl`](../packages/session/session-persistence-jsonl), [`session-projection`](../packages/session/session-projection), [`session-projection-cache`](../packages/session/session-projection-cache), [`session-telemetry`](../packages/session/session-telemetry), [`session-telemetry-otel`](../packages/session/session-telemetry-otel), [`session-title`](../packages/session/session-title), [`subagent`](../packages/subagent/subagent), [`token-meter`](../packages/llm/token-meter), [`tools`](../packages/core/tools), [`user-questions`](../packages/interaction/user-questions), [`workspace-changes`](../packages/deliverables/workspace-changes) |
+ | `session/flush` | `parallel` | [`packages/core/session/src/index.ts:82`](../packages/core/session/src/index.ts) | [`session`](../packages/core/session) (`events.dispatch`) | [`session-persistence-jsonl`](../packages/session/session-persistence-jsonl), [`session-telemetry`](../packages/session/session-telemetry) |
+ | `settings/document-updated` | `emit` | [`packages/settings/settings/src/types.ts:75`](../packages/settings/settings/src/types.ts) | [`settings`](../packages/settings/settings) (`emit`) | `remotes` |
+-| `skills/change` | `emit` | [`packages/skill/skill/src/index.ts:296`](../packages/skill/skill/src/index.ts) | [`skill`](../packages/skill/skill) (`events.dispatch`) | - |
++| `skills/change` | `emit` | [`packages/skill/skill/src/types.ts:13`](../packages/skill/skill/src/types.ts) | [`skill`](../packages/skill/skill) (`events.dispatch`) | `remotes` |
+ | `subagent/end` | `emit` | [`packages/subagent/subagent/src/index.ts:166`](../packages/subagent/subagent/src/index.ts) | [`subagent`](../packages/subagent/subagent) (`events.dispatch`) | [`hooks-claude-code`](../packages/experimental/hooks-claude-code), `server` |
+ | `subagent/provider-added` | `emit` | [`packages/subagent/subagent/src/index.ts:142`](../packages/subagent/subagent/src/index.ts) | [`subagent`](../packages/subagent/subagent) (`emit`) | [`tool-subagent`](../packages/subagent/tool-subagent) |
+ | `subagent/provider-removed` | `emit` | [`packages/subagent/subagent/src/index.ts:148`](../packages/subagent/subagent/src/index.ts) | [`subagent`](../packages/subagent/subagent) (`events.dispatch`) | [`tool-subagent`](../packages/subagent/tool-subagent) |
 @@ -77,7 +78,7 @@ This matrix shows which packages dispatch each harness-owned event and which pac
  | `tools/change` | `emit` | [`packages/core/tools/src/index.ts:209`](../packages/core/tools/src/index.ts) | [`agent-preset-registry`](../packages/preset/agent-preset-registry) (`emit`), [`tools`](../packages/core/tools) (`emit`) | `browser-use-runtime`, [`tool-subagent`](../packages/subagent/tool-subagent) |
  | `tools/execute` | `waterfall` | [`packages/core/tools/src/index.ts:165`](../packages/core/tools/src/index.ts) | [`tools`](../packages/core/tools) (`waterfall`) | `browser-use-runtime`, `browser-use-stagehand-native`, `claude-code-mods`, `computer-use-cua-driver-native`, [`session-checkpoint-policy`](../packages/session/session-checkpoint-policy), `timeout-policy` |
@@ -757,7 +784,7 @@ index 3d1bbaf9878f8f29970d693a4776eb5c1f985128..b7f6ed2623d20d5d472580642cd3390b
  | `internal/status` | - | [`agent`](../packages/core/agent), `inspector`, `translator`, [`web`](../packages/web/web) |
  | `internal/update` | - | [`app-boot`](../packages/boot/app-boot) |
 diff --git a/docs/event-producer-consumer.zh.md b/docs/event-producer-consumer.zh.md
-index 213180e82e28bdc61af7b84ad80ef389b641bd4b..c21cebcc53f66b6f534f551ef7bd8948b601dbd2 100644
+index 213180e82e28bdc61af7b84ad80ef389b641bd4b..d4977ded7654e9cd05e6b4240cf31bc98bd9bf7c 100644
 --- a/docs/event-producer-consumer.zh.md
 +++ b/docs/event-producer-consumer.zh.md
 @@ -11,15 +11,16 @@
@@ -781,6 +808,15 @@ index 213180e82e28bdc61af7b84ad80ef389b641bd4b..c21cebcc53f66b6f534f551ef7bd8948
  | `agent/request` | `waterfall` | [`packages/core/agent/src/runtime-types.ts:337`](../packages/core/agent/src/runtime-types.ts) | [`agent-loop`](../packages/core/agent-loop) (`waterfall`) | [`agent`](../packages/core/agent), [`webhook`](../packages/experimental/webhook) |
  | `agent/request-error` | `waterfall` | [`packages/core/agent/src/runtime-types.ts:353`](../packages/core/agent/src/runtime-types.ts) | [`agent-loop`](../packages/core/agent-loop) (`waterfall`) | [`compaction-basic`](../packages/compaction/compaction-basic), [`compaction-image-offload`](../packages/compaction/compaction-image-offload), [`llm-retry`](../packages/llm/llm-retry) |
  | `agent/status` | `emit` | [`packages/core/agent/src/runtime-types.ts:280`](../packages/core/agent/src/runtime-types.ts) | [`agent-loop`](../packages/core/agent-loop) (`emit`) | [`acp`](../packages/acp/acp), `agent-team`, [`compaction-basic`](../packages/compaction/compaction-basic), [`goal-round-driver`](../packages/goal/goal-round-driver), `server`, `session-controller` |
+@@ -69,7 +70,7 @@
+ | `session/event` | `emit` | [`packages/core/session/src/index.ts:74`](../packages/core/session/src/index.ts) | [`session`](../packages/core/session) (`events.dispatch`) | [`acp`](../packages/acp/acp), [`agent-instructions`](../packages/context/agent-instructions), [`agent-loop`](../packages/core/agent-loop), [`agent-preset-registry`](../packages/preset/agent-preset-registry), `agent-team`, `claude-code-mods`, [`compaction-basic`](../packages/compaction/compaction-basic), [`file-reference-local`](../packages/context/file-reference-local), `file-upload`, [`goal`](../packages/goal/goal), [`goal-round-driver`](../packages/goal/goal-round-driver), [`headless`](../packages/bundle/headless), [`loader-smoke`](../packages/test-support/loader-smoke), `product-analytics`, [`ptc-runtime-node`](../packages/ptc-runtime/ptc-runtime-node), `server`, `session-controller`, [`session-persistence-jsonl`](../packages/session/session-persistence-jsonl), [`session-projection`](../packages/session/session-projection), [`session-projection-cache`](../packages/session/session-projection-cache), [`session-telemetry`](../packages/session/session-telemetry), [`session-telemetry-otel`](../packages/session/session-telemetry-otel), [`session-title`](../packages/session/session-title), [`subagent`](../packages/subagent/subagent), [`token-meter`](../packages/llm/token-meter), [`tools`](../packages/core/tools), [`user-questions`](../packages/interaction/user-questions), [`workspace-changes`](../packages/deliverables/workspace-changes) |
+ | `session/flush` | `parallel` | [`packages/core/session/src/index.ts:82`](../packages/core/session/src/index.ts) | [`session`](../packages/core/session) (`events.dispatch`) | [`session-persistence-jsonl`](../packages/session/session-persistence-jsonl), [`session-telemetry`](../packages/session/session-telemetry) |
+ | `settings/document-updated` | `emit` | [`packages/settings/settings/src/types.ts:75`](../packages/settings/settings/src/types.ts) | [`settings`](../packages/settings/settings) (`emit`) | `remotes` |
+-| `skills/change` | `emit` | [`packages/skill/skill/src/index.ts:296`](../packages/skill/skill/src/index.ts) | [`skill`](../packages/skill/skill) (`events.dispatch`) | - |
++| `skills/change` | `emit` | [`packages/skill/skill/src/types.ts:13`](../packages/skill/skill/src/types.ts) | [`skill`](../packages/skill/skill) (`events.dispatch`) | `remotes` |
+ | `subagent/end` | `emit` | [`packages/subagent/subagent/src/index.ts:166`](../packages/subagent/subagent/src/index.ts) | [`subagent`](../packages/subagent/subagent) (`events.dispatch`) | [`hooks-claude-code`](../packages/experimental/hooks-claude-code), `server` |
+ | `subagent/provider-added` | `emit` | [`packages/subagent/subagent/src/index.ts:142`](../packages/subagent/subagent/src/index.ts) | [`subagent`](../packages/subagent/subagent) (`emit`) | [`tool-subagent`](../packages/subagent/tool-subagent) |
+ | `subagent/provider-removed` | `emit` | [`packages/subagent/subagent/src/index.ts:148`](../packages/subagent/subagent/src/index.ts) | [`subagent`](../packages/subagent/subagent) (`events.dispatch`) | [`tool-subagent`](../packages/subagent/tool-subagent) |
 @@ -79,7 +80,7 @@
  | `tools/change` | `emit` | [`packages/core/tools/src/index.ts:209`](../packages/core/tools/src/index.ts) | [`agent-preset-registry`](../packages/preset/agent-preset-registry) (`emit`), [`tools`](../packages/core/tools) (`emit`) | `browser-use-runtime`, [`tool-subagent`](../packages/subagent/tool-subagent) |
  | `tools/execute` | `waterfall` | [`packages/core/tools/src/index.ts:165`](../packages/core/tools/src/index.ts) | [`tools`](../packages/core/tools) (`waterfall`) | `browser-use-runtime`, `browser-use-stagehand-native`, `claude-code-mods`, `computer-use-cua-driver-native`, [`session-checkpoint-policy`](../packages/session/session-checkpoint-policy), `timeout-policy` |
@@ -799,6 +835,47 @@ index 213180e82e28bdc61af7b84ad80ef389b641bd4b..c21cebcc53f66b6f534f551ef7bd8948
  | `internal/service` | - | `gateway` |
  | `internal/status` | - | [`agent`](../packages/core/agent), `inspector`, `translator`, [`web`](../packages/web/web) |
  | `internal/update` | - | [`app-boot`](../packages/boot/app-boot) |
+diff --git a/docs/persistence-catalog.i18n.yaml b/docs/persistence-catalog.i18n.yaml
+index 5b57d28fca6151f55aa1ebf0ec41df907482ea99..cf332a79dd7e4c7668b84a02beb014532f4647c7 100644
+--- a/docs/persistence-catalog.i18n.yaml
++++ b/docs/persistence-catalog.i18n.yaml
+@@ -1221,8 +1221,8 @@
+   en: de04d42a8b0004df
+   zh: db64863dd7da1e26
+ /session-persistence-event-catalog/resolved-persistence-types/skillinvocationsource:
+-  en: ecc15ebadb77afdf
+-  zh: 97ac27d6a4175f6f
++  en: db57f5edf40615f8
++  zh: eb35581fd86600b1
+ /session-persistence-event-catalog/resolved-persistence-types/streamchunk:
+   en: 6a9cc39c2df1b476
+   zh: 697ea4d14d77f59c
+diff --git a/docs/persistence-catalog.md b/docs/persistence-catalog.md
+index 5cd37161404b5245b52105d20ed17216428ae9f9..cd2d040c06c54a0ef6cab55260fe66dbc9282d60 100644
+--- a/docs/persistence-catalog.md
++++ b/docs/persistence-catalog.md
+@@ -4788,7 +4788,7 @@ Sources: [`packages/skill/tool-skill/src/index.ts:35`](../packages/skill/tool-sk
+ 
+ SHA-256: `672c4aa2a9b736e3d6e5da6346d2e2ed5e3573f2d0baafa18e7407c9f3fee3db`
+ 
+-Sources: [`packages/skill/skill/src/index.ts:146`](../packages/skill/skill/src/index.ts)
++Sources: [`packages/skill/skill/src/index.ts:147`](../packages/skill/skill/src/index.ts)
+ 
+ | Property | Presence | Type |
+ |---|---|---|
+diff --git a/docs/persistence-catalog.zh.md b/docs/persistence-catalog.zh.md
+index c12ce2c6ad2aa729f29b84467052dee0743789d9..6ee6c2498ed4b85cd7f40ee4e0ddbfd94116c459 100644
+--- a/docs/persistence-catalog.zh.md
++++ b/docs/persistence-catalog.zh.md
+@@ -4790,7 +4790,7 @@ SHA-256: `fc2ae6962f9f8801c2b1e414668e1e17cbb7544c4f39381198977a38bd10c093`
+ 
+ SHA-256: `672c4aa2a9b736e3d6e5da6346d2e2ed5e3573f2d0baafa18e7407c9f3fee3db`
+ 
+-来源：[`packages/skill/skill/src/index.ts:146`](../packages/skill/skill/src/index.ts)
++来源：[`packages/skill/skill/src/index.ts:147`](../packages/skill/skill/src/index.ts)
+ 
+ | 属性 | 存在性 | 类型 |
+ |---|---|---|
 diff --git a/docs/persistence-changes/2026-10-09-product-installed-skill-attribution.i18n.yaml b/docs/persistence-changes/2026-10-09-product-installed-skill-attribution.i18n.yaml
 new file mode 100644
 index 0000000000000000000000000000000000000000..865db081e6a2252d29172ea03da490ab62827dea
@@ -12599,6 +12676,19 @@ index 0000000000000000000000000000000000000000..b63392a048d406181ec67e2b69c5da97
 +## 开发备注
 +
 +无。
+diff --git a/docs/persistence-schema.json b/docs/persistence-schema.json
+index 87853fac338a1d463424a2de95db7ef21a24f1ff..68c83c01e840911eb85ecf666ba90bb46ac7a541 100644
+--- a/docs/persistence-schema.json
++++ b/docs/persistence-schema.json
+@@ -23988,7 +23988,7 @@
+         "packages/skill/skill/src/index.ts#SkillInvocationSource"
+       ],
+       "sources": [
+-        "packages/skill/skill/src/index.ts:146"
++        "packages/skill/skill/src/index.ts:147"
+       ]
+     },
+     {
 diff --git a/docs/subsystems/README.i18n.yaml b/docs/subsystems/README.i18n.yaml
 index ec9d159bbbf9844e9d1c2066bbf94712c60b55b3..50d6adaebce077d639867b74edb640862c9aee5c 100644
 --- a/docs/subsystems/README.i18n.yaml
@@ -12844,21 +12934,22 @@ index 9714c7c62fc596798f5c7ddc0a469f8426e3443c..1ad09d5f9b56d7216d3e5082566c1418
  
  #### `agent-preset/selected` — emit
 diff --git a/packages/client/ui-tool/src/client/contract/slots.ts b/packages/client/ui-tool/src/client/contract/slots.ts
-index 6ad2204aaa6c67cc550fe9990641e217de5f63e5..6e0ce8cd64531074ea67f6aa2a33d0db7637dbaf 100644
+index 6ad2204aaa6c67cc550fe9990641e217de5f63e5..f3840b834f8d30a1912edafb8cd67ae9c3bb9947 100644
 --- a/packages/client/ui-tool/src/client/contract/slots.ts
 +++ b/packages/client/ui-tool/src/client/contract/slots.ts
-@@ -14,9 +14,8 @@ import type {} from '@deepseek-ai/dsh-client-locale/client'
+@@ -14,10 +14,8 @@ import type {} from '@deepseek-ai/dsh-client-locale/client'
  declare module '@deepseek-ai/dsh-client-ui-slots' {
    interface SlotMap {
      /**
 -     * Keyed Tool call view dispatched by wire Tool name. Any name is allowed,
 -     * including tools registered by your package. Register with
 -     * `key: '<tool name>'`; a typo never renders.
-+     * Keyed Tool call view dispatched by wire Tool name, including package tools.
+-     *
++     * Keyed Tool call view dispatched by wire Tool name.
 +     * Register with `key: '<tool name>'`; a typo never renders.
-      *
       * Registering an occupied key replaces its view; unclaimed keys use the
       * generic row. The owner supplies the call identity and running
+      * or settled node through explicit phase props. Every stage supplies
 diff --git a/packages/extensions/cordis-client-runner/src/client/api-catalog.ts b/packages/extensions/cordis-client-runner/src/client/api-catalog.ts
 index 1dd6bf22b9f4ee5c58eaf07bec3fd5cbbf49da9d..e4e575131ded9e451b1f50a07b1df9b24d7170ae 100644
 --- a/packages/extensions/cordis-client-runner/src/client/api-catalog.ts
@@ -12913,7 +13004,7 @@ index 1dd6bf22b9f4ee5c58eaf07bec3fd5cbbf49da9d..e4e575131ded9e451b1f50a07b1df9b2
      name: 'RegisterFactory',
      declaration: 'export interface RegisterFactory {\n    <F extends keyof SlotFactoryMap & string>(options: RegisterFactoryOptions<F>, component: SlotComponent<FactoryComponentPropsOf<F>>): () => void;\n}',
 diff --git a/packages/extensions/cordis-client-runner/src/client/slot-catalog.ts b/packages/extensions/cordis-client-runner/src/client/slot-catalog.ts
-index 50bcbe529a7fd300d65688e8854e5da93d8250d4..adb9b491978e7dc23febff62345e529c9683ffcf 100644
+index 50bcbe529a7fd300d65688e8854e5da93d8250d4..65a7f7632516d5447da914c574b6bc7d2924513e 100644
 --- a/packages/extensions/cordis-client-runner/src/client/slot-catalog.ts
 +++ b/packages/extensions/cordis-client-runner/src/client/slot-catalog.ts
 @@ -574,7 +574,6 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
@@ -13460,20 +13551,24 @@ index 50bcbe529a7fd300d65688e8854e5da93d8250d4..adb9b491978e7dc23febff62345e529c
      replaceRisk: 'shadows-shipped-ui',
      example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'tool.call.images\', () => ctx.slots.register(\n      { name: \'tool.call.images\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
 -    source: 'packages/client/ui-tool/src/client/contract/slots.ts:44',
-+    source: 'packages/client/ui-tool/src/client/contract/slots.ts:43',
++    source: 'packages/client/ui-tool/src/client/contract/slots.ts:42',
    },
    {
      key: 'tool.call.toolview',
      kind: 'keyed',
      scope: 'session',
--    summary: 'Keyed Tool call view dispatched by wire Tool name.',
+     summary: 'Keyed Tool call view dispatched by wire Tool name.',
 -    doc: 'Keyed Tool call view dispatched by wire Tool name. Any name is allowed,\nincluding tools registered by your package. Register with\n`key: \'<tool name>\'`; a typo never renders.\n\nRegistering an occupied key replaces its view; unclaimed keys use the\ngeneric row. The owner supplies the call identity and running\nor settled node through explicit phase props. Every stage supplies\n`name` and a lazy `args` view; preparing arguments may be incomplete.',
-+    summary: 'Keyed Tool call view dispatched by wire Tool name, including package tools.',
-+    doc: 'Keyed Tool call view dispatched by wire Tool name, including package tools.\nRegister with `key: \'<tool name>\'`; a typo never renders.\n\nRegistering an occupied key replaces its view; unclaimed keys use the\ngeneric row. The owner supplies the call identity and running\nor settled node through explicit phase props. Every stage supplies\n`name` and a lazy `args` view; preparing arguments may be incomplete.',
++    doc: 'Keyed Tool call view dispatched by wire Tool name.\nRegister with `key: \'<tool name>\'`; a typo never renders.\nRegistering an occupied key replaces its view; unclaimed keys use the\ngeneric row. The owner supplies the call identity and running\nor settled node through explicit phase props. Every stage supplies\n`name` and a lazy `args` view; preparing arguments may be incomplete.',
      registerOptions: [
        {
          name: 'key',
-@@ -4794,10 +5008,11 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
+@@ -4790,14 +5004,16 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
+       'client-ui-tool TodoRow key \'todo_write\'',
+       'client-ui-tool WebRow key \'web_search\'',
+       'client-ui-tool WebRow key \'web_fetch\'',
++      '@deepseek-harness/product-experts CreationCard',
+       'client-ui-cordis CordisDefineRow key \'cordis_define\'',
        'client-ui-cordis CordisRunRow key \'cordis_run\'',
        'client-ui-cordis CordisActionRow key \'cordis_stop\'',
        'client-ui-cordis CordisActionRow key \'cordis_undefine\'',
@@ -13482,7 +13577,7 @@ index 50bcbe529a7fd300d65688e8854e5da93d8250d4..adb9b491978e7dc23febff62345e529c
      replaceRisk: 'shadows-shipped-ui',
      example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'tool.call.toolview\', () => ctx.slots.register(\n      { name: \'tool.call.toolview\', key: \'<one key the owner dispatches>\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
 -    source: 'packages/client/ui-tool/src/client/contract/slots.ts:26',
-+    source: 'packages/client/ui-tool/src/client/contract/slots.ts:25',
++    source: 'packages/client/ui-tool/src/client/contract/slots.ts:24',
    },
    {
      key: 'tool.view.cordis',
@@ -13546,10 +13641,10 @@ index be3e31626359ec9607789b83000f7e3128a425ea..cdd3f1549f33c78522a5fdac41103890
    {
      name: 'PresetOption',
 diff --git a/packages/preset/agent-preset/skills/cordis-composition-reference/references/packages.md b/packages/preset/agent-preset/skills/cordis-composition-reference/references/packages.md
-index eee345a99c533b7ebb5355acd65509d9055b2ce4..d782e8635debb995131d1db8b94d4bbc29c2276c 100644
+index eee345a99c533b7ebb5355acd65509d9055b2ce4..735ac8254da53fa1bb0d0c684e9d2dbf8a6cc305 100644
 --- a/packages/preset/agent-preset/skills/cordis-composition-reference/references/packages.md
 +++ b/packages/preset/agent-preset/skills/cordis-composition-reference/references/packages.md
-@@ -167,6 +167,13 @@ Every package below exports a Cordis plugin that a bundle patch can name in a Lo
+@@ -167,6 +167,14 @@ Every package below exports a Cordis plugin that a bundle patch can name in a Lo
  | `@deepseek-ai/dsh-credentials-local` | yes | File-backed credentials provider ($DSH_HOME/.env under the live process environment) for the DeepSeek Harness |
  | `@deepseek-ai/dsh-deepseek-account-platform` | yes | Authorize DeepSeek accounts through browser PKCE |
  
@@ -13559,11 +13654,12 @@ index eee345a99c533b7ebb5355acd65509d9055b2ce4..d782e8635debb995131d1db8b94d4bbc
 +|---|---|---|
 +| `@deepseek-harness/product-experts` | yes | Harness 内建专家套件模块 |
 +| `@deepseek-harness/product-runtime` | yes | undefined |
++| `@deepseek-harness/product-skills` | no | Harness 内建技能模块 |
 +
  ## deliverables
  
  | Package | Config | Description |
-@@ -225,6 +232,7 @@ Every package below exports a Cordis plugin that a bundle patch can name in a Lo
+@@ -225,6 +233,7 @@ Every package below exports a Cordis plugin that a bundle patch can name in a Lo
  | `@deepseek-ai/dsh-cordis-client-runner` | no | Browser half of dynamic dual-half plugin packages: event subscription, closure evaluation, guard facade, and loader entries |
  | `@deepseek-ai/dsh-cordis-host-runner` | yes | Dynamic package definition registry, host-half sandbox lifecycle, and invoke handler table for model-mounted dual-half packages |
  | `@deepseek-ai/dsh-tool-cordis` | no | Read-only runtime API inspection for Harness plugin development |
@@ -13603,14 +13699,15 @@ index 215048297e6ad71c344092d4f6873fb008c37dd5..d77faae08037fe15923d1493b7b04b40
  
  interface SessionFormatRelease {
 diff --git a/scripts/gen-cordis-catalog.ts b/scripts/gen-cordis-catalog.ts
-index ebd752714286dd59491439c88a697bfa84f3b6f2..36feda64968093d9fa5ba0bd0ee651b15bf205b2 100644
+index ebd752714286dd59491439c88a697bfa84f3b6f2..46572dab309f06991f1191d39e77457b53c8411e 100644
 --- a/scripts/gen-cordis-catalog.ts
 +++ b/scripts/gen-cordis-catalog.ts
-@@ -170,6 +170,7 @@ export const SERVICE_PAGE: Record<string, string> = {
+@@ -170,6 +170,8 @@ export const SERVICE_PAGE: Record<string, string> = {
   * to a model as `cordis_runtime_inspect what:"client"`).
   */
  export const SERVICE_WALK_EXEMPTIONS: Record<string, string> = {
 +  companyContent: 'product Host content source; main owns credentials and durable versions — packages/deepseek-harness-product/runtime/README.md owns this private API',
++  skillsManager: 'product-only Remote service outside the native catalog projection — packages/deepseek-harness-product/skills/README.md owns this API and its generated Typert methods',
    invocation: 'not a service: per-call accessor (RemoteInvocation | undefined) the Gateway derives for each Remote call — packages/api/gateway/README.md owns the contract',
    webTerminals: 'client-side terminal view models — packages/api/terminal-controller/README.md owns the API',
    appReady: 'not a service: launcher-provided successful-startup signal — packages/boot/cmdline/README.md owns the launcher contract',

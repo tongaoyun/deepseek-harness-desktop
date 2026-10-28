@@ -27,6 +27,8 @@ kind: "package-reference"
 
 挂载插件即可让组合拥有一个统一的 skill 注册表。skill 来源（提供方）和消费方（面向模型的目录与 loader，或你自己的代码）都通过 `ctx.skills` 交互；注册表合并任意提供方报告的一切内容，因此一次查找就能看到所有来源的 skill。
 
+客户端安全的 `@deepseek-ai/dsh-skill/types` 入口声明无载荷的 `skills/change` 通知；消费方使自身目录缓存失效，再按自己的查询选项读取。 该入口使用标准 JavaScript 编译输出目录，与声明文件一同纳入软件包。
+
 ### 何时选择
 
 当 agent 需要通过同一个接口从多个来源加载 skill，或 skill 来源并非本地文件系统时，选择 `dsh-skill`。当组合完全不需要加载 skill 时，请避免使用——插件会增加一个服务以及每次查找的发现成本。随附的本地提供方（`dsh-skill-filesystem`）和面向模型的消费方（`dsh-tool-skill`）是独立包；部署需要本地 skill 和模型访问时，请一并挂载。

@@ -1,0 +1,8 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`follows late locale activation and persisted language changes without rereading Settings per schema 1`] = `
+{
+  "chinese": "列出已启用专家团。召唤前使用 get_expert_team 读取主理人规则及成员分工。",
+  "english": "List enabled teams. Read coordinator rules and assignments with get_expert_team before invocation.",
+}
+`;

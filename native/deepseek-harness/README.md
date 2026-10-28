@@ -2,21 +2,8 @@
 
 English | [中文](README.zh.md)
 
-The Electron sidecar implements native product capabilities that the Renderer
-invokes through the preload allowlist. It speaks one line-delimited JSON-RPC protocol:
+This product-owned Electron sidecar provides `health` and `device-identity.get` through the line-delimited JSON protocol `deepseek-harness.native.v1`. It owns no Harness Session state or agent execution.
 
-```text
-deepseek-harness.native.v1
-```
+`health` reports sidecar readiness and the `device-identity` capability. Electron uses the installation identifier for device reporting; the sidecar reads the existing `device/device-id` file under `DEEPSEEK_HARNESS_NATIVE_DATA_DIR` and creates it only when missing. Existing identifiers and other files in the data directory are preserved. Credential encryption is checked separately by Electron.
 
-The sidecar owns no Harness Session state. It exposes only bounded product
-operations: `filesystem.list/read/write`, `attachments.put/get/list`,
-`secure-storage.get/set`, `sqlite.query/execute`, `dingtalk-auth.state`,
-`device-identity.get`, `image-preview.inspect`, and `file-undo.record/undo`.
-Paths are relative to the Electron-owned data directory, SQLite queries are
-read-only unless the explicit execute method is selected, and file payloads
-are hex encoded with an 8 MiB limit. Electron starts it and validates every
-method. Renderer code does not receive the sidecar process handle, while
-allowlisted credential operations return their declared results.
-
-The protocol intentionally has no legacy Tauri `invoke` compatibility path.
+The product method allowlist exposes only `native.device-identity.get`. Files, attachments, databases, credentials, authentication, previews and undo have no generic sidecar operations. See the [upgrade guide](../../docs/upgrade-guide/v0.2.1-rc.2/product-native-sidecar/guide.md) for device-policy configuration.

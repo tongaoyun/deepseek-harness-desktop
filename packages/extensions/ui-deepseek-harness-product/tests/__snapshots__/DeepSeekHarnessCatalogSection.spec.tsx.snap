@@ -1,5 +1,13 @@
 // Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
 
+exports[`DeepSeekHarness capability navigation > shows Other in connector details for the custom category '__proto__' ('en') 1`] = `"Custom MCPOtherShared"`;
+
+exports[`DeepSeekHarness capability navigation > shows Other in connector details for the custom category '__proto__' ('zh') 1`] = `"Custom MCP其他共享"`;
+
+exports[`DeepSeekHarness capability navigation > shows Other in connector details for the custom category 'constructor' ('en') 1`] = `"Custom MCPOtherShared"`;
+
+exports[`DeepSeekHarness capability navigation > shows Other in connector details for the custom category 'constructor' ('zh') 1`] = `"Custom MCP其他共享"`;
+
 exports[`DeepSeekHarness capability navigation > shows all categories in enterprise order and retains a way to clear a disappearing category 1`] = `
 [
   "全部分类",

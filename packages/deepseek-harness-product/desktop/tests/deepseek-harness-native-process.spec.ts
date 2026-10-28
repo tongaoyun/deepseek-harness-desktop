@@ -14,9 +14,12 @@ describe('DeepSeekHarnessNativeProcess', () => {
       let request = ''
       Object.assign(sidecar, { child: { stdin: { write: (chunk: string) => { request = chunk } } } })
       const controller = new AbortController()
+      controller.signal.addEventListener('abort', (event) => { event.stopImmediatePropagation() })
       const pending = sidecar.invoke('health', undefined, controller.signal)
       const rejected = expect(pending).rejects.toThrow('cancel native')
       controller.abort(new Error('cancel native'))
+      const late = JSON.parse(request) as { request_id: string }
+      receiveNativeResponse(sidecar, { protocol: 'deepseek-harness.native.v1', request_id: late.request_id, result: {} })
       await rejected
       expect(vi.getTimerCount()).toBe(0)
       const envelope = JSON.parse(request) as { request_id: string }
@@ -98,4 +101,33 @@ describe('DeepSeekHarnessNativeProcess', () => {
 
     await expect(response).resolves.toEqual({ ready: true })
   })
+})
+
+
+it.each(['write', 'serialize'])('releases a native request immediately after synchronous %s failure', async (mode) => {
+  vi.useFakeTimers()
+  try {
+    const sidecar = new DeepSeekHarnessNativeProcess(undefined, undefined)
+    const owner = new AbortController()
+    const remove = vi.spyOn(owner.signal, 'removeEventListener')
+    Object.assign(sidecar, { child: { stdin: { write: () => { throw new Error('Pipe closed') } } } })
+    const payload = mode === 'serialize' ? { toJSON: () => { throw new Error('Cannot encode') } } : undefined
+    await expect(sidecar.invoke('health', payload, owner.signal)).rejects.toThrow(mode === 'serialize' ? 'Cannot encode' : 'Pipe closed')
+    expect(vi.getTimerCount()).toBe(0)
+    expect(sidecar['pending'].size).toBe(0)
+    expect(remove).toHaveBeenCalledWith('abort', expect.any(Function))
+  } finally { vi.useRealTimers() }
+})
+
+it('rejects new native work while waiting for sidecar exit', async () => {
+  const sidecar = new DeepSeekHarnessNativeProcess(undefined, undefined)
+  const child = Object.assign(new EventEmitter(), { stdin: { write: vi.fn() }, kill: vi.fn(() => true) })
+  Object.assign(sidecar, { child })
+  const stopping = sidecar.stop()
+  try {
+    const request = sidecar.invoke('health')
+    child.emit('exit')
+    await expect(request).rejects.toThrow('stopping')
+    expect(child.stdin.write).not.toHaveBeenCalled()
+  } finally { child.emit('exit'); await stopping }
 })

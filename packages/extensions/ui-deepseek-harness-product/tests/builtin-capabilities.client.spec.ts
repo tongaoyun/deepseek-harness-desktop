@@ -16,6 +16,7 @@ it('owns main pages, mention sources and remote mounts across unload and reload'
   ctx.provide('locale', new LocaleRuntime(ctx))
   ctx.provide('sessions', {} as never)
   ctx.provide('conversation', {} as never)
+  ctx.provide('layout', {} as never)
   const sources = new Set<object>()
   ctx.provide('inputTriggers', { registerSource(source: object) {
     sources.add(source)
@@ -44,6 +45,6 @@ it('owns main pages, mention sources and remote mounts across unload and reload'
     expect(slots.entries('conversation.input.left')).toHaveLength(0)
     expect(sources.size).toBe(0)
     expect(document.head.querySelectorAll('style[data-plugin="@deepseek-harness/product-experts"]')).toHaveLength(0)
-    expect(unmount).toHaveBeenCalledTimes(index + 1)
+    expect(unmount).toHaveBeenCalledTimes((index + 1) * 2)
   }
 })

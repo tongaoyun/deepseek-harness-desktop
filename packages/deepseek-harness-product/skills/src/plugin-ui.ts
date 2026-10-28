@@ -1,5 +1,5 @@
 import React from "react";
-import { Input as HostInput } from "@deepseek-ai/dsh-client-ui-primitives";
+export { Input } from "@deepseek-ai/dsh-client-ui-primitives";
 
 type Create = typeof React.createElement;
 
@@ -12,9 +12,6 @@ export function TextArea(props: React.TextareaHTMLAttributes<HTMLTextAreaElement
     rows: autoSize?.minRows || rows || 4,
   });
 }
-
-/** 单行用宿主 Input，多行挂本插件的 TextArea。 */
-export const Input = Object.assign(HostInput, { TextArea });
 
 /** 来源和仓库折叠箭头。方向由 aria-expanded 决定，不靠动画结束才算展开。 */
 export function foldChevron(h: Create, open: boolean) {

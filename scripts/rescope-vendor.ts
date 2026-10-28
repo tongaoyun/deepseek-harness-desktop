@@ -699,7 +699,10 @@ function main(): void {
   const all = patterns(reverse)
   const files = execFileSync('git', ['ls-files', '-z'], { cwd: root, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 })
     .split('\0')
-    .filter(file => file !== '' && !isRescopeExcluded(file))
+    // `git ls-files` keeps a path whose deletion is still unstaged.  A deleted
+    // source file has no text to rescope and must not make the check fail while
+    // the surrounding product change is being reviewed.
+    .filter(file => file !== '' && existsSync(resolve(root, file)) && !isRescopeExcluded(file))
 
   const counts = new Map<string, { files: number; lines: number }>()
   const failures: string[] = []

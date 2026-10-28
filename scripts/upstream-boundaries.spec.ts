@@ -10,6 +10,7 @@ it('isolates the registered product knowledge guide without exempting other upgr
   expect(productOwned('docs/upgrade-guide/v0.2.1-alpha.2/product-support/guide.md')).toBe(true)
   expect(productOwned('docs/upgrade-guide/v0.2.1-alpha.4/product-knowledge-references/guide.md')).toBe(true)
   expect(productOwned('docs/upgrade-guide/v0.2.1-rc.2/product-expert-kit-selection/guide.md')).toBe(true)
+  expect(productOwned('docs/upgrade-guide/v0.2.1-rc.2/product-native-sidecar/guide.md')).toBe(true)
   expect(productOwned('docs/upgrade-guide/v0.2.1-rc.2/official-profile/guide.md')).toBe(false)
   expect(productOwned('docs/upgrade-guide/v0.2.1-alpha.4/official-profile/guide.md')).toBe(false)
   expect(productOwned('docs/upgrade-guide/v0.2.1-alpha.2/official-profile/guide.md')).toBe(false)

@@ -3,8 +3,8 @@ import { createActivationProbe } from '../tests/activation-probe.ts'
 import { publishedTeamDocument } from '@deepseek-harness/product/company-team'
 import { TEST_TEAMS } from './fixtures/teams.ts'
 import { fileURLToPath } from 'node:url'
-import { describe, it, expect, vi } from 'vitest'
-import type { NativeTeamService } from './team-engine.ts'
+import { describe, it, expect } from 'vitest'
+import { createNativeTeam, createTeamAgent } from '../tests/native-team.ts'
 import { Context } from '@deepseek-ai/cordis'
 import type { SettingsNamespace } from '@deepseek-ai/dsh-settings'
 import { apply } from './index.ts'
@@ -81,12 +81,12 @@ describe('专家团宿主与远端集成', () => {
     })
     apply(ctx, { root: fileURLToPath(new URL('../../../../vendor/product-expert-fixtures/agency-agents', import.meta.url)), provider: 'spawn', divisions: ['product', 'design', 'engineering'], ...volatileConfig(settings) } as never)
     const remote = new AgencyAgentsRemote(ctx)
-    expect((await remote.getTeams()).teams).toEqual([])
+    expect((await remote.getTeams(new AbortController().signal)).teams).toEqual([])
     const { id: _fixtureId, ...firstDraft } = TEST_TEAMS[0]
     const initial = await remote.saveTeam(firstDraft, false, 0)
     expect(initial.teams).toHaveLength(1)
     expect(initial.nativeMembers ?? {}).toEqual({})
-    const catalog = await remote.getCatalog(false)
+    const catalog = await remote.getCatalog(false, new AbortController().signal)
     for (const group of initial.teams) {
       for (const member of group.members) {
         expect(catalog.experts.some(expert => expert.slug === member.expertSlug && !expert.conflict)).toBe(true)
@@ -111,7 +111,7 @@ describe('专家团宿主与远端集成', () => {
     const invoke = async (
       name: string,
       args: unknown,
-      exec: unknown = { agent: {} },
+      exec: unknown = { agent: createTeamAgent() },
     ) => {
       const result = (await tools.get(name)!.execute(args, exec)) as {
         report: string
@@ -165,7 +165,7 @@ describe('专家团宿主与远端集成', () => {
     ).rejects.toThrow('未启用')
     expect(starts).toHaveLength(3)
     const { id: _id, ...draft } = team
-    const before = await remote.getTeams()
+    const before = await remote.getTeams(new AbortController().signal)
     const custom = await remote.saveTeam({ ...draft, name: '自定义验收团', coordinatorMode: 'custom', coordinatorPrompt: '优先输出反证和待确认事项。' }, true, before.revision)
     const saved = custom.teams.find(group => group.name === '自定义验收团')!
     const customReport = await invoke('summon_expert_team', { team: saved.id, task: '评审配置变更' })
@@ -174,23 +174,16 @@ describe('专家团宿主与远端集成', () => {
     const deleted = await remote.deleteTeam(saved.id, custom.revision)
     expect(deleted.enabledExperts).toEqual(custom.enabledExperts)
     await expect(invoke('get_expert_team', { team: saved.id })).rejects.toThrow('未启用')
-    const latest = await remote.getTeams()
+    const latest = await remote.getTeams(new AbortController().signal)
     await remote.setTeamEnabled(team.id, true, latest.revision)
-    const native: NativeTeamService = {
-      tryMembership: () => ({ role: 'lead', name: 'lead' }),
-      listMembers: () => [],
-      spawnTeammate: vi.fn(async (_agent, request) => ({ member: { name: request.name, status: 'running' } })),
-      sendMessage: async () => ({}),
-      createTask: async () => ({ id: '1', revision: 1 }),
-      updateTask: async () => ({}), waitForChange: async () => ({}), interrupt: () => {},
-    }
+    const { service: native } = createNativeTeam()
     services.set('agentTeams', native)
-    expect((await remote.getTeams()).engine).toMatchObject({ state: 'enabled', mode: 'native' })
+    expect((await remote.getTeams(new AbortController().signal)).engine).toMatchObject({ state: 'enabled', mode: 'native' })
     const notReady = await invoke('get_expert_team', { team: team.id })
     expect(notReady.engine).toMatchObject({ state: 'disabled', mode: 'subagent', recommendation: expect.stringContaining('开启') })
     const priorStarts = starts.length
     const nativeReport = await invoke('summon_expert_team', { team: team.id, task: '评审整体方案' }, {
-      agent: { ctx: { tools: { get: () => ({}) } } }, signal: new AbortController().signal,
+      agent: createTeamAgent(createTestContext({ get: (key: string) => key === 'tools' ? { get: () => ({}) } : undefined })), signal: new AbortController().signal,
     })
     expect(nativeReport.engine).toMatchObject({ state: 'enabled', mode: 'native' })
     expect(nativeReport.dispatch.started).toBe(3)

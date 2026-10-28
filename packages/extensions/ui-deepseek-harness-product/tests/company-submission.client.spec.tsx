@@ -11,7 +11,7 @@ const candidate = { resourceKey: 'skills/orders', files: { 'skills/orders/SKILL.
 afterEach(() => { cleanup(); vi.unstubAllGlobals() })
 function fixture(initialSession = Promise.resolve({ authenticated: true, employeeId: 'alice' })) {
   let listener: ((event: { type: string; payload?: unknown }) => void) | undefined
-  const invoke = vi.fn(async (_namespace: string, method: string) => ({ ok: true, result: method === 'auth.getSession'
+  const invoke = vi.fn(async (_namespace: string, method: string): Promise<{ ok: true; result: unknown }> => ({ ok: true, result: method === 'auth.getSession'
     ? await initialSession
     : method.endsWith('inspect') ? { status: null } : { status: 'SUBMITTED', reviewNote: '' } }))
   const cancel = vi.fn()
@@ -43,6 +43,32 @@ it('retains content after failure and closes stale dialogs on identity changes',
   await act(async () => f.changeIdentity())
   expect(screen.queryByRole('dialog')).toBeNull()
   expect(f.cancel).toHaveBeenCalled()
+})
+
+it.each([null, { status: ['SUBMITTED'], reviewNote: '' }, { status: 'UNKNOWN', reviewNote: '' }])(
+  'reports an unconfirmed submission for an invalid receipt: %j', async (result) => {
+    const f = fixture(); await open()
+    f.invoke.mockResolvedValueOnce({ ok: true, result })
+    fireEvent.click(screen.getByRole('button', { name: zh.companySubmitTitle }))
+    expect((await screen.findByRole('alert')).textContent).toBe(t('companySubmitFailed'))
+    expect(screen.getByText('包含 1 个文件')).toBeTruthy()
+    expect(screen.queryByRole('status')).toBeNull()
+    expect(screen.getByRole<HTMLButtonElement>('button', { name: zh.companySubmitTitle }).disabled).toBe(false)
+    expect(f.invoke.mock.calls.filter(call => call[1].endsWith('submit'))).toHaveLength(1)
+  },
+)
+
+it('blocks submission when inspection contains a coerced status', async () => {
+  const f = fixture()
+  await waitFor(() => { expect(f.invoke).toHaveBeenCalled() })
+  f.invoke.mockResolvedValueOnce({ ok: true, result: { status: { status: ['SUBMITTED'], reviewNote: '' } } })
+  await act(async () => document.dispatchEvent(new CustomEvent('dsh:company-content-submit', {
+    cancelable: true, detail: { name: '订单核对', prepare: async () => candidate },
+  })))
+  expect((await screen.findByRole('alert')).textContent).toBe(t('companySubmitFailed'))
+  expect(screen.queryByRole('status')).toBeNull()
+  expect(screen.getByRole<HTMLButtonElement>('button', { name: zh.companySubmitTitle }).disabled).toBe(true)
+  expect(screen.getByRole('dialog').textContent).toMatchSnapshot()
 })
 it('cancels preparation when closed or unmounted without submitting', async () => {
   const f = fixture()

@@ -1,37 +1,21 @@
 import { TEST_TEAMS } from './fixtures/teams.ts'
 import { describe, expect, it, vi } from 'vitest'
-import { detectTeamEngine, resolveTeamEngine, dispatchNativeTeam, blocksNativeDelegation, type NativeTeamService } from './team-engine.ts'
+import { detectTeamEngine, resolveTeamEngine, dispatchNativeTeam, blocksNativeDelegation } from './team-engine.ts'
 
-function native() {
-  const members: { name: string; status: string }[] = []
-  const service = {
-    tryMembership: vi.fn(() => ({ role: 'lead', name: 'lead' })),
-    listMembers: vi.fn(() => members),
-    spawnTeammate: vi.fn<NativeTeamService['spawnTeammate']>(async (_agent, request) => {
-      const member = { name: request.name, status: 'running' }
-      members.push(member)
-      return { member }
-    }),
-    sendMessage: vi.fn(async () => ({})),
-    createTask: vi.fn<NativeTeamService['createTask']>(async () => ({ id: '1', revision: 1 })),
-    updateTask: vi.fn(async () => ({})),
-    waitForChange: vi.fn(async () => ({})),
-    interrupt: vi.fn(),
-  } satisfies NativeTeamService
-  return { service, members }
-}
+import { createNativeTeam as native, createTeamAgent, nativeTeamMember } from '../tests/native-team.ts'
+import { createTestContext } from '../tests/context.ts'
+import { TeamId } from '@deepseek-ai/dsh-experimental-agent-team'
 
 describe('专家团运行引擎能力分流', () => {
-  it('旧版本不支持时普通执行，不推荐不存在的能力', () => {
+  it('未安装能力时普通执行，不推荐不存在的能力', () => {
     expect(detectTeamEngine(undefined, false)).toMatchObject({ state: 'unsupported', mode: 'subagent', recommendation: '' })
   })
   it('安装能力不代表启用，未挂载时推荐开启但允许普通调用', () => {
     expect(detectTeamEngine(undefined, true)).toMatchObject({ state: 'disabled', mode: 'subagent', recommendation: expect.stringContaining('开启') })
   })
-  it('只有兼容的已挂载接口才使用原生模式', () => {
+  it('当前原生服务和会话工具就绪才使用原生模式', () => {
     const { service } = native()
     expect(detectTeamEngine(service, false)).toMatchObject({ state: 'enabled', mode: 'native' })
-    expect(detectTeamEngine({}, true).mode).toBe('subagent')
     expect(detectTeamEngine(service, true, false).mode).toBe('subagent')
   })
   it('显式深度限制不能被原生模式静默忽略', () => {
@@ -39,19 +23,32 @@ describe('专家团运行引擎能力分流', () => {
   })
   it('只拦截本插件队友的递归委派，不影响通信和主理人', () => {
     const { service } = native()
-    expect(blocksNativeDelegation(service, {}, 'subagent')).toBe(false)
-    service.tryMembership.mockReturnValue({ role: 'teammate', name: `agency-reviewer-${'a'.repeat(10)}` })
-    expect(blocksNativeDelegation(service, {}, 'summon_expert')).toBe(true)
-    expect(blocksNativeDelegation(service, {}, 'subagent_fork')).toBe(true)
-    expect(blocksNativeDelegation(service, {}, 'send_message')).toBe(false)
+    const agent = createTeamAgent()
+    expect(blocksNativeDelegation(service, agent, 'subagent')).toBe(false)
+    service.tryMembership.mockReturnValue({ root: agent, id: TeamId(agent.id), role: 'teammate', name: `agency-reviewer-${'a'.repeat(10)}` })
+    expect(blocksNativeDelegation(service, agent, 'summon_expert')).toBe(true)
+    expect(blocksNativeDelegation(service, agent, 'subagent_fork')).toBe(true)
+    expect(blocksNativeDelegation(service, agent, 'send_message')).toBe(false)
   })
   it('按当前智能体作用域检测工具，不能误读全局工具表', () => {
     const { service } = native()
     const get = vi.fn((_name: string, scope?: unknown) => scope === agent ? {} : undefined)
-    const agent = { ctx: { tools: { get } } }
-    const ctx = { get: () => service }
-    expect(resolveTeamEngine(ctx as never, agent as never).status.mode).toBe('native')
+    const agent = createTeamAgent(createTestContext({ get: (key: string) => key === 'tools' ? { get } : undefined }))
+    const ctx = createTestContext({ get: (key: string) => key === 'agentTeams' ? service : undefined })
+    expect(resolveTeamEngine(ctx, agent).status.mode).toBe('native')
     expect(get).toHaveBeenCalledWith('spawn_teammate', agent)
+  })
+  it('原生服务已挂载但当前 Agent 未装配工具时明确使用普通子代理', () => {
+    const { service } = native()
+    const ctx = createTestContext({ get: (key: string) => key === 'agentTeams' ? service : undefined })
+    const status = resolveTeamEngine(ctx, createTeamAgent()).status
+    expect({ state: status.state, mode: status.mode, reason: status.reason }).toMatchInlineSnapshot(`
+      {
+        "mode": "subagent",
+        "reason": "Agent Team services or conversation tools are not ready.",
+        "state": "disabled",
+      }
+    `)
   })
 })
 
@@ -60,7 +57,7 @@ describe('原生专家团启动语义', () => {
   const input = () => ({
     team, revision: 1, task: '评审现有方案', enabled: team.members.map(m => m.expertSlug),
     experts: team.members.map(m => ({ slug: m.expertSlug, name: m.expertSlug, nameEn: m.expertSlug, division: 'engineering', divisionZh: '工程', description: '', descriptionEn: '', emoji: '', custom: false })),
-    readPersona: async () => '专家职责正文', agent: {}, provider: 'spawn', signal: new AbortController().signal,
+    readPersona: async () => '专家职责正文', agent: createTeamAgent(), provider: 'spawn', signal: new AbortController().signal,
   })
   it('英文环境使用英文显示名，同时保留稳定队友标识', async () => {
     const { service } = native()
@@ -82,7 +79,7 @@ describe('原生专家团启动语义', () => {
     expect(result.dispatch.started).toBe(3)
     expect(result).not.toHaveProperty('coverage')
     expect(result).not.toHaveProperty('results')
-    expect(service.spawnTeammate.mock.calls[0][1].prompt[0].text).toContain('专家职责正文')
+    expect(service.spawnTeammate.mock.calls[0][1].prompt).toContainEqual({ type: 'text', text: expect.stringContaining('专家职责正文') })
     expect(result.instruction).toContain('wait_agent')
   })
   it('创建失败只报告失败，不重复走普通路径', async () => {
@@ -100,7 +97,7 @@ describe('原生专家团启动语义', () => {
     await dispatchNativeTeam(args)
     const busy = await dispatchNativeTeam(args)
     expect(busy.dispatch.started).toBe(0)
-    members.forEach(m => { m.status = 'idle' })
+    members.splice(0, members.length, ...members.map(member => ({ ...member, status: 'inactive' as const })))
     const reused = await dispatchNativeTeam(args)
     expect(reused.dispatch.started).toBe(3)
     expect(service.spawnTeammate).toHaveBeenCalledTimes(3)
@@ -124,7 +121,7 @@ describe('原生专家团启动语义', () => {
     service.spawnTeammate.mockImplementation(async (_agent, request) => {
       await Promise.resolve()
       controller.abort()
-      return { member: { name: request.name, status: 'running' } }
+      return { member: nativeTeamMember(request.name) }
     })
     await expect(dispatchNativeTeam({ ...input(), service, signal: controller.signal })).rejects.toThrow()
     expect(service.interrupt.mock.calls.length).toBe(service.spawnTeammate.mock.calls.length)

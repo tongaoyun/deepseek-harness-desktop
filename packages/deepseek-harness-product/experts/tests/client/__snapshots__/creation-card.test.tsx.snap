@@ -1,0 +1,41 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`opens a prefilled en editor only on an explicit click and retains the draft on save failure 1`] = `
+{
+  "action": "Draft opened in editor",
+  "fields": [
+    {
+      "label": "Expert name",
+      "value": "Review expert",
+    },
+    {
+      "label": "Short description",
+      "value": "Review changes",
+    },
+    {
+      "label": "Expert prompt",
+      "value": "Report findings with evidence.",
+    },
+  ],
+}
+`;
+
+exports[`opens a prefilled zh editor only on an explicit click and retains the draft on save failure 1`] = `
+{
+  "action": "草案已在编辑器打开",
+  "fields": [
+    {
+      "label": "专家名称",
+      "value": "Review expert",
+    },
+    {
+      "label": "一句话简介",
+      "value": "Review changes",
+    },
+    {
+      "label": "专家提示词",
+      "value": "Report findings with evidence.",
+    },
+  ],
+}
+`;

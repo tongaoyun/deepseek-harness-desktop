@@ -1,8 +1,10 @@
 /** Main-process MCP proxy keeps employee and connector credentials out of Host. */
 import { randomUUID } from 'node:crypto'
+import { addAbortListener } from 'node:events'
 import { createServer, type Server, type IncomingMessage, type ServerResponse } from 'node:http'
 import { Readable } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
+import { deadline, idleWatchdog } from '@deepseek-ai/dsh-timeout'
 import { z } from 'zod'
 
 /** Header and idle deadlines apply to forwarding; active streams have no total deadline. */
@@ -86,17 +88,16 @@ export class ConnectorProxy {
           const value = request.headers[name]
           if (typeof value === 'string') headers.set(name, value)
         }
-        const transport = new AbortController()
-        const signal = AbortSignal.any([lifetime, transport.signal])
-        const headerDeadline = setTimeout(() => { transport.abort(new Error('Connector response timeout')) }, policy.responseTimeoutMs)
-        headerDeadline.unref()
+        using idle = idleWatchdog(lifetime, policy.streamIdleTimeoutMs, 'CONNECTOR_STREAM_IDLE_TIMEOUT')
         let upstream: Response
-        try {
+        {
+          using header = deadline(lifetime, policy.responseTimeoutMs, 'CONNECTOR_RESPONSE_TIMEOUT')
           upstream = await fetch(connector.url, {
-            method: request.method ?? 'GET', headers, signal, redirect: 'error',
+            method: request.method ?? 'GET', headers,
+            signal: AbortSignal.any([header.signal, idle.signal]), redirect: 'error',
             ...(length === 0 ? {} : { body: Buffer.concat(chunks) }),
           })
-        } finally { clearTimeout(headerDeadline) }
+        }
         response.statusCode = upstream.status
         for (const name of ['content-type', 'mcp-session-id', 'mcp-protocol-version']) {
           const value = upstream.headers.get(name)
@@ -105,22 +106,32 @@ export class ConnectorProxy {
         if (upstream.body === null) response.end()
         else {
           const reader = upstream.body.getReader()
-          await pipeline(Readable.from((async function* () {
-            try {
+          let cancellation: Promise<void> | undefined
+          const cancel = (): Promise<void> => cancellation ??= reader.cancel(idle.signal.reason)
+          const iterator: AsyncIterator<Uint8Array> = {
+            async next() {
+              const result = await reader.read()
+              return result.done ? { done: true, value: undefined } : result
+            },
+          }
+          try {
+            using _abortReader = addAbortListener(idle.signal, () => {
+              void cancel().catch(() => {
+                // The forwarding operation awaits this cleanup and owns its failure.
+              })
+            })
+            await pipeline(Readable.from((async function* () {
               for (;;) {
-                const idleDeadline = setTimeout(() => { transport.abort(new Error('Connector stream idle timeout')) }, policy.streamIdleTimeoutMs)
-                idleDeadline.unref()
-                let result: ReadableStreamReadResult<Uint8Array>
-                try { result = await reader.read() }
-                finally { clearTimeout(idleDeadline) }
+                const result = await idle.next(iterator)
+                idle.signal.throwIfAborted()
                 if (result.done) return
                 yield result.value
               }
-            } finally {
-              try { await reader.cancel() }
-              finally { reader.releaseLock() }
-            }
-          })()), response, { signal })
+            })()), response, { signal: idle.signal })
+          } finally {
+            try { await cancel() }
+            finally { reader.releaseLock() }
+          }
         }
       })().catch(() => {
         if (response.destroyed) return

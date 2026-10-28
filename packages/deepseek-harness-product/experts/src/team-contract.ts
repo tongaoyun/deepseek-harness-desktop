@@ -23,6 +23,7 @@ export const teamSnapshotSchema = z.object({
   engine: teamEngineStatusSchema.optional(),
   nativeMembers: z.record(z.string(), z.string()).optional(),
 })
+/** Revision-checked teams, enabled selections and native execution metadata. */
 export type TeamSnapshot = z.infer<typeof teamSnapshotSchema>
 export const effectiveCoordinator = (team: TeamInput, locale: 'zh' | 'en' = 'zh'): string =>
   team.coordinatorMode === 'custom'

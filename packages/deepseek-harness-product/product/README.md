@@ -51,3 +51,5 @@ description: "企业认证、连接器和知识库的协议与服务端访问。
 <a id="known-limitations-and-deferred-work"></a>
 
 - 企业服务需要有效员工身份及可访问的组织服务；第三方专家和技能插件使用其自身的管理入口。
+
+产品桥接的原生分发仅允许 `native.device-identity.get`，其他原生方法名在调用前拒绝；健康检查由桌面主进程直接调用。[sidecar 协议](../../../native/deepseek-harness/README.zh.md)由产品维护。

@@ -2,12 +2,9 @@
  * 宿主侧用户可见文案。zh 为 key 集真相源；en 用 satisfies 校验完整性。
  * 模板占位符使用 {word}，与客户端 locale 服务约定一致。
  */
-import type { SettingsNamespace } from '@deepseek-ai/dsh-settings'
+import { LOCALE_SETTINGS_NAMESPACE } from '@deepseek-ai/dsh-client-locale'
 import type { Context } from '@deepseek-ai/cordis'
 import { EN_DIVISION, ZH_DIVISION } from './names.ts'
-import { expertSettingsNamespace } from './settings.ts'
-
-const LOCALE_SETTINGS_NAMESPACE = expertSettingsNamespace('locale')
 
 /** 与 DSH locale 插件一致的语言标识。 */
 export type LocaleId = 'zh' | 'en'
@@ -103,26 +100,14 @@ export function formatHost(locale: LocaleId, key: HostKey, params?: Record<strin
 }
 
 /** 从宿主 locale.preference 读取语言，缺失或异常时使用默认英文。 */
-export function readHostLocale(ctx: {
-  settings?: {
-    get?: (ns: SettingsNamespace) => unknown
-    describe?: () => ReadonlyArray<{ ns?: unknown; value?: unknown }>
-  }
-}): LocaleId {
+export function readHostLocale(ctx: { settings?: Pick<Context['settings'], 'describe'> }): LocaleId {
   try {
-    // Cordis 对未注入服务的属性访问会直接抛错，optional chaining 拦不住。
-    const settings = ctx.settings
-    if (typeof settings?.get === 'function') {
-      const section = settings.get(LOCALE_SETTINGS_NAMESPACE) as { preference?: unknown } | undefined
-      if (section !== undefined) return resolveHostLocale(section.preference)
-    }
-    const described = settings?.describe?.().find((item) => item.ns === LOCALE_SETTINGS_NAMESPACE)
-    const value = described?.value
+    const value = ctx.settings?.describe().find(item => item.ns === LOCALE_SETTINGS_NAMESPACE)?.value
     const preference = value !== null && typeof value === 'object' && 'preference' in value
-      ? (value as { preference?: unknown }).preference
-      : undefined
+      ? value.preference : undefined
     return resolveHostLocale(preference)
-  } catch {
+  } catch (_error) {
+    // Optional Settings may be absent during service teardown.
     return 'en'
   }
 }
@@ -145,27 +130,16 @@ export function createHostLocaleReader(ctx: Context): () => LocaleId {
       try { current = readHostLocale(ctx) } finally { refreshing = false }
     })
   }
-  ctx.on?.('settings/document-updated', (ns) => {
+  ctx.on('settings/document-updated', (ns) => {
     if (ns === LOCALE_SETTINGS_NAMESPACE) scheduleRefresh()
   })
-  ctx.on?.('internal/status', (fiber) => {
+  ctx.on('internal/status', (fiber) => {
     // apply 可能早于 locale 的首次激活；不能依赖 schema 读取来纠正初始回退值。
-    const entry = (fiber as { entry?: { options?: { id?: string } } }).entry
-    if (fiber.state === 2 && entry?.options?.id === LOCALE_SETTINGS_NAMESPACE) scheduleRefresh()
+    if (fiber.state === 2 && fiber.entry?.options.id === LOCALE_SETTINGS_NAMESPACE) scheduleRefresh()
   })
-  ctx.effect?.(() => () => { disposed = true })
+  ctx.effect(() => () => { disposed = true })
 
-  return () => {
-    // get() 能读到当前快照时直接用，不依赖设置事件是否已经发出。
-    try {
-      const settings = ctx.settings as Parameters<typeof readHostLocale>[0]['settings']
-      const section = settings?.get?.(LOCALE_SETTINGS_NAMESPACE) as { preference?: unknown } | undefined
-      if (section !== undefined) current = resolveHostLocale(section.preference)
-    } catch {
-      // 服务卸载或读取异常时保留最后一次有效语言。
-    }
-    return current
-  }
+  return () => current
 }
 
 /** 分区查询同时认 key、中文名和英文名。 */

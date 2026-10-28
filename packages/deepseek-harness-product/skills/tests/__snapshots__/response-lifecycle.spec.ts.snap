@@ -1,0 +1,8 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`keeps the archive size diagnostic when cancellation itself rejects 1`] = `
+{
+  "code": "error.repo.tooLarge",
+  "error": "仓库归档超过 32 MiB",
+}
+`;

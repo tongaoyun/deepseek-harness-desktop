@@ -20,11 +20,17 @@
     ],
     "allowImportingTsExtensions": true,
     "noUnusedLocals": true,
-    "noUnusedParameters": true
+    "noUnusedParameters": true,
+    "paths": {
+      "@deepseek-harness/product-skills/types": [
+        "./src/types.ts"
+      ]
+    }
   },
   "include": [
     "src/**/*.ts",
     "test/types/**/*.ts",
+    "tests/**/*.ts",
     "tests/**/*.tsx"
   ]
 }

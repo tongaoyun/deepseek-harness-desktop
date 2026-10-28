@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { mkdir, mkdtemp, realpath, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, realpath, readFile, readdir, rm, stat, chmod, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { zipSync, strToU8 } from 'fflate'
@@ -7,7 +7,6 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { createRepositoryManager } from './repositories.ts'
 import { getProviderSkill, listProviderCandidates, managerHomePath, readManagerState, scanEntries, setSkillEnabled, toKebab, userRoots } from './core.ts'
 import { selectInstallRecord } from './repository-updates.ts'
-import { resolveApiUrl } from './api-base.ts'
 
 vi.mock('node:os', async importOriginal => ({ ...await importOriginal<typeof import('node:os')>(), homedir: () => process.env.DSH_HOME! }))
 let home: string
@@ -173,12 +172,45 @@ it('does not create policy records for an unknown missing skill', async () => {
   expect((await readManagerState()).state.disabledSkills.codex).toEqual([])
 })
 
-it.each([
-  ['https://harness.test/', 'https://harness.test/api/dsh-skills-manager/state'],
-  ['https://harness.test/traefik/harness/', 'https://harness.test/traefik/harness/api/dsh-skills-manager/state'],
-  ['https://harness.test/traefik/harness', 'https://harness.test/traefik/harness/api/dsh-skills-manager/state'],
-  ['https://harness.test/traefik/harness/?view=skills#details', 'https://harness.test/traefik/harness/api/dsh-skills-manager/state'],
-])('resolves skills API paths beneath the page base %s', (base, expected) => {
-  expect(resolveApiUrl('/api/dsh-skills-manager/state', base)).toBe(expected)
-  expect(resolveApiUrl('/api/dsh-skills-manager/disable', base)).toBe(expected.replace(/state$/, 'disable'))
+it('rechecks native invocation restrictions when an external skill changes after discovery', async () => {
+  const directory = join(home, '.codex', 'skills', 'audit-orders')
+  await mkdir(directory, { recursive: true })
+  const file = join(directory, 'SKILL.md')
+  await writeFile(file, text('Original allowed body'))
+  const candidate = (await listProviderCandidates()).find(value => value.name === 'audit-orders')
+  if (!candidate) throw new Error('Missing external candidate')
+  await writeFile(file, '---\nname: audit-orders\ndescription: Restricted skill\ndisable-model-invocation: true\nuser-invocable: false\n---\nRestricted body\n')
+  expect(await getProviderSkill(candidate)).toMatchObject({
+    description: 'Restricted skill', invocation: { modelInvocable: false, userInvocable: false },
+  })
+  await writeFile(file, '---\nname: audit-orders\ndescription: Legacy policy\nuserInvocable: false\n---\nBlocked body\n')
+  const restricted = await getProviderSkill(candidate)
+  expect(restricted?.invocation).toEqual({ modelInvocable: false, userInvocable: false })
+  expect(restricted && { description: restricted.description, invocation: restricted.invocation }).toMatchSnapshot()
+})
+
+it('keeps manager state and repository archives private when replacing existing files', async () => {
+  const root = userRoots().find(value => value.key === 'codex')!
+  await mkdir(join(root.path, 'audit-orders'), { recursive: true })
+  await writeFile(join(root.path, 'audit-orders', 'SKILL.md'), text('Private policy'))
+  await setSkillEnabled(root, 'audit-orders', true)
+  const policy = join(managerHomePath(), 'state.json')
+  await chmod(policy, 0o644)
+  await setSkillEnabled(root, 'audit-orders', false)
+  const fetchImpl = vi.fn(async () => new Response(zipSync({ 'repo-main/skills/audit-orders/SKILL.md': strToU8(text('Private archive')) })))
+  const manager = createRepositoryManager({ fetchImpl })
+  const repo = await manager.add({ url: 'instudio/skills' })
+  const stateFile = join(managerHomePath(), 'repositories.json')
+  await chmod(stateFile, 0o644)
+  await manager.refresh({ id: repo.id })
+  const cache = join(managerHomePath(), 'repository-cache')
+  const archives = (await readdir(cache)).filter(name => name.endsWith('.zip'))
+  expect(archives).toHaveLength(1)
+  if (process.platform !== 'win32') {
+    for (const file of [policy, stateFile, ...archives.map(name => join(cache, name))]) {
+      expect((await stat(file)).mode & 0o777).toBe(0o600)
+    }
+  }
+  expect((await readdir(managerHomePath())).filter(name => name.endsWith('.tmp'))).toEqual([])
+  expect((await readdir(cache)).filter(name => name.endsWith('.tmp'))).toEqual([])
 })

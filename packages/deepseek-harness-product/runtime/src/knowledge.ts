@@ -1,6 +1,6 @@
 import type { Context } from '@deepseek-ai/cordis'
 import { defineTool } from '@deepseek-ai/dsh-tools'
-import { getProductData } from './data.ts'
+import { getProductData, scopedProductInvoker } from './data.ts'
 export const inject = ['productData', 'tools', 'systemPrompt']
 export interface Config { readonly knowledgeBaseIds: readonly string[] }
 interface KnowledgeHit {
@@ -32,19 +32,8 @@ function sourceMetadata(hits: readonly KnowledgeHit[]) {
 
 export function apply(ctx: Context, config: Config): void {
   const product = getProductData(ctx)
-  const lifecycle = new AbortController()
-  const pending = new Set<Promise<unknown>>()
-  const invoke = (method: 'knowledge.search' | 'knowledge.sources.read', input: unknown, signal: AbortSignal) => {
-    const combined = AbortSignal.any([signal, lifecycle.signal])
-    combined.throwIfAborted()
-    const operation = product.invoke(method, input, combined)
-    pending.add(operation)
-    return operation.finally(() => { pending.delete(operation) })
-  }
-  ctx.effect(() => async () => {
-    lifecycle.abort(new Error('Knowledge scope unloaded'))
-    await Promise.allSettled([...pending])
-  }, 'product-knowledge.requests')
+  const requests = scopedProductInvoker(product, 'Knowledge scope unloaded')
+  ctx.effect(() => requests.dispose, 'product-knowledge.requests')
   const ids = config.knowledgeBaseIds
   if (ids.length === 0) throw new Error('Knowledge tool requires an explicit selection')
   ctx.systemPrompt.section({
@@ -78,7 +67,7 @@ export function apply(ctx: Context, config: Config): void {
       if (args.query.trim() === '' || args.query.length > 2_000) throw new Error('query must be between 1 and 2000 characters')
       const limit = args.limit ?? 8
       if (limit < 1 || limit > 12) throw new Error('limit must be between 1 and 12')
-      const result = await invoke('knowledge.search', {
+      const result = await requests.invoke('knowledge.search', {
         query: args.query.trim(), knowledgeBaseRefs: [],
         knowledgeBaseIds: ids, restrictToKnowledgeBaseRefs: true, limit,
       }, exec.signal)
@@ -98,7 +87,7 @@ export function apply(ctx: Context, config: Config): void {
     presentResult: (_args, result) => ({ card: 'generic', kind: 'read', title: 'Knowledge source', content: result.content }),
     isConcurrencySafe: () => true,
     async execute(args, exec) {
-      const result = await invoke('knowledge.sources.read', { sourceId: args.sourceId }, exec.signal)
+      const result = await requests.invoke('knowledge.sources.read', { sourceId: args.sourceId }, exec.signal)
       const hit = knowledgeHit(result)
       if (hit.sourceId !== args.sourceId) throw new Error('Knowledge source does not match the requested fragment')
       if (!ids.includes(hit.knowledgeBaseId)) throw new Error('Knowledge source is outside the selected task scope')

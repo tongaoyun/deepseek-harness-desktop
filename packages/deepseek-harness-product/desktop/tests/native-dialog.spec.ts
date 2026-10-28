@@ -27,3 +27,30 @@ it('returns an active native choice and releases its cancellation listener', asy
   await expect(waitForNativeDialog(() => Promise.resolve(choice), controller.signal)).resolves.toBe(choice)
   expect(remove).toHaveBeenCalledWith('abort', expect.any(Function))
 })
+
+it('cancels even when an earlier observer stops abort event propagation', async () => {
+  const owner = new AbortController()
+  owner.signal.addEventListener('abort', (event) => { event.stopImmediatePropagation() })
+  const dialog = Promise.withResolvers<string>()
+  const result = waitForNativeDialog(() => dialog.promise, owner.signal)
+  owner.abort(new Error('Owner closed'))
+  dialog.resolve('late choice')
+  await expect(result).rejects.toThrow('Owner closed')
+})
+
+it('normalizes synchronous picker failures and disposes the listener', async () => {
+  const owner = new AbortController()
+  const remove = vi.spyOn(owner.signal, 'removeEventListener')
+  await expect(waitForNativeDialog(() => { throw 'not an Error' }, owner.signal)).rejects.toThrow('Native dialog operation failed')
+  expect(remove).toHaveBeenCalledWith('abort', expect.any(Function))
+})
+
+
+it('keeps cancellation authoritative when opening the picker also throws', async () => {
+  const owner = new AbortController()
+  const result = waitForNativeDialog(() => {
+    owner.abort(new Error('Owner stopped'))
+    throw new Error('Picker could not open')
+  }, owner.signal)
+  await expect(result).rejects.toThrow('Owner stopped')
+})

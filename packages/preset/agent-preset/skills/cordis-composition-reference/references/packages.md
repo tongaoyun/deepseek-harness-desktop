@@ -173,6 +173,7 @@ Every package below exports a Cordis plugin that a bundle patch can name in a Lo
 |---|---|---|
 | `@deepseek-harness/product-experts` | yes | Harness 内建专家套件模块 |
 | `@deepseek-harness/product-runtime` | yes | undefined |
+| `@deepseek-harness/product-skills` | no | Harness 内建技能模块 |
 
 ## deliverables
 

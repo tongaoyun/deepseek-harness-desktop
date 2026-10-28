@@ -1,0 +1,8 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`自定义专家 Host 存储 > 公司自定义分类 constructor 保存后仍按原名展示 1`] = `
+{
+  "division": "constructor",
+  "divisionZh": "constructor",
+}
+`;

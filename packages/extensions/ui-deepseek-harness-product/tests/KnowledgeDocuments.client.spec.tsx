@@ -3,7 +3,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testi
 import { afterEach, expect, it, vi } from 'vitest'
 import { StrictMode } from 'react'
 import { ProductError } from '@deepseek-harness/product/errors'
-import { KnowledgeDetail } from '../src/client/KnowledgeView.tsx'
+import { KnowledgeDocuments } from '../src/client/KnowledgeDocuments.tsx'
 import { KnowledgeEditor } from '../src/client/KnowledgeEditor.tsx'
 import { items, localDetail } from '../src/client/catalog-shared.tsx'
 import { zh, type DeepSeekHarnessProductKey } from '../src/locales.ts'
@@ -33,7 +33,7 @@ afterEach(() => { cleanup(); vi.unstubAllGlobals() })
 
 it('browses paginated materials and filters at the server without changing task selection', async () => {
   const api = transport(async method => method === 'knowledge.documents.list' ? page([document], 41) : page([]))
-  await act(async () => { render(<KnowledgeDetail renderFactorySlot={renderKnowledgePreview} product={library()} t={t} />) })
+  await act(async () => { render(<KnowledgeDocuments renderFactorySlot={renderKnowledgePreview} product={library()} t={t} />) })
   await screen.findByRole('button', { name: document.filename })
   expect(screen.queryByRole('checkbox')).toBeNull()
   expect(screen.queryByRole('button', { name: zh.knowledgeUpload })).toBeNull()
@@ -56,7 +56,7 @@ it('browses paginated materials and filters at the server without changing task 
 it('shows the localized failed index state without exposing parser diagnostics in library details', async () => {
   const failureMessage = 'anydoc malformed archive; internal source path: /private/parser/uploads/document.docx'
   transport(async method => method === 'knowledge.documents.list' ? page([{ ...document, status: 'FAILED', failureMessage }]) : page([]))
-  const { container } = render(<KnowledgeDetail renderFactorySlot={renderKnowledgePreview} product={library()} t={t} />)
+  const { container } = render(<KnowledgeDocuments renderFactorySlot={renderKnowledgePreview} product={library()} t={t} />)
   const file = await screen.findByRole('button', { name: document.filename })
   expect(file.hasAttribute('disabled')).toBe(false)
   expect(within(screen.getByRole('table')).getByText(zh.knowledgeIndexFailed)).toBeDefined()
@@ -75,7 +75,7 @@ it('lets managers stop active processing and reprocess while preserving original
     }
     return page([])
   })
-  render(<KnowledgeDetail renderFactorySlot={renderKnowledgePreview} product={library(true)} t={t} />)
+  render(<KnowledgeDocuments renderFactorySlot={renderKnowledgePreview} product={library(true)} t={t} />)
   await screen.findByRole('button', { name: document.filename })
   expect(within(screen.getByRole('table')).getByText(zh.knowledgeProcessing).getAttribute('title')).toBe(zh.knowledgeProcessingHint)
   const actions = () => screen.getByRole('button', { name: zh.knowledgeDocumentActions.replace('{name}', document.filename) })
@@ -100,7 +100,7 @@ it('lets managers stop active processing and reprocess while preserving original
 
 it('keeps active files readable without showing processing management to ordinary employees', async () => {
   const api = transport(async method => method === 'knowledge.documents.list' ? page([{ ...document, status: 'QUEUED' }]) : page([]))
-  render(<KnowledgeDetail renderFactorySlot={renderKnowledgePreview} product={library()} t={t} />)
+  render(<KnowledgeDocuments renderFactorySlot={renderKnowledgePreview} product={library()} t={t} />)
   await screen.findByRole('button', { name: document.filename })
   fireEvent.click(screen.getByRole('button', { name: zh.knowledgeDocumentActions.replace('{name}', document.filename) }))
   expect(screen.queryByRole('menuitem', { name: zh.knowledgeStopProcessing })).toBeNull()
@@ -111,7 +111,7 @@ it('keeps active files readable without showing processing management to ordinar
 
 it('does not promise an original file for a webpage still processing', async () => {
   transport(async method => method === 'knowledge.documents.list' ? page([{ ...document, status: 'PROCESSING', sourceType: 'url' }]) : page([]))
-  render(<KnowledgeDetail renderFactorySlot={renderKnowledgePreview} product={library()} t={t} />)
+  render(<KnowledgeDocuments renderFactorySlot={renderKnowledgePreview} product={library()} t={t} />)
   await screen.findByRole('button', { name: document.filename })
   expect(within(screen.getByRole('table')).getByText(zh.knowledgeProcessing).getAttribute('title')).toBeNull()
 })
@@ -123,7 +123,7 @@ it('reads document passages and cancels outstanding content requests when closed
     if (method === 'knowledge.documents.preview.open') return new Promise((resolve) => { content = resolve })
     return page([])
   })
-  render(<KnowledgeDetail renderFactorySlot={renderKnowledgePreview} product={library()} t={t} />)
+  render(<KnowledgeDocuments renderFactorySlot={renderKnowledgePreview} product={library()} t={t} />)
   fireEvent.click(await screen.findByRole('button', { name: document.filename }))
   await screen.findByRole('dialog', { name: document.filename })
   const request = api.invoke.mock.calls.find(row => row[1] === 'knowledge.documents.preview.open')
@@ -132,28 +132,6 @@ it('reads document passages and cancels outstanding content requests when closed
   expect(api.cancel).toHaveBeenCalledWith('product', request?.[3])
   await act(async () => { content(page([{ id: 'chunk', documentId: document.id, content: '旧正文', locator: '第 1 页' }])) })
   expect(screen.queryByText('旧正文')).toBeNull()
-})
-
-it('searches one selected library and opens a retrieval source through the server', async () => {
-  const hit = { sourceId: 'chunk-1', documentId: document.id, filename: document.filename, content: '合同依据', locator: '第 1 页' }
-  const api = transport(async method => method === 'knowledge.search' ? [hit] : method === 'knowledge.sources.read'
-    ? { ...hit, content: '完整来源' } : method === 'knowledge.documents.preview.open'
-      ? page([{ id: 'chunk-all', documentId: document.id, content: '完整文档正文', locator: '第 1 页' }]) : page([]))
-  render(<KnowledgeDetail renderFactorySlot={renderKnowledgePreview} product={library()} t={t} />)
-  fireEvent.click(screen.getByRole('tab', { name: zh.knowledgeRetrieval }))
-  fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'policy' } })
-  fireEvent.click(screen.getByRole('button', { name: zh.search }))
-  fireEvent.click(await screen.findByRole('button', { name: document.filename }))
-  await screen.findByText('完整来源')
-  expect(api.invoke).toHaveBeenCalledWith('product', 'knowledge.search', {
-    query: 'policy', knowledgeBaseIds: ['policy'], knowledgeBaseRefs: [], restrictToKnowledgeBaseRefs: true, limit: 8,
-  }, expect.any(String))
-  expect(api.invoke).toHaveBeenCalledWith('product', 'knowledge.sources.read', { sourceId: 'chunk-1' }, expect.any(String))
-  fireEvent.click(screen.getByRole('button', { name: zh.knowledgeReadFullDocument }))
-  await screen.findByText('完整文档正文')
-  expect(api.invoke).toHaveBeenCalledWith('product', 'knowledge.documents.preview.open', {
-    knowledgeBaseId: 'policy', documentId: document.id,
-  }, expect.any(String), 300_000)
 })
 
 it('preserves edits and the idempotency key after a failed manual document save', async () => {
@@ -198,7 +176,7 @@ it.each(['markdown', 'url'] as const)('preserves %s creation destination and edi
 
 it('exposes upload and creation only to a library manager and accepts native picker cancellation', async () => {
   const api = transport(async method => method === 'knowledge.documents.upload.select' ? [] : page([]))
-  render(<StrictMode><KnowledgeDetail renderFactorySlot={renderKnowledgePreview} product={library(true)} t={t} /></StrictMode>)
+  render(<StrictMode><KnowledgeDocuments renderFactorySlot={renderKnowledgePreview} product={library(true)} t={t} /></StrictMode>)
   await waitFor(() => { expect(screen.getByRole<HTMLButtonElement>('button', { name: zh.knowledgeUpload }).disabled).toBe(false) })
   fireEvent.click(screen.getByRole('button', { name: zh.knowledgeUpload }))
   fireEvent.click(await screen.findByRole('menuitem', { name: zh.knowledgeUploadStandard }))
@@ -217,7 +195,7 @@ it('offers no-OCR PDF extraction without accepting a renderer file path or chang
     ? [{ operationId: 'pdf-upload-operation-1', filename: 'policy.pdf', pdfParseMode: 'TEXT', folderId: null }]
     : method === 'knowledge.documents.upload' ? { ...document, filename: 'policy.pdf', status: 'QUEUED' }
       : method === 'knowledge.documents.upload.discard' ? { discarded: true } : page([]))
-  render(<KnowledgeDetail renderFactorySlot={renderKnowledgePreview} product={library(true)} t={t} />)
+  render(<KnowledgeDocuments renderFactorySlot={renderKnowledgePreview} product={library(true)} t={t} />)
   await waitFor(() => { expect(screen.getByRole<HTMLButtonElement>('button', { name: zh.knowledgeUpload }).disabled).toBe(false) })
   fireEvent.click(screen.getByRole('button', { name: zh.knowledgeUpload }))
   fireEvent.click(await screen.findByRole('menuitem', { name: zh.knowledgeUploadTextPdf }))
@@ -238,7 +216,7 @@ it.each([
     if (method === 'knowledge.documents.upload.select') throw new ProductError(code, 'Private upstream response', false)
     return page([])
   })
-  render(<KnowledgeDetail renderFactorySlot={renderKnowledgePreview} product={library(true)} t={t} />)
+  render(<KnowledgeDocuments renderFactorySlot={renderKnowledgePreview} product={library(true)} t={t} />)
   await waitFor(() => { expect(screen.getByRole<HTMLButtonElement>('button', { name: zh.knowledgeUpload }).disabled).toBe(false) })
   fireEvent.click(screen.getByRole('button', { name: zh.knowledgeUpload }))
   fireEvent.click(await screen.findByRole('menuitem', { name: zh.knowledgeUploadTextPdf }))
@@ -250,7 +228,7 @@ it.each([
 it('keeps folder browsing scoped to stable folder IDs and retains server-side permissions', async () => {
   const api = transport(async (method, payload) => method === 'knowledge.folders.list' && typeof payload === 'object' && payload !== null && 'parentId' in payload && payload.parentId === null
     ? page([{ id: 'folder-1', name: '业务制度', parentId: null, updatedAt: '2026-10-17T00:00:00Z' }]) : page([]))
-  render(<KnowledgeDetail renderFactorySlot={renderKnowledgePreview} product={library()} t={t} />)
+  render(<KnowledgeDocuments renderFactorySlot={renderKnowledgePreview} product={library()} t={t} />)
   fireEvent.click((await screen.findAllByRole('button', { name: '业务制度' }))[0]!)
   await waitFor(() => { expect(api.invoke).toHaveBeenCalledWith('product', 'knowledge.documents.list', {
     knowledgeBaseId: 'policy', page: 1, size: 20, folderId: 'folder-1',
@@ -274,7 +252,7 @@ it('retains the delete confirmation and operation identity after a temporary fai
     }
     return page([])
   })
-  render(<KnowledgeDetail renderFactorySlot={renderKnowledgePreview} product={library(true)} t={t} />)
+  render(<KnowledgeDocuments renderFactorySlot={renderKnowledgePreview} product={library(true)} t={t} />)
   fireEvent.click(await screen.findByRole('button', { name: zh.knowledgeDocumentActions.replace('{name}', document.filename) }))
   fireEvent.click(await screen.findByRole('menuitem', { name: zh.deleteResource }))
   fireEvent.click(screen.getByRole('button', { name: zh.deleteResource }))
@@ -305,7 +283,7 @@ it.each(['delete', 'reindex', 'cancel'] as const)('retains the %s operation iden
     : { ...row, status: action === 'cancel' ? 'CANCELLED' : 'QUEUED' }
   const api = transport(async name => name === 'knowledge.documents.list' ? page([row]) : name === method
     ? valid ? receipt : { ...receipt, ...action === 'delete' ? { documentId: 'another-document' } : { id: 'another-document' } } : page([]))
-  render(<KnowledgeDetail renderFactorySlot={renderKnowledgePreview} product={library(true)} t={t} />)
+  render(<KnowledgeDocuments renderFactorySlot={renderKnowledgePreview} product={library(true)} t={t} />)
   const trigger = async () => {
     fireEvent.click(await screen.findByRole('button', { name: zh.knowledgeDocumentActions.replace('{name}', document.filename) }))
     fireEvent.click(screen.getByRole('menuitem', { name: action === 'delete' ? zh.deleteResource : action === 'cancel' ? zh.knowledgeStopProcessing : zh.knowledgeReindex }))

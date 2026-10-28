@@ -43,13 +43,15 @@ test('专家选择浮层使用宿主模态窗口标准层级背景与面板圆�
   assert.match(clientIndex, /className:\s*'aag-menu aag-discovery'[^}]*role:\s*'dialog'[^}]*'aria-modal':\s*'true'/)
 })
 
-test('输入框使用宿主原生 Input 原语，不污染 allowClear 属性到 DOM，不手写清除按钮', () => {
+test('输入框使用宿主原生 Input 属性和图标，不手写清除按钮', () => {
   const html = renderToStaticMarkup(React.createElement(Input, {
     value: 'review',
-    allowClear: { clearIcon: React.createElement('span', { 'aria-label': '清除搜索' }) },
+    icon: React.createElement('span', { 'aria-label': '搜索' }),
+    'aria-label': '搜索专家',
     onChange: () => undefined,
   }))
-  assert.doesNotMatch(html, /allowClear/)
+  assert.match(html, /aria-label="搜索专家"/)
+  assert.match(html, /aria-label="搜索"/)
   assert.doesNotMatch(html, /aag-input-clearable/)
   assert.doesNotMatch(html, /<button/)
 })
@@ -118,7 +120,7 @@ test('弹窗右上角的关闭按钮与页脚动作不同名，避免同名二�
     value: { name: '专家', prompt: '正文' },
     title: '提示词',
     closeLabel: '关闭',
-    returnFocus: undefined as unknown as HTMLElement,
+    returnFocus: document.createElement('button'),
     onClose: () => undefined,
   }))
   assert.equal(nameCount(prompt, '关闭'), 1, '× 不应复用页脚关闭文案')

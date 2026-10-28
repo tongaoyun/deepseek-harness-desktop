@@ -1,3 +1,0 @@
-// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
-
-exports[`clears search summaries and the reader after knowledge.sources.read denies access 1`] = `"在知识库中搜索搜索所选知识库已失去访问权限，请刷新并重新选择。 (KNOWLEDGE_ACCESS_REVOKED)"`;

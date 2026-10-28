@@ -3,68 +3,19 @@ import { teamText } from './team-i18n.ts';
 import { createHash } from 'node:crypto';
 import type { Context } from '@deepseek-ai/cordis';
 import type { Agent } from '@deepseek-ai/dsh-agent';
+import type { TeamService, TeamTaskId } from '@deepseek-ai/dsh-experimental-agent-team';
 import { executeTeam } from './team-runtime.ts';
 import type { TeamEngineStatus } from './team-contract.ts';
-/** 只依赖已核对的原生接口形状。未安装实验包时回退普通子代理，不要求每个 0.2.x 宿主都启用 Agent Team。 */
-export interface NativeTeamService {
-    tryMembership(agent: object): {
-        role: string;
-        name: string;
-    } | undefined;
-    listMembers(agent: object): {
-        name: string;
-        status: string;
-    }[];
-    spawnTeammate(agent: object, request: {
-        name: string;
-        description: string;
-        prompt: {
-            type: 'text';
-            text: string;
-        }[];
-        context: 'fresh';
-        provider: string;
-        signal: AbortSignal;
-    }): Promise<{
-        member: {
-            name: string;
-            status: string;
-        };
-    }>;
-    sendMessage(agent: object, request: {
-        target: string;
-        content: {
-            type: 'text';
-            text: string;
-        }[];
-        signal: AbortSignal;
-    }): Promise<unknown>;
-    createTask(agent: object, request: {
-        subject: string;
-        description: string;
-    }): Promise<{
-        id: string;
-        revision: number;
-    }>;
-    updateTask(agent: object, request: {
-        taskId: string;
-        expectedRevision: number;
-        action: 'delete';
-    }): Promise<unknown>;
-    waitForChange(agent: object, timeoutMs: number, signal: AbortSignal): Promise<unknown>;
-    interrupt(agent: object, name: string): unknown;
-}
-const methods = ['tryMembership', 'listMembers', 'spawnTeammate', 'sendMessage', 'createTask', 'updateTask', 'waitForChange', 'interrupt'] as const;
+/** Native methods consumed by expert teams; the optional service remains Host-owned. */
+export type NativeTeamService = Pick<TeamService,
+    'tryMembership' | 'listMembers' | 'spawnTeammate' | 'sendMessage' | 'createTask' | 'updateTask' | 'interrupt'>;
 const delegationTools = new Set(['summon_expert', 'summon_experts', 'list_experts', 'list_expert_teams', 'get_expert_team', 'summon_expert_team', 'spawn_teammate', 'subagent', 'subagent_fork']);
 /** 原生队友仍遵守本插件不递归扩团的边界，由宿主工具门禁强制执行。 */
-export function blocksNativeDelegation(service: unknown, agent: object | undefined, tool: string): boolean {
-    if (!agent || !delegationTools.has(tool) || !isNativeTeamService(service))
+export function blocksNativeDelegation(service: NativeTeamService | undefined, agent: Agent | undefined, tool: string): boolean {
+    if (!agent || !delegationTools.has(tool) || service === undefined)
         return false;
     const member = service.tryMembership(agent);
     return member?.role === 'teammate' && /^agency-[a-z0-9-]+-[0-9a-f]{10}$/u.test(member.name);
-}
-export function isNativeTeamService(value: unknown): value is NativeTeamService {
-    return value !== null && typeof value === 'object' && methods.every(key => typeof (value as Record<string, unknown>)[key] === 'function');
 }
 let agentTeamInstalled: boolean | undefined
 /** 可选专家团仅使用当前装配中实际可解析的包。同一进程只探测一次。 */
@@ -81,10 +32,10 @@ export function hostHasAgentTeam(): boolean {
         throw error;
     }
 }
-export function detectTeamEngine(service: unknown, supported: boolean, toolsReady = true, maxDepth?: number, locale: 'zh' | 'en' = 'zh'): TeamEngineStatus {
+export function detectTeamEngine(service: NativeTeamService | undefined, supported: boolean, toolsReady = true, maxDepth?: number, locale: 'zh' | 'en' = 'zh'): TeamEngineStatus {
     const tx = (key: string, values?: readonly unknown[]) => teamText(locale, key, values);
 
-    const compatible = isNativeTeamService(service);
+    const compatible = service !== undefined;
     if (!supported && !compatible)
         return { state: 'unsupported', mode: 'subagent', reason: tx("当前宿主未检测到兼容的 Agent Team 能力，使用普通子代理。"), recommendation: '' };
     if (!compatible || !toolsReady)
@@ -94,18 +45,19 @@ export function detectTeamEngine(service: unknown, supported: boolean, toolsRead
     return { state: 'enabled', mode: 'native', reason: tx("Agent Team 已启用，使用原生团队协作。"), recommendation: '' };
 }
 export function resolveTeamEngine(ctx: Context, agent?: Agent, maxDepth?: number) {
-    const service: unknown = ctx.get('agentTeams');
-    const toolsReady = !isNativeTeamService(service) || !agent || ['spawn_teammate', 'send_message', 'wait_agent', 'team_task_create', 'team_task_update', 'team_task_list'].every(name => agent.ctx?.tools?.get?.(name, agent) !== undefined);
-    return { service: isNativeTeamService(service) ? service : undefined, status: detectTeamEngine(service, isNativeTeamService(service) || hostHasAgentTeam(), toolsReady, maxDepth, readHostLocale(ctx)) };
+    const service = ctx.get('agentTeams');
+    const tools = service === undefined ? undefined : agent?.ctx.get('tools');
+    const toolsReady = service === undefined || agent === undefined || tools !== undefined && ['spawn_teammate', 'send_message', 'wait_agent', 'team_task_create', 'team_task_update', 'team_task_list'].every(name => tools.get(name, agent) !== undefined);
+    return { service, status: detectTeamEngine(service, service !== undefined || hostHasAgentTeam(), toolsReady, maxDepth, readHostLocale(ctx)) };
 }
-const activeLeads = new WeakSet<object>();
+const activeLeads = new WeakSet<Agent>();
 /** 显示名称可以变化；此持久标识必须保持原算法，以复用已存在的队友。 */
 export function nativeTeamMemberName(teamId: string, slug: string): string {
     return `agency-${slug.slice(0, 36).replace(/-+$/u, '')}-${createHash('sha256').update(`${teamId}:${slug}`).digest('hex').slice(0, 10)}`;
 }
 type NativeDispatchArgs = Omit<Parameters<typeof executeTeam>[0], 'run'> & {
     service: NativeTeamService;
-    agent: object;
+    agent: Agent;
     provider: string;
     signal: AbortSignal;
 };
@@ -121,7 +73,7 @@ export async function dispatchNativeTeam(args: NativeDispatchArgs) {
     const launched: string[] = [];
     const tasks = new Map<string, {
         name: string;
-        taskId: string;
+        taskId: TeamTaskId;
     }>();
     try {
         const report = await executeTeam({ ...args, team, run: async (member) => {
@@ -129,7 +81,7 @@ export async function dispatchNativeTeam(args: NativeDispatchArgs) {
                 // 队友名持久保留，复用同团同专家，避免每次召唤耗尽宿主名额。
                 const name = nativeTeamMemberName(args.team.id, member.slug);
                 const existing = args.service.listMembers(args.agent).find(item => item.name === name);
-                if (existing && !['idle', 'inactive'].includes(existing.status))
+                if (existing && existing.status !== 'inactive')
                     throw new Error(tx("专家队友仍在运行或不可恢复：{0}", [existing.status]));
                 const task = await args.service.createTask(args.agent, {
                     subject: `${team.name}：${member.name}`.slice(0, 180),

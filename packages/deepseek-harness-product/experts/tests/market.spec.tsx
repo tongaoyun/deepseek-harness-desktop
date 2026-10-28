@@ -1,6 +1,7 @@
+// @vitest-environment jsdom
+import { createExpertClientState } from '../src/client/client-state.ts'
 import { Context } from '@deepseek-ai/cordis'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
-// @vitest-environment jsdom
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, expect, it, onTestFinished, vi } from 'vitest'
 import type { ComponentProps } from 'react'
@@ -24,7 +25,7 @@ function setup(shared: boolean, gate?: Promise<void>) {
   const locale = new LocaleRuntime(ctx)
   locale.register('agency', { zh, en })
   locale.setLocale('zh')
-  render(<AgencySettingsPanel remote={remote} t={locale.bind('agency')} getActive={() => 'zh'} prepareTeamSelection={() => () => true} />)
+  render(<AgencySettingsPanel cache={createExpertClientState(remote)} remote={remote} t={locale.bind('agency')} getActive={() => 'zh'} prepareTeamSelection={() => () => true} />)
   return remote
 }
 

@@ -100,7 +100,7 @@
         {
           "path": "scripts/rescope-vendor.ts",
           "before": "cc64e6b550cabb1486d2ad7f04f19f86a4e55625202e08ed8f3cbc55b0c690d8",
-          "after": "6fc90689b3658748e03b1bd47a4e98a33fa0e77565ef4a2d8a043523a7591fdc"
+          "after": "76ec0edf47be74fb3a11c588caa6c325daf13373ce44bc64e073b2806733f3a0"
         }
       ],
       "diff": "rescope-runtime-identifiers.patch"
@@ -125,7 +125,7 @@
         {
           "path": "scripts/verify-product-use.ts",
           "before": "2c86e81f400f932667f28c83d3f87c40b33df2ca1528892f458871140231df5d",
-          "after": "388742a942891430aa66eb9c6ac880d38ce1913addc8c275f6f3956f69fae96c"
+          "after": "1dcd2716a9f15fb3521cfef1fb5829496736bebbe5316f624453f983cb268469"
         }
       ],
       "diff": "product-package-classification.patch"
@@ -753,7 +753,7 @@
     },
     {
       "id": "workspace-integration",
-      "purpose": "Workspace integration registers private external-namespace packages, their compiler programs and public exports, and product assembly commands. Official runtime manifests and sources have no product dependency. Product build configuration stays package-local. Repository reference scanning distinguishes lockfile artifact byte counts from commit references while retaining checks for references on the same line. 产品协议包声明 YAML 解析依赖，独立发布工具将其打包为无需安装依赖的校验产物；不引入官方运行时对产品包的依赖。 产品运行时通过公开 Scope 与 MCP 资源、Node PTC 测试依赖验证连接器按需发现；只补充产品包依赖，不改官方执行循环。",
+      "purpose": "Workspace integration registers private external-namespace packages, their compiler programs and public exports, and product assembly commands. Official runtime manifests and sources have no product dependency. Product build configuration stays package-local. Repository reference scanning distinguishes lockfile artifact byte counts from commit references while retaining checks for references on the same line. 产品协议包声明 YAML 解析依赖，独立发布工具将其打包为无需安装依赖的校验产物；不引入官方运行时对产品包的依赖。 产品运行时通过公开 Scope 与 MCP 资源、Node PTC 测试依赖验证连接器按需发现；只补充产品包依赖，不改官方执行循环。 专家套件通过开发依赖引用原生 Agent Team 服务类型，不修改官方团队实现或默认装配。 专家 Markdown 元数据复用原生公开文档解析器；专家包声明对应工作区依赖并移除未使用的直接 YAML 依赖。 专家语言验证通过真实原生 Profile、Loader 与 Settings 组合，相关工作区包仅作为测试开发依赖。",
       "tests": [
         "scripts/check-workspace-constraints.spec.ts",
         "scripts/client-tsconfig.spec.ts",
@@ -765,7 +765,10 @@
         "packages/extensions/ui-deepseek-harness-product/tests/KnowledgeToolResult.client.spec.tsx",
         "packages/deepseek-harness-product/runtime/tests/company-skill-format.spec.ts",
         "apps/product-desktop/tests/company-content.test.mjs",
-        "packages/deepseek-harness-product/runtime/tests/erp-tool-discovery.spec.ts"
+        "packages/deepseek-harness-product/runtime/tests/erp-tool-discovery.spec.ts",
+        "packages/deepseek-harness-product/experts/src/team-engine.test.ts",
+        "packages/deepseek-harness-product/experts/src/team-integration.test.ts",
+        "packages/deepseek-harness-product/experts/tests/native-locale.test.ts"
       ],
       "files": [
         {
@@ -796,7 +799,7 @@
         {
           "path": "pnpm-lock.yaml",
           "before": "4637cca3b89c4c8d5a147321710e597aa62ec2444a3772ab542be5690893dfe4",
-          "after": "c66530b7f132062e87ceaea4d88899dd90a4ebec92f2390fd1a1acb67d718212"
+          "after": "3d045f4b38124c365a0d2589fd59f7694802c79fd5280a720dfcd110538cc2b1"
         },
         {
           "path": "scripts/check-workspace-constraints.spec.ts",
@@ -826,7 +829,7 @@
         {
           "path": "tsconfig.base.json",
           "before": "5c43c1a82cc6eac83bbe9f73637144205e6560155346d9ff506d662f7ea8ca7e",
-          "after": "e4c99e571d0b57f98d0d11977a728a8a9050debf015255d50016d8a8368510dd"
+          "after": "3b0e160cbf1a9f9cfa2502f3bb5851943550718f71aaf8ad077b3b82241e4f55"
         },
         {
           "path": "tsconfig.client.json",
@@ -836,7 +839,7 @@
         {
           "path": "tsconfig.host.json",
           "before": "d9f18524d4b0eb00e1cff0bfee748029c6051b00f47fc28b3fc57141703cead7",
-          "after": "37c791b615bd5eecec5496731567ca91777460fe10ad2ef715f0b46b50fda88a"
+          "after": "8009dc73480e606834e0a974dc5570684b3f00839fd006483d66d8b0d2b56153"
         },
         {
           "path": "pnpm-workspace.yaml",
@@ -913,22 +916,22 @@
         {
           "path": "docs/config-catalog.md",
           "before": "1dd99a4488550d8ea6e303adfeb01abc41be7cfffa94708658e32ea5a2c5c015",
-          "after": "20ab7e19e5a13608bdda813f3ebba9736b278d115c2e35a297c7d5bedf7f2e1f"
+          "after": "e9dd4ee649adb9448a8b21296c158f73825fa450ca78fb2419629e35e6568f9a"
         },
         {
           "path": "docs/config-catalog.zh.md",
           "before": "df509dde710b613d454b3ed01f6b76ec3d3f5f96321e1a4c52ab5471ee2d3e2e",
-          "after": "ea06a86cd8e0290a3ab3a0958e8605fe86819d419968d3e1bb7d9a55e064affb"
+          "after": "c1543d2a16e59b0979ca7acd2bb9c503b601659b325f01f617ab4e78046d8a93"
         },
         {
           "path": "docs/event-producer-consumer.md",
           "before": "d9c072884a46f3fbeb1f5d1c8d7a5750101aa244ff1aeb4f603c01639af8b7c5",
-          "after": "883c2d4137e982b680b7dee4d61e2c59256795194c4f10e2e8a97433adf401c8"
+          "after": "6d8bbb2268090d9919e73fa08aa4075742df01638e5df3f7b99591d666957065"
         },
         {
           "path": "docs/event-producer-consumer.zh.md",
           "before": "7d69de177a12cd40bf378da47ada45acf4a623747c100dd1af873e5248225495",
-          "after": "b6f3d8f7c9f3c66ea8b7796922b3c219064176d6e59214dd2451291fe2655bc2"
+          "after": "440c3c82cb144717d9c9b797e954c421b60e07eae151ada4df73742e04370eee"
         },
         {
           "path": "docs/persistence-changes/2026-10-09-product-installed-skill-attribution.i18n.yaml",
@@ -978,7 +981,7 @@
         {
           "path": "packages/client/ui-tool/src/client/contract/slots.ts",
           "before": "ba3d869c09fead1a4de6eef0b23a276d795ab159a3f9d5df1c5e8fe1c40a7415",
-          "after": "00de8d8a16df80423a3c4019ef103571602ee93ce6dfd077290f330f5078b88d"
+          "after": "ca435e90bc4b72395cffba116cec7f04fa12b9f29c070eb1a6dd2a5beb6923b1"
         },
         {
           "path": "packages/extensions/cordis-client-runner/src/client/api-catalog.ts",
@@ -988,7 +991,7 @@
         {
           "path": "packages/extensions/cordis-client-runner/src/client/slot-catalog.ts",
           "before": "f8e09d2e99335793434ca39fb65beefbbecbd0573d235bafd10e81131035d330",
-          "after": "622268e01bd3ed716ba0a94e5a8fa7e5271b0069122b7e5989b2b6f4cbcc3387"
+          "after": "a4d398550b7cc6c4c4035ae650ba5d62f61baa9f8947a768949c97ac8b22c6e0"
         },
         {
           "path": "packages/extensions/tool-cordis/src/api-catalog.ts",
@@ -998,7 +1001,7 @@
         {
           "path": "packages/preset/agent-preset/skills/cordis-composition-reference/references/packages.md",
           "before": "dce58b653277bbcd25cf245178916e5f7b06e558382bb98a566f00b63318474c",
-          "after": "484726c44636cbbc90bac995020562148ef6a8061188a78e0449475e910e3db7"
+          "after": "bb8a7556399271a5b3913a555b93147d8b29cf6c87d80adc648479dc36d3186f"
         },
         {
           "path": "scripts/doc-standard.spec.ts",
@@ -1008,7 +1011,27 @@
         {
           "path": "scripts/gen-cordis-catalog.ts",
           "before": "20d2d305dc12ae9b37e958081b93a5e9639479104555cca67eae0eeb23dbfca7",
-          "after": "7dfc754f1b84826f20228ec2edcb27af0062f078d9b4cd3c70cf4645200a88ea"
+          "after": "16c6d0575f2af08edcef2d32fafbff91cc133c3dc245258f44b5ea71ef6eca17"
+        },
+        {
+          "path": "docs/persistence-catalog.md",
+          "before": "f5cac1e8b15c9fddce43eaedb30f10f0d73cef0e28bf3e6a6761a66958a3045b",
+          "after": "29f8397aae9081a03da02732e883fcd5532d360c7636eb5fe0a34590b2049be2"
+        },
+        {
+          "path": "docs/persistence-catalog.zh.md",
+          "before": "8d3747c2e45cfcedb86d41eab6f7f57b9ece8887b4285f27d506e668d257c818",
+          "after": "e843720ff2fdaafa3377da565004352aa1fb14d0456473f722cad9301da854aa"
+        },
+        {
+          "path": "docs/persistence-catalog.i18n.yaml",
+          "before": "ff872250f66e0f037d6e54dfdb1aab819d375810fc79829c73622d9a7b5f47bd",
+          "after": "cc6aadec7e403c184930e20185de37cb5a57d4025d0a1cfae54f0406f75caa0c"
+        },
+        {
+          "path": "docs/persistence-schema.json",
+          "before": "80983484fe957b42092789f6203b92836b0d2bf235fc54bf557775bd0578561f",
+          "after": "31167143fcee1b7098c5fb9ff563c13a49a1d30a8fef02f6498600d7cf59ddf5"
         }
       ],
       "diff": "documentation-catalogs.patch"
@@ -1700,27 +1723,32 @@
     },
     {
       "id": "product-builtin-capabilities-integration",
-      "purpose": "将专家与技能作为产品内建模块统一装配；仅登记依赖布局、生成目录和原有源码断言门禁基线的迁移差异，不修改官方执行循环。 原社区实现迁移后沿用此前 vendor 的 lint 范围；新增配置读取、提交出口及装配测试仍由仓库 lint 检查，源码均经过独立严格类型检查。 移除已由真实 Cordis Context 测试夹具替代的产品类型断言基线条目，不扩大允许断言的范围。",
+      "purpose": "将专家与技能作为产品内建模块统一装配；仅登记依赖布局、生成目录和原有源码断言门禁基线的迁移差异，不修改官方执行循环。 原社区实现迁移后沿用此前 vendor 的 lint 范围；新增配置读取、提交出口及装配测试仍由仓库 lint 检查，源码均经过独立严格类型检查。 移除已由真实 Cordis Context 测试夹具替代的产品类型断言基线条目，不扩大允许断言的范围。 技能正文阅读组件使用仓库 lint 规则，同时覆盖普通和暂存检查。 对话创建专家与专家团、批量启停及对应回归使用同一 lint 范围。",
       "tests": [
         "packages/extensions/ui-deepseek-harness-product/tests/builtin-capabilities.client.spec.ts",
         "packages/deepseek-harness-product/desktop/tests/company-plugins.spec.ts",
-        "packages/deepseek-harness-product/desktop/tests/builtin-capabilities.spec.ts"
+        "packages/deepseek-harness-product/desktop/tests/builtin-capabilities.spec.ts",
+        "packages/deepseek-harness-product/skills/tests/market.spec.tsx",
+        "packages/deepseek-harness-product/skills/tests/skill-body.spec.tsx",
+        "packages/deepseek-harness-product/experts/src/creation-loader.test.ts",
+        "packages/deepseek-harness-product/experts/tests/client/creation-card.test.tsx",
+        "packages/deepseek-harness-product/experts/src/client/bulk-operations.test.ts"
       ],
       "files": [
         {
           "path": "scripts/no-unknown-casts.baseline.json",
           "before": "fd85277f4e3c906f2c3de6d47880ae447c39e4c439f3c29f2bae83ecf76ff99b",
-          "after": "ed616ed86a56d768f070c0a46efe8fe581837084950677ba375995ca7683ebac"
+          "after": "dd358b768ca97d8c57f159a737f663eebae857f1dfdd132f8a8be649ebb7433c"
         },
         {
           "path": ".oxlintrc.json",
           "before": "b285b45af907c2c40455fcf394270d5a35a95d1999da0475ea5eb99afa200393",
-          "after": "ad7e396fbbaa994ddce7df33391f1eb5aee241a81d51c4683b042a824ce9750d"
+          "after": "879aca713814294248dc0db3c7fd260999c3efdfcc0cf8cfc786c8bb080e99be"
         },
         {
           "path": ".oxlintrc.staged.json",
           "before": "05356dceba62c7ad25d987be23eb3bc6550d84099dcb9a1962ffa8b77b9bac00",
-          "after": "8ef7b2365e76378b55898368f2fb024e90b8833665f6ee460fc1298047e2600b"
+          "after": "4a19ddd72554fc10ec1ea006894ab2e6f511941e005766b05a10e1de3af0f2c7"
         }
       ],
       "diff": "product-builtin-capabilities-integration.patch"
@@ -1801,6 +1829,183 @@
         }
       ],
       "diff": "product-client-test-resolution.patch"
+    },
+    {
+      "id": "shared-skill-document-parser",
+      "purpose": "Expose the existing filesystem skill YAML and invocation parsers through a public library entry, retaining native loading behavior. Product skill management uses this parser and native home/name helpers instead of separate parsing and permissions; native providers remain independent of product code.",
+      "tests": [
+        "packages/skill/skill-filesystem/tests/skill-filesystem.spec.ts",
+        "packages/deepseek-harness-product/skills/src/native-reuse.test.ts",
+        "packages/deepseek-harness-product/skills/src/native-loader.test.ts",
+        "packages/deepseek-harness-product/skills/src/repositories.test.ts",
+        "packages/deepseek-harness-product/runtime/tests/runtime-loader.spec.ts"
+      ],
+      "files": [
+        {
+          "path": "packages/skill/skill-filesystem/src/index.ts",
+          "before": "4be3a8f4142b27e07093cff1757876a80a344dd6f664a38775069244b89f4ec4",
+          "after": "efe384bfeb9fc9466caa36476aac72b92883a91e6ef4f1c84caeae0bb829aee5"
+        },
+        {
+          "path": "packages/skill/skill-filesystem/src/document.ts",
+          "before": null,
+          "after": "9d7f336e2f0932d7fc46273bc012e14057025cf6d9b30d16e499f3cc20b743c0"
+        },
+        {
+          "path": "packages/skill/skill-filesystem/package.json",
+          "before": "271653d6c0133f628e45787db547ea35cd4ee1019ea743db3d6e5fc112de30fa",
+          "after": "ff40111204fa2252ad6c912c7a67bce128eceb9a63058534d2554ac7b2b086c5"
+        },
+        {
+          "path": "packages/skill/skill-filesystem/README.md",
+          "before": "cf1690d124c3e0532dfbf231b65396550ed705097a2925507b4cffbc2c6e4966",
+          "after": "771fd7d4bda6d75d6fd3dab2151f7b53a2bee7280610db82b071f70240a67971"
+        },
+        {
+          "path": "packages/skill/skill-filesystem/README.zh.md",
+          "before": "9201695c5ba987646a11558c95db7e52ad9bf2f144ed7cee5c9bdcc5248adb20",
+          "after": "2be7e393dfd9e94836bd3dcfac245f90cb8bd9e9e0ab0917424a109bc6be4d83"
+        },
+        {
+          "path": "packages/skill/skill-filesystem/README.i18n.yaml",
+          "before": "9f8218e32d8874d3e34105fb2e4653d4b3bd02c9b952411add1060b3a7d1d821",
+          "after": "3e13352c1d13496d795c93d68f0ddb13e4d287a1fef6f44679a804c2d8848523"
+        },
+        {
+          "path": "docs/subsystems/skills.md",
+          "before": "d12d4ebf14406654a4c7b9a5a85fc2a7a5519125b5050ae7b06ff88ceb680399",
+          "after": "7f9c0583292befe1e78b6453b97a0681994951bec5a60028839b4ae2551c2751"
+        },
+        {
+          "path": "docs/subsystems/skills.zh.md",
+          "before": "87f70f30874c103121154efd3c4578b794440c8c19e24e1704176d4e10536ea2",
+          "after": "9947b09366a3bf868f5f210658610fc6a1b046478413729b21826e664524d742"
+        },
+        {
+          "path": "docs/subsystems/skills.i18n.yaml",
+          "before": "d2f97b15af9d3140145bfcd7ce6d38c324000467b3d7cc097d52ad602e35d4a6",
+          "after": "0a4ce0f46e05c5746fc078a1c7b8d9f32a749463c500368838417d7b7e4442a0"
+        }
+      ],
+      "diff": "shared-skill-document-parser.patch"
+    },
+    {
+      "id": "skill-catalog-change-forwarding",
+      "purpose": "Forward the existing native skills/change invalidation through the application Remote allowlist, expose its client-safe event declaration, and reset skill-menu catalogs and pending previews directly. Skill management no longer impersonates preset or command changes.",
+      "tests": [
+        "packages/skill/skill/tests/skill.spec.ts",
+        "packages/api/remotes/tests/remote-events.host.spec.ts",
+        "packages/client/ui-skill/tests/browser-plugin.client.spec.ts",
+        "packages/deepseek-harness-product/skills/src/native-remote.test.ts"
+      ],
+      "files": [
+        {
+          "path": "packages/api/remotes/README.i18n.yaml",
+          "before": "90d899243ac52fcc6698e9eaf246b1815163575f573f07ae2746f7151261088d",
+          "after": "35961771dbd3ff605599c66818da77228a04da1f71afe59bf77098c5bef88db5"
+        },
+        {
+          "path": "packages/api/remotes/README.md",
+          "before": "1e6f19d62d29b09971deec72cc1c81c073b7e8b42f7f791d145684ec230e6f99",
+          "after": "2a4a41bc4c84ee0a8c2d444c65531463fad3e7b816aad6b27c7f41ac2c93bef4"
+        },
+        {
+          "path": "packages/api/remotes/README.zh.md",
+          "before": "329c3d59c9e026859daa3eac9a22df75482a926d348cd001405a948a9d00a23d",
+          "after": "d3dc4165d15e3f3eaa83dad9aa13d724b58bc5cd76628c8533fc1f6761b76b66"
+        },
+        {
+          "path": "packages/api/remotes/package.json",
+          "before": "b89a6030daab2697504df954dc515b2994ec83cc6a741b54358f8ebca29534c6",
+          "after": "8165ee304aac66dcbedaf8413e7d95273dd2a74a27a8fca3d4782931986efaba"
+        },
+        {
+          "path": "packages/api/remotes/src/remote-events.ts",
+          "before": "a066975d2cfa683f95cacb5f8ab4ab85b0424191377bb3e2dbbfb46377eb698a",
+          "after": "1a477a1a3a8a908c05df1d2e2db508147bd7e1c3affdb51c714479b634fa360b"
+        },
+        {
+          "path": "packages/api/remotes/tests/remote-events.host.spec.ts",
+          "before": "a152a9416a651c8ca71d38e78aaf9f14bc47a0dfc64b1d067fe42fd70ac1f72e",
+          "after": "899108d48689fca5d15ab9faad1a0854221c6fe4b8ba9ddb0c2bc4670f10c10b"
+        },
+        {
+          "path": "packages/api/remotes/tsconfig.client.json",
+          "before": "3d88f122929ef2316b76ec2a0756ac4aea80caf52ccca16d3fe2a1ec454b2f35",
+          "after": "292dee60d3f184674d6a19e453633932093abc4afcc83049c21505fbb5a3c7cb"
+        },
+        {
+          "path": "packages/api/remotes/tsconfig.host.json",
+          "before": "0102177ee894ba464eddd72e3ed7d24ea291f4231da6bb25790486d897814c6c",
+          "after": "2b90e15825d8a40514d382017fb1a6704afd863a0da10257f5861a03769f37a2"
+        },
+        {
+          "path": "packages/client/ui-skill/README.i18n.yaml",
+          "before": "98d9d7199aa736575c85e1c54684d97de61eba8a421f95d5d14125dda6ceee2e",
+          "after": "a73386c33442e0ecebf9eff0669c0f699164823cb6a5eefb8b3c352e7be93a45"
+        },
+        {
+          "path": "packages/client/ui-skill/README.md",
+          "before": "7a9735bf72b6a5afdb786c4ec2ad2577e6037a0369b7db2bebdf6299c3ec7bfc",
+          "after": "0e4c9c6fec5791af4b6e39ae630e8907dc3b74089558811dfc40a295075c9e17"
+        },
+        {
+          "path": "packages/client/ui-skill/README.zh.md",
+          "before": "f59b5104fe1b74fd98e97553901c7e7d03f2228b877ed84be4120fdd5a1389a7",
+          "after": "2c09253f0cbb289fa7fde3b16d0957735b845d350346e72b08a20afa79a4bfc3"
+        },
+        {
+          "path": "packages/client/ui-skill/package.json",
+          "before": "f6d943e7b7d3f3b7d71738975d4ee07768d7f52aa12ca7c984756d0d19a26caa",
+          "after": "d28dd1d44a825db0a75ab6368e43e5f2bdb9b09478bb55599de4663996e3a6a6"
+        },
+        {
+          "path": "packages/client/ui-skill/src/client/index.ts",
+          "before": "186b0f6edcaf69fda634ae1a7732c3b8bb3b28eaf3ababe0ec4d6e1b1d1b0fa5",
+          "after": "2fc3021074cd16452373ce4f0af09a2645b34d243a4b0f976dabf6a3d3c1c3ab"
+        },
+        {
+          "path": "packages/client/ui-skill/tests/browser-plugin.client.spec.ts",
+          "before": "7cd49df2edb619a37cf268a94f638966ecd1876ae884b6c8090a63738592ecfc",
+          "after": "7799d4a7dd1a8d5f2d8024bd24a4d2666391d7a473ad3bc7cd4a8987eba9120d"
+        },
+        {
+          "path": "packages/client/ui-skill/tsconfig.json",
+          "before": "e4bff5814e78c35bb1f29854430e616b9050441da567eb00a8aeca61c6417256",
+          "after": "7646b728c3d71e3ad6a990a243db96a08fe5396d98e519a07e38aec7dc974bde"
+        },
+        {
+          "path": "packages/skill/skill/README.i18n.yaml",
+          "before": "bbb855d83fff1eb3ecb5fdde7fde20e37c7af6e70c9a2952a30eefec83072144",
+          "after": "8afa3623357a6a27820f672225cd40a4fba37b22143bebe2590a24b3951c7966"
+        },
+        {
+          "path": "packages/skill/skill/README.md",
+          "before": "6717d6df2c778e4a1ba07afee30206f3a0f3c414e5f49725d755ab7ced9995bb",
+          "after": "5a3a0d919019484dddd9b4ed2b041baad810c992d7f2e01991e2b481ee931f97"
+        },
+        {
+          "path": "packages/skill/skill/README.zh.md",
+          "before": "535cb17423807ad24fb1086aa0fa14374b196b9ebc48ab208475d0f52fc67a52",
+          "after": "d728af1f5f8b97e8d98fe273e289bcb726d664462e07c4d28c55a8e6028d783e"
+        },
+        {
+          "path": "packages/skill/skill/package.json",
+          "before": "e2ef6df1c2604e47dfd3614c1575b30407ff4efd604fe5a1c1dadda07089702b",
+          "after": "677a33e5a49a0c201379fe26ced7767e70b7b68f42050b1d6bcd04642e5e9ee0"
+        },
+        {
+          "path": "packages/skill/skill/src/index.ts",
+          "before": "af4fad67fb086c3f5c93aed4604830718b4535e7e59a60d680404b07ea08477c",
+          "after": "61765ca048729f4b44edbb628f0e0100ad322f07fb9590d9b09cf57becd4e0a1"
+        },
+        {
+          "path": "packages/skill/skill/src/types.ts",
+          "before": null,
+          "after": "eba2c4155ce76e5b1ace28ccf55951678e22b5cdbd88396ad389eb02563a8a30"
+        }
+      ],
+      "diff": "skill-catalog-change-forwarding.patch"
     }
   ]
 }

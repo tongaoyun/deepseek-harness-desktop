@@ -1,5 +1,6 @@
 /** Correlated Host-to-main extension requests for product data. */
 
+import { addAbortListener } from 'node:events'
 import { randomUUID } from 'node:crypto'
 import { ProductError, isProductFailure, type ProductFailure } from '@deepseek-harness/product/errors'
 import type { ProductRuntimeMethod } from '@deepseek-harness/product/protocol'
@@ -46,34 +47,19 @@ export class DeepSeekHarnessProductIpc {
     const requestId = randomUUID()
     return new Promise<unknown>((resolve, reject) => {
       const timer = setTimeout(() => {
-        const pending = this.pending.get(requestId)
-        if (pending === undefined) return
-        pending.removeAbort?.()
-        this.pending.delete(requestId)
-        process.send?.({ type: 'extension-cancel', requestId })
-        pending.reject(new Error(`deepseek-harness product: ${method} timed out`))
+        this.failRequest(requestId, new Error(`deepseek-harness product: ${method} timed out`), true)
       }, timeoutMs ?? (method === 'connectors.list' ? 2 * 600_000 + PRODUCT_REQUEST_TIMEOUT_MS : PRODUCT_REQUEST_TIMEOUT_MS))
       timer.unref()
-      const onAbort = (): void => {
-        const pending = this.pending.get(requestId)
-        if (pending === undefined) return
-        clearTimeout(pending.timer)
-        this.pending.delete(requestId)
-        process.send?.({ type: 'extension-cancel', requestId })
-        pending.reject(signal?.reason instanceof Error ? signal.reason : new Error('deepseek-harness product: request cancelled'))
-      }
-      signal?.addEventListener('abort', onAbort, { once: true })
-      this.pending.set(requestId, { resolve, reject, timer,
-        ...(signal === undefined ? {} : { removeAbort: () => { signal.removeEventListener('abort', onAbort) } }) })
-      process.send?.({ type: 'extension-invoke', namespace: 'product', requestId, method, payload }, (error) => {
-        if (error === null) return
-        const pending = this.pending.get(requestId)
-        if (pending === undefined) return
-        clearTimeout(pending.timer)
-        pending.removeAbort?.()
-        this.pending.delete(requestId)
-        pending.reject(error)
+      let listener: Disposable | undefined
+      this.pending.set(requestId, { resolve, reject, timer, removeAbort: () => { listener?.[Symbol.dispose]() } })
+      if (signal !== undefined) listener = addAbortListener(signal, () => {
+        this.failRequest(requestId, signal.reason instanceof Error ? signal.reason : new Error('deepseek-harness product: request cancelled'), true)
       })
+      try {
+        process.send?.({ type: 'extension-invoke', namespace: 'product', requestId, method, payload }, (error) => {
+          if (error != null) this.failRequest(requestId, error)
+        })
+      } catch (error) { this.failRequest(requestId, error instanceof Error ? error : new Error(String(error))) }
     })
   }
 
@@ -101,13 +87,30 @@ export class DeepSeekHarnessProductIpc {
   close(reason = 'Host stopped'): void {
     if (this.closed) return
     this.closed = true
-    for (const [requestId, pending] of this.pending) {
-      if (process.connected) process.send?.({ type: 'extension-cancel', requestId })
-      clearTimeout(pending.timer)
-      pending.removeAbort?.()
-      pending.reject(new Error(`deepseek-harness product: ${reason}`))
+    for (const requestId of this.pending.keys()) {
+      this.failRequest(requestId, new Error(`deepseek-harness product: ${reason}`), true)
     }
-    this.pending.clear()
+  }
+
+  private failRequest(requestId: string, error: Error, cancel = false): void {
+    const pending = this.pending.get(requestId)
+    if (pending === undefined) return
+    clearTimeout(pending.timer)
+    pending.removeAbort?.()
+    this.pending.delete(requestId)
+    pending.reject(error)
+    if (cancel) this.cancel(requestId)
+  }
+
+  private cancel(requestId: string): void {
+    if (!process.connected) return
+    try {
+      process.send?.({ type: 'extension-cancel', requestId }, (_error) => {
+        // Cancellation is advisory; a closed parent channel cannot undo local settlement.
+      })
+    } catch (_error) {
+      // The parent channel can close between the connected check and this send.
+    }
   }
 }
 

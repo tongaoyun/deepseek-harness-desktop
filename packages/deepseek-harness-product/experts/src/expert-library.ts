@@ -45,6 +45,23 @@ export interface ExpertSettingsStore {
   revision(): number
   mutate(ops: SettingsPathOp[], expectedRevision: number): Promise<void>
 }
+/** Commit personal expert or team settings, preserving native transaction conflict semantics.
+ * @param store Authoritative revision-checked settings writer.
+ * @param ops Atomic settings edits.
+ * @param expectedRevision Revision confirmed by the caller.
+ * @param locale Language for a rejected stale write.
+ * @returns Completion after persistence; failed writes never publish a success snapshot.
+ */
+export async function mutateExpertSettings(store: ExpertSettingsStore, ops: SettingsPathOp[], expectedRevision: number, locale: 'zh' | 'en'): Promise<void> {
+  try {
+    await store.mutate(ops, expectedRevision)
+  } catch (error: unknown) {
+    if (typeof error === 'object' && error !== null && 'code' in error && error.code === 'SETTINGS_CONFLICT') {
+      throw customError('conflict', locale, { cause: error })
+    }
+    throw error
+  }
+}
 export interface AgencyExpertLibrary {
   catalog(): Promise<CatalogSnapshot>
   getCustom(slug: string): Promise<CustomExpert>
@@ -101,10 +118,10 @@ export function createExpertLibrary(
   }
   const activeRecords = (records: CustomExpert[]): CustomExpert[] => records.filter(item => !item.deleted).map(({ deleted: _deleted, wasEnabled: _wasEnabled, ...item }) => item)
   const persist = async (state: ReturnType<typeof read>, revision: number): Promise<CatalogSnapshot> => {
-    await store.mutate([
+    await mutateExpertSettings(store, [
       { op: 'set', path: ['customExperts'], value: activeRecords(state.customExperts) },
       { op: 'set', path: ['enabled'], value: [...new Set(state.enabled)] },
-    ], revision)
+    ], revision, locale())
     return library.catalog()
   }
   const library: AgencyExpertLibrary = {
@@ -152,10 +169,10 @@ export function createExpertLibrary(
       const available = new Set(project(catalogExperts, state).experts.filter(expert => !expert.conflict).map(expert => expert.slug))
       if (enabled.some(slug => !available.has(slug))) throw customError('unavailable', locale())
       const next = [...new Set(enabled)]
-      await store.mutate([
+      await mutateExpertSettings(store, [
         { op: 'set', path: ['customExperts'], value: activeRecords(state.customExperts) },
         { op: 'set', path: ['enabled'], value: next },
-      ], expectedRevision)
+      ], expectedRevision, locale())
       return { enabled: next, revision: store.revision() }
     },
     async cleanupDeleted() {
@@ -165,10 +182,10 @@ export function createExpertLibrary(
       const expectedRevision = store.revision()
       const records = activeRecords(state.customExperts)
       const deleted = new Set(state.customExperts.filter(item => item.deleted).map(item => item.slug))
-      await store.mutate([
+      await mutateExpertSettings(store, [
         { op: 'set', path: ['customExperts'], value: records },
         { op: 'set', path: ['enabled'], value: state.enabled.filter(slug => !deleted.has(slug)) },
-      ], expectedRevision)
+      ], expectedRevision, locale())
     },
   }
   return library

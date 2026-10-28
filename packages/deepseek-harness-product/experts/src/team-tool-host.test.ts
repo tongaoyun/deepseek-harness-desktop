@@ -1,15 +1,25 @@
 import { createRequire } from 'node:module'
 import { pathToFileURL } from 'node:url'
-import { describe, expect, it, vi } from 'vitest'
+import { beforeAll, describe, expect, it, vi } from 'vitest'
 import { localizeTeamTool } from './team-tool-locale.ts'
 import { createHostLocaleReader } from './i18n.ts'
 import type { SettingsNamespace } from '@deepseek-ai/dsh-settings'
 
 // 可指定实际 DSH 的 package.json，直接运行安装目录中的服务，而非 mock 注册器。
 const hostRequire = createRequire(process.env.AGENCY_DSH_MANIFEST ?? import.meta.url)
-const { Context } = await import(pathToFileURL(hostRequire.resolve('@deepseek-ai/cordis')).href) as typeof import('@deepseek-ai/cordis')
-const { ToolRuntime, defineTool } = await import(pathToFileURL(hostRequire.resolve('@deepseek-ai/dsh-tools')).href) as typeof import('@deepseek-ai/dsh-tools')
-const { SystemPrompt } = await import(pathToFileURL(hostRequire.resolve('@deepseek-ai/dsh-system-prompt')).href) as typeof import('@deepseek-ai/dsh-system-prompt')
+let Context: typeof import('@deepseek-ai/cordis').Context
+let ToolRuntime: typeof import('@deepseek-ai/dsh-tools').ToolRuntime
+let defineTool: typeof import('@deepseek-ai/dsh-tools').defineTool
+let SystemPrompt: typeof import('@deepseek-ai/dsh-system-prompt').SystemPrompt
+beforeAll(async () => {
+  const cordis = await import(pathToFileURL(hostRequire.resolve('@deepseek-ai/cordis')).href) as typeof import('@deepseek-ai/cordis')
+  const tools = await import(pathToFileURL(hostRequire.resolve('@deepseek-ai/dsh-tools')).href) as typeof import('@deepseek-ai/dsh-tools')
+  const prompt = await import(pathToFileURL(hostRequire.resolve('@deepseek-ai/dsh-system-prompt')).href) as typeof import('@deepseek-ai/dsh-system-prompt')
+  Context = cordis.Context
+  ToolRuntime = tools.ToolRuntime
+  defineTool = tools.defineTool
+  SystemPrompt = prompt.SystemPrompt
+})
 
 describe('真实宿主工具注册与模型提示组装', () => {
   it('locale 晚于插件激活时从默认英文切换到明确选择的中文，无需工具扫描或设置面板', async () => {

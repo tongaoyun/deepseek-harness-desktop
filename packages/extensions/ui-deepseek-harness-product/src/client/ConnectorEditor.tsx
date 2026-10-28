@@ -6,7 +6,7 @@ import { Button, IconCloseOutlineRegular, IconDeliverDocRegular, IconPlusOutline
 import { ConnectorEditorSnapshotSchema, ConnectorDraftSchema, ConnectorSaveResultSchema, type ConnectorDraft } from '@deepseek-harness/product/connector-draft'
 import type { DeepSeekHarnessProductKey } from '../locales.ts'
 import css from '../DeepSeekHarnessProduct.module.css'
-import { CATEGORY_KEYS, items, nextProductRequestId, type ProductItem } from './catalog-shared.tsx'
+import { CATEGORY_KEYS, items, type ProductItem } from './catalog-shared.tsx'
 import { productApi } from './product-api.ts'
 import { productErrorMessage } from './product-errors.ts'
 import { connectorCommand, connectorCommandText, connectorConfigurations, connectorVariables } from './connector-configuration.ts'
@@ -57,7 +57,7 @@ export function ConnectorEditor({ onClose, onSaved, editing, t }: {
     signal.throwIfAborted()
     const api = productApi()
     if (!api) throw new Error(t('unavailable'))
-    const request = nextProductRequestId()
+    const request = randomUUID()
     const cancel = () => { api.cancel(request) }
     signal.addEventListener('abort', cancel, { once: true })
     try {

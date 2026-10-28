@@ -224,9 +224,9 @@ export class DeepSeekHarnessProductBridge {
     assertProductMethod(method)
     const input = assertProductPayload(payload)
     if (method === 'auth.getSession') return this.session
-    if (method.startsWith('native.')) {
+    if (method === 'native.device-identity.get') {
       if (this.nativeInvoke === undefined) throw new Error('deepseek-harness product: native sidecar is unavailable')
-      return this.nativeInvoke(method.slice('native.'.length), input, signal)
+      return this.nativeInvoke('device-identity.get', input, signal)
     }
     if (this.api === undefined) throw new Error('deepseek-harness product: server URL is not configured')
     if (method === 'auth.beginDingTalk') {

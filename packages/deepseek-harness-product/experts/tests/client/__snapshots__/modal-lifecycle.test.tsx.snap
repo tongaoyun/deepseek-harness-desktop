@@ -1,0 +1,25 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`focuses the prompt action and restores the explicit opener after closing 1`] = `
+{
+  "focusedAction": "Done",
+  "prompt": <textarea
+    aria-label="Prompt"
+    class="aag-textarea aag-prompt-body"
+    readonly=""
+    rows="3"
+    style="min-height: 240px; resize: none; overflow: auto;"
+  >
+    Review changes
+  </textarea>,
+  "title": "Prompt",
+}
+`;
+
+exports[`opens conflict review from the native error code even when its wording changes 1`] = `
+{
+  "draft": "Check changes",
+  "notice": "Another window changed these settings. Your draft is still in this form. Read the latest content and compare before saving.",
+  "recovery": "Read latest content",
+}
+`;

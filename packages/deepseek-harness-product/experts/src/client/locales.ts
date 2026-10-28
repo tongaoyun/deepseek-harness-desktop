@@ -8,6 +8,24 @@ import { customEn, customZh } from './custom-locales.ts'
 
 /** 简体中文词条（key 集真相源）。 */
 export const zh = {
+  'creation.expert': '通过对话创建专家',
+  'creation.team': '通过对话创建专家团',
+  'creation.open': '核对并保存草案',
+  'creation.opened': '草案已在编辑器打开',
+  'creation.confirming': '正在确认草案…',
+  'creation.noSession': '请先打开一个对话，再创建专家或专家团',
+  'creation.failed': '未能填入对话，请重试',
+  'creation.expertPrompt': '我想创建一个个人专家，请先和我确认需求，生成完整草案供我修改，满意后再打开编辑器：',
+  'creation.teamPrompt': '我想组建一个个人专家团，请先了解目标，从现有专家中选择成员，给出分工及主理人规则草案，满意后再打开编辑器：',
+  'bulk.enable': '启用当前列表',
+  'bulk.disable': '停用当前列表',
+  'bulk.title': '批量修改个人启用状态？',
+  'bulk.description': '将{action}当前列表中的 {count} 位专家。仅处理本次确认的专家，已删除或冲突的专家会跳过。',
+  'bulk.enableVerb': '启用',
+  'bulk.disableVerb': '停用',
+  'bulk.confirm': '确认修改',
+  'bulk.cancel': '取消',
+
   'company.retry': '重试加载',
   ...customZh,
   'discovery.search': '搜索名称、领域或关键词',
@@ -73,6 +91,24 @@ export type AgencyKey = keyof typeof zh
 
 /** 英文词条，key 完整性由 satisfies 在编译期保证。 */
 export const en = {
+  'creation.expert': 'Create expert in chat',
+  'creation.team': 'Create team in chat',
+  'creation.open': 'Review and save draft',
+  'creation.opened': 'Draft opened in editor',
+  'creation.confirming': 'Confirming draft…',
+  'creation.noSession': 'Open a conversation before creating an expert or team.',
+  'creation.failed': 'Could not fill the conversation. Try again.',
+  'creation.expertPrompt': 'I want to create a personal expert. Clarify my needs, propose a complete draft for revisions, and open the editor after I confirm: ',
+  'creation.teamPrompt': 'I want to create a personal expert team. Clarify the goal, select existing experts, propose duties and coordinator rules, and open the editor after I confirm: ',
+  'bulk.enable': 'Enable current list',
+  'bulk.disable': 'Disable current list',
+  'bulk.title': 'Change personal activation in bulk?',
+  'bulk.description': '{action} {count} experts in this list. Only these confirmed experts are affected; removed or conflicted entries are skipped.',
+  'bulk.enableVerb': 'Enable',
+  'bulk.disableVerb': 'Disable',
+  'bulk.confirm': 'Confirm changes',
+  'bulk.cancel': 'Cancel',
+
   'company.retry': 'Retry loading',
   ...customEn,
   'discovery.search': 'Search names, fields or keywords',

@@ -112,22 +112,7 @@ export type ProductMethod =
   | 'knowledge.folders.create'
   | 'knowledge.folders.rename'
   | 'knowledge.folders.delete'
-  | 'native.filesystem.list'
-  | 'native.filesystem.read'
-  | 'native.filesystem.write'
-  | 'native.secure-storage.get'
-  | 'native.secure-storage.set'
-  | 'native.secure-storage.delete'
-  | 'native.sqlite.query'
-  | 'native.sqlite.execute'
-  | 'native.dingtalk-auth.state'
-  | 'native.attachments.put'
-  | 'native.attachments.get'
-  | 'native.attachments.list'
-  | 'native.file-undo.record'
-  | 'native.file-undo.undo'
   | 'native.device-identity.get'
-  | 'native.image-preview.inspect'
 
 /** Product operations the trusted Harness Host may request from Electron main. */
 export type ProductRuntimeMethod = Extract<ProductMethod,
@@ -249,12 +234,7 @@ export function isProductMethod(value: unknown): value is ProductMethod {
     'knowledge.documents.download', 'knowledge.documents.openExternal',
     'knowledge.documents.save', 'knowledge.documents.importUrl', 'knowledge.documents.delete', 'knowledge.documents.reindex', 'knowledge.documents.cancel',
     'knowledge.documents.move', 'knowledge.folders.list', 'knowledge.folders.get', 'knowledge.folders.create', 'knowledge.folders.rename', 'knowledge.folders.delete',
-    'native.filesystem.list', 'native.filesystem.read',
-    'native.filesystem.write', 'native.secure-storage.get', 'native.secure-storage.set', 'native.secure-storage.delete',
-    'native.sqlite.query', 'native.sqlite.execute', 'native.dingtalk-auth.state',
-    'native.attachments.put', 'native.attachments.get', 'native.attachments.list',
-    'native.file-undo.record', 'native.file-undo.undo', 'native.device-identity.get',
-    'native.image-preview.inspect',
+    'native.device-identity.get',
   ].includes(value)
 }
 

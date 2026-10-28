@@ -1,14 +1,19 @@
+import { SessionId } from '@deepseek-ai/dsh-session'
+import { CREATION_SERVICE, type CreationDrafts } from './creation.ts'
+import type { CreationEditorData } from './remote-contract.ts'
 import { publishedTeamSchema } from '@deepseek-harness/product/company-team'
 import { AGENCY_TEAM_SERVICE, type AgencyTeamLibrary } from './team-library.ts'
 import { nativeTeamMemberName } from './team-engine.ts'
 import { teamText } from './team-i18n.ts'
-import type { TeamInput, TeamSnapshot, TeamEngineStatus } from './team-contract.ts'
+import type { TeamInput } from '@deepseek-harness/product/company-team'
+import type { TeamSnapshot, TeamEngineStatus } from './team-contract.ts'
 import type { Context } from '@deepseek-ai/cordis'
 import type { CompanyContentSource } from '@deepseek-harness/product/protocol'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import type { TypertContribution } from '@deepseek-ai/dsh-typert-registry'
 import type {} from '@deepseek-ai/dsh-typert-registry'
 import { AGENCY_AGENTS_DESCRIPTORS } from './remote-contract.ts'
+import { TYPERT as generatedHost } from './generated/typert.host.js'
 import { AGENCY_PERSONA_SERVICE, type AgencyPersonaSource } from './index.ts'
 import { formatHost, readHostLocale } from './i18n.ts'
 import { expertSettingsNamespace } from './settings.ts'
@@ -29,15 +34,9 @@ function personaSource(ctx: Context): AgencyPersonaSource {
   throw new Error(formatHost(readHostLocale(ctx), 'error.personaSourceUnavailable'))
 }
 
-/**
- * Host 严格描述符。Gateway 优先读取它，避免启动期间的 SRC 扫描缓存遗漏
- * 后加载的外部插件服务。
- */
+/** Retain native Host metadata while applying the product's semantic validators. */
 const TYPERT = {
-  package: '@deepseek-harness/product-experts',
-  face: 'host',
-  schemas: [],
-  model: { services: [], events: [], objects: [] },
+  ...generatedHost as TypertContribution,
   invocations: AGENCY_AGENTS_DESCRIPTORS,
 } satisfies TypertContribution
 
@@ -50,6 +49,21 @@ export default class AgencyAgentsRemote extends TypertRemoteService {
     this.ctx.typert.register(TYPERT)
   }
 
+  /** Claim an explicitly confirmed draft for its original Session and one editor window.
+   * @param sessionId - Session owning the tool result.
+   * @param proposalId - Exact proposal confirmed by the human.
+   * @returns Draft and current revision-checked editing inputs; rejects if unavailable.
+   */
+  @Remote('claimCreation')
+  async claimCreation(sessionId: SessionId, proposalId: string): Promise<CreationEditorData> {
+    const drafts = this.ctx.get(CREATION_SERVICE) as CreationDrafts | undefined
+    const catalog = await this.library().catalog()
+    const teams = await this.teams().snapshot()
+    const draft = drafts?.claim(SessionId(sessionId), proposalId)
+    if (!draft) throw new Error(readHostLocale(this.ctx) === 'zh' ? '草案未确认、已过期或已在其他窗口打开，请重新生成预览' : 'Draft is unconfirmed, expired or already opened elsewhere. Generate a new preview.')
+    return { draft, catalog, teams }
+  }
+
   private teams(): AgencyTeamLibrary {
     const library = this.ctx.get(AGENCY_TEAM_SERVICE) as AgencyTeamLibrary | undefined
     if (!library) throw new Error(teamText(readHostLocale(this.ctx), '专家团服务不可用，请重新加载插件。'))
@@ -58,11 +72,14 @@ export default class AgencyAgentsRemote extends TypertRemoteService {
 
   /**
    * 读取个人专家团及原生成员名称。
+   * @param signal - 当前读取的原生 Remote 取消信号。
    * @returns 个人专家团和成员目录。
    */
   @Remote('getTeams')
-  async getTeams(): Promise<TeamSnapshot> {
-    const snapshot = await this.teams().snapshot()
+  async getTeams(signal: AbortSignal): Promise<TeamSnapshot> {
+    signal.throwIfAborted()
+    const snapshot = await this.teams().snapshot(undefined, signal)
+    signal.throwIfAborted()
     const engine = this.ctx.get('agencyAgentsTeamEngine') as (() => TeamEngineStatus) | undefined
     const nativeMembers = Object.fromEntries(snapshot.teams.flatMap(team => team.members.map(member => [nativeTeamMemberName(team.id, member.expertSlug), member.expertSlug])))
     return { ...snapshot, nativeMembers, ...(engine ? { engine: engine() } : {}) }
@@ -136,12 +153,17 @@ export default class AgencyAgentsRemote extends TypertRemoteService {
   /**
    * 返回动态名册，不预加载任何专家提示词正文。
    * @param refreshCompany - 是否同步检查团队目录。
+   * @param signal - 当前读取的原生 Remote 取消信号；不取消共享的公司同步。
    * @returns 当前个人和团队专家目录。
    */
   @Remote('getCatalog')
-  async getCatalog(refreshCompany: boolean): Promise<CatalogSnapshot> {
+  async getCatalog(refreshCompany: boolean, signal: AbortSignal): Promise<CatalogSnapshot> {
+    signal.throwIfAborted()
     if (refreshCompany) await (this.ctx.get('companyContent') as CompanyContentSource | undefined)?.refresh()
-    return this.library().catalog()
+    signal.throwIfAborted()
+    const catalog = await this.library().catalog()
+    signal.throwIfAborted()
+    return catalog
   }
 
   /**

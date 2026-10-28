@@ -37,11 +37,15 @@
     },
     {
       "commit": "19f275fdd49de58510b233c7f07a55c5c68895e4",
-      "scope": "Allow revoking recorded permissions after skill content disappears or becomes invalid"
+      "scope": "Allow revoking recorded permissions after skill content disappears or becomes invalid; copy exact skill bodies and use a larger monospace reader"
     },
     {
       "commit": "54467051bcde9d2aa316a86be90e380b6cef043f",
       "scope": "Resolve API requests beneath the page base for reverse proxies"
+    },
+    {
+      "commit": "660656c55720e41a7aab62558f1737a289f35334",
+      "scope": "Use className for wide skill detail modals instead of an unsupported wide prop"
     }
   ]
 }

@@ -1,3 +1,6 @@
+export { default as AgencyAgentsRemote } from './remote.ts'
+import { createDrafts, CREATION_SERVICE } from './creation.ts'
+import { registerCreationTools } from './creation-tools.ts'
 import { localizeTeamTool } from './team-tool-locale.ts'
 import { readCompanyTeams } from './company-teams.ts'
 import { PersonaError } from './persona-error.ts'
@@ -39,6 +42,7 @@ import { SessionId } from '@deepseek-ai/dsh-session'
 import { PERSONA_PREFIX_SECTION } from '@deepseek-ai/dsh-system-prompt'
 import { randomUUID } from 'node:crypto'
 import { open, readdir, readFile, stat } from 'node:fs/promises'
+import { parseSkillFrontmatter } from '@deepseek-ai/dsh-skill-filesystem/document'
 import { join } from 'node:path'
 import { TextDecoder } from 'node:util'
 import { EXPERT_DIVISION_ORDER, ZH_DIVISION } from './names.ts'
@@ -267,18 +271,6 @@ export function stripBom(text: string): string {
   return text.charCodeAt(0) === 0xFEFF ? text.slice(1) : text
 }
 
-/** 剥离字段值首尾的成对引号，保留引号内部的 #、冒号等字符。
- * @param value - 待规范化的字段。
- * @returns 移除匹配引号的值。
- */
-export function unquote(value: string): string {
-  const first = value.charAt(0)
-  if ((first === '"' || first === "'") && value.length >= 2 && value.endsWith(first)) {
-    return value.slice(1, -1)
-  }
-  return value
-}
-
 /** 将超长文本截断到指定长度并追加省略号。
  * @param text - 原始文本。
  * @param limit - Unicode 码点上限。
@@ -289,22 +281,21 @@ export function truncate(text: string, limit: number): string {
   return codePoints.length <= limit ? text : `${codePoints.slice(0, limit).join('')}…`
 }
 
-function parseFrontmatterMetadata(fm: string): FrontmatterMetadata {
-  const get = (key: string): string | undefined => {
-    const m = fm.match(new RegExp(`^${key}\\s*:\\s*(.*)$`, 'm'))
-    return m === null ? undefined : unquote(m[1].trim())
-  }
-  return { name: get('name'), description: get('description'), descriptionEn: get('descriptionEn'), emoji: get('emoji') }
-}
-
-/** Parse the `key: value` frontmatter block of one agency agent file.
+/** Parse one expert document with the native YAML reader; metadata fields must be text.
  * @param raw - 完整 Markdown 文件内容。
- * @returns 有效元数据与正文；格式不符时为空。
+ * @returns 文本元数据与去除首尾空白的正文；YAML 无效或不是映射时为空。
  */
 export function parseFrontmatter(raw: string): Frontmatter | undefined {
-  const match = raw.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/)
-  if (match === null) return undefined
-  return { ...parseFrontmatterMetadata(match[1]), body: match[2].trim() }
+  let parsed: ReturnType<typeof parseSkillFrontmatter>
+  try { parsed = parseSkillFrontmatter(raw) }
+  catch (_error) {
+    // Invalid local documents remain unavailable to catalog and prompt readers.
+    return undefined
+  }
+  if (parsed === undefined) return undefined
+  const text = (key: string): string | undefined => typeof parsed.data[key] === 'string' ? parsed.data[key] : undefined
+  return { name: text('name'), description: text('description'), descriptionEn: text('descriptionEn'),
+    emoji: text('emoji'), body: parsed.body.trim() }
 }
 
 /** 仅读取文件头部的 YAML frontmatter，避免启动时把全部 persona 正文读入内存。 */
@@ -321,16 +312,16 @@ async function readFrontmatterMetadata(filePath: string): Promise<FrontmatterMet
       if (bytesRead === 0) {
         raw += decoder.decode()
         const match = stripBom(raw).match(/^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/)
-        return match === null ? undefined : parseFrontmatterMetadata(match[1])
+        return match === null ? undefined : parseFrontmatter(match[0])
       }
       position += bytesRead
       raw += decoder.decode(buffer.subarray(0, bytesRead), { stream: true })
       const match = stripBom(raw).match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n/)
-      if (match !== null) return parseFrontmatterMetadata(match[1])
+      if (match !== null) return parseFrontmatter(match[0])
     }
     raw += decoder.decode()
     const match = stripBom(raw).match(/^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/)
-    return match === null ? undefined : parseFrontmatterMetadata(match[1])
+    return match === null ? undefined : parseFrontmatter(match[0])
   } finally {
     await file.close()
   }
@@ -632,21 +623,17 @@ export function apply(ctx: Context, config: Config): void {
   const library = createExpertLibrary(() => readSummaries(), store, divisions, activeLocale)
   const catalogForSession = (sessionId?: string, signal?: AbortSignal) => sessionId === undefined ? library.catalog()
     : createExpertLibrary(() => readSummaries(sessionId, signal), store, divisions, activeLocale).catalog()
-  const teamLibrary = createTeamLibrary(catalogForSession, {
-    read: () => settingsSource(),
-    revision: () => {
-      const descriptor = ctx.settings.describe().find(item => item.ns === settingsNamespace)
-      if (!descriptor) throw new Error(formatHost(activeLocale(), 'error.settingsMissing'))
-      return descriptor.revision
-    },
-    mutate: (ops, revision) => ctx.settings.mutate(settingsNamespace, ops, revision),
-  }, activeLocale, async (sessionId, signal) => {
+  const teamLibrary = createTeamLibrary(catalogForSession, store, activeLocale, async (sessionId, signal) => {
     const root = await companyRoot(sessionId, signal)
     return root ? (await companyCatalog(root)).teams.teams : []
   })
+  const creationDrafts = createDrafts(activeLocale)
+  ctx.reflect.provide(CREATION_SERVICE, creationDrafts)
+  registerCreationTools(ctx, creationDrafts, library, activeLocale)
+  ctx.systemPrompt.section({ name: 'agency:creation', order: 119, text: 'Creation requests do not invoke summon tools. When the user wants to create or customize an expert or expert team, design a personal draft with propose_custom_expert or propose_expert_team. Use list_creation_experts for available categories and members, including disabled experts. Present the complete preview, invite changes and revise through the proposal tool. Call the matching open editor tool with the exact proposalId only after explicit user confirmation. The native confirmation makes a prefilled editor available; the user must click Save. Never save silently, publish company content, or create files as a substitute.' })
   ctx.reflect.provide(AGENCY_TEAM_SERVICE, teamLibrary)
   ctx.reflect.provide('agencyAgentsTeamEngine', () => resolveTeamEngine(ctx, undefined, maxDepth).status)
-  ctx.on?.('tools/pre-execute', async (exec, next) => {
+  ctx.on('tools/pre-execute', async (exec, next) => {
     if (blocksNativeDelegation(ctx.get('agentTeams'), exec.agent, exec.name)) return { kind: 'deny', reason: teamTx('专家团成员不能继续创建子代理或扩展专家团，请将缺口交给主理人。') }
     return next()
   })
@@ -661,11 +648,7 @@ export function apply(ctx: Context, config: Config): void {
   }
   settingsSource = () => readAgencySettings(config, activeLocale())
   retryCleanup()
-  const settingsApi = ctx.settings as { configure?: (policy: { auto?: boolean }, owner?: unknown) => () => void }
-  const fiber = (ctx as { fiber?: object }).fiber
-  if (typeof ctx.effect === 'function' && fiber !== undefined && typeof settingsApi.configure === 'function') {
-    ctx.effect(() => settingsApi.configure!({ auto: false }, fiber), 'agency-agents: settings presentation')
-  }
+  ctx.effect(() => ctx.settings.configure({ auto: false }), 'agency-agents: settings presentation')
   // 闭包读取当前 source，避免 settings 服务替换时继续持有旧快照。
   const personaSource: AgencyPersonaSource = {
     async getPrompt(slug, division, locale, sessionId, signal) {
@@ -929,13 +912,7 @@ export function apply(ctx: Context, config: Config): void {
 const requireParent = (exec: ToolRunContext): void => {
     if (!exec.agent)
         throw new Error(teamTx("专家团只能在主会话中召唤。"));
-    const parent = (exec.agent as unknown as {
-        session?: {
-            header?: {
-                parentSession?: unknown;
-            };
-        };
-    }).session?.header?.parentSession;
+    const parent = exec.agent.session.header.parentSession;
     if (parent !== undefined)
         throw new Error(teamTx("专家成员不能继续召唤专家团。"));
 };

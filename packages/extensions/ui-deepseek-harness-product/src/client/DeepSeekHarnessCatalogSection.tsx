@@ -1,3 +1,4 @@
+import { randomUUID } from '@deepseek-ai/dsh-util-crypto'
 import type { PropsLocale, PropsRuntime, PropsRenderFactories } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ReactNode } from 'react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -7,7 +8,7 @@ import { NS, type DeepSeekHarnessProductKey } from '../locales.ts'
 import css from '../DeepSeekHarnessProduct.module.css'
 import { productApi, type ProductApi } from './product-api.ts'
 import { productErrorMessage } from './product-errors.ts'
-import { type Catalog, type ProductItem, type ProductDetail, type DeepSeekHarnessCatalogActions, METHODS, CATEGORY_KEYS, AUTHORIZATION_TIMEOUT_MS, nextProductRequestId, items, normalizedSearch, localizedCategory, itemMetadata, localDetail } from './catalog-shared.tsx'
+import { type Catalog, type ProductItem, type ProductDetail, type DeepSeekHarnessCatalogActions, METHODS, CATEGORY_KEYS, AUTHORIZATION_TIMEOUT_MS, items, normalizedSearch, localizedCategory, itemMetadata, localDetail } from './catalog-shared.tsx'
 import { ConnectorDetailModal } from './ConnectorView.tsx'
 import { ConnectorEditor } from './ConnectorEditor.tsx'
 import { ResourceActionsMenu } from './ResourceActionsMenu.tsx'
@@ -77,7 +78,7 @@ export function DeepSeekHarnessCatalogSection(props: CatalogSectionProps): React
 
   const read = async (api: ProductApi, method: string, payload?: unknown, timeoutMs?: number,
     scope: ReadScope = detailReads.current): Promise<unknown> => {
-    const requestId = nextProductRequestId()
+    const requestId = randomUUID()
     scope.requests.set(requestId, api)
     let timer: ReturnType<typeof setTimeout> | undefined
     try {
@@ -240,7 +241,7 @@ export function DeepSeekHarnessCatalogSection(props: CatalogSectionProps): React
     if (!api || !confirmation || managementPending) return
     const target = confirmation
     const lifetime = managementLifetime.current
-    const requestId = nextProductRequestId()
+    const requestId = randomUUID()
     writes.current.set(requestId, api)
     setManagementPending(true); setManagementError(undefined)
     try {

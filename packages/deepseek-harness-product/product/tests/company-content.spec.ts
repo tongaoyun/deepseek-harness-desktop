@@ -42,6 +42,17 @@ describe('company native content', () => {
     const data = { [`experts/operations/${name}.md`]: document, [`skills/${name}/SKILL.md`]: document }
     expect(companyContentRelease(release(data)).files).toEqual(data)
   })
+  it('uses native YAML semantics for expert metadata and binds the name to the file', () => {
+    const document = (header: string) => Buffer.from(`---\n${header}\n---\nUse the configured tools.`).toString('base64')
+    const quoted = { 'experts/operations/orders.md': document('name: orders # stable id\ndescription: "查询订单"') }
+    expect(companyContentRelease(release(quoted)).files).toEqual(quoted)
+    expect(() => companyContentRelease(release({
+      'experts/operations/orders.md': document('name: other\ndescription: Orders'),
+    }))).toThrow('公司专家必须包含与文件名一致')
+    expect(() => companyContentRelease(release({
+      'experts/operations/orders.md': document('name: orders\ndescription: [broken'),
+    }))).toThrow('公司专家 YAML 格式无效')
+  })
   it.each(['skills/orders/../../private', 'skills/orders/CON.txt', 'skills/orders/x.', 'skills/orders/.hidden/../x', 'experts/engineering/orders--invalid.md', 'skills/orders--invalid/SKILL.md', 'skills/orders-/SKILL.md'])('rejects unsafe paths: %s', (path) => {
     const data = { ...files, [path]: markdown }
     expect(() => companyContentRelease(release(data))).toThrow()

@@ -11,6 +11,7 @@ import { registerConnectorSelection, DISCOVER_CONNECTOR_TOOLS, CONNECTOR_SELECTI
 import type { DeepSeekHarnessProductIpc } from './deepseek-harness-product-ipc.ts'
 import { connectorServerName, parseConnectorCatalog, type DeepSeekHarnessConnector as Connector } from './deepseek-harness-connector-contract.ts'
 import { connectorSearchQuery, rankConnectorTools } from './connector-search.ts'
+import { scopedProductInvoker } from './data.ts'
 
 export { DISCOVER_CONNECTOR_TOOLS } from './connector-selection.ts'
 export const discoveryOptions = z.object({
@@ -50,7 +51,7 @@ export function installConnectorDiscovery(ctx: Context, product: Pick<DeepSeekHa
   ])
   registerConnectorSelection(ctx)
   const states = new Map<Agent, State>()
-  const lifetime = new AbortController()
+  const requests = scopedProductInvoker(product, 'Product runtime unloaded')
   const operations = new Set<Promise<unknown>>()
   const lookup = (pin: Pin) => {
     const current = catalog()
@@ -157,13 +158,13 @@ export function installConnectorDiscovery(ctx: Context, product: Pick<DeepSeekHa
       if (!parsed.success) throw new ProductError('CONNECTOR_QUERY_INVALID',
         '请提供业务关键词（每项不超过 200 字，可附最多 4 组同义表达）和结果数量，或连接器 ID 和不重复的工具原名；两种方式不能混用，数量不能超限。')
       const request = parsed.data
-      const signal = AbortSignal.any([exec.signal, lifetime.signal, state.controller.signal])
+      const signal = AbortSignal.any([exec.signal, requests.signal, state.controller.signal])
       const operation = (async () => {
         const current = catalog()
         if (!current) throw new ProductError('CONNECTOR_CATALOG_UNAVAILABLE', '连接器目录暂不可用，请刷新连接器后重试。', true)
         const exact = 'connectorId' in request
         const ids = exact ? [request.connectorId] : current.connectors.map(connector => connector.id)
-        const allowed = parseConnectorCatalog(await product.invoke('connectors.list', { ids }, signal))
+        const allowed = parseConnectorCatalog(await requests.invoke('connectors.list', { ids }, signal))
         signal.throwIfAborted()
         if (current !== catalog()) throw new ProductError('CONNECTOR_CATALOG_CHANGED', '连接器正在刷新，请稍后重试。', true)
         const resolve = (connector: Connector, raw: string) => {
@@ -239,11 +240,10 @@ export function installConnectorDiscovery(ctx: Context, product: Pick<DeepSeekHa
     },
   }))
   ctx.on('internal/plugin', (fiber) => {
-    if (fiber === ctx.fiber && fiber.uid === null) lifetime.abort(new Error('Product runtime unloaded'))
+    if (fiber === ctx.fiber && fiber.uid === null) void requests.dispose()
   }, { global: true })
   ctx.effect(() => async () => {
-    lifetime.abort(new Error('Product runtime unloaded'))
-    await Promise.allSettled([...operations, ...disposals])
+    await Promise.allSettled([...operations, ...disposals, requests.dispose()])
     await Promise.all([...states.values()].map(state => state.scope.dispose()))
     states.clear()
   }, 'product-connectors.discovery')
