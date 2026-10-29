@@ -1790,6 +1790,32 @@
           "after": "e9fe2cd8dcc1a57b18660b8c35b0bb318b18050f9697eba5810d4b1317a57a5b"
         }
       ]
+    },
+    {
+      "id": "windows-unsigned-policy",
+      "purpose": "允许 Windows 未签名与内部开发包跳过强制更新策略源站校验，避免构建环境把 file URL 当作策略服务。",
+      "tests": [
+        "apps/desktop/tests/desktop-package-environment.spec.ts",
+        "apps/desktop/tests/desktop-policy-environment.spec.ts"
+      ],
+      "files": [
+        {
+          "path": "apps/desktop/scripts/desktop-package-environment.mjs",
+          "before": "56139bb4bf52f90e4aed11de2872d7417905521a94047ae6899a2187ba3b8df7",
+          "after": "10cfac8f7200b2a8892048333851c07ac1fe9bba5306945957b766ae0bd7bc44"
+        },
+        {
+          "path": "apps/desktop/tests/desktop-package-environment.spec.ts",
+          "before": "f02b185b7e4631929c0e1b6eb10b31f6e8939bdbbc047bed9a9cde6c1dc2a788",
+          "after": "857e1e5f804957e442822e1e722a8e406102f15457a4e9235e022796b41ff1cd"
+        },
+        {
+          "path": "apps/desktop/tests/desktop-policy-environment.spec.ts",
+          "before": "bb85d28e7c4f3a333bc92670a3a72caef19a2a76a0031b71f5ceaeb4b5d16349",
+          "after": "cb988d8d7d21e0902f0b80a1b3a4610a815fb23596d041c8751696648fd638f2"
+        }
+      ],
+      "diff": "windows-unsigned-policy.patch"
     }
   ]
 }

@@ -1,0 +1,43 @@
+diff --git a/apps/desktop/scripts/desktop-package-environment.mjs b/apps/desktop/scripts/desktop-package-environment.mjs
+index 27a7f92c7f17c25b291f790d759988fc50fa7bcd..0e877e3cdae73e069ea1d34fff315620b0a9c656 100644
+--- a/apps/desktop/scripts/desktop-package-environment.mjs
++++ b/apps/desktop/scripts/desktop-package-environment.mjs
+@@ -156,7 +156,7 @@ export function validateDesktopPackageEnvironment(environment, target, options =
+   resolveDesktopTargetBuildPaths(environment, target.platform, target.arch)
+   resolveDesktopAppId(environment)
+   resolveNpmRegistry(environment)
+-  if (target.platform !== 'darwin' || !options.unsigned) resolveDesktopPolicyEnvironment(environment)
++  if (!options.unsigned) resolveDesktopPolicyEnvironment(environment)
+   if (target.platform === 'darwin') resolveMacOSPackageSettings(environment)
+   else resolveWindowsPackageSettings(environment)
+   if (options.unsigned) return
+diff --git a/apps/desktop/tests/desktop-package-environment.spec.ts b/apps/desktop/tests/desktop-package-environment.spec.ts
+index a8d79a2c96f82358872c5b9e94e1d6dbe4e3d286..1b6fbf793e82e6b64816bc5a7c008c66db05c915 100644
+--- a/apps/desktop/tests/desktop-package-environment.spec.ts
++++ b/apps/desktop/tests/desktop-package-environment.spec.ts
+@@ -251,6 +251,9 @@ describe('Desktop local packaging configuration', () => {
+     expect(() => {
+       validateDesktopPackageEnvironment({ ...POLICY, DSH_DESKTOP_APP_ID: RELEASE.DSH_DESKTOP_APP_ID }, WINDOWS, { unsigned: true })
+     }).not.toThrow()
++    expect(() => {
++      validateDesktopPackageEnvironment({ DSH_DESKTOP_APP_ID: RELEASE.DSH_DESKTOP_APP_ID }, WINDOWS, { unsigned: true })
++    }).not.toThrow()
+     expect(() => {
+       validateDesktopPackageEnvironment({ ...POLICY, DSH_DESKTOP_APP_ID: RELEASE.DSH_DESKTOP_APP_ID }, WINDOWS, { prepareOnly: true })
+     }).not.toThrow()
+diff --git a/apps/desktop/tests/desktop-policy-environment.spec.ts b/apps/desktop/tests/desktop-policy-environment.spec.ts
+index be5b4ede251c17e44c071e15f23a56968d9d94d2..a9d9a4f28240febf8fa79b0e8f05e3d34892103a 100644
+--- a/apps/desktop/tests/desktop-policy-environment.spec.ts
++++ b/apps/desktop/tests/desktop-policy-environment.spec.ts
+@@ -47,9 +47,9 @@ it('rejects login origins in production', () => {
+     .toThrow('must not configure allowedAuthOrigins')
+ })
+ 
+-it.each([{ unsigned: true }, { prepareOnly: true }, {}])('requires policy outside local macOS builds in %j', (options) => {
++it.each([{ unsigned: true }, { prepareOnly: true }, {}])('requires policy for signed and preparation builds in %j', (options) => {
+   for (const platform of ['win32', 'darwin'] as const) {
+-    if (platform === 'darwin' && options.unsigned) {
++    if (options.unsigned) {
+       expect(() => { validateDesktopPackageEnvironment({ DSH_DESKTOP_APP_ID: 'com.example.test' }, { platform, arch: 'x64' }, options) })
+         .not.toThrow()
+       continue
