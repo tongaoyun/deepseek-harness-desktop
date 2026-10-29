@@ -8,7 +8,7 @@ export function apply(ctx, config) {
   ctx.effect(() => ctx.appReady.onReady(() => {
     const urls = [...ctx.loader.internal.loadCache.keys()]
       .filter(url => /\/(?:dsh-)?(?:app-boot|hmr|plugin-manager)\//u.test(url)
-        || /\/@deepseek-harness\/product-(?:experts|skills)\/lib\//u.test(url))
+        || /\/(?:@deepseek-harness\/product-|packages\/deepseek-harness-product\/)(?:experts|skills)\/lib\//u.test(url))
     writeFileSync(config.output, JSON.stringify({
       modules: urls,
       loaderSharesRoot: ctx.loader.ctx.root === ctx.root,
