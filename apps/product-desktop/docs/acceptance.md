@@ -33,7 +33,7 @@ pnpm --dir apps/product-desktop run test:installed --target mac-arm64 --installe
 
 `internal` 验收从完整安装包制作两个隔离、递增版本。Mac 使用同一固定证书及 Squirrel.Mac；Windows 使用生产 NSIS 目录安装器。保留依赖、解包二进制、运行时清单及 ASAR 完整性，只替换测试启动、版本和服务输入，原安装包不变。
 
-两端均通过实际“检查更新”界面验证：安装 A，发现并下载 B，取消重启后继续使用 A，再确认重启安装 B。有活动任务时，显式确认按钮为“停止任务并更新”；空闲时为“安装并重启”。验收只接受这两类 shell 确认，记录实际按钮，关闭弹层始终取消。检查版本、Session 与草稿保留，以及旧 Host 和 sidecar 退出。Mac 更新测试有八分钟执行、一分钟清理及十分钟父进程期限。
+两端均通过产品内的“检查更新”验证：安装 A，点击后直接下载 B，确认实际收到安装包请求，再取消重启并继续使用 A，重新打开确认后重启安装 B。有活动任务时，显式确认按钮为“停止任务并更新”；空闲时为“安装并重启”。验收只接受这两类 shell 确认，记录实际按钮，关闭弹层始终取消。检查版本、Session 与草稿保留，以及旧 Host 和 sidecar 退出。Mac 更新测试有八分钟执行、一分钟清理及十分钟父进程期限。
 
 结果写入 `.artifacts/native-macos-update-*.json` 或 `.artifacts/native-windows-update-*.json`。正式 `signed` 分发仍须分别完成 Windows、Mac ARM64 和 Mac Intel 的签名、公证及 A→B 升级，不能以模拟结果替代。
 

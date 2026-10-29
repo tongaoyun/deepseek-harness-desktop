@@ -226,9 +226,8 @@ app.whenReady().then(() => writeFileSync(${JSON.stringify(directory)} + '/boot-'
       console.log('Native product update: downloading the prepared next version')
       await page.getByRole('button', { name: /^(More menu|更多菜单)$/, exact: true }).click()
       await page.getByRole('menuitem', { name: /^(Check for updates|检查更新)$/, exact: true }).click()
-      const dialog = await dialogWithButton(application, /^(Download update|下载更新)$/)
-      await dialog.getByRole('button', { name: /^(Download update|下载更新)$/, exact: true }).click()
       const install = await dialogWithButton(application, restartConfirmation)
+      assert.ok(requests.includes('/' + zipName), 'Product update action must download the next version before restart confirmation')
       await install.locator('#close').click()
       assert.equal(await application.evaluate(({ app }) => app.getVersion()), initialVersion)
       await expect.poll(() => composer.textContent()).toBe(draft)
@@ -269,7 +268,6 @@ app.whenReady().then(() => writeFileSync(${JSON.stringify(directory)} + '/boot-'
       asar.uncache(updatedArchive)
       assert.equal(JSON.parse(asar.extractFile(updatedArchive, 'package.json')).version, version)
       if (!windows) await verifyInternalApplication(appPath, environment)
-      assert.ok(requests.includes('/' + zipName))
       const evidence = resolve(import.meta.dirname, '../../../.artifacts')
       await mkdir(evidence, { recursive: true })
       await writeFile(join(evidence, `native-${windows ? 'windows' : 'macos'}-update-${process.arch}.json`), JSON.stringify({ passed: true, from: initialVersion, to: version,
