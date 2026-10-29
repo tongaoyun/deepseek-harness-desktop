@@ -2,6 +2,7 @@ import { Context } from '@deepseek-ai/cordis'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import Tools from '@deepseek-ai/dsh-tools'
+import * as NativeToolExecutor from '@deepseek-ai/dsh-tool-executor-native'
 import { ToolCallId } from '@deepseek-ai/dsh-llm'
 import LlmRuntime from '@deepseek-ai/dsh-llm'
 import Sessions, { SessionId } from '@deepseek-ai/dsh-session'
@@ -12,6 +13,14 @@ import Presets from '@deepseek-ai/dsh-agent-preset-registry'
 import { expect, it, onTestFinished, vi } from 'vitest'
 import { ProductData } from '../src/data.ts'
 
+async function executeTool(ctx: Context, agent: Parameters<Context['tools']['execute']>[0]['agent'], name: string,
+  args: Record<string, unknown>, callId: ToolCallId, signal = new AbortController().signal) {
+  const batch = await ctx.tools.execute({ calls: [{ type: 'tool-call', name, id: callId, arguments: JSON.stringify(args) }], ...agent === undefined ? {} : { agent }, signal })
+  const result = batch.results[0]?.result
+  if (result === undefined) throw new Error(`Executor omitted result for ${name}`)
+  return result
+}
+
 it('loads knowledge in a selected scope, records replayable inputs, and releases the tool', async () => {
   const ctx = new Context()
   ctx.baseUrl = import.meta.url
@@ -19,6 +28,7 @@ it('loads knowledge in a selected scope, records replayable inputs, and releases
   await ctx.plugin(Loader)
   await ctx.plugin(SystemPrompt)
   await ctx.plugin(Tools)
+  await ctx.plugin(NativeToolExecutor)
   await ctx.plugin(LlmRuntime)
   await ctx.plugin(Sessions)
   await ctx.plugin(SessionProjections)
@@ -37,34 +47,29 @@ it('loads knowledge in a selected scope, records replayable inputs, and releases
   expect(ctx.tools.schemas()).toEqual([])
   const schema = ctx.tools.schemas(agent)[0]!
   expect(Object.keys(schema.parameters.properties ?? {})).toEqual(['query', 'limit'])
-  const result = await ctx.tools.execute({ signal: new AbortController().signal, callId: ToolCallId('knowledge-fixture'),
-    agent, name: 'knowledge_search', arguments: { query: ' policy ', limit: 2 } })
+  const result = await executeTool(ctx, agent, 'knowledge_search', { query: ' policy ', limit: 2 }, ToolCallId('knowledge-fixture'))
   expect(invoke).toHaveBeenCalledWith('knowledge.search', { query: 'policy', limit: 2, knowledgeBaseRefs: [],
     knowledgeBaseIds: ['selected'], restrictToKnowledgeBaseRefs: true }, expect.any(AbortSignal))
   expect(JSON.stringify({ schema, input: invoke.mock.calls[0]?.[1], result })).toContain('Recorded enterprise evidence.')
   const { content: _content, score: _score, ...source } = hit
   expect(result.meta).toEqual({ kind: 'product-knowledge-sources-v1', sources: [source] })
-  const read = await ctx.tools.execute({ signal: new AbortController().signal, callId: ToolCallId('read-source'),
-    agent, name: 'knowledge_read', arguments: { sourceId: 'source' } })
+  const read = await executeTool(ctx, agent, 'knowledge_read', { sourceId: 'source' }, ToolCallId('read-source'))
   expect(invoke).toHaveBeenCalledWith('knowledge.sources.read', { sourceId: 'source' }, expect.any(AbortSignal))
   expect(JSON.stringify(read)).toContain('Recorded enterprise evidence.')
   expect(read.meta).toEqual(result.meta)
   invoke.mockResolvedValueOnce({ ...hit, sourceId: 'other-source' })
-  const wrongSource = await ctx.tools.execute({ signal: new AbortController().signal, callId: ToolCallId('wrong-source'),
-    agent, name: 'knowledge_read', arguments: { sourceId: 'source' } })
+  const wrongSource = await executeTool(ctx, agent, 'knowledge_read', { sourceId: 'source' }, ToolCallId('wrong-source'))
   expect(wrongSource.isError).toBe(true)
   expect(JSON.stringify(wrongSource)).toContain('does not match the requested fragment')
   expect(JSON.stringify(wrongSource)).not.toContain('Recorded enterprise evidence.')
   expect(wrongSource.meta).toBeUndefined()
   invoke.mockResolvedValueOnce({ ...hit, knowledgeBaseId: 'unselected' })
-  const wrongScope = await ctx.tools.execute({ signal: new AbortController().signal, callId: ToolCallId('wrong-scope'),
-    agent, name: 'knowledge_read', arguments: { sourceId: 'source' } })
+  const wrongScope = await executeTool(ctx, agent, 'knowledge_read', { sourceId: 'source' }, ToolCallId('wrong-scope'))
   expect(JSON.stringify(wrongScope)).toContain('outside the selected task scope')
   expect(JSON.stringify(wrongScope)).not.toContain('Recorded enterprise evidence.')
   expect(wrongScope.meta).toBeUndefined()
   invoke.mockRejectedValueOnce(new Error('permission revoked'))
-  const denied = await ctx.tools.execute({ signal: new AbortController().signal, callId: ToolCallId('revoked-fixture'),
-    agent, name: 'knowledge_search', arguments: { query: 'policy' } })
+  const denied = await executeTool(ctx, agent, 'knowledge_search', { query: 'policy' }, ToolCallId('revoked-fixture'))
   expect(JSON.stringify(denied)).toContain('permission revoked')
   let settle: (() => void) | undefined
   let signal: AbortSignal | undefined
@@ -74,8 +79,8 @@ it('loads knowledge in a selected scope, records replayable inputs, and releases
     signal?.throwIfAborted()
     return hit
   })
-  const pending = ctx.tools.execute({ signal: new AbortController().signal, callId: ToolCallId('pending-source'),
-    agent, name: 'knowledge_read', arguments: { sourceId: 'source' } })
+  const controller = new AbortController()
+  const pending = executeTool(ctx, agent, 'knowledge_read', { sourceId: 'source' }, ToolCallId('pending-source'), controller.signal)
   onTestFinished(() => { settle?.() })
   await vi.waitFor(() => { expect(settle).toBeDefined() })
   await release()

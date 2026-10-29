@@ -13,6 +13,8 @@ const owned = new Set(['UPSTREAM_COMMIT', 'UPSTREAM_TAG', 'UPSTREAM_REPOSITORY',
   'scripts/upstream-boundaries.d.mts',
   'scripts/sync-upstream.mjs',
   'scripts/deepseek-harness-electron-workflows.spec.ts', 'scripts/release/gitea-release.mjs',
+  '.jscpd.json', 'scripts/verify-package-dependencies.ts',
+  'packages/extensions/README.i18n.yaml', 'packages/extensions/README.md', 'packages/extensions/README.zh.md',
   'docs/deepseek-harness-electron-architecture.md', 'docs/deepseek-harness-electron-architecture.zh.md', 'docs/deepseek-harness-electron-architecture.i18n.yaml',
   'docs/subsystems/deepseek-harness-product.md', 'docs/subsystems/deepseek-harness-product.zh.md', 'docs/subsystems/deepseek-harness-product.i18n.yaml',
   'apps/web/tests/deepseek-harness-catalog.e2e.ts'])
@@ -29,6 +31,7 @@ export function productOwned(path) {
     || path.startsWith('docs/upgrade-guide/v0.2.1-alpha.4/product-folder-rename/')
     || path.startsWith('docs/upgrade-guide/v0.2.1-rc.2/product-expert-kit-selection/')
     || path.startsWith('docs/upgrade-guide/v0.2.1-rc.2/product-native-sidecar/')
+    || path.startsWith('docs/upgrade-guide/v0.2.2-alpha.2/product-device-identity/')
     || path.startsWith('docs/persistence-changes/2026-10-13-product-expert-kit-instructions.')
     || path.startsWith('docs/persistence-changes/2026-10-20-retire-product-content.')
 }

@@ -1833,6 +1833,7 @@ describe('Task manager details', () => {
   function renderSidebarGlyph(size: number) {
     const unread = (): never => { throw new Error('The sidebar icon must not read application state') }
     return render(<TaskManagerIcon
+      wide={false}
       size={size}
       active={false}
       usePanelInfo={unread}

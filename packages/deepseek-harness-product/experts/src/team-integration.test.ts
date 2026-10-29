@@ -9,6 +9,7 @@ import { Context } from '@deepseek-ai/cordis'
 import type { SettingsNamespace } from '@deepseek-ai/dsh-settings'
 import { apply } from './index.ts'
 import AgencyAgentsRemote from './remote.ts'
+import { nativeTeamMemberName } from './team-engine.ts'
 import { MemorySettings } from './settings-memory.ts'
 class TestSettings extends MemorySettings {
   protected async persist(
@@ -85,7 +86,7 @@ describe('专家团宿主与远端集成', () => {
     const { id: _fixtureId, ...firstDraft } = TEST_TEAMS[0]
     const initial = await remote.saveTeam(firstDraft, false, 0)
     expect(initial.teams).toHaveLength(1)
-    expect(initial.nativeMembers ?? {}).toEqual({})
+    expect(initial.nativeMembers).toEqual(Object.fromEntries(initial.teams.flatMap(team => team.members.map(member => [nativeTeamMemberName(team.id, member.expertSlug), member.expertSlug]))))
     const catalog = await remote.getCatalog(false, new AbortController().signal)
     for (const group of initial.teams) {
       for (const member of group.members) {
@@ -93,16 +94,16 @@ describe('专家团宿主与远端集成', () => {
       }
     }
     const team = initial.teams[0]
-    const exported = await remote.exportTeam(team.id, initial.revision)
+    const exported = await remote.exportTeam(team.id, initial.revision, new AbortController().signal)
     expect(exported.resourceKey).toMatch(/^teams\//)
     const document = publishedTeamDocument(Buffer.from(Object.values(exported.files)[0], 'base64').toString('utf8'))
     expect(document.experts).toHaveLength(team.members.length)
     expect(document.team.members.map(member => member.expertSlug)).toEqual(document.experts.map(expert => expert.key))
     expect(JSON.stringify(document)).not.toContain(team.members[0].expertSlug)
-    await expect(remote.exportTeam(team.id, initial.revision + 1)).rejects.toThrow('已更新')
+    await expect(remote.exportTeam(team.id, initial.revision + 1, new AbortController().signal)).rejects.toThrow('已更新')
     let companyRevision = 0
     services.set('companyContent', { read: async () => ({ sha256: String(companyRevision++) }) })
-    await expect(remote.exportTeam(team.id, initial.revision)).rejects.toThrow('已更新')
+    await expect(remote.exportTeam(team.id, initial.revision, new AbortController().signal)).rejects.toThrow('已更新')
     services.delete('companyContent')
     const enabled = await remote.setTeamEnabled(team.id, true, initial.revision)
     expect(enabled.enabledExperts).toEqual(

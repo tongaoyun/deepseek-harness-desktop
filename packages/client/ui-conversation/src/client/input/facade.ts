@@ -313,7 +313,17 @@ export class SessionInputShell implements SessionInput {
       return 'applied'
     }
     if (whenDraftExists === 'keep') return 'preserved'
-    this.draftEditor.appendDraft(options.prompt)
+    if (typeof options.prompt === 'string') this.draftEditor.appendDraft(options.prompt)
+    else if (options.prompt.text !== '') {
+      const current = this.draftSnapshot
+      const offset = current.text.length + (current.text === '' ? 0 : 1)
+      this.setDraft({
+        text: `${current.text}${current.text === '' ? '' : '\n'}${options.prompt.text}`,
+        references: [...current.references, ...options.prompt.references.map(ref => ({ ...ref, offset: ref.offset + offset }))],
+        quotes: [...current.quotes ?? [], ...options.prompt.quotes?.map(quote => ({ ...quote, offset: quote.offset + offset })) ?? []],
+        ...(current.command === undefined ? {} : { command: current.command }),
+      })
+    }
     return 'applied'
   }
 

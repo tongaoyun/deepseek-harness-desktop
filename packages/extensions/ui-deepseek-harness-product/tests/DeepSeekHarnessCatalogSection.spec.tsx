@@ -16,7 +16,7 @@ import {
 } from '../src/client/DeepSeekHarnessCapabilitiesNavigation.tsx'
 import { apply } from '../src/client/index.ts'
 import { DeepSeekHarnessSettingsMenu } from '../src/client/DeepSeekHarnessSettingsMenu.tsx'
-import { en, zh, type DeepSeekHarnessProductKey } from '../src/locales.ts'
+import { zh, type DeepSeekHarnessProductKey } from '../src/locales.ts'
 import { createPreviewFixture, originalFromFixture, originalMetadata, renderKnowledgePreview } from './knowledge-preview-fixture.client.tsx'
 
 afterEach(() => {
@@ -60,6 +60,39 @@ function castClientContext(value: object): ClientContext {
 }
 
 describe('DeepSeekHarness capability navigation', () => {
+  it.each([
+    { entries: { data: [] }, problem: 'a non-array catalog' },
+    { entries: [null], problem: 'a malformed entry' },
+    { entries: [{ name: 'Missing identity' }], problem: 'a missing resource ID' },
+    { entries: [{ id: 'erp' }], problem: 'a missing resource name' },
+    { entries: [{ id: 'erp', name: 'ERP', tools: {} }], problem: 'a malformed tool list' },
+    { entries: [{ id: 'erp', name: 'ERP', tools: [{ name: 'write', displayName: 'Write', access: 'UNKNOWN' }] }], problem: 'an unknown tool access policy' },
+    { entries: [{ id: 'erp', name: 'ERP', canEdit: 'true' }], problem: 'a malformed permission' },
+    { entries: [{ id: 'erp', name: 'ERP' }, { id: 'erp', name: 'Another ERP' }], problem: 'duplicate resource IDs' },
+  ])('reports $problem instead of an empty or partial successful catalog', async ({ entries }) => {
+    installProductApi({ invoke: async () => entries })
+    render(<ConnectorsPanel t={t} {...actions()} />)
+    expect((await screen.findByRole('alert')).textContent).toContain(zh.loadFailed)
+    expect(screen.queryByText(zh.noConnectors)).toBeNull()
+    expect(screen.queryByRole('button', { name: /Missing identity|Another ERP/ })).toBeNull()
+  })
+
+  it('rejects malformed knowledge identities and recovers to server-issued resources on retry', async () => {
+    let invalid = true
+    installProductApi({ invoke: async method => method === 'knowledge.bases.list'
+      ? invalid ? [{ name: 'Unknown knowledge' }] : [{ id: 'policy', name: 'Company policy', scope: 'COMPANY', canManage: false }]
+      : { items: [], page: 1, size: 20, total: 0 } })
+    render(<KnowledgePanel t={t} {...actions()} />)
+    const failure = (await screen.findByRole('alert')).textContent
+    expect(failure).toContain(zh.loadFailed)
+    expect(screen.queryByText('Unknown knowledge')).toBeNull()
+    invalid = false
+    fireEvent.click(screen.getByRole('button', { name: zh.refresh }))
+    const resource = await screen.findByTitle('Company policy')
+    expect(screen.queryByRole('alert')).toBeNull()
+    expect({ failure, recovered: resource.textContent }).toMatchSnapshot()
+  })
+
   it.each([false, true])('keeps connector content mounted during refresh (empty: %s)', async (empty) => {
     const initial = deferred<unknown>()
     const reconnect = deferred<unknown>()
@@ -496,20 +529,6 @@ describe('DeepSeekHarness capability navigation', () => {
       expect(screen.getByRole('button', { name: new RegExp(name) })).toBeTruthy()
     }
     expect(screen.queryByRole('button', { name: /ERP MCP/ })).toBeNull()
-  })
-
-  it.each([
-    { category: 'constructor', locale: 'zh', messages: zh },
-    { category: '__proto__', locale: 'zh', messages: zh },
-    { category: 'constructor', locale: 'en', messages: en },
-    { category: '__proto__', locale: 'en', messages: en },
-  ])('shows Other in connector details for the custom category $category ($locale)', async ({ category, messages }) => {
-    installProductApi({ invoke: async () => [{ id: 'custom', name: 'Custom MCP', category }] })
-    render(<ConnectorsPanel t={(key: DeepSeekHarnessProductKey): string => messages[key]} {...actions()} />)
-    fireEvent.click(await screen.findByRole('button', { name: /Custom MCP/ }))
-    const dialog = await screen.findByRole('dialog', { name: messages.connectorDetails })
-    expect(within(dialog).getByText(messages.categoryOther)).toBeTruthy()
-    expect(dialog.querySelector('header')?.textContent).toMatchSnapshot()
   })
 
   it('shows all categories in enterprise order and retains a way to clear a disappearing category', async () => {

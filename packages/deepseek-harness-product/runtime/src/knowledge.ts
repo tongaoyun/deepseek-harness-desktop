@@ -1,6 +1,7 @@
 import type { Context } from '@deepseek-ai/cordis'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import { getProductData, scopedProductInvoker } from './data.ts'
+import { objectRecord, stringField } from './response-fields.ts'
 export const inject = ['productData', 'tools', 'systemPrompt']
 export interface Config { readonly knowledgeBaseIds: readonly string[] }
 interface KnowledgeHit {
@@ -29,7 +30,6 @@ const hitSchema = {
 function sourceMetadata(hits: readonly KnowledgeHit[]) {
   return { kind: 'product-knowledge-sources-v1', sources: hits.map(({ content: _content, score: _score, ...source }) => source) }
 }
-
 export function apply(ctx: Context, config: Config): void {
   const product = getProductData(ctx)
   const requests = scopedProductInvoker(product, 'Knowledge scope unloaded')
@@ -95,7 +95,6 @@ export function apply(ctx: Context, config: Config): void {
     },
   })), 'product-knowledge.read')
 }
-
 function knowledgeHits(value: unknown): KnowledgeHit[] {
   if (!Array.isArray(value)) throw new Error('deepseek-harness product: invalid knowledge search response')
   return value.map(knowledgeHit)
@@ -111,14 +110,4 @@ function knowledgeHit(entry: unknown): KnowledgeHit {
     filename: stringField(record, 'filename'), locator: stringField(record, 'locator'),
     content: stringField(record, 'content'), score,
   }
-}
-
-function objectRecord(value: unknown, label: string): Record<string, unknown> {
-  if (typeof value !== 'object' || value === null || Array.isArray(value)) throw new Error(`Invalid ${label}`)
-  return value as Record<string, unknown>
-}
-
-function stringField(record: Record<string, unknown>, key: string): string {
-  if (typeof record[key] !== 'string') throw new Error(`Invalid knowledge field: ${key}`)
-  return record[key]
 }

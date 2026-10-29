@@ -40,7 +40,7 @@ it('flattens hidden derivations to their selectable origin while executing and l
   const agent = await agentOn(ctx, 'derived-mode')
   ctx.on('agent-preset/resolve-selection', async (_agent, _requested, next) => { await next(); return second.id })
   expect(await ctx.agentPresets.select(agent, 'minimal')).toBe(second.id)
-  expect(ctx.sessionProjections.stateOf(agent.session, 'agentPreset')).toBe(second.id)
+  expect(ctx.agentPresets.presetForSession(agent.session)).toBe(second.id)
   expect(ctx.tools.schemas(agent).map(row => row.name)).toEqual(['minimal'])
   expect(() => ctx.agentPresets.derive('minimal', {
     id: 'misnamed', selectable: false, selectionBase: 'standard', plugins: [],

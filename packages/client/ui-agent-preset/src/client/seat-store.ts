@@ -18,8 +18,8 @@ import type {} from '@deepseek-ai/dsh-api-remotes/client'
 import type { SessionSummary } from '@deepseek-ai/dsh-api-session-controller/client'
 import { createSnapshotStore, type SnapshotStore } from '@deepseek-ai/dsh-client-store'
 import type {} from '@deepseek-ai/dsh-agent-preset-registry/types'
-import { presetOptions, readRoster } from './settings-store.ts'
-import type { AgentPresetOption } from './settings-store.ts'
+import { isUnavailablePreset, presetOptions, readRoster, selectionPresetId } from './settings-store.ts'
+import type { AgentPresetOption, RosterPreset } from './settings-store.ts'
 
 /** Hero-chip snapshot. */
 export interface AgentPresetSeatState {
@@ -27,6 +27,8 @@ export interface AgentPresetSeatState {
   options: readonly AgentPresetOption[]
   /** The staged choice, empty until the roster loads. */
   current: string
+  /** An unnamed hidden composition has no recoverable selectable base. */
+  currentUnavailable: boolean
   /** An error message; explicit selection failures also carry the preset for a Toast. */
   error: string | { readonly preset: AgentPresetOption; readonly reason: string } | null
   busy: boolean
@@ -39,11 +41,13 @@ export interface AgentPresetSeatState {
 }
 
 const INITIAL: AgentPresetSeatState = {
-  options: [], current: '', error: null, busy: false, introduce: false,
+  options: [], current: '', currentUnavailable: false, error: null, busy: false, introduce: false,
 }
 
 /** Mutable one-shot preset choice shared across Provider-bound seat controllers. */
 export interface AgentPresetStage {
+  /** Distinguishes newer choices, including repeated picks of the same preset. */
+  revision: number
   /** Preset awaiting application; absence means no staged choice. */
   id: string | undefined
   /** Whether the receiving chip should announce the applied choice once. */
@@ -74,6 +78,12 @@ export class AgentPresetSeatController {
 
   /** Only the newest roster read may publish after overlapping refreshes. */
   private loadGeneration = 0
+  private presets: readonly RosterPreset[] = []
+  private rosterLoaded = false
+  /** One refresh per unknown identity until an explicit roster reload. */
+  private readonly missingPresetReads = new Map<string, Promise<void> | null>()
+  /** Selection responses may arrive before the matching Session projection. */
+  private committedSelection: { sessionId: SessionSummary['id']; before: string | undefined; id: string } | undefined
   /** Completion of the active Host selection; Settings choices wait before staging. */
   private pendingSelection: Promise<undefined> | undefined
 
@@ -84,7 +94,7 @@ export class AgentPresetSeatController {
       SessionSummary,
       'id' | 'blank' | 'projectionValues'
     > | undefined,
-    private readonly staged: AgentPresetStage = { id: undefined, introduce: false },
+    private readonly staged: AgentPresetStage = { revision: 0, id: undefined, introduce: false },
   ) {}
 
   private set(patch: Partial<AgentPresetSeatState>): void {
@@ -92,8 +102,63 @@ export class AgentPresetSeatController {
   }
 
   private clearStage(): void {
+    this.staged.revision += 1
     this.staged.id = undefined
     this.staged.introduce = false
+  }
+
+  private currentPreset(session: ReturnType<AgentPresetSeatController['currentSession']>): string | undefined {
+    const actual = presetOf(session)
+    const committed = this.committedSelection
+    if (committed === undefined) return actual
+    if (session?.id !== committed.sessionId || actual === committed.id || actual !== committed.before) {
+      this.committedSelection = undefined
+      return actual
+    }
+    return committed.id
+  }
+
+  private shownPreset(id: string | undefined): string {
+    return id === undefined ? '' : selectionPresetId(id, this.presets)
+  }
+
+  private unavailablePreset(id: string | undefined): boolean {
+    return id !== undefined && isUnavailablePreset(id, this.presets)
+  }
+
+  private reconcileCurrent(): void {
+    const session = this.currentSession()
+    const actual = this.currentPreset(session)
+    this.set({
+      current: this.staged.id ?? (session === undefined ? this.fallback : this.shownPreset(actual)),
+      currentUnavailable: this.staged.id === undefined && this.unavailablePreset(actual),
+    })
+  }
+
+  private refreshMissingPreset(id: string | undefined, force = false): Promise<void> | undefined {
+    if ((!this.rosterLoaded && !force) || id === undefined || this.presets.some(preset => preset.id === id)) return
+    const existing = this.missingPresetReads.get(id)
+    if (existing !== undefined) return existing ?? undefined
+    const generation = ++this.loadGeneration
+    const sessionId = this.currentSession()?.id
+    const refresh = readRoster(this.ctx).then((roster) => {
+      if (generation !== this.loadGeneration) return
+      if (!roster.ok) {
+        const error = this.store.getSnapshot().error
+        if (this.currentSession()?.id === sessionId && (error === null || typeof error !== 'object')) {
+          this.set({ error: roster.error })
+        }
+        return
+      }
+      this.presets = roster.value.presets
+      this.rosterLoaded = true
+      this.fallback = this.presets.find(preset => preset.isDefault)?.id ?? this.presets[0]?.id ?? ''
+      this.set({ options: presetOptions(this.presets, true) })
+    }).finally(() => {
+      if (this.missingPresetReads.get(id) === refresh) this.missingPresetReads.set(id, null)
+    })
+    this.missingPresetReads.set(id, refresh)
+    return refresh
   }
 
   /**
@@ -111,17 +176,24 @@ export class AgentPresetSeatController {
       return
     }
     const { presets } = roster.value
+    this.presets = presets
+    this.rosterLoaded = true
+    this.missingPresetReads.clear()
     this.fallback = presets.find(preset => preset.isDefault)?.id ?? presets[0]?.id ?? ''
     const session = this.currentSession()
+    const actual = this.currentPreset(session)
+    const before = this.store.getSnapshot()
     this.set({
-      options: presetOptions(presets),
+      options: presetOptions(presets, true),
       // Staged pick first, then the composition the current session
       // already carries, then the Host-effective default. The middle term is
       // what keeps a late-landing load from regressing the display after
       // an applied stage was consumed — the chip mounts (and loads) only
       // once the flow's session is current, so the reply can arrive after
       // apply() already composed it.
-      current: this.staged.id ?? (session === undefined ? this.fallback : presetOf(session) ?? ''),
+      current: this.staged.id ?? (before.busy ? before.current : session === undefined ? this.fallback : this.shownPreset(actual)),
+      currentUnavailable: before.busy ? before.currentUnavailable
+        : this.staged.id === undefined && this.unavailablePreset(actual),
       error: typeof error === 'object' ? error : null,
       introduce: this.staged.introduce,
     })
@@ -155,9 +227,10 @@ export class AgentPresetSeatController {
    * chip should announce itself on the session it lands on.
    */
   stage(id: string, introduce = false): void {
+    this.staged.revision += 1
     this.staged.id = id
     this.staged.introduce = introduce
-    this.set({ current: id, error: null, introduce })
+    this.set({ current: id, currentUnavailable: false, error: null, introduce })
   }
 
   /** Acknowledge a displayed refusal without dismissing a newer attempt.
@@ -215,18 +288,35 @@ export class AgentPresetSeatController {
   async apply(): Promise<AgentPresetApplyOutcome> {
     if (this.store.getSnapshot().busy) return UNCHANGED
     const staged = this.staged.id
-    const session = this.currentSession()
+    const stageRevision = this.staged.revision
+    let session = this.currentSession()
+    const sessionId = session?.id
+    const current = this.currentPreset(session)
+    const refresh = this.refreshMissingPreset(current)
+    if (refresh !== undefined) await refresh
+    if (this.store.getSnapshot().busy) return UNCHANGED
+    session = this.currentSession()
+    if (session?.id !== sessionId) {
+      if (this.staged.revision === stageRevision) this.clearStage()
+      this.reconcileCurrent()
+      return UNCHANGED
+    }
+    // Another picker may have staged a newer choice during the roster read.
+    if (this.staged.revision !== stageRevision) return UNCHANGED
     if (staged === undefined) {
-      const current = session === undefined ? this.fallback : presetOf(session) ?? ''
+      const actual = this.currentPreset(session)
+      const current = session === undefined ? this.fallback : this.shownPreset(actual)
+      const currentUnavailable = this.unavailablePreset(actual)
       const shown = this.store.getSnapshot()
-      if (current !== shown.current) this.set({ current })
+      if (current !== shown.current || currentUnavailable !== shown.currentUnavailable) this.set({ current, currentUnavailable })
       return UNCHANGED
     }
     if (session === undefined) return { kind: 'staged' }
     // A started session's history was produced under its own composition; the
     // host refuses the swap, so the stage is no longer meaningful.
-    if (!session.blank || presetOf(session) === staged) {
+    if (!session.blank || this.shownPreset(this.currentPreset(session)) === staged) {
       this.clearStage()
+      this.reconcileCurrent()
       return UNCHANGED
     }
     const completion = Promise.withResolvers<undefined>()
@@ -235,13 +325,19 @@ export class AgentPresetSeatController {
     const refuse = (reason: string): AgentPresetApplyOutcome => {
       this.set({
         error: { reason, preset: this.store.getSnapshot().options.find(option => option.id === staged) ?? { id: staged } },
-        current: this.staged.id ?? presetOf(session) ?? '',
       })
+      this.reconcileCurrent()
       return { kind: 'refused', reason }
     }
     try {
       this.set({ busy: true, error: null })
+      const before = presetOf(session)
       const result = await this.ctx.remote.agentPresets.select(session.id, staged)
+      const latest = this.currentSession()
+      if (latest?.id !== session.id) {
+        this.reconcileCurrent()
+        return UNCHANGED
+      }
       if (!result.ok) {
         const { error } = result
         // Prefer the bare cause; the Toast already names the rejected preset.
@@ -250,9 +346,16 @@ export class AgentPresetSeatController {
           : error.message
         return refuse(refusal)
       }
-      this.set({ current: this.staged.id ?? result.value })
+      this.committedSelection = { sessionId: session.id, before, id: result.value }
+      const refresh = this.refreshMissingPreset(result.value, result.value !== staged)
+      if (refresh !== undefined) await refresh
+      this.reconcileCurrent()
       return result.value === staged ? { kind: 'applied' } : UNCHANGED
     } catch (error) {
+      if (this.currentSession()?.id !== session.id) {
+        this.reconcileCurrent()
+        return UNCHANGED
+      }
       return refuse(error instanceof Error ? error.message : String(error))
     } finally {
       this.pendingSelection = undefined

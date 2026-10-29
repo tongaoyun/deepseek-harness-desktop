@@ -6,4 +6,4 @@
 
 `health` 上报 sidecar 就绪状态和 `device-identity` 能力。Electron 使用安装标识上报设备；sidecar 从 `DEEPSEEK_HARNESS_NATIVE_DATA_DIR` 下的 `device/device-id` 读取既有标识，仅在文件缺失时创建。既有标识和数据目录内的其他文件均保留。凭据加密由 Electron 独立检查。
 
-产品方法白名单只暴露 `native.device-identity.get`，不提供通用文件、附件、数据库、凭据、认证、预览或撤销操作。设备策略配置见[升级说明](../../docs/upgrade-guide/v0.2.1-rc.2/product-native-sidecar/guide.zh.md)。
+Electron 主进程在启动产品服务前校验就绪状态、协议及设备标识能力。产品桥接不向页面暴露 `native.*` 方法或原始安装标识，不提供通用文件、附件、数据库、凭据、认证、预览或撤销操作。设备策略配置见[升级说明](../../docs/upgrade-guide/v0.2.1-rc.2/product-native-sidecar/guide.zh.md)。

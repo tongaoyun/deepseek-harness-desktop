@@ -11,7 +11,6 @@ import { registerConnectorSelection, DISCOVER_CONNECTOR_TOOLS, CONNECTOR_SELECTI
 import type { DeepSeekHarnessProductIpc } from './deepseek-harness-product-ipc.ts'
 import { connectorServerName, parseConnectorCatalog, type DeepSeekHarnessConnector as Connector } from './deepseek-harness-connector-contract.ts'
 import { connectorSearchQuery, rankConnectorTools } from './connector-search.ts'
-import { scopedProductInvoker } from './data.ts'
 
 export { DISCOVER_CONNECTOR_TOOLS } from './connector-selection.ts'
 export const discoveryOptions = z.object({
@@ -38,9 +37,9 @@ function unavailable(pin: Pin): ProductError {
     '已加载的连接器工具已变更或不可用。请刷新连接器；若版本已更新，请新建对话。原对话历史仍保留。', false,
     [{ kind: 'connector', id: pin.connectorId }])
 }
-/** Own discovery state, registrations, cancellation and replay without changing the Agent loop. */
-export function installConnectorDiscovery(ctx: Context, product: Pick<DeepSeekHarnessProductIpc, 'invoke'>,
-  catalog: () => ConnectorCatalog | undefined, options: DiscoveryOptions = {}): void {
+/** Own per-Agent discovery scopes; the caller must inject `tools` and the Agent/Session services. */
+export async function installConnectorDiscovery(ctx: Context, product: Pick<DeepSeekHarnessProductIpc, 'invoke'>,
+  catalog: () => ConnectorCatalog | undefined, options: DiscoveryOptions = {}): Promise<void> {
   const limits = discoveryOptions.parse(options)
   const identifier = z.string().regex(/^[A-Za-z0-9._-]{1,128}$/u)
   const requestSchema = z.union([
@@ -49,9 +48,9 @@ export function installConnectorDiscovery(ctx: Context, product: Pick<DeepSeekHa
     z.object({ connectorId: identifier, toolNames: z.array(identifier).min(1).max(limits.maxResults)
       .refine(names => new Set(names).size === names.length) }).strict(),
   ])
-  registerConnectorSelection(ctx)
+  const selection = await registerConnectorSelection(ctx)
   const states = new Map<Agent, State>()
-  const requests = scopedProductInvoker(product, 'Product runtime unloaded')
+  const lifetime = new AbortController()
   const operations = new Set<Promise<unknown>>()
   const lookup = (pin: Pin) => {
     const current = catalog()
@@ -89,11 +88,10 @@ export function installConnectorDiscovery(ctx: Context, product: Pick<DeepSeekHa
     state.loaded.set(pin.name, { pin, remove })
   }
   const readPins = (agent: Agent) => {
-    const selection = ctx.sessionProjections.stateOf(agent.session, 'productConnectorTools')
-    if (!selection) throw new ProductError('CONNECTOR_TOOL_PROJECTION_UNAVAILABLE', '连接器工具状态暂不可用，请重启软件后重试。', true)
-    if (selection.failure) throw new ProductError(selection.failure === 'missing' ? 'CONNECTOR_TOOL_SNAPSHOT_MISSING' : 'CONNECTOR_TOOL_SNAPSHOT_INVALID',
+    const state = selection.stateOf(agent.session)
+    if (state.failure) throw new ProductError(state.failure === 'missing' ? 'CONNECTOR_TOOL_SNAPSHOT_MISSING' : 'CONNECTOR_TOOL_SNAPSHOT_INVALID',
       '连接器工具记录无法恢复，请新建对话；原历史仍可查看。')
-    return selection.pins
+    return state.pins
   }
   const replay = (agent: Agent, state: State) => {
     delete state.invalid
@@ -108,7 +106,7 @@ export function installConnectorDiscovery(ctx: Context, product: Pick<DeepSeekHa
       state.invalid = cause instanceof ProductError ? cause : new ProductError('CONNECTOR_TOOL_SNAPSHOT_INVALID', '连接器工具记录无法恢复，请新建对话；原历史仍可查看。', false, [], { cause })
     }
   }
-  const attach = (agent: Agent) => {
+  const attach = (agent: Agent): undefined => {
     const scope = createScope(ctx, agent)
     const state: State = { scope, controller: new AbortController(), loaded: new Map() }
     scope.ctx.effect(() => () => { state.controller.abort(new Error('Conversation disposed')) }, 'connector-discovery.agent')
@@ -128,6 +126,7 @@ export function installConnectorDiscovery(ctx: Context, product: Pick<DeepSeekHa
       for (const { pin } of state.loaded.values()) if (!lookup(pin)) throw unavailable(pin)
       return next()
     })
+    return undefined
   }
   ctx.on('agent/created', ({ agent }) => { attach(agent) })
   const disposals = new Set<Promise<void>>()
@@ -158,13 +157,13 @@ export function installConnectorDiscovery(ctx: Context, product: Pick<DeepSeekHa
       if (!parsed.success) throw new ProductError('CONNECTOR_QUERY_INVALID',
         '请提供业务关键词（每项不超过 200 字，可附最多 4 组同义表达）和结果数量，或连接器 ID 和不重复的工具原名；两种方式不能混用，数量不能超限。')
       const request = parsed.data
-      const signal = AbortSignal.any([exec.signal, requests.signal, state.controller.signal])
+      const signal = AbortSignal.any([exec.signal, lifetime.signal, state.controller.signal])
       const operation = (async () => {
         const current = catalog()
         if (!current) throw new ProductError('CONNECTOR_CATALOG_UNAVAILABLE', '连接器目录暂不可用，请刷新连接器后重试。', true)
         const exact = 'connectorId' in request
         const ids = exact ? [request.connectorId] : current.connectors.map(connector => connector.id)
-        const allowed = parseConnectorCatalog(await requests.invoke('connectors.list', { ids }, signal))
+        const allowed = parseConnectorCatalog(await product.invoke('connectors.list', { ids }, signal))
         signal.throwIfAborted()
         if (current !== catalog()) throw new ProductError('CONNECTOR_CATALOG_CHANGED', '连接器正在刷新，请稍后重试。', true)
         const resolve = (connector: Connector, raw: string) => {
@@ -240,10 +239,11 @@ export function installConnectorDiscovery(ctx: Context, product: Pick<DeepSeekHa
     },
   }))
   ctx.on('internal/plugin', (fiber) => {
-    if (fiber === ctx.fiber && fiber.uid === null) void requests.dispose()
+    if (fiber === ctx.fiber && fiber.uid === null) lifetime.abort(new Error('Product runtime unloaded'))
   }, { global: true })
   ctx.effect(() => async () => {
-    await Promise.allSettled([...operations, ...disposals, requests.dispose()])
+    lifetime.abort(new Error('Product runtime unloaded'))
+    await Promise.allSettled([...operations, ...disposals])
     await Promise.all([...states.values()].map(state => state.scope.dispose()))
     states.clear()
   }, 'product-connectors.discovery')

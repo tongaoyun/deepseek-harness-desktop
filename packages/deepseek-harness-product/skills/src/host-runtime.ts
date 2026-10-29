@@ -1,3 +1,4 @@
+/// <reference types="node" />
 /** Native skill registration, lifecycle and catalog invalidation for the product manager. */
 import type { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
@@ -5,6 +6,7 @@ import { RemoteError } from '@deepseek-ai/dsh-typert-protocol'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import type { SkillCandidate, SkillProviderControl } from '@deepseek-ai/dsh-skill'
 import type {} from '@deepseek-ai/dsh-workspace'
+import type {} from '@deepseek-ai/dsh-working-directory'
 import type {} from '@deepseek-harness/product-runtime/company-content'
 import type { ScopeOptions } from './types.ts'
 import { listProviderCandidates, getProviderSkill, type ProviderCandidate } from './core.ts'
@@ -38,12 +40,16 @@ export function registeredWorkspacePaths(ctx: Context): string[] | undefined {
   }
 }
 
-/** 仅从客户端当前选中的已知 Session 解析工作目录；缺失或失效时不回退其他会话。 */
-export function activeSessionCwds(ctx: Context, sessionId: unknown) {
-  if (typeof sessionId !== 'string' || !sessionId.trim()) return []
+/**
+ * Read the selected Session's committed effective directory through its native owner.
+ * @param ctx Host context with injected sessions and workingDirectory services.
+ * @param sessionId Selected Session; absent or unknown ids yield no project roots.
+ * @returns Its current directory, without falling back to another Session.
+ */
+export function activeSessionCwds(ctx: Context, sessionId: string | undefined): string[] {
+  if (sessionId === undefined || !sessionId.trim()) return []
   const session = ctx.sessions.get(SessionId(sessionId))
-  const cwd = session?.header.cwd
-  return typeof cwd === 'string' && cwd.trim() ? [cwd.trim()] : []
+  return session === undefined ? [] : [ctx.workingDirectory.get(session)]
 }
 
 export function externalSkillProvider(

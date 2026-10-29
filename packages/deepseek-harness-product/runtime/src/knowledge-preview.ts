@@ -3,14 +3,8 @@ import type { Context } from '@deepseek-ai/cordis'
 import { brandString } from '@deepseek-ai/dsh-brand'
 import { OfficeToPdfError, type OfficeExtension, type OfficeSourceKey } from '@deepseek-ai/dsh-office-to-pdf'
 import { ProductError } from '@deepseek-harness/product/errors'
-import type { KnowledgeFileTransfer } from '@deepseek-harness/product/protocol'
+import { isKnowledgeResourceId, parseKnowledgeDocumentPreviewMetadata, type KnowledgeFileTransfer } from '@deepseek-harness/product/protocol'
 import type { DeepSeekHarnessProductIpc } from './deepseek-harness-product-ipc.ts'
-
-interface OriginalMetadata {
-  readonly filename: string
-  readonly contentVersion: string
-  readonly sizeBytes: number
-}
 
 /** Authorize before admission and again before returning any cached or new PDF.
  * @param ctx - Host services, including the optional official converter.
@@ -22,7 +16,7 @@ interface OriginalMetadata {
 export async function renderKnowledgeOffice(ctx: Context, product: Pick<DeepSeekHarnessProductIpc, 'invoke'>,
   payload: Readonly<Record<string, unknown>>, signal: AbortSignal): Promise<KnowledgeFileTransfer> {
   if (Object.keys(payload).some(key => !['knowledgeBaseId', 'documentId'].includes(key))
-    || !validId(payload.knowledgeBaseId) || !validId(payload.documentId)) {
+    || !isKnowledgeResourceId(payload.knowledgeBaseId) || !isKnowledgeResourceId(payload.documentId)) {
     throw new ProductError('KNOWLEDGE_REQUEST_INVALID', 'Invalid original file identity', false)
   }
   const identity = { knowledgeBaseId: payload.knowledgeBaseId, documentId: payload.documentId }
@@ -30,10 +24,12 @@ export async function renderKnowledgeOffice(ctx: Context, product: Pick<DeepSeek
   if (files === undefined) throw new ProductError('KNOWLEDGE_OFFICE_PREVIEW_UNAVAILABLE', 'Office preview is unavailable', true)
   const employee = await product.invoke('auth.getSession', undefined, signal)
   if (typeof employee !== 'object' || employee === null || !('authenticated' in employee) || employee.authenticated !== true
-    || !('employeeId' in employee) || !validId(employee.employeeId)) {
+    || !('employeeId' in employee) || !isKnowledgeResourceId(employee.employeeId)) {
     throw new ProductError('KNOWLEDGE_ACCESS_DENIED', 'Authenticated employee is required', false)
   }
-  const source = metadata(await product.invoke('knowledge.documents.previewMetadata', identity, signal), identity)
+  const source = parseKnowledgeDocumentPreviewMetadata(
+    await product.invoke('knowledge.documents.previewMetadata', identity, signal),
+    { id: identity.documentId, knowledgeBaseId: identity.knowledgeBaseId })
   const policy = await product.invoke('runtime.knowledge.preview.policy', {}, signal)
   if (typeof policy !== 'object' || policy === null || !('fileRequestTimeoutMs' in policy)
     || typeof policy.fileRequestTimeoutMs !== 'number' || !Number.isSafeInteger(policy.fileRequestTimeoutMs)
@@ -49,7 +45,9 @@ export async function renderKnowledgeOffice(ctx: Context, product: Pick<DeepSeek
       || currentEmployee.employeeId !== employee.employeeId || !('authenticated' in currentEmployee) || currentEmployee.authenticated !== true) {
       throw new ProductError('KNOWLEDGE_ACCESS_DENIED', 'Employee identity changed', false)
     }
-    const current = metadata(await product.invoke('knowledge.documents.previewMetadata', identity, lifetime), identity)
+    const current = parseKnowledgeDocumentPreviewMetadata(
+      await product.invoke('knowledge.documents.previewMetadata', identity, lifetime),
+      { id: identity.documentId, knowledgeBaseId: identity.knowledgeBaseId })
     if (current.contentVersion !== source.contentVersion || current.filename !== source.filename
       || current.sizeBytes !== source.sizeBytes) {
       throw new ProductError('KNOWLEDGE_PREVIEW_SOURCE_CHANGED', 'The original file changed; reopen the preview', true)
@@ -104,21 +102,8 @@ export async function renderKnowledgeOffice(ctx: Context, product: Pick<DeepSeek
   }
 }
 
-function validId(value: unknown): value is string {
-  return typeof value === 'string' && /^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$/u.test(value)
-}
 function officeExtension(value: string | undefined): value is OfficeExtension {
   return value === 'doc' || value === 'docx' || value === 'xls' || value === 'xlsx' || value === 'ppt' || value === 'pptx'
-}
-function metadata(value: unknown, identity: { knowledgeBaseId: string; documentId: string }): OriginalMetadata {
-  if (typeof value !== 'object' || value === null || !('id' in value) || value.id !== identity.documentId
-    || !('knowledgeBaseId' in value) || value.knowledgeBaseId !== identity.knowledgeBaseId
-    || !('filename' in value) || typeof value.filename !== 'string' || value.filename === ''
-    || !('contentVersion' in value) || typeof value.contentVersion !== 'string' || value.contentVersion === '' || value.contentVersion.length > 256
-    || !('sizeBytes' in value) || typeof value.sizeBytes !== 'number' || !Number.isSafeInteger(value.sizeBytes) || value.sizeBytes < 0) {
-    throw new ProductError('INVALID_SERVER_RESPONSE', 'Invalid original file metadata', false)
-  }
-  return { filename: value.filename, contentVersion: value.contentVersion, sizeBytes: value.sizeBytes }
 }
 async function readOriginal(product: Pick<DeepSeekHarnessProductIpc, 'invoke'>, identity: { knowledgeBaseId: string; documentId: string },
   signal: AbortSignal, maxBytes: number, timeoutMs: number): Promise<Uint8Array> {

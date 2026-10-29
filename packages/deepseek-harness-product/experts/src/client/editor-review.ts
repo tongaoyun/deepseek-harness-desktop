@@ -11,15 +11,20 @@ export async function loadEditorReview(
   remote: AgencyCatalogRemote,
   slug: string | undefined,
   locale: "zh" | "en",
+  signal?: AbortSignal,
 ): Promise<EditorReview> {
-  const before = await remote.getCatalog(false);
+  signal?.throwIfAborted();
+  const before = await remote.getCatalog(false, signal);
   if (!before.ok) throw before.error;
   if (slug === undefined || !before.value.experts.some(item => item.slug === slug && item.custom))
     return { catalog: before.value };
-  const expert = await remote.getCustomExpert(slug);
+  signal?.throwIfAborted();
+  const expert = await remote.getCustomExpert(slug, signal);
   if (!expert.ok) throw expert.error;
-  const after = await remote.getCatalog(false);
+  signal?.throwIfAborted();
+  const after = await remote.getCatalog(false, signal);
   if (!after.ok) throw after.error;
+  signal?.throwIfAborted();
   if (before.value.revision !== after.value.revision) throw customError("conflict", locale);
   return { catalog: after.value, expert: expert.value };
 }

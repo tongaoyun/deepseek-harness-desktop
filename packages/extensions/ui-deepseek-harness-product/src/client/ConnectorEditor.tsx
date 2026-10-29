@@ -7,7 +7,7 @@ import { ConnectorEditorSnapshotSchema, ConnectorDraftSchema, ConnectorSaveResul
 import type { DeepSeekHarnessProductKey } from '../locales.ts'
 import css from '../DeepSeekHarnessProduct.module.css'
 import { CATEGORY_KEYS, items, type ProductItem } from './catalog-shared.tsx'
-import { productApi } from './product-api.ts'
+import { invokeProduct, productApi } from './product-api.ts'
 import { productErrorMessage } from './product-errors.ts'
 import { connectorCommand, connectorCommandText, connectorConfigurations, connectorVariables } from './connector-configuration.ts'
 import { useEditorCloseGuard } from './useEditorCloseGuard.ts'
@@ -57,14 +57,7 @@ export function ConnectorEditor({ onClose, onSaved, editing, t }: {
     signal.throwIfAborted()
     const api = productApi()
     if (!api) throw new Error(t('unavailable'))
-    const request = randomUUID()
-    const cancel = () => { api.cancel(request) }
-    signal.addEventListener('abort', cancel, { once: true })
-    try {
-      const value = await api.invoke(method, payload, request, timeoutMs)
-      signal.throwIfAborted()
-      return value
-    } finally { signal.removeEventListener('abort', cancel) }
+    return invokeProduct(api, method, payload, signal, timeoutMs)
   }
   const load = async (signal = lifecycle.current.signal): Promise<void> => {
     if (!editing) return

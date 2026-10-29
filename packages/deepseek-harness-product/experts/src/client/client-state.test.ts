@@ -154,12 +154,12 @@ it('cancels a company refresh queued for the previous Host without starting anot
   expect((await state.catalog.refresh()).revision).toBe(2)
 })
 
-it('retains execution metadata across mutation receipts and replaces it on a full Host read', async () => {
+it('replaces execution metadata from each complete Host receipt', async () => {
   const state = fixture()
   const engine: NonNullable<TeamSnapshot['engine']> = { state: 'enabled', mode: 'native', reason: 'Available', recommendation: '' }
   state.teams.accept({ ...teams, engine })
   state.teams.accept({ ...teams, revision: 3 })
-  expect(state.teams.getSnapshot()?.engine).toBe(engine)
+  expect(state.teams.getSnapshot()?.engine).toBeUndefined()
   state.getTeams.mockResolvedValueOnce({ ok: true, value: { ...teams, revision: 3 } })
   await state.teams.refresh()
   expect(state.teams.getSnapshot()?.engine).toBeUndefined()

@@ -184,7 +184,7 @@ function realSpellings(path: string): string[] {
 
 function canonicalPath(path: string): string {
   try {
-    return realpathSync(path)
+    return process.versions.electron === undefined ? realpathSync(path) : realpathSync.native(path)
   } catch {
     // A runtime resolution may name a profile scope before that directory is materialized.
     return resolve(path)
@@ -833,7 +833,21 @@ export function installRuntimeInterception(
   const router = new ResolutionRouter(resolution, directory => cjs._nodeModulePaths(directory))
   let delegatedEsm: { parent: string | undefined; request: string } | undefined
 
-  const adaptEsm = (native: EsmResolve): EsmResolve => {
+  const adaptEsm = (nativeResolve: EsmResolve): EsmResolve => {
+    // Electron's ASAR realpath preserves Windows short spelling; startup imports use native paths.
+    const canonicalResult = (result: ResolveResult): ResolveResult => {
+      if (process.versions.electron === undefined || !result.url.startsWith('file:')) return result
+      const url = new URL(result.url)
+      const canonical = pathToFileURL(realpathSync.native(fileURLToPath(url)))
+      canonical.search = url.search
+      canonical.hash = url.hash
+      return { ...result, url: canonical.href }
+    }
+    const native: EsmResolve = (request, parent, attributes) => {
+      const result = nativeResolve(request, parent, attributes)
+      /* v8 ignore next -- Node 24+ resolves synchronously; the Node 22 matrix covers its Promise result */
+      return result instanceof Promise ? result.then(canonicalResult) : canonicalResult(result)
+    }
     const adapted: EsmResolve = (request, parent, attributes) => {
       const delegated = delegatedEsm
       /* v8 ignore next -- reentry requires a separate synchronous Node hook; supported launches install none */

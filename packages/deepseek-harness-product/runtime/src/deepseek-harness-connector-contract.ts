@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto'
+import { ConnectorCatalogToolsSchema } from '@deepseek-harness/product/catalog'
 import { objectRecord, stringField, stringList } from './response-fields.ts'
 import { publicToolName } from '@deepseek-ai/dsh-mcp-client'
 import { z } from 'zod'
@@ -72,18 +73,14 @@ export function parseConnectorCatalog(value: unknown): DeepSeekHarnessConnector[
 
 function connectorTools(value: unknown): Array<{ readonly name: string; readonly access: 'READ' | 'WRITE' }> {
   if (!Array.isArray(value)) throw new Error('deepseek-harness product: invalid tools')
-  const names = new Set<string>()
-  return value.map((item) => {
-    const record = objectRecord(item, 'connector tool')
-    const name = stringField(record, 'name')
-    const access = stringField(record, 'access')
-    if (!/^[A-Za-z0-9._-]{1,128}$/.test(name) || names.has(name)) {
-      throw new Error('deepseek-harness product: duplicate tools')
-    }
-    if (access !== 'READ' && access !== 'WRITE') throw new Error('deepseek-harness product: invalid tool access')
-    names.add(name)
-    return { name, access }
-  })
+  try {
+    return ConnectorCatalogToolsSchema.parse(value).map(({ name, access }) => {
+      if (!/^[A-Za-z0-9._-]{1,128}$/.test(name)) throw new Error('invalid tool name')
+      return { name, access }
+    })
+  } catch (error) {
+    throw new Error('deepseek-harness product: invalid or duplicate tools', { cause: error })
+  }
 }
 
 export function connectorServerName(id: string): string {

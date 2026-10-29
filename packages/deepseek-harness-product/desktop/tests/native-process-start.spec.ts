@@ -18,9 +18,11 @@ function fixture() {
   child.stdin.on('data', (chunk: Buffer) => { requestId = (JSON.parse(chunk.toString()) as { request_id: string }).request_id })
   spawning.spawn.mockReturnValue(child)
   const sidecar = new DeepSeekHarnessNativeProcess(process.execPath, '/native-data')
-  const respond = (error: string | null = null) => {
+  const respond = (error: string | null = null, result: unknown = {
+    ready: true, protocol: 'deepseek-harness.native.v1', capabilities: ['device-identity'],
+  }) => {
     child.stdout.write(`${JSON.stringify({ protocol: 'deepseek-harness.native.v1', request_id: requestId,
-      result: error === null ? { ready: true } : undefined, error: error === null ? null : { message: error } })}\n`)
+      result: error === null ? result : undefined, error: error === null ? null : { message: error } })}\n`)
   }
   return { sidecar, child, respond }
 }
@@ -73,4 +75,20 @@ it('contains stdin stream errors and rejects startup after joining the process',
   expect(child.kill).toHaveBeenCalledWith('SIGTERM')
   expect(sidecar['pending'].size).toBe(0)
   expect(sidecar['child']).toBeUndefined()
+})
+
+it.each([
+  null,
+  { ready: false, protocol: 'deepseek-harness.native.v1', capabilities: ['device-identity'] },
+  { ready: true, protocol: 'deepseek-harness.native.v0', capabilities: ['device-identity'] },
+  { ready: true, protocol: 'deepseek-harness.native.v1', capabilities: [] },
+])('rejects an unusable health receipt before declaring startup ready: %j', async (health) => {
+  const { sidecar, child, respond } = fixture()
+  const failure = expect(sidecar.start()).rejects.toMatchObject({ code: 'DEVICE_HEALTH_INVALID' })
+  try {
+    respond(null, health)
+    await failure
+    expect(child.kill).toHaveBeenCalledWith('SIGTERM')
+    expect(sidecar['child']).toBeUndefined()
+  } finally { await sidecar.stop() }
 })

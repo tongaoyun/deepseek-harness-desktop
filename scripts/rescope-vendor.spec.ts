@@ -40,17 +40,17 @@ describe('runtime identifier preservation', () => {
   ])('preserves the preset ID in %s while checking other package names', (file) => {
     const text = 'Use `cordis` and `@cordisjs/plugin-loader`.\n'
     expect(isRescopeExcluded(file)).toBe(false)
-    expect(rescopeText(text, file)).toBe('Use `cordis` and `@deepseek-ai/cordis-plugin-loader`.\n')
+    expect(rescopeText(text, file).text).toBe('Use `cordis` and `@deepseek-ai/cordis-plugin-loader`.\n')
   })
 
   it('preserves Inspector event names while rewriting actual plugin imports', () => {
     const text = "ctx.on('cordis/inspect-query', handler)\nimport Loader from '@cordisjs/plugin-loader'\n"
-    expect(rescopeText(text, 'snapshots/session/cordis-inspect-timeout/client-fixture.mjs'))
+    expect(rescopeText(text, 'snapshots/session/cordis-inspect-timeout/client-fixture.mjs').text)
       .toBe("ctx.on('cordis/inspect-query', handler)\nimport Loader from '@deepseek-ai/cordis-plugin-loader'\n")
   })
 
   it('continues rewriting unregistered bare package imports', () => {
-    expect(rescopeText("import { Context } from 'cordis'\n", 'packages/example/src/index.ts'))
+    expect(rescopeText("import { Context } from 'cordis'\n", 'packages/example/src/index.ts').text)
       .toBe("import { Context } from '@deepseek-ai/cordis'\n")
   })
 })

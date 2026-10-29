@@ -41,7 +41,7 @@ Status: implemented
 
 不新增草稿服务、存储 key、通用任务框架或另一套 Session 创建入口；不改 SlotRenderer、Host Session 日志、命令执行和文件发现 RPC。`InputActions` 保留统一输入操作入口，组件不单独注入另一条内容初始化回调。
 
-调用参数依次为 `startSession(workspaceId?: WorkspaceId, options?: StartSessionOptions)`、`requestDraftInitialization(binding: SessionBinding, options: DraftInitializationOptions)`、`SessionInputShell.requestDraftInitialization(options)`，以及内部的 `SessionInputShell.setDraft(input: string | DraftSnapshot)`。`StartSessionOptions` 扩展 `DraftInitializationOptions`，字段为 `prompt?: string`、`whenDraftExists?: 'replace' | 'append' | 'keep'` 和 `clearPreviousDraft?: boolean`；进入异步创建前浅拷贝这些值，结果只作用于最终保留的 binding。初始化结果区分已应用、保留原稿和提交期间拒绝；拒绝不先清空，导航被后续操作取消时不写稿。
+调用参数依次为 `startSession(workspaceId?: WorkspaceId, options?: StartSessionOptions)`、`requestDraftInitialization(binding: SessionBinding, options: DraftInitializationOptions)`、`SessionInputShell.requestDraftInitialization(options)`，以及内部的 `SessionInputShell.setDraft(input: string | DraftSnapshot)`。`StartSessionOptions` 扩展 `DraftInitializationOptions`，字段为 `prompt?: string | DraftSnapshot`、`whenDraftExists?: 'replace' | 'append' | 'keep'` 和 `clearPreviousDraft?: boolean`；进入异步创建前浅拷贝这些值，结果只作用于最终保留的 binding。初始化结果区分已应用、保留原稿和提交期间拒绝；拒绝不先清空，导航被后续操作取消时不写稿。
 
 ### 数据流
 

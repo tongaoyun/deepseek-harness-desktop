@@ -1,5 +1,4 @@
 /** The only product client adapter to Harness Sessions, Presets, Workspaces, and drafts. */
-import { randomUUID } from '@deepseek-ai/dsh-util-crypto'
 import type { Context } from '@deepseek-ai/cordis'
 import { SessionId } from '@deepseek-ai/dsh-session/types'
 import type {} from '@deepseek-ai/dsh-api-session-controller/client'
@@ -8,10 +7,10 @@ import type {} from '@deepseek-ai/dsh-api-remotes/client'
 import type { DraftInput, DraftSnapshot } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {} from '@deepseek-ai/dsh-client-ui-workspace/client'
 import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
-import type { ProductTaskCapabilityRequest, ProductTaskCapabilities } from '@deepseek-harness/product/protocol'
+import { parseTaskCapabilities, parseTaskCapabilityResult, type ProductTaskCapabilityRequest, type ProductTaskCapabilities } from '@deepseek-harness/product/protocol'
 import type { DeepSeekHarnessCatalogActions } from './DeepSeekHarnessCatalogSection.tsx'
 import type { AgentPresetRow } from '@deepseek-ai/dsh-agent-preset-registry/types'
-import { productApi, type ProductApi } from './product-api.ts'
+import { invokeProduct, productApi, type ProductApi } from './product-api.ts'
 import { items, type Catalog, type ProductItem } from './catalog-shared.tsx'
 import { CAPABILITY_PANELS } from './DeepSeekHarnessCapabilitiesNavigation.tsx'
 
@@ -62,14 +61,7 @@ export function createHarnessActions(ctx: Context): DeepSeekHarnessCatalogAction
     const api = productApi()
     if (api === undefined) throw new Error('Product bridge is unavailable')
     const combined = AbortSignal.any([lifecycle.signal, ...signal === undefined ? [] : [signal]])
-    combined.throwIfAborted()
-    const requestId = randomUUID()
-    const abort = () =>{  api.cancel(requestId) }
-    combined.addEventListener('abort', abort, { once: true })
-    return api.invoke(method, payload, requestId).then((value) => {
-      combined.throwIfAborted()
-      return value
-    }).finally(() =>{  combined.removeEventListener('abort', abort) })
+    return invokeProduct(api, method, payload, combined)
   }
   const workspace = async (signal: AbortSignal, sessionId?: SessionId) => {
     signal.throwIfAborted()
@@ -88,8 +80,7 @@ export function createHarnessActions(ctx: Context): DeepSeekHarnessCatalogAction
   const draft = (sessionId?: SessionId): DraftSnapshot => {
     const binding = sessionId === undefined ? undefined : ctx.sessions.binding(sessionId)
     if (binding === undefined) return { text: '', references: [] }
-    const snapshot = ctx.conversation.input.for(binding.ctx).state.getSnapshot()
-    return { text: snapshot.draft, references: snapshot.occurrences }
+    return ctx.conversation.input.for(binding.ctx).draftSnapshot
   }
   const initializeDraft = (binding: Parameters<typeof ctx.conversation.input.requestDraftInitialization>[0], prompt: DraftInput) => {
     const result = ctx.conversation.input.requestDraftInitialization(binding, { prompt, clearPreviousDraft: true })
@@ -97,17 +88,14 @@ export function createHarnessActions(ctx: Context): DeepSeekHarnessCatalogAction
   }
   const readCapabilities = async (sessionId = currentSession()): Promise<ProductTaskCapabilities> => {
     const value = await invoke('tasks.capabilities.read', sessionId === undefined ? {} : { sessionId })
-    if (typeof value !== 'object' || value === null || !('knowledgeBaseIds' in value) || !Array.isArray(value.knowledgeBaseIds)) throw new Error('Invalid task knowledge selection')
-    return value as ProductTaskCapabilities
+    return parseTaskCapabilities(value)
   }
   const prepare = async (request: ProductTaskCapabilityRequest, signal: AbortSignal, options: { navigation?: AbortSignal } = {}) => {
     const current = request.sessionId as SessionId | undefined
     const value = await invoke('tasks.capabilities.prepare', {
       ...request, ...current === undefined ? {} : { sessionId: current },
     }, signal)
-    if (typeof value !== 'object' || value === null || !('presetId' in value) || typeof value.presetId !== 'string'
-      || !('kind' in value) || (value.kind !== 'CURRENT_SESSION' && value.kind !== 'NEW_SESSION')) throw new Error('Invalid task preparation response')
-    const result = { kind: value.kind, presetId: value.presetId }
+    const result = parseTaskCapabilityResult(value, request)
     const newSession = async () => {
       const item = await workspace(signal, current)
       signal.throwIfAborted()
@@ -182,8 +170,8 @@ export function createHarnessActions(ctx: Context): DeepSeekHarnessCatalogAction
           await source.ready
           const presetId = ctx.sessions.list.getSnapshot().byId[sessionId]?.projectionValues?.agentPreset
           if (typeof presetId !== 'string' || !presetId.startsWith('product-task-')) throw new Error('Task retry requires a pinned capability snapshot')
-          const value = await invoke('tasks.capabilities.prepare', { sessionId }, signal)
-          if (typeof value !== 'object' || value === null || !('presetId' in value) || value.presetId !== presetId
+          const value = parseTaskCapabilityResult(await invoke('tasks.capabilities.prepare', { sessionId }, signal))
+          if (value.presetId !== presetId
             || ctx.sessions.list.getSnapshot().byId[sessionId]?.projectionValues?.agentPreset !== presetId) {
             throw new Error('Task composition changed during retry; refresh the task')
           }

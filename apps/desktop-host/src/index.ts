@@ -19,6 +19,12 @@ import { installPlatformSessionPublisher } from './platform-session.ts'
 import { installOfficeEngineResolution } from './office-engine.ts'
 import { installOperationDiagnostics } from './operation-diagnostics.ts'
 
+function desktopProfilePatches(): string[] {
+  const value: unknown = JSON.parse(process.env.DSH_DESKTOP_PROFILE_PATCHES ?? '[]')
+  if (!Array.isArray(value) || value.some(path => typeof path !== 'string')) throw new Error('Invalid Desktop profile overlays')
+  return value as string[]
+}
+
 async function main(): Promise<void> {
   const runId = randomUUID() as PluginOperationRunId
   if (process.connected) process.send?.({ type: 'starting', runId }, (error) => { if (error !== null) console.error(error) })
@@ -32,7 +38,7 @@ async function main(): Promise<void> {
     environment: loadLayeredEnv('dsh'),
     profile: 'desktop',
     resolvedProfile: { profile, installAnchor },
-    patchFiles: [],
+    patchFiles: desktopProfilePatches(),
     args: ['--no-open', '--host', '127.0.0.1', '--port', '0'],
     ...(process.argv[5] === undefined ? {} : {
       packageManager: {
@@ -52,6 +58,7 @@ async function main(): Promise<void> {
   const control: {
     updateTasks?: ReturnType<typeof installDesktopUpdateTaskControl>
     quitInspection?: ReturnType<typeof installDesktopQuitInspection>
+    indexInjections?: () => readonly unknown[]
   } = {}
   const send = (message: object): Promise<void> => new Promise((resolve, reject) => {
     if (!process.connected || process.send === undefined) { resolve(); return }
@@ -97,6 +104,20 @@ async function main(): Promise<void> {
       void task.finally(() => { dragTasks.delete(task) })
       return
     }
+    if (message.type === 'index-injections') {
+      if (!('requestId' in message) || !Number.isSafeInteger(message.requestId)) return
+      const requestId = message.requestId
+      void (async () => {
+        try {
+          if (stopping !== undefined || control.indexInjections === undefined) throw new Error('desktop boot: Host is unavailable')
+          await send({ type: 'index-injections', requestId, injections: control.indexInjections() })
+        } catch (error) {
+          await send({ type: 'index-injections', requestId, injections: [],
+            error: error instanceof Error ? error.message : String(error) })
+        }
+      })().catch((error: unknown) => { console.error(error) })
+      return
+    }
     if (message.type === 'quit-inspection') {
       if (!('requestId' in message) || !Number.isSafeInteger(message.requestId)) return
       const requestId = message.requestId
@@ -131,6 +152,7 @@ async function main(): Promise<void> {
   installOperationDiagnostics(ctx, record => send({ type: 'plugin-operation', record }), 32, runId)
   control.updateTasks = installDesktopUpdateTaskControl(ctx)
   control.quitInspection = installDesktopQuitInspection(ctx)
+  control.indexInjections = () => ctx.webServer.collectIndexInjections(ctx.connection.browserPeer)
   await ctx.plugin(desktopOffice, {
     runtimeDir,
     source: process.argv[4] ?? join(runtimeDir, '..', 'runtime', 'primary-runtime'),

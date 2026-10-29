@@ -185,7 +185,16 @@ export class DeepSeekHarnessApiClient {
     const lifetime = AbortSignal.any([this.lifecycle.signal, AbortSignal.timeout(timeoutMs ?? this.options.requestTimeoutMs ?? 60_000),
       ...signal ? [signal] : []])
     lifetime.throwIfAborted()
-    const response = await this.requestFetch(`${this.baseUrl}${path}`, { headers, signal: lifetime, redirect: 'error' })
+    let response: Response
+    try {
+      response = await this.requestFetch(`${this.baseUrl}${path}`, { headers, signal: lifetime, redirect: 'error' })
+    } catch (cause) {
+      this.lifecycle.signal.throwIfAborted()
+      signal?.throwIfAborted()
+      if (!(cause instanceof TypeError) && !lifetime.aborted) throw cause
+      throw new ProductError('PRODUCT_NETWORK_UNAVAILABLE',
+        'Unable to reach the product service. The request outcome is unknown.', true, [], { cause })
+    }
     if (!response.ok) {
       const data = await readBoundedBody(response, 64 * 1024, lifetime)
       let body: unknown

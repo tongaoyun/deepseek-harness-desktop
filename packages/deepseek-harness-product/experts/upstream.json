@@ -11,10 +11,7 @@
     "src/teams.test.ts": "58da01f3cf176e4e4dcbe72ff7b7979c3f21720d723e7884f9dccb060d71e320",
     "src/settings-memory.ts": "a1dcd33054060bd25e4601f9e5abf5cc4f0cdc2cddac800601a1ef06e7397875",
     "src/team-collaboration.test.ts": "f94cb72e89801c219ed5687a05f58750f4cbc4a36cc24f2df57e51559f21b68a",
-    "src/primitives.d.ts": "7dd1b6faab6695f746e3adde32d7698b605b00e7fa1b40c8b7f8111a3e5f0928",
-    "src/team-content-en.ts": "c547d6394450549e36a4bf1d8e008d6107426498ee99540f1feed68054ee8f7b",
     "src/team-library.ts": "ca6123e3118a71e7eff47fb8490f538c024d906d965f47683848002a14dcaaf4",
-    "src/settings-compat.ts": "4302efdfe2b2130e5a1093405c7301d34299c03e59e2dd724d75adb94744c451",
     "src/custom-experts.test.ts": "d167e4595913828456f6072c212ed9f980c9fc0467cd010949240cbedf7cf0e4",
     "src/team-engine.test.ts": "2c9a7bd404361aff91e2e1ae2dc885811f37df9568eccda31cba8582fdba431e",
     "src/expert-library.ts": "f32510a3f9bb889ab7bbc84f98bbc5b7a97d8493df32dd5797c301960196a376",
@@ -32,10 +29,8 @@
     "src/names.ts": "df70c6994938428e4d39b83747586ebc41fddf5fe97bbe98aeb6b9e76b4d73a5",
     "src/team-collaboration.ts": "99f8ed191e154187b8cd85fdae67fa7256b7e747f20a92e8b1bc289d2ee3e4b8",
     "src/team-collaboration-en.ts": "3c535169504fa0f7901c340a1f8adf1d9558be778bd3fc0959cec7c086c3ef84",
-    "src/plugin-updater.test.ts": "4452c316d69465b1434d673ba133a954cc698cec31413032fb8ff7d42e99a241",
     "src/team-i18n.test.ts": "ef16f00f9f2257a6292482cb5e485aa3855f235cf0c0b02ef4af106908c38425",
     "src/team-prompts-en.ts": "7b27f0abc5c27289bc888003e1df04515c941e78ac93defc48ba79d1a064808a",
-    "src/plugin-updater.ts": "a9c51db46427f26db32b453dd645c4b62d9f314e04473b6d928bb628f0fdf621",
     "src/persona-error.ts": "a68d8c3530bdaa29ebb4791104c907cfebde06931c0b30ed97b3d3d912e5f6f8",
     "src/team-contract.ts": "a9eb50489ed292f07af907e9d275ac5e7074135f9191ef8444c5efb19f44b256",
     "src/team-tool-locale.ts": "f7b579df43afa5c303ff7a8479555d8ee2a6c1ec7195ee20baac9db4bc7a9478",
@@ -45,19 +40,15 @@
     "src/index.ts": "1461dd96a2f5450fa36f6ac56ee9e1a95a268b8205e9493c0761500a8da46a2c",
     "src/expert-insertion.test.ts": "1843bb4aed500070252d8684eae2e0cd292fe0fa4007fd3845c395b2c5e48b7b",
     "src/expert-contract.ts": "1236881de83c3b7184504f670d4504cdb964fe19bb0e6d16a5b2d07e7989816d",
-    "src/task-examples.test.ts": "e656e2e3203a5d0ee65106715cec35a88fc8f218d713a12d55b1765287725609",
-    "src/plugin-update-runtime.d.ts": "a6d27f8c34655ed5008b96c050ebbd196319435d143a976958a8ab49b772cbc2",
     "src/test-utils/composer-projection.ts": "d618cc3fa96ef4f660cca5be449223e3e6f1fb8807bc57d7809bbfd0deb484e4",
     "src/client/expert-discovery.ts": "deb319324f371a39ee5451a591031403057a42780d1209f83de0652a2b2624c6",
     "src/client/team-ui.tsx": "a57db732f3dd472314eac104a541b3481553f626a1c9787c45a187f814aa99d7",
     "src/client/team-locale.ts": "83d75d26cf9be95f8b78d3708b9c211fb994aaedc8c6231e988135fb96499ca6",
-    "src/client/roster.ts": "2699594da37320e61093b8e9fee9b67a5f347e8fdbf5c9d41c961bdc38e48798",
     "src/client/plugin-ui.ts": "5ce24156b560bdb592033db9463c1ea011c9848b9d0cf504dc0d4d7b1ba30724",
     "src/client/team-reference.ts": "75c6024212f56b64c487fed9b7c8b083ec0537106cf217c53d6c94d971c1ebfa",
     "src/client/avatars.ts": "4ac1d2f9d0b9e11e18870a018f87a7bf2130b2fef7a3b5499d005e203398f883",
     "src/client/native-team-names.ts": "47f6dab68d612529f7f2d77c611e8db1cb7582aa1d4692533e23b682614312de",
     "src/client/native-team-names.test.ts": "443b4897699515c35910d70c5e7c5b880a519c2b73f37826f1ead8a2f25cff0b",
-    "src/client/settings-nav-icon.ts": "e73eef8af7aaa345232fb862c51da409cf7278c47ceb4d13aa61a062faab85ea",
     "src/client/locales.ts": "180462f2cd1f255c0da97e5937bd8e1111d16cc196b6bdc0c483b24e18f2eee3",
     "src/client/team-member-picker.test.ts": "43004a4fbe204d5378ecb4a7d916fce848a9c6265a36c87bfa048a0b715322c1",
     "src/client/team-confirmation.tsx": "7e4764e9d4bded3f85914f437584f23ee268de14682d1e492859785a9967d468",
@@ -70,32 +61,18 @@
     "src/client/index.ts": "f64bdef72dd87c3b6efefd3ed3d63ada14e7c005aa53a43e2de7c90823c2de04",
     "src/client/team-composer.tsx": "eac565c7b142af243fe132532aea1fc808e1d44c70b7a464bae6b6ec7ec80f1f",
     "src/client/plugin-ui.test.ts": "d0a1cafda82bb9eaefb6c6a28d6dace565ff972d90c222c8f1dae405079434fe",
-    "src/client/plugin-update-ui.ts": "68ed6c3f1fd207e4152c205efd25e9f4b99ce8ce83f56fca4f53c18a15b31470",
     "src/client/custom-editor.ts": "2e7bcfd3c1c010ba9da4ed79c6487f04f2be5782cf7fddc7af720d8173ff8298",
     "src/client/team-shared.tsx": "2f81ececa7e40283d961d8f0ed95648f521563c25ce120a89638489a21354fb6",
     "src/client/editor-review.ts": "4850ba80c50c8b5e8e192d20b3d32addc356db5b59ca7fa6fbeb1b9a8e9176b7",
     "src/client/team-style.ts": "b1766564f450a3ff28915a9e6d692524b5f1c30b0a88a4e3cf008b8d1ee0c65a",
     "src/client/category-select.ts": "1112a23a48828fee3aa001bd3bc362edae9e12723bb196d89f6f979595db6e63",
     "src/client/team-member-picker.ts": "c97e5340bbba2a4ea1476ab9d26b65f25850063149de9a9c47438ce79fce3fd2",
-    "src/client/catalog.ts": "916e3be0e964271b5009ae52f12053485afdbc30f43f5d68886d468298cdfa57",
-    "src/client/task-examples.ts": "92273f6b88d6470d23ede0d8d20aa0ed6ac65e1b9fe6e6c4aca72d9f2d5e4286"
+    "src/client/catalog.ts": "916e3be0e964271b5009ae52f12053485afdbc30f43f5d68886d468298cdfa57"
   },
   "selectedFixes": [
     {
       "commit": "1d3487f5cf590c6ec3267163c875b58f6639e478",
       "scope": "Use English when no explicit Chinese locale is selected"
-    },
-    {
-      "commit": "7c9610af260dcf22c836441d97d3fab19abfe9cb",
-      "scope": "Adapt filtered bulk activation with explicit count confirmation and a revision-checked merge into the latest personal selection."
-    },
-    {
-      "commit": "4e7b200c1a9a6848a218d73e367e6348140a274d",
-      "scope": "Adapt conversational expert and team drafts, full previews, native human confirmation and prefilled personal editors. Use the current scoped transcript action instead of global draft polling or DOM navigation."
-    },
-    {
-      "commit": "ac409400157443aae3554924df84a4dcfb051502",
-      "scope": "Require originating Session and exact proposal identity, invalidate superseded drafts, expire after 15 minutes and allow one editor claim. Reject ambiguous member names and return candidates."
     }
   ]
 }

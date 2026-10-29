@@ -10,6 +10,7 @@ export interface RemoteGenerationOptions {
   readonly packageName: string
   readonly tempPrefix: string
   readonly label: string
+  readonly hostConfig?: string
   readonly remoteName?: string
   readonly references?: readonly string[]
   readonly prepare?: (context: {
@@ -36,7 +37,7 @@ export async function generateRemote(options: RemoteGenerationOptions, check = f
       extends: join(root, 'tsconfig.base.json'), files: [],
       references: [...(aggregate.projectReferences ?? []).map(item => ({ path: item.path })),
         ...(options.references ?? []).map(path => ({ path })),
-        { path: join(options.packageRoot, 'tsconfig.json') }],
+        { path: join(options.packageRoot, options.hostConfig ?? 'tsconfig.json') }],
     }))
     await options.prepare?.({ root, packageRoot: options.packageRoot, output, check })
     const model = new WorkspaceAnalyzer({ root, hostConfig: config, clientConfig: join(temporary, 'no-client.json'),
@@ -47,7 +48,8 @@ export async function generateRemote(options: RemoteGenerationOptions, check = f
     if (!artifact.remote) throw new Error(`${options.label} Remote methods are missing`)
     const generated = {
       'typert.host.js': artifact.js,
-      'typert.host.d.ts': artifact.dts,
+      'typert.host.d.ts': artifact.dts.replace('export declare const TYPERT:',
+        '/** Native Host metadata generated from the service declarations. */\nexport declare const TYPERT:'),
       'typert.remote-client.js': artifact.remote.js,
       'typert.remote-client.d.ts': artifact.remote.dts.replace('\n\nexport declare const TYPERT_REMOTE:',
         `\n/** Native ${options.remoteName ?? options.label.toLowerCase()} management methods generated from the Host service. */\nexport declare const TYPERT_REMOTE:`),

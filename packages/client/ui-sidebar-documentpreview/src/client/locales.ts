@@ -87,6 +87,7 @@ export const ja = {
   'error.notRegularFile': '通常のファイルではないため、表示する内容がありません。',
   'error.unavailable': '読み込みに失敗しました: {message}',
   'retry': '再試行',
+  readFailed: en.readFailed,
 } satisfies Record<keyof typeof en, string>
 
 /** Spanish dictionary, checked against the English keys. */
@@ -113,6 +114,7 @@ export const es = {
   'error.notRegularFile': 'No es un archivo normal, no hay nada que mostrar.',
   'error.unavailable': 'Error de lectura: {message}',
   retry: 'Reintentar',
+  readFailed: en.readFailed,
 } satisfies Record<keyof typeof en, string>
 
 /** French dictionary, checked against the English keys. */
@@ -139,6 +141,7 @@ export const fr = {
   'error.notRegularFile': "Ce n'est pas un fichier normal, rien à afficher.",
   'error.unavailable': 'Échec de lecture : {message}',
   retry: 'Réessayer',
+  readFailed: en.readFailed,
 } satisfies Record<keyof typeof en, string>
 
 /** German dictionary, checked against the English keys. */
@@ -165,6 +168,7 @@ export const de = {
   'error.notRegularFile': 'Keine normale Datei, nichts zum Anzeigen.',
   'error.unavailable': 'Lesen fehlgeschlagen: {message}',
   retry: 'Erneut versuchen',
+  readFailed: en.readFailed,
 } satisfies Record<keyof typeof en, string>
 
 /** Russian dictionary, checked against the English keys. */
@@ -191,6 +195,7 @@ export const ru = {
   'error.notRegularFile': 'Не обычный файл, отображать нечего.',
   'error.unavailable': 'Не удалось прочитать: {message}.',
   retry: 'Повторить',
+  readFailed: en.readFailed,
 } satisfies Record<keyof typeof en, string>
 
 /** Portuguese dictionary, checked against the English keys. */
@@ -217,4 +222,5 @@ export const pt = {
   'error.notRegularFile': 'Não é um arquivo normal, nada para exibir.',
   'error.unavailable': 'Falha na leitura: {message}',
   retry: 'Tentar novamente',
+  readFailed: en.readFailed,
 } satisfies Record<keyof typeof en, string>

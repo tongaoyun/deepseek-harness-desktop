@@ -23,12 +23,14 @@ import { en } from '../src/client/locales.ts'
 afterEach(cleanup)
 
 const ROSTER_READY: AgentPresetSettingsState = {
+  presets: ['standard', 'mine'].map(id => ({ id, isDefault: id === 'standard', selectable: true, defaultable: true })),
   status: 'ready',
   error: null,
   options: [{ id: 'standard' }, { id: 'mine' }],
 }
 
 const SEAT_READY: AgentPresetSeatState = {
+  currentUnavailable: false,
   current: 'standard',
   options: [
     { id: 'standard' },

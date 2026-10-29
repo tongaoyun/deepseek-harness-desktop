@@ -98,10 +98,10 @@ describe('repository build steps', () => {
     ])
   })
 
-  it('starts each aggregate check after its own package compilation in the complete build', () => {
+  it('waits for public bundle declarations before the complete Host aggregate check', () => {
     expect(graph(buildGates(root, 'complete'))).toEqual({
       ...artifactGraph,
-      'host-check': ['host-src'],
+      'host-check': ['host-bundle'],
       'client-check': ['client-src'],
     })
   })

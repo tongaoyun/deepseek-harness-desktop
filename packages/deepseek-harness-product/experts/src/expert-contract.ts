@@ -29,8 +29,6 @@ export const customExpertInputSchema = z.object({
 
 export const customExpertSchema = customExpertInputSchema.extend({
   slug: z.string().regex(CUSTOM_EXPERT_SLUG),
-  deleted: z.boolean().optional(),
-  wasEnabled: z.boolean().optional(),
 })
 /** Editable expert fields before product defaults and normalization are applied. */
 export type CustomExpertInput = z.input<typeof customExpertInputSchema>
@@ -52,7 +50,7 @@ export const catalogSnapshotSchema = z.object({
 })
 /** Revision-checked expert directory and enabled selection returned by the Host. */
 export type CatalogSnapshot = z.infer<typeof catalogSnapshotSchema>
-export const expertEditSchema = customExpertSchema.omit({ deleted: true, wasEnabled: true })
+export const expertEditSchema = customExpertSchema
 
 const messages = {
   invalid: ['请检查名称、简介、分类和提示词。', 'Check the name, description, category and prompt.'],

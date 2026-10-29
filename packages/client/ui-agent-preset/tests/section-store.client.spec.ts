@@ -11,7 +11,7 @@ function fixture() {
   })
   const remote = { agentPresets: {
     list: vi.fn(async (): Promise<{ ok: true; value: { presets: AgentPresetRow[] } }> => ({
-      ok: true, value: { presets: [{ id: 'standard', isDefault: true }] },
+      ok: true, value: { presets: [{ selectable: true, defaultable: true, id: 'standard', isDefault: true }] },
     })),
     read: vi.fn(async (id: string) => ({ ok: true as const, value: { agentPreset: id, name: 'Standard', content: '- name: fs\n' } })),
   }, settings: {
@@ -28,7 +28,7 @@ describe('the preset roster', () => {
     const { controller, remote, state } = fixture()
     await Promise.all([controller.load(), controller.load()])
     expect(remote.agentPresets.list).toHaveBeenCalledOnce()
-    expect(state()).toMatchObject({ status: 'ready', rows: [{ id: 'standard', isDefault: true }], view: null })
+    expect(state()).toMatchObject({ status: 'ready', rows: [{ selectable: true, defaultable: true, id: 'standard', isDefault: true }], view: null })
     remote.agentPresets.list.mockRejectedValueOnce(new Error('offline'))
     await controller.load()
     expect(state()).toMatchObject({ status: 'error', error: 'offline' })
@@ -104,7 +104,7 @@ describe('the preset roster', () => {
   it('skips blank-session synchronization when the roster marks no default', async () => {
     const { controller, remote } = fixture()
     const sync = vi.fn(async () => undefined)
-    remote.agentPresets.list.mockResolvedValueOnce({ ok: true, value: { presets: [{ id: 'standard', isDefault: false }] } })
+    remote.agentPresets.list.mockResolvedValueOnce({ ok: true, value: { presets: [{ selectable: true, defaultable: true, id: 'standard', isDefault: false }] } })
 
     await controller.makeDefault('standard', sync)
 
@@ -117,8 +117,8 @@ describe('Coding Tools default reconciliation', () => {
   function setup(defaultId = 'minimal', name?: string) {
     const f = fixture()
     let rows: AgentPresetRow[] = [
-      { id: 'standard', isDefault: defaultId === 'standard' },
-      ...(defaultId === 'standard' ? [] : [{ id: defaultId, isDefault: true, ...(name === undefined ? {} : { name }) }]),
+      { selectable: true, defaultable: true, id: 'standard', isDefault: defaultId === 'standard' },
+      ...(defaultId === 'standard' ? [] : [{ selectable: true, defaultable: true, id: defaultId, isDefault: true, ...(name === undefined ? {} : { name }) }]),
     ]
     f.remote.agentPresets.list.mockImplementation(async () => ({ ok: true, value: { presets: rows } }))
     f.remote.settings.update.mockImplementation(async (_ns, patch) => {
@@ -159,11 +159,11 @@ describe('Coding Tools default reconciliation', () => {
 
   it.each([false, true])('waits for a pending default write and checks the latest toggle (re-enabled: %s)', async (reEnabled) => {
     const f = setup('standard')
-    f.setRows([{ id: 'standard', isDefault: true }, { id: 'minimal', isDefault: false }])
+    f.setRows([{ selectable: true, defaultable: true, id: 'standard', isDefault: true }, { selectable: true, defaultable: true, id: 'minimal', isDefault: false }])
     const reply = Promise.withResolvers<undefined>()
     f.remote.settings.update.mockImplementationOnce(async () => {
       await reply.promise
-      f.setRows([{ id: 'standard', isDefault: false }, { id: 'minimal', isDefault: true }])
+      f.setRows([{ selectable: true, defaultable: true, id: 'standard', isDefault: false }, { selectable: true, defaultable: true, id: 'minimal', isDefault: true }])
       return { ok: true, value: {} }
     })
     const pending = f.controller.makeDefault('minimal')
@@ -191,7 +191,7 @@ describe('Coding Tools default reconciliation', () => {
 
   it.each([false, true])('reports unavailable Standard without a default write (broken: %s)', async (broken) => {
     const f = setup()
-    f.setRows([{ id: 'minimal', isDefault: true }, ...(broken ? [{ id: 'standard', isDefault: false, broken: 'Missing plugin' }] : [])])
+    f.setRows([{ selectable: true, defaultable: true, id: 'minimal', isDefault: true }, ...(broken ? [{ selectable: true, defaultable: true, id: 'standard', isDefault: false, broken: 'Missing plugin' }] : [])])
     await f.controller.reconcileCodingTools(() => true)
     expect(f.remote.settings.update).not.toHaveBeenCalled()
     expect(f.state().error).toBe(en.standardUnavailable)

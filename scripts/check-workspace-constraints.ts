@@ -28,6 +28,7 @@ import {
   PACKAGE_ASSET_FILES_ENTRY,
 } from '../packages/client/modules/src/assets.ts'
 import { collectProjectReferenceFaceViolations } from './project-reference-faces.ts'
+import { PRODUCT_PACKAGE_POLICY } from './product-package-policy.ts'
 
 const root = resolve(import.meta.dirname, '..')
 // Publication rules cover these package trees; dependency rules read all pnpm members.
@@ -76,6 +77,8 @@ const standardReleaseMemberDirectory = new RegExp(
 )
 /** Installable application assembled by electron-builder rather than published to npm. */
 const desktopApplicationDirectory = 'apps/desktop'
+/** Product Electron assembly is packaged as an installer, not an npm release member. */
+const productDesktopApplicationDirectory = 'apps/product-desktop'
 const localArtifactDirs = new Set(['node_modules'])
 const appPackageFiles: Readonly<Record<string, readonly string[]>> = {
   '@deepseek-ai/dsh': ['lib/*.js', 'lib/types/*.d.ts'],
@@ -460,6 +463,12 @@ export function checkExperimentalNameExceptions(manifests: readonly WorkspaceMan
 function isReleaseMemberDirectory(dir: string): boolean {
   // The SSH carrier is distributed as executable archives, never as an npm application.
   if (dir === 'packages/ssh/ssh-helper-runtime') return false
+  // The product Electron assembly is packaged as an installer, not an npm
+  // release member.
+  if (dir === productDesktopApplicationDirectory) return false
+  // Product packages are assembled into the Electron application and are not
+  // published as independent npm release members.
+  if (PRODUCT_PACKAGE_POLICY[dir]?.category === 'product') return false
   return standardReleaseMemberDirectory.test(dir) || isPublicExperimentalPackageDirectory(dir)
 }
 

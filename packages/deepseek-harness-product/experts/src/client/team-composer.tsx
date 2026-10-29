@@ -1,74 +1,43 @@
 import type { ExpertClientState } from './client-state.ts'
-import { useTeamLocale, localizedExperts } from './team-locale.ts';
 import React from 'react';
-import type { ExpertTeam, TeamSnapshot } from '../team-contract.ts';
-import type { ExpertSummary } from '../expert-contract.ts';
+import type { ExpertTeam } from '../team-contract.ts';
 import { TeamDetails, unwrap, type TeamRemote } from './team-ui.tsx';
 import { TeamAvatars, TeamConfirm, teamIssue, IconEye } from './team-shared.tsx';
 import { Input } from './plugin-ui.ts';
+import { useTeamDirectoryView } from './team-directory.ts';
 export function TeamMenu(props: {
     cache: ExpertClientState;
     remote: TeamRemote;
     prepareSelect?(): (team: ExpertTeam, example?: string) => boolean | Promise<boolean>;
     onSelected(): void;
 }) {
-    const { locale, tx } = useTeamLocale();
-
-    const [snapshot, setSnapshot] = React.useState<TeamSnapshot | null>(() => props.cache.teams.getSnapshot());
-    const [rawExperts, setExperts] = React.useState<ExpertSummary[]>(() => {
-        const catalog = props.cache.catalog.getSnapshot();
-        return catalog.revision < 0 ? [] : [...catalog.experts];
-    });
-    const experts = localizedExperts(rawExperts, locale);
+    const { locale, tx, error, setError, directory, snapshot, experts } = useTeamDirectoryView({ cache: props.cache, remote: props.remote, fallback: "专家团加载失败" });
     const [query, setQuery] = React.useState('');
-    const [error, setError] = React.useState('');
     const [busy, setBusy] = React.useState(false);
     const [detail, setDetail] = React.useState<ExpertTeam | null>(null);
     const [confirm, setConfirm] = React.useState<{
         team: ExpertTeam;
         example?: string;
     } | null>(null);
-    const lifetime = React.useRef<AbortController | undefined>(undefined);
     React.useEffect(() => {
-        const controller = new AbortController();
-        lifetime.current = controller;
         setBusy(false);
         setError('');
         setDetail(null);
         setConfirm(null);
-        const updateTeams = () => {
-            const next = props.cache.teams.getSnapshot();
-            setSnapshot(next);
-            if (!next) { setDetail(null); setConfirm(null); }
-        };
-        const updateExperts = () => setExperts([...props.cache.catalog.getSnapshot().experts]);
-        const unsubscribeTeams = props.cache.teams.subscribe(updateTeams);
-        const unsubscribeExperts = props.cache.catalog.subscribe(updateExperts);
-        updateTeams();
-        updateExperts();
-        void load();
-        return () => {
-            controller.abort();
-            unsubscribeTeams();
-            unsubscribeExperts();
-        };
+        // The shared directory hook owns subscriptions and request cancellation.
     }, [props.remote, props.cache]);
+    React.useEffect(() => {
+        if (!snapshot) {
+            setDetail(null);
+            setConfirm(null);
+        }
+    }, [snapshot]);
     const load = async () => {
-        const signal = lifetime.current?.signal;
-        if (!signal || signal.aborted) return;
-        try {
-            await props.cache.teams.refresh();
-            if (signal.aborted) return;
-            if (props.cache.catalog.getSnapshot().revision < 0) await props.cache.catalog.refresh();
-            if (!signal.aborted) setError('');
-        }
-        catch (cause) {
-            if (!signal.aborted)
-                setError(cause instanceof Error ? tx(cause.message) : tx("专家团加载失败"));
-        }
+        await directory.refresh();
+        if (!directory.getSignal()?.aborted) setError('');
     };
     const pick = async (team: ExpertTeam, example?: string, confirmed = false) => {
-        const signal = lifetime.current?.signal;
+        const signal = directory.getSignal();
         if (busy || !snapshot || !signal || signal.aborted)
             return;
         if (!confirmed &&
@@ -81,7 +50,7 @@ export function TeamMenu(props: {
         setBusy(true);
         try {
             if (confirmed) {
-                const next = await unwrap(props.remote.setTeamEnabled(team.id, true, snapshot.revision));
+                const next = await unwrap(props.remote.setTeamEnabled(team.id, true, snapshot.revision, signal));
                 if (signal.aborted)
                     return;
                 const accepted = props.cache.teams.accept(next);

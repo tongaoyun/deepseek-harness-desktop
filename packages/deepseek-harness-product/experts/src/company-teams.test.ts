@@ -1,7 +1,7 @@
 import { mkdtemp, mkdir, writeFile, rm, readFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { beforeAll, expect, it, onTestFinished } from 'vitest'
+import { expect, it, onTestFinished, beforeAll } from 'vitest'
 import { readCompanyTeams } from './company-teams.ts'
 import { createTeamLibrary } from './team-library.ts'
 import { createExpertLibrary, type AgencySettings } from './expert-library.ts'
@@ -10,7 +10,9 @@ import { executeTeam } from './team-runtime.ts'
 import { publishedTeamDocument } from '@deepseek-harness/product/company-team'
 
 let document: string
-beforeAll(async () => { document = await readFile(new URL('../tests/fixtures/team.json', import.meta.url), 'utf8') })
+beforeAll(async () => {
+  document = await readFile(new URL('../tests/fixtures/team.json', import.meta.url), 'utf8')
+})
 async function fixture() {
   const root = await mkdtemp(join(tmpdir(), 'company-teams-'))
   onTestFinished(() => rm(root, { recursive: true, force: true }))

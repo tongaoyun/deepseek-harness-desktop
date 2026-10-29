@@ -1,4 +1,6 @@
 import type * as React from 'react';
+import type {} from '@deepseek-ai/dsh-client-ui-session/client';
+import type { PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots';
 import type { Modal } from '@deepseek-ai/dsh-client-ui-primitives';
 import type { state, skillDetail, listTrash } from './core.ts';
 export type Translate = (key: string, params?: object) => string;
@@ -26,19 +28,10 @@ export interface SourceSelectProps {
     }[];
     onChange: (value: string) => void;
 }
-export interface SessionSnapshot {
-    ids?: string[];
-    byId?: Record<string, {
-        retainedBy?: {
-            mainView?: unknown;
-        };
-    }>;
-}
-export interface SectionProps {
+export interface SectionProps extends Pick<PropsRuntime<'main'>, 'useSessions'> {
     api: import('./remote-client.ts').SkillApi;
     apiForSession: (sessionId?: string) => import('./remote-client.ts').SkillApi;
     t: Translate;
-    useSessions?: (selector: (snapshot?: SessionSnapshot) => string | undefined) => string | undefined;
 }
 export interface Filters {
     query: string;

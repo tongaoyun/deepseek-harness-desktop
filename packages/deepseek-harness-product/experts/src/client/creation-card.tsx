@@ -18,7 +18,7 @@ export interface CreationCardInjected {
   cache: ExpertClientState
   remote: TeamRemote
   getActive(): 'zh' | 'en'
-  loadCreation(proposalId: string): Promise<CreationEditorData>
+  loadCreation: (proposalId: string, signal: AbortSignal) => Promise<CreationEditorData>
 }
 /** Render one confirmed draft action with the existing conflict-aware personal editor.
  * @param props - Original tool result, localized labels and Session-bound loading callback.
@@ -29,26 +29,40 @@ export function CreationCard(props: ToolCallPhaseProps & PropsLocale<'agency'> &
   const [error, setError] = React.useState<string | null>(null)
   const [busy, setBusy] = React.useState(false)
   const [claimed, setClaimed] = React.useState(false)
-  const pending = React.useRef(false)
-  const mounted = React.useRef(true)
-  React.useEffect(() => { mounted.current = true; return () => { mounted.current = false } }, [])
+  const pending = React.useRef<AbortController | null>(null)
+  const lifetime = React.useRef<AbortController | undefined>(undefined)
+  React.useEffect(() => {
+    const controller = new AbortController()
+    lifetime.current = controller
+    setBusy(false)
+    return () => {
+      controller.abort()
+      if (lifetime.current === controller) lifetime.current = undefined
+      pending.current?.abort()
+      pending.current = null
+    }
+  }, [props.loadCreation, props.cache])
   const ready = props.phase === 'result' && !props.block.isError ? readySchema.safeParse(props.block.meta) : null
   const load = async (proposalId: string) => {
     if (pending.current || claimed) return
-    pending.current = true
+    const controller = new AbortController()
+    pending.current = controller
     setBusy(true)
     setError(null)
     try {
-      const value = await props.loadCreation(proposalId)
-      if (mounted.current) {
+      const value = await props.loadCreation(proposalId, controller.signal)
+      if (!controller.signal.aborted) {
         props.cache.catalog.accept(value.catalog)
         props.cache.teams.accept(value.teams)
         setEditor(value)
         setClaimed(true)
       }
     } catch (cause: unknown) {
-      if (mounted.current) setError(cause instanceof Error ? cause.message : String(cause))
-    } finally { pending.current = false; if (mounted.current) setBusy(false) }
+      if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : String(cause))
+    } finally {
+      if (pending.current === controller) pending.current = null
+      if (!controller.signal.aborted) setBusy(false)
+    }
   }
   return <div>
     <p>{props.phase === 'result' ? props.block.content.filter(part => part.type === 'text').map(part => part.text).join('\n') : props.t('creation.confirming')}</p>
@@ -56,13 +70,16 @@ export function CreationCard(props: ToolCallPhaseProps & PropsLocale<'agency'> &
     {error && <p role="alert" className="aag-error">{error}</p>}
     {editor?.draft.kind === 'expert' && <CustomExpertEditor expert={editor.draft.data} enabled={false} revision={editor.catalog.revision}
       divisions={[...new Set([...EXPERT_DIVISION_ORDER, ...editor.catalog.experts.map(expert => expert.division)])]}
-      remote={props.remote} t={props.t} locale={props.getActive()} onClose={() => { setEditor(null) }}
+      remote={props.remote} signal={lifetime.current?.signal} t={props.t} locale={props.getActive()} onClose={() => { setEditor(null) }}
       onSaved={(catalog) => { props.cache.catalog.accept(catalog); setEditor(null) }} />}
     {editor?.draft.kind === 'team' && <TeamLocaleContext.Provider value={props.getActive()}><TeamEditor initial={editor.draft.data}
       experts={editor.catalog.experts} enabled={false} enabledExperts={editor.catalog.enabled} close={() => { setEditor(null) }}
       refresh={() => props.cache.teams.refresh()}
       save={async (value, enabled, revision) => {
-        const saved = await unwrap(props.remote.saveTeam(value, enabled, revision ?? editor.teams.revision))
+        const signal = lifetime.current?.signal
+        signal?.throwIfAborted()
+        const saved = await unwrap(props.remote.saveTeam(value, enabled, revision ?? editor.teams.revision, signal))
+        signal?.throwIfAborted()
         props.cache.teams.accept(saved)
         props.cache.catalog.adoptRevision(saved.revision, saved.enabledExperts)
         setEditor(null)

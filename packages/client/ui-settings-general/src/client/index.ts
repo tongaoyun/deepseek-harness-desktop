@@ -1,3 +1,4 @@
+import { SettingsSectionView } from './SettingsSectionView.tsx'
 /**
  * Settings shell and ownerless-copy plugin, browser half: renders the
  * `sidebar.settings` occupant — panel chrome, section navigation, and the
@@ -212,6 +213,14 @@ export function apply(ctx: ClientContext): void {
         },
       })
 
+      const disposeSectionView = ctx.slots.registerFactory({
+        name: 'settings.section-view', scope: 'root',
+        children: { 'settings.section': { kind: 'list', scope: 'root' } },
+        inject: () => ({ hooks: { dialogOpen: {
+          getSnapshot: () => shellInstance.getSnapshot().open,
+          subscribe: listener => shellInstance.subscribe(listener),
+        } } }),
+      }, SettingsSectionView)
       const disposeSlot = ctx.slots.register({
         name: 'sidebar.settings',
         locale: NS,
@@ -222,12 +231,11 @@ export function apply(ctx: ClientContext): void {
           'settings.header': { kind: 'single', scope: 'root' },
           'settings.action': { kind: 'list', scope: 'root' },
           'settings.close': { kind: 'single', scope: 'root' },
-          'settings.section': { kind: 'list', scope: 'root' },
           'settings.onboarding': { kind: 'list', scope: 'root' },
         },
         inject: shellInjected,
       }, SettingsRoot)
-      return () => { disposeCommand(); disposeSlot() }
+      return () => { disposeCommand(); disposeSlot(); disposeSectionView() }
     }))
 
   ctx.slots.inject('settings.trigger', () =>

@@ -40,9 +40,7 @@
   ],
   "scripts": {
     "build": "tsdown",
-    "typecheck": "tsc --noEmit",
-    "generate:remote": "tsx scripts/generate-remote.ts",
-    "verify:remote": "tsx scripts/generate-remote.ts --check"
+    "typecheck": "tsc --noEmit"
   },
   "license": "Apache-2.0",
   "repository": {
@@ -60,7 +58,6 @@
     "@deepseek-ai/dsh-client-ui-primitives": "workspace:*",
     "@deepseek-ai/dsh-client-ui-settings": "workspace:*",
     "@deepseek-ai/dsh-client-ui-slots": "workspace:*",
-    "@deepseek-ai/dsh-host-webserver": "workspace:*",
     "@deepseek-ai/dsh-llm": "workspace:*",
     "@deepseek-ai/dsh-settings": "workspace:*",
     "@deepseek-ai/dsh-subagent": "workspace:*",
@@ -85,8 +82,9 @@
   "dependencies": {
     "zod": "^4.4.3",
     "@tabler/icons-react": "3.47.0",
-    "@deepseek-ai/dsh-skill-filesystem": "workspace:*",
-    "@deepseek-harness/product": "workspace:*"
+    "yaml": "^2.8.3",
+    "@deepseek-harness/product": "workspace:*",
+    "@deepseek-ai/dsh-skill-filesystem": "workspace:*"
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "workspace:~",
@@ -101,7 +99,6 @@
     "@deepseek-ai/dsh-client-ui-primitives": "workspace:*",
     "@deepseek-ai/dsh-client-ui-settings": "workspace:*",
     "@deepseek-ai/dsh-client-ui-slots": "workspace:*",
-    "@deepseek-ai/dsh-host-webserver": "workspace:*",
     "@deepseek-ai/dsh-llm": "workspace:*",
     "@deepseek-ai/dsh-ptc-runtime": "workspace:*",
     "@deepseek-ai/dsh-sandbox": "workspace:*",
@@ -132,13 +129,15 @@
     "@deepseek-ai/cordis-plugin-include": "workspace:~",
     "@deepseek-ai/dsh-util-values": "workspace:*",
     "@deepseek-ai/dsh-client-store": "workspace:*",
+    "@deepseek-ai/dsh-util-crypto": "workspace:*",
     "@deepseek-ai/dsh-typert-generator": "workspace:*",
     "@deepseek-ai/dsh-api-gateway": "workspace:*",
     "@deepseek-ai/dsh-api-remote-access": "workspace:*",
     "@deepseek-ai/dsh-api-session-controller": "workspace:*",
     "@deepseek-ai/dsh-experimental-agent-team": "workspace:*",
     "@deepseek-ai/dsh-config-editor": "workspace:*",
-    "@deepseek-ai/dsh-app-boot": "workspace:*"
+    "@deepseek-ai/dsh-app-boot": "workspace:*",
+    "@deepseek-ai/dsh-tool-executor-native": "workspace:*"
   },
   "private": true
 }

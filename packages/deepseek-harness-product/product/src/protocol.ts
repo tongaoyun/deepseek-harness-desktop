@@ -1,4 +1,7 @@
 /** Public product bridge contract. Harness execution never crosses this boundary. */
+import { z } from 'zod'
+import { isProductFailure, ProductError, type ProductFailure } from './errors.ts'
+
 
 /** Protocol identifier for the product sidecar bridge. */
 export const PRODUCT_PROTOCOL = 'deepseek-harness.native.v1' as const
@@ -13,10 +16,10 @@ export interface CompanyContentRoots {
 
 /** Optional company source supplied by the product Host to preinstalled plugins. */
 export interface CompanyContentSource {
-  /** Latest installed catalog; this read never contacts the remote server. */
-  read(): Promise<CompanyContentRoots>
-  /** Coalesced, throttled server check; failures preserve the installed catalog. */
-  refresh(): Promise<void>
+  /** Latest installed catalog without remote access; an optional signal cancels this reader. */
+  read(signal?: AbortSignal): Promise<CompanyContentRoots>
+  /** Coalesced server check; an optional signal releases this caller without stopping shared work. */
+  refresh(signal?: AbortSignal): Promise<void>
   /** Durable Session version; cancellation releases this reader and aborts verification when none remain. */
   forSession(sessionId: string, signal?: AbortSignal): Promise<CompanyContentRoots>
 }
@@ -43,6 +46,67 @@ export interface KnowledgeFileChunk {
   readonly data: Uint8Array
   readonly offset: number
   readonly eof: boolean
+}
+
+/** Common metadata returned before an employee-owned document is opened. */
+export interface KnowledgeDocumentPreviewMetadata {
+  readonly id: string
+  readonly knowledgeBaseId: string
+  readonly filename: string
+  readonly contentVersion: string
+  readonly sizeBytes: number
+  readonly sourceType?: string
+  readonly previewMaxBytes?: number
+  readonly downloadMaxBytes?: number
+}
+
+/** Resource identifiers accepted by all knowledge IPC and HTTP boundaries.
+ * @param value - Candidate resource identifier.
+ * @returns Whether the value matches the public resource identifier format.
+ */
+export function isKnowledgeResourceId(value: unknown): value is string {
+  return typeof value === 'string' && /^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$/u.test(value)
+}
+
+/**
+ * Validate the server metadata used by both the Host preview and Electron's
+ * private file transport. Keeping this at the product boundary prevents the
+ * two processes from silently accepting different document identities or
+ * size limits.
+ * @param value - Untrusted server metadata.
+ * @param identity - Expected document identity.
+ * @param options - Optional validation policy.
+ * @returns Validated preview metadata.
+ */
+export function parseKnowledgeDocumentPreviewMetadata(value: unknown,
+  identity: Pick<KnowledgeDocumentPreviewMetadata, 'id' | 'knowledgeBaseId'>,
+  options: { readonly requireLimits?: boolean } = {}): KnowledgeDocumentPreviewMetadata {
+  if (typeof value !== 'object' || value === null
+    || !('id' in value) || value.id !== identity.id
+    || !('knowledgeBaseId' in value) || value.knowledgeBaseId !== identity.knowledgeBaseId
+    || !('filename' in value) || typeof value.filename !== 'string' || value.filename === '' || value.filename.length > 1024
+    || !('contentVersion' in value) || typeof value.contentVersion !== 'string' || value.contentVersion === '' || value.contentVersion.length > 256
+    || !('sizeBytes' in value) || typeof value.sizeBytes !== 'number' || !Number.isSafeInteger(value.sizeBytes) || value.sizeBytes < 0
+    || 'sourceType' in value && value.sourceType !== undefined && typeof value.sourceType !== 'string'
+    || options.requireLimits === true && (!('previewMaxBytes' in value) || typeof value.previewMaxBytes !== 'number'
+      || !('downloadMaxBytes' in value) || typeof value.downloadMaxBytes !== 'number')
+    || 'previewMaxBytes' in value && value.previewMaxBytes !== undefined
+      && (typeof value.previewMaxBytes !== 'number' || !Number.isSafeInteger(value.previewMaxBytes) || value.previewMaxBytes < 1)
+    || 'downloadMaxBytes' in value && value.downloadMaxBytes !== undefined
+      && (typeof value.downloadMaxBytes !== 'number' || !Number.isSafeInteger(value.downloadMaxBytes) || value.downloadMaxBytes < 1)) {
+    throw new ProductError('INVALID_SERVER_RESPONSE', 'Invalid original file metadata', false)
+  }
+  const record = value as Record<string, unknown>
+  return {
+    id: record.id as string,
+    knowledgeBaseId: record.knowledgeBaseId as string,
+    filename: record.filename as string,
+    contentVersion: record.contentVersion as string,
+    sizeBytes: record.sizeBytes as number,
+    ...record.sourceType === undefined ? {} : { sourceType: record.sourceType as string },
+    ...record.previewMaxBytes === undefined ? {} : { previewMaxBytes: record.previewMaxBytes as number },
+    ...record.downloadMaxBytes === undefined ? {} : { downloadMaxBytes: record.downloadMaxBytes as number },
+  }
 }
 
 /** File operations owned by Electron main, including private Host conversion transport. */
@@ -112,7 +176,6 @@ export type ProductMethod =
   | 'knowledge.folders.create'
   | 'knowledge.folders.rename'
   | 'knowledge.folders.delete'
-  | 'native.device-identity.get'
 
 /** Product operations the trusted Harness Host may request from Electron main. */
 export type ProductRuntimeMethod = Extract<ProductMethod,
@@ -163,33 +226,83 @@ export interface ProductSession {
   readonly expiresAt?: string
 }
 
-/** Knowledge selection pinned to an immutable task composition. */
-export interface ProductTaskCapabilities {
-  readonly basePresetId?: string
-  readonly knowledgeBaseIds: readonly string[]
-  readonly unavailable?: import('./errors.ts').ProductFailure
-}
+const taskIdentity = z.string().min(1).max(256).refine(value => value.trim() !== '')
+const knowledgeSelection = z.array(taskIdentity).max(32).readonly()
+
+/** Validate a task request without accepting obsolete selections or undeclared fields. */
+export const ProductTaskCapabilityRequestSchema = z.object({
+  basePresetId: taskIdentity.optional(), sessionId: taskIdentity.optional(),
+  knowledgeBaseIds: knowledgeSelection.optional(), recoverCapabilities: z.boolean().optional(),
+}).strict()
 /** Omitted selections retain the current task's knowledge scope. */
-export interface ProductTaskCapabilityRequest {
-  readonly basePresetId?: string
-  readonly sessionId?: string
-  readonly knowledgeBaseIds?: readonly string[]
-  readonly recoverCapabilities?: boolean
-}
+export type ProductTaskCapabilityRequest = Readonly<z.output<typeof ProductTaskCapabilityRequestSchema>>
 
-/** Preparation does not modify a Session; the official selection API commits the result. */
-export interface ProductTaskCapabilityResult {
-  readonly kind: 'CURRENT_SESSION' | 'NEW_SESSION'
-  readonly presetId: string
-  readonly capabilities: ProductTaskCapabilities
-  readonly dependencyChecks: readonly ProductDependencyCheck[]
-}
+/** Validate a complete selected scope and its optional restoration diagnostic. */
+export const ProductTaskCapabilitiesSchema = z.object({
+  basePresetId: taskIdentity.optional(),
+  knowledgeBaseIds: knowledgeSelection.refine(ids => new Set(ids).size === ids.length),
+  unavailable: z.custom<ProductFailure>(isProductFailure).optional(),
+}).strict()
+/** Knowledge selection pinned to an immutable task composition. */
+export type ProductTaskCapabilities = Readonly<z.output<typeof ProductTaskCapabilitiesSchema>>
 
+/** Validate one verified knowledge dependency. */
+export const ProductDependencyCheckSchema = z.object({
+  kind: z.literal('KNOWLEDGE_BASE'), reference: taskIdentity,
+  status: z.enum(['READY', 'MISSING', 'UNAUTHORIZED', 'INCOMPATIBLE', 'NOT_CHECKED']),
+}).strict()
 /** One dependency verified before preparing a product capability. */
-export interface ProductDependencyCheck {
-  readonly kind: 'KNOWLEDGE_BASE'
-  readonly reference: string
-  readonly status: 'READY' | 'MISSING' | 'UNAUTHORIZED' | 'INCOMPATIBLE' | 'NOT_CHECKED'
+export type ProductDependencyCheck = Readonly<z.output<typeof ProductDependencyCheckSchema>>
+
+/** Require a successful check for every selected knowledge base before Session selection. */
+export const ProductTaskCapabilityResultSchema = z.object({
+  kind: z.enum(['CURRENT_SESSION', 'NEW_SESSION']), presetId: taskIdentity,
+  capabilities: ProductTaskCapabilitiesSchema,
+  dependencyChecks: z.array(ProductDependencyCheckSchema).max(32).readonly(),
+}).strict().refine(value => value.capabilities.basePresetId !== undefined && value.capabilities.unavailable === undefined
+  && value.dependencyChecks.length === value.capabilities.knowledgeBaseIds.length
+  && new Set(value.dependencyChecks.map(check => check.reference)).size === value.dependencyChecks.length
+  && value.dependencyChecks.every(check => check.status === 'READY'
+    && value.capabilities.knowledgeBaseIds.includes(check.reference)))
+/** Preparation does not modify a Session; the official selection API commits the result. */
+export type ProductTaskCapabilityResult = Readonly<z.output<typeof ProductTaskCapabilityResultSchema>>
+
+/** Validate the renderer's task request at a process interface.
+ * @param value - Untrusted request fields.
+ * @returns Explicit task selections; omitted fields remain omitted.
+ */
+export function parseTaskCapabilityRequest(value: unknown): ProductTaskCapabilityRequest {
+  const parsed = ProductTaskCapabilityRequestSchema.safeParse(value)
+  if (!parsed.success) throw new ProductError('CAPABILITY_REQUEST_INVALID', 'Invalid task capability request', false, [], { cause: parsed.error })
+  return parsed.data
+}
+
+/** Validate a task read before exposing its selected scope.
+ * @param value - Untrusted Host response.
+ * @returns Complete task selections or a structured response failure.
+ */
+export function parseTaskCapabilities(value: unknown): ProductTaskCapabilities {
+  const parsed = ProductTaskCapabilitiesSchema.safeParse(value)
+  if (!parsed.success) throw new ProductError('CAPABILITY_RESPONSE_INVALID', 'Task selection is invalid; reload the task', true, [], { cause: parsed.error })
+  return parsed.data
+}
+
+/** Validate a preparation receipt before changing a native Session or draft.
+ * @param value - Untrusted Host response, including all dependency checks.
+ * @param request - Requested selection; recovery may discard knowledge that is no longer available.
+ * @returns A complete receipt matching the request, with one successful check per selected knowledge base.
+ */
+export function parseTaskCapabilityResult(value: unknown, request?: ProductTaskCapabilityRequest): ProductTaskCapabilityResult {
+  const parsed = ProductTaskCapabilityResultSchema.safeParse(value)
+  if (!parsed.success) throw new ProductError('CAPABILITY_RESPONSE_INVALID', 'Task preparation is incomplete or inconsistent; reload the task', true, [], { cause: parsed.error })
+  const capabilities = parsed.data.capabilities
+  const selected = request?.knowledgeBaseIds
+  if (request !== undefined && (request.basePresetId !== undefined && request.basePresetId !== capabilities.basePresetId
+    || selected !== undefined && (capabilities.knowledgeBaseIds.some(id => !selected.includes(id))
+      || request.recoverCapabilities !== true && new Set(selected).size !== capabilities.knowledgeBaseIds.length))) {
+    throw new ProductError('CAPABILITY_RESPONSE_INVALID', 'Task preparation does not match the requested selection; reload the task', true)
+  }
+  return parsed.data
 }
 
 /** Versioned request sent across the product bridge. */
@@ -234,7 +347,6 @@ export function isProductMethod(value: unknown): value is ProductMethod {
     'knowledge.documents.download', 'knowledge.documents.openExternal',
     'knowledge.documents.save', 'knowledge.documents.importUrl', 'knowledge.documents.delete', 'knowledge.documents.reindex', 'knowledge.documents.cancel',
     'knowledge.documents.move', 'knowledge.folders.list', 'knowledge.folders.get', 'knowledge.folders.create', 'knowledge.folders.rename', 'knowledge.folders.delete',
-    'native.device-identity.get',
   ].includes(value)
 }
 

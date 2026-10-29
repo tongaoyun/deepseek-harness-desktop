@@ -1,4 +1,6 @@
 import type { ProductEventMap, ProductEvent } from '@deepseek-ai/dsh-client-product-analytics/types'
+import { loadDesktopExtension } from './extensions.ts'
+import { extensionFailure } from './extension-errors.ts'
 import { WINDOWS_TITLEBAR_HEIGHT } from './windows-layout.ts'
 /** Electron shell: desktop project ownership, custom protocol, windows, and lifecycle. */
 
@@ -15,7 +17,6 @@ import {
   powerMonitor,
   nativeImage,
   nativeTheme,
-  net,
   protocol,
   session,
   shell,
@@ -38,7 +39,7 @@ import { desktopUpdateChannel } from './update-channel.ts'
 import { DesktopUpdateCoordinator } from './update-coordinator.ts'
 import { prepareDesktopUpdateWindow } from './update-window.ts'
 import { DesktopCommandManager } from './command-management.ts'
-import { serveWebDocument, authenticateWebHost, forwardWebRequest } from './web-document.ts'
+import { serveWebDocument, authenticateWebHost, requestAuthenticatedWebHost, forwardWebRequest } from './web-document.ts'
 import { DesktopFatalRecovery } from './fatal-recovery.ts'
 import { pruneCrashReports, RendererConsoleTail, writeCrashReport, type CrashReportSource } from './crash-report.ts'
 import { OperationJournal } from './operation-journal.ts'
@@ -387,10 +388,15 @@ async function main(): Promise<void> {
     for (const failure of result.failures) console.warn(`desktop login shell: ${failure.shell} failed (${failure.reason})`)
     return result.environment
   })
+  let extensionHostEnvironment: NodeJS.ProcessEnv = {}
   let hostEnvironment: NodeJS.ProcessEnv = process.env
-  const prepareHostEnvironment = async (): Promise<void> => { hostEnvironment = await loginShell }
+  const prepareHostEnvironment = async (): Promise<void> => {
+    hostEnvironment = { ...await loginShell, ...extensionHostEnvironment }
+  }
   let quitting = false
+  let quitCleanupCompleted = false
   let startup: Promise<void> | undefined
+  let hostStartup: Promise<void> | undefined
   let workspaceRecovery: Promise<void> | undefined
   let mainWindow: BrowserWindow | undefined
   let welcomeWindow: BrowserWindow | undefined
@@ -473,7 +479,14 @@ async function main(): Promise<void> {
   let hostUrl: string | undefined
   let hostCookie: string | undefined
   const browserGuests = new DesktopBrowserGuests(() => hostUrl)
-  let injections: readonly unknown[] = []
+  const extension = await loadDesktopExtension({
+    getWindow: () => mainWindow, isQuitting: () => quitting,
+    requestHost: (namespace, method, payload, signal, timeoutMs) => {
+      const host = backend.host
+      if (host === undefined) throw new Error('Desktop Host is unavailable')
+      return host.requestExtension(namespace, method, payload, signal, timeoutMs)
+    },
+  }, app.isPackaged ? { root: process.resourcesPath, runtime: resources.dsh } : undefined)
   let welcomeBackend: DesktopWelcomeBackend | undefined
   let reportedLaunch = false
   let analyticsEnabled = false
@@ -524,15 +537,20 @@ async function main(): Promise<void> {
           segmentBytes: 256 * 1024, recordBytes: 4096, queuedBytes: 64 * 1024,
         })
         operationJournal.enqueue(JSON.stringify(record))
+      },
+      (namespace, method, payload, signal) => {
+        if (extension === undefined || namespace !== extension.namespace) throw new Error('Unknown Desktop extension')
+        return extension.invokeRuntime(method, payload, signal)
       })
     return {
       start: async () => {
         const ready = await host.start()
-        hostCookie = await authenticateWebHost(ready.url)
+        const cookie = await authenticateWebHost(ready.url)
+        hostCookie = cookie
         hostUrl = ready.url
         if (ready.injections === undefined) throw new Error('Desktop Host did not provide boot injections')
-        injections = ready.injections
-        welcomeBackend = await connectDesktopWelcome(ready.url, (input, init) => net.fetch(input, init), async () => (await session.defaultSession.cookies.get({ url: ready.url })).map(cookie => `${cookie.name}=${cookie.value}`).join('; '))
+        welcomeBackend = await connectDesktopWelcome(new URL(ready.url).origin,
+          (input, init) => requestAuthenticatedWebHost(input, init, ready.url, cookie), () => Promise.resolve(cookie))
         analyticsEnabled = await welcomeBackend.analyticsEnabled().catch(() => false)
         if (!reportedLaunch) { reportedLaunch = true; void track('desktop_app_launch', {}) }
         stopAccount?.()
@@ -587,6 +605,9 @@ async function main(): Promise<void> {
       updateTasks: (action: 'inspect' | 'lock' | 'unlock') => host.updateTasks(action),
       inspectQuit: () => host.inspectQuit(),
       resolveDragResource: (address: string, signal?: AbortSignal) => host.resolveDragResource(address, signal),
+      readIndexInjections: () => host.readIndexInjections(),
+      requestExtension: (namespace: string, method: string, payload?: unknown, signal?: AbortSignal, timeoutMs?: number) =>
+        host.requestExtension(namespace, method, payload, signal, timeoutMs),
     }
   }, (state) => {
     if (state.phase === 'error') reportFatal(state.failure, 'host')
@@ -659,18 +680,32 @@ async function main(): Promise<void> {
 
   const reconcileBackend = (): Promise<void> => {
     startup ??= (async () => {
-      await navigateMain(applicationUrl)
-      await backend.start(async () => {
+      const extensionEnvironment = await extension?.prepareHost({ directory: paths.profile, installAnchor: join(resources.dsh, 'node_modules', '@deepseek-ai', 'dsh', 'package.json') })
+      if (extension !== undefined && extensionEnvironment === undefined) return
+      extensionHostEnvironment = extensionEnvironment ?? {}
+      const document = navigateMain(applicationUrl)
+      const host = backend.start(async () => {
         await Promise.all([manager.applyRelease(), prepareHostEnvironment()])
       })
-      if (backend.host !== undefined) await openInitialWindow()
+      hostStartup = (async () => {
+        await host
+        if (backend.host !== undefined) await openInitialWindow({ deferWorkspace: true })
+      })()
+      await Promise.race([hostStartup, document])
+      await hostStartup
+      await document
+      await deferredInitialWorkspace
       if (backend.host !== undefined) updateJournal?.action('workspace-ready')
       // The existing Web document resumes through the boot IPC response.
     })().catch((error: unknown) => {
+      if (quitting) return
       updateJournal?.action('workspace-failed')
       reportFatal(error, 'main')
       throw error
-    }).finally(() => { startup = undefined })
+    }).finally(() => {
+      startup = undefined
+      hostStartup = undefined
+    })
     return startup
   }
 
@@ -737,6 +772,7 @@ async function main(): Promise<void> {
   )
 
   const updateSchedule = new DesktopUpdateSchedule(updates, resolveDesktopUpdateScheduleConfig(process.env))
+  const quitHasStarted = (): boolean => quitting
 
   const downloadUpdate = async (version: string): Promise<DesktopUpdateState> => {
     void track('desktop_upgrade_click', {})
@@ -747,8 +783,7 @@ async function main(): Promise<void> {
     // A confirmation on a hidden window would go unseen, so it waits for the next show; the mandatory
     // flow keeps its own taskbar and Dock attention instead.
     if (!isMandatory()) await windowShown()
-    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- A quit can begin while the show is awaited.
-    if (quitting) return state
+    if (quitHasStarted()) return state
     return updates.install(version)
   }
   const windowShown = (): Promise<void> => new Promise((resolve) => {
@@ -784,9 +819,16 @@ async function main(): Promise<void> {
 
   ipcMain.handle(DESKTOP_IPC.boot, async (event) => {
     assertDesktopSender(event, ['app'])
-    await startup
-    if (backend.host === undefined || hostUrl === undefined) throw new Error('Desktop Host is unavailable')
-    return { injections, streamBaseUrl: new URL(hostUrl).origin }
+    // The initial document asks for this payload before it can finish loading.
+    // Wait only for Host readiness, not for the encompassing startup promise
+    // that also waits for this document to finish loading.
+    if (backend.host === undefined || hostUrl === undefined) await (hostStartup ?? startup)
+    const host = backend.host
+    const url = hostUrl
+    if (host === undefined || url === undefined) throw new Error('Desktop Host is unavailable')
+    const injections = await host.readIndexInjections()
+    if (backend.host !== host || hostUrl !== url) throw new Error('Desktop Host changed during renderer boot')
+    return { injections, streamBaseUrl: new URL(url).origin }
   })
 
   ipcMain.handle(DESKTOP_IPC.bootFailed, (event, message: unknown) => {
@@ -805,6 +847,39 @@ async function main(): Promise<void> {
   ipcMain.handle(DESKTOP_IPC.browserRelease, (event, lease: unknown) => {
     assertProductSender(event)
     return browserGuests.release(event.sender, lease)
+  })
+  const rendererExtensionRequests = new Map<string, AbortController>()
+  ipcMain.handle(DESKTOP_IPC.extensionInvoke, async (
+    event, namespace: unknown, method: unknown, payload: unknown, requestId: unknown,
+  ) => {
+    assertProductSender(event)
+    if (extension === undefined || namespace !== extension.namespace) throw new Error('Unknown Desktop extension')
+    if (requestId !== undefined && (typeof requestId !== 'string' || requestId.length < 8 || requestId.length > 128)) {
+      throw new Error('desktop extension: invalid request id')
+    }
+    if (typeof requestId === 'string' && rendererExtensionRequests.has(requestId)) {
+      throw new Error('desktop extension: duplicate request id')
+    }
+    const controller = typeof requestId === 'string' ? new AbortController() : undefined
+    if (controller !== undefined) rendererExtensionRequests.set(requestId as string, controller)
+    try {
+      return { ok: true, result: await extension.invoke(method, payload, controller?.signal) }
+    } catch (error) {
+      return { ok: false, failure: extensionFailure(error) }
+    } finally {
+      if (typeof requestId === 'string') rendererExtensionRequests.delete(requestId)
+    }
+  })
+  ipcMain.on(DESKTOP_IPC.extensionCancel, (event, namespace: unknown, requestId: unknown) => {
+    if (extension === undefined || namespace !== extension.namespace) return
+    assertProductSender(event)
+    if (typeof requestId !== 'string') return
+    rendererExtensionRequests.get(requestId)?.abort(new Error('desktop extension: request cancelled'))
+  })
+  extension?.subscribe((productEvent) => {
+    if (mainWindow !== undefined && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send(DESKTOP_IPC.extensionEvent, extension.namespace, productEvent)
+    }
   })
 
   session.defaultSession.webRequest.onBeforeSendHeaders({ urls: ['ws://127.0.0.1/*', 'wss://127.0.0.1/*'] }, (details, callback) => {
@@ -892,7 +967,6 @@ async function main(): Promise<void> {
     assertProductSender(event)
     await openUpdatePrompt()
   })
-
   let promptOperation: Promise<void> | undefined
   let policyAuthenticationQueued = false
   const openUpdatePrompt = (manual = false): Promise<void> => {
@@ -1169,6 +1243,7 @@ async function main(): Promise<void> {
     browserGuests.bind(window, (guest, name) => shortcuts.attachGuest(window, guest, name))
     shortcuts.attach(window)
     window.on('focus', automaticCheck)
+    window.on('focus', () => { void extension?.focus().catch(() => undefined) })
     // Closing hides: the page and the Host keep running, and the next show resumes the same document.
     window.on('close', (event) => {
       if (quitting || shellInstallerOwnsQuit || sessionEnding) return
@@ -1295,7 +1370,8 @@ async function main(): Promise<void> {
     })().finally(() => { openingWelcome = undefined })
     return openingWelcome
   }
-  const openInitialWindow = async (): Promise<void> => {
+  let deferredInitialWorkspace: Promise<void> | undefined
+  const openInitialWindow = async ({ deferWorkspace = false }: { deferWorkspace?: boolean } = {}): Promise<void> => {
     if (quitting || recovery.active) return
     const state = await readWelcomeState()
     if (isQuitting() || backend.state.phase !== 'ready') return
@@ -1308,7 +1384,9 @@ async function main(): Promise<void> {
       raiseAfterUpdate = false
       await showWelcome()
     } else {
-      await enterWorkspace()
+      const workspace = enterWorkspace()
+      if (deferWorkspace) deferredInitialWorkspace = workspace
+      else await workspace
     }
   }
   focusPrimaryWindow = () => {
@@ -1321,7 +1399,14 @@ async function main(): Promise<void> {
       return
     }
     // Startup and sign-out select the visible window before activation may reveal the workspace.
-    if (window === mainWindow && !enteredWorkspace) return
+    if (window === mainWindow && !enteredWorkspace) {
+      if (extension?.ownsStartupDocument) {
+        if (window.isMinimized()) window.restore()
+        window.show()
+        window.focus()
+      }
+      return
+    }
     if (window.isMinimized()) window.restore()
     window.show()
     window.focus()
@@ -1343,6 +1428,8 @@ async function main(): Promise<void> {
   const finishQuit = (): void => {
     quitting = true
     shuttingDown = true
+    for (const controller of rendererExtensionRequests.values()) controller.abort(new Error('Desktop is shutting down'))
+    rendererExtensionRequests.clear()
     updateJournal?.action('quit-requested')
     quitConfirmation.dispose()
     backgroundNotice?.dispose()
@@ -1360,8 +1447,9 @@ async function main(): Promise<void> {
       }),
       platformView.dispose(),
       disposeFileDrag(),
+      Promise.resolve().then(() => extension?.close()),
     ].map(cleanup => cleanup.catch((error: unknown) => { console.error(error) })))
-      .then(() => { app.quit() })
+      .then(() => { quitCleanupCompleted = true; app.quit() })
   }
   app.on('before-quit', (event) => {
     if (shellInstallerOwnsQuit) {
@@ -1376,7 +1464,10 @@ async function main(): Promise<void> {
       void platformView.dispose().catch((error: unknown) => { console.error(error) })
       return
     }
-    if (quitting) return
+    if (quitting) {
+      if (!quitCleanupCompleted) event.preventDefault()
+      return
+    }
     event.preventDefault()
     if (skipQuitConfirmation || sessionEnding) { finishQuit(); return }
     void quitConfirmation.confirm().then((approved) => {

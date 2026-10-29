@@ -498,6 +498,7 @@ export const TYPERT_REMOTE = createTypertRemoteInfo({
           },
         },
       ],
+      cancellation: { parameter: 'signal' },
       result: {
         mode: 'strict',
         typeSymbol: '@deepseek-harness/product-experts/types#CreationEditorData',
@@ -505,7 +506,7 @@ export const TYPERT_REMOTE = createTypertRemoteInfo({
         description: 'Draft and current revision-checked editing inputs; rejects if unavailable.',
         jsonSchemaError: 'typert tool schema: unsupported undefined value',
       },
-      sourceLocation: {"file":"packages/deepseek-harness-product/experts/src/remote.ts","line":58,"column":9},
+      sourceLocation: {"file":"packages/deepseek-harness-product/experts/src/remote.ts","line":59,"column":9},
     },
     'agencyAgents/deleteCustomExpert': {
       service: 'agencyAgents',
@@ -547,6 +548,7 @@ export const TYPERT_REMOTE = createTypertRemoteInfo({
           },
         },
       ],
+      cancellation: { parameter: 'signal' },
       result: {
         mode: 'strict',
         typeSymbol: '@deepseek-harness/product-experts/types#CatalogSnapshot',
@@ -554,7 +556,7 @@ export const TYPERT_REMOTE = createTypertRemoteInfo({
         description: '删除完成后的最新目录。',
         jsonSchema: {"type":"object","properties":{"experts":{"type":"array","items":{"type":"object","properties":{"slug":{"type":"string"},"name":{"type":"string"},"nameEn":{"type":"string"},"description":{"type":"string"},"descriptionEn":{"type":"string"},"emoji":{"type":"string"},"division":{"type":"string"},"divisionZh":{"type":"string"},"custom":{"type":"boolean"},"company":{"type":"boolean","enum":[false,true]},"teamMember":{"type":"boolean","enum":[false,true]},"conflict":{"type":"boolean","enum":[false,true]},"avatar":{"type":"number"}},"required":["slug","name","nameEn","description","descriptionEn","emoji","division","divisionZh","custom"],"additionalProperties":true}},"enabled":{"type":"array","items":{"type":"string"}},"revision":{"type":"number"}},"required":["experts","enabled","revision"],"additionalProperties":true},
       },
-      sourceLocation: {"file":"packages/deepseek-harness-product/experts/src/remote.ts","line":199,"column":9},
+      sourceLocation: {"file":"packages/deepseek-harness-product/experts/src/remote.ts","line":242,"column":9},
     },
     'agencyAgents/deleteTeam': {
       service: 'agencyAgents',
@@ -596,6 +598,7 @@ export const TYPERT_REMOTE = createTypertRemoteInfo({
           },
         },
       ],
+      cancellation: { parameter: 'signal' },
       result: {
         mode: 'strict',
         typeSymbol: '@deepseek-harness/product-experts/types#TeamSnapshot',
@@ -603,7 +606,7 @@ export const TYPERT_REMOTE = createTypertRemoteInfo({
         description: '删除后的专家团快照。',
         jsonSchemaError: 'typert tool schema: selected dictionaries require string keys and unconstrained JSON values',
       },
-      sourceLocation: {"file":"packages/deepseek-harness-product/experts/src/remote.ts","line":145,"column":9},
+      sourceLocation: {"file":"packages/deepseek-harness-product/experts/src/remote.ts","line":169,"column":9},
     },
     'agencyAgents/exportTeam': {
       service: 'agencyAgents',
@@ -645,6 +648,7 @@ export const TYPERT_REMOTE = createTypertRemoteInfo({
           },
         },
       ],
+      cancellation: { parameter: 'signal' },
       result: {
         mode: 'strict',
         typeSymbol: '@deepseek-harness/product-experts#agencyAgents/exportTeam:result',
@@ -652,7 +656,7 @@ export const TYPERT_REMOTE = createTypertRemoteInfo({
         description: 'Resource key and Base64-encoded files for company review.',
         jsonSchemaError: 'typert tool schema: selected dictionaries require string keys and unconstrained JSON values',
       },
-      sourceLocation: {"file":"packages/deepseek-harness-product/experts/src/remote.ts","line":95,"column":9},
+      sourceLocation: {"file":"packages/deepseek-harness-product/experts/src/remote.ts","line":98,"column":9},
     },
     'agencyAgents/getCatalog': {
       service: 'agencyAgents',
@@ -685,7 +689,7 @@ export const TYPERT_REMOTE = createTypertRemoteInfo({
         description: '当前个人和团队专家目录。',
         jsonSchema: {"type":"object","properties":{"experts":{"type":"array","items":{"type":"object","properties":{"slug":{"type":"string"},"name":{"type":"string"},"nameEn":{"type":"string"},"description":{"type":"string"},"descriptionEn":{"type":"string"},"emoji":{"type":"string"},"division":{"type":"string"},"divisionZh":{"type":"string"},"custom":{"type":"boolean"},"company":{"type":"boolean","enum":[false,true]},"teamMember":{"type":"boolean","enum":[false,true]},"conflict":{"type":"boolean","enum":[false,true]},"avatar":{"type":"number"}},"required":["slug","name","nameEn","description","descriptionEn","emoji","division","divisionZh","custom"],"additionalProperties":true}},"enabled":{"type":"array","items":{"type":"string"}},"revision":{"type":"number"}},"required":["experts","enabled","revision"],"additionalProperties":true},
       },
-      sourceLocation: {"file":"packages/deepseek-harness-product/experts/src/remote.ts","line":160,"column":9},
+      sourceLocation: {"file":"packages/deepseek-harness-product/experts/src/remote.ts","line":195,"column":9},
     },
     'agencyAgents/getCustomExpert': {
       service: 'agencyAgents',
@@ -710,6 +714,7 @@ export const TYPERT_REMOTE = createTypertRemoteInfo({
           },
         },
       ],
+      cancellation: { parameter: 'signal' },
       result: {
         mode: 'strict',
         typeSymbol: '@deepseek-harness/product-experts/types#CustomExpertInput',
@@ -717,7 +722,7 @@ export const TYPERT_REMOTE = createTypertRemoteInfo({
         description: '可编辑的个人专家正文和元数据。',
         jsonSchema: {"type":"object","properties":{"name":{"type":"string"},"description":{"type":"string"},"division":{"type":"string"},"prompt":{"type":"string"},"slug":{"type":"string"},"emoji":{"type":"string"},"avatar":{"type":"number"}},"required":["name","description","division","prompt"],"additionalProperties":true},
       },
-      sourceLocation: {"file":"packages/deepseek-harness-product/experts/src/remote.ts","line":175,"column":9},
+      sourceLocation: {"file":"packages/deepseek-harness-product/experts/src/remote.ts","line":211,"column":9},
     },
     'agencyAgents/getEnabled': {
       service: 'agencyAgents',
@@ -732,7 +737,7 @@ export const TYPERT_REMOTE = createTypertRemoteInfo({
         description: '专家标识与当前修订号。',
         jsonSchema: {"type":"object","properties":{"enabled":{"type":"array","items":{"type":"string"}},"revision":{"type":"number"}},"required":["enabled","revision"],"additionalProperties":true},
       },
-      sourceLocation: {"file":"packages/deepseek-harness-product/experts/src/remote.ts","line":208,"column":3},
+      sourceLocation: {"file":"packages/deepseek-harness-product/experts/src/remote.ts","line":254,"column":3},
     },
     'agencyAgents/getPrompt': {
       service: 'agencyAgents',
@@ -774,6 +779,7 @@ export const TYPERT_REMOTE = createTypertRemoteInfo({
           },
         },
       ],
+      cancellation: { parameter: 'signal' },
       result: {
         mode: 'strict',
         typeSymbol: '@deepseek-harness/product-experts#agencyAgents/getPrompt:result',
@@ -781,7 +787,7 @@ export const TYPERT_REMOTE = createTypertRemoteInfo({
         description: '经当前访问检查读取的专家正文。',
         jsonSchema: {"type":"object","properties":{"prompt":{"type":"string"}},"required":["prompt"],"additionalProperties":true},
       },
-      sourceLocation: {"file":"packages/deepseek-harness-product/experts/src/remote.ts","line":233,"column":9},
+      sourceLocation: {"file":"packages/deepseek-harness-product/experts/src/remote.ts","line":284,"column":9},
     },
     'agencyAgents/getTeams': {
       service: 'agencyAgents',
@@ -797,7 +803,7 @@ export const TYPERT_REMOTE = createTypertRemoteInfo({
         description: '个人专家团和成员目录。',
         jsonSchemaError: 'typert tool schema: selected dictionaries require string keys and unconstrained JSON values',
       },
-      sourceLocation: {"file":"packages/deepseek-harness-product/experts/src/remote.ts","line":79,"column":9},
+      sourceLocation: {"file":"packages/deepseek-harness-product/experts/src/remote.ts","line":83,"column":9},
     },
     'agencyAgents/saveCustomExpert': {
       service: 'agencyAgents',
@@ -856,6 +862,7 @@ export const TYPERT_REMOTE = createTypertRemoteInfo({
           },
         },
       ],
+      cancellation: { parameter: 'signal' },
       result: {
         mode: 'strict',
         typeSymbol: '@deepseek-harness/product-experts/types#CatalogSnapshot',
@@ -863,7 +870,7 @@ export const TYPERT_REMOTE = createTypertRemoteInfo({
         description: '成功提交后的最新目录。',
         jsonSchema: {"type":"object","properties":{"experts":{"type":"array","items":{"type":"object","properties":{"slug":{"type":"string"},"name":{"type":"string"},"nameEn":{"type":"string"},"description":{"type":"string"},"descriptionEn":{"type":"string"},"emoji":{"type":"string"},"division":{"type":"string"},"divisionZh":{"type":"string"},"custom":{"type":"boolean"},"company":{"type":"boolean","enum":[false,true]},"teamMember":{"type":"boolean","enum":[false,true]},"conflict":{"type":"boolean","enum":[false,true]},"avatar":{"type":"number"}},"required":["slug","name","nameEn","description","descriptionEn","emoji","division","divisionZh","custom"],"additionalProperties":true}},"enabled":{"type":"array","items":{"type":"string"}},"revision":{"type":"number"}},"required":["experts","enabled","revision"],"additionalProperties":true},
       },
-      sourceLocation: {"file":"packages/deepseek-harness-product/experts/src/remote.ts","line":188,"column":9},
+      sourceLocation: {"file":"packages/deepseek-harness-product/experts/src/remote.ts","line":227,"column":9},
     },
     'agencyAgents/saveTeam': {
       service: 'agencyAgents',
@@ -922,6 +929,7 @@ export const TYPERT_REMOTE = createTypertRemoteInfo({
           },
         },
       ],
+      cancellation: { parameter: 'signal' },
       result: {
         mode: 'strict',
         typeSymbol: '@deepseek-harness/product-experts/types#TeamSnapshot',
@@ -929,7 +937,7 @@ export const TYPERT_REMOTE = createTypertRemoteInfo({
         description: '保存后的专家团快照。',
         jsonSchemaError: 'typert tool schema: selected dictionaries require string keys and unconstrained JSON values',
       },
-      sourceLocation: {"file":"packages/deepseek-harness-product/experts/src/remote.ts","line":126,"column":9},
+      sourceLocation: {"file":"packages/deepseek-harness-product/experts/src/remote.ts","line":138,"column":9},
     },
     'agencyAgents/setEnabled': {
       service: 'agencyAgents',
@@ -971,6 +979,7 @@ export const TYPERT_REMOTE = createTypertRemoteInfo({
           },
         },
       ],
+      cancellation: { parameter: 'signal' },
       result: {
         mode: 'strict',
         typeSymbol: '@deepseek-harness/product-experts#agencyAgents/setEnabled:result',
@@ -978,7 +987,7 @@ export const TYPERT_REMOTE = createTypertRemoteInfo({
         description: '已提交的启用选择及修订号。',
         jsonSchema: {"type":"object","properties":{"enabled":{"type":"array","items":{"type":"string"}},"revision":{"type":"number"}},"required":["enabled","revision"],"additionalProperties":true},
       },
-      sourceLocation: {"file":"packages/deepseek-harness-product/experts/src/remote.ts","line":222,"column":9},
+      sourceLocation: {"file":"packages/deepseek-harness-product/experts/src/remote.ts","line":269,"column":9},
     },
     'agencyAgents/setTeamEnabled': {
       service: 'agencyAgents',
@@ -1037,6 +1046,7 @@ export const TYPERT_REMOTE = createTypertRemoteInfo({
           },
         },
       ],
+      cancellation: { parameter: 'signal' },
       result: {
         mode: 'strict',
         typeSymbol: '@deepseek-harness/product-experts/types#TeamSnapshot',
@@ -1044,7 +1054,7 @@ export const TYPERT_REMOTE = createTypertRemoteInfo({
         description: '修改后的专家团快照。',
         jsonSchemaError: 'typert tool schema: selected dictionaries require string keys and unconstrained JSON values',
       },
-      sourceLocation: {"file":"packages/deepseek-harness-product/experts/src/remote.ts","line":136,"column":9},
+      sourceLocation: {"file":"packages/deepseek-harness-product/experts/src/remote.ts","line":154,"column":9},
     },
   },
 }, z)

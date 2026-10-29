@@ -1,0 +1,21 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`joins pending company observation on Loader unload and rejects explicitly signalled readers 1`] = `
+{
+  "callerCancelled": false,
+  "closed": true,
+  "mainRequests": 0,
+  "phase": "observation",
+  "serviceAvailable": false,
+}
+`;
+
+exports[`joins pending company verification on Loader unload and rejects explicitly signalled readers 1`] = `
+{
+  "callerCancelled": false,
+  "closed": true,
+  "mainRequests": 1,
+  "phase": "verification",
+  "serviceAvailable": false,
+}
+`;

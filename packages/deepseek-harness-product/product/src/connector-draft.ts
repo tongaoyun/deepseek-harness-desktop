@@ -22,7 +22,11 @@ export const ConnectorDraftSchema = ConnectorDraftFields.superRefine((draft, con
   if (draft.transport === 'streamable-http' && !draft.oauthProviderId) {
     try {
       const endpoint = new URL(draft.url ?? '')
-      if (!['http:', 'https:'].includes(endpoint.protocol) || endpoint.username || endpoint.password || endpoint.hash) throw new Error('Invalid endpoint')
+      // Query parameters are part of the connector identity. Keeping them out
+      // of drafts makes the product and runtime URL contracts deterministic and
+      // prevents a hidden per-request credential or routing flag.
+      if (!['http:', 'https:'].includes(endpoint.protocol) || endpoint.username || endpoint.password
+        || endpoint.search || endpoint.hash) throw new Error('Invalid endpoint')
     } catch { context.addIssue({ code: 'custom', path: ['url'], message: 'An HTTP MCP endpoint without embedded credentials is required' }) }
   } else if (draft.transport !== 'streamable-http' && (draft.transport !== 'stdio' || !draft.command?.trim())) {
     context.addIssue({ code: 'custom', path: ['command'], message: 'Select a transport and executable' })

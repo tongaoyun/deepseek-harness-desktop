@@ -1,15 +1,15 @@
 ---
-kind: package-library
+kind: package-reference
 description: "认证产品桌面用户，管理凭据、原生操作与产品资源。"
 ---
 
 # 产品桌面
 
-## 概述
+## Summary
 
 进入企业工作区前通过钉钉登录。员工令牌由 Electron 主进程使用操作系统加密存储。可信桌面扩展管理产品请求和原生 sidecar。
 
-## 目录
+## Table of Contents
 
 - [组合](#assembly)
 - [设备与反馈](#device-and-feedback)
@@ -22,6 +22,10 @@ description: "认证产品桌面用户，管理凭据、原生操作与产品资
 
 `createExtension` 向官方壳提供启动准备、产品分发、事件和关闭钩子。产品组合负责 `desktop-extension.json`、`assembly.json`、服务端资源与原生二进制。官方 profile 默认不加载产品扩展。参见[产品子系统](../../../docs/subsystems/deepseek-harness-product.md)。
 
+同一扩展的并发 Host 准备请求共享一个操作；关闭会取消并等待准备、认证、目录同步、桥接和 sidecar 的实际结束。重复关闭共享同一个清理结果，避免退出期间重复销毁资源或让迟到的启动结果继续写入配置。
+
+企业登录、工作区配置和推理 overlay 准备完成前不启动 Host。桌面壳将认证后环境和有序 overlay 交给原生 profile 启动器，加载产品运行时与内建专家、技能；员工令牌留在主进程。通用扩展传输与页面重载规则见 [Desktop](../../../apps/desktop/README.md#low-level-development-overrides)。
+
 通过 `pnpm --dir apps/product-desktop run package <target>` 打包产品，未签名制品添加 `--unsigned`。该入口为官方构建流程选择产品组合。内部桌面 CI 与发布流程使用此入口；根目录的 `package:desktop:*` 命令打包不含产品资源的官方桌面。
 
 产品打包通过 Cargo metadata 解析原生二进制，支持 `CARGO_TARGET_DIR` 和 Cargo 配置。准备应用前先构建并检查 sidecar，打包进程退出后清理临时组合清单。
@@ -30,7 +34,7 @@ description: "认证产品桌面用户，管理凭据、原生操作与产品资
 
 
 
-公司内容的磁盘校验采用受控并行单次扫描；每次执行仍检查固定版本，完成结果不缓存。远端刷新间隔使用单调计时，不受系统日期前跳或回拨影响。同一 Session 的绑定写入串行，其他 Session 可独立恢复；关闭时取消并等待全部扫描与排队请求。目录和发布规则见[公司内容说明](../../../apps/product-desktop/docs/company-content.md)。
+公司内容的磁盘校验采用受控并行单次扫描；每次执行仍检查固定版本，完成结果不缓存。同一 Session 的绑定写入串行，其他 Session 可独立恢复；关闭时取消并等待全部扫描与排队请求。目录和发布规则见[公司内容说明](../../../apps/product-desktop/docs/company-content.md)。
 
 `PersonalConnectors` 发现 MCP 工具，使用操作系统存储加密私密 Header 与环境变量，并通过本地 HTTP 转发 stdio。只有实际非破坏性只读注解允许 READ，其他已声明工具走官方审批，未声明工具拒绝。公开配置同步服务端，私密配置按员工隔离留在设备。切换账号与关闭会结束 SDK 连接和子进程。员工令牌只发送到产品服务端精确的托管 MCP 路径，已配置 OAuth 复用现有服务端提供方。
 
@@ -38,7 +42,7 @@ description: "认证产品桌面用户，管理凭据、原生操作与产品资
 
 公开配置保留私密字段名及空值。本人在新设备上使用、或其他员工使用已共享的非托管连接器时，通过“配置本机连接”填写自己的值；该操作固定目录版本、端点、命令、参数和字段名，仅执行 MCP 工具发现并加密保存，不调用业务工具或创建服务端新版本。读取仅返回字段名与配置状态。禁用或不可用连接器不能配置和执行，凭据不跨员工复用。
 
-`ConnectorProxy` 将调用方断开连接和关闭应用的取消信号贯穿目录查询与转发。HTTP 响应头和空闲读取期限复用原生 `dsh-timeout`；取消或空闲超时时主动取消响应体读取，即使上游读取未响应请求信号，也会结束等待并释放读取锁。关闭时停止接收连接，等待在途目录请求、HTTP 响应体和 stdio 代理清理完成；取消后迟到的目录结果不能发起新的上游请求。
+`ConnectorProxy` 将调用方断开连接和关闭应用的取消信号贯穿目录查询与转发。关闭时停止接收连接，等待在途目录请求和 stdio 代理清理完成；取消后迟到的目录结果不能发起新的上游请求。
 
 主进程拥有的 `product.json` 通过 `connectorProxy.responseTimeoutMs`（默认 30,000，范围 1,000–300,000）和 `streamIdleTimeoutMs`（默认 120,000，范围 1,000–3,600,000）配置 HTTP 转发。两者分别限制响应头等待和每次无数据读取。活跃 SSE 没有总时长限制；SDK 的单次操作仍使用 `timeoutSeconds` 期限。
 
@@ -51,10 +55,6 @@ description: "认证产品桌面用户，管理凭据、原生操作与产品资
 个人连接器保存按员工与资源串行执行。提交版本前，主进程原子保留加密的待确认配置。回执丢失时通过已认证的不可变目录核对；重启或刷新目录仅在所有者、版本、公开元数据、连接目标和工具名称一致时恢复配置。结果未知时保留待确认配置，需重试同一配置；明确拒绝时清理。关闭应用取消并等待保存完成。待确认记录和临时文件不会向渲染进程暴露凭据。
 
 所有者修改时读取公开字段，本机私密键只返回空占位值。仅连接类型、地址、命令和参数均未改变时，留空才保留已有密钥；修改目标地址需要重新填写私密值。保存发现工具并创建新版本。读取编辑信息、本机配置、创建、修改和删除按员工与连接器串行执行，权限和版本在前一操作结束后重新检查；删除后排队请求不能继续使用旧目录结果。取消的排队操作不发出请求，关闭时取消并等待全部管理操作结束。删除使服务端全部版本退役，关闭当前员工该连接器各版本的缓存连接并移除当前版本的本机配置；其他连接器的连接和在途调用继续运行。服务端拒绝删除时保留连接和配置。修改失败保留原配置。
-
-sidecar 使用原生 `scrubbedParentEnv` 过滤父进程凭据及 `DSH_*`，仅显式传入产品数据目录。并发启动等待同一次健康检查；检查失败会等待进程退出，停止期间拒绝新调用。写入或序列化失败立即释放请求记录、期限和取消监听。
-
-原生对话框、公司内容共享读取、MCP 握手与 sidecar 请求使用 Node `addAbortListener`，取消不受其他监听器阻断；每个读取结束后释放自己的监听，共享操作继续遵循等待者所有权。
 
 主进程从 Electron 提供 `runtime.environment.desktopVersion`，Renderer 无法覆盖。Host、HTTP 和原生请求将调用方取消与扩展生命周期信号组合。关闭时停止后台刷新，取消待处理操作并等待完成，确认 sidecar 已退出。单项清理失败仍按顺序释放其余资源、等待在途请求与授权结束，最后汇总报告错误。不含凭据的产品诊断保留错误码、资源 ID、可重试性和依赖结果。
 
@@ -85,35 +85,35 @@ sidecar 使用原生 `scrubbedParentEnv` 过滤父进程凭据及 `DSH_*`，仅�
 <a id="device-and-feedback"></a>
 ## 设备与反馈
 
-`DesktopSupport` 在员工认证后上报主进程提供的应用版本、平台、架构、显示缩放、sidecar 设备标识能力及 Electron 凭据加密状态；不把其他产品功能上报为 Rust sidecar 能力。设备标识为原生安装标识派生的稳定 UUIDv8。打包的 `product.json` 必须提供 `support.heartbeatIntervalMs`（60,000–3,600,000）及 `support.reportIntervalMs`（不小于心跳间隔，不超过 86,400,000）。完整能力上报之间发送在线心跳，元信息变更触发完整上报。全量上报间隔使用单调计时，系统日期前跳或回拨不改变间隔；展示的上报日期仍使用服务端回执或系统日期。失败保留可见的异常状态，在窗口聚焦或下一周期重试，不阻塞对话。账号切换取消请求并重置员工状态；关闭时取消并等待在途操作，再停止 sidecar。
+`DesktopSupport` 在员工认证后上报主进程提供的应用版本、平台、架构、显示缩放及原生方法可用性。设备标识为原生安装标识派生的稳定 UUIDv8，原始标识不通过产品桥接提供给页面。启动和上报共用健康结果校验，要求当前协议、就绪状态和设备标识能力；不满足时拒绝启动或本次上报。打包的 `product.json` 必须提供 `support.heartbeatIntervalMs`（60,000–3,600,000）及 `support.reportIntervalMs`（不小于心跳间隔，不超过 86,400,000）。完整能力上报之间发送在线心跳，元信息变更触发完整上报。失败保留可见的异常状态，在窗口聚焦或下一周期重试，不阻塞对话；恢复成功清除失败码，保留最近完整上报时间。账号切换取消请求并重置员工状态；关闭时取消并等待在途操作，再停止 sidecar。
 
 产品设置入口提供员工主动反馈，包含正文、分类及最多四张主动选择的 PNG/JPEG/WebP 截图，每张不超过 5 MiB。主进程校验内容、补充真实版本和设备 ID，并使用员工范围内的 UUID 幂等键提交；渲染进程仅收到非空回执 ID。失败、取消或回执无效时保留草稿及重试键，修改内容生成新键。设备上报和反馈不收集对话历史、本地路径、员工令牌或运行 Bootstrap 密钥。产品不提供桌面执行审计 API。
 
-<a id="model-experience"></a>
-## 模型体验
-
-### 产品桌面
-
-#### 模型看到的内容
-
-主进程通过 `prepareHost` 向 Host 提供推理配置。本地 MCP 代理将上游凭据替换为私有代理凭证，并逐请求检查连接器可用性。员工令牌留在主进程，Renderer 不接收员工令牌或运行时 Bootstrap 机密。
-
-#### Token 影响
-
-认证和原生操作不增加模型 Token。
-
-#### KV Cache 影响
-
-此包不组装模型请求或缓存条目。
-
-## 已知限制与延期工作
-<a id="known-limitations-and-deferred-work"></a>
-
-- 真实钉钉登录需要可访问的产品服务。打包和原生二进制依赖目标平台工具链，签名和部署是独立操作。
-
 <a id="dev-note"></a>
-### 开发备注
+## Dev Note
 
 关闭时取消认证轮询、停止产品刷新并结束 sidecar。方法白名单属于产品协议，preload 传输命名空间请求，壳校验请求来源。构建并准备本地 macOS 运行时后，执行 `DSH_DESKTOP_SMOKE=1 DSH_SNAPSHOT=replay pnpm exec vitest run --config vitest.web.config.ts apps/web/tests/deepseek-harness-catalog.e2e.ts`，用独立产品服务夹具验证两种 Electron profile。
 
 设备状态没有独立读取 IPC。`support.device.report` 用主进程元数据上报设备和在线状态，返回无凭据的上报结果；反馈通过 `support.feedback.submit` 发送。
+
+<a id="model-experience"></a>
+## Model Experience
+
+### Product desktop
+
+#### What the model sees
+
+主进程通过 `prepareHost` 向 Host 提供推理配置。本地 MCP 代理将上游凭据替换为私有代理凭证，并逐请求检查连接器可用性。员工令牌留在主进程，Renderer 不接收员工令牌或运行时 Bootstrap 机密。
+
+#### Token effect
+
+认证和原生操作不增加模型 Token。
+
+#### KV Cache effect
+
+此包不组装模型请求或缓存条目。
+
+## Known Limitations and Deferred Work
+<a id="known-limitations-and-deferred-work"></a>
+
+- 真实钉钉登录需要可访问的产品服务。打包和原生二进制依赖目标平台工具链，签名和部署是独立操作。

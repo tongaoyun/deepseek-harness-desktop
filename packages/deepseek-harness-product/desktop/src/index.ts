@@ -57,15 +57,34 @@ interface StoredDeepSeekHarnessSession {
   readonly encryptedToken: string
 }
 
+const StoredDeepSeekHarnessSessionSchema = z.object({
+  version: z.literal(1),
+  session: z.object({
+    authenticated: z.boolean(),
+    employeeId: z.string().min(1).max(256).optional(),
+    displayName: z.string().max(256).optional(),
+    expiresAt: z.string().max(128).optional(),
+  }).strict().refine(value => !value.authenticated || value.employeeId !== undefined, 'authenticated session requires employeeId'),
+  encryptedToken: z.string().min(1),
+}).strict()
+
 /** Restore the product session without exposing the opaque token to Renderer. */
 function readStoredDeepSeekHarnessSession(): { session: ProductSession; token: string } | undefined {
   if (!safeStorage.isEncryptionAvailable()) return undefined
   try {
-    const raw = JSON.parse(readFileSync(join(app.getPath('userData'), 'deepseek-harness-session.json'), 'utf8')) as StoredDeepSeekHarnessSession
-    if (raw.version !== 1 || typeof raw.encryptedToken !== 'string' || raw.encryptedToken === '') return undefined
+    const parsed = StoredDeepSeekHarnessSessionSchema.safeParse(
+      JSON.parse(readFileSync(join(app.getPath('userData'), 'deepseek-harness-session.json'), 'utf8')))
+    if (!parsed.success) return undefined
+    const raw = parsed.data
     const token = safeStorage.decryptString(Buffer.from(raw.encryptedToken, 'base64'))
     if (token === '') return undefined
-    return { session: raw.session, token }
+    const session: ProductSession = {
+      authenticated: raw.session.authenticated,
+      ...raw.session.employeeId === undefined ? {} : { employeeId: raw.session.employeeId },
+      ...raw.session.displayName === undefined ? {} : { displayName: raw.session.displayName },
+      ...raw.session.expiresAt === undefined ? {} : { expiresAt: raw.session.expiresAt },
+    }
+    return { session, token }
   } catch {
     return undefined
   }
@@ -133,7 +152,7 @@ export function createExtension(context: ExtensionContext): ProductDesktopExtens
   const supportPolicy = resolveDesktopSupportPolicy({ packaged: app.isPackaged,
     resourcesPath: process.resourcesPath, appPath: app.getAppPath() })
   const support = new DesktopSupport({ policy: supportPolicy,
-    native: (method, input, signal) => nativeSidecar.invoke(method, input, signal),
+    native: (method, signal) => nativeSidecar.invoke(method, signal),
     metadata: () => ({ desktopVersion: app.getVersion(), platform: process.platform, architecture: process.arch,
       displayScalePercents: screen.getAllDisplays().map(display => Math.round(display.scaleFactor * 100)),
       encryptedStorage: safeStorage.isEncryptionAvailable() }),
@@ -165,7 +184,6 @@ export function createExtension(context: ExtensionContext): ProductDesktopExtens
     serverUrl,
     sessionToken,
     initialSession: storedDeepSeekHarnessSession?.session,
-    nativeInvoke: (method, payload, signal) => nativeSidecar.invoke(method, payload, signal),
     taskCapabilities: (method, payload, signal) => context.requestHost('product', 'tasks.capabilities.' + method, payload, signal),
     connectorManagement: async (method, payload, api, session, signal) => {
       const lifetime = signal ?? lifecycle.signal
@@ -288,6 +306,8 @@ export function createExtension(context: ExtensionContext): ProductDesktopExtens
   }
 
   let closed = false
+  let closePromise: Promise<void> | undefined
+  let preparePromise: Promise<NodeJS.ProcessEnv | undefined> | undefined
   let supportTimer: ReturnType<typeof setInterval> | undefined
   const operations = new Set<Promise<unknown>>()
   const track = <T>(signal: AbortSignal | undefined, operation: (signal: AbortSignal) => Promise<T>): Promise<T> => {
@@ -305,50 +325,65 @@ export function createExtension(context: ExtensionContext): ProductDesktopExtens
   return {
     namespace: 'product',
     get ownsStartupDocument() { return deepseekHarnessAuthenticationVisible },
-    async prepareHost(): Promise<NodeJS.ProcessEnv | undefined> {
-      await knowledgeFiles.prepare()
-      await connectorProxy.start()
-      await nativeSidecar.start()
-      const prepared = await prepareDeepSeekHarnessBootstrap()
-      if (closed || prepared === undefined) return undefined
-      const bootstrap = prepared
-      await companyContent?.sync.close()
-      const employeeId = productBridge.getSession().employeeId
-      if (!employeeId) throw new Error('Authenticated employee is required')
-      const sync = new CompanyContentSync({ root: join(app.getPath('userData'), 'company-content'), employeeId,
-        refreshIntervalMs: resolveCompanyContentRefreshInterval({ packaged: app.isPackaged,
-          resourcesPath: process.resourcesPath, appPath: app.getAppPath() }),
-        load: async (signal) => {
-          if (productBridge.getSession().employeeId !== employeeId) throw new Error('Employee identity changed')
-          const value = await productBridge.loadCompanyContent(signal)
-          if (productBridge.getSession().employeeId !== employeeId) throw new Error('Employee identity changed')
-          return value
-        } })
-      companyContent = { employeeId, sync }
-      const roots = await sync.prepare()
-      reportDevice()
-      if (supportTimer === undefined) {
-        supportTimer = setInterval(reportDevice, supportPolicy.heartbeatIntervalMs)
-        supportTimer.unref()
-      }
-      const modelProfile = join(app.getPath('userData'), 'product-inference.patch.json')
-      writeFileSync(modelProfile, JSON.stringify(inferenceProfile(bootstrap,
-        fileURLToPath(import.meta.resolve('@deepseek-harness/product-runtime/inference-default')))), { mode: 0o600 })
-      const builtinCapabilities = join(app.getPath('userData'), 'product-builtin-capabilities.patch.json')
-      writeFileSync(builtinCapabilities, JSON.stringify(builtinCapabilityPatches()), { mode: 0o600 })
-      return {
-        DSH_COMPANY_SKILLS_ROOT: roots.skillsRoot,
-        DSH_COMPANY_EXPERTS_ROOT: roots.expertsRoot,
-        DEEPSEEK_HARNESS_SESSION_TOKEN: undefined,
-        DEEPSEEK_API_KEY: bootstrap.modelApiKey,
-        DEEPSEEK_BASE_URL: bootstrap.endpoints.litellm,
-        DSH_DESKTOP_PROFILE_PATCHES: JSON.stringify([
-          fileURLToPath(import.meta.resolve('@deepseek-harness/product-runtime/cordis.patch.yml')),
-          fileURLToPath(import.meta.resolve('@deepseek-harness/product-ui/cordis.patch.yml')),
-          builtinCapabilities,
-          modelProfile,
-        ]),
-      }
+    prepareHost(): Promise<NodeJS.ProcessEnv | undefined> {
+      if (preparePromise !== undefined) return preparePromise
+      const operation = track(undefined, async (signal) => {
+        await knowledgeFiles.prepare()
+        signal.throwIfAborted()
+        await connectorProxy.start()
+        signal.throwIfAborted()
+        await nativeSidecar.start()
+        signal.throwIfAborted()
+        const prepared = await prepareDeepSeekHarnessBootstrap()
+        if (closed || prepared === undefined) return undefined
+        const bootstrap = prepared
+        await companyContent?.sync.close()
+        signal.throwIfAborted()
+        const employeeId = productBridge.getSession().employeeId
+        if (!employeeId) throw new Error('Authenticated employee is required')
+        const sync = new CompanyContentSync({ root: join(app.getPath('userData'), 'company-content'), employeeId,
+          refreshIntervalMs: resolveCompanyContentRefreshInterval({ packaged: app.isPackaged,
+            resourcesPath: process.resourcesPath, appPath: app.getAppPath() }),
+          load: async (signal) => {
+            if (productBridge.getSession().employeeId !== employeeId) throw new Error('Employee identity changed')
+            const value = await productBridge.loadCompanyContent(signal)
+            if (productBridge.getSession().employeeId !== employeeId) throw new Error('Employee identity changed')
+            return value
+          } })
+        companyContent = { employeeId, sync }
+        const roots = await sync.prepare()
+        signal.throwIfAborted()
+        reportDevice()
+        if (supportTimer === undefined) {
+          supportTimer = setInterval(reportDevice, supportPolicy.heartbeatIntervalMs)
+          supportTimer.unref()
+        }
+        const modelProfile = join(app.getPath('userData'), 'product-inference.patch.json')
+        writeFileSync(modelProfile, JSON.stringify(inferenceProfile(bootstrap,
+          fileURLToPath(import.meta.resolve('@deepseek-harness/product-runtime/inference-default')))), { mode: 0o600 })
+        const builtinCapabilities = join(app.getPath('userData'), 'product-builtin-capabilities.patch.json')
+        writeFileSync(builtinCapabilities, JSON.stringify(builtinCapabilityPatches()), { mode: 0o600 })
+        return {
+          DSH_COMPANY_SKILLS_ROOT: roots.skillsRoot,
+          DSH_COMPANY_EXPERTS_ROOT: roots.expertsRoot,
+          DEEPSEEK_HARNESS_SESSION_TOKEN: undefined,
+          DEEPSEEK_API_KEY: bootstrap.modelApiKey,
+          DEEPSEEK_BASE_URL: bootstrap.endpoints.litellm,
+          DSH_DESKTOP_PROFILE_PATCHES: JSON.stringify([
+            fileURLToPath(import.meta.resolve('@deepseek-harness/product-runtime/cordis.patch.yml')),
+            fileURLToPath(import.meta.resolve('@deepseek-harness/product-ui/cordis.patch.yml')),
+            builtinCapabilities,
+            modelProfile,
+          ]),
+        }
+      })
+      const prepared = operation.catch((error: unknown) => {
+        if (lifecycle.signal.aborted || closed) return undefined
+        throw error
+      })
+      preparePromise = prepared
+      void prepared.finally(() => { if (preparePromise === prepared) preparePromise = undefined }).catch(() => undefined)
+      return prepared
     },
     async invoke(method: unknown, payload?: unknown, signal?: AbortSignal): Promise<unknown> {
       return track(signal, async (signal) => {
@@ -394,24 +429,28 @@ export function createExtension(context: ExtensionContext): ProductDesktopExtens
     subscribe: (listener: (event: unknown) => void) => productBridge.subscribe(listener),
     focus: () => track(undefined, async (signal) => { reportDevice(); await productBridge.refreshCatalog(signal) }),
     async close(): Promise<void> {
-      closed = true
-      if (supportTimer !== undefined) clearInterval(supportTimer)
-      lifecycle.abort(new Error('Product extension is closed'))
-      const errors: unknown[] = []
-      const cleanup = async (close: () => void | Promise<void>): Promise<void> => {
-        try { await close() } catch (error: unknown) { errors.push(error) }
-      }
-      await cleanup(() => { knowledgeUploads.close() })
-      await cleanup(async () => { await companyContent?.sync.close() })
-      await cleanup(() => productBridge.dispose())
-      await cleanup(() => support.close())
-      await cleanup(() => knowledgeFiles.close())
-      await cleanup(() => connectorProxy.close())
-      await cleanup(() => personalConnectors.close())
-      await cleanup(() => nativeSidecar.stop())
-      await Promise.allSettled([...operations])
-      await Promise.allSettled([...authenticationOperations])
-      if (errors.length > 0) throw new AggregateError(errors, 'Product extension cleanup failed')
+      if (closePromise !== undefined) return closePromise
+      closePromise = (async () => {
+        closed = true
+        if (supportTimer !== undefined) clearInterval(supportTimer)
+        lifecycle.abort(new Error('Product extension is closed'))
+        const errors: unknown[] = []
+        const cleanup = async (close: () => void | Promise<void>): Promise<void> => {
+          try { await close() } catch (error: unknown) { errors.push(error) }
+        }
+        await cleanup(() => { knowledgeUploads.close() })
+        await cleanup(async () => { await companyContent?.sync.close() })
+        await cleanup(() => productBridge.dispose())
+        await cleanup(() => support.close())
+        await cleanup(() => knowledgeFiles.close())
+        await cleanup(() => connectorProxy.close())
+        await cleanup(() => personalConnectors.close())
+        await cleanup(() => nativeSidecar.stop())
+        await Promise.allSettled([...operations])
+        await Promise.allSettled([...authenticationOperations])
+        if (errors.length > 0) throw new AggregateError(errors, 'Product extension cleanup failed')
+      })()
+      return closePromise
     },
   }
 }

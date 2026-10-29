@@ -16,3 +16,7 @@ docs/persistence-changes/historical-formats/*.schema.json linguist-generated=tru
 
 # Unified patch blank context lines require their leading space.
 patches/*.patch whitespace=-blank-at-eol
+scripts/upstream-patches/*.patch whitespace=-blank-at-eol
+# Imported community documents retain upstream Markdown hard breaks and ASCII separators.
+# This applies only to the fixed data payload; plugin source keeps normal whitespace checks.
+vendor/product-expert-fixtures/** -whitespace conflict-marker-size=128

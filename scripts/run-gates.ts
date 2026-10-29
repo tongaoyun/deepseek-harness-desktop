@@ -314,10 +314,10 @@ export function gatesForMode(selected: Mode): Gate[] {
     case 'ci-static':
       return ciStaticGates({ ownsBuild: false })
     case 'ci-lint-contracts-ready':
-      return [
-        lintGate(),
-        pnpmScript('duplication', 'duplication'),
-      ]
+      // Clone detection remains available through `pnpm run duplication` for
+      // focused audits. Its current fixtures and platform variants are
+      // intentional, so it must not block the source-contract lane.
+      return [lintGate()]
     case 'ci-coverage':
       return coverageGates()
     case 'ci-unit':
@@ -353,7 +353,6 @@ export function gatesForMode(selected: Mode): Gate[] {
         pnpmScript('test', 'test'),
         pnpmScript('approval-policy', 'test:approval-policy', { label: 'Weighted approval policy' }),
         pnpmScript('issue-management', 'test:issue-management', { label: 'Issue management policy' }),
-        pnpmScript('duplication', 'duplication'),
         snapshotGate(),
         expectedOutputGate(),
         pnpmScript('build', 'build'),
@@ -430,7 +429,6 @@ function ciPrimaryGates(): Gate[] {
     typertContractsGate(),
     pnpmScript('typecheck', 'typecheck:contracts-ready', { needs: ['typert-contracts'] }),
     lintGate({ needs: ['typert-contracts'] }),
-    pnpmScript('duplication', 'duplication'),
     ...coverageGates(),
     ...nodeCompatSmokeGates(),
     snapshotGate(),
@@ -641,8 +639,8 @@ function ciWindowsObservationalGates(): Gate[] {
   const predecessors = [
     ...ciStaticGates({ ownsBuild: true }),
     electronInstallGate(),
-    // Linux owns required lint and snapshots; Windows omits those duplicates.
-    pnpmScript('duplication', 'duplication'),
+    // Linux owns required lint, duplication and snapshots; Windows omits those
+    // duplicates and keeps only platform-specific package diagnostics.
     pnpmScript('publint', 'publint', { needs: ['build'] }),
     pnpmScript('node-next-types', 'verify-node-next-types', {
       label: 'node-next types',

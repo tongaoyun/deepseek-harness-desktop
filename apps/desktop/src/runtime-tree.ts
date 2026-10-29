@@ -37,10 +37,31 @@ export interface DesktopRuntimeDescriptor {
 }
 
 const PACKAGE_NAME = /^(?:@[a-z0-9][a-z0-9._~-]*\/[a-z0-9][a-z0-9._~-]*|[a-z0-9][a-z0-9._~-]*)$/u
+const SHA256 = /^[a-f0-9]{64}$/u
+const NODE_PLATFORMS = new Set<NodeJS.Platform>([
+  'aix', 'android', 'darwin', 'freebsd', 'haiku', 'linux', 'openbsd', 'sunos', 'win32',
+])
 const readRuntimeFile = promisify(readFile)
 
 function record(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function runtimePlatform(value: unknown): NodeJS.Platform {
+  if (typeof value !== 'string' || !NODE_PLATFORMS.has(value as NodeJS.Platform)) {
+    throw new Error('desktop runtime: invalid platform')
+  }
+  return value as NodeJS.Platform
+}
+
+function runtimeFileRecord(root: string, value: unknown): DesktopRuntimeFile {
+  if (!record(value) || typeof value.path !== 'string' || typeof value.bytes !== 'number'
+    || !Number.isSafeInteger(value.bytes) || value.bytes < 0 || typeof value.sha256 !== 'string'
+    || !SHA256.test(value.sha256) || typeof value.executable !== 'boolean') {
+    throw new Error('desktop runtime: invalid file record')
+  }
+  runtimePath(root, value.path)
+  return { path: value.path, bytes: value.bytes, sha256: value.sha256, executable: value.executable }
 }
 
 /**
@@ -174,15 +195,12 @@ function writeRuntimeDescriptor(root: string, descriptor: DesktopRuntimeDescript
  */
 export function readDesktopRuntime(root: string): DesktopRuntimeDescriptor {
   const value: unknown = JSON.parse(readFileSync(join(root, DESKTOP_RUNTIME_FILE), 'utf8'))
-  if (!record(value) || typeof value.platform !== 'string' || typeof value.arch !== 'string'
+  if (!record(value) || value.schemaVersion !== 1 || typeof value.arch !== 'string' || value.arch === ''
     || !Array.isArray(value.sharedPackages) || !Array.isArray(value.files)) {
     throw new Error('desktop runtime: invalid descriptor')
   }
-  if (!record(value.release) || typeof value.release.version !== 'string'
-    || typeof value.release.nodeVersion !== 'string' || typeof value.release.pnpmVersion !== 'string') {
-    throw new Error('desktop runtime: invalid release fields')
-  }
-  const release = value.release as unknown as DesktopRelease
+  const platform = runtimePlatform(value.platform)
+  const release = parseDesktopRelease(value.release)
   const sharedPackages = value.sharedPackages.map((entry: unknown): DesktopSharedPackage => {
     if (!record(entry) || typeof entry.name !== 'string' || !PACKAGE_NAME.test(entry.name)
       || typeof entry.version !== 'string' || valid(entry.version) === null || entry.path !== `node_modules/${entry.name}`) {
@@ -193,14 +211,16 @@ export function readDesktopRuntime(root: string): DesktopRuntimeDescriptor {
   if (new Set(sharedPackages.map(entry => entry.name)).size !== sharedPackages.length) {
     throw new Error('desktop runtime: duplicate shared package')
   }
-  const files = value.files as DesktopRuntimeFile[]
+  const files = value.files.map(entry => runtimeFileRecord(root, entry))
+  if (new Set(files.map(entry => entry.path)).size !== files.length) {
+    throw new Error('desktop runtime: duplicate file record')
+  }
   for (const name of ['@deepseek-ai/dsh', DESKTOP_HOST_PACKAGE]) {
     if (sharedPackages.find(entry => entry.name === name)?.version !== release.version) {
       throw new Error(`desktop runtime: missing or mismatched ${name}`)
     }
   }
-  return { schemaVersion: value.schemaVersion as 1, release, platform: value.platform as NodeJS.Platform,
-    arch: value.arch, sharedPackages, files }
+  return { schemaVersion: 1, release, platform, arch: value.arch, sharedPackages, files }
 }
 
 /**
@@ -215,12 +235,10 @@ export async function verifyDesktopRuntime(
   root: string, expectedVersion: string, target: { platform: NodeJS.Platform; arch: string } = process,
 ): Promise<DesktopRuntimeDescriptor> {
   const descriptor = readDesktopRuntime(root)
-  // readDesktopRuntime preserves the disk schema value without validating release compatibility.
-  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
-  if (descriptor.schemaVersion !== 1 || descriptor.platform !== target.platform || descriptor.arch !== target.arch) {
+  if (descriptor.platform !== target.platform || descriptor.arch !== target.arch) {
     throw new Error('desktop runtime: invalid descriptor or incompatible platform/architecture')
   }
-  const release = parseDesktopRelease(descriptor.release)
+  const release = descriptor.release
   if (release.version !== expectedVersion) throw new Error(`desktop runtime: bundled ${release.version} is not the expected ${expectedVersion}`)
   for (const entry of descriptor.sharedPackages) {
     const manifest: unknown = JSON.parse(readFileSync(join(runtimePath(root, entry.path), 'package.json'), 'utf8'))

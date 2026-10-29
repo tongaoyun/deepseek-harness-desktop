@@ -8,7 +8,9 @@ import * as FileSkills from '@deepseek-ai/dsh-skill-filesystem'
 import Sessions from '@deepseek-ai/dsh-session'
 import Tools from '@deepseek-ai/dsh-tools'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
-import WebServer from '@deepseek-ai/dsh-host-webserver'
+import Projections from '@deepseek-ai/dsh-session-projection'
+import WorkingDirectory from '@deepseek-ai/dsh-working-directory'
+import FileSystem from '@deepseek-ai/dsh-fs-local'
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
@@ -34,17 +36,17 @@ it('keeps current native policies when loading cached external candidates and di
   ctx.baseUrl = import.meta.url
   await ctx.plugin(Loader)
   Object.assign(ctx.loader.builtins, { include: Include, skills: Skills, filesystem: FileSkills,
-    sessions: Sessions, tools: Tools, prompt: SystemPrompt, server: WebServer, typert: TypertRegistry, manager: ManagedSkills })
+    sessions: Sessions, tools: Tools, prompt: SystemPrompt, projections: Projections, directory: WorkingDirectory, fs: FileSystem,
+    typert: TypertRegistry, manager: ManagedSkills })
   const config = join(root, 'cordis.yml')
   await writeFile(config, `
 - name: 'cordis:skills'
 - name: 'cordis:sessions'
 - name: 'cordis:prompt'
 - name: 'cordis:tools'
-- name: 'cordis:server'
-  config:
-    port: 0
-    host: 127.0.0.1
+- name: 'cordis:projections'
+- name: 'cordis:fs'
+- name: 'cordis:directory'
 - name: 'cordis:filesystem'
   config:
     watch: false

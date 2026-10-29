@@ -1,7 +1,9 @@
-/** Incremental, host-only projection of successful connector discoveries. */
+/** Host-only recovery of successful native and PTC connector discoveries from Session events. */
 import type { Context } from '@deepseek-ai/cordis'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
+import type { ProjectionHandle } from '@deepseek-ai/dsh-session-projection'
 import type {} from '@deepseek-ai/dsh-session-projection'
+import type {} from '@deepseek-ai/dsh-tool-executor-ptc/types'
 import { z } from 'zod'
 
 export const DISCOVER_CONNECTOR_TOOLS = 'connector_search_tools'
@@ -35,8 +37,8 @@ function fold(state: SelectionState, event: SessionEvent): SelectionState {
     result = { isError: event.data.message.isError === true, meta: event.data.meta }
   } else if (event.type === 'tool/ptc-dispatch') {
     name = event.data.name
-    result = event.data
     if (name !== DISCOVER_CONNECTOR_TOOLS && !isProductTool(name)) return state
+    result = event.data
   } else return state
   const next = { ...state, calls }
   if (result.isError) return next
@@ -60,7 +62,7 @@ function fold(state: SelectionState, event: SessionEvent): SelectionState {
 }
 
 /** Register the fold before Agents are created or resumed; no client view or extra storage is needed. */
-export function registerConnectorSelection(ctx: Context): void {
-  ctx.sessionProjections.register({ key: 'productConnectorTools', stateVersion: 1, stateSchema,
+export function registerConnectorSelection(ctx: Context): Promise<ProjectionHandle<SelectionState>> {
+  return ctx.sessionProjections.register({ key: 'productConnectorTools', stateVersion: 2, stateSchema,
     init: () => ({ pins: [], calls: [], failure: null }), apply: fold })
 }

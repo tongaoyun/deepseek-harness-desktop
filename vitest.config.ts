@@ -193,7 +193,17 @@ const liveshareRemoteBuild = fileURLToPath(new URL('./packages/experimental/live
 const generatedRemoteAliases = existsSync(liveshareRemoteBuild) ? {} : {
   '@deepseek-ai/dsh-experimental-liveshare/remote': fileURLToPath(new URL('./packages/experimental/liveshare/tests/generated-remote-stub.ts', import.meta.url)),
 }
-const testingAliases = { ...claudeCodeTestingAliases, ...generatedRemoteAliases }
+// Imported product plugins own a standalone compiler and are bundled before Client compilation.
+// Tests resolve their entries to sources without changing that package compiler boundary.
+const productTestingAliases = ['experts', 'skills'].flatMap(group =>
+  ['client', 'remote', 'index'].map(entry => ({
+    find: new RegExp(`^@deepseek-harness/product-${group}${entry === 'index' ? '' : '/' + entry}$`),
+    replacement: fileURLToPath(new URL(`./packages/deepseek-harness-product/${group}/src/${entry}.ts`, import.meta.url)),
+  })))
+const testingAliases = [
+  ...Object.entries({ ...claudeCodeTestingAliases, ...generatedRemoteAliases }).map(([find, replacement]) => ({ find, replacement })),
+  ...productTestingAliases,
+]
 
 export default defineConfig({
   plugins: [pathsPlugin(), standardDecoratorPlugin()],

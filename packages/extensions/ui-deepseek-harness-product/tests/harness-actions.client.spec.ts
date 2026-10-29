@@ -3,6 +3,8 @@ import type { DraftInitializationOptions, DraftInitializationResult, DraftRefere
 import { afterEach, expect, it, vi } from 'vitest'
 import { createHarnessActions } from '../src/client/harness-actions.ts'
 import { SessionId } from '@deepseek-ai/dsh-session/types'
+import { productErrorMessage } from '../src/client/product-errors.ts'
+import { zh, en } from '../src/locales.ts'
 import { RemoteError } from '@deepseek-ai/dsh-client-test-runtime'
 
 afterEach(() => vi.unstubAllGlobals())
@@ -15,8 +17,11 @@ function fixture(opening: Promise<void> = Promise.resolve()) {
   const refreshSkills = vi.fn()
   let active = 'original'
   let count = 0
-  const capabilities = { connectorIds: [] as string[], requiredConnectorIds: [] as string[],
-    knowledgeBaseIds: [] as string[], requiredKnowledgeBaseIds: [], knowledgeBaseRefs: [] }
+  const capabilities = { basePresetId: 'standard', knowledgeBaseIds: [] as string[] }
+  const preparation = (kind = 'CURRENT_SESSION', presetId = 'prepared', ids = capabilities.knowledgeBaseIds) => ({
+    kind, presetId, capabilities: { ...capabilities, knowledgeBaseIds: [...ids] },
+    dependencyChecks: ids.map(reference => ({ kind: 'KNOWLEDGE_BASE', reference, status: 'READY' })),
+  })
   const drafts = new Map([['original', '  unfinished draft  ']])
   const selectedPresets = new Map([['original', 'standard']])
   const references = new Map<string, readonly DraftReference[]>()
@@ -54,6 +59,7 @@ function fixture(opening: Promise<void> = Promise.resolve()) {
   > => ({ ok: true, value: await pickDirectory() }))
   const setDraft = vi.fn((id: string, value: string) => { drafts.set(id, value); references.set(id, []) })
   const input = (id: string) => ({
+    get draftSnapshot() { return { text: drafts.get(id) ?? '', references: references.get(id) ?? [] } },
     state: { getSnapshot: () => ({ draft: drafts.get(id) ?? '',
       occurrences: (references.get(id) ?? []).map((reference, index) => ({ ...reference, occurrenceId: index + 1 })) }) },
     setDraft: (value: string) => { setDraft(id, value) }, focus: vi.fn(),
@@ -73,7 +79,7 @@ function fixture(opening: Promise<void> = Promise.resolve()) {
     }): Promise<unknown> => {
     if (method.endsWith('.read')) return structuredClone(capabilities)
     if (request.knowledgeBaseIds) capabilities.knowledgeBaseIds = request.knowledgeBaseIds
-    return { kind: 'CURRENT_SESSION', presetId: 'prepared', capabilities }
+    return preparation()
   })
   vi.stubGlobal('dshDesktop', { extensions: {
     invoke: async (...args: Parameters<typeof invoke>) => ({ ok: true, result: args[1] === 'auth.getSession'
@@ -96,7 +102,8 @@ function fixture(opening: Promise<void> = Promise.resolve()) {
     layout: { selectPanel, beginNavigation: () => new AbortController().signal },
     uiWorkspace: { openSession: (id: string) => { active = id }, pickDirectory },
   })
-  return { actions: createHarnessActions(ctx), capabilities, drafts, selectedPresets, references, setDraft, requestDraftInitialization,
+  return { actions: createHarnessActions(ctx), preparation, capabilities, drafts, selectedPresets, references, setDraft,
+    requestDraftInitialization,
     select, list, retain, using, selectPanel, create, invoke, workspaceItems, initializeDefault, createWorkspace, pickDirectory, pickNative,
     active: () => active, switchTo: (id: string) => { drafts.set(id, 'other draft'); active = id },
     sessionChanged: (employeeId: string) => { for (const listener of listeners) listener({ type: 'session.changed', payload: { authenticated: true, employeeId } }) },
@@ -106,7 +113,6 @@ function fixture(opening: Promise<void> = Promise.resolve()) {
 it('restores a started task in place without changing its pinned composition, draft, or navigation', async () => {
   const f = fixture()
   f.selectedPresets.set('original', 'product-task-pinned')
-  f.capabilities.connectorIds = ['erp']
   f.capabilities.knowledgeBaseIds = ['orders-kb']
   const reply = Promise.withResolvers<unknown>()
   f.invoke.mockImplementationOnce(() => reply.promise)
@@ -114,7 +120,7 @@ it('restores a started task in place without changing its pinned composition, dr
   await vi.waitFor(() => { expect(f.invoke).toHaveBeenCalledOnce() })
   f.switchTo('other')
   f.drafts.set('original', 'latest draft')
-  reply.resolve({ kind: 'NEW_SESSION', presetId: 'product-task-pinned', capabilities: f.capabilities })
+  reply.resolve(f.preparation('NEW_SESSION', 'product-task-pinned'))
   await operation
   expect(f.invoke).toHaveBeenCalledExactlyOnceWith('product', 'tasks.capabilities.prepare', { sessionId: 'original' }, expect.any(String))
   expect(f.create).not.toHaveBeenCalled()
@@ -122,7 +128,6 @@ it('restores a started task in place without changing its pinned composition, dr
   expect(f.requestDraftInitialization).not.toHaveBeenCalled()
   expect(f.active()).toBe('other')
   expect(f.drafts.get('original')).toBe('latest draft')
-  expect(f.capabilities.connectorIds).toEqual(['erp'])
 })
 
 it('rejects a retry response for a different snapshot without replacing the task', async () => {
@@ -165,7 +170,7 @@ it('keeps the task and draft when knowledge preparation fails', async () => {
 it('preserves the current task when preparation returns a non-string session kind', async () => {
   const f = fixture()
   f.invoke.mockResolvedValueOnce({ kind: ['CURRENT_SESSION'], presetId: 'prepared', capabilities: f.capabilities })
-  await expect(f.actions.setKnowledgeSelection(['policy'])).rejects.toThrow('Invalid task preparation response')
+  await expect(f.actions.setKnowledgeSelection(['policy'])).rejects.toMatchObject({ code: 'CAPABILITY_RESPONSE_INVALID' })
   expect(f.create).not.toHaveBeenCalled()
   expect(f.select).not.toHaveBeenCalled()
   expect(f.requestDraftInitialization).not.toHaveBeenCalled()
@@ -307,7 +312,7 @@ it('reuses the native default-workspace initialization and its cancellation sign
   const f = fixture()
   f.workspaceItems.length = 0
   f.initializeDefault.mockResolvedValueOnce({ workspaceId: 'native-default', sessionIds: [] })
-  f.invoke.mockResolvedValueOnce({ kind: 'NEW_SESSION', presetId: 'prepared' })
+  f.invoke.mockResolvedValueOnce(f.preparation('NEW_SESSION', 'prepared', ['policy']))
   await f.actions.setKnowledgeSelection(['policy'])
   expect(f.initializeDefault).toHaveBeenCalledExactlyOnceWith(f.retain.mock.calls[0]?.[1].signal)
   expect(f.pickDirectory).not.toHaveBeenCalled()
@@ -322,7 +327,7 @@ it.each(['identity', 'teardown'] as const)('does not open a picker after %s canc
   const initialization = Promise.withResolvers<undefined>()
   f.workspaceItems.length = 0
   f.initializeDefault.mockImplementationOnce(() => initialization.promise)
-  f.invoke.mockResolvedValueOnce({ kind: 'NEW_SESSION', presetId: 'prepared' })
+  f.invoke.mockResolvedValueOnce(f.preparation('NEW_SESSION', 'prepared', ['policy']))
   const result = f.actions.setKnowledgeSelection(['policy']).catch((error: unknown) => error)
   await vi.waitFor(() => { expect(f.initializeDefault).toHaveBeenCalledOnce() })
   let disposed: Promise<void> | undefined
@@ -345,7 +350,7 @@ it.each(['identity', 'teardown'] as const)('does not register a late directory c
   const selection = Promise.withResolvers<string | null>()
   f.workspaceItems.length = 0
   f.pickDirectory.mockImplementationOnce(() => selection.promise)
-  f.invoke.mockResolvedValueOnce({ kind: 'NEW_SESSION', presetId: 'prepared' })
+  f.invoke.mockResolvedValueOnce(f.preparation('NEW_SESSION', 'prepared', ['policy']))
   const result = f.actions.setKnowledgeSelection(['policy']).catch((error: unknown) => error)
   await vi.waitFor(() => { expect(f.pickDirectory).toHaveBeenCalledOnce() })
   let disposed: Promise<void> | undefined
@@ -366,7 +371,7 @@ it.each(['identity', 'teardown'] as const)('does not register a late directory c
 it.each(['identity', 'teardown'] as const)('cancels the native directory chooser on %s', async (kind) => {
   const f = fixture()
   f.workspaceItems.length = 0
-  f.invoke.mockResolvedValueOnce({ kind: 'NEW_SESSION', presetId: 'prepared' })
+  f.invoke.mockResolvedValueOnce(f.preparation('NEW_SESSION', 'prepared', ['policy']))
   f.pickNative.mockImplementationOnce(signal => new Promise((resolve) => {
     signal?.addEventListener('abort', () => { resolve({ ok: false,
       error: new RemoteError('gateway/cancelled', 'directory picker was aborted', {}),
@@ -391,12 +396,58 @@ it.each(['identity', 'teardown'] as const)('cancels the native directory chooser
 it('preserves native directory-picker errors without registering a workspace or creating a task', async () => {
   const f = fixture()
   f.workspaceItems.length = 0
-  f.invoke.mockResolvedValueOnce({ kind: 'NEW_SESSION', presetId: 'prepared' })
+  f.invoke.mockResolvedValueOnce(f.preparation('NEW_SESSION', 'prepared', ['policy']))
   const error = new RemoteError('gateway/internal', 'chooser unavailable', {}, { cause: new Error('native backend') })
   f.pickNative.mockResolvedValueOnce({ ok: false, error })
   await expect(f.actions.setKnowledgeSelection(['policy'])).rejects.toBe(error)
   expect(f.createWorkspace).not.toHaveBeenCalled()
   expect(f.create).not.toHaveBeenCalled()
   expect(f.drafts.get('original')).toBe('  unfinished draft  ')
+  await f.dispose()
+})
+
+it.each([
+  { kind: 'CURRENT_SESSION', presetId: 'prepared' },
+  { kind: 'CURRENT_SESSION', presetId: 'prepared', capabilities: { knowledgeBaseIds: [42] }, dependencyChecks: [] },
+  { kind: 'CURRENT_SESSION', presetId: 'prepared', capabilities: { knowledgeBaseIds: ['policy'] }, dependencyChecks: [] },
+  { kind: 'CURRENT_SESSION', presetId: 'prepared', capabilities: { basePresetId: 'standard', knowledgeBaseIds: ['policy'] },
+    dependencyChecks: [{ kind: 'KNOWLEDGE_BASE', reference: 'policy', status: 'UNAUTHORIZED' }] },
+  { kind: 'CURRENT_SESSION', presetId: 'prepared', capabilities: { basePresetId: 'standard', knowledgeBaseIds: ['other'] },
+    dependencyChecks: [{ kind: 'KNOWLEDGE_BASE', reference: 'other', status: 'READY' }] },
+])('rejects incomplete task preparation before native Session changes (%j)', async (response) => {
+  const f = fixture()
+  f.invoke.mockResolvedValueOnce(response)
+  await expect(f.actions.setKnowledgeSelection(['policy'])).rejects.toMatchObject({ code: 'CAPABILITY_RESPONSE_INVALID' })
+  expect(f.create).not.toHaveBeenCalled()
+  expect(f.select).not.toHaveBeenCalled()
+  expect(f.requestDraftInitialization).not.toHaveBeenCalled()
+  expect(f.drafts.get('original')).toBe('  unfinished draft  ')
+  expect(f.active()).toBe('original')
+  expect(f.release).toHaveBeenCalledOnce()
+  await f.dispose()
+})
+
+it.each([
+  { knowledgeBaseIds: [42] },
+  { knowledgeBaseIds: ['policy', 'policy'] },
+  { knowledgeBaseIds: [], basePresetId: {} },
+  { knowledgeBaseIds: [], unavailable: { code: 'error' } },
+])('rejects malformed task selection rather than presenting it as typed data (%j)', async (response) => {
+  const f = fixture()
+  f.invoke.mockResolvedValueOnce(response)
+  await expect(f.actions.readMode()).rejects.toMatchObject({ code: 'CAPABILITY_RESPONSE_INVALID' })
+  expect(f.create).not.toHaveBeenCalled()
+  expect(f.select).not.toHaveBeenCalled()
+  await f.dispose()
+})
+
+it('shows a localized task response failure while retaining the native task and draft', async () => {
+  const f = fixture()
+  f.invoke.mockResolvedValueOnce({ kind: 'CURRENT_SESSION', presetId: 'prepared' })
+  const error: unknown = await f.actions.setKnowledgeSelection(['policy']).catch((reason: unknown) => reason)
+  expect({ zh: productErrorMessage(error, key => zh[key], 'taskSelectionFailed'),
+    en: productErrorMessage(error, key => en[key], 'taskSelectionFailed'),
+    task: f.active(), draft: f.drafts.get('original'),
+    created: f.create.mock.calls.length, selected: f.select.mock.calls.length }).toMatchSnapshot()
   await f.dispose()
 })

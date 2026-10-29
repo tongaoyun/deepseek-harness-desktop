@@ -42,13 +42,15 @@ describe('company native content', () => {
     const data = { [`experts/operations/${name}.md`]: document, [`skills/${name}/SKILL.md`]: document }
     expect(companyContentRelease(release(data)).files).toEqual(data)
   })
-  it('uses native YAML semantics for expert metadata and binds the name to the file', () => {
+  it('uses native YAML semantics and preserves expert display names independently of their file ids', () => {
     const document = (header: string) => Buffer.from(`---\n${header}\n---\nUse the configured tools.`).toString('base64')
     const quoted = { 'experts/operations/orders.md': document('name: orders # stable id\ndescription: "查询订单"') }
     expect(companyContentRelease(release(quoted)).files).toEqual(quoted)
+    const displayName = { 'experts/operations/orders.md': document('name: 订单专家\ndescription: Orders') }
+    expect(companyContentRelease(release(displayName)).files).toEqual(displayName)
     expect(() => companyContentRelease(release({
-      'experts/operations/orders.md': document('name: other\ndescription: Orders'),
-    }))).toThrow('公司专家必须包含与文件名一致')
+      'experts/operations/orders.md': document('name: [invalid]\ndescription: Orders'),
+    }))).toThrow('公司专家必须包含非空单行字符串名称和简介')
     expect(() => companyContentRelease(release({
       'experts/operations/orders.md': document('name: orders\ndescription: [broken'),
     }))).toThrow('公司专家 YAML 格式无效')

@@ -14,8 +14,8 @@ import { isAgentPresetEntry, isCordisGroupEntry, loadCordisYaml } from './cordis
 import { PRODUCT_PACKAGE_POLICY, type ProductPackagePolicy } from './product-package-policy.ts'
 import { collectRuntimeLocalSourceSpecifiers, collectRuntimeSourceSpecifiers } from './verify-client-packages.ts'
 
-const PROFILE_SOURCE = 'packages/boot/app-boot/src/profile.ts'
-const ON_DEMAND_SOURCE = 'packages/boot/app-boot/src/official-bundle-packages.ts'
+const PROFILE_SOURCE = 'packages/util/official-bundles/src/bundles.ts'
+const ON_DEMAND_SOURCE = PROFILE_SOURCE
 const PROFILES = ['acp', 'web', 'headless', 'sdk', 'sdk-minimal']
 const PICKER_SOURCE = 'packages/host/directory-picker-auto/src/index.ts'
 const ASSEMBLY_GLOB = ['packages/*/*/assembly.json', 'apps/*/assembly.json']

@@ -39,7 +39,7 @@ function developerTools(enabled = true): { configForms: { developerTools: { enab
 const ROSTER_ONE = {
   ok: true as const,
   value: {
-    presets: [{ id: 'standard', isDefault: true }],
+    presets: [{ selectable: true, defaultable: true, id: 'standard', isDefault: true }],
   },
 }
 
@@ -48,8 +48,8 @@ const ROSTER_AUTHORED = {
   ok: true as const,
   value: {
     presets: [
-      { id: 'standard', isDefault: true },
-      { id: 'mine', isDefault: false },
+      { selectable: true, defaultable: true, id: 'standard', isDefault: true },
+      { selectable: true, defaultable: true, id: 'mine', isDefault: false },
     ],
   },
 }
@@ -59,8 +59,8 @@ const ROSTER_MOVED = {
   ok: true as const,
   value: {
     presets: [
-      { id: 'standard', isDefault: false },
-      { id: 'minimal', isDefault: true },
+      { selectable: true, defaultable: true, id: 'standard', isDefault: false },
+      { selectable: true, defaultable: true, id: 'minimal', isDefault: true },
     ],
   },
 }
@@ -432,7 +432,7 @@ describe('ui-agent-preset apply', () => {
     await section.load()
     await section.makeDefault('standard')
     expect(section.hooks.agentPresetSection.getSnapshot().rows)
-      .toEqual([{ id: 'standard', isDefault: true }])
+      .toEqual([{ selectable: true, defaultable: true, id: 'standard', isDefault: true }])
     await section.view('standard')
     expect(section.hooks.agentPresetSection.getSnapshot().view)
       .toEqual({ id: 'standard', title: 'standard', content: '# standard\n[]\n' })
@@ -618,7 +618,7 @@ describe('ui-agent-preset apply', () => {
       expect(seat.hooks.agentPresetSeat.getSnapshot().current).toBe('standard')
       state.byId.s1.projectionValues.agentPreset = 'minimal'
       sessions.notify()
-      expect(seat.hooks.agentPresetSeat.getSnapshot().current).toBe('minimal')
+      await vi.waitFor(() => { expect(seat.hooks.agentPresetSeat.getSnapshot().current).toBe('minimal') })
       expect(calls.filter(call => call.startsWith('select:'))).toEqual([])
 
       const selecting = seat.select('standard')
@@ -704,7 +704,7 @@ describe('ui-agent-preset apply', () => {
       .inject as unknown as () => AgentPresetSectionInjected)()
     await section.load()
     expect(section.hooks.agentPresetSection.getSnapshot().rows)
-      .toEqual([{ id: 'standard', isDefault: true }])
+      .toEqual([{ selectable: true, defaultable: true, id: 'standard', isDefault: true }])
 
     await section.makeDefault('minimal')
 
@@ -809,8 +809,8 @@ describe('ui-agent-preset apply', () => {
     .flatMap(preset => ['unbound', 'inactive bound'].map(source => ({ preset, source }))))(
     'clears the staged $preset choice on Coding Tools off without changing the Session ($source)', async ({ preset, source }) => {
       const { ctx, slots, calls, setDeveloperTools } = await bench({ presets: [
-        ...ROSTER_MOVED.value.presets, { id: 'ptc', isDefault: false },
-        { id: 'cordis', isDefault: false }, { id: 'mine', name: 'Mine', isDefault: false },
+        ...ROSTER_MOVED.value.presets, { selectable: true, defaultable: true, id: 'ptc', isDefault: false },
+        { selectable: true, defaultable: true, id: 'cordis', isDefault: false }, { selectable: true, defaultable: true, id: 'mine', name: 'Mine', isDefault: false },
       ] })
       declareRoot(slots)
       declareConversation(slots)
@@ -898,7 +898,7 @@ describe('ui-agent-preset apply', () => {
 
   it.each(['ptc', 'minimal'])('resets an accepted disabled %s default once, without restoring it on enable', async (id) => {
     const b = await bench({ developerToolsEnabled: false, presets: [
-      { id: 'standard', isDefault: false }, { id, isDefault: true },
+      { selectable: true, defaultable: true, id: 'standard', isDefault: false }, { selectable: true, defaultable: true, id, isDefault: true },
     ] })
     b.ctx.provide('sessions', sessionsDouble(b.ctx, { byId: {} }) as never)
     declareRoot(b.slots)
@@ -915,8 +915,8 @@ describe('ui-agent-preset apply', () => {
   it.each([['standard', undefined], ['cordis', undefined], ['mine', 'Mine'], ['ptc', 'Custom PTC'], ['minimal', 'Custom Minimal']] as const)(
     'keeps the allowed default %s (%s) when Coding Tools are disabled', async (id, name) => {
       const b = await bench({ developerToolsEnabled: false, presets: [
-        { id, isDefault: true, ...(name === undefined ? {} : { name }) },
-        ...(id === 'standard' ? [] : [{ id: 'standard', isDefault: false }]),
+        { selectable: true, defaultable: true, id, isDefault: true, ...(name === undefined ? {} : { name }) },
+        ...(id === 'standard' ? [] : [{ selectable: true, defaultable: true, id: 'standard', isDefault: false }]),
       ] })
       b.ctx.provide('sessions', sessionsDouble(b.ctx, { byId: {} }) as never)
       declareRoot(b.slots)
@@ -976,8 +976,8 @@ describe('ui-agent-preset apply', () => {
   it.each([['cordis', true], ['mine', true], ['ptc', true], ['minimal', true], ['ptc', false], ['minimal', false]] as const)(
     'resets only the default while the current task uses %s (blank: %s)', async (preset, blank) => {
       const b = await bench({ presets: [
-        { id: 'standard', isDefault: false }, { id: 'minimal', isDefault: true }, { id: 'ptc', isDefault: false },
-        { id: 'cordis', isDefault: false }, { id: 'mine', name: 'Mine', isDefault: false },
+        { selectable: true, defaultable: true, id: 'standard', isDefault: false }, { selectable: true, defaultable: true, id: 'minimal', isDefault: true }, { selectable: true, defaultable: true, id: 'ptc', isDefault: false },
+        { selectable: true, defaultable: true, id: 'cordis', isDefault: false }, { selectable: true, defaultable: true, id: 'mine', name: 'Mine', isDefault: false },
       ] })
       declareRoot(b.slots)
       declareConversation(b.slots)
@@ -1196,9 +1196,9 @@ describe('ui-agent-preset apply', () => {
 
 /** Official presets plus one custom preset whose id and name must not leave the Client. */
 const ANALYTICS_ROSTER: AgentPresetRow[] = [
-  { id: 'standard', isDefault: true }, { id: 'cordis', isDefault: false },
-  { id: 'ptc', isDefault: false }, { id: 'minimal', isDefault: false },
-  { id: 'private-id', name: 'Private name', isDefault: false },
+  { selectable: true, defaultable: true, id: 'standard', isDefault: true }, { selectable: true, defaultable: true, id: 'cordis', isDefault: false },
+  { selectable: true, defaultable: true, id: 'ptc', isDefault: false }, { selectable: true, defaultable: true, id: 'minimal', isDefault: false },
+  { selectable: true, defaultable: true, id: 'private-id', name: 'Private name', isDefault: false },
 ]
 
 /**
@@ -1375,7 +1375,7 @@ describe('AgentPresetSeatController reconciliation', () => {
     requests[1]!.outcome.resolve(refuseLatest ? refusal : { ok: true, value: 'cordis' })
     await expect(settings).resolves.toBe(refuseLatest ? 'selection refused' : undefined)
     expect(controller.store.getSnapshot()).toMatchObject({
-      current: refuseLatest ? 'standard' : 'cordis', busy: false,
+      current: refuseLatest ? (refuseFirst ? 'standard' : 'minimal') : 'cordis', busy: false,
       error: refuseLatest ? { preset: { id: 'cordis' }, reason: 'selection refused' } : null,
     })
   })
@@ -1498,7 +1498,7 @@ describe('AgentPresetSeatController reconciliation', () => {
       ...developerTools(),
       remote: { agentPresets: {
         select,
-        list: () => Promise.resolve({ ok: true, value: { presets: [{ id: 'standard', isDefault: true }] } }),
+        list: () => Promise.resolve({ ok: true, value: { presets: [{ selectable: true, defaultable: true, id: 'standard', isDefault: true }] } }),
       } },
     } as never, () => ({ id: SessionId('uncomposed'), blank: true }))
 
@@ -1556,7 +1556,12 @@ describe('AgentPresetSeatController apply outcomes', () => {
 
   function seatOver(current: () => SessionView | undefined, reply?: (preset: string) => Promise<SelectReply>) {
     const select = vi.fn((_id: SessionId, preset: string) => reply?.(preset) ?? Promise.resolve({ ok: true as const, value: preset }))
-    const controller = new AgentPresetSeatController({ ...developerTools(), remote: { agentPresets: { select } } } as never, current)
+    const controller = new AgentPresetSeatController({ ...developerTools(), remote: { agentPresets: {
+      select,
+      list: async () => ({ ok: true, value: { presets: ['standard', 'minimal'].map(id => ({
+        id, isDefault: id === 'standard', selectable: true, defaultable: true,
+      })) } }),
+    } } } as never, current)
     return { controller, select }
   }
 

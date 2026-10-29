@@ -618,6 +618,13 @@ async resolve(id?: string): Promise<AgentPreset>
  */
 @Remote('read') readDocument(agentPreset: string): Promise<AgentPresetDocument>
 
+/** Derive a detached composition without parsing its display document.
+ * @param baseId Registered composition to extend.
+ * @param definition Metadata and additional plugin rows; additional rows resolve in the base context.
+ * @returns Detached definition retaining the base Loader resolution context and, when hidden, selectable origin.
+ */
+derive(baseId: string, definition: PresetDefinition): PresetDefinition
+
 /** Bind an unpublished Agent to the current preset revision.
  * @param ctx Agent context from its setup callback.
  * @param id Requested preset, or the default.
@@ -1166,6 +1173,25 @@ Source: [`packages/core/agent-loop/src/index.ts`](../../packages/core/agent-loop
 <a id="agent-preset-events"></a>
 
 ### `agent-preset/*` events
+
+<a id="agent-presetresolve-selection--waterfall"></a>
+
+#### `agent-preset/resolve-selection` — waterfall
+
+Resolve a requested composition before selection commits.
+
+```ts cordis-catalog
+/** Resolve a requested composition before selection commits.
+ * @mode waterfall
+ * @param agent Target Agent whose blank-turn guard remains owned by the registry.
+ * @param requested Requested Preset identity.
+ * @param next Delegate to subsequent resolvers.
+ * @returns Registered composition to select; rejection leaves the selection unchanged.
+ */
+'agent-preset/resolve-selection'(agent: Agent, requested: string, next: () => Promise<string>): Promise<string>
+```
+
+Source: [`packages/preset/agent-preset-registry/src/index.ts`](../../packages/preset/agent-preset-registry/src/index.ts)
 
 <a id="agent-presetselected--emit"></a>
 

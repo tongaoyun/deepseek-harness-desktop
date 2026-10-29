@@ -17,6 +17,7 @@ export interface CustomEditorProps {
   readonly revision: number
   readonly divisions: readonly string[]
   readonly remote: AgencyCatalogRemote
+  readonly signal?: AbortSignal
   readonly t: TranslateNS<'agency'>
   readonly locale: 'zh' | 'en'
   readonly onSaved: (catalog: CatalogSnapshot) => void
@@ -55,10 +56,10 @@ export function CustomExpertEditor(props: CustomEditorProps): React.ReactElement
     saving.current = true;
     setBusy(true);
     setReview(null);
-    void loadEditorReview(props.remote, draft.slug, props.locale)
-      .then(setReview)
-      .catch((cause: unknown) => setError(cause instanceof Error ? cause.message : String(cause)))
-      .finally(() => { saving.current = false; setBusy(false); });
+    void loadEditorReview(props.remote, draft.slug, props.locale, props.signal)
+      .then((value) => { props.signal?.throwIfAborted(); setReview(value) })
+      .catch((cause: unknown) => { if (!props.signal?.aborted) setError(cause instanceof Error ? cause.message : String(cause)) })
+      .finally(() => { saving.current = false; if (!props.signal?.aborted) setBusy(false); });
   };
   const continueReview = (useLatest: boolean): void => {
     if (review === null) return;
@@ -79,16 +80,19 @@ export function CustomExpertEditor(props: CustomEditorProps): React.ReactElement
     saving.current = true
     setBusy(true)
     setError(null)
-    void props.remote.saveCustomExpert(parsed.data, enabled, revision).then(result => {
+    props.signal?.throwIfAborted()
+    void props.remote.saveCustomExpert(parsed.data, enabled, revision, props.signal).then(result => {
+      props.signal?.throwIfAborted()
       if (!result.ok) throw result.error
       props.onSaved(result.value)
     }).catch((cause: unknown) => {
+      if (props.signal?.aborted) return
       const message = cause instanceof Error ? cause.message : String(cause)
       const conflict = isExpertConflict(cause);
       setNeedsReview(conflict);
       if (conflict) setReview(null);
       setError(conflict ? props.t("custom.conflict") : message);
-    }).finally(() => { saving.current = false; setBusy(false) })
+    }).finally(() => { saving.current = false; if (!props.signal?.aborted) setBusy(false) })
   }
   const label = (text: string, control: React.ReactNode, required = false): React.ReactElement => h('label', { className: 'aag-custom-field' },
     h('span', null, text, required ? h('small', null, props.t('custom.required')) : null), control)

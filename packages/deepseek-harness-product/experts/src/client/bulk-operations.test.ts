@@ -4,7 +4,7 @@ import { commitBulk } from './bulk-operations.ts'
 import type { ExpertSummary } from '../expert-contract.ts'
 const expert = (slug: string, conflict = false): ExpertSummary => ({ slug, name: slug, nameEn: slug, description: '', descriptionEn: '', emoji: '🧩', division: 'engineering', divisionZh: '', custom: true, conflict })
 it('merges confirmed targets into current state and skips removed or conflicted experts', async () => {
-  const setEnabled = vi.fn((enabled: string[], revision: number) => Promise.resolve({
+  const setEnabled = vi.fn((enabled: string[], revision: number, _signal?: AbortSignal) => Promise.resolve({
     ok: true as const, value: { enabled, revision: revision + 1 },
   }))
   const remote = { getCatalog: vi.fn(() => Promise.resolve({ ok: true as const, value: { experts: [expert('target'), expert('conflict', true), expert('other')], enabled: ['other'], revision: 9 } })), setEnabled }

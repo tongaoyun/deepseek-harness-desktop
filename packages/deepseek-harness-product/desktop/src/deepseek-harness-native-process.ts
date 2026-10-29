@@ -6,13 +6,7 @@ import { createInterface } from 'node:readline'
 import { existsSync } from 'node:fs'
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
-
-interface NativeResponse {
-  readonly protocol?: string
-  readonly request_id?: string
-  readonly result?: unknown
-  readonly error?: { readonly code?: string; readonly message?: string } | null
-}
+import { nativeHealth, nativeResponse, NATIVE_PROTOCOL, type NativeMethod, type NativeResponse } from './native-health.ts'
 
 interface Pending {
   readonly resolve: (value: unknown) => void
@@ -66,10 +60,10 @@ export class DeepSeekHarnessNativeProcess {
     })
     const lines = createInterface({ input: child.stdout })
     lines.on('line', (line) => {
-      try { this.receive(JSON.parse(line) as NativeResponse) }
+      try { this.receive(JSON.parse(line)) }
       catch (error) { this.failAll(error instanceof Error ? error : new Error(String(error))) }
     })
-    try { await this.invoke('health') }
+    try { nativeHealth(await this.invoke('health')) }
     catch (error) {
       try { await this.stop() }
       catch (cleanupError) { throw new AggregateError([error, cleanupError], 'Native startup and cleanup failed') }
@@ -77,7 +71,7 @@ export class DeepSeekHarnessNativeProcess {
     }
   }
 
-  invoke(method: string, payload?: unknown, signal?: AbortSignal): Promise<unknown> {
+  invoke(method: NativeMethod, signal?: AbortSignal): Promise<unknown> {
     if (signal?.aborted) return Promise.reject(signal.reason instanceof Error ? signal.reason : new Error('Native request aborted'))
     if (this.stopping !== undefined) return Promise.reject(new Error('deepseek-harness-native stopping'))
     const child = this.child
@@ -94,7 +88,7 @@ export class DeepSeekHarnessNativeProcess {
         this.failRequest(requestId, signal.reason instanceof Error ? signal.reason : new Error('Native request aborted'))
       })
       try {
-        child.stdin.write(`${JSON.stringify({ protocol: 'deepseek-harness.native.v1', request_id: requestId, method, payload })}\n`, (error) => {
+        child.stdin.write(`${JSON.stringify({ protocol: NATIVE_PROTOCOL, request_id: requestId, method })}\n`, (error) => {
           if (error != null) this.failRequest(requestId, error)
         })
       } catch (error) { this.failRequest(requestId, error instanceof Error ? error : new Error(String(error))) }
@@ -127,15 +121,20 @@ export class DeepSeekHarnessNativeProcess {
     return stopping
   }
 
-  private receive(response: NativeResponse): void {
-    if (response.protocol !== 'deepseek-harness.native.v1' || typeof response.request_id !== 'string') return
-    const pending = this.pending.get(response.request_id)
+  private receive(response: unknown): void {
+    let envelope: NativeResponse
+    try { envelope = nativeResponse(response) }
+    catch (error) {
+      this.failAll(error instanceof Error ? error : new Error(String(error)))
+      return
+    }
+    const pending = this.pending.get(envelope.request_id)
     if (pending === undefined) return
     clearTimeout(pending.timer)
     pending.removeAbort()
-    this.pending.delete(response.request_id)
-    if (response.error != null) pending.reject(new Error(response.error.message ?? response.error.code ?? 'native sidecar error'))
-    else pending.resolve(response.result)
+    this.pending.delete(envelope.request_id)
+    if (envelope.error != null) pending.reject(new Error(envelope.error.message ?? envelope.error.code ?? 'native sidecar error'))
+    else pending.resolve(envelope.result)
   }
 
   private failRequest(requestId: string, error: Error): void {

@@ -37,6 +37,14 @@ it('accepts the nullable error fields of a successful COLA response', async () =
   finally { client.close() }
 })
 
+it('normalizes streamed file transport failures like JSON requests', async () => {
+  const cause = new TypeError('socket closed')
+  const client = new DeepSeekHarnessApiClient({ baseUrl: 'https://product.test', getSessionToken: () => undefined,
+    fetch: async () => { throw cause } })
+  try { await expect(client.requestBytes('/api/v1/file', 1024)).rejects.toMatchObject({ code: 'PRODUCT_NETWORK_UNAVAILABLE', cause }) }
+  finally { client.close() }
+})
+
 it.each(['json', 'file'] as const)('preserves server retry policy and dependency diagnostics for %s requests', async (transport) => {
   for (const [status, retryable] of [[503, false], [400, true], [429, false]] as const) {
     const client = new DeepSeekHarnessApiClient({ baseUrl: 'https://product.test', getSessionToken: () => undefined,

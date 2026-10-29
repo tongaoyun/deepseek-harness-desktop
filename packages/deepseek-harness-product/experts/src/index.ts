@@ -594,7 +594,7 @@ export function apply(ctx: Context, config: Config): void {
     return pending
   }
   const companyRoot = async (sessionId?: string, signal?: AbortSignal): Promise<string | undefined> => companySource
-    ? (await (sessionId === undefined ? companySource.read() : companySource.forSession(sessionId, signal))).expertsRoot
+    ? (await (sessionId === undefined ? companySource.read(signal) : companySource.forSession(sessionId, signal))).expertsRoot
     : process.env.DSH_COMPANY_EXPERTS_ROOT
   const summaries = new Map<string, Array<Expert & { custom: false }>>()
   const readRootSummaries = async (root: string | undefined) => {
@@ -620,9 +620,9 @@ export function apply(ctx: Context, config: Config): void {
     mutate: (ops, revision) => ctx.settings.mutate(settingsNamespace, ops, revision),
   }
   const divisions = [...new Set([...DEFAULT_DIVISIONS, ...config.divisions])]
-  const library = createExpertLibrary(() => readSummaries(), store, divisions, activeLocale)
-  const catalogForSession = (sessionId?: string, signal?: AbortSignal) => sessionId === undefined ? library.catalog()
-    : createExpertLibrary(() => readSummaries(sessionId, signal), store, divisions, activeLocale).catalog()
+  const library = createExpertLibrary(signal => readSummaries(undefined, signal), store, divisions, activeLocale)
+  const catalogForSession = (sessionId?: string, signal?: AbortSignal) => sessionId === undefined ? library.catalog(signal)
+    : createExpertLibrary(() => readSummaries(sessionId, signal), store, divisions, activeLocale).catalog(signal)
   const teamLibrary = createTeamLibrary(catalogForSession, store, activeLocale, async (sessionId, signal) => {
     const root = await companyRoot(sessionId, signal)
     return root ? (await companyCatalog(root)).teams.teams : []
@@ -637,17 +637,10 @@ export function apply(ctx: Context, config: Config): void {
     if (blocksNativeDelegation(ctx.get('agentTeams'), exec.agent, exec.name)) return { kind: 'deny', reason: teamTx('专家团成员不能继续创建子代理或扩展专家团，请将缺口交给主理人。') }
     return next()
   })
-  const retryCleanup = (): void => {
-    // 库内部判断是否有旧记录，默认源与卸载回退均为空操作。
-    void library.cleanupDeleted().catch((error: unknown) =>
-      console.warn('[agency-agents] 旧删除记录清理失败，下次写入时重试：', error),
-    )
-  }
   if (!isLiveValue((config as { enabled?: unknown }).enabled)) {
     throw new Error(formatHost(activeLocale(), 'error.settingsLiveUnsupported'))
   }
   settingsSource = () => readAgencySettings(config, activeLocale())
-  retryCleanup()
   ctx.effect(() => ctx.settings.configure({ auto: false }), 'agency-agents: settings presentation')
   // 闭包读取当前 source，避免 settings 服务替换时继续持有旧快照。
   const personaSource: AgencyPersonaSource = {

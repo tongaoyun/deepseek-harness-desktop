@@ -44,9 +44,8 @@ it('limits product documents to update status and a native confirmation action',
   const api = electron.contextBridge.exposeInMainWorld.mock.calls.find(([name]) => name === 'dshDesktop')?.[1] as DshDesktopProductApi
   await api.updates.status()
   await api.updates.open()
-  await api.updates.check()
   expect(electron.ipcRenderer.invoke.mock.calls).toEqual([
-    [DESKTOP_IPC.updatesStatus], [DESKTOP_IPC.updatesOpen], [DESKTOP_IPC.updatesCheck],
+    [DESKTOP_IPC.updatesStatus], [DESKTOP_IPC.updatesOpen],
   ])
   expect(api).not.toHaveProperty('plugins')
   expect(api).not.toHaveProperty('backend')
@@ -59,6 +58,29 @@ it('limits product documents to update status and a native confirmation action',
   expect(listener).toHaveBeenCalledWith({ visible: false })
   dispose()
   expect(electron.ipcRenderer.off).toHaveBeenCalledWith(DESKTOP_IPC.updatesPresentation, handler)
+})
+
+it('carries correlated extension calls and disposes namespace-filtered events', async () => {
+  vi.stubGlobal('location', new URL('dsh-app://app/'))
+  electron.ipcRenderer.invoke.mockResolvedValueOnce({ ok: true, result: { id: 'document' } })
+  await import('../src/preload-app.ts')
+  const api = electron.contextBridge.exposeInMainWorld.mock.calls.find(([name]) => name === 'dshDesktop')?.[1] as DshDesktopProductApi
+  await expect(api.extensions.invoke('product', 'knowledge.read', { id: 'document' }, 'request-1234'))
+    .resolves.toEqual({ ok: true, result: { id: 'document' } })
+  expect(electron.ipcRenderer.invoke).toHaveBeenCalledWith(DESKTOP_IPC.extensionInvoke,
+    'product', 'knowledge.read', { id: 'document' }, 'request-1234')
+  api.extensions.cancel('product', 'request-1234')
+  expect(electron.ipcRenderer.send).toHaveBeenCalledWith(DESKTOP_IPC.extensionCancel, 'product', 'request-1234')
+  const listener = vi.fn()
+  const dispose = api.extensions.subscribe('product', listener)
+  const handle = electron.ipcRenderer.on.mock.calls.find(([channel]) => channel === DESKTOP_IPC.extensionEvent)![1] as
+    (event: unknown, namespace: string, payload: unknown) => void
+  handle({}, 'other', { revision: 1 })
+  expect(listener).not.toHaveBeenCalled()
+  handle({}, 'product', { revision: 2 })
+  expect(listener).toHaveBeenCalledExactlyOnceWith({ revision: 2 })
+  dispose()
+  expect(electron.ipcRenderer.off).toHaveBeenCalledWith(DESKTOP_IPC.extensionEvent, handle)
 })
 
 it.each(['dsh-app://shell/plugin-manager.html', 'dsh-app://other/index.html', 'https://shell/startup.html', 'http://example.com/'])('exposes only the carrier marker to %s', async (url) => {

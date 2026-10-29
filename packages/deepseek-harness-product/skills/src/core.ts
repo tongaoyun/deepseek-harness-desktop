@@ -3182,13 +3182,11 @@ export async function getProviderSkill(candidate: ProviderCandidate, options: Sc
     const summary = entryOf(locator.entryName, entry.kind, entry.docPath, doc);
     if (!summary.loadable) return undefined;
     if (hostAcceptableSkillName(summary.declaredName) !== candidate.name) return undefined;
+    const policy = effectiveSkillPolicy(await readManagerState(), root, { ...entry, ...summary });
     return {
       name: candidate.name,
       description: summary.description,
-      invocation: {
-        modelInvocable: candidate.invocation.modelInvocable && summary.invocationPolicyValid && summary.modelInvocable,
-        userInvocable: candidate.invocation.userInvocable && summary.invocationPolicyValid && summary.userInvocable,
-      },
+      invocation: { modelInvocable: policy.modelInvocable, userInvocable: policy.userInvocable },
       provider: candidate.provider,
       source: candidate.source,
       resourceBase: candidate.resourceBase,

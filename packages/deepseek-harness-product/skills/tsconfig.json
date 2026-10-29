@@ -1,36 +1,11 @@
 {
-  "compilerOptions": {
-    "target": "ES2022",
-    "jsx": "react-jsx",
-    "module": "NodeNext",
-    "moduleResolution": "NodeNext",
-    "lib": [
-      "ES2022",
-      "DOM",
-      "DOM.Iterable"
-    ],
-    "strict": true,
-    "erasableSyntaxOnly": true,
-    "noEmit": true,
-    "verbatimModuleSyntax": true,
-    "skipLibCheck": true,
-    "types": [
-      "node",
-      "react"
-    ],
-    "allowImportingTsExtensions": true,
-    "noUnusedLocals": true,
-    "noUnusedParameters": true,
-    "paths": {
-      "@deepseek-harness/product-skills/types": [
-        "./src/types.ts"
-      ]
+  "files": [],
+  "references": [
+    {
+      "path": "./tsconfig.host.json"
+    },
+    {
+      "path": "./tsconfig.client.json"
     }
-  },
-  "include": [
-    "src/**/*.ts",
-    "test/types/**/*.ts",
-    "tests/**/*.ts",
-    "tests/**/*.tsx"
   ]
 }

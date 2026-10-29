@@ -16,6 +16,7 @@ import { DesktopUpdatePreparationError } from '../src/update-error.ts'
 import { writeCrashReport } from '../src/crash-report.ts'
 import { runOperationReportJob } from '../src/operation-report-job.ts'
 
+
 type InvokeEvent = { sender?: unknown; senderFrame: { url: string } }
 type InvokeHandler = (event: InvokeEvent, ...args: unknown[]) => unknown
 
@@ -52,6 +53,7 @@ const harness = await vi.hoisted(async () => {
   let prepared = deferred()
   let hostStarted = deferred()
   let navigated = deferred()
+  let navigationGate: ReturnType<typeof deferred> | undefined
   let dialogShown = deferred()
   let quitCompleted = deferred()
   let policyBlocked = deferred()
@@ -62,6 +64,9 @@ const harness = await vi.hoisted(async () => {
   // The native Platform view owns persistent browser storage; Desktop startup tests replace it so
   // each quit can control when that cleanup settles.
   const platformDispose = vi.fn(() => platformDisposeDeferred?.promise ?? Promise.resolve())
+  const extensionClose = vi.fn(async () => {})
+  let extensionEnabled = true
+  const extensionInvoke = vi.fn<(method: unknown, payload?: unknown, signal?: AbortSignal) => Promise<unknown>>(async () => ({}))
   let platformCloseDeferred: ReturnType<typeof deferred> | undefined
   const platformCloseAndWait = vi.fn(() => platformCloseDeferred?.promise ?? Promise.resolve())
   const readLoginShell = async (base: NodeJS.ProcessEnv) => ({
@@ -123,7 +128,10 @@ const harness = await vi.hoisted(async () => {
     async loadURL(url: string) {
       this.urls.push(url)
       this.webContents.mainFrame.url = url
-      if (url === 'dsh-app://app/') navigated.resolve()
+      if (url === 'dsh-app://app/') {
+        navigated.resolve()
+        await navigationGate?.promise
+      }
     }
     static getAllWindows() { return windows.filter(window => !window.destroyed) }
     setMenu() {}
@@ -153,11 +161,16 @@ const harness = await vi.hoisted(async () => {
     readonly updateTasks = vi.fn(async (_action: 'inspect' | 'lock' | 'unlock') => false)
     readonly inspectQuit = vi.fn(async () => ({ activeTasks: false, scheduledTasks: false }))
     url = 'http://127.0.0.1:3080/?token=test'
+    injections: readonly unknown[] = []
+    readonly readIndexInjections = vi.fn(async () => this.injections)
     fetch = vi.fn(async () => Response.json({ hasApiKey: true, writable: true, localePreference: null }))
     readonly ready = deferred()
     readonly exited = deferred()
     readonly stopping = deferred()
-    readonly start = vi.fn(() => { hostStarted.resolve(); return this.ready.promise.then(() => ({ url: this.url, injections: [] })) })
+    readonly start = vi.fn(() => {
+      hostStarted.resolve()
+      return this.ready.promise.then(() => ({ url: this.url, injections: this.injections }))
+    })
     readonly stop = vi.fn(() => {
       this.stopping.resolve()
       this.ready.reject(new Error('child stopped'))
@@ -182,6 +195,7 @@ const harness = await vi.hoisted(async () => {
     getAppPath: (): string => 'desktop-test-app',
     setAppLogsPath: vi.fn(),
     getPath: vi.fn<(name: string) => string>(),
+    dock: { setIcon: vi.fn<(path: string) => void>() },
     setAboutPanelOptions: vi.fn<(options: Electron.AboutPanelOptionsOptions) => void>(),
     requestSingleInstanceLock: () => true,
     setAsDefaultProtocolClient: vi.fn(),
@@ -216,7 +230,9 @@ const harness = await vi.hoisted(async () => {
     windows, views, hosts, handlers, app, FakeWindow, FakeView, FakeHost, powerMonitor, nativeTheme, analytics,
     trays, FakeTray, backgroundNotice, shellDialog,
     menu, popup, socketHeaders: vi.fn(), loginShell, readLoginShell, updateCheck, updateDownload, updateInstall,
-    platformDispose,
+    platformDispose, extensionClose, extensionInvoke,
+    disableExtension: () => { extensionEnabled = false },
+    get extensionEnabled() { return extensionEnabled },
     platformCloseAndWait,
 
     get analyticsEnabled() { return analyticsEnabled },
@@ -253,12 +269,15 @@ const harness = await vi.hoisted(async () => {
     set embeddedPolicy(value: unknown) { embeddedPolicy = value },
     nextNavigation() { navigated = deferred(); return navigated.promise },
     nextHostStart() { hostStarted = deferred(); return hostStarted.promise },
+    deferNavigation() { navigationGate = deferred(); return navigationGate },
     deferPlatformDispose() { platformDisposeDeferred = deferred(); return platformDisposeDeferred },
     deferPlatformClose() { platformCloseDeferred = deferred(); return platformCloseDeferred },
     get pluginsEnabled() { return pluginsEnabled },
     set pluginsEnabled(value: boolean) { pluginsEnabled = value },
     set closeWindowsOnQuit(value: boolean) { closeWindowsOnQuit = value },
     reset() {
+      navigationGate?.resolve()
+      navigationGate = undefined
       accountListener = undefined
       windows.length = 0
       views.length = 0; hosts.length = 0; handlers.clear(); app.removeAllListeners()
@@ -267,6 +286,7 @@ const harness = await vi.hoisted(async () => {
       shellDialog.isOpen = false
       powerMonitor.removeAllListeners()
       app.isPackaged = true
+      app.dock.setIcon.mockReset()
       windowFailure = undefined
       pluginsEnabled = false
       closeWindowsOnQuit = false
@@ -285,6 +305,9 @@ const harness = await vi.hoisted(async () => {
       fileDrag.install.mockReset()
       fileDrag.dispose.mockReset().mockResolvedValue(undefined)
       platformDisposeDeferred = undefined
+      extensionClose.mockReset().mockResolvedValue()
+      extensionEnabled = true
+      extensionInvoke.mockReset().mockResolvedValue({})
       platformCloseDeferred = undefined
     },
   }
@@ -323,6 +346,11 @@ vi.mock('electron', () => ({
   powerMonitor: harness.powerMonitor,
   Tray: harness.FakeTray,
   nativeImage: { createFromPath: (path: string) => ({ path }) },
+  safeStorage: {
+    isEncryptionAvailable: () => false,
+    encryptString: vi.fn(),
+    decryptString: vi.fn(),
+  },
 }))
 vi.mock('../src/background-notice.ts', () => ({ DesktopBackgroundNotice: class {
   constructor(options: { markerPath: string }) { harness.backgroundNotice.markerPath = options.markerPath }
@@ -343,6 +371,12 @@ vi.mock('../src/login-shell-environment.ts', async importOriginal => ({
   readDesktopLoginShellEnvironment: harness.loginShell,
 }))
 vi.mock('../src/runtime-tree.ts', () => ({ readDesktopRuntime: () => ({ release: { version: '1.0.0' } }) }))
+vi.mock('../src/extensions.ts', () => ({ loadDesktopExtension: async () => harness.extensionEnabled ? ({
+  namespace: 'fixture', ownsStartupDocument: false,
+  prepareHost: async () => ({ DEEPSEEK_API_KEY: 'fixture-key', DEEPSEEK_BASE_URL: 'https://models.example.test/v1' }),
+  invoke: harness.extensionInvoke, invokeRuntime: async () => ({}),
+  subscribe: () => () => {}, focus: async () => {}, close: harness.extensionClose,
+}) : undefined }))
 vi.mock('../src/paths.ts', () => ({ resolveDesktopPaths: () => ({ profile: 'desktop-test-profile' }) }))
 vi.mock('../src/project-manager.ts', () => ({
   DesktopProjectManager: class {
@@ -531,6 +565,11 @@ describe('desktop main startup', () => {
     } finally {
       vi.mocked(web.serveWebDocument).mockReset()
     }
+  })
+
+  it('registers the DeepSeekHarness deep-link protocol for packaged launches', async () => {
+    await readyForUpdate()
+    expect(harness.app.setAsDefaultProtocolClient).toHaveBeenCalledExactlyOnceWith('dsh')
   })
 
   it('serves shell dialogs and their assets without forwarding them to the Host', async () => {
@@ -1185,6 +1224,92 @@ describe('desktop main startup', () => {
     expect(harness.windows[0]!.urls).toEqual(['dsh-app://app/'])
   })
 
+  it('boots the official profile without product extension credentials', async () => {
+    harness.disableExtension()
+    const host = await readyForUpdate()
+    expect(host.environment).not.toHaveProperty('DEEPSEEK_API_KEY', 'fixture-key')
+    await expect(Promise.resolve(invoke(DESKTOP_IPC.boot))).resolves.toEqual({
+      injections: [], streamBaseUrl: 'http://127.0.0.1:3080',
+    })
+    await expect(Promise.resolve(invoke(DESKTOP_IPC.extensionInvoke, 'app', 'fixture', 'read', {}, 'request-1234')))
+      .rejects.toThrow('Unknown Desktop extension')
+  })
+
+  it('routes product calls only from the owning application frame and cancels their request', async () => {
+    await readyForUpdate()
+    await expect(Promise.resolve(invoke(DESKTOP_IPC.extensionInvoke, 'shell', 'fixture', 'read', {}, 'request-1234')))
+      .rejects.toThrow('unowned renderer')
+    await expect(Promise.resolve(invoke(DESKTOP_IPC.extensionInvoke, 'app', 'other', 'read', {}, 'request-1234')))
+      .rejects.toThrow('Unknown Desktop extension')
+    expect(harness.extensionInvoke).not.toHaveBeenCalled()
+    const admitted = Promise.withResolvers<AbortSignal>()
+    harness.extensionInvoke.mockImplementationOnce(async (_method, _payload, signal) => {
+      if (signal === undefined) throw new Error('Expected request cancellation')
+      admitted.resolve(signal)
+      return new Promise((_resolve, reject) => {
+        signal.addEventListener('abort', () => { reject(Object.assign(new Error('private detail'), {
+          publicFailure: { code: 'FIXTURE_CANCELLED', message: 'Request cancelled', retryable: true, resources: [] },
+        })) }, { once: true })
+      })
+    })
+    const pending = Promise.resolve(invoke(DESKTOP_IPC.extensionInvoke, 'app', 'fixture', 'read', { id: 'document' }, 'request-1234'))
+    const signal = await admitted.promise
+    await expect(Promise.resolve(invoke(DESKTOP_IPC.extensionInvoke, 'app', 'fixture', 'read', {}, 'request-1234')))
+      .rejects.toThrow('duplicate request id')
+    const cancel = harness.ipcOn.mock.calls.find(([channel]) => channel === DESKTOP_IPC.extensionCancel)![1]
+    const window = harness.windows[0]!
+    cancel({ sender: window.webContents, senderFrame: window.webContents.mainFrame }, 'fixture', 'request-1234')
+    expect(signal.aborted).toBe(true)
+    await expect(pending).resolves.toEqual({ ok: false, failure: {
+      code: 'FIXTURE_CANCELLED', message: 'Request cancelled', retryable: true, resources: [],
+    } })
+    harness.extensionInvoke.mockResolvedValueOnce({ id: 'document' })
+    await expect(Promise.resolve(invoke(DESKTOP_IPC.extensionInvoke, 'app', 'fixture', 'read', {}, 'request-1234')))
+      .resolves.toEqual({ ok: true, result: { id: 'document' } })
+  })
+
+  it('reads current Host injections on reload after the module graph changes', async () => {
+    await import('../src/main.ts')
+    await harness.preparing.promise
+    harness.prepared.resolve()
+    await harness.hostStarted.promise
+    const host = harness.hosts[0]!
+    host.injections = [{ type: 'script', src: 'plugins/client.js?rev=before-rebuild' }]
+    host.ready.resolve()
+    await expect(Promise.resolve(invoke(DESKTOP_IPC.boot))).resolves.toEqual({
+      injections: host.injections, streamBaseUrl: 'http://127.0.0.1:3080',
+    })
+
+    host.injections = [{ type: 'script', src: 'plugins/client.js?rev=after-rebuild' }]
+    await expect(Promise.resolve(invoke(DESKTOP_IPC.boot))).resolves.toEqual({
+      injections: host.injections, streamBaseUrl: 'http://127.0.0.1:3080',
+    })
+    expect(host.readIndexInjections).toHaveBeenCalledTimes(2)
+  })
+
+  it('rejects a failed current injection read instead of using startup metadata', async () => {
+    const host = await readyForUpdate()
+    host.readIndexInjections.mockRejectedValueOnce(new Error('module graph unavailable'))
+    await expect(Promise.resolve(invoke(DESKTOP_IPC.boot))).rejects.toThrow('module graph unavailable')
+    expect(host.readIndexInjections).toHaveBeenCalledOnce()
+  })
+
+  it('rejects boot injections when their Host stops before the read completes', async () => {
+    const host = await readyForUpdate()
+    let resolve!: (injections: readonly unknown[]) => void
+    host.readIndexInjections.mockImplementationOnce(() => new Promise((accept) => { resolve = accept }))
+    const boot = Promise.resolve(invoke(DESKTOP_IPC.boot))
+    const rejected = expect(boot).rejects.toThrow('Desktop Host changed during renderer boot')
+    await vi.waitFor(() => { expect(host.readIndexInjections).toHaveBeenCalledOnce() })
+    harness.dialog.showMessageBox.mockResolvedValueOnce({ response: 0 })
+    const preparing = harness.prepareUpdate()
+    await host.stopping.promise
+    resolve([{ type: 'script', src: 'plugins/client.js?rev=retired-host' }])
+    await rejected
+    host.exited.resolve()
+    await expect(preparing).resolves.toBe(true)
+  })
+
   it('retains macOS native editing actions on right-click and only copy for selected read-only text', async () => {
     vi.spyOn(process, 'platform', 'get').mockReturnValue('darwin')
     await import('../src/main.ts')
@@ -1240,6 +1365,22 @@ describe('desktop main startup', () => {
     await harness.navigated.promise
     return harness.hosts[0]!
   }
+
+  it('lets initial Renderer boot wait for the Host without waiting for its own navigation', async () => {
+    const navigation = harness.deferNavigation()
+    await import('../src/main.ts')
+    await harness.preparing.promise
+    await harness.navigated.promise
+    harness.prepared.resolve()
+    await harness.hostStarted.promise
+    harness.hosts[0]!.ready.resolve()
+
+    await expect(Promise.resolve(invoke(DESKTOP_IPC.boot))).resolves.toMatchObject({
+      injections: [], streamBaseUrl: 'http://127.0.0.1:3080',
+    })
+    navigation.resolve()
+    await vi.advanceTimersByTimeAsync(0)
+  })
 
   it.each([
     ['win32', ['--updated'], true],
@@ -1593,6 +1734,37 @@ describe('desktop main startup', () => {
     expect(console.error).toHaveBeenCalledWith(failure)
     host.exited.resolve()
     await expect(preparing).resolves.toBe(true)
+  })
+
+  it('keeps repeated quit requests waiting for the owned Host to stop', async () => {
+    const host = await readyForUpdate()
+    let nativeQuitCompleted = false
+    void harness.quitCompleted.promise.then(() => { nativeQuitCompleted = true })
+    harness.app.quit()
+    await host.stopping.promise
+    harness.app.quit()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(nativeQuitCompleted).toBe(false)
+    expect(host.stop).toHaveBeenCalledOnce()
+    host.exited.resolve()
+    await harness.quitCompleted.promise
+    expect(harness.app.quit).toHaveBeenCalledTimes(3)
+  })
+
+  it('joins Host cleanup after a desktop extension fails to close', async () => {
+    const host = await readyForUpdate()
+    const failure = new Error('extension cleanup failed')
+    harness.extensionClose.mockRejectedValueOnce(failure)
+    let nativeQuitCompleted = false
+    void harness.quitCompleted.promise.then(() => { nativeQuitCompleted = true })
+    harness.app.quit()
+    await host.stopping.promise
+    await vi.advanceTimersByTimeAsync(0)
+    expect(console.error).toHaveBeenCalledWith(failure)
+    expect(nativeQuitCompleted).toBe(false)
+    host.exited.resolve()
+    await harness.quitCompleted.promise
+    expect(harness.app.quit).toHaveBeenCalledTimes(2)
   })
 
   it('finishes quitting when the native window is destroyed before its closed listener clears ownership', async () => {
@@ -2526,9 +2698,13 @@ describe('desktop main startup', () => {
       primaryRuntime: join('desktop-test-resources', 'runtime', 'primary-runtime'),
       profile: 'desktop-test-profile',
     })
+    expect(harness.hosts[0]!.environment).toMatchObject({
+      DEEPSEEK_API_KEY: 'fixture-key',
+      DEEPSEEK_BASE_URL: 'https://models.example.test/v1',
+      DSH_CLIENT_VERSION: '1.2.3',
+      DSH_TEST_LOGIN_SHELL: 'login',
+    })
     expect(harness.hosts[0]!.environment).not.toBe(process.env)
-    expect(harness.hosts[0]!.environment?.DSH_CLIENT_VERSION).toBe('1.2.3')
-    expect(harness.hosts[0]!.environment?.DSH_TEST_LOGIN_SHELL).toBe('login')
     expect(console.warn).toHaveBeenCalledWith('desktop login shell: /account/shell failed (timeout)')
     expect(harness.analytics).toHaveBeenCalledExactlyOnceWith({ eventName: 'desktop_app_launch', timestamp: Date.now(), attributes: {} })
     expect(harness.hosts[0]!.start).toHaveBeenCalledTimes(1)

@@ -1,8 +1,9 @@
 import { SettingsConflictError, type SettingsDescriptor, type SettingsPathOp } from '@deepseek-ai/dsh-settings'
 import { expertSettingsNamespace } from './settings.ts'
 
-type SettingsSchema = (value: any) => unknown
-type SettingsValidate = (value: any) => void
+/** Schemastery schemas accept a schema-specific input shape and return its normalized value. */
+type SettingsSchema = Schemastery<never, unknown> | ((value: never) => unknown)
+type SettingsValidate = (value: never) => void
 
 interface Registration {
   schema: SettingsSchema
@@ -34,6 +35,8 @@ export class MemorySettings {
     }
   }
 
+  register(ns: string, schema: Schemastery<never, unknown>, options?: { base?: unknown; validate?: SettingsValidate }): void
+  register(ns: string, schema: (value: unknown) => unknown, options?: { base?: unknown; validate?: SettingsValidate }): void
   register(ns: string, schema: SettingsSchema, options?: { base?: unknown; validate?: SettingsValidate }): void {
     const registration: Registration = {
       schema,
@@ -92,8 +95,8 @@ export class MemorySettings {
   }
 
   private resolve(registration: Registration, section: Record<string, unknown> | undefined): unknown {
-    const value = registration.schema({ ...(registration.base as object ?? {}), ...(section ?? {}) })
-    registration.validate?.(value)
+    const value = Reflect.apply(registration.schema, undefined, [{ ...(registration.base as object ?? {}), ...(section ?? {}) }])
+    if (registration.validate !== undefined) Reflect.apply(registration.validate, undefined, [value])
     return value
   }
 }

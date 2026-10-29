@@ -837,9 +837,11 @@ describe('Typert contract preparation', () => {
   it('reuses contracts from the validated consumer build', () => {
     const subject = withPnpmEntrypoint(() => gatesForMode('ci-consumers'))
 
-    // Lint and duplication run in their own lane; the consumers graph only
-    // keeps the readers that consume built artifacts.
+    // Lint runs in its own lane; the consumers graph only keeps the readers
+    // that consume built artifacts. Clone detection is a manual audit because
+    // the repository intentionally contains fixture and platform variants.
     expect(subject.map(item => item.id)).not.toContain('lint-and-duplication')
+    expect(withPnpmEntrypoint(() => gatesForMode('ci-lint-contracts-ready')).map(item => item.id)).toEqual(['lint'])
     expect(withPnpmEntrypoint(() => gatesForMode('ci-lint-contracts-ready'))).toContainEqual(expect.objectContaining({
       id: 'lint',
     }))

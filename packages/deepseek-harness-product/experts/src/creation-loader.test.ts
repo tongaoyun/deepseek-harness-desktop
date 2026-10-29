@@ -7,9 +7,11 @@ import { afterEach, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
 import Include from '@deepseek-ai/cordis-plugin-include'
+import SessionProjections from '@deepseek-ai/dsh-session-projection'
 import AgentRegistry, { type Agent } from '@deepseek-ai/dsh-agent'
 import { Session, SessionId } from '@deepseek-ai/dsh-session'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
+import * as NativeExecutor from '@deepseek-ai/dsh-tool-executor-native'
 import ToolRuntime from '@deepseek-ai/dsh-tools'
 import { ToolCallId } from '@deepseek-ai/dsh-llm'
 import UserQuestions from '@deepseek-ai/dsh-user-questions'
@@ -32,12 +34,13 @@ const expert = { name: 'Reviewer', description: 'Review changes', division: 'eng
 async function boot() {
   directory = await mkdtemp(join(tmpdir(), 'harness-creation-'))
   const config = join(directory, 'cordis.yml')
-  await writeFile(config, ['agents', 'prompt', 'tools', 'questions', 'creation'].map(name => `- name: 'cordis:${name}'`).join('\n') + '\n')
+  await writeFile(config, ['projections', 'agents', 'prompt', 'tools', 'executor', 'questions', 'creation'].map(name => `- name: 'cordis:${name}'`).join('\n') + '\n')
   const context = new Context()
   ctx = context
   await context.plugin(Loader)
   Object.assign(context.loader.builtins, {
-    include: Include, agents: AgentRegistry, prompt: SystemPrompt, tools: ToolRuntime, questions: UserQuestions,
+    include: Include, projections: SessionProjections, agents: AgentRegistry, prompt: SystemPrompt,
+    tools: ToolRuntime, questions: UserQuestions,
   })
   const drafts = createDrafts()
   const saved: AgencySettings = { enabled: [] }
@@ -46,13 +49,14 @@ async function boot() {
     read: () => saved, revision: () => 0,
     mutate: () => Promise.reject(new Error('Creation tools must never persist content')),
   }, ['engineering'], () => 'en')
-  context.loader.builtins.creation = { name: 'creation-test', inject: ['tools', 'userQuestions'], apply: (scope: Context) =>{  registerCreationTools(scope, drafts, library, () => 'en') } }
+  context.loader.builtins.executor = NativeExecutor
+  context.loader.builtins.creation = { name: 'creation-test', inject: ['tools', 'userQuestions'], apply: (scope: Context) => { registerCreationTools(scope, drafts, library, () => 'en') } }
   await context.loader.create({ name: 'cordis:include', config: { path: pathToFileURL(config).href } })
   await context.loader.await()
   for (const entry of context.loader.entries()) await entry.fiber?.await()
   const scope = context.plugin(() => {})
   const id = SessionId('creation-session')
-  const owner: Agent = { id, options: {}, session: Session.create(id), ctx: scope.ctx, status: 'idle',
+  const owner: Agent = { id, options: {}, model: { current: () => undefined, select() {} }, session: Session.create(id), ctx: scope.ctx, status: 'idle',
     inbox: {
       nextTurn: [], nextStep: [], clear() {}, append() {}, prepend() {},
       replace: () => false, remove: () => false, splice: () => [],
@@ -62,7 +66,11 @@ async function boot() {
   }
   await context.agents.register(owner)
   let call = 0
-  const run = (name: string, args: object, signal = new AbortController().signal) => context.tools.execute({ name, arguments: args, agent: owner, signal, callId: ToolCallId(`creation-${++call}`) })
+  const run = async (name: string, args: object, signal = new AbortController().signal) => {
+    const batch = await context.tools.execute({ calls: [{ type: 'tool-call', name, arguments: JSON.stringify(args), id: ToolCallId(`creation-${++call}`) }], agent: owner, signal })
+    const outcome = batch.results[0]
+    return outcome.result
+  }
   return { context, drafts, owner, saved, run }
 }
 it('keeps previews unsaved, requires native approval, and confirms only the reviewed proposal', async () => {

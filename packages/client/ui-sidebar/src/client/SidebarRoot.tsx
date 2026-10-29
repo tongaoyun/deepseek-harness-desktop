@@ -80,7 +80,7 @@ function PanelRow({ id, label, wide, usePanelInfo, selectPanel, trackEntryClick,
         }}
       >
         <span className={css.panelGlyph} aria-hidden="true">
-          {renderSlot('sidebar.panellist', { size: wide ? 16 : 18, active }, { only: id })}
+          {renderSlot('sidebar.panellist', { size: wide ? 16 : 18, active, wide }, { only: id })}
         </span>
         {wide && (
           <span className={clsx(css.panelTitle, css.wide)}>
@@ -356,6 +356,9 @@ export function SidebarRoot({
 
       {panels.length > 0 && (
         <nav className={css.panelList} aria-label={t('panels.label')}>
+          <div className={css.panelHeadings}>
+            {renderSlot('sidebar.panelheading', { wide })}
+          </div>
           {panels.filter(({ id }) => id === FIXED_PANEL_ID || !unpinned.includes(id)).map(({ id, label }) => (
             <PanelRow
               key={id}

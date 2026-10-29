@@ -1,0 +1,12 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`shows a localized task response failure while retaining the native task and draft 1`] = `
+{
+  "created": 0,
+  "draft": "  unfinished draft  ",
+  "en": "Task configuration is incomplete or does not match your selection. The current task and draft are preserved. Refresh and retry. (CAPABILITY_RESPONSE_INVALID)",
+  "selected": 0,
+  "task": "original",
+  "zh": "任务配置校验未完成或与选择不一致，已保留当前任务和草稿。请刷新后重试。 (CAPABILITY_RESPONSE_INVALID)",
+}
+`;

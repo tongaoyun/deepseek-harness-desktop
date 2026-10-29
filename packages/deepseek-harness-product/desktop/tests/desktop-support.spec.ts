@@ -6,8 +6,8 @@ import { DesktopSupport } from '../src/desktop-support.ts'
 afterEach(() => vi.restoreAllMocks())
 const policy = { heartbeatIntervalMs: 300000, reportIntervalMs: 86400000 }
 function fixture(transport: typeof fetch) {
-  const native = vi.fn(async (method: string) => method === 'device-identity.get' ? { deviceId: 'private-installation-id' }
-    : { ready: true, capabilities: ['device-identity'] })
+  const native = vi.fn<(method: string) => Promise<unknown>>(async method => method === 'device-identity.get' ? { deviceId: 'private-installation-id' }
+    : { ready: true, protocol: 'deepseek-harness.native.v1', capabilities: ['device-identity'] })
   const support = new DesktopSupport({ policy, native, metadata: () => ({ desktopVersion: '0.2.1-alpha.2',
     platform: 'darwin', architecture: 'arm64', displayScalePercents: [200], encryptedStorage: true }) })
   const bridge = new DeepSeekHarnessProductBridge({ serverUrl: 'https://product.test', fetch: transport,
@@ -148,5 +148,36 @@ it('rejects malformed device receipts and retries rather than caching a successf
     expect(transport.mock.calls.map(call => requestUrl(call[0]))).toEqual([
       'https://product.test/api/v1/device-capabilities', 'https://product.test/api/v1/device-capabilities',
     ])
+  } finally { await f.close() }
+})
+
+it('clears an earlier presence failure after a successful heartbeat', async () => {
+  vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+  const transport = vi.fn<typeof fetch>(async () => Response.json({ success: true, data: { createdAt: '2026-10-13T00:00:00Z' } }))
+  const f = fixture(transport)
+  try {
+    await f.bridge.invoke('support.device.report')
+    transport.mockRejectedValueOnce(new Error('offline'))
+    await expect(f.bridge.invoke('support.device.report')).rejects.toThrow()
+    transport.mockResolvedValueOnce(new Response(null, { status: 204 }))
+    const state = await f.bridge.invoke('support.device.report')
+    expect(state).toMatchObject({ status: 'READY', capabilitiesReportedAt: '2026-10-13T00:00:00Z' })
+    expect(state).not.toHaveProperty('failureCode')
+  } finally { await f.close() }
+})
+
+it.each([
+  null,
+  { ready: true, protocol: 'deepseek-harness.native.v0', capabilities: ['device-identity'] },
+  { ready: true, protocol: 'deepseek-harness.native.v1', capabilities: ['filesystem'] },
+  { ready: true, protocol: 'deepseek-harness.native.v1', capabilities: ['device-identity', 'device-identity'] },
+])('does not report an unusable sidecar as ready: %j', async (health) => {
+  vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+  const transport = vi.fn<typeof fetch>()
+  const f = fixture(transport)
+  f.native.mockResolvedValueOnce({ deviceId: 'private-installation-id' }).mockResolvedValueOnce(health)
+  try {
+    await expect(f.bridge.invoke('support.device.report')).rejects.toMatchObject({ code: 'DEVICE_HEALTH_INVALID' })
+    expect(transport).not.toHaveBeenCalled()
   } finally { await f.close() }
 })

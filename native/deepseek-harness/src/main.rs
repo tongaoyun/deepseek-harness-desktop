@@ -40,7 +40,16 @@ fn data_root() -> Result<PathBuf, String> {
 fn device_identity(root: &Path) -> Result<Value, String> {
     let path = root.join("device").join("device-id");
     let id = match fs::read_to_string(&path) {
-        Ok(value) => value.trim().to_owned(),
+        Ok(value) => {
+            let value = value.trim().to_owned();
+            if value.is_empty()
+                || value.len() > 256
+                || value.chars().any(|character| character.is_control())
+            {
+                return Err("device identity file is invalid".to_owned());
+            }
+            value
+        }
         Err(error) if error.kind() == io::ErrorKind::NotFound => {
             fs::create_dir_all(path.parent().ok_or("invalid device path")?)
                 .map_err(|error| error.to_string())?;
@@ -227,6 +236,19 @@ mod tests {
             fs::read_to_string(root.join("device/device-id")).unwrap(),
             "existing-installation-id\n"
         );
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn device_identity_rejects_corrupt_existing_installations() {
+        let root = std::env::temp_dir().join(format!(
+            "deepseek-harness-invalid-identity-test-{}",
+            std::process::id()
+        ));
+        fs::create_dir_all(root.join("device")).unwrap();
+        fs::write(root.join("device/device-id"), "\n").unwrap();
+        let error = device_identity(&root).unwrap_err();
+        assert_eq!(error, "device identity file is invalid");
         fs::remove_dir_all(root).unwrap();
     }
 }

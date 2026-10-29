@@ -3,6 +3,7 @@ import { pathToFileURL } from 'node:url'
 import { beforeAll, describe, expect, it, vi } from 'vitest'
 import { localizeTeamTool } from './team-tool-locale.ts'
 import { createHostLocaleReader } from './i18n.ts'
+import * as NativeExecutor from '@deepseek-ai/dsh-tool-executor-native'
 import type { SettingsNamespace } from '@deepseek-ai/dsh-settings'
 
 // 可指定实际 DSH 的 package.json，直接运行安装目录中的服务，而非 mock 注册器。
@@ -116,6 +117,7 @@ describe('真实宿主工具注册与模型提示组装', () => {
     const ctx = new Context()
     const prompt = new SystemPrompt(ctx, { includeHarnessIdentity: false, includeRuntimeContext: false })
     const runtime = new ToolRuntime(ctx)
+    await ctx.plugin(NativeExecutor).await()
     let locale: 'zh' | 'en' = 'zh'
     const dispose = runtime.register(localizeTeamTool(defineTool({
       name: 'get_expert_team', description: '专家团只能在主会话中召唤。',

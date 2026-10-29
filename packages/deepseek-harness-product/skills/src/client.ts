@@ -1,5 +1,6 @@
 import * as React from "react";
-import type { Translate, SkillMethod, SkillInput, SkillOutput, ModalProps, SessionSnapshot, SectionProps, ViewProps, Filters, ClientContext, ManagerSnapshot, Detail, TrashItem } from './client-types.ts';
+import { bytesToBase64 } from '@deepseek-ai/dsh-util-crypto';
+import type { Translate, SkillMethod, SkillInput, SkillOutput, ModalProps, SectionProps, ViewProps, Filters, ClientContext, ManagerSnapshot, Detail, TrashItem } from './client-types.ts';
 import type { SkillView, RootView, SkillRoot, CodedError, ImportResult, Diagnostic } from './types.ts';
 type SearchSkill = Partial<SkillView> & {kindLabel?: string; statusLabel?: string; rootKey?: string; rootLabel?: string};
 type UploadFile = File & {_dssmPath?: string};
@@ -94,6 +95,7 @@ import { SkillBody } from "./skill-body.ts";
 
     Object.assign(DICT.zh, repositoryLocales.zh, destinationLocales.zh);
     Object.assign(DICT.en, repositoryLocales.en, destinationLocales.en);
+function createSkillsPage(localeService: ClientContext["locale"]) {
     var SourceSelect = createSourceSelect(react);
     var destinationKit = createDestinationKit({ react, SourceSelect, translateError });
     var DestinationPicker = destinationKit.DestinationPicker;
@@ -126,7 +128,7 @@ import { SkillBody } from "./skill-body.ts";
     }
     function isSkillEnabled(skill: Partial<SkillView>): boolean { if (skill.enabled !== undefined) return skill.enabled === true; return !!(skill.invocationPolicyValid && skill.modelInvocable && skill.userInvocable && skill.managerEnabled !== false); }
     function countKey(key: string, count: number) { return key + (Number(count) === 1 ? ".one" : ".other"); }
-    var localeService: ClientContext["locale"] | undefined;
+
     // getLocale().active 是宿主对 locale.preference 的最终有效解析，不读取网页/浏览器语言。
     function hostLocale() { return localeService?.getSnapshot().active; }
     function formatTrashTime(t: Translate, value: string) { return new Date(value).toLocaleString(hostLocale() || t("format.locale")); }
@@ -190,8 +192,7 @@ import { SkillBody } from "./skill-body.ts";
       if (lower.endsWith(".zip")) return size > MAX_UPLOAD_ARCHIVE_BYTES ? { error: { code: "error.upload.archiveTooLarge", params: { limit: MAX_UPLOAD_ARCHIVE_BYTES } } } : { kind: "zip", name: name, files: list, count: 1, size: size };
       return { error: { code: "select.file.invalid" } };
     }
-    function bytesToBase64(buffer: ArrayBuffer) { var bytes = new Uint8Array(buffer), binary = "", chunk = 0x8000; for (var i = 0; i < bytes.length; i += chunk) binary += String.fromCharCode(...bytes.subarray(i, Math.min(i + chunk, bytes.length))); return btoa(binary); }
-    function buildUploadPayload(selection: UploadSelection) { return Promise.all(selection.files.map(function (file) { return file.arrayBuffer().then(function (buffer) { return { path: uploadFilePath(file), data: bytesToBase64(buffer) }; }); })).then(function (entries) { return selection.kind === "zip" ? { name: selection.name, zip: entries[0].data } : { name: selection.name, entries: entries }; }); }
+    function buildUploadPayload(selection: UploadSelection) { return Promise.all(selection.files.map(function (file) { return file.arrayBuffer().then(function (buffer) { return { path: uploadFilePath(file), data: bytesToBase64(new Uint8Array(buffer)) }; }); })).then(function (entries) { return selection.kind === "zip" ? { name: selection.name, zip: entries[0].data } : { name: selection.name, entries: entries }; }); }
     function readDroppedEntry(entry: FileSystemEntry, prefix: string, output: UploadFile[]): Promise<void> { if (entry.isFile) return new Promise<void>(function (resolve, reject) { (entry as FileSystemFileEntry).file(function (file: UploadFile) { file._dssmPath = prefix + file.name; output.push(file); resolve(); }, reject); }); if (!entry.isDirectory) return Promise.resolve(); return new Promise<void>(function (resolve, reject) { var reader = (entry as FileSystemDirectoryEntry).createReader(), children: FileSystemEntry[] = []; function next() { reader.readEntries(function (batch) { if (!batch.length) { Promise.all(children.map(function (child) { return readDroppedEntry(child, prefix + entry.name + "/", output); })).then(function () { resolve(); }, reject); return; } children = children.concat(batch); next(); }, reject); } next(); }); }
     function droppedFiles(dataTransfer: DataTransfer) { var items = Array.from(dataTransfer && dataTransfer.items || []), entries = items.map(function (item) { return item.webkitGetAsEntry && item.webkitGetAsEntry(); }).filter((entry): entry is FileSystemEntry => !!entry); if (!entries.length) return Promise.resolve(Array.from(dataTransfer && dataTransfer.files || [])); var files: UploadFile[] = []; return Promise.all(entries.map(function (entry) { return readDroppedEntry(entry, "", files); })).then(function () { return files; }); }
     function SkillSwitch(props: {on: boolean; label: string; disabled?: boolean; onClick: () => void}) {
@@ -352,21 +353,9 @@ import { SkillBody } from "./skill-body.ts";
             }, props.children ? h("div", null, props.children) : undefined);
     }
 
-    function currentSessionId(snapshot?: SessionSnapshot) {
-      if (!snapshot) return undefined;
-      var byId = snapshot.byId || {};
-      var ids = Array.isArray(snapshot.ids) && snapshot.ids.length ? snapshot.ids : Object.keys(byId);
-      for (var i = 0; i < ids.length; i++) {
-        var row = byId[ids[i]];
-        if (row && row.retainedBy && row.retainedBy.mainView) return ids[i];
-      }
-      for (var id in byId) {
-        if (ids.indexOf(id) !== -1) continue;
-        if (byId[id] && byId[id].retainedBy && byId[id].retainedBy!.mainView) return id;
-      }
-    }
     function SkillManagerSection(props: SectionProps) {
-      var sessionId = props.useSessions ? props.useSessions(currentSessionId) : undefined;
+      const sessionId = props.useSessions(snapshot => Object.values(snapshot.byId)
+        .find(session => (session.retainedBy.mainView ?? 0) > 0)?.id);
       var scopes = react.useState("market"), filtersState = react.useState<Record<string, Filters>>({}), expandedState = react.useState<Record<string, boolean>>({});
       // 按会话重挂载请求和表单状态，旧会话的异步响应不能覆盖新会话页面。
       return h(SkillManagerView, Object.assign({}, props, { key: sessionId || "no-session", sessionId: sessionId, scope: scopes[0], setScope: scopes[1], savedFilters: filtersState[0], setSavedFilters: filtersState[1], expanded: expandedState[0], setExpanded: expandedState[1] }));
@@ -379,12 +368,21 @@ import { SkillBody } from "./skill-body.ts";
       var t = props.t;
       const sessionApi = react.useMemo(() => props.apiForSession(props.sessionId), [props.apiForSession, props.sessionId]);
       const callApi = props.api;
-      const useRepositoryUI = react.useMemo(() => createRepositoryUI({ react, Modal, Input, SourceSelect, destination: destinationKit, api: callApi, translateError, getLocale: hostLocale }), [callApi]);
+      const useRepositoryUI = react.useMemo(() => createRepositoryUI({ react, Modal, Input, Button: PrimitiveButton, SourceSelect, destination: destinationKit, api: callApi, translateError, getLocale: hostLocale }), [callApi]);
       var ss = react.useState<{loading: boolean; error: string | null; data: ManagerSnapshot | null}>({ loading: true, error: null, data: null }), snapshot = ss[0], setSnapshot = ss[1];
       var bs = react.useState(false), busy = bs[0], setBusy = bs[1];
-      var scope = props.scope, setScope = props.setScope;
+      var scope = props.scope;
+      function setScope(value: React.SetStateAction<string>) { setModal(null); props.setScope(value); }
       var expanded = props.expanded, setExpanded = props.setExpanded, savedFilters = props.savedFilters, setSavedFilters = props.setSavedFilters;
-      var ms = react.useState<ModalState>(null), modal = ms[0], setModal = ms[1];
+      var ms = react.useState<ModalState>(null), modal = ms[0];
+      function setModal(value: ModalState) {
+        if (value !== "detail" && readRequests.current.has("detail")) {
+          cancelRead("detail");
+          setBusy(false);
+          setDetail(null);
+        }
+        ms[1](value);
+      }
       var asState = react.useState(""), addSearch = asState[0], setAddSearch = asState[1];
       var aselState = react.useState<Record<string, boolean>>({}), addSelection = aselState[0], setAddSelection = aselState[1];
       var rs = react.useState<ResultMessage | null>(null), result = rs[0] && rs[0].scope === scope ? rs[0] : null;
@@ -397,7 +395,6 @@ import { SkillBody } from "./skill-body.ts";
       var wss = react.useState<SkillOutput<"listWorkspaces">["items"]>([]), workspaceRows = wss[0], setWorkspaceRows = wss[1];
       var wps = react.useState(""), selectedWorkspace = wps[0], setSelectedWorkspace = wps[1];
       var selectedWorkspaceRef = react.useRef("");
-      var workspaceListRequest = react.useRef(0);
       var wls = react.useState<{ loading: boolean; loaded: boolean; error: string | null }>({ loading: false, loaded: false, error: null }), workspaceList = wls[0], setWorkspaceList = wls[1];
       var wds = react.useState<Record<string, { loading: boolean; loaded: boolean; error: string | null; roots: RootView[] }>>({}), workspaceDetails = wds[0], setWorkspaceDetails = wds[1];
       var us = react.useState<UploadSelection | null>(null), upload = us[0], setUpload = us[1];
@@ -417,27 +414,62 @@ import { SkillBody } from "./skill-body.ts";
           release();
         };
       }, [modal]);
-      var workspaceRequests = react.useRef<Record<string, number>>({});
-      var workspaceEpoch = react.useRef(0);
-      react.useEffect(function () { return function () { workspaceEpoch.current++; }; }, []);
-      var catalogRequest = react.useRef(0);
+      const readRequests = react.useRef(new Map<string, AbortController>());
+      const lifetime = react.useRef(new AbortController());
+      function cancelRead(key: string) {
+        readRequests.current.get(key)?.abort();
+        readRequests.current.delete(key);
+      }
+      function beginRead(key: string) {
+        cancelRead(key);
+        const request = new AbortController();
+        if (lifetime.current.signal.aborted) request.abort();
+        else readRequests.current.set(key, request);
+        return request;
+      }
+      function finishRead(key: string, request: AbortController) {
+        if (readRequests.current.get(key) === request) readRequests.current.delete(key);
+      }
+      react.useEffect(() => {
+        lifetime.current = new AbortController();
+        return () => {
+          lifetime.current.abort();
+          for (const request of readRequests.current.values()) request.abort();
+          readRequests.current.clear();
+        };
+      }, []);
       function refresh(silent: boolean, checkCompany = false) {
-        var request = ++catalogRequest.current;
+        const request = beginRead("catalog");
+        if (request.signal.aborted) return Promise.resolve();
         if (!silent) setSnapshot(previous => ({ ...previous, loading: true, error: null }));
-        return sessionApi("readState", { scope: {}, refreshCompany: checkCompany }).then(function (data) {
-          if (request === catalogRequest.current) setSnapshot({ loading: false, error: null, data: data });
+        return sessionApi("readState", { scope: {}, refreshCompany: checkCompany }, request.signal).then(function (data) {
+          if (request.signal.aborted) return;
+          setSnapshot({ loading: false, error: null, data: data });
           return data;
         }).catch(function (error) {
-          if (request === catalogRequest.current) setSnapshot(previous => ({ ...previous, loading: false, error: translateError(t, error) }));
-        });
+          if (!request.signal.aborted) setSnapshot(previous => ({ ...previous, loading: false, error: translateError(t, error) }));
+        }).finally(() => { finishRead("catalog", request); });
       }
       react.useEffect(function () {
-        var alive = true;
-        void refresh(false).then(() => { if (alive) return refresh(true, true); });
-        return () => { alive = false; catalogRequest.current++; };
+        void refresh(false).then(value => { if (value !== undefined) return refresh(true, true); });
+        return () => { cancelRead("catalog"); };
       }, []);
-      function post<K extends SkillMethod>(path: K, body: SkillInput<K>, successKey?: string | null, successParams?: object): Promise<SkillOutput<K>> { if (inflightRef.current) return Promise.reject({ error: "operation already in progress" }); inflightRef.current = true; setBusy(true); setResult(null); return sessionApi(path, body).then(function (data) { setResult({ ok: true, text: successKey ? t(successKey, successParams || data || {}) : t("result.updated") }); var operationScope = "target" in body ? body.target : "request" in body ? body.request : "scope" in body ? body.scope : undefined; var scopedWorkspace = operationScope && "workspace" in operationScope && typeof operationScope.workspace === "string" ? operationScope.workspace : ""; return Promise.all([refresh(true), scopedWorkspace ? loadWorkspaceDetail(scopedWorkspace) : null]).then(function () { return data; }); }).catch(function (error) { setResult({ ok: false, text: t("error.action", { error: translateError(t, error) }) }); throw error; }).finally(function () { inflightRef.current = false; setBusy(false); }); }
-      function openDetail(root: RootView, skill: SkillView, workspacePath?: string) { setBusy(true); setDetail(null); setModal("detail"); sessionApi("readDetail", { target: workspacePath ? { root: root.key, name: skill.name, workspace: workspacePath } : { root: root.key, name: skill.name } }).then(setDetail).catch(function (error) { setResult({ ok: false, text: t("error.action", { error: translateError(t, error) }) }); setModal(null); }).finally(function () { setBusy(false); }); }
+      function post<K extends SkillMethod>(path: K, body: SkillInput<K>, successKey?: string | null, successParams?: object): Promise<SkillOutput<K>> { const signal = lifetime.current.signal; if (signal.aborted) return Promise.reject(signal.reason); if (inflightRef.current) return Promise.reject({ error: "operation already in progress" }); inflightRef.current = true; setBusy(true); setResult(null); return sessionApi(path, body, signal).then(function (data) { if (!signal.aborted) setResult({ ok: true, text: successKey ? t(successKey, successParams || data || {}) : t("result.updated") }); var operationScope = "target" in body ? body.target : "request" in body ? body.request : "scope" in body ? body.scope : undefined; var scopedWorkspace = operationScope && "workspace" in operationScope && typeof operationScope.workspace === "string" ? operationScope.workspace : ""; return Promise.all([refresh(true), scopedWorkspace ? loadWorkspaceDetail(scopedWorkspace) : null]).then(function () { return data; }); }).catch(function (error) { if (!signal.aborted) setResult({ ok: false, text: t("error.action", { error: translateError(t, error) }) }); throw error; }).finally(function () { inflightRef.current = false; if (!signal.aborted) setBusy(false); }); }
+      function openDetail(root: RootView, skill: SkillView, workspacePath?: string) {
+        const request = beginRead("detail");
+        if (request.signal.aborted) return;
+        setBusy(true); setDetail(null); setModal("detail");
+        void sessionApi("readDetail", { target: { root: root.key, name: skill.name, ...workspacePath ? { workspace: workspacePath } : {} } }, request.signal)
+          .then(value => { if (!request.signal.aborted) setDetail(value); })
+          .catch(error => {
+            if (request.signal.aborted) return;
+            setResult({ ok: false, text: t("error.action", { error: translateError(t, error) }) });
+            setModal(null);
+          }).finally(() => {
+            if (!request.signal.aborted) setBusy(false);
+            finishRead("detail", request);
+          });
+      }
       function updateForm(key: string, value: string) { setForm(Object.assign({}, form, { [key]: value })); }
       function submitCreate() { if (!destinationReady(createDestination, workspaceRows, userDestinations)) return; post("createSkill", { request: Object.assign({}, form, { root: undefined }, destinationPayload(createDestination)) }, null).then(function (data) { setModal(null); setForm({ root: "dsh", name: "", description: "", body: "" }); setResult({ ok: true, text: t("result.created", { name: data.name }) + (createDestination.scope === "workspace" ? " · " + t("dest.createdInWorkspace") : "") }); }).catch(function () {}); }
       function selectUploadFiles(files: ArrayLike<UploadFile> | null) { pickerOpenRef.current = false; var selected = inspectUploadSelection(files); if (!selected) return; if (selected.error) { setUpload(null); setResult({ ok: false, text: translateError(t, selected.error) }); return; } setUpload(selected); setResult(null); }
@@ -447,7 +479,7 @@ import { SkillBody } from "./skill-body.ts";
       var filterKey = scope === "market" ? "market" : scope === "project" ? "project" : "user", filters = savedFilters[filterKey] || { query: "", source: "", status: "" }, query = filters.query, source = filters.source;
       function updateFilter(key: string, value: string) { setSavedFilters(function (previous) { return Object.assign({}, previous, { [filterKey]: Object.assign({}, filters, { [key]: value }) }); }); }
       function setQuery(value: string) { updateFilter("query", value); }
-      function setSource(value: string) { updateFilter("source", value); }
+      function setSource(value: string) { setModal(null); updateFilter("source", value); }
       var selectedDetail = workspaceDetails[selectedWorkspace];
       var roots = scope === "trash" ? [] : scope === "project" ? visibleSkillRoots(selectedDetail?.roots || []) : scopeSkillRoots(allRoots).filter(function (root) { return scope === "market" ? root.key === "company" : root.key !== "company"; });
       var filteredOptionsRoots = roots.filter(function (r) { return r.key === "company" || (r.skills || []).length > 0; });
@@ -455,16 +487,17 @@ import { SkillBody } from "./skill-body.ts";
       function workspacePath(row: SkillOutput<"listWorkspaces">["items"][number]) { return row.registeredPaths[0] || ""; }
       function selectWorkspace(path: string) {
         if (!workspaceRows.some(function (row) { return row.available && workspacePath(row) === path; })) return;
+        setModal(null);
         selectedWorkspaceRef.current = path;
         setSelectedWorkspace(path);
         if (!workspaceDetails[path]) loadWorkspaceDetail(path);
       }
       function loadWorkspaces(readSelected = scope === "project", forceDetail = false) {
-        var epoch = workspaceEpoch.current, request = ++workspaceListRequest.current;
-        var current = function () { return epoch === workspaceEpoch.current && request === workspaceListRequest.current; };
+        const request = beginRead("workspaces");
+        if (request.signal.aborted) return Promise.resolve([]);
         setWorkspaceList(previous => ({ ...previous, loading: true, error: null }));
-        return callApi("listWorkspaces", {}).then(function (listed) {
-          if (!current()) return [];
+        return callApi("listWorkspaces", {}, request.signal).then(function (listed) {
+          if (request.signal.aborted) return [];
           var items = listed.items || [];
           setWorkspaceRows(items);
           setWorkspaceList({ loading: false, loaded: true, error: null });
@@ -475,24 +508,30 @@ import { SkillBody } from "./skill-body.ts";
           if (readSelected && path && (forceDetail || !workspaceDetails[path])) loadWorkspaceDetail(path);
           return items;
         }).catch(function (error) {
-          if (!current()) return [];
+          if (request.signal.aborted) return [];
           setWorkspaceRows([]);
           selectedWorkspaceRef.current = "";
           setSelectedWorkspace("");
           setWorkspaceList({ loading: false, loaded: true, error: translateError(t, error) });
           return [];
-        });
+        }).finally(() => { finishRead("workspaces", request); });
       }
       // 只读所选登记路径：详情按路径缓存，操作完成后只重新读取原工作区。
       function loadWorkspaceDetail(path: string) {
-        var epoch = workspaceEpoch.current, request = (workspaceRequests.current[path] || 0) + 1;
-        workspaceRequests.current[path] = request;
-        var current = function () { return epoch === workspaceEpoch.current && request === workspaceRequests.current[path]; };
-        setWorkspaceDetails(function (previous) { return Object.assign({}, previous, { [path]: { loading: true, loaded: previous[path]?.loaded ?? false, error: null, roots: previous[path] ? previous[path].roots : [] } }); });
-        return callApi("readWorkspace", { workspace: path }).then(function (detail) { if (current()) setWorkspaceDetails(function (previous) { return Object.assign({}, previous, { [path]: { loading: false, loaded: true, error: null, roots: detail.roots || [] } }); }); }).catch(function (error) { if (current()) setWorkspaceDetails(function (previous) { return Object.assign({}, previous, { [path]: { loading: false, loaded: true, error: translateError(t, error), roots: [] } }); }); });
+        const key = "workspace:" + path;
+        const request = beginRead(key);
+        if (request.signal.aborted) return Promise.resolve();
+        setWorkspaceDetails(previous => ({ ...previous, [path]: { loading: true, loaded: previous[path]?.loaded ?? false, error: null, roots: previous[path]?.roots ?? [] } }));
+        return callApi("readWorkspace", { workspace: path }, request.signal).then(value => {
+          if (!request.signal.aborted) setWorkspaceDetails(previous => ({ ...previous, [path]: { loading: false, loaded: true, error: null, roots: value.roots } }));
+        }).catch(error => {
+          if (!request.signal.aborted) setWorkspaceDetails(previous => ({ ...previous, [path]: { loading: false, loaded: true, error: translateError(t, error), roots: [] } }));
+        }).finally(() => { finishRead(key, request); });
       }
       function refreshWorkspaceDetails() {
-        workspaceEpoch.current++;
+        for (const key of readRequests.current.keys()) {
+          if (key === "workspaces" || key.startsWith("workspace:")) cancelRead(key);
+        }
         setWorkspaceDetails(previous => {
           var path = selectedWorkspaceRef.current, current = previous[path];
           return current?.loaded ? { [path]: { ...current, loading: false } } : {};
@@ -912,7 +951,7 @@ import { SkillBody } from "./skill-body.ts";
               inflightRef.current = true;
               setBusy(true); setAddSelection({}); setAddSearch(""); setModal(null);
               names.reduce<Promise<unknown>>(function (p, name) {
-                return p.then(function () { return sessionApi("assignCategory", { target: scoped({ root: addModal.root, name: name, category: addModal.id }) }); });
+                return p.then(function () { return sessionApi("assignCategory", { target: scoped({ root: addModal.root, name: name, category: addModal.id }) }, lifetime.current.signal); });
               }, Promise.resolve()).then(function () {
                 setResult({ ok: true, text: t("category.batchAssigned", { count: names.length, category: addModal.name }) });
               }).catch(function (err: unknown) {
@@ -931,6 +970,9 @@ import { SkillBody } from "./skill-body.ts";
       return h("section", { className: "dssm-section" }, content);
     }
 
+    return SkillManagerSection;
+}
+
 /** Register the builtin skills page in the product main area. */
 export const inject = ['slots', 'locale', 'remote'];
 export async function apply(ctx: ClientContext): Promise<void> {
@@ -938,7 +980,7 @@ export async function apply(ctx: ClientContext): Promise<void> {
   ctx.effect(() => dispose);
   const apiForSession = (sessionId?: string) => createSkillApi(ctx.remote, sessionId);
   const api = apiForSession();
-  localeService = ctx.locale;
+  const SkillManagerSection = createSkillsPage(ctx.locale);
   ctx.effect(() => ctx.locale.register(NS, DICT));
   ctx.slots.inject('main', () => ctx.slots.register({
     name: 'main', key: 'deepseek-harness-skills', locale: NS,

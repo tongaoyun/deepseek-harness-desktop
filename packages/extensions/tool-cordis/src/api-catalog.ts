@@ -210,6 +210,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'The declared composition beside its published metadata.',
       },
       {
+        signature: 'derive(baseId: string, definition: PresetDefinition): PresetDefinition',
+        description: 'Derive a detached composition without parsing its display document.',
+        parameters: [{ name: 'baseId', description: 'Registered composition to extend.' }, { name: 'definition', description: 'Metadata and additional plugin rows; additional rows resolve in the base context.' }],
+        returns: 'Detached definition retaining the base Loader resolution context and, when hidden, selectable origin.',
+      },
+      {
         signature: 'async mount(ctx: Context, id?: string): Promise<AgentPreset>',
         description: 'Bind an unpublished Agent to the current preset revision.',
         parameters: [{ name: 'ctx', description: 'Agent context from its setup callback.' }, { name: 'id', description: 'Requested preset, or the default.' }],
@@ -2397,7 +2403,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       },
       {
         signature: 'readonly overlays: readonly PatchOptions[]',
-        description: 'Parsed command-line overlays, applied above profile and home patches.',
+        description: 'Parsed command-line overlays; default insertions precede profile edits, other patches follow home patches.',
         parameters: [],
       },
       {
@@ -4608,6 +4614,14 @@ export const EVENT_API: readonly EventApiEntry[] = [
     parameters: [{ name: 'payload', description: '.error - persistence, setup, or publication failure.' }],
   },
   {
+    name: 'agent-preset/resolve-selection',
+    mode: 'waterfall',
+    signature: '\'agent-preset/resolve-selection\'(agent: Agent, requested: string, next: () => Promise<string>): Promise<string>',
+    summary: 'Resolve a requested composition before selection commits.',
+    description: 'Resolve a requested composition before selection commits.',
+    parameters: [{ name: 'agent', description: 'Target Agent whose blank-turn guard remains owned by the registry.' }, { name: 'requested', description: 'Requested Preset identity.' }, { name: 'next', description: 'Delegate to subsequent resolvers.' }],
+  },
+  {
     name: 'agent-preset/selected',
     mode: 'emit',
     signature: '\'agent-preset/selected\'(sessionId: SessionId, agentPreset: string): void',
@@ -5417,7 +5431,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'AgentPresetRow',
-    declaration: 'export interface AgentPresetRow {\n    readonly id: string;\n    readonly isDefault: boolean;\n    readonly name?: string;\n    readonly description?: string;\n    readonly broken?: string;\n}',
+    declaration: 'export interface AgentPresetRow {\n    readonly id: string;\n    readonly isDefault: boolean;\n    readonly name?: string;\n    readonly description?: string;\n    readonly selectable: boolean;\n    readonly defaultable: boolean;\n    readonly selectionBase?: string;\n    readonly broken?: string;\n}',
   },
   {
     name: 'AgentResolver',
@@ -7449,7 +7463,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'PresetDefinition',
-    declaration: 'export interface PresetDefinition {\n    readonly id: string;\n    readonly name?: string;\n    readonly description?: string;\n    readonly order?: number;\n    readonly plugins: readonly (Omit<EntryOptions, \'id\' | \'disabled\'> & {\n        id?: string;\n        disabled?: EntryOptions[\'disabled\'] | JsExpr;\n    })[];\n}',
+    declaration: 'export interface PresetDefinition {\n    readonly id: string;\n    readonly resolutionBase?: string;\n    readonly name?: string;\n    readonly description?: string;\n    readonly order?: number;\n    readonly selectable?: boolean;\n    readonly defaultable?: boolean;\n    readonly selectionBase?: string;\n    readonly plugins: readonly (Omit<EntryOptions, \'id\' | \'disabled\'> & {\n        id?: string;\n        disabled?: EntryOptions[\'disabled\'] | JsExpr;\n    })[];\n}',
   },
   {
     name: 'PresetOption',

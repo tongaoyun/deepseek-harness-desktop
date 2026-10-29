@@ -4,6 +4,7 @@ import type { DesktopKeyboardApi, DesktopShortcutsApi } from '@deepseek-ai/dsh-c
 import type { IpcMainInvokeEvent } from 'electron'
 import type { DesktopBrowserBridge } from '@deepseek-ai/dsh-client-ui-sidebar-browser/types'
 import type { DesktopFileDrag } from '@deepseek-ai/dsh-util-file-drag'
+import type { ExtensionResponse } from './extension-errors.ts'
 
 /** IPC channel names kept private to the desktop application bundle. */
 export const DESKTOP_IPC = {
@@ -36,6 +37,9 @@ export const DESKTOP_IPC = {
   windowFullscreen: 'dsh-desktop:window-fullscreen',
   windowsAppearance: 'dsh-desktop:windows-appearance',
   windowsMenu: 'dsh-desktop:windows-menu',
+  extensionInvoke: 'dsh-desktop:extension-invoke',
+  extensionCancel: 'dsh-desktop:extension-cancel',
+  extensionEvent: 'dsh-desktop:extension-event',
 } as const
 
 /** Desktop release update state rendered by desktop-owned UI. */
@@ -90,6 +94,11 @@ export interface DshDesktopProductApi {
     status(): Promise<DesktopUpdatePresentation>
     open(): Promise<void>
     subscribe(listener: (state: DesktopUpdatePresentation) => void): () => void
+  }
+  readonly extensions: {
+    invoke(namespace: string, method: string, payload?: unknown, requestId?: string, timeoutMs?: number): Promise<ExtensionResponse>
+    cancel(namespace: string, requestId: string): void
+    subscribe(namespace: string, listener: (event: unknown) => void): () => void
   }
 }
 

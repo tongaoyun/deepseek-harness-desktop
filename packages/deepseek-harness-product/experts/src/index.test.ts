@@ -965,7 +965,7 @@ describe('AgencyAgentsRemote（Host↔Client 读写链路）', () => {
       })
       const remote = new AgencyAgentsRemote(remoteCtx)
 
-      await expect(remote.getPrompt('reviewer', 'engineering')).resolves.toEqual({ prompt: 'Custom persona' })
+      await expect(remote.getPrompt('reviewer', 'engineering', new AbortController().signal)).resolves.toEqual({ prompt: 'Custom persona' })
     } finally {
       await rm(root, { recursive: true, force: true })
     }
@@ -982,7 +982,7 @@ describe('AgencyAgentsRemote（Host↔Client 读写链路）', () => {
       })
       const remote = new AgencyAgentsRemote(ctx)
 
-      await expect(remote.getPrompt('chief-executive-officer', 'company')).rejects.toThrow(
+      await expect(remote.getPrompt('chief-executive-officer', 'company', new AbortController().signal)).rejects.toThrow(
         formatHost(locale, 'error.personaSourceUnavailable'),
       )
     }

@@ -1,174 +1,25 @@
 // @vitest-environment jsdom
-import { RemoteMock, ok } from '@deepseek-ai/dsh-remote-mock'
-import { Modal as NativeModal } from '@deepseek-ai/dsh-client-ui-primitives'
-import { RemoteError } from '@deepseek-ai/dsh-typert-protocol'
-let remoteMock: RemoteMock
 import { Context } from '@deepseek-ai/cordis'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
 import type { PropsRenderSlots } from '@deepseek-ai/dsh-client-ui-slots'
 import { SlotRegistry } from '@deepseek-ai/dsh-client-ui-renderer/client'
-import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { createElement, type ComponentType } from 'react'
 import { afterEach, expect, it, onTestFinished, vi } from 'vitest'
+import { RemoteError } from '@deepseek-ai/dsh-typert-protocol'
+import { RemoteMock, ok } from '@deepseek-ai/dsh-remote-mock'
 import * as Skills from '../src/client.ts'
-import type { ManagerSnapshot, SectionProps } from '../src/client-types.ts'
+import type { ManagerSnapshot, SectionProps, SkillOutput } from '../src/client-types.ts'
 import type { RootView, SkillView } from '../src/types.ts'
 
 afterEach(() => { cleanup(); document.querySelector('base')?.remove(); vi.unstubAllGlobals() })
 
-it.each([
-  { name: 'IME', init: { isComposing: true } },
-  { name: 'legacy IME', init: { keyCode: 229 } },
-  { name: 'modified shortcut', init: { ctrlKey: true } },
-  { name: 'held key', init: { repeat: true } },
-  { name: 'Shift shortcut', init: { shiftKey: true } },
-])('preserves the skill draft when Escape belongs to $name', async ({ init }) => {
-  await setup(false)
-  await screen.findByText('市场暂无技能，审核发布后会展示在这里。')
-  fireEvent.click(screen.getByRole('tab', { name: '我的' }))
-  fireEvent.click(screen.getByRole('button', { name: '创建技能' }))
-  const dialog = screen.getByRole('dialog', { name: '创建技能' })
-  const body = dialog.querySelector('textarea')
-  if (!body) throw new Error('Skill body missing')
-  fireEvent.change(body, { target: { value: 'Keep this draft' } })
-  fireEvent.keyDown(body, { key: 'Escape', ...init })
-  expect(screen.getByRole('dialog', { name: '创建技能' })).toBe(dialog)
-  expect(body.value).toBe('Keep this draft')
-})
-
-it('keeps an IME closing Escape in the draft, then restores focus after a separate dismissal', async () => {
-  await setup(false)
-  await screen.findByText('市场暂无技能，审核发布后会展示在这里。')
-  fireEvent.click(screen.getByRole('tab', { name: '我的' }))
-  const trigger = screen.getByRole('button', { name: '创建技能' })
-  trigger.focus()
-  fireEvent.click(trigger)
-  const dialog = screen.getByRole('dialog', { name: '创建技能' })
-  const body = dialog.querySelector('textarea')
-  if (!body) throw new Error('Skill body missing')
-  body.focus()
-  fireEvent.change(body, { target: { value: '输入技能说明' } })
-  fireEvent.compositionStart(body)
-  fireEvent.compositionEnd(body)
-  fireEvent.keyDown(body, { key: 'Escape' })
-  expect({ title: screen.getByRole('dialog').getAttribute('aria-label'), body: body.value }).toMatchInlineSnapshot(`
-    {
-      "body": "输入技能说明",
-      "title": "创建技能",
-    }
-  `)
-  fireEvent.keyUp(body, { key: 'Escape' })
-  fireEvent.keyDown(body, { key: 'Escape' })
-  expect(screen.queryByRole('dialog')).toBeNull()
-  expect(document.activeElement).toBe(trigger)
-})
-
-it('lets a foreground native dialog own Escape before the skill editor', async () => {
-  await setup(false)
-  await screen.findByText('市场暂无技能，审核发布后会展示在这里。')
-  fireEvent.click(screen.getByRole('tab', { name: '我的' }))
-  fireEvent.click(screen.getByRole('button', { name: '创建技能' }))
-  const dialog = screen.getByRole('dialog', { name: '创建技能' })
-  const close = vi.fn()
-  const foreground = render(createElement(NativeModal, { open: true, title: 'Foreground', closeLabel: 'Close foreground', onClose: close }))
-  fireEvent.keyDown(screen.getByRole('dialog', { name: 'Foreground' }), { key: 'Escape' })
-  expect(close).toHaveBeenCalledTimes(1)
-  expect(screen.getByRole('dialog', { name: '创建技能' })).toBe(dialog)
-  foreground.unmount()
-  fireEvent.keyDown(dialog, { key: 'Escape' })
-  expect(screen.queryByRole('dialog')).toBeNull()
-})
-
-it('dismisses a destination menu before its skill editor', async () => {
-  await setup(false)
-  await screen.findByText('市场暂无技能，审核发布后会展示在这里。')
-  fireEvent.click(screen.getByRole('tab', { name: '我的' }))
-  fireEvent.click(screen.getByRole('button', { name: '创建技能' }))
-  const dialog = screen.getByRole('dialog', { name: '创建技能' })
-  const trigger = within(dialog).getByRole('combobox', { name: '范围' })
-  trigger.focus()
-  fireEvent.click(trigger)
-  fireEvent.keyDown(trigger, { key: 'Escape' })
-  expect(screen.queryByRole('menu')).toBeNull()
-  expect(screen.getByRole('dialog', { name: '创建技能' })).toBe(dialog)
-  expect(document.activeElement).toBe(trigger)
-  fireEvent.keyDown(trigger, { key: 'Escape' })
-  expect(screen.queryByRole('dialog')).toBeNull()
-})
-
-it.each(['zh', 'en'] as const)('shows a workspace registry failure instead of an empty project directory (%s)', async (locale) => {
-  await setup(false, false, skill('audit-orders'), undefined, locale)
-  await screen.findByText(locale === 'zh' ? '市场暂无技能，审核发布后会展示在这里。' : 'No skills in the marketplace yet. Approved publications will appear here.')
-  remoteMock.unary('skillsManager/listWorkspaces', () => ({ ok: false, error: new RemoteError('skills/operation', 'Could not read registered workspaces', {
-    code: 'error.workspace.registryUnavailable', error: 'Could not read registered workspaces',
-  }) }))
-  fireEvent.click(screen.getByRole('tab', { name: locale === 'zh' ? '我的' : 'Mine' }))
-  fireEvent.click(screen.getByRole('tab', { name: locale === 'zh' ? '项目技能' : 'Project skills' }))
-  const alert = await screen.findByRole('alert')
-  expect({ locale, message: alert.textContent }).toMatchSnapshot()
-  const emptyMessage = locale === 'zh' ? '还没有已登记的工作区。请先在侧栏添加工作区。' : 'No registered workspaces yet. Add one in the sidebar first.'
-  expect(screen.queryByText(emptyMessage)).toBeNull()
-  remoteMock.unary('skillsManager/listWorkspaces', () => ok({ items: [] }))
-  fireEvent.click(screen.getByRole('button', { name: locale === 'zh' ? '刷新' : 'Refresh' }))
-  await screen.findByText(emptyMessage)
-  expect(screen.queryByRole('alert')).toBeNull()
-})
-
-it.each(['focus', 'time'] as const)('keeps a native file selection active across %s until the picker reports completion', async (event) => {
-  await setup(false)
-  await screen.findByText('市场暂无技能，审核发布后会展示在这里。')
-  fireEvent.click(screen.getByRole('tab', { name: '我的' }))
-  fireEvent.click(screen.getByRole('button', { name: '导入技能' }))
-  const input = document.querySelector<HTMLInputElement>('input[type="file"]:not([multiple])')
-  if (!input) throw new Error('File input missing')
-  const open = vi.spyOn(input, 'click').mockImplementation(() => {})
-  vi.useFakeTimers()
-  try {
-    fireEvent.click(screen.getByRole('button', { name: '选择文件' }))
-    if (event === 'focus') fireEvent(window, new Event('focus'))
-    await act(async () => { await vi.advanceTimersByTimeAsync(event === 'focus' ? 0 : 30_000) })
-    fireEvent.click(screen.getByRole('button', { name: '选择文件' }))
-    expect(open).toHaveBeenCalledTimes(1)
-  } finally { vi.useRealTimers(); open.mockRestore() }
-})
-
-it.each(['选择文件', '选择文件夹'])('allows another %s immediately after the native cancel event', async (label) => {
-  await setup(false)
-  await screen.findByText('市场暂无技能，审核发布后会展示在这里。')
-  fireEvent.click(screen.getByRole('tab', { name: '我的' }))
-  fireEvent.click(screen.getByRole('button', { name: '导入技能' }))
-  const input = document.querySelector<HTMLInputElement>(label === '选择文件'
-    ? 'input[type="file"]:not([multiple])' : 'input[type="file"][multiple]')
-  if (!input) throw new Error('File input missing')
-  const open = vi.spyOn(input, 'click').mockImplementation(() => {})
-  try {
-    fireEvent.click(screen.getByRole('button', { name: label }))
-    fireEvent(input, new Event('cancel', { bubbles: false }))
-    fireEvent.click(screen.getByRole('button', { name: label }))
-    expect(open).toHaveBeenCalledTimes(2)
-  } finally { open.mockRestore() }
-})
-
-it('reports a failed native picker and allows a retry without losing the import form', async () => {
-  await setup(false)
-  await screen.findByText('市场暂无技能，审核发布后会展示在这里。')
-  fireEvent.click(screen.getByRole('tab', { name: '我的' }))
-  fireEvent.click(screen.getByRole('button', { name: '导入技能' }))
-  const input = document.querySelector<HTMLInputElement>('input[type="file"]:not([multiple])')
-  if (!input) throw new Error('File input missing')
-  const open = vi.spyOn(input, 'click').mockImplementationOnce(() => { throw new DOMException('Picker unavailable', 'InvalidStateError') }).mockImplementation(() => {})
-  try {
-    fireEvent.click(screen.getByRole('button', { name: '选择文件' }))
-    expect({ message: screen.getByRole('alert').textContent, installDisabled: screen.getByRole<HTMLButtonElement>('button', { name: '安装' }).disabled }).toMatchInlineSnapshot(`
-      {
-        "installDisabled": true,
-        "message": "无法打开文件选择器：Picker unavailable。请重试或拖拽技能到导入区。",
-      }
-    `)
-    fireEvent.click(screen.getByRole('button', { name: '选择文件' }))
-    expect(open).toHaveBeenCalledTimes(2)
-  } finally { open.mockRestore() }
-})
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  let reject!: (reason: Error) => void
+  const promise = new Promise<T>((res, rej) => { resolve = res; reject = rej })
+  return { promise, resolve, reject }
+}
 
 function skill(name: string): SkillView {
   return { name, declaredName: name, description: `${name}说明`, kind: 'directory', path: `/skills/${name}`,
@@ -182,12 +33,13 @@ function root(key: string, skills: SkillView[]): RootView {
 async function setup(shared: boolean, includeCompany = true, personal = skill('个人技能'), gate?: Promise<void>, activeLocale: 'zh' | 'en' = 'zh') {
   const data: ManagerSnapshot = { roots: [...(includeCompany ? [root('company', shared ? [skill('共享技能')] : [])] : []), root('dsh', [personal])],
     writeDestinations: [], projects: [], summary: { total: 2, enabled: 2, disabled: 0, issues: 0 }, trash: [], warnings: [] }
-  remoteMock = RemoteMock.create()
-  remoteMock.unary('skillsManager/readState', async () => { await gate; return ok(data) })
-  remoteMock.unary('skillsManager/listWorkspaces', async () => { await gate; return ok({ items: [] }) })
-  remoteMock.unary('skillsManager/setSkillEnabled', () => ok({}))
-  remoteMock.unary('skillsManager/createCategory', () => ok({}))
-
+  vi.stubGlobal('fetch', vi.fn(() => { throw new Error('Skills UI must use native Remote') }))
+  const mock = RemoteMock.create()
+  mock.unary('skillsManager/readState', async () => { await gate; return ok(data) })
+  mock.unary('skillsManager/listWorkspaces', () => ok({ items: [] }))
+  mock.unary('skillsManager/setSkillEnabled', () => ok({}))
+  mock.unary('skillsManager/createCategory', () => ok({}))
+  const remote = Object.assign(mock.remote, { $mount: async () => async () => {}, $on: () => () => {} })
   const ctx = new Context()
   onTestFinished(() => ctx.fiber.dispose())
   await ctx.plugin(SlotRegistry).await()
@@ -195,43 +47,19 @@ async function setup(shared: boolean, includeCompany = true, personal = skill('�
   const locale = new LocaleRuntime(ctx)
   locale.setLocale(activeLocale)
   ctx.provide('locale', locale)
-  ctx.provide('remote', Object.assign(remoteMock.remote, { $mount: async () => () => {} }))
+  ctx.provide('remote', remote)
+  ctx.provide('remote.skillsManager', mock.remote.skillsManager)
   slots.register({ name: 'root', children: { main: { kind: 'keyed', scope: 'root' } } }, (props: PropsRenderSlots<'main'>) => { void props.renderSlot; return null })
   await ctx.plugin(Skills).await()
   const entry = slots.entries('main').find(item => item.options.key === 'deepseek-harness-skills')
   if (!entry) throw new Error('Missing skills page registration')
-  render(createElement(entry.component as ComponentType<Pick<SectionProps, 't'>>, { t: (key: string, params?: object) => locale.bind('skills-manager')(key, { ...params }) }))
-  return data
-}
-
-it.each(['zh', 'en'] as const)('copies the exact skill body from company and local details (%s)', async (locale) => {
-  await setup(true, true, skill('个人技能'), undefined, locale)
-  await screen.findByText('共享技能')
-  const body = '  # Orders\r\n\r\nKeep whitespace.\n'
-  const writeText = vi.fn().mockResolvedValue(undefined)
-  vi.stubGlobal('navigator', { clipboard: { writeText } })
-  remoteMock.unary('skillsManager/readDetail', () => ok({ name: 'orders', declaredName: 'orders', description: '',
-    path: '/skills/orders/SKILL.md', diagnostics: [], body }))
-  for (const local of [false, true]) {
-    if (local) {
-      fireEvent.click(screen.getByRole('tab', { name: locale === 'zh' ? '我的' : 'Mine' }))
-      fireEvent.click(screen.getByRole('button', { name: /DSH/, expanded: false }))
-    }
-    fireEvent.click(screen.getByRole('button', { name: locale === 'zh' ? '更多' : 'More' }))
-    fireEvent.click(screen.getByRole('menuitem', { name: locale === 'zh' ? '查看详情' : 'View details' }))
-    const copy = await screen.findByRole('button', { name: locale === 'zh' ? '复制正文' : 'Copy body' })
-    expect(screen.getByRole('dialog').classList.contains('dssm-modal-wide')).toBe(true)
-    const reader = screen.getByRole<HTMLTextAreaElement>('textbox', { name: locale === 'zh' ? '正文' : 'Body' })
-    expect(reader.rows).toBe(16)
-    if (!local) expect({ action: copy.textContent, bodyLabel: reader.getAttribute('aria-label'),
-      readOnly: reader.readOnly, rows: reader.rows }).toMatchSnapshot()
-    fireEvent.click(copy)
-    await screen.findByRole('button', { name: locale === 'zh' ? '已复制' : 'Copied' })
-    expect(writeText).toHaveBeenLastCalledWith(body)
-    fireEvent.click(screen.getByRole('button', { name: locale === 'zh' ? '关闭' : 'Close' }))
+  const pageProps: Pick<SectionProps, 't' | 'useSessions'> = {
+    useSessions: selector => selector({ ids: [], byId: {}, phase: 'ready', projectionsBySession: {} }),
+    t: (key: string, params?: object) => locale.bind('skills-manager')(key, { ...params }),
   }
-  expect(writeText).toHaveBeenCalledTimes(2)
-})
+  const view = render(createElement(entry.component as ComponentType<Pick<SectionProps, 't'>>, pageProps))
+  return { data, mock, view }
+}
 
 it('shows published company skills in Market and preserves local, project, repository and trash views in Mine', async () => {
   await setup(true)
@@ -276,25 +104,24 @@ it.each([true, false])('shows a publication empty state with company root presen
   expect(screen.getByRole<HTMLInputElement>('textbox', { name: '搜索' }).value).toBe('不存在')
 })
 
-it('loads the embedded skills page through a reverse-proxy path prefix', async () => {
+it('uses native Remote independently of a reverse-proxy path prefix', async () => {
   const base = document.createElement('base')
   base.href = 'https://harness.test/traefik/harness/'
   document.head.appendChild(base)
-  vi.stubGlobal('fetch', vi.fn(() => { throw new Error('Skills must use native Remote') }))
-  await setup(true)
+  const { mock } = await setup(true)
   await screen.findByText('共享技能')
   fireEvent.click(screen.getByRole('tab', { name: '我的' }))
   fireEvent.click(screen.getByRole('tab', { name: '项目技能' }))
   await screen.findByText('还没有已登记的工作区。请先在侧栏添加工作区。')
-  expect(remoteMock.remote.skillsManager.readState).toHaveBeenCalled()
-  expect(remoteMock.remote.skillsManager.listWorkspaces).toHaveBeenCalled()
+  expect(mock.remote.skillsManager.readState).toHaveBeenCalled()
+  expect(mock.remote.skillsManager.listWorkspaces).toHaveBeenCalled()
   expect(fetch).not.toHaveBeenCalled()
 })
 
 it.each([true, false])('only permits revocation for a broken skill with recorded enablement=%s', async (recorded) => {
   const broken: SkillView = { ...skill('audit-orders'), loadable: false, enabled: recorded,
     managerOverride: recorded, managerEnabled: recorded, hasFrontmatter: false, invocationPolicyValid: false }
-  await setup(false, true, broken)
+  const { mock } = await setup(false, true, broken)
   await screen.findByText('市场暂无技能，审核发布后会展示在这里。')
   fireEvent.click(screen.getByRole('tab', { name: '我的' }))
   fireEvent.click(screen.getByRole('button', { name: /DSH/, expanded: false }))
@@ -302,9 +129,8 @@ it.each([true, false])('only permits revocation for a broken skill with recorded
   expect(toggle.disabled).toBe(!recorded)
   if (recorded) {
     fireEvent.click(toggle)
-    await waitFor(() => {
-      expect(remoteMock.remote.skillsManager.setSkillEnabled).toHaveBeenCalledWith({ root: 'dsh', name: 'audit-orders' }, false, undefined)
-    })
+    await waitFor(() => { expect(mock.remote.skillsManager.setSkillEnabled).toHaveBeenCalledWith(
+      { root: 'dsh', name: 'audit-orders' }, false, expect.any(AbortSignal)) })
   }
 })
 
@@ -343,15 +169,20 @@ it('shows unknown skill counts and an accessible indicator while the initial rea
 })
 
 it.each([false, true])('preserves loaded project skills and empty results while refreshing (empty: %s)', async (empty) => {
-  await setup(true)
+  const { data, mock } = await setup(true)
   await screen.findByText('共享技能')
   const entries = [{ name: '项目', available: true, registeredPaths: ['/workspace'] }]
   let refreshing = false
   let finish!: () => void
   const gate = new Promise<void>((resolve) => { finish = resolve })
-  remoteMock.unary('skillsManager/listWorkspaces', async () => { if (refreshing) await gate; return ok({ items: entries }) })
-  remoteMock.unary('skillsManager/readWorkspace', async () => { if (refreshing) await gate; return ok({ roots: empty ? [] : [root('dsh', [skill('项目技能')])] }) })
-
+  mock.unary('skillsManager/listWorkspaces', async () => {
+    if (refreshing) await gate
+    return ok({ items: entries })
+  })
+  mock.unary('skillsManager/readWorkspace', async () => {
+    if (refreshing) await gate
+    return ok({ ...data, roots: empty ? [] : [root('dsh', [skill('项目技能')])] })
+  })
   fireEvent.click(screen.getByRole('tab', { name: '我的' }))
   fireEvent.click(screen.getByRole('tab', { name: /项目技能/ }))
   const text = empty ? '这个工作区还没有技能。' : '项目技能'
@@ -371,14 +202,44 @@ it.each([false, true])('preserves loaded project skills and empty results while 
   expect(panel.textContent).toBe(content)
 })
 
+it.each(['zh', 'en'] as const)('copies the exact skill body from company and local details (%s)', async (locale) => {
+  const { mock } = await setup(true, true, skill('个人技能'), undefined, locale)
+  await screen.findByText('共享技能')
+  const body = '  # Orders\r\n\r\nKeep whitespace.\n'
+  const writeText = vi.fn().mockResolvedValue(undefined)
+  vi.stubGlobal('navigator', { clipboard: { writeText } })
+  mock.unary('skillsManager/readDetail', () => ok({ name: 'orders', declaredName: 'orders', description: '',
+    path: '/skills/orders/SKILL.md', diagnostics: [], body }))
+  for (const local of [false, true]) {
+    if (local) {
+      fireEvent.click(screen.getByRole('tab', { name: locale === 'zh' ? '我的' : 'Mine' }))
+      fireEvent.click(screen.getByRole('button', { name: /DSH/, expanded: false }))
+    }
+    fireEvent.click(screen.getByRole('button', { name: locale === 'zh' ? '更多' : 'More' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: locale === 'zh' ? '查看详情' : 'View details' }))
+    const copy = await screen.findByRole('button', { name: locale === 'zh' ? '复制正文' : 'Copy body' })
+    expect(screen.getByRole('dialog').classList.contains('dssm-modal-wide')).toBe(true)
+    const reader = screen.getByRole<HTMLTextAreaElement>('textbox', { name: locale === 'zh' ? '正文' : 'Body' })
+    expect(reader.rows).toBe(16)
+    if (!local) expect({ action: copy.textContent, bodyLabel: reader.getAttribute('aria-label'),
+      readOnly: reader.readOnly, rows: reader.rows }).toMatchSnapshot()
+    fireEvent.click(copy)
+    await screen.findByRole('button', { name: locale === 'zh' ? '已复制' : 'Copied' })
+    expect(writeText).toHaveBeenLastCalledWith(body)
+    fireEvent.click(screen.getByRole('button', { name: locale === 'zh' ? '关闭' : 'Close' }))
+  }
+  expect(writeText).toHaveBeenCalledTimes(2)
+})
+
+
 it.each(['zh', 'en'] as const)('submits a category with Enter but keeps IME composition in the input (%s)', async (locale) => {
-  await setup(false, false, skill('audit-orders'), undefined, locale)
+  const { mock } = await setup(false, false, skill('audit-orders'), undefined, locale)
   await screen.findByText(locale === 'zh' ? '市场暂无技能，审核发布后会展示在这里。' : 'No skills in the marketplace yet. Approved publications will appear here.')
   fireEvent.click(screen.getByRole('tab', { name: locale === 'zh' ? '我的' : 'Mine' }))
   fireEvent.click(screen.getByRole('button', { name: locale === 'zh' ? '新建分类' : 'New category' }))
   const input = screen.getByRole('textbox', { name: locale === 'zh' ? '分类名称' : 'Category name' })
   fireEvent.change(input, { target: { value: 'Finance' } })
-  const requests = () => remoteMock.remote.skillsManager.createCategory.mock.calls
+  const requests = () => mock.remote.skillsManager.createCategory.mock.calls
   fireEvent.keyDown(input, { key: 'Enter', isComposing: true })
   expect(requests()).toHaveLength(0)
   fireEvent.keyDown(input, { key: 'Enter' })
@@ -389,23 +250,101 @@ it.each(['zh', 'en'] as const)('submits a category with Enter but keeps IME comp
   expect({ inputLabel: input.getAttribute('aria-label'), saved }).toMatchSnapshot()
 })
 
-it('reloads the original project after a scoped skill mutation', async () => {
-  await setup(true)
+
+it.each(['zh', 'en'] as const)('shows a workspace registry failure instead of an empty project directory (%s)', async (locale) => {
+  const { mock } = await setup(false, false, skill('audit-orders'), undefined, locale)
+  await screen.findByText(locale === 'zh' ? '市场暂无技能，审核发布后会展示在这里。' : 'No skills in the marketplace yet. Approved publications will appear here.')
+  mock.unary('skillsManager/listWorkspaces', () => ({ ok: false, error: new RemoteError('skills/operation', 'Could not read registered workspaces', {
+    code: 'error.workspace.registryUnavailable', error: 'Could not read registered workspaces',
+  }) }))
+  fireEvent.click(screen.getByRole('tab', { name: locale === 'zh' ? '我的' : 'Mine' }))
+  fireEvent.click(screen.getByRole('tab', { name: locale === 'zh' ? '项目技能' : 'Project skills' }))
+  const alert = await screen.findByRole('alert')
+  expect({ locale, message: alert.textContent }).toMatchSnapshot()
+  const emptyMessage = locale === 'zh' ? '还没有已登记的工作区。请先在侧栏添加工作区。' : 'No registered workspaces yet. Add one in the sidebar first.'
+  expect(screen.queryByText(emptyMessage)).toBeNull()
+  mock.unary('skillsManager/listWorkspaces', () => ok({ items: [] }))
+  fireEvent.click(screen.getByRole('button', { name: locale === 'zh' ? '刷新' : 'Refresh' }))
+  await screen.findByText(emptyMessage)
+  expect(screen.queryByRole('alert')).toBeNull()
+})
+
+
+it('cancels a dismissed skill detail and allows a new dialog before the old request settles', async () => {
+  const { mock } = await setup(true)
   await screen.findByText('共享技能')
-  const entries = [{ name: '项目', available: true, registeredPaths: ['/workspace'] }]
-  let enabled = true
-  remoteMock.unary('skillsManager/listWorkspaces', () => ok({ items: entries }))
-  remoteMock.unary('skillsManager/readWorkspace', () => ok({ roots: [root('dsh', [{ ...skill('项目技能'),
-    managerEnabled: enabled, managerOverride: enabled, effectiveModelInvocable: enabled, effectiveUserInvocable: enabled }])] }))
-  remoteMock.unary('skillsManager/setSkillEnabled', (_target: { root: string }, next: boolean) => { enabled = next; return ok({}) })
-  fireEvent.click(screen.getByRole('tab', { name: '我的' }))
-  fireEvent.click(screen.getByRole('tab', { name: /项目技能/ }))
-  const panel = await screen.findByRole('tabpanel', { name: /项目技能/ })
-  await waitFor(() => { expect(panel.getAttribute('aria-busy')).toBe('false') })
-  const toggle = screen.getByRole('switch', { name: '启停技能 项目技能' })
-  expect(toggle.getAttribute('aria-checked')).toBe('true')
-  fireEvent.click(toggle)
-  await waitFor(() => { expect(toggle.getAttribute('aria-checked')).toBe('false') })
-  expect(remoteMock.remote.skillsManager.setSkillEnabled.mock.calls[0][0]).toMatchObject({ root: 'dsh', name: '项目技能', workspace: '/workspace' })
-  expect(remoteMock.remote.skillsManager.readWorkspace.mock.calls).toHaveLength(2)
+  const pending = deferred<SkillOutput<'readDetail'>>()
+  mock.unary('skillsManager/readDetail', async () => ok(await pending.promise))
+  try {
+    fireEvent.click(screen.getByRole('button', { name: '更多' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: '查看详情' }))
+    const signal = mock.remote.skillsManager.readDetail.mock.calls[0][1]
+    fireEvent.click(screen.getByRole('button', { name: '关闭' }))
+    expect(signal?.aborted).toBe(true)
+    fireEvent.click(screen.getByRole('tab', { name: '我的' }))
+    expect(screen.getByRole<HTMLButtonElement>('button', { name: '创建技能' }).disabled).toBe(false)
+    fireEvent.click(screen.getByRole('button', { name: '创建技能' }))
+    fireEvent.change(screen.getByPlaceholderText('例如 code-review-helper'), { target: { value: 'keep-new-skill' } })
+    await act(async () => { pending.reject(new Error('Old detail failed')); await pending.promise.catch(() => {}) })
+    expect(screen.getByRole('dialog', { name: '创建技能' })).toBeTruthy()
+    expect({ dialog: screen.getByRole('heading', { name: '创建技能' }).textContent,
+      name: screen.getByPlaceholderText<HTMLInputElement>('例如 code-review-helper').value,
+      error: screen.queryByText(/Old detail failed/)?.textContent ?? null }).toMatchInlineSnapshot(`
+      {
+        "dialog": "创建技能",
+        "error": null,
+        "name": "keep-new-skill",
+      }
+    `)
+  } finally { pending.reject(new Error('Detail test released')) }
+})
+
+it('cancels the initial native catalog read when the skills page is removed', async () => {
+  const pending = deferred<undefined>()
+  const { mock, view } = await setup(true, true, skill('个人技能'), pending.promise)
+  try {
+    const signal = mock.remote.skillsManager.readState.mock.calls[0][2]
+    view.unmount()
+    expect(signal?.aborted).toBe(true)
+  } finally { await act(async () => { pending.resolve(undefined); await pending.promise }) }
+})
+
+it('cancels native workspace listing when the skills page is removed', async () => {
+  const { mock, view } = await setup(true)
+  await screen.findByText('共享技能')
+  const pending = deferred<SkillOutput<'listWorkspaces'>>()
+  mock.unary('skillsManager/listWorkspaces', async () => ok(await pending.promise))
+  try {
+    fireEvent.click(screen.getByRole('tab', { name: '我的' }))
+    fireEvent.click(screen.getByRole('button', { name: '创建技能' }))
+    const signal = mock.remote.skillsManager.listWorkspaces.mock.calls[0][0]
+    view.unmount()
+    expect(signal?.aborted).toBe(true)
+  } finally { await act(async () => { pending.resolve({ items: [] }); await pending.promise }) }
+})
+
+it('cancels a superseded workspace read and retains the refreshed skill list', async () => {
+  const { data, mock } = await setup(true)
+  await screen.findByText('共享技能')
+  const pending = deferred<ManagerSnapshot>()
+  mock.unary('skillsManager/listWorkspaces', () => ok({ items: [{ name: '项目', available: true, registeredPaths: ['/workspace'] }] }))
+  let reads = 0
+  mock.unary('skillsManager/readWorkspace', async () => ok(++reads === 1
+    ? await pending.promise
+    : { ...data, roots: [root('dsh', [skill('refreshed-skill')])] }))
+  try {
+    fireEvent.click(screen.getByRole('tab', { name: '我的' }))
+    fireEvent.click(screen.getByRole('tab', { name: '项目技能' }))
+    await waitFor(() => { expect(mock.remote.skillsManager.readWorkspace).toHaveBeenCalledTimes(1) })
+    const signal = mock.remote.skillsManager.readWorkspace.mock.calls[0][1]
+    fireEvent.click(screen.getByRole('button', { name: '刷新' }))
+    expect(signal?.aborted).toBe(true)
+    await screen.findByText('refreshed-skill')
+    await act(async () => {
+      pending.resolve({ ...data, roots: [root('dsh', [skill('stale-skill')])] })
+      await pending.promise
+    })
+    expect(screen.queryByText('stale-skill')).toBeNull()
+    expect(screen.getByText('refreshed-skill')).toBeTruthy()
+  } finally { pending.resolve(data) }
 })

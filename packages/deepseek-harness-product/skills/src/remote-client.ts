@@ -11,6 +11,13 @@ export type SkillInput<K extends SkillMethod> = Parameters<Methods[K]['invoke']>
 export type SkillOutput<K extends SkillMethod> = Awaited<ReturnType<Methods[K]['invoke']>> extends RemoteResult<infer T> ? T : never
 export type SkillApi = <K extends SkillMethod>(method: K, input: SkillInput<K>, signal?: AbortSignal) => Promise<SkillOutput<K>>
 
+const scopeFields: Partial<Record<SkillMethod, 'target' | 'request' | 'scope' | 'destination'>> = {
+  readState: 'scope', readDetail: 'target', exportSkill: 'target', setSkillEnabled: 'target', setSourceEnabled: 'target',
+  createCategory: 'target', renameCategory: 'target', deleteCategory: 'target', assignCategory: 'target',
+  moveInCategory: 'target', setCategoryEnabled: 'target', trashSkill: 'target', restoreTrash: 'scope',
+  createSkill: 'request', importSkill: 'request', uploadSkill: 'request', installCatalog: 'destination',
+}
+
 /** Resolve the selected Session explicitly before invoking the native method.
  * @param remote Native Remote caller owned by this client composition.
  * @param sessionId Selected Session, never a global current-session singleton.
@@ -22,12 +29,6 @@ export function createSkillApi(remote: TypertClientRemote, sessionId?: string): 
     const method = methods[name] as TypertRemoteMethod<SkillInput<K>, SkillOutput<K>>
     const prepared = { ...input }
     const fields: Record<string, unknown> = prepared
-    const scopeFields: Partial<Record<SkillMethod, 'target' | 'request' | 'scope' | 'destination'>> = {
-      readState: 'scope', readDetail: 'target', exportSkill: 'target', setSkillEnabled: 'target', setSourceEnabled: 'target',
-      createCategory: 'target', renameCategory: 'target', deleteCategory: 'target', assignCategory: 'target',
-      moveInCategory: 'target', setCategoryEnabled: 'target', trashSkill: 'target', restoreTrash: 'scope',
-      createSkill: 'request', importSkill: 'request', uploadSkill: 'request', installCatalog: 'destination',
-    }
     const key = scopeFields[name]
     if (sessionId && key && fields[key] && typeof fields[key] === 'object') {
       Object.assign(prepared, { [key]: { ...fields[key], sessionId } })

@@ -1,5 +1,5 @@
 /** Complete image bytes rendered in a shared zoom viewport. */
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode, type RefCallback } from 'react'
 import { DraggableImage } from '@deepseek-ai/dsh-client-ui-primitives'
 import { bindImagePan } from './pan.ts'
 import type { PropsLocale, PropsStore } from '@deepseek-ai/dsh-client-ui-slots'
@@ -10,6 +10,7 @@ import { hostFileOf } from '../rpc.ts'
 import { ZoomViewport, zoomSurfaceClass } from '../zoom/ZoomViewport.tsx'
 import { DEFAULT_ZOOM, type ZoomInjected, type ZoomStore } from '../zoom/store.ts'
 import type { ZoomLabels, ZoomPreference } from '../zoom/types.ts'
+import { useRetainedTab } from '../retain-tab.ts'
 import type {} from './locales.ts'
 import css from './ImageBody.module.css'
 
@@ -66,14 +67,35 @@ export function ImageBody(props: ImageBodyProps): ReactNode {
   const { tab } = props.useTabInfo()
   const preference = props.useStore(state => state.byTab[tab.id] ?? DEFAULT_ZOOM)
   const path = useMemo(() => hostFileOf(resourceAddress).path, [resourceAddress])
-  const mediaType = imageMediaType(path)
-  const data = content.kind === 'bytes' ? content.data : undefined
-  const [source, setSource] = useState<ImageSource>()
   const setPreference = useCallback((value: ZoomPreference): void => {
     props.actions.zoom(tab.id, value)
   }, [props.actions, tab.id])
 
-  useEffect(() => { props.retainTab(tab.id, tab.signal) }, [props.retainTab, tab.id, tab.signal])
+  useRetainedTab(props.retainTab, tab.id, tab.signal)
+
+  return <ImageDocumentView path={path} data={content.kind === 'bytes' ? content.data : undefined}
+    preference={preference} onPreference={setPreference} signal={tab.signal}
+    scrollportRef={props.scrollportRef} t={t} drag={{ fileDrag: props.fileDrag, resourceAddress }} />
+}
+
+/** Authorized image bytes with caller-owned zoom and optional native file dragging. */
+export interface ImageDocumentProps extends PropsLocale<'sidebarImage'> {
+  readonly path: string
+  readonly data: Uint8Array<ArrayBuffer> | undefined
+  readonly preference: ZoomPreference
+  readonly onPreference: (value: ZoomPreference) => void
+  readonly signal: AbortSignal
+  readonly scrollportRef: RefCallback<HTMLElement>
+  readonly drag?: { readonly fileDrag: ImageBodyInjected['fileDrag']; readonly resourceAddress: string }
+}
+
+/** Reuse the native image renderer for authorized bytes without requiring a workspace resource.
+ * @param props - complete bytes, viewing lifetime, zoom and optional workspace drag identity.
+ * @returns the ordinary zoomable image view.
+ */
+export function ImageDocumentView({ path, data, preference, onPreference, signal, scrollportRef, t, drag }: ImageDocumentProps): ReactNode {
+  const mediaType = imageMediaType(path)
+  const [source, setSource] = useState<ImageSource>()
 
   useEffect(() => {
     if (data === undefined || mediaType === undefined) return
@@ -102,29 +124,17 @@ export function ImageBody(props: ImageBodyProps): ReactNode {
     controls: t('zoomControls'), menu: t('zoomMenu'), out: t('zoomOut'), into: t('zoomIn'),
     fitWidth: t('zoomFitWidth'), value: percent => t('zoomValue', { percent }),
   }
-  return <LoadedImage
-    fileDrag={props.fileDrag}
-    resourceAddress={resourceAddress}
-    key={source.url}
-    url={source.url}
-    name={name}
-    file={source.file}
-    preference={preference}
-    onPreference={setPreference}
-    labels={labels}
-    signal={tab.signal}
-    scrollportRef={props.scrollportRef}
-    t={t}
-  />
+  return <LoadedImage key={source.url} url={source.url} name={name} file={source.file}
+    preference={preference} onPreference={onPreference} labels={labels} signal={signal}
+    scrollportRef={scrollportRef} t={t} drag={drag} />
 }
 
 /** SVG stays in the browser's static image mode because its bytes only reach an img Blob URL. */
-function LoadedImage({ url, name, file, resourceAddress, preference, onPreference, labels, signal, scrollportRef, t, fileDrag }: {
-  readonly fileDrag: ImageBodyInjected['fileDrag']
+function LoadedImage({ url, name, file, preference, onPreference, labels, signal, scrollportRef, t, drag }: {
+  readonly drag: ImageDocumentProps['drag']
   readonly url: string
   readonly name: string
   readonly file: File
-  readonly resourceAddress: string
   readonly preference: ZoomPreference
   readonly onPreference: (preference: ZoomPreference) => void
   readonly labels: ZoomLabels
@@ -153,20 +163,16 @@ function LoadedImage({ url, name, file, resourceAddress, preference, onPreferenc
       {state === 'failed' && <p className={css.status} role="alert">{t('failed')}</p>}
       <div className={`${css.surface} ${zoomSurfaceClass}`} data-document-zoom-surface
         style={{ '--document-zoom-width': `${width ?? 0}px` } as CSSProperties} hidden={state !== 'ready'}>
-        <DraggableImage
-          fileDrag={fileDrag}
-          resourceAddress={resourceAddress}
-          ref={attachImage}
-          className={css.image}
-          src={url}
-          alt={t('preview', { name })}
-          decoding="async"
-          name={name}
-          original={file}
-          referrerPolicy="no-referrer"
+        {drag ? <DraggableImage
+          fileDrag={drag.fileDrag} resourceAddress={drag.resourceAddress} ref={attachImage}
+          className={css.image} src={url} alt={t('preview', { name })} decoding="async"
+          name={name} original={file} referrerPolicy="no-referrer"
           onLoad={(event) => { setWidth(event.currentTarget.naturalWidth); setState('ready') }}
           onError={() => { setState('failed') }}
-        />
+        /> : <img ref={attachImage} className={css.image} src={url} alt={t('preview', { name })}
+          decoding="async" draggable={false} referrerPolicy="no-referrer"
+          onLoad={(event) => { setWidth(event.currentTarget.naturalWidth); setState('ready') }}
+          onError={() => { setState('failed') }} />}
       </div>
     </div>
   </ZoomViewport>

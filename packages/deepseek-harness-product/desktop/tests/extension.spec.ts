@@ -10,15 +10,17 @@ const fixture = vi.hoisted(() => ({ authenticate: vi.fn<typeof import('@deepseek
   dialog: vi.fn(async (..._args: unknown[]) => ({ response: 0 })), quit: vi.fn(),
   companyContent: vi.fn(async () => null),
   bootstrap: vi.fn(async () => ({ modelApiKey: 'model-key', endpoints: { litellm: 'https://example.test/v1' }, models: ['deepseek-v4-flash', 'gpt-example'] })),
-  stop: vi.fn(async () => {}), dispose: vi.fn(), knowledgeClose: vi.fn(async () => {}), writeFile: vi.fn(),
+  start: vi.fn(async () => {}), stop: vi.fn(async () => {}), dispose: vi.fn(),
+  knowledgePrepare: vi.fn(async () => {}), knowledgeClose: vi.fn(async () => {}), writeFile: vi.fn(),
+  companyPrepare: vi.fn(async () => {}), companyClose: vi.fn(async () => {}),
   bridgeOptions: vi.fn<(options: ProductBridgeOptions) => void>(),
   invoke: vi.fn(async (..._args: unknown[]) => ({})), refreshCatalog: vi.fn(async () => {}) }))
 vi.mock('../src/company-content-sync.ts', () => ({ CompanyContentSync: class {
-  prepare = async () => { void fixture.companyContent().catch(() => undefined); return this.read() }
+  prepare = async () => { await fixture.companyPrepare(); void fixture.companyContent().catch(() => undefined); return this.read() }
   read = () => ({ skillsRoot: '/company/skills', expertsRoot: '/company/experts', version: '0', sha256: '0'.repeat(64) })
   refresh = async () => { await fixture.companyContent() }
   pin = async () => this.read()
-  close = async () => {}
+  close = fixture.companyClose
 } }))
 vi.mock('../src/builtin-capabilities.ts', () => ({ builtinCapabilityPatches: () => [] }))
 vi.mock('node:fs', async original => ({ ...await original<typeof import('node:fs')>(), writeFileSync: fixture.writeFile }))
@@ -36,10 +38,10 @@ vi.mock('../src/deepseek-harness-product-config.ts', () => ({ resolveDeepSeekHar
     officeOutputMaxBytes: 1024, downloadMaxBytes: 1024, uploadMaxBytes: 1024, transferLifetimeMs: 60_000,
     fileRequestTimeoutMs: 60_000, maxTransfers: 8 }) }))
 vi.mock('../src/deepseek-harness-native-process.ts', () => ({ DeepSeekHarnessNativeProcess: class {
-  start = async () => {}; stop = fixture.stop; invoke = async () => ({})
+  start = fixture.start; stop = fixture.stop; invoke = async () => ({})
 } }))
 vi.mock('../src/knowledge-files.ts', () => ({ KnowledgeFiles: class {
-  prepare = async () => {}; close = fixture.knowledgeClose; resetIdentity = async () => {}; invoke = async () => ({})
+  prepare = fixture.knowledgePrepare; close = fixture.knowledgeClose; resetIdentity = async () => {}; invoke = async () => ({})
 } }))
 vi.mock('@deepseek-harness/product/dingtalk-auth', async original => ({
   ...await original<typeof import('@deepseek-harness/product/dingtalk-auth')>(), ensureDingTalkSession: fixture.authenticate,
@@ -58,6 +60,73 @@ beforeEach(() => {
   fixture.authenticate.mockResolvedValue({ authenticated: true })
   fixture.invoke.mockReset().mockResolvedValue({}); fixture.refreshCatalog.mockReset().mockResolvedValue()
   fixture.dispose.mockReset(); fixture.knowledgeClose.mockReset().mockResolvedValue(); fixture.stop.mockReset().mockResolvedValue()
+  fixture.start.mockReset().mockResolvedValue(); fixture.knowledgePrepare.mockReset().mockResolvedValue()
+  fixture.companyPrepare.mockReset().mockResolvedValue(); fixture.companyClose.mockReset().mockResolvedValue()
+})
+
+it.each(['files', 'native', 'company'] as const)('joins startup during %s preparation and rejects late startup effects on close', async (phase) => {
+  const entered = Promise.withResolvers<undefined>()
+  const release = Promise.withResolvers<undefined>()
+  const delayed = phase === 'files' ? fixture.knowledgePrepare : phase === 'native' ? fixture.start : fixture.companyPrepare
+  delayed.mockImplementationOnce(async () => { entered.resolve(undefined); await release.promise })
+  const cleaned = Promise.withResolvers<undefined>()
+  fixture.stop.mockImplementationOnce(async () => { cleaned.resolve(undefined) })
+  const extension = createExtension({ getWindow: () => undefined, isQuitting: () => false, requestHost: async () => ({}) })
+  const pending = extension.prepareHost({ directory: '/unused-profile', installAnchor: '/unused-runtime/package.json' })
+  const outcome = pending.then(value => value, (error: unknown) => error)
+  await entered.promise
+  let closed = false
+  const closing = extension.close().then(() => { closed = true })
+  try {
+    await cleaned.promise
+    expect(closed).toBe(false)
+  } finally {
+    release.resolve(undefined)
+    await closing
+  }
+  expect(await outcome).toBeUndefined()
+  expect(fixture.writeFile).not.toHaveBeenCalled()
+  expect(fixture.invoke).not.toHaveBeenCalled()
+  if (phase === 'files') expect(fixture.start).not.toHaveBeenCalled()
+  if (phase !== 'company') expect(fixture.companyPrepare).not.toHaveBeenCalled()
+  else expect(fixture.companyClose).toHaveBeenCalledOnce()
+})
+
+it('coalesces concurrent Host preparation instead of replacing the company sync twice', async () => {
+  const entered = Promise.withResolvers<undefined>()
+  const release = Promise.withResolvers<undefined>()
+  fixture.companyPrepare.mockImplementationOnce(async () => { entered.resolve(undefined); await release.promise })
+  const extension = createExtension({ getWindow: () => undefined, isQuitting: () => false, requestHost: async () => ({}) })
+  try {
+    const first = extension.prepareHost({ directory: '/unused-profile', installAnchor: '/unused-runtime/package.json' })
+    await entered.promise
+    const second = extension.prepareHost({ directory: '/unused-profile', installAnchor: '/unused-runtime/package.json' })
+    expect(second).toBe(first)
+    release.resolve(undefined)
+    await expect(first).resolves.toMatchObject({ DEEPSEEK_API_KEY: 'model-key' })
+    expect(fixture.knowledgePrepare).toHaveBeenCalledOnce()
+    expect(fixture.start).toHaveBeenCalledOnce()
+    expect(fixture.companyPrepare).toHaveBeenCalledOnce()
+  } finally {
+    release.resolve(undefined)
+    await extension.close()
+  }
+})
+
+it('shares cleanup completion and failure across repeated close calls', async () => {
+  const failure = new Error('Bridge cleanup failed')
+  const entered = Promise.withResolvers<undefined>()
+  const release = Promise.withResolvers<undefined>()
+  fixture.dispose.mockImplementationOnce(async () => { entered.resolve(undefined); await release.promise; throw failure })
+  const extension = createExtension({ getWindow: () => undefined, isQuitting: () => false, requestHost: async () => ({}) })
+  const first = extension.close().catch((error: unknown) => error)
+  await entered.promise
+  const second = extension.close().catch((error: unknown) => error)
+  release.resolve(undefined)
+  expect(await first).toMatchObject({ errors: [failure] })
+  expect(await second).toBe(await first)
+  expect(fixture.dispose).toHaveBeenCalledOnce()
+  expect(fixture.stop).toHaveBeenCalledOnce()
 })
 
 it('releases remaining resources and joins in-flight requests before reporting cleanup failures', async () => {

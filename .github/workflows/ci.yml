@@ -202,10 +202,11 @@ jobs:
           path: .coverage-times.json
           key: coverage-times-Linux-${{ runner.environment }}-${{ vars.DSH_CI_FAILOVER_LINUX || 'enterprise' }}-${{ github.run_id }}-${{ github.run_attempt }}
 
-  # Lint and duplication get their own lane instead of riding the artifact
-  # consumers: a red lint no longer costs the snapshot and artifact consumers a
-  # full rerun. The lane compiles package declarations because oxlint's
-  # type-aware rules read them.
+  # Lint gets its own lane instead of riding the artifact consumers: a red lint
+  # no longer costs the snapshot and artifact consumers a full rerun. The lane
+  # compiles package declarations because oxlint's type-aware rules read them.
+  # Clone detection remains a manual audit (`pnpm run duplication`) because the
+  # repository intentionally contains small fixture and platform variants.
   node-24-lint:
     if: github.event_name == 'pull_request'
     runs-on: >-
@@ -264,7 +265,7 @@ jobs:
       - name: Compile package declarations
         run: pnpm run typecheck
 
-      - name: Run lint and duplication
+      - name: Run lint
         run: pnpm run check:ci:lint:contracts-ready
 
   node-24-bench:

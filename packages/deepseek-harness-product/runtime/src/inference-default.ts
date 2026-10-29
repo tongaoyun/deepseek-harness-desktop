@@ -24,7 +24,7 @@ export function apply(ctx: Context, config: Options): void {
   let pending: Promise<void> | undefined
   const repair = () => pending ??= (async () => {
     if (!permitted(ctx.agentDefaultModel.currentSelection())) await ctx.agentDefaultModel.saveSelection(config.selections[0])
-  })()
+  })().finally(() => { pending = undefined })
   ctx.effect(() => ctx.get('appReady')?.onReady(() => {
     void repair().catch((error: unknown) => { ctx.logger.error('Product default model selection failed', error) })
   }) ?? (() => {}), 'product-inference.ready')

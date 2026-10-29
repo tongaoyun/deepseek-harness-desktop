@@ -343,7 +343,7 @@ describe('native selection of derived compositions', () => {
     await state.controller.load()
     state.select.mockResolvedValueOnce({ ok: false, error: new RemoteError('gateway/internal', 'not allowed', {}) })
 
-    await expect(state.controller.select('minimal')).resolves.toBe('not allowed')
+    await expect(state.controller.select('minimal')).resolves.toEqual({ kind: 'refused', reason: 'not allowed' })
     expect(state.controller.store.getSnapshot()).toMatchObject({ current: 'standard',
       error: { preset: { id: 'minimal' }, reason: 'not allowed' } })
   })

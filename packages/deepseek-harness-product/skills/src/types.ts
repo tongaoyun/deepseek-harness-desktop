@@ -1,4 +1,9 @@
 import type { JsonValue } from '@deepseek-ai/dsh-util-values';
+import type {} from '@deepseek-ai/dsh-typert-protocol';
+
+declare module '@deepseek-ai/dsh-typert-protocol' {
+    interface RemoteErrorDetailsMap { 'skills/operation': Diagnostic & { error: string } }
+}
 /** 全局与项目来源共用的目录契约；项目字段只在项目来源存在。 */
 export interface SkillRoot {
     key: string;
@@ -389,9 +394,12 @@ export interface ManagerImport extends ManagerScope, CreateInput, UploadInput {
     conflict?: 'overwrite' | 'skip';
     dryRun?: boolean;
 }
-export type { CatalogIdentity } from './catalog-skill.ts';
+/** Validated catalog source identity used for installation and updates. */
+export type CatalogIdentity =
+    | { catalog: 'clawhub'; owner: string; slug: string }
+    | { catalog: 'skillsh'; source: string; skillId: string };
 /** Bounded public catalog paging and sorting inputs. */
-export interface ManagerMarketOptions { limit?: string; cursor?: string; sort?: string; }
+export interface ManagerMarketOptions { limit?: number; cursor?: string; sort?: string; }
 
 
 /** Persisted trash entry and original restore location. */

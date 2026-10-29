@@ -31,6 +31,10 @@
       "types": "./lib/types/catalog-manager.d.ts",
       "default": "./lib/catalog-manager.js"
     },
+    "./catalog": {
+      "types": "./lib/types/catalog.d.ts",
+      "default": "./lib/catalog.js"
+    },
     "./connector-draft": {
       "types": "./lib/types/connector-draft.d.ts",
       "default": "./lib/connector-draft.js"

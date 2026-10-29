@@ -1,8 +1,10 @@
+/// <reference types="node" />
 /** Product skill operations carried by the native Typert Remote service. */
 import type {} from '@deepseek-harness/product-runtime/company-content'
+import type {} from '@deepseek-ai/dsh-tools'
 import type { SkillManagerResults } from './generated/results.ts'
-import type { Context } from '@deepseek-ai/cordis'
-import { Remote, RemoteError, TypertRemoteService, remoteErrorOf } from '@deepseek-ai/dsh-typert-protocol'
+import { Context, Service } from '@deepseek-ai/cordis'
+import { Remote, RemoteError, TypertRemoteService, remoteErrorOf, principalOf } from '@deepseek-ai/dsh-typert-protocol'
 import { isJsonValue, type JsonValue } from '@deepseek-ai/dsh-util-values'
 import { realpath } from 'node:fs/promises'
 import type { Log, ManagerScope, ManagerTarget, ManagerImport, RootView, Diagnostic, OperationError, SkillRequest, RepositoryInput, CatalogIdentity, ManagerMarketOptions } from './types.ts'
@@ -12,13 +14,11 @@ import { installationSourceKey } from './repository-updates.ts'
 import { listClawHub, searchClawHub } from './clawhub-catalog.ts'
 import { searchSkillsSh } from './skills-sh-catalog.ts'
 import { loadCatalogPackage, readCatalogSkill } from './catalog-skill.ts'
-import { activeSessionCwds, registeredWorkspacePaths } from './host-runtime.ts'
+import { activeSessionCwds, notifyChatCatalog, registerAgentSkillProviders, externalSkillProvider, registeredWorkspacePaths } from './host-runtime.ts'
+import { makeLog } from './log.ts'
 
 declare module '@deepseek-ai/cordis' {
   interface Context { skillsManager: SkillsManager }
-}
-declare module '@deepseek-ai/dsh-typert-protocol' {
-  interface RemoteErrorDetailsMap { 'skills/operation': Diagnostic & { error: string } }
 }
 
 type Success<T> = T extends { error: string } ? never : T
@@ -29,20 +29,67 @@ interface OperationOptions {
 
 /** Native Remote owner for personal skills, registered projects, imports and repositories. */
 export class SkillsManager extends TypertRemoteService {
-  static inject = ['sessions', 'typert']
+  static inject = ['sessions', 'workingDirectory', 'typert', 'skills', 'tools']
   private readonly repositories
   private readonly log: Log
   private readonly afterWrite: () => void
   private readonly lifetime = new AbortController()
   private readonly active = new Set<Promise<unknown>>()
+  private readonly providerInvalidators = new Set<() => void>()
   private mutationQueue: Promise<unknown> = Promise.resolve()
 
-  constructor(ctx: Context, options: { log: Log; afterWrite: () => void }) {
+  constructor(ctx: Context, options: Partial<{ log: Log; afterWrite: () => void }> = {}) {
     super(ctx, 'skillsManager')
     ctx.effect(() => async () => { this.lifetime.abort(); await Promise.allSettled([...this.active]) }, 'skills-manager pending operations')
-    this.log = options.log
-    this.afterWrite = options.afterWrite
+    this.log = options.log ?? makeLog()
+    this.afterWrite = options.afterWrite ?? (() => { notifyChatCatalog(ctx, this.providerInvalidators) })
     this.repositories = createRepositoryManager({ log: this.log, registeredWorkspaces: () => registeredWorkspacePaths(ctx) })
+  }
+
+  protected [Service.init](): void {
+    const ctx = this.ctx
+    const companyContent = ctx.get('companyContent')
+    ctx.effect(() => ctx.skills.registerProvider(control => externalSkillProvider(control, this.providerInvalidators,
+      companyContent === undefined ? undefined : async signal => (await companyContent.read(signal)).skillsRoot)),
+    'skills-manager global external skills provider')
+    ctx.effect(() => registerAgentSkillProviders(ctx, this.providerInvalidators), 'skills-manager agent-scoped external skills providers')
+    ctx.effect(() => ctx.tools.register({
+      name: 'create_skill',
+      description: 'Create a new local DSH skill in DSH_HOME/skills. Use only when the user explicitly asks to create or save a reusable skill.',
+      parameters: {
+        type: 'object',
+        properties: {
+          name: { type: 'string', description: 'Skill name; it will be normalized to kebab-case.' },
+          description: { type: 'string', description: 'A concise routing description for when to use the skill.' },
+          body: { type: 'string', description: 'Markdown instructions that form the skill body.' },
+        },
+        required: ['name', 'description', 'body'],
+        additionalProperties: false,
+      },
+      output: {
+        schema: { type: 'object' },
+        render: (_args: unknown, value: JsonValue) => [{
+          type: 'text',
+          text: (() => {
+            const result = value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {}
+            return result.ok === false
+              ? `Skill creation failed${typeof result.code === 'string' ? ` (${result.code})` : ''}.`
+              : `Created DSH skill ${typeof result.name === 'string' ? result.name : ''} at ${typeof result.path === 'string' ? result.path : ''}`
+          })(),
+        }],
+      },
+      async execute(args: Parameters<typeof createSkill>[0], exec) {
+        const result = await ctx.skillsManager.createSkill(args, exec.signal)
+        return result
+      },
+      presentCall(args: Parameters<typeof createSkill>[0]) {
+        return { card: 'generic', title: 'Create DSH skill', kind: 'edit', rawInput: args.name || undefined }
+      },
+    }), 'skills-manager create_skill tool')
+    ctx.effect(() => ctx.on('tools/pre-execute', (exec, next) => {
+      if (exec.name === 'create_skill') return Promise.resolve({ kind: 'ask', reason: 'Create a new skill under DSH_HOME/skills' })
+      return next()
+    }), 'skills-manager create_skill confirmation')
   }
 
   private async perform<T>(
@@ -53,11 +100,15 @@ export class SkillsManager extends TypertRemoteService {
     const run = async () => {
       signal.throwIfAborted()
       // Management is the local owner's capability; a model/MCP Peer cannot select another user's files.
-      if (this.ctx.invocation && this.ctx.invocation.peer.principal.kind !== 'owner') {
+      if (principalOf(this.ctx.invocation) !== undefined) {
         throw new RemoteError('skills/operation', 'Skill management requires the Host owner', { code: 'error.proto.forbidden', error: 'forbidden' })
       }
       try {
         const value = await task(signal)
+        // Upstream readers may finish after transport cancellation (for
+        // example a late mocked response). Never commit a value that crossed
+        // the caller or service lifetime boundary.
+        signal.throwIfAborted()
         if (value && typeof value === 'object' && 'ok' in value && value.ok === false && 'error' in value && typeof value.error === 'string') {
           const failure: OperationError = { ok: false, error: value.error, ...'code' in value && typeof value.code === 'string' ? { code: value.code } : {}, ...'params' in value && value.params && typeof value.params === 'object' && !Array.isArray(value.params) && isJsonValue(value.params) ? { params: value.params as Record<string, JsonValue> } : {} }
           throw new RemoteError('skills/operation', failure.error, failure)
@@ -81,24 +132,27 @@ export class SkillsManager extends TypertRemoteService {
     try { return await result } finally { this.active.delete(result) }
   }
 
-  private async options(scope: ManagerScope) {
+  private async options(scope: ManagerScope, signal: AbortSignal) {
     const company = this.ctx.get('companyContent')
-    const companySkillsRoot = company ? (await company.read()).skillsRoot : process.env.DSH_COMPANY_SKILLS_ROOT
+    const companySkillsRoot = company ? (await company.read(signal)).skillsRoot : process.env.DSH_COMPANY_SKILLS_ROOT
+    signal.throwIfAborted()
     if (scope.workspace !== undefined) {
       const target = await resolveWorkspaceTarget(scope.workspace, registeredWorkspacePaths(this.ctx))
+      signal.throwIfAborted()
       if (!('root' in target)) throw new RemoteError('skills/operation', target.error, target)
-      return { projectCwds: target.root.workspaceCwds ?? [], workspaceBound: true, companySkillsRoot, workspaceTarget: target.root }
+      return { signal, projectCwds: target.root.workspaceCwds ?? [], workspaceBound: true, companySkillsRoot, workspaceTarget: target.root }
     }
-    return { projectCwds: activeSessionCwds(this.ctx, scope.sessionId), companySkillsRoot }
+    return { signal, projectCwds: activeSessionCwds(this.ctx, scope.sessionId), companySkillsRoot }
   }
 
-  private async root(scope: ManagerScope & { root?: string }) {
-    const options = await this.options(scope)
-    if (options.workspaceTarget) {
-      if (scope.root === undefined || scope.root === 'dsh') return options.workspaceTarget
-      return (await projectRoots(options.projectCwds)).find(root => root.key === scope.root)
-    }
-    return userRoots(options.companySkillsRoot).find(root => root.key === (scope.root ?? 'dsh')) ?? (await projectRoots(options.projectCwds)).find(root => root.key === scope.root)
+  private async root(scope: ManagerScope & { root?: string }, signal: AbortSignal) {
+    const options = await this.options(scope, signal)
+    if (options.workspaceTarget && (scope.root === undefined || scope.root === 'dsh')) return options.workspaceTarget
+    const user = options.workspaceTarget ? undefined : userRoots(options.companySkillsRoot).find(root => root.key === (scope.root ?? 'dsh'))
+    if (user) return user
+    const roots = await projectRoots(options.projectCwds)
+    signal.throwIfAborted()
+    return roots.find(root => root.key === scope.root)
   }
 
   private async attachSources<T extends { roots: RootView[]; warnings: Diagnostic[] }>(snapshot: T) {
@@ -122,9 +176,9 @@ export class SkillsManager extends TypertRemoteService {
    */
   @Remote
   readState(scope: ManagerScope, refreshCompany: boolean, signal: AbortSignal): Promise<SkillManagerResults['readState']> {
-    return this.perform(async () => {
-      if (refreshCompany) await this.ctx.get('companyContent')?.refresh()
-      return this.attachSources(await state(await this.options(scope)))
+    return this.perform(async (active) => {
+      if (refreshCompany) await this.ctx.get('companyContent')?.refresh(active)
+      return this.attachSources(await state(await this.options(scope, active)))
     }, signal, { mutation: refreshCompany, notify: refreshCompany })
   }
 
@@ -162,7 +216,7 @@ export class SkillsManager extends TypertRemoteService {
    * @returns The committed result or a typed operation failure.
    */
   @Remote
-  readDetail(target: ManagerTarget, signal: AbortSignal): Promise<SkillManagerResults['readDetail']> { return this.perform(async () => skillDetail(target.root, target.name ?? '', await this.options(target)), signal) }
+  readDetail(target: ManagerTarget, signal: AbortSignal): Promise<SkillManagerResults['readDetail']> { return this.perform(async active => skillDetail(target.root, target.name ?? '', await this.options(target, active)), signal) }
 
   /** Prepare a personal skill for company submission.
    * @param target Explicit operation input.
@@ -170,7 +224,7 @@ export class SkillsManager extends TypertRemoteService {
    * @returns The committed result or a typed operation failure.
    */
   @Remote
-  exportSkill(target: ManagerTarget, signal: AbortSignal): Promise<SkillManagerResults['exportSkill']> { return this.perform(async () => exportSkill(target.root, target.name ?? '', await this.options(target)), signal) }
+  exportSkill(target: ManagerTarget, signal: AbortSignal): Promise<SkillManagerResults['exportSkill']> { return this.perform(async active => exportSkill(target.root, target.name ?? '', await this.options(target, active)), signal) }
 
   /** Set one skill invocation policy.
    * @param target Explicit operation input.
@@ -179,7 +233,7 @@ export class SkillsManager extends TypertRemoteService {
    * @returns The committed result or a typed operation failure.
    */
   @Remote
-  setSkillEnabled(target: ManagerTarget, enabled: boolean, signal: AbortSignal): Promise<SkillManagerResults['setSkillEnabled']> { return this.perform(async () => setSkillEnabled(await this.root(target), target.name ?? '', enabled, this.log), signal, { mutation: true, notify: true }) }
+  setSkillEnabled(target: ManagerTarget, enabled: boolean, signal: AbortSignal): Promise<SkillManagerResults['setSkillEnabled']> { return this.perform(async active => setSkillEnabled(await this.root(target, active), target.name ?? '', enabled, this.log), signal, { mutation: true, notify: true }) }
 
   /** Set one source invocation policy.
    * @param target Explicit operation input.
@@ -188,7 +242,7 @@ export class SkillsManager extends TypertRemoteService {
    * @returns The committed result or a typed operation failure.
    */
   @Remote
-  setSourceEnabled(target: ManagerTarget, enabled: boolean, signal: AbortSignal): Promise<SkillManagerResults['setSourceEnabled']> { return this.perform(async () => setSourceEnabled(target.root, enabled, this.log, await this.options(target)), signal, { mutation: true, notify: true }) }
+  setSourceEnabled(target: ManagerTarget, enabled: boolean, signal: AbortSignal): Promise<SkillManagerResults['setSourceEnabled']> { return this.perform(async active => setSourceEnabled(target.root, enabled, this.log, await this.options(target, active)), signal, { mutation: true, notify: true }) }
 
   /** Create a list category.
    * @param target Explicit operation input.
@@ -196,7 +250,7 @@ export class SkillsManager extends TypertRemoteService {
    * @returns The committed result or a typed operation failure.
    */
   @Remote
-  createCategory(target: ManagerTarget, signal: AbortSignal): Promise<SkillManagerResults['createCategory']> { return this.perform(async () => createCategory(target.root, target.name ?? '', this.log, await this.options(target)), signal, { mutation: true }) }
+  createCategory(target: ManagerTarget, signal: AbortSignal): Promise<SkillManagerResults['createCategory']> { return this.perform(async active => createCategory(target.root, target.name ?? '', this.log, await this.options(target, active)), signal, { mutation: true }) }
 
   /** Rename a list category.
    * @param target Explicit operation input.
@@ -204,7 +258,7 @@ export class SkillsManager extends TypertRemoteService {
    * @returns The committed result or a typed operation failure.
    */
   @Remote
-  renameCategory(target: ManagerTarget, signal: AbortSignal): Promise<SkillManagerResults['renameCategory']> { return this.perform(async () => renameCategory(target.root, target.id ?? '', target.name ?? '', this.log, await this.options(target)), signal, { mutation: true }) }
+  renameCategory(target: ManagerTarget, signal: AbortSignal): Promise<SkillManagerResults['renameCategory']> { return this.perform(async active => renameCategory(target.root, target.id ?? '', target.name ?? '', this.log, await this.options(target, active)), signal, { mutation: true }) }
 
   /** Delete a list category while retaining its skills.
    * @param target Explicit operation input.
@@ -212,7 +266,7 @@ export class SkillsManager extends TypertRemoteService {
    * @returns The committed result or a typed operation failure.
    */
   @Remote
-  deleteCategory(target: ManagerTarget, signal: AbortSignal): Promise<SkillManagerResults['deleteCategory']> { return this.perform(async () => deleteCategory(target.root, target.id ?? '', this.log, await this.options(target)), signal, { mutation: true }) }
+  deleteCategory(target: ManagerTarget, signal: AbortSignal): Promise<SkillManagerResults['deleteCategory']> { return this.perform(async active => deleteCategory(target.root, target.id ?? '', this.log, await this.options(target, active)), signal, { mutation: true }) }
 
   /** Assign a skill to a category.
    * @param target Explicit operation input.
@@ -220,7 +274,7 @@ export class SkillsManager extends TypertRemoteService {
    * @returns The committed result or a typed operation failure.
    */
   @Remote
-  assignCategory(target: ManagerTarget, signal: AbortSignal): Promise<SkillManagerResults['assignCategory']> { return this.perform(async () => assignSkillCategory(target.root, target.name ?? '', target.category ?? '', this.log, await this.options(target)), signal, { mutation: true }) }
+  assignCategory(target: ManagerTarget, signal: AbortSignal): Promise<SkillManagerResults['assignCategory']> { return this.perform(async active => assignSkillCategory(target.root, target.name ?? '', target.category ?? '', this.log, await this.options(target, active)), signal, { mutation: true }) }
 
   /** Change category ordering.
    * @param target Explicit operation input.
@@ -228,7 +282,7 @@ export class SkillsManager extends TypertRemoteService {
    * @returns The committed result or a typed operation failure.
    */
   @Remote
-  moveInCategory(target: ManagerTarget, signal: AbortSignal): Promise<SkillManagerResults['moveInCategory']> { return this.perform(async () => moveSkillInCategory(target.root, target.name ?? '', target.category ?? '', target.targetName, target.position ?? 'before', this.log, await this.options(target)), signal, { mutation: true }) }
+  moveInCategory(target: ManagerTarget, signal: AbortSignal): Promise<SkillManagerResults['moveInCategory']> { return this.perform(async active => moveSkillInCategory(target.root, target.name ?? '', target.category ?? '', target.targetName, target.position ?? 'before', this.log, await this.options(target, active)), signal, { mutation: true }) }
 
   /** Set invocation policy for a category.
    * @param target Explicit operation input.
@@ -237,7 +291,7 @@ export class SkillsManager extends TypertRemoteService {
    * @returns The committed result or a typed operation failure.
    */
   @Remote
-  setCategoryEnabled(target: ManagerTarget, enabled: boolean, signal: AbortSignal): Promise<SkillManagerResults['setCategoryEnabled']> { return this.perform(async () => setCategoryEnabled(target.root, target.category ?? '', enabled, this.log, await this.options(target)), signal, { mutation: true, notify: true }) }
+  setCategoryEnabled(target: ManagerTarget, enabled: boolean, signal: AbortSignal): Promise<SkillManagerResults['setCategoryEnabled']> { return this.perform(async active => setCategoryEnabled(target.root, target.category ?? '', enabled, this.log, await this.options(target, active)), signal, { mutation: true, notify: true }) }
 
   /** Move a writable skill into the recoverable trash.
    * @param target Explicit operation input.
@@ -245,7 +299,7 @@ export class SkillsManager extends TypertRemoteService {
    * @returns The committed result or a typed operation failure.
    */
   @Remote
-  trashSkill(target: ManagerTarget, signal: AbortSignal): Promise<SkillManagerResults['trashSkill']> { return this.perform(async () => this.repositories.trashSkill(await this.root(target), target.name ?? ''), signal, { mutation: true, notify: true }) }
+  trashSkill(target: ManagerTarget, signal: AbortSignal): Promise<SkillManagerResults['trashSkill']> { return this.perform(async active => this.repositories.trashSkill(await this.root(target, active), target.name ?? ''), signal, { mutation: true, notify: true }) }
 
   /** Restore a trash item only to its registered original destination.
    * @param id Explicit operation input.
@@ -254,7 +308,7 @@ export class SkillsManager extends TypertRemoteService {
    * @returns The committed result or a typed operation failure.
    */
   @Remote
-  restoreTrash(id: string, scope: ManagerScope, signal: AbortSignal): Promise<SkillManagerResults['restoreTrash']> { return this.perform(async () => this.repositories.restoreTrash(id, { ...await this.options(scope), registeredWorkspaces: registeredWorkspacePaths(this.ctx) }), signal, { mutation: true, notify: true }) }
+  restoreTrash(id: string, scope: ManagerScope, signal: AbortSignal): Promise<SkillManagerResults['restoreTrash']> { return this.perform(async active => this.repositories.restoreTrash(id, { ...await this.options(scope, active), registeredWorkspaces: registeredWorkspacePaths(this.ctx) }), signal, { mutation: true, notify: true }) }
 
   /** Permanently delete one trash item.
    * @param id Explicit operation input.
@@ -270,7 +324,7 @@ export class SkillsManager extends TypertRemoteService {
    * @returns The committed result or a typed operation failure.
    */
   @Remote
-  createSkill(request: ManagerImport, signal: AbortSignal): Promise<SkillManagerResults['createSkill']> { return this.perform(async () => createSkill({ name: request.name, description: request.description, body: request.body }, this.log, { root: await this.root(request) }), signal, { mutation: true, notify: true }) }
+  createSkill(request: ManagerImport, signal: AbortSignal): Promise<SkillManagerResults['createSkill']> { return this.perform(async active => createSkill({ name: request.name, description: request.description, body: request.body }, this.log, { root: await this.root(request, active) }), signal, { mutation: true, notify: true }) }
 
   /** Preview or import local skill files without changing source files.
    * @param request Explicit operation input.
@@ -278,7 +332,7 @@ export class SkillsManager extends TypertRemoteService {
    * @returns The committed result or a typed operation failure.
    */
   @Remote
-  importSkill(request: ManagerImport, signal: AbortSignal): Promise<SkillManagerResults['importSkill']> { return this.perform(async () => importSkill(request.source ?? '', this.log, { conflict: request.conflict ?? 'skip', dryRun: request.dryRun === true, ...request.workspace !== undefined || request.root === 'agents' ? { root: await this.root(request) } : {} }), signal, { mutation: true, notify: request.dryRun !== true }) }
+  importSkill(request: ManagerImport, signal: AbortSignal): Promise<SkillManagerResults['importSkill']> { return this.perform(async active => importSkill(request.source ?? '', this.log, { conflict: request.conflict ?? 'skip', dryRun: request.dryRun === true, ...request.workspace !== undefined || request.root === 'agents' ? { root: await this.root(request, active) } : {} }), signal, { mutation: true, notify: request.dryRun !== true }) }
 
   /** Import a bounded file or ZIP upload.
    * @param request Explicit operation input.
@@ -286,9 +340,9 @@ export class SkillsManager extends TypertRemoteService {
    * @returns The committed result or a typed operation failure.
    */
   @Remote
-  uploadSkill(request: ManagerImport, signal: AbortSignal): Promise<SkillManagerResults['uploadSkill']> { return this.perform(async () => {
+  uploadSkill(request: ManagerImport, signal: AbortSignal): Promise<SkillManagerResults['uploadSkill']> { return this.perform(async (active) => {
     if (Buffer.byteLength(JSON.stringify(request)) > (88 << 20)) throw new RemoteError('skills/operation', 'body too large', { error: 'body too large', code: 'error.proto.bodyTooLarge' })
-    return importUploadedSkill({ name: request.name, entries: request.entries, zip: request.zip }, this.log, { conflict: request.conflict ?? 'skip', ...request.workspace !== undefined || request.root === 'agents' ? { root: await this.root(request) } : {} }) }, signal, { mutation: true, notify: true }) }
+    return importUploadedSkill({ name: request.name, entries: request.entries, zip: request.zip }, this.log, { conflict: request.conflict ?? 'skip', ...request.workspace !== undefined || request.root === 'agents' ? { root: await this.root(request, active) } : {} }) }, signal, { mutation: true, notify: true }) }
 
   /** Read repositories and installed copies.
    * @param signal Native invocation lifetime.
@@ -413,10 +467,12 @@ export class SkillsManager extends TypertRemoteService {
     return this.perform(async (active) => {
       if (destination.root !== undefined && destination.root !== 'dsh' && destination.root !== 'agents') throw new RemoteError('skills/operation', '技能安装位置无效', { code: 'error.repo.invalid', error: '技能安装位置无效' })
       if (destination.workspace !== undefined && destination.root !== undefined && destination.root !== 'dsh') throw new RemoteError('skills/operation', '工作区只能安装到项目 DSH skills', { code: 'error.repo.invalid', error: '工作区只能安装到项目 DSH skills' })
-      await this.options(destination)
+      await this.options(destination, active)
       const pack = await loadCatalogPackage(target, fetch, active)
       const id = target.catalog === 'skillsh' ? `skillsh:${target.source}/${target.skillId}` : `clawhub:${target.owner}/${target.slug}`
       return this.perform(() => this.repositories.installCatalog(id, pack, destination), active, { mutation: true, notify: true })
     }, signal)
   }
 }
+
+export default SkillsManager

@@ -69,16 +69,14 @@ export function companyContentRelease(value: unknown): CompanyContentRelease {
         }
       })
       const metadata: unknown = parsed.toJS({ maxAliasCount: 0 })
-      const expectedName = path.startsWith('skills/')
-        ? path.split('/')[1]
-        : path.slice(path.lastIndexOf('/') + 1, -'.md'.length)
       if (typeof metadata !== 'object' || metadata === null || Array.isArray(metadata)
-        || !('name' in metadata) || metadata.name !== expectedName
+        || !('name' in metadata) || typeof metadata.name !== 'string' || !metadata.name.trim() || /[\r\n]/u.test(metadata.name)
+        || path.startsWith('skills/') && metadata.name !== path.split('/')[1]
         || !('description' in metadata) || typeof metadata.description !== 'string'
         || !metadata.description.trim() || /[\r\n]/u.test(metadata.description)) {
         throw new Error(path.endsWith('/SKILL.md')
           ? '公司技能必须包含与目录一致的名称和非空单行字符串简介'
-          : '公司专家必须包含与文件名一致的名称和非空单行字符串简介')
+          : '公司专家必须包含非空单行字符串名称和简介')
       }
       if (path.endsWith('/SKILL.md')) {
         validateSkillInvocation(metadata)

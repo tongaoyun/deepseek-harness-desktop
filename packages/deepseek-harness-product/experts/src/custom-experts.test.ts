@@ -18,6 +18,7 @@ import {
   customExpertInputSchema,
   isExpertEmoji,
   type ExpertSummary,
+  type CustomExpertInput,
 } from "./expert-contract.ts";
 import { expertSettingsNamespace } from "./settings.ts";
 import { MemorySettings } from "./settings-memory.ts";
@@ -123,39 +124,6 @@ describe("自定义专家 Host 存储", () => {
     const restored = setup(settings.disk);
     expect((await restored.library.getCustom(expert.slug)).division).toBe(category.id);
     expect((await restored.library.catalog()).experts.find(item => item.slug === expert.slug)).toEqual(expert);
-  });
-
-  it("无旧记录时清理不访问尚未注册或已卸载的设置区", async () => {
-    const revision = vi.fn(() => { throw new Error("namespace unavailable"); });
-    const mutate = vi.fn();
-    const library = createExpertLibrary(async () => [builtin], {
-      read: () => ({ enabled: [], customExperts: [] }), revision, mutate,
-    }, ["engineering"], () => "zh");
-    await expect(library.cleanupDeleted()).resolves.toBeUndefined();
-    expect(revision).not.toHaveBeenCalled();
-    expect(mutate).not.toHaveBeenCalled();
-  });
-
-  it("启动时自动清理旧删除记录", async () => {
-    const ctx = new Context();
-    const settings = new TestSettings(ctx);
-    const slug = "custom-00000000-0000-4000-8000-000000000000";
-    settings.restore({ "agency-agents": {
-      enabled: [slug], customExperts: [{ ...input, slug, deleted: true }],
-    } });
-    ctx.provide("tools", { register: () => {} });
-    ctx.provide("systemPrompt", { section: () => {} });
-    const warning = vi.spyOn(console, "warn").mockImplementation(() => {});
-    try {
-      apply(ctx, { root: "", provider: "spawn", divisions: ["engineering"], ...volatileConfig(settings) } as never);
-      await vi.waitFor(() => expect(settings.disk["agency-agents"]).toMatchObject({
-        enabled: [], customExperts: [],
-      }));
-      expect(warning).not.toHaveBeenCalled();
-    } finally {
-      warning.mockRestore();
-      await ctx.fiber.dispose();
-    }
   });
 
   it("兼容旧 enabled 配置；新建、启用及重启恢复来自同一持久化文档", async () => {
@@ -355,7 +323,7 @@ describe("真实 Host 与 Remote 集成", () => {
     expect(await remote.getCatalog(false, new AbortController().signal)).toEqual(initial);
     const saved = await remote.saveCustomExpert(input, true, initial.revision);
     const slug = saved.experts.find((expert) => expert.custom)!.slug;
-    expect(await remote.getPrompt(slug, input.division)).toEqual({
+    expect(await remote.getPrompt(slug, input.division, new AbortController().signal)).toEqual({
       prompt: input.prompt,
     });
     expect(
@@ -459,7 +427,7 @@ describe("审查回归", () => {
     snapshot = await library.deleteCustom(other.slug, snapshot.revision);
     expect(snapshot.experts.some(e => e.conflict)).toBe(false);
   });
-  it("满额删除释放配额；失败不丢数据，旧删除记录可清理", async () => {
+  it("满额删除释放配额；失败不丢数据", async () => {
     const records = Array.from({ length: 200 }, (_, i) => ({ ...input, name: `专家${i}`, slug: `custom-00000000-0000-4000-8000-${String(i).padStart(12, '0')}` }));
     const { library, settings } = setup({ 'agency-agents': { enabled: [records[0]!.slug], customExperts: records } });
     await expect(library.saveCustom(input, true, 0)).rejects.toThrow();
@@ -470,10 +438,6 @@ describe("审查回归", () => {
     const cleared = await library.deleteCustom(records[0]!.slug, 0);
     await expect(library.deleteCustom(records[1]!.slug, 0)).rejects.toThrow();
     expect((await library.saveCustom(input, true, cleared.revision)).experts.filter(e => e.custom)).toHaveLength(200);
-    const legacy = setup({ 'agency-agents': { enabled: [records[0]!.slug], customExperts: records.map(record => ({ ...record, deleted: true, wasEnabled: true })) } });
-    await legacy.library.cleanupDeleted();
-    expect((legacy.settings.disk['agency-agents'] as AgencySettings).customExperts).toEqual([]);
-    expect((await legacy.library.catalog()).enabled).toEqual([]);
   });
   it("启停拒绝不存在和已删除的专家", async () => {
     const { library } = setup();
@@ -526,27 +490,6 @@ describe("兼容与恢复入口", () => {
     expect((await current).enabled.has(builtin.slug)).toBe(true);
   });
 });
-
-describe("启动清理的修订号保护", () => {
-  it("前序排队写入成功后，旧快照清理失败且保留新专家", async () => {
-    const legacy = { ...input, slug: 'custom-00000000-0000-4000-8000-000000000093', deleted: true, wasEnabled: true };
-    const added = { ...input, name: '新专家', slug: 'custom-00000000-0000-4000-8000-000000000094' };
-    const { settings, library } = setup({ 'agency-agents': { enabled: [], customExperts: [legacy] } });
-    const writing = settings.mutate(expertSettingsNamespace('agency-agents'), [
-      { op: 'set', path: ['customExperts'], value: [legacy, added] },
-      { op: 'set', path: ['enabled'], value: [added.slug] },
-    ], 0);
-    const cleaning = library.cleanupDeleted();
-    const rejected = expect(cleaning).rejects.toThrow();
-    await writing;
-    await rejected;
-    expect((await library.catalog()).enabled).toContain(added.slug);
-    expect((settings.disk['agency-agents'] as AgencySettings).customExperts?.some(item => item.slug === added.slug)).toBe(true);
-    await library.cleanupDeleted();
-    expect((settings.disk['agency-agents'] as AgencySettings).customExperts).toEqual([added]);
-  });
-});
-
 
 describe("名册写入回执顺序", () => {
   it("延迟保存回执不能覆盖已读取的新名册或阻断后续查询", async () => {
@@ -609,8 +552,8 @@ it.each(["删除", "改名"] as const)("他窗%s释放名称后，编辑器保�
   const oldSlug = previous.experts.find(item => item.custom)!.slug;
   if (action === "删除") await library.deleteCustom(oldSlug, previous.revision);
   else await library.saveCustom({ ...input, slug: oldSlug, name: "已改名的专家" }, true, previous.revision);
-  const saveCustomExpert = vi.fn(async (...args: Parameters<AgencyCatalogRemote["saveCustomExpert"]>) => {
-    try { return { ok: true as const, value: await library.saveCustom(...args) }; }
+  const saveCustomExpert = vi.fn(async (expert: CustomExpertInput, enabled: boolean, revision: number) => {
+    try { return { ok: true as const, value: await library.saveCustom(expert, enabled, revision) }; }
     catch (error) { return { ok: false as const, error: remoteErrorOf(error) ?? new RemoteError("gateway/internal", error instanceof Error ? error.message : String(error), {}, { cause: error }) }; }
   });
   const remote = {

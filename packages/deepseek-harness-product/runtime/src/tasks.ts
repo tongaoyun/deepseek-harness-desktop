@@ -4,9 +4,8 @@ import { join } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-agent'
 import { entryListProblem, type PresetDefinition } from '@deepseek-ai/dsh-agent-preset-registry'
-import type { ProductTaskCapabilities, ProductTaskCapabilityRequest, ProductTaskCapabilityResult } from '@deepseek-harness/product/protocol'
+import { ProductTaskCapabilitiesSchema, type ProductTaskCapabilities, type ProductTaskCapabilityRequest, type ProductTaskCapabilityResult } from '@deepseek-harness/product/protocol'
 import { ProductError, isProductFailure, productFailure, type ProductFailure } from '@deepseek-harness/product/errors'
-import { z } from 'zod'
 
 interface Snapshot {
   readonly version: 4
@@ -26,9 +25,7 @@ const empty: ProductTaskCapabilities = { knowledgeBaseIds: [] }
 const prefix = 'product-task-'
 const CAPABILITY_PROMPT = 'cordis:product-task-capabilities'
 const sorted = (values: readonly string[]) => [...new Set(values)].sort()
-const identifier = z.string().min(1).max(256)
-const identifiers = z.array(identifier).max(32)
-const capabilitySnapshot = z.object({ basePresetId: identifier, knowledgeBaseIds: identifiers }).strict()
+const capabilitySnapshot = ProductTaskCapabilitiesSchema.omit({ unavailable: true }).required({ basePresetId: true })
 
 /** Validate a durable task generation before restoring or collecting its content.
  * @param raw Stored JSON, already checked against the snapshot byte limit.
@@ -133,13 +130,21 @@ export async function createTaskCapabilities(ctx: Context, deps: TaskDependencie
     }
   }
 
-  const inspect = async (sessionId?: string) => {
+  const inspect = async (sessionId?: string, signal?: AbortSignal) => {
+    signal?.throwIfAborted()
     if (sessionId === undefined) return { presetId: ctx.agentPresets.defaultId, started: false }
-    using observation = await ctx.sessionQuery.observeSession(sessionId as Parameters<typeof ctx.sessionQuery.observeSession>[0])
-    const projections = observation.projections?.values
-    return {
-      presetId: typeof projections?.agentPreset === 'string' ? projections.agentPreset : observation.header.agentPreset ?? ctx.agentPresets.defaultId,
-      started: observation.events.some(event => event.type === 'turn/start'),
+    try {
+      using observation = await ctx.sessionQuery.observeSession(sessionId as Parameters<typeof ctx.sessionQuery.observeSession>[0],
+        signal === undefined ? {} : { signal })
+      signal?.throwIfAborted()
+      const projections = observation.projections?.values
+      return {
+        presetId: typeof projections?.agentPreset === 'string' ? projections.agentPreset : observation.header.agentPreset ?? ctx.agentPresets.defaultId,
+        started: observation.events.some(event => event.type === 'turn/start'),
+      }
+    } catch (error) {
+      signal?.throwIfAborted()
+      throw error
     }
   }
   return {
@@ -155,8 +160,9 @@ export async function createTaskCapabilities(ctx: Context, deps: TaskDependencie
         await deps.validateKnowledge(snapshot.capabilities.knowledgeBaseIds, signal)
       }
     },
-    async read(request: ProductTaskCapabilityRequest): Promise<ProductTaskCapabilities> {
-      const current = await inspect(request.sessionId)
+    async read(request: ProductTaskCapabilityRequest, signal?: AbortSignal): Promise<ProductTaskCapabilities> {
+      const current = await inspect(request.sessionId, signal)
+      signal?.throwIfAborted()
       const snapshot = snapshots.get(current.presetId)
       const unavailable = failures.get(current.presetId) ?? (current.presetId.startsWith(prefix) && snapshot === undefined
         ? productFailure(new ProductError('TASK_SNAPSHOT_MISSING', 'Task capabilities need explicit recovery')) : undefined)
@@ -177,7 +183,7 @@ export async function createTaskCapabilities(ctx: Context, deps: TaskDependencie
     async prepare(request: ProductTaskCapabilityRequest, signal?: AbortSignal): Promise<ProductTaskCapabilityResult> {
       const dependencyChecks: ProductTaskCapabilityResult['dependencyChecks'][number][] = []
       try {
-        const current = await inspect(request.sessionId)
+        const current = await inspect(request.sessionId, signal)
         signal?.throwIfAborted()
         const previous = request.recoverCapabilities === true ? undefined : snapshots.get(current.presetId)
         if (current.presetId.startsWith(prefix) && !snapshots.has(current.presetId) && request.recoverCapabilities !== true) {
@@ -242,7 +248,8 @@ export async function createTaskCapabilities(ctx: Context, deps: TaskDependencie
         }
         snapshots.set(presetId, snapshot)
         failures.delete(presetId)
-        const latest = await inspect(request.sessionId)
+        const latest = await inspect(request.sessionId, signal)
+        signal?.throwIfAborted()
         return { kind: request.sessionId !== undefined && !latest.started ? 'CURRENT_SESSION' : 'NEW_SESSION', presetId, capabilities,
           dependencyChecks: capabilities.knowledgeBaseIds.map(reference => ({ kind: 'KNOWLEDGE_BASE', reference, status: 'READY' })),
         }

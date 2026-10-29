@@ -1178,6 +1178,18 @@ describe('WorkspaceAnalyzer', { timeout: 60_000 }, () => {
     ])
   })
 
+  it('analyzes split builtin faces without declaring an automatically loaded client plugin', () => {
+    const root = copyFixture('typert-split-builtin-')
+    configureDualRuntimeClient(root, true)
+    const manifestPath = join(root, 'packages/client/package.json')
+    const manifest = JSON.parse(readFileSync(manifestPath, 'utf8')) as Record<string, unknown>
+    delete manifest.dsh
+    writeFileSync(manifestPath, JSON.stringify(manifest))
+    const model = new WorkspaceAnalyzer({ root, packages: ['@fixture/client'], checkDiagnostics: false }).analyze()
+    expect(model.faces.map(face => ({ face: face.face, exports: face.packages[0]?.exports.map(item => item.subpath) })))
+      .toMatchSnapshot()
+  })
+
   it('accepts package export forms while skipping artifact-only rows and unexported packages', { timeout: 180_000 }, () => {
     const root = copyFixture('typert-export-forms-')
     const hostRoot = join(root, 'packages/host')

@@ -1,5 +1,6 @@
 import React from 'react'
-import { Button, writeClipboard } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Button } from '@deepseek-ai/dsh-client-ui-primitives'
+import { writeClipboard } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { Translate } from './client-types.ts'
 import { TextArea } from './plugin-ui.ts'
 

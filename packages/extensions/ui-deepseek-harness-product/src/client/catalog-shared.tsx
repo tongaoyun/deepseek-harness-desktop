@@ -2,82 +2,22 @@ import type { ComponentType, ReactNode } from 'react'
 import { type DeepSeekHarnessProductKey } from '../locales.ts'
 import css from '../DeepSeekHarnessProduct.module.css'
 import type { ProductTaskCapabilities } from '@deepseek-harness/product/protocol'
+import { ProductCatalogSchema, type ProductCatalogItem, type ProductConnectorTool } from '@deepseek-harness/product/catalog'
 
 export type Catalog = keyof typeof METHODS
 
-export type ConnectorTool = {
-  readonly name: string
-  readonly displayName: string
-  readonly description?: string
-  readonly access: 'READ' | 'WRITE'
-}
+export type ConnectorTool = ProductConnectorTool
 
-export type ProductItem = {
-  readonly canRead?: boolean
-  readonly canManage?: boolean
-  readonly visibility?: string
-  readonly canEdit?: boolean
-  readonly canSubmit?: boolean
-  readonly canDelete?: boolean
-  readonly canConfigure?: boolean
-  readonly reviewStatus?: string
-  readonly id: string
-  readonly label: string
-  readonly description?: string
-  readonly author?: string
-  readonly category?: string
-  readonly version?: string
-  readonly sha256?: string
-  readonly scope?: string
-  readonly companyId?: string
-  readonly ownerEmployeeId?: string
-  readonly ownerDepartmentId?: string
-  readonly ownerName?: string
-  readonly referenceKey?: string
-  readonly reference?: string
-  readonly transport?: string
-  readonly authMode?: string
-  readonly managed?: boolean
-  readonly authorizationStatus?: string
-  readonly tools: readonly ConnectorTool[]
-  readonly createdAt?: string
-  readonly updatedAt?: string
-}
+export type ProductItem = ProductCatalogItem
 
 export interface DeepSeekHarnessCatalogActions {
   readCapabilities?(this: void): Promise<ProductTaskCapabilities>
   subscribeTaskSelection?(this: void, listener: () => void): () => void
 }
 
-export type ProductDetail = {
-  readonly canRead?: boolean
-  readonly canManage?: boolean
-  readonly visibility?: string
-  readonly canEdit?: boolean
-  readonly canSubmit?: boolean
-  readonly canDelete?: boolean
-  readonly canConfigure?: boolean
-  readonly reviewStatus?: string
-  readonly id: string
-  readonly name: string
-  readonly author?: string
-  readonly version?: string
-  readonly summary?: string
-  readonly category?: string
-  readonly sha256?: string
-  readonly scope?: string
-  readonly companyId?: string
-  readonly ownerEmployeeId?: string
-  readonly ownerDepartmentId?: string
-  readonly ownerName?: string
-  readonly transport?: string
-  readonly authMode?: string
-  readonly managed?: boolean
-  readonly authorizationStatus?: string
-  readonly tools: readonly ConnectorTool[]
-  readonly createdAt?: string
-  readonly updatedAt?: string
-}
+export type ProductDetail = Pick<ProductItem, 'id' | 'tools'>
+  & Partial<Omit<ProductItem, 'id' | 'tools' | 'label' | 'description'>>
+  & { readonly name: string; readonly summary?: string }
 
 export const METHODS = {
   connectors: 'connectors.list',
@@ -117,49 +57,12 @@ export function text(record: Record<string, unknown>, key: string): string | und
   return typeof value === 'string' && value.trim() !== '' ? value : undefined
 }
 
-export function connectorTools(value: unknown): readonly ConnectorTool[] {
-  if (!Array.isArray(value)) return []
-  return value.flatMap((entry) => {
-    if (typeof entry !== 'object' || entry === null || Array.isArray(entry)) return []
-    const record = entry as Record<string, unknown>
-    const name = text(record, 'name')
-    const displayName = text(record, 'displayName')
-    const access = text(record, 'access')
-    if (name === undefined || displayName === undefined || (access !== 'READ' && access !== 'WRITE')) return []
-    const description = text(record, 'description')
-    return [{ name, displayName, access, ...(description === undefined ? {} : { description }) }]
-  })
-}
-
+/** Validate complete public catalog responses before using resource identities in actions.
+ * @param value Untrusted catalog response from the product bridge.
+ * @returns Catalog entries with server-issued IDs and validated tools.
+ */
 export function items(value: unknown): readonly ProductItem[] {
-  if (!Array.isArray(value)) return []
-  return value.flatMap((entry, index) => {
-    if (typeof entry !== 'object' || entry === null || Array.isArray(entry)) return []
-    const record = entry as Record<string, unknown>
-    const id = text(record, 'id') ?? `${index}`
-    const label = [record.displayName, record.name, record.title]
-      .find((candidate): candidate is string => typeof candidate === 'string' && candidate.trim() !== '')
-    if (label === undefined) return []
-    const description = [record.description, record.summary]
-      .find((candidate): candidate is string => typeof candidate === 'string' && candidate.trim() !== '')
-    const authorizationStatus = text(record, 'authorizationStatus')
-    const metadata = Object.fromEntries(
-      ['author', 'category', 'version', 'sha256', 'scope', 'companyId', 'ownerEmployeeId', 'ownerDepartmentId', 'ownerName', 'referenceKey', 'reference', 'transport', 'authMode', 'createdAt', 'updatedAt', 'visibility', 'reviewStatus'].flatMap((key) => {
-        const value = text(record, key)
-        return value === undefined ? [] : [[key, value]]
-      }),
-    )
-    return [{ id, label, ...(description === undefined ? {} : { description }), ...metadata,
-      ...(typeof record.managed === 'boolean' ? { managed: record.managed } : {}),
-      ...(authorizationStatus === undefined ? {} : { authorizationStatus }),
-      ...(typeof record.canEdit === 'boolean' ? { canEdit: record.canEdit } : {}),
-      ...(typeof record.canSubmit === 'boolean' ? { canSubmit: record.canSubmit } : {}),
-      ...(typeof record.canDelete === 'boolean' ? { canDelete: record.canDelete } : {}),
-      ...(typeof record.canConfigure === 'boolean' ? { canConfigure: record.canConfigure } : {}),
-      ...(typeof record.canRead === 'boolean' ? { canRead: record.canRead } : {}),
-      ...(typeof record.canManage === 'boolean' ? { canManage: record.canManage } : {}),
-      tools: connectorTools(record.tools) }]
-  })
+  return ProductCatalogSchema.parse(value)
 }
 
 /** Localize an organization knowledge scope; unknown values remain visible for diagnostics.
@@ -201,30 +104,8 @@ export function normalizedSearch(item: ProductItem): string {
 }
 
 export function localDetail(item: ProductItem): ProductDetail {
-  return {
-    id: item.id, name: item.label,
-    ...(item.visibility ? { visibility: item.visibility } : {}),
-    ...(item.canEdit === undefined ? {} : { canEdit: item.canEdit }),
-    ...(item.canSubmit === undefined ? {} : { canSubmit: item.canSubmit }),
-    ...(item.canDelete === undefined ? {} : { canDelete: item.canDelete }),
-    ...(item.canRead === undefined ? {} : { canRead: item.canRead }),
-    ...(item.canManage === undefined ? {} : { canManage: item.canManage }),
-    ...(item.reviewStatus ? { reviewStatus: item.reviewStatus } : {}),
-    ...(item.description === undefined ? {} : { summary: item.description }),
-    ...(item.author === undefined ? {} : { author: item.author }),
-    ...(item.category === undefined ? {} : { category: item.category }),
-    ...(item.version === undefined ? {} : { version: item.version }),
-    ...(item.scope === undefined ? {} : { scope: item.scope }),
-    ...Object.fromEntries(['companyId', 'ownerEmployeeId', 'ownerDepartmentId', 'ownerName'].flatMap(key => item[key as keyof ProductItem] === undefined ? [] : [[key, item[key as keyof ProductItem]]])),
-    ...(item.canConfigure === undefined ? {} : { canConfigure: item.canConfigure }),
-    ...(item.transport === undefined ? {} : { transport: item.transport }),
-    ...(item.authMode === undefined ? {} : { authMode: item.authMode }),
-    ...(item.managed === undefined ? {} : { managed: item.managed }),
-    ...(item.authorizationStatus === undefined ? {} : { authorizationStatus: item.authorizationStatus }),
-    tools: item.tools,
-    ...(item.createdAt === undefined ? {} : { createdAt: item.createdAt }),
-    ...(item.updatedAt === undefined ? {} : { updatedAt: item.updatedAt }),
-  }
+  const { label, description, ...metadata } = item
+  return { ...metadata, name: label, ...(description === undefined ? {} : { summary: description }) }
 }
 
 export function markdownLabels(t: (key: DeepSeekHarnessProductKey) => string) {

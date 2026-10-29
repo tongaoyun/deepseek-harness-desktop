@@ -25,8 +25,34 @@ function setup(shared: boolean, gate?: Promise<void>) {
   const locale = new LocaleRuntime(ctx)
   locale.register('agency', { zh, en })
   locale.setLocale('zh')
-  render(<AgencySettingsPanel cache={createExpertClientState(remote)} remote={remote} t={locale.bind('agency')} getActive={() => 'zh'} prepareTeamSelection={() => () => true} />)
-  return remote
+  const cache = createExpertClientState(remote)
+  const view = render(<AgencySettingsPanel cache={cache} remote={remote} t={locale.bind('agency')} getActive={() => 'zh'} prepareTeamSelection={() => () => true} />)
+  return { remote, cache, ...view }
+}
+
+for (const action of ['edit', 'prompt'] as const) {
+  it.each(['source', 'view', 'reset', 'unmount'] as const)(`${action} cancels its native read on %s and ignores late success`, async (change) => {
+    const { remote, cache, unmount } = setup(true)
+    const custom = Promise.withResolvers<Awaited<ReturnType<typeof remote.getCustomExpert>>>()
+    const prompt = Promise.withResolvers<Awaited<ReturnType<typeof remote.getPrompt>>>()
+    const readCustom = vi.spyOn(remote, 'getCustomExpert').mockReturnValue(custom.promise)
+    const readPrompt = vi.spyOn(remote, 'getPrompt').mockReturnValue(prompt.promise)
+    await screen.findByText('共享专家')
+    fireEvent.click(screen.getByRole('tab', { name: '我的' }))
+    fireEvent.click(screen.getByRole('button', { name: zh[action === 'edit' ? 'custom.edit' : 'settings.viewPromptTitle'] }))
+    const signal = action === 'edit' ? readCustom.mock.calls[0]?.[1] : readPrompt.mock.calls[0]?.[2]
+    if (change === 'source') fireEvent.click(screen.getByRole('tab', { name: '市场' }))
+    else if (change === 'view') fireEvent.click(screen.getByRole('tab', { name: /专家团/ }))
+    else if (change === 'reset') await act(async () => { cache.catalog.reset() })
+    else unmount()
+    await act(async () => {
+      custom.resolve({ ok: true, value: { slug: 'personal', name: '个人专家', description: '我的说明', division: 'orders', prompt: '迟到的正文' } })
+      prompt.resolve({ ok: true, value: { prompt: '迟到的正文' } })
+    })
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(signal?.aborted).toBe(true)
+    cache.catalog.dispose(); cache.teams.dispose()
+  })
 }
 
 it('separates marketplace experts from personal experts and exposes expert teams in both sources', async () => {

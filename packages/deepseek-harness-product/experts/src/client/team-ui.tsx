@@ -1,7 +1,8 @@
 import type { RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
 import type { ExpertClientState } from './client-state.ts'
 import { StateDot } from '@deepseek-ai/dsh-client-ui-primitives';
-import { useTeamLocale, localizedExperts } from './team-locale.ts';
+import { localizedExperts, useTeamLocale } from './team-locale.ts';
+import { useTeamDirectoryView } from './team-directory.ts';
 import { LibraryCard } from './library-ui.tsx';
 import { Button, Input } from './plugin-ui.ts';
 import { CategorySelect } from './category-select.ts';
@@ -120,22 +121,14 @@ export function TeamsPanel(props: {
     } | null) => void;
     title?: string;
 }) {
-    const { locale, tx } = useTeamLocale();
-
-    const [snapshot, setSnapshot] = React.useState<TeamSnapshot | null>(() => props.cache.teams.getSnapshot());
+    const { locale, tx, error, setError, directory, snapshot, experts } = useTeamDirectoryView({ cache: props.cache, remote: props.remote, fallback: "加载失败。" });
     React.useEffect(() => {
         if (snapshot === null) { props.onSummary?.(null); return; }
         const teams = snapshot.teams.filter(team => Boolean('company' in team && team.company) === (props.source === 'company')) ?? [];
         props.onSummary?.({ source: props.source === 'company' ? 'company' : 'custom', total: teams.length, enabled: teams.filter(team => snapshot?.enabledTeams.includes(team.id)).length });
     }, [snapshot, props.source, props.onSummary]);
-    const [rawExperts, setExperts] = React.useState<ExpertSummary[]>(() => {
-        const catalog = props.cache.catalog.getSnapshot();
-        return catalog.revision < 0 ? [] : [...catalog.experts];
-    });
-    const experts = localizedExperts(rawExperts, locale);
     const [query, setQuery] = React.useState('');
     const [status, setStatus] = React.useState('');
-    const [error, setError] = React.useState('');
     const [notice, setNotice] = React.useState('');
     const [busy, setBusy] = React.useState(false);
     const [details, setDetails] = React.useState<ExpertTeam | null>(null);
@@ -149,61 +142,39 @@ export function TeamsPanel(props: {
         action: 'enable' | 'delete' | 'select';
         example?: string;
     } | null>(null);
-    const lifetime = React.useRef<AbortController | undefined>(undefined);
     React.useEffect(() => {
-        const controller = new AbortController();
-        lifetime.current = controller;
         setBusy(false);
         setError('');
         setNotice('');
         setDetails(null);
         setConfirm(null);
         setEditor(null);
-        const updateTeams = () => {
-            const next = props.cache.teams.getSnapshot();
-            setSnapshot(next);
-            if (!next) { setDetails(null); setConfirm(null); }
-        };
-        const updateExperts = () => setExperts([...props.cache.catalog.getSnapshot().experts]);
-        const unsubscribeTeams = props.cache.teams.subscribe(updateTeams);
-        const unsubscribeExperts = props.cache.catalog.subscribe(updateExperts);
-        updateTeams();
-        updateExperts();
-        void load();
-        return () => {
-            controller.abort();
-            unsubscribeTeams();
-            unsubscribeExperts();
-        };
+        // The shared directory hook owns subscriptions and request cancellation.
     }, [props.remote, props.cache]);
+    React.useEffect(() => {
+        if (!snapshot) {
+            setDetails(null);
+            setConfirm(null);
+        }
+    }, [snapshot]);
     React.useEffect(() => {
         if (!props.active) return;
         let live = true;
         void props.cache.catalog.refresh(props.source === 'company').then(() => {
-            if (live) return load();
+            if (live) return directory.refresh();
         }).catch(cause => { if (live) setError(cause instanceof Error ? cause.message : tx("加载失败。")); });
         return () => { live = false; };
-    }, [props.active, props.source, props.remote, props.cache]);
+    }, [props.active, props.source, props.remote, props.cache, directory.refresh]);
     const load = async () => {
-        const signal = lifetime.current?.signal;
-        if (!signal || signal.aborted) return;
-        try {
-            await props.cache.teams.refresh();
-            if (signal.aborted) return;
-            if (props.cache.catalog.getSnapshot().revision < 0) await props.cache.catalog.refresh();
-            if (!signal.aborted) setError('');
-        }
-        catch (cause) {
-            if (!signal.aborted)
-                setError(cause instanceof Error ? tx(cause.message) : tx("加载失败。"));
-        }
+        await directory.refresh();
+        if (!directory.getSignal()?.aborted) setError('');
     };
     const accept = (value: TeamSnapshot) => {
         const next = props.cache.teams.accept(value);
         props.cache.catalog.adoptRevision(next.revision, next.enabledExperts);
     };
     const change = async (team: ExpertTeam, action: 'enable' | 'delete' | 'select', example?: string, confirmed = false) => {
-        const signal = lifetime.current?.signal;
+        const signal = directory.getSignal();
         if (busy || !snapshot || !signal || signal.aborted)
             return;
         const enabling = action !== 'delete' &&
@@ -219,7 +190,7 @@ export function TeamsPanel(props: {
         setError('');
         try {
             if (action === 'delete') {
-                const next = await unwrap(props.remote.deleteTeam(team.id, snapshot.revision));
+                const next = await unwrap(props.remote.deleteTeam(team.id, snapshot.revision, signal));
                 if (signal.aborted) return;
                 accept(next);
                 setDetails(null);
@@ -229,7 +200,7 @@ export function TeamsPanel(props: {
                 if (action === 'enable' ||
                     !snapshot.enabledTeams.includes(team.id) ||
                     missing.length) {
-                    const next = await unwrap(props.remote.setTeamEnabled(team.id, enabling, snapshot.revision));
+                    const next = await unwrap(props.remote.setTeamEnabled(team.id, enabling, snapshot.revision, signal));
                     if (signal.aborted) return;
                     accept(next);
                 }
@@ -335,7 +306,8 @@ export function TeamsPanel(props: {
                       ...('dshDesktop' in globalThis ? [{ id: 'submit', label: tx("提交发布"), disabled: busy, onSelect: () => {
                         document.dispatchEvent(new CustomEvent('dsh:company-content-submit', { cancelable: true, detail: {
                           name: team.name, prepare: async (signal: AbortSignal) => {
-                            const value = await unwrap(props.remote.exportTeam(team.id, snapshot!.revision));
+                            signal.throwIfAborted();
+                            const value = await unwrap(props.remote.exportTeam(team.id, snapshot!.revision, signal));
                             signal.throwIfAborted(); return value;
                           },
                         } }));
@@ -366,7 +338,7 @@ export function TeamsPanel(props: {
                     setDetails(null);
                 }} onDelete={details.company ? undefined : () => void change(details, 'delete')}/>)}
       {editor && (<TeamEditor initial={editor.value} experts={experts} enabled={editor.enabled} enabledExperts={snapshot?.enabledExperts ?? []} close={() => setEditor(null)} refresh={async () => {
-                const signal = lifetime.current?.signal;
+                const signal = directory.getSignal();
                 if (!signal) throw new DOMException('Expert panel is unavailable', 'AbortError');
                 signal.throwIfAborted();
                 await props.cache.teams.refresh();
@@ -377,10 +349,10 @@ export function TeamsPanel(props: {
                 if (!latest) throw new DOMException('Expert teams disconnected', 'AbortError');
                 return latest;
             }} save={async (value, enabled, revision) => {
-                const signal = lifetime.current?.signal;
+                const signal = directory.getSignal();
                 if (!signal) return;
                 signal.throwIfAborted();
-                const next = await unwrap(props.remote.saveTeam(value, enabled, revision ?? editor.revision));
+                const next = await unwrap(props.remote.saveTeam(value, enabled, revision ?? editor.revision, signal));
                 signal.throwIfAborted();
                 accept(next);
                 setEditor(null);

@@ -11,7 +11,7 @@ import type { SessionBinding } from '@deepseek-ai/dsh-api-session-controller/cli
 import type { InboxState } from '@deepseek-ai/dsh-agent/types'
 import type { ObservableSnapshot, SnapshotStore } from '@deepseek-ai/dsh-client-store'
 import type { Branded } from '@deepseek-ai/dsh-brand'
-import type { ArbitrateKey, ArbitrateOutcome, DraftQuote, Occurrence, ReferenceInsert, TokenSpan } from './draft-editor.ts'
+import type { ArbitrateKey, ArbitrateOutcome, DraftInput, DraftQuote, Occurrence, ReferenceInsert, TokenSpan } from './draft-editor.ts'
 import type { InputSubmitMode, MessageSubmission } from './composer-submission.ts'
 
 /** Attachment payload passed to a claimed command submission. */
@@ -182,11 +182,14 @@ export interface InputTarget {
 
 /** Per-session input facade owned by the conversation wiring layer. */
 export interface SessionInput extends InputTarget {
+  /** Current semantic document, including references, quotes, and the leading command. */
+  readonly draftSnapshot: import('./draft-editor.ts').DraftSnapshot
+
   /** Insert selected transcript text as an atomic quote. @param text - nonblank selection. @returns whether editing accepted it. */
   insertQuote(text: string): boolean
 
-  /** Replace the whole draft with plain text, removing inline reference chips. */
-  setDraft(text: string): void
+  /** Replace the whole draft with plain text or a semantic document preserving reference and quote identities. */
+  setDraft(text: DraftInput): void
   /** Append ordered browser-owned attachment ids; busy admission phases refuse. */
   addAttachments(ids: readonly DraftAttachmentId[]): boolean
   /** Remove one browser-owned attachment id; busy admission phases refuse. @returns whether the id was removed. */
@@ -232,9 +235,9 @@ export interface SessionInputResolver {
   requestDraftInitialization(binding: SessionBinding, options: DraftInitializationOptions): DraftInitializationResult
 }
 
-/** Initial text for a target Session; attachments remain under their existing owner. */
+/** Initial semantic document for a target Session; attachments remain under their existing owner. */
 export interface DraftInitializationOptions {
-  readonly prompt?: string
+  readonly prompt?: DraftInput
   /** `true` acts as `whenDraftExists: 'replace'`; ignored when `whenDraftExists` is set. */
   readonly clearPreviousDraft?: boolean
   /**

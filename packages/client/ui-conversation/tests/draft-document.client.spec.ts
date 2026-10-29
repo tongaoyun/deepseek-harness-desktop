@@ -483,6 +483,23 @@ describe('draft documents in the input shell', () => {
     expect(chips(shell)).toEqual([])
   })
 
+  it('initializes and appends semantic drafts without flattening reference identities', () => {
+    const shell = makeShell()
+    const first = documentOf('read ', file)
+    const next = documentOf('then ', session)
+    expect(shell.requestDraftInitialization({ prompt: first })).toBe('applied')
+    expect(shell.draftSnapshot).toEqual(first)
+    expect(shell.requestDraftInitialization({ prompt: next })).toBe('preserved')
+    expect(shell.requestDraftInitialization({ prompt: next, whenDraftExists: 'append' })).toBe('applied')
+    expect(shell.draftSnapshot).toMatchObject({
+      text: `${first.text}\n${next.text}`,
+      references: [...first.references, ...next.references.map(ref => ({ ...ref, offset: ref.offset + first.text.length + 1 }))],
+    })
+    expect(chips(shell)).toHaveLength(2)
+    expect(shell.requestDraftInitialization({ prompt: next, clearPreviousDraft: true })).toBe('applied')
+    expect(shell.draftSnapshot).toEqual(next)
+  })
+
   it('preserves existing text or attachments unless target text is explicitly cleared', () => {
     const shell = makeShell()
     const old = documentOf('existing ', session)

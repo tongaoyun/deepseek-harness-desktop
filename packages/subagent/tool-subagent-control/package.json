@@ -20,10 +20,12 @@
     },
     "./src/*": "./src/*",
     "./package.json": "./package.json",
-    "./locale/*.json": "./locale/*.json"
+    "./locale/*.json": "./locale/*.json",
+    "./list-agents/locale/*.json": "./locale/list-agents/*.json"
   },
   "files": [
     "locale/*.json",
+    "locale/list-agents/*.json",
     "lib/index.js",
     "lib/types/**/*.d.ts"
   ],

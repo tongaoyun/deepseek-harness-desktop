@@ -10,34 +10,34 @@ import type { TeamInput } from '@deepseek-harness/product/company-team'
 
 declare module '@deepseek-ai/dsh-typert-protocol' {
   interface TypertRemoteNamespace$6167656e63794167656e7473 {
-    claimCreation: (sessionId: SessionId, proposalId: string) => Promise<RemoteResult<CreationEditorData>>
-    deleteCustomExpert: (slug: string, expectedRevision: number) => Promise<RemoteResult<CatalogSnapshot>>
-    deleteTeam: (id: string, expectedRevision: number) => Promise<RemoteResult<TeamSnapshot>>
-    exportTeam: (id: string, expectedRevision: number) => Promise<RemoteResult<{ resourceKey: string; files: Record<string, string>; }>>
+    claimCreation: (sessionId: SessionId, proposalId: string, signal?: AbortSignal) => Promise<RemoteResult<CreationEditorData>>
+    deleteCustomExpert: (slug: string, expectedRevision: number, signal?: AbortSignal) => Promise<RemoteResult<CatalogSnapshot>>
+    deleteTeam: (id: string, expectedRevision: number, signal?: AbortSignal) => Promise<RemoteResult<TeamSnapshot>>
+    exportTeam: (id: string, expectedRevision: number, signal?: AbortSignal) => Promise<RemoteResult<{ resourceKey: string; files: Record<string, string>; }>>
     getCatalog: (refreshCompany: boolean, signal?: AbortSignal) => Promise<RemoteResult<CatalogSnapshot>>
-    getCustomExpert: (slug: string) => Promise<RemoteResult<CustomExpertInput>>
+    getCustomExpert: (slug: string, signal?: AbortSignal) => Promise<RemoteResult<CustomExpertInput>>
     getEnabled: () => Promise<RemoteResult<{ enabled: string[]; revision: number; }>>
-    getPrompt: (slug: string, division: string) => Promise<RemoteResult<{ prompt: string; }>>
+    getPrompt: (slug: string, division: string, signal?: AbortSignal) => Promise<RemoteResult<{ prompt: string; }>>
     getTeams: (signal?: AbortSignal) => Promise<RemoteResult<TeamSnapshot>>
-    saveCustomExpert: (expert: CustomExpertInput, enabled: boolean, expectedRevision: number) => Promise<RemoteResult<CatalogSnapshot>>
-    saveTeam: (team: TeamInput, enabled: boolean, expectedRevision: number) => Promise<RemoteResult<TeamSnapshot>>
-    setEnabled: (enabled: string[], expectedRevision: number) => Promise<RemoteResult<{ enabled: string[]; revision: number; }>>
-    setTeamEnabled: (id: string, enabled: boolean, expectedRevision: number) => Promise<RemoteResult<TeamSnapshot>>
+    saveCustomExpert: (expert: CustomExpertInput, enabled: boolean, expectedRevision: number, signal?: AbortSignal) => Promise<RemoteResult<CatalogSnapshot>>
+    saveTeam: (team: TeamInput, enabled: boolean, expectedRevision: number, signal?: AbortSignal) => Promise<RemoteResult<TeamSnapshot>>
+    setEnabled: (enabled: string[], expectedRevision: number, signal?: AbortSignal) => Promise<RemoteResult<{ enabled: string[]; revision: number; }>>
+    setTeamEnabled: (id: string, enabled: boolean, expectedRevision: number, signal?: AbortSignal) => Promise<RemoteResult<TeamSnapshot>>
   }
   interface TypertRemoteMap {
-    'agencyAgents/claimCreation': (sessionId: SessionId, proposalId: string) => Promise<RemoteResult<CreationEditorData>>
-    'agencyAgents/deleteCustomExpert': (slug: string, expectedRevision: number) => Promise<RemoteResult<CatalogSnapshot>>
-    'agencyAgents/deleteTeam': (id: string, expectedRevision: number) => Promise<RemoteResult<TeamSnapshot>>
-    'agencyAgents/exportTeam': (id: string, expectedRevision: number) => Promise<RemoteResult<{ resourceKey: string; files: Record<string, string>; }>>
+    'agencyAgents/claimCreation': (sessionId: SessionId, proposalId: string, signal?: AbortSignal) => Promise<RemoteResult<CreationEditorData>>
+    'agencyAgents/deleteCustomExpert': (slug: string, expectedRevision: number, signal?: AbortSignal) => Promise<RemoteResult<CatalogSnapshot>>
+    'agencyAgents/deleteTeam': (id: string, expectedRevision: number, signal?: AbortSignal) => Promise<RemoteResult<TeamSnapshot>>
+    'agencyAgents/exportTeam': (id: string, expectedRevision: number, signal?: AbortSignal) => Promise<RemoteResult<{ resourceKey: string; files: Record<string, string>; }>>
     'agencyAgents/getCatalog': (refreshCompany: boolean, signal?: AbortSignal) => Promise<RemoteResult<CatalogSnapshot>>
-    'agencyAgents/getCustomExpert': (slug: string) => Promise<RemoteResult<CustomExpertInput>>
+    'agencyAgents/getCustomExpert': (slug: string, signal?: AbortSignal) => Promise<RemoteResult<CustomExpertInput>>
     'agencyAgents/getEnabled': () => Promise<RemoteResult<{ enabled: string[]; revision: number; }>>
-    'agencyAgents/getPrompt': (slug: string, division: string) => Promise<RemoteResult<{ prompt: string; }>>
+    'agencyAgents/getPrompt': (slug: string, division: string, signal?: AbortSignal) => Promise<RemoteResult<{ prompt: string; }>>
     'agencyAgents/getTeams': (signal?: AbortSignal) => Promise<RemoteResult<TeamSnapshot>>
-    'agencyAgents/saveCustomExpert': (expert: CustomExpertInput, enabled: boolean, expectedRevision: number) => Promise<RemoteResult<CatalogSnapshot>>
-    'agencyAgents/saveTeam': (team: TeamInput, enabled: boolean, expectedRevision: number) => Promise<RemoteResult<TeamSnapshot>>
-    'agencyAgents/setEnabled': (enabled: string[], expectedRevision: number) => Promise<RemoteResult<{ enabled: string[]; revision: number; }>>
-    'agencyAgents/setTeamEnabled': (id: string, enabled: boolean, expectedRevision: number) => Promise<RemoteResult<TeamSnapshot>>
+    'agencyAgents/saveCustomExpert': (expert: CustomExpertInput, enabled: boolean, expectedRevision: number, signal?: AbortSignal) => Promise<RemoteResult<CatalogSnapshot>>
+    'agencyAgents/saveTeam': (team: TeamInput, enabled: boolean, expectedRevision: number, signal?: AbortSignal) => Promise<RemoteResult<TeamSnapshot>>
+    'agencyAgents/setEnabled': (enabled: string[], expectedRevision: number, signal?: AbortSignal) => Promise<RemoteResult<{ enabled: string[]; revision: number; }>>
+    'agencyAgents/setTeamEnabled': (id: string, enabled: boolean, expectedRevision: number, signal?: AbortSignal) => Promise<RemoteResult<TeamSnapshot>>
   }
   interface TypertRemoteNamespaceMap {
     'agencyAgents': TypertRemoteNamespace$6167656e63794167656e7473

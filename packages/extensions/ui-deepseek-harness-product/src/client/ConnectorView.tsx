@@ -1,4 +1,3 @@
-import { randomUUID } from '@deepseek-ai/dsh-util-crypto'
 import { ProductLoading } from './ProductLoading.tsx'
 import type { ReactNode } from 'react'
 import { useEffect, useRef, useState } from 'react'
@@ -6,7 +5,7 @@ import { Button, IconLinkOutlineRegular, Modal } from '@deepseek-ai/dsh-client-u
 import { parseConnectorAuthorization, parseConnectorAuthorizationLaunch, ConnectorConfigurationSaveResultSchema, ConnectorDeviceConfigurationSchema, type ConnectorDeviceConfigurationSnapshot } from '@deepseek-harness/product/connector-draft'
 import { type DeepSeekHarnessProductKey } from '../locales.ts'
 import css from '../DeepSeekHarnessProduct.module.css'
-import { productApi, type ProductApi } from './product-api.ts'
+import { invokeProduct, productApi, type ProductApi } from './product-api.ts'
 import { productErrorMessage } from './product-errors.ts'
 import { type ProductDetail, AUTHORIZATION_TIMEOUT_MS, AUTHORIZATION_POLL_INTERVAL_MS, abortableDelay, DetailIdentity } from './catalog-shared.tsx'
 import { ConnectorTools } from './ConnectorTools.tsx'
@@ -53,18 +52,7 @@ export function ConnectorDetail({ product, onCatalogChanged, t }: {
     return () => { controller.abort() }
   }, [])
   const invoke = async (api: ProductApi, method: string, signal: AbortSignal): Promise<unknown> => {
-    signal.throwIfAborted()
-    const requestId = randomUUID()
-    const cancelled = Promise.withResolvers<never>()
-    const cancel = (): void => { cancelled.reject(signal.reason); api.cancel(requestId) }
-    signal.addEventListener('abort', cancel, { once: true })
-    try {
-      const value = await Promise.race([api.invoke(method, { id: product.id }, requestId), cancelled.promise])
-      signal.throwIfAborted()
-      return value
-    } finally {
-      signal.removeEventListener('abort', cancel)
-    }
+    return invokeProduct(api, method, { id: product.id }, signal)
   }
   const refreshCatalog = async (): Promise<void> => {
     const signal = lifecycle.current.signal
@@ -181,17 +169,9 @@ function ConnectorDeviceConfiguration({ product, onClose, onSaved, t }: {
   const close = useEditorCloseGuard(dirty, pending, onClose)
   const lifecycle = useRef(new AbortController())
   const invoke = async (method: string, input: unknown, signal: AbortSignal): Promise<unknown> => {
-    signal.throwIfAborted()
     const api = productApi()
     if (!api) throw new Error('Product transport unavailable')
-    const requestId = randomUUID()
-    const cancel = () => { api.cancel(requestId) }
-    signal.addEventListener('abort', cancel, { once: true })
-    try {
-      const value = await api.invoke(method, input, requestId, timeout * 2000 + 60_000)
-      signal.throwIfAborted()
-      return value
-    } finally { signal.removeEventListener('abort', cancel) }
+    return invokeProduct(api, method, input, signal, timeout * 2000 + 60_000)
   }
   const load = async (signal = lifecycle.current.signal): Promise<void> => {
     setError(undefined)

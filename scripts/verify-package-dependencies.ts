@@ -349,7 +349,11 @@ function hasGeneratedHostExport(pkg: WorkspacePackageManifest): boolean {
 function generatedHostSources(root: string, packages: readonly WorkspacePackageManifest[]): ReadonlyMap<string, string> {
   const selected = packages.filter(hasGeneratedHostExport)
   if (selected.length === 0) return new Map()
-  const artifacts = new WorkspaceTypertGenerator(root).generate(selected.map(pkg => pkg.name), ['host'])
+  // TypeScript diagnostics are owned by the typecheck/lint lane. This gate only
+  // needs Typert's Host model and dependency surface; rerunning diagnostics here
+  // made package-policy verification the slowest static gate by several minutes.
+  const artifacts = new WorkspaceTypertGenerator(root, { checkDiagnostics: false })
+    .generate(selected.map(pkg => pkg.name), ['host'])
   const sources = new Map(artifacts.map(artifact => [artifact.package, artifact.js]))
   for (const pkg of selected) {
     if (!sources.has(pkg.name)) throw new Error(`${pkg.manifestPath}: declared Host Typert export has no generated module`)

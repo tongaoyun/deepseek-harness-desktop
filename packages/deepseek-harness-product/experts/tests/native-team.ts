@@ -12,7 +12,7 @@ import type { NativeTeamService } from '../src/team-engine.ts'
 export function createTeamAgent(ctx = new Context()): Agent {
   onTestFinished(() => ctx.fiber.dispose())
   const id = SessionId(randomUUID())
-  return { id, ctx, options: {}, session: Session.create(id), status: 'idle',
+  return { id, ctx, options: {}, model: { current: () => undefined, select() {} }, session: Session.create(id), status: 'idle',
     inbox: { nextTurn: [], nextStep: [], clear() {}, append() {}, prepend() {},
       replace: () => false, remove: () => false, splice: () => [] },
     send() {}, followup() {}, steer() {}, inject() {}, cancel() {},

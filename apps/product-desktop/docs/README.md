@@ -14,7 +14,6 @@
 - [仓库与架构](#repositories-and-architecture)
 - [开发与交付](#development-and-delivery)
 - [公司专家与技能：仓库安装、AI 发布与桌面同步](company-content.md)
-- [产品破坏性变更](breaking-changes.md)
 - [验收与限制](#verification-and-limitations)
 
 <a id="product-entry-points"></a>
@@ -27,13 +26,13 @@
 <a id="capabilities"></a>
 ## 能力使用
 
-左侧“扩展能力”中的“专家套件”“技能”在主内容区展示预装社区插件的管理页，设置中的入口继续保留，两处共用页面和数据。页面切换不修改当前对话或草稿。
+左侧“扩展能力”中的“专家套件”“技能”在主内容区展示内建模块的管理页；不提供设置重复页、独立安装或独立更新。页面切换不修改当前对话或草稿。
 
 “连接器”直接展示公司服务端目录及第三方账号连接配置，使用官方 MCP 客户端连接服务并提供工具。
 
 | 能力 | 员工操作 | 任务行为 |
 |---|---|---|
-| 专家套件与技能 | 预装插件，在官方设置中管理 | 沿用官方 Agent、Skill Provider、工具与审批 |
+| 专家套件与技能 | 在“市场／我的”浏览和管理内建内容 | 使用官方 Agent、Skill Provider、工具与审批 |
 | 连接器 | 通过表单或 MCP JSON 添加，所有者可修改或删除，独立管理第三方账号连接 | 公司连接器默认全员可见，配置完成且账号条件满足后供普通会话使用；READ 注解进入策略检查，WRITE 工具走官方审批，未声明工具拒绝 |
 | 知识库 | 在能力下浏览个人、直属部门和公司知识库 | 从对话输入框选择检索范围，浏览文件不将知识库加入任务 |
 
@@ -43,7 +42,7 @@
 
 知识库工作区包含目录树、文件列表和内嵌阅读器。管理者可创建多级文件夹、重命名、上传、移动资料及删除空目录；非空目录拒绝删除。点击知识库名称返回首页，左侧仅列真实文件夹；右侧“按文件夹 / 全部文件”切换直属资料与跨目录文件。文件名搜索提示当前范围，可一键清除筛选；文件菜单可定位所在目录。左侧加号创建顶层目录，子目录从文件夹菜单创建；新建和导入保留当前位置，位置未确认时提示检查全部文件，不盲目重复创建。
 
-原件使用官方 Harness 预览组件，不依赖解析成功：PDF 显示页面，Excel 显示只读工作簿，Word 和 PowerPoint 通过官方 Office 转 PDF；也可下载或用系统应用打开。WeKnora 负责解析、索引、检索及来源片段，网页资料不一定有原件。协议与限制见[文件 UI](../../../packages/extensions/ui-deepseek-harness-product/README.md)和[知识库升级说明](../../../docs/upgrade-guide/v0.2.1-alpha.2/product-knowledge-library/guide.md)。
+原件使用官方 Harness 预览组件，不依赖解析成功：PDF 显示页面，Excel 显示只读工作簿，Word 和 PowerPoint 通过官方 Office 转 PDF；也可下载或用系统应用打开。WeKnora 负责解析、索引、检索及来源片段，网页资料不一定有原件。协议与限制见[文件 UI](../../../packages/extensions/ui-deepseek-harness-product/README.md)。
 
 服务端重新检查当前钉钉组织归属，不信任任务快照或客户端部门声明。只有本人、全部直属部门和配置公司授予范围，文件夹不增加权限。空任务范围不注册检索工具，失权和网络失败采用不同恢复方式。[产品子系统](../../../docs/subsystems/deepseek-harness-product.md)定义权限与检索规则。
 
@@ -67,7 +66,7 @@ Gitea 负责评审和 CI，GitHub 原生 runner 构建 Windows x64 与两种 Mac
 
 Gitea 的共享 Runner 使用与上游 CI 一致的 `DSH_COVERAGE_TEST_TIMEOUT_MS=90000`，同时约束测试、清理钩子和轮询；不重试失败测试，也不改变应用运行超时。
 
-服务端通过其 Gitea 流水线、Harbor、GitOps 和 Fleet 部署。构建成功、部署就绪和员工流程验收是独立结果。服务端 `docs/README.md` 索引 API、部署、领域和验收说明。协议迁移先部署服务端，再更新依赖新协议的桌面；[产品升级说明](../../../docs/upgrade-guide/v0.2.1-alpha.2/product-knowledge-library/guide.md)记录受影响行为。
+服务端通过其 Gitea 流水线、Harbor、GitOps 和 Fleet 部署。构建成功、部署就绪和员工流程验收是独立结果。服务端 `docs/README.md` 索引 API、部署、领域和验收说明。涉及接口变更时先更新服务端，再更新依赖新接口的桌面。
 
 <a id="verification-and-limitations"></a>
 ## 验收与限制
@@ -78,4 +77,4 @@ Gitea 的共享 Runner 使用与上游 CI 一致的 `DSH_COVERAGE_TEST_TIMEOUT_M
 
 ## 开发期协议
 
-产品快照只接受当前协议；旧格式或坏文件保留诊断并提示显式恢复，不转换旧产品缓存或降级执行。官方 Session 历史和草稿保留。具体恢复及快照规则见[运行时](../../../packages/deepseek-harness-product/runtime/README.md)，破坏性变更见对应[升级说明](../../../docs/upgrade-guide/v0.2.1-alpha.2/product-knowledge-library/guide.md)。
+产品快照只接受当前协议；格式错误的文件保留诊断并提示显式恢复，不降级执行。官方 Session 历史和草稿保留。具体恢复及快照规则见[运行时](../../../packages/deepseek-harness-product/runtime/README.md)。

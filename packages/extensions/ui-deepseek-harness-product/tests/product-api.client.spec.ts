@@ -1,5 +1,5 @@
 import { afterEach, expect, it, vi } from 'vitest'
-import { productApi } from '../src/client/product-api.ts'
+import { invokeProduct, productApi } from '../src/client/product-api.ts'
 
 afterEach(() => vi.unstubAllGlobals())
 
@@ -31,3 +31,17 @@ it.each([null, { ok: true }, { ok: false, failure: { message: 'private diagnosti
     await expect(productApi()!.invoke('knowledge.bases.list')).rejects.toThrow('Invalid product transport response')
   },
 )
+
+it('cancels a shared product request immediately and releases the abort listener', async () => {
+  const pending = Promise.withResolvers<unknown>()
+  const invoke = vi.fn(() => pending.promise)
+  const cancel = vi.fn()
+  vi.stubGlobal('dshDesktop', { extensions: { invoke, cancel } })
+  const api = productApi()!
+  const controller = new AbortController()
+  const request = invokeProduct(api, 'knowledge.bases.list', undefined, controller.signal)
+  controller.abort(new Error('view closed'))
+  await expect(request).rejects.toThrow('view closed')
+  expect(cancel).toHaveBeenCalledOnce()
+  pending.resolve({ ok: true, result: [] })
+})

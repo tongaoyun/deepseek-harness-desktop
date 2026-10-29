@@ -638,16 +638,6 @@ export function rescopeText(text: string, file: string, reverse = false): { text
   return rewrite(text, file, patterns(reverse))
 }
 
-/** Apply token rewrites while preserving the file's declared runtime identifiers.
- * @param text - Authored file contents.
- * @param file - Repository-relative file path.
- * @param reverse - Restore upstream names instead of applying the vendored scope.
- * @returns Contents after the same token pass used by the codemod.
- */
-export function rescopeText(text: string, file: string, reverse = false): string {
-  return rewrite(text, file, patterns(reverse)).text
-}
-
 function classify(file: string): string {
   if (/^vendor\/[^/]+\/package\.json$/.test(file)) return 'vendor manifest name'
   if (file.endsWith('package.json')) return 'package.json dependencies'

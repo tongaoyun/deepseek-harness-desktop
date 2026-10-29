@@ -10,11 +10,11 @@ import ts from 'typescript'
  */
 export async function generateSkillRemote(check = false): Promise<void> {
   const packageRoot = fileURLToPath(new URL('../', import.meta.url))
-  await generateRemote({ packageRoot, packageName: '@deepseek-harness/product-skills', tempPrefix: 'skills-typert-', label: 'Skills', remoteName: 'skill', prepare: async ({ output, check }) => {
+  await generateRemote({ packageRoot, packageName: '@deepseek-harness/product-skills', tempPrefix: 'skills-typert-', label: 'Skills', remoteName: 'skill', hostConfig: 'tsconfig.host.json', prepare: async ({ output, check }) => {
     // Materialize inferred operation results first: the native analyzer requires explicit type syntax.
     // These types are regenerated from implementations, never maintained as a second DTO set.
     const inference = join(packageRoot, 'scripts/result-inference.ts')
-    const parsed = ts.getParsedCommandLineOfConfigFile(join(packageRoot, 'tsconfig.json'), {}, { ...ts.sys, onUnRecoverableConfigFileDiagnostic: (diagnostic) => { throw new Error(ts.flattenDiagnosticMessageText(diagnostic.messageText, '\n')) } })
+    const parsed = ts.getParsedCommandLineOfConfigFile(join(packageRoot, 'tsconfig.host.json'), {}, { ...ts.sys, onUnRecoverableConfigFileDiagnostic: (diagnostic) => { throw new Error(ts.flattenDiagnosticMessageText(diagnostic.messageText, '\n')) } })
     if (!parsed) throw new Error('Skills compiler configuration is unavailable')
     const program = ts.createProgram([...parsed.fileNames, inference], parsed.options)
     const checker = program.getTypeChecker()

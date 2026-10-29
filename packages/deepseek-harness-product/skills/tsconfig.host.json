@@ -1,0 +1,25 @@
+{
+  "extends": "./tsconfig.shared.json",
+  "files": [
+    "src/index.ts",
+    "src/submission.ts"
+  ],
+  "include": [
+    "src/**/*.ts",
+    "scripts/**/*.ts",
+    "tests/**/*.spec.ts"
+  ],
+  "exclude": [
+    "src/client.ts",
+    "src/client-types.ts",
+    "src/remote.ts",
+    "src/remote-client.ts",
+    "src/skill-body.ts",
+    "src/destination-types.ts",
+    "src/destination-picker.ts",
+    "src/plugin-ui.ts",
+    "src/repository-ui.ts",
+    "src/source-select.ts",
+    "src/generated/typert.remote-client.*"
+  ]
+}

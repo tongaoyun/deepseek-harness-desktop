@@ -24,7 +24,7 @@ function fixture(locale: 'zh' | 'en' = 'en') {
     getCatalog: unused, getCustomExpert: unused, saveCustomExpert, deleteCustomExpert: unused, exportTeam: unused,
     getTeams: unused, saveTeam: unused, setTeamEnabled: unused, deleteTeam: unused,
   }
-  const loadCreation = vi.fn(() => Promise.resolve(structuredClone(data)))
+  const loadCreation = vi.fn<React.ComponentProps<typeof CreationCard>['loadCreation']>(() => Promise.resolve(structuredClone(data)))
   const dictionary: Readonly<Record<string, string>> = locale === 'zh' ? zh : en
   const props: React.ComponentProps<typeof CreationCard> = { phase: 'result', block: { kind: 'tool-result', seq: 1, time: 0, callId: 'open', name: 'open_custom_expert_editor', args: PartialArguments.EMPTY, call: null, callTime: null, content: [{ type: 'text', text: 'Draft confirmed' }], isError: false, subCalls: [], meta: { ready: true, proposalId: id } }, remote, cache: createExpertClientState(remote), loadCreation, getActive: () => locale, t: key => dictionary[key] ?? key }
   return { props, loadCreation, saveCustomExpert }
@@ -34,13 +34,36 @@ async function click(label: string) {
   if (!button) throw new Error(`Missing button: ${label}`)
   await act(async () => { button.click(); await Promise.resolve() })
 }
+
+it.each(['unmount', 'replacement'] as const)('cancels draft preparation on %s without adopting a late editor', async (transition) => {
+  const { props, loadCreation } = fixture()
+  const reading = Promise.withResolvers<CreationEditorData>()
+  loadCreation.mockReturnValueOnce(reading.promise)
+  await act(async () => { root.render(<CreationCard {...props} />) })
+  await click(en['creation.open'])
+  const signal = loadCreation.mock.calls[0][1]
+  const replacement = vi.fn<typeof props.loadCreation>(() => Promise.resolve(structuredClone(data)))
+  await act(async () => {
+    root.render(transition === 'unmount' ? null : <CreationCard {...props} loadCreation={replacement} />)
+  })
+  expect(signal.aborted).toBe(true)
+  await act(async () => { reading.resolve(structuredClone(data)) })
+  expect(document.querySelector('form')).toBeNull()
+  expect(props.cache.catalog.getSnapshot().revision).toBe(-1)
+  if (transition === 'replacement') {
+    await click(en['creation.open'])
+    expect(replacement).toHaveBeenCalledOnce()
+    expect(document.querySelector('form')).not.toBeNull()
+  }
+})
+
 it.each(['zh', 'en'] as const)('opens a prefilled %s editor only on an explicit click and retains the draft on save failure', async (locale) => {
   const { props, loadCreation, saveCustomExpert } = fixture(locale)
   await act(async () => { root.render(<CreationCard {...props} />); await Promise.resolve() })
   expect(loadCreation).not.toHaveBeenCalled()
   const copy = locale === 'zh' ? zh : en
   await click(copy['creation.open'])
-  expect(loadCreation).toHaveBeenCalledWith(id)
+  expect(loadCreation).toHaveBeenCalledWith(id, expect.any(AbortSignal))
   expect(document.querySelector<HTMLInputElement>('input[aria-label="' + copy['custom.name'] + '"]')?.value).toBe('Review expert')
   expect([...document.querySelectorAll('textarea')].map(area => area.value)).toContain('Report findings with evidence.')
   expect(saveCustomExpert).not.toHaveBeenCalled()
@@ -96,7 +119,7 @@ it('confirms the visible bulk count, cancels without writing, and preserves anot
   await click(en['bulk.enable'])
   catalog = { ...catalog, enabled: ['other'], revision: 6 }
   await click(en['bulk.confirm'])
-  expect(setEnabled).toHaveBeenCalledWith(['other', 'target'], 6)
+  expect(setEnabled).toHaveBeenCalledWith(['other', 'target'], 6, expect.any(AbortSignal))
   expect(document.body.textContent).not.toContain(en['bulk.title'])
 })
 
@@ -115,7 +138,7 @@ it('keeps the existing member-enable confirmation and refreshes expert activatio
   expect(saveTeam).not.toHaveBeenCalled()
   expect(document.body.textContent).toContain(TEAM_EN['启用团队成员'])
   await click(TEAM_EN['启用团队及所需成员'])
-  expect(saveTeam).toHaveBeenCalledWith(team, true, 3)
+  expect(saveTeam).toHaveBeenCalledWith(team, true, 3, expect.any(AbortSignal))
   expect([...props.cache.catalog.getSnapshot().enabled]).toEqual(['one', 'two'])
   expect(document.querySelector('form')).toBeNull()
 })

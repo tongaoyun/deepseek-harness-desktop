@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { join, relative } from 'node:path'
 import { expect, it } from 'vitest'
 import { desktopRuntimeFileExclusion } from '../scripts/runtime-file-policy.ts'
-import { verifyDesktopRuntime, writeDesktopRuntime } from '../src/runtime-tree.ts'
+import { DESKTOP_RUNTIME_FILE, readDesktopRuntime, verifyDesktopRuntime, writeDesktopRuntime } from '../src/runtime-tree.ts'
 import { runtimeFixture } from './runtime-fixture.ts'
 
 const windows = { platform: 'win32' as const, arch: 'x64' }
@@ -13,6 +13,7 @@ it('omits development artifacts while preserving executable modules, assets and 
   const source = join(root, 'source')
   const output = join(root, 'output')
   const removed = [
+    '@tabler/icons/categories/.gitkeep', '@tabler/icons/icons/.gitkeep',
     'example/index.d.ts', 'example/index.d.mts', 'example/index.d.cts',
     'example/index.js.map', 'example/index.mjs.map', 'example/index.cjs.map',
     'example/style.css.map', 'example/index.d.ts.map', 'example/index.d.mts.map',
@@ -49,6 +50,7 @@ it('omits development artifacts while preserving executable modules, assets and 
     '@mixmark-io/domino/lib/HTMLParser.js', '@mixmark-io/domino/lib/EntityParser.js',
     '@mixmark-io/domino/LICENSE', '@mixmark-io/domino/package.json',
     'example/.yarn/runtime.cjs', '@mixmark-io/domino/.yarn-data.json',
+    'example/.gitkeep.json', 'example/.hidden-runtime',
     '@img/sharp-win32-x64/lib/libvips-42.dll',
     '@deepseek-ai/libreoffice-kit-win32-x64/bin/libreoffice-kit.exe',
     '@deepseek-ai/libreoffice-kit-win32-x64/sources/core-source.json',
@@ -70,6 +72,21 @@ it('omits development artifacts while preserving executable modules, assets and 
     const sealed = writeDesktopRuntime(output, runtime.release, runtime.sharedPackages.map(entry => entry.name))
     expect(await verifyDesktopRuntime(output, runtime.release.version)).toEqual(sealed)
     expect(readFileSync(join(modules, removed[0]!), 'utf8')).toBe(`payload:${removed[0]}`)
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+it('rejects malformed runtime metadata before integrity verification', () => {
+  const root = mkdtempSync(join(tmpdir(), 'desktop-runtime-metadata-'))
+  try {
+    runtimeFixture(root)
+    const descriptor = JSON.parse(readFileSync(join(root, DESKTOP_RUNTIME_FILE), 'utf8')) as {
+      files: Array<{ sha256: string }>
+    }
+    descriptor.files[0]!.sha256 = 'invalid'
+    writeFileSync(join(root, DESKTOP_RUNTIME_FILE), JSON.stringify(descriptor))
+    expect(() => readDesktopRuntime(root)).toThrow('desktop runtime: invalid file record')
   } finally {
     rmSync(root, { recursive: true, force: true })
   }

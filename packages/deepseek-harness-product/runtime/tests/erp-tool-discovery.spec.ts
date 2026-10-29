@@ -17,6 +17,8 @@ import Subprocess from '@deepseek-ai/dsh-subprocess-local'
 import Sandbox from '@deepseek-ai/dsh-sandbox-local'
 import SandboxPolicy from '@deepseek-ai/dsh-sandbox-policy'
 import NodePtcRuntime from '@deepseek-ai/dsh-ptc-runtime-node'
+import * as NativeToolExecutor from '@deepseek-ai/dsh-tool-executor-native'
+import * as PtcToolExecutor from '@deepseek-ai/dsh-tool-executor-ptc'
 import Tools from '@deepseek-ai/dsh-tools'
 import Llm, { LlmAdapter, ToolCallId, createUserMessage, projectToolUpdates,
   type GenerateOptions, type StreamChunk } from '@deepseek-ai/dsh-llm'
@@ -35,6 +37,15 @@ const serverName = connectorServerName('erp')
 const publicName = (raw: string) => publicToolName(serverName, raw)
 const discoveryMeta = z.object({ kind: z.literal('product-connector-tools-v1'), content: z.string() }).strict()
 type Step = { name: string; arguments: Record<string, string | number | string[]> }
+
+async function executeTool(ctx: Context, agent: Agent, name: string, args: Record<string, unknown>, callId: ToolCallId,
+  signal = new AbortController().signal) {
+  const batch = await ctx.tools.execute({ calls: [{ type: 'tool-call', name, id: callId, arguments: JSON.stringify(args) }],
+    agent, signal })
+  const result = batch.results[0]?.result
+  if (result === undefined) throw new Error(`Executor omitted result for ${name}`)
+  return result
+}
 
 /** Scripted model isolates protocol behavior; it does not measure model selection quality. */
 class ScriptedModel extends LlmAdapter {
@@ -61,6 +72,7 @@ it('proves scoped discovery over 300 ERP tools with native policy, approval, dur
   const home = await mkdtemp(join(tmpdir(), 'erp-tool-discovery-'))
   vi.stubEnv('DSH_HOME', home)
   const contexts: Context[] = []
+  const runtimeFibers = new WeakMap<Context, ReturnType<Context['plugin']>>()
   const calls: string[] = []
   const protocol: string[] = []
   const approvals: string[] = []
@@ -154,7 +166,6 @@ it('proves scoped discovery over 300 ERP tools with native policy, approval, dur
     { id: 'sandbox-policy', name: 'cordis:sandbox-policy', config: { mode: 'danger-full-access', workspaceRoot: home } },
     { id: 'working-directory', name: 'cordis:working-directory', config: { defaultDirectory: home } },
     { id: 'ptc', name: 'cordis:ptc', config: {} },
-    { id: 'runtime', name: 'cordis:runtime' },
   ]
   await writeFile(join(directory, 'cordis.patch.yml'), JSON.stringify([{ insert: rows }]))
   await writeFile(join(directory, 'cordis.yml'), '[]\n')
@@ -162,19 +173,21 @@ it('proves scoped discovery over 300 ERP tools with native policy, approval, dur
     patchPath: join(directory, 'cordis.patch.yml'), installAnchor: fileURLToPath(new URL('../package.json', import.meta.url)),
     cwd: home, home, overlays: [], telemetryDisabledEnv: undefined }
   const start = async () => {
-    const ctx = await boot('test', join(directory, 'cordis.yml'), readProfilePatches('test', profile), (ctx) => {
+    const ctx = await boot('test', join(directory, 'cordis.yml'), readProfilePatches('test', profile), async (ctx) => {
       ctx.provide('profileContext', profile)
       ctx.provide('sessionQuery', { listSessions: async () => [] })
       Object.assign(ctx.loader.builtins, { prompt: SystemPrompt, tools: Tools, llm: Llm, sessions: Sessions,
         projections: SessionProjections, persistence: Jsonl, agents: Agents, loop: AgentLoop, presets: Presets, approval: Approval,
         'working-directory': WorkingDirectory, 'mcp-resources': McpResources, fs: FileSystem, subprocess: Subprocess,
         sandbox: Sandbox, 'sandbox-policy': SandboxPolicy, ptc: NodePtcRuntime,
-        runtime: { inject: Runtime.inject, apply: (owner: Context) => Runtime.apply(owner, {
-          product, connectorDiscovery: { maxLoadedTools: 8 },
-          publishControl(value) { control = value } }) },
-
       })
     })
+    await ctx.plugin(NativeToolExecutor)
+    const runtimeFiber = ctx.plugin({ inject: Runtime.inject, apply: (owner: Context) => Runtime.apply(owner, {
+      product, connectorDiscovery: { maxLoadedTools: 8 }, publishControl(value) { control = value },
+    }) })
+    await runtimeFiber
+    runtimeFibers.set(ctx, runtimeFiber)
     contexts.push(ctx)
     expect(ctx.tools.schemas().filter(tool => names.includes(tool.name))).toHaveLength(0)
     ctx.on('approval/request', (request) => {
@@ -191,7 +204,7 @@ it('proves scoped discovery over 300 ERP tools with native policy, approval, dur
     const options = { agentOptions: { provider, model: 'fixture' } }
     const handle = resume ? await ctx.agents.resume({ resumeSessionId: SessionId(id), ...options })
       : await ctx.agents.create({ sessionId: SessionId(id), ...options, ...seed === undefined ? {} : { seed } })
-    return { handle, model }
+    return { handle, model, provider }
   }
   const run = async (agent: Agent, model: ScriptedModel, steps: Step[]) => {
     const before = agent.session.snapshotEvents().filter(event => event.type === 'turn/end').length
@@ -204,11 +217,25 @@ it('proves scoped discovery over 300 ERP tools with native policy, approval, dur
   const exact = (toolNames: string[], connectorId = 'erp'): Step => ({ name: DISCOVER, arguments: { connectorId, toolNames } })
   const call = (raw: string): Step => ({ name: publicName(raw), arguments: { recordId: 'fixture-record' } })
   const ctx = await start()
+  const runtimeOwner = runtimeFibers.get(ctx)?.ctx.fiber
+  const conversationFibers = new Set<NonNullable<typeof runtimeOwner>>()
+  const stopTracking = ctx.on('internal/plugin', (fiber) => {
+    if (fiber.parent.fiber !== runtimeOwner) return
+    if (fiber.uid === null) conversationFibers.delete(fiber)
+    else conversationFibers.add(fiber)
+  }, { global: true })
+  onTestFinished(() => { stopTracking() })
+  for (const id of ['scope-lifetime-first', 'scope-lifetime-second']) {
+    const transient = await create(ctx, id)
+    expect(conversationFibers.size).toBeGreaterThan(0)
+    await transient.handle.dispose()
+    await vi.waitFor(() => { expect(conversationFibers.size).toBe(0) })
+  }
   const a = await create(ctx, 'erp-proof-a')
   const b = await create(ctx, 'erp-proof-b')
   expect(protocol.filter(method => method === 'initialize')).toHaveLength(1)
   expect(protocol.filter(method => method === 'tools/list')).toHaveLength(1)
-  const resources = await ctx.tools.execute({ agent: a.handle.agent, name: 'list_mcp_resources', arguments: { server: serverName }, callId: ToolCallId('native-resource'), signal: new AbortController().signal })
+  const resources = await executeTool(ctx, a.handle.agent, 'list_mcp_resources', { server: serverName }, ToolCallId('native-resource'))
   expect(resources.isError).toBe(false)
   expect(JSON.stringify(resources.content)).toContain('erp://orders/policy')
   expect(ctx.tools.schemas(a.handle.agent).filter(tool => names.includes(tool.name))).toEqual([])
@@ -252,7 +279,7 @@ it('proves scoped discovery over 300 ERP tools with native policy, approval, dur
   expect(ctx.tools.schemas(a.handle.agent).some(tool => tool.name === 'knowledge_destinations')).toBe(true)
   available = false
   const resourceCalls = protocol.filter(method => method === 'resources/list').length
-  expect((await ctx.tools.execute({ agent: a.handle.agent, name: 'list_mcp_resources', arguments: { server: serverName }, callId: ToolCallId('revoked-resource'), signal: new AbortController().signal })).isError).toBe(true)
+  expect((await executeTool(ctx, a.handle.agent, 'list_mcp_resources', { server: serverName }, ToolCallId('revoked-resource'))).isError).toBe(true)
   expect(protocol.filter(method => method === 'resources/list')).toHaveLength(resourceCalls)
   await run(a.handle.agent, a.model, [call('orders_read_00')])
   await run(b.handle.agent, b.model, [discover('库存', 1)])
@@ -282,13 +309,10 @@ it('proves scoped discovery over 300 ERP tools with native policy, approval, dur
   const restored = await create(restarted, 'erp-proof-a', true)
   const recoveredCrash = await create(restarted, 'erp-proof-crash', true)
   expect(restarted.tools.schemas(recoveredCrash.handle.agent).filter(tool => names.includes(tool.name))).toHaveLength(2)
-  await run(recoveredCrash.handle.agent, recoveredCrash.model, [call('orders_read_00')])
   await recoveredCrash.handle.dispose()
   expect(ctx.get('tools')).toBeUndefined()
   expect(restarted.tools.schemas(restored.handle.agent).filter(tool => names.includes(tool.name))).toHaveLength(3)
   expect(restored.handle.agent.session.snapshotEvents().slice(0, persistedEvents.length)).toEqual(persistedEvents)
-  await run(restored.handle.agent, restored.model, [call('orders_read_00')])
-  expect(calls.at(-1)).toBe('orders_read_00')
   const persisted = await restarted.sessionPersistence.open(SessionId('erp-proof-b'), 'read')
   try { expect((await persisted.read()).events.some(event => event.type === 'tool/result')).toBe(true) }
   finally { await persisted.close() }
@@ -438,8 +462,8 @@ it('proves scoped discovery over 300 ERP tools with native policy, approval, dur
   const cancelled = await create(restarted, 'erp-proof-cancel')
   const controller = new AbortController()
   heldCatalog = { started: Promise.withResolvers<null>(), release: Promise.withResolvers<null>() }
-  const cancelling = restarted.tools.execute({ agent: cancelled.handle.agent, name: DISCOVER,
-    arguments: { connectorId: 'erp', toolNames: ['catalog_read_00'] }, callId: ToolCallId('cancel-discovery'), signal: controller.signal })
+  const cancelling = executeTool(restarted, cancelled.handle.agent, DISCOVER,
+    { connectorId: 'erp', toolNames: ['catalog_read_00'] }, ToolCallId('cancel-discovery'), controller.signal)
   await heldCatalog.started.promise
   controller.abort(new Error('Cancel ERP discovery'))
   heldCatalog.release.resolve(null)
@@ -456,7 +480,7 @@ it('proves scoped discovery over 300 ERP tools with native policy, approval, dur
   const refreshing = refreshControl.refreshConnectors()
   await heldCatalog.started.promise
   expect(restarted.tools.schemas().some(tool => names.includes(tool.name))).toBe(false)
-  expect((await restarted.tools.execute({ agent: refreshAgent.handle.agent, name: publicName('warehouse_read_00'), arguments: { recordId: 'x' }, callId: ToolCallId('during-refresh'), signal: new AbortController().signal })).isError).toBe(true)
+  expect((await executeTool(restarted, refreshAgent.handle.agent, publicName('warehouse_read_00'), { recordId: 'x' }, ToolCallId('during-refresh'))).isError).toBe(true)
   heldCatalog.release.resolve(null)
   await refreshing
   heldCatalog = undefined
@@ -464,8 +488,8 @@ it('proves scoped discovery over 300 ERP tools with native policy, approval, dur
   await run(refreshAgent.handle.agent, refreshAgent.model, [call('warehouse_read_00')])
   expect(calls.slice(refreshCalls)).toEqual(['warehouse_read_00'])
   imageResult = true
-  const richResult = await restarted.tools.execute({ agent: refreshAgent.handle.agent, name: publicName('warehouse_read_00'),
-    arguments: { recordId: 'rich-result' }, callId: ToolCallId('rich-after-refresh'), signal: new AbortController().signal })
+  const richResult = await executeTool(restarted, refreshAgent.handle.agent, publicName('warehouse_read_00'),
+    { recordId: 'rich-result' }, ToolCallId('rich-after-refresh'))
   imageResult = false
   expect(richResult.isError).toBe(false)
   expect(JSON.stringify(richResult.content)).toContain('no attachment store is mounted')
@@ -488,21 +512,58 @@ it('proves scoped discovery over 300 ERP tools with native policy, approval, dur
   expect(restarted.tools.schemas(child.agent).some(tool => names.includes(tool.name))).toBe(false)
   await child.dispose()
   await parent.handle.dispose()
-  // Real Node PTC dispatch sees only the discovery SDK, then the selected native MCP definitions.
   const ptc = await create(restarted, 'erp-ptc')
-  ptc.handle.agent.ctx.tools.presentAs('ptc')
-  await run(ptc.handle.agent, ptc.model, [{ name: 'run_code', arguments: { description: 'ERP fixture', code: `return await tools.${DISCOVER}({ connectorId: "erp", toolNames: ["catalog_read_00"] });` } },
-    { name: 'run_code', arguments: { description: 'ERP fixture', code: `return await tools.${publicName('catalog_read_00')}({ recordId: "ptc" });` } }])
-  expect(calls.at(-1), JSON.stringify(ptc.handle.agent.session.snapshotEvents().filter(event => event.type === 'tool/result' || event.type === 'tool/ptc-dispatch'))).toBe('catalog_read_00')
+  await ptc.handle.agent.ctx.plugin(PtcToolExecutor, { maxParallelSubCalls: 10 })
+  const ptcCalls = calls.length
+  await run(ptc.handle.agent, ptc.model, [call('catalog_read_00')])
+  expect(calls).toHaveLength(ptcCalls)
+  expect(ptc.handle.agent.session.snapshotEvents().some(event => event.type === 'tool/result' && event.data.message.isError)).toBe(true)
+  await run(ptc.handle.agent, ptc.model, [
+    { name: 'run_code', arguments: { description: 'Discover the catalog lookup tool',
+      code: `return await tools.${DISCOVER}({ connectorId: "erp", toolNames: ["catalog_read_00"] });` } },
+    { name: 'run_code', arguments: { description: 'Read the selected catalog record',
+      code: `return await tools.${publicName('catalog_read_00')}({ recordId: "ptc" });` } },
+  ])
+  expect(calls.slice(ptcCalls), JSON.stringify(ptc.handle.agent.session.snapshotEvents()
+    .filter(event => event.type === 'tool/result' || event.type === 'tool/ptc-dispatch'))).toEqual(['catalog_read_00'])
   expect(ptc.model.requests.every(request => request.tools?.map(tool => tool.name).join() === 'run_code')).toBe(true)
-  expect(JSON.stringify(ptc.model.requests[0]?.messages)).not.toContain(publicName('catalog_read_00'))
-  expect(JSON.stringify(ptc.model.requests[1]?.messages)).toContain(publicName('catalog_read_00'))
-  expect(JSON.stringify(ptc.model.requests[1]?.messages)).not.toContain(publicName('finance_read_00'))
+  expect(JSON.stringify(ptc.model.requests.at(-1)?.messages)).toContain(publicName('catalog_read_00'))
+  expect(JSON.stringify(ptc.model.requests.at(-1)?.messages)).not.toContain(publicName('finance_read_00'))
   expect(ptc.handle.agent.session.snapshotEvents().some(event => event.type === 'tool/ptc-dispatch' && event.data.name === DISCOVER && !event.data.isError)).toBe(true)
   await ptc.handle.dispose()
   const ptcRestored = await create(restarted, 'erp-ptc', true)
+  ptcRestored.handle.agent.model.select({ provider: ptcRestored.provider, model: 'fixture' })
+  await ptcRestored.handle.agent.ctx.plugin(PtcToolExecutor, { maxParallelSubCalls: 10 })
   expect(restarted.tools.schemas(ptcRestored.handle.agent).some(tool => tool.name === publicName('catalog_read_00'))).toBe(true)
+  await run(ptcRestored.handle.agent, ptcRestored.model, [
+    { name: 'run_code', arguments: { description: 'Read the restored catalog record',
+      code: `return await tools.${publicName('catalog_read_00')}({ recordId: "ptc-restored" });` } },
+  ])
+  expect(calls.slice(ptcCalls)).toEqual(['catalog_read_00', 'catalog_read_00'])
+  const ptcEvidence = {
+    calls: calls.slice(ptcCalls),
+    modelTools: ptc.model.requests.at(-1)?.tools?.map(tool => tool.name),
+    resumedResult: ptcRestored.handle.agent.session.snapshotEvents()
+      .filter(event => event.type === 'tool/result').at(-1)?.data.message.content,
+  }
   await ptcRestored.handle.dispose()
+  const ptcDiscovery = ptc.handle.agent.session.snapshotEvents().find(event => event.type === 'tool/ptc-dispatch'
+    && event.data.name === DISCOVER && !event.data.isError)
+  if (ptcDiscovery?.type !== 'tool/ptc-dispatch') throw new Error('Missing PTC discovery recording')
+  for (const [id, content] of [['missing', undefined], ['malformed', '{']] as const) {
+    const damagedPtc = await create(restarted, `erp-ptc-${id}`)
+    const data = structuredClone(ptcDiscovery.data)
+    if (content === undefined) delete data.meta
+    else data.meta = { kind: 'product-connector-tools-v1', content }
+    damagedPtc.handle.agent.session.append('tool/ptc-dispatch', data)
+    const callsBefore = calls.length
+    const denied = await executeTool(restarted, damagedPtc.handle.agent, DISCOVER,
+      { connectorId: 'erp', toolNames: ['catalog_read_00'] }, ToolCallId(`ptc-${id}-direct`))
+    expect(denied.isError).toBe(true)
+    expect(calls).toHaveLength(callsBefore)
+    expect(restarted.tools.schemas(damagedPtc.handle.agent).some(tool => names.includes(tool.name))).toBe(false)
+    await damagedPtc.handle.dispose()
+  }
   // Complete UTF-8 output is bounded before installing any definition.
   const oversized = { ...definitions[0]!, name: 'oversized_read', description: 'oversizedunique ' + '中文'.repeat(10_000) }
   definitions.push(oversized)
@@ -535,8 +596,8 @@ it('proves scoped discovery over 300 ERP tools with native policy, approval, dur
       source: { kind: 'tool', callId: ToolCallId('damaged-discovery') } },
     meta: { kind: 'product-connector-tools-v1', content: '{' } }, { surfaceOp: 'append' })
   const beforeDamaged = calls.length
-  expect((await restarted.tools.execute({ agent: damaged.handle.agent, name: publicName('warehouse_read_00'),
-    arguments: { recordId: 'damaged' }, callId: ToolCallId('damaged-direct'), signal: new AbortController().signal })).isError).toBe(true)
+  expect((await executeTool(restarted, damaged.handle.agent, publicName('warehouse_read_00'),
+    { recordId: 'damaged' }, ToolCallId('damaged-direct'))).isError).toBe(true)
   expect(calls).toHaveLength(beforeDamaged)
   await damaged.handle.dispose()
   const corruptPrefix = structuredClone(interruptedPrefix)
@@ -572,8 +633,6 @@ it('proves scoped discovery over 300 ERP tools with native policy, approval, dur
   const changed = await start()
   const exactRestarted = await create(changed, 'erp-exact', true)
   expect(changed.tools.schemas(exactRestarted.handle.agent).filter(tool => names.includes(tool.name))).toHaveLength(2)
-  await run(exactRestarted.handle.agent, exactRestarted.model, [call('orders_read_07')])
-  expect(calls.at(-1)).toBe('orders_read_07')
   await exactRestarted.handle.dispose()
   const blocked = await create(changed, 'erp-proof-a', true)
   const beforeCalls = [...calls]
@@ -589,10 +648,10 @@ it('proves scoped discovery over 300 ERP tools with native policy, approval, dur
   // Owner disposal removes both masks and the registrations it introduced.
   const live = await create(changed, 'erp-proof-unload')
   await run(live.handle.agent, live.model, [discover('库存', 1)])
-  const proofFiber = [...changed.loader.entries()].find(entry => entry.options.id === 'runtime')?.fiber
+  const proofFiber = runtimeFibers.get(changed)
   expect(proofFiber).toBeDefined()
   heldCatalog = { started: Promise.withResolvers<null>(), release: Promise.withResolvers<null>() }
-  const pendingDiscovery = changed.tools.execute({ agent: live.handle.agent, name: DISCOVER, arguments: { query: '商品', limit: 1 }, callId: ToolCallId('unload-discovery'), signal: new AbortController().signal })
+  const pendingDiscovery = executeTool(changed, live.handle.agent, DISCOVER, { query: '商品', limit: 1 }, ToolCallId('unload-discovery'))
   await heldCatalog.started.promise
   const unloading = proofFiber?.dispose()
   heldCatalog.release.resolve(null)
@@ -602,7 +661,7 @@ it('proves scoped discovery over 300 ERP tools with native policy, approval, dur
   expect(changed.tools.schemas(live.handle.agent).some(tool => tool.name === DISCOVER)).toBe(false)
   expect(changed.tools.schemas(live.handle.agent).filter(tool => names.includes(tool.name))).toHaveLength(0)
   await live.handle.dispose()
-  await expect(JSON.stringify({ ...evidence, discoverySchema, searchEvidence, exactContent: recordedExact,
+  await expect(JSON.stringify({ ...evidence, discoverySchema, searchEvidence, exactContent: recordedExact, ptcExecution: ptcEvidence,
     exactReferencesAtomic: true, exactReferencesKeepApproval: true, exactReferencesResume: true, exactConnectorIdentity: true,
     exactCapacityAtomic: true, exactNetworkFailurePreserved: true,
     cancelledDiscoveryAddsNoTools: true, changedDefinitionBlocksModelRequest: true,

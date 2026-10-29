@@ -559,7 +559,10 @@ export class WorkspaceAnalyzer {
           manifest,
           ...(exportSubpaths === undefined ? {} : { exportSubpaths }),
         })
-        if (!isDualFacePackage(manifest)) {
+        const splitFaces = existsSync(join(packageRoot, 'tsconfig.host.json'))
+          && existsSync(join(packageRoot, 'tsconfig.client.json'))
+          && clientExportSubpaths(manifest).length > 0
+        if (!isDualFacePackage(manifest) && !splitFaces) {
           registrations.push(register(face))
         } else if (configPath === join(packageRoot, 'tsconfig.json')) {
           registrations.push(

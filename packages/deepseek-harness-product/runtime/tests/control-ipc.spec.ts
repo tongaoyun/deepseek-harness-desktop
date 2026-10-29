@@ -7,8 +7,10 @@ import { Context } from '@deepseek-ai/cordis'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import Tools from '@deepseek-ai/dsh-tools'
+import * as NativeToolExecutor from '@deepseek-ai/dsh-tool-executor-native'
 import Skills from '@deepseek-ai/dsh-skill'
-import Sessions from '@deepseek-ai/dsh-session'
+import Sessions, { SessionId } from '@deepseek-ai/dsh-session'
+import SessionQueryEngine from '@deepseek-ai/dsh-session-query'
 import SessionProjections from '@deepseek-ai/dsh-session-projection'
 import Agents from '@deepseek-ai/dsh-agent'
 import Presets from '@deepseek-ai/dsh-agent-preset-registry'
@@ -16,6 +18,11 @@ import { expect, it, onTestFinished, vi } from 'vitest'
 import * as Runtime from '../src/index.ts'
 
 const emit = (message: object): void => { EventEmitter.prototype.emit.call(process, 'message', message) }
+
+class FixtureSessionQuery extends SessionQueryEngine {
+  override async searchSessions(): Promise<never> { throw new Error('Search is not used by product control') }
+  override async searchEvents(): Promise<never> { throw new Error('Search is not used by product control') }
+}
 
 async function fixture() {
   const root = await mkdtemp(join(tmpdir(), 'product-control-ipc-'))
@@ -58,17 +65,20 @@ async function fixture() {
   await ctx.plugin(Loader)
   await ctx.plugin(SystemPrompt)
   await ctx.plugin(Tools)
+  await ctx.plugin(NativeToolExecutor)
   await ctx.plugin(Skills)
   await ctx.plugin(Sessions)
   await ctx.plugin(SessionProjections)
   await ctx.plugin(Agents)
   await ctx.plugin(Presets, { default: 'minimal' })
-  ctx.provide('sessionQuery', { listSessions: async () => [], observeSession: vi.fn() })
+  await ctx.plugin(FixtureSessionQuery)
   ctx.loader.builtins['fixture-product-control'] = Runtime
   await ctx.loader.root.update([{ id: 'product', name: 'cordis:fixture-product-control' }])
   await ctx.loader.await()
   await ctx.loader.resolve('product').fiber?.await()
-  const dispatch = (method: string) => { emit({ type: 'extension-control', namespace: 'product', requestId: 1, method, payload: {} }) }
+  const dispatch = (method: string, payload: object = {}) => {
+    emit({ type: 'extension-control', namespace: 'product', requestId: 1, method, payload })
+  }
   return { ctx, before, replies, attempts, dispatch, catalogReads: () => catalogReads,
     fail: (mode?: 'sync' | 'async') => { failure = mode } }
 }
@@ -96,3 +106,69 @@ it.each([
   await h.ctx.loader.await()
   expect(process.listenerCount('message')).toBe(h.before)
 })
+
+it.each(['tasks.capabilities.read', 'tasks.capabilities.prepare'])('cancels native Session observation for %s and allows a later request', async (method) => {
+  const h = await fixture()
+  const id = SessionId('cancelled-task')
+  h.ctx.sessions.create(id)
+  const observe = h.ctx.sessionQuery.observeSession.bind(h.ctx.sessionQuery)
+  let release!: () => void
+  const pending = new Promise<void>((resolve) => { release = resolve })
+  onTestFinished(() => { release() })
+  let signal: AbortSignal | undefined
+  vi.spyOn(h.ctx.sessionQuery, 'observeSession').mockImplementationOnce(async (sessionId, options) => {
+    signal = options?.signal
+    await pending
+    return observe(sessionId, options)
+  })
+  h.dispatch(method, { sessionId: id })
+  await vi.waitFor(() => { expect(signal).toBeDefined() })
+  emit({ type: 'extension-control-cancel', namespace: 'product', requestId: 1 })
+  expect(signal?.aborted).toBe(true)
+  release()
+  await vi.waitFor(() => { expect(h.replies).toHaveLength(1) })
+  expect(h.replies[0]).toMatchObject({ requestId: 1, failure: { code: 'PRODUCT_REQUEST_CANCELLED' } })
+  expect(h.replies[0]).not.toHaveProperty('result')
+  h.dispatch('tasks.capabilities.read', { sessionId: id })
+  await vi.waitFor(() => { expect(h.replies).toHaveLength(2) })
+  expect(h.replies[1]).toMatchObject({ result: { basePresetId: 'minimal', knowledgeBaseIds: [] } })
+  expect({ cancelled: h.replies[0], retried: h.replies[1] }).toMatchSnapshot()
+})
+
+it('aborts pending native task reads when the Loader unloads without sending a late reply', async () => {
+  const h = await fixture()
+  const id = SessionId('unloaded-task')
+  h.ctx.sessions.create(id)
+  const observe = h.ctx.sessionQuery.observeSession.bind(h.ctx.sessionQuery)
+  let release!: () => void
+  const pending = new Promise<void>((resolve) => { release = resolve })
+  onTestFinished(() => { release() })
+  let signal: AbortSignal | undefined
+  vi.spyOn(h.ctx.sessionQuery, 'observeSession').mockImplementationOnce(async (sessionId, options) => {
+    signal = options?.signal
+    await pending
+    return observe(sessionId, options)
+  })
+  h.dispatch('tasks.capabilities.read', { sessionId: id })
+  await vi.waitFor(() => { expect(signal).toBeDefined() })
+  const unloading = h.ctx.loader.root.update([])
+  await vi.waitFor(() => { expect(signal?.aborted).toBe(true) })
+  release()
+  await unloading
+  await h.ctx.loader.await()
+  expect(h.replies).toEqual([])
+  expect(process.listenerCount('message')).toBe(h.before)
+})
+
+it.each([{ connectorIds: ['obsolete'] }, { knowledgeBaseIds: [42] }, { sessionId: ' ' }])(
+  'rejects invalid task requests through the real Loader before inspecting Sessions (%j)', async (payload) => {
+    const h = await fixture()
+    const observe = vi.spyOn(h.ctx.sessionQuery, 'observeSession')
+    h.dispatch('tasks.capabilities.prepare', payload)
+    await vi.waitFor(() => { expect(h.replies).toHaveLength(1) })
+    expect(h.replies[0]).toMatchObject({ requestId: 1, failure: { code: 'CAPABILITY_REQUEST_INVALID', retryable: false } })
+    expect(h.replies[0]).not.toHaveProperty('result')
+    expect(observe).not.toHaveBeenCalled()
+    expect(h.replies[0]).toMatchSnapshot()
+  },
+)

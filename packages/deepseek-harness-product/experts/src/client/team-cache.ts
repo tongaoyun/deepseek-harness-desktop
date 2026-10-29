@@ -38,7 +38,6 @@ export class ExpertTeams {
   dispose(): void { this.pending = undefined; this.lifecycle.dispose(null) }
 
   /** Accept a committed mutation; older receipts cannot replace it.
-   * Retain Host execution metadata omitted by mutation receipts until the next complete read.
    * @param value Committed team settings.
    * @returns Latest accepted team snapshot.
    */
@@ -47,7 +46,7 @@ export class ExpertTeams {
     if (this.lifecycle.signal.aborted) throw new DOMException('Expert teams disposed', 'AbortError')
     if (current !== null && value.revision < current.revision) return current
     this.pending = undefined
-    return this.publish(value.engine === undefined && current?.engine !== undefined ? { ...value, engine: current.engine } : value)
+    return this.publish(value)
   }
 
   /** Share one current query; a superseded failure cannot hide a successful mutation.

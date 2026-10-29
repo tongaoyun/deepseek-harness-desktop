@@ -77,7 +77,7 @@ export function apply(ctx: ClientContext): void {
   // Host preferences start at false before their first accepted document.
   const codingToolsDisabled = (): boolean => active && toolsSettings.getSnapshot().value?.enabled === false
   const controller = new AgentPresetSettingsController(ctx)
-  const staged: AgentPresetStage = { id: undefined, introduce: false }
+  const staged: AgentPresetStage = { revision: 0, id: undefined, introduce: false }
   const seats = new WeakMapWithValues<SessionBinding, AgentPresetSeatController>()
   const boundSeatDisposers = new Set<() => Promise<void>>()
   ctx.effect(() => async () => {

@@ -1,23 +1,25 @@
 ---
-description: "记录持久化类型更改及其兼容性确认。"
+description: "Records a persistence type transition and its compatibility acknowledgement."
 kind: persistence-change
 ---
 
 # 2026-10-13-product-expert-kit-instructions
 
-## 概述
+English | [中文](2026-10-13-product-expert-kit-instructions.zh.md)
 
-通过带产品归属的普通用户消息记录固定的专家套件说明和快捷任务技能指令。
+## Summary
 
-## 目录
+Ordinary user messages with product attribution record pinned expert-kit instructions and shortcut task skill instructions.
 
-- [声明](#declaration)
-- [兼容性](#compatibility)
-- [验证](#verification)
-- [开发备注](#dev-note)
+## Table of Contents
+
+- [Declaration](#declaration)
+- [Compatibility](#compatibility)
+- [Verification](#verification)
+- [Dev Note](#dev-note)
 
 <a id="declaration"></a>
-## 声明
+## Declaration
 
 ```yaml persistence-change
 schemaVersion: 1
@@ -43,16 +45,16 @@ changes:
 ```
 
 <a id="compatibility"></a>
-## 兼容性
+## Compatibility
 
-已有记录继续可读。新来源类型和元数据仅标记生产者；未加载本插件时，未知来源仍保留消息正文。产品去重读取当前模型可见历史中的自身归属。必需的快捷任务选择和 Provider 配置由独立哈希产品快照校验；旧运行时快照 Schema 拒绝不支持的字段，不会改用默认能力执行。官方 Session 格式和执行语义保持不变。
+Existing records remain readable. The new source kind and metadata identify only the producer; an unknown source preserves the message body when this plugin is absent. Product deduplication reads its own attribution in the current model-visible history. A separately hashed product snapshot validates required shortcut selections and Provider configuration. Older runtime snapshot schemas reject unsupported fields instead of executing with default capabilities. The official Session format and execution semantics remain unchanged.
 
 <a id="verification"></a>
-## 验证
+## Verification
 
-真实 Loader 的 runtime-loader.spec.ts 记录验证首次直接 MCP 调用前已提供完整说明和所选技能、固定快照恢复、重启不重复注入、实时权限拒绝和凭据排除。expert-kit-readme.spec.ts 验证可见历史去重、上下文替换后恢复、错误 Provider 拒绝和插件释放。
+The real Loader tests in runtime-loader.spec.ts verify complete instructions and selected skills before the first direct MCP call, pinned snapshot restoration, restart deduplication, live permission denial and credential exclusion. The expert-kit-readme.spec.ts tests verify deduplication against visible history, restoration after context replacement, rejection of the wrong Provider and plugin disposal.
 
 <a id="dev-note"></a>
-## 开发备注
+## Dev Note
 
-无。
+None.

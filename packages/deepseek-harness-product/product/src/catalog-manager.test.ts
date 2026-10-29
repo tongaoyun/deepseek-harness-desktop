@@ -5,7 +5,7 @@ function manager(api: { listAll: ReturnType<typeof vi.fn> }) {
   return new ProductCatalogManager({
     api: api as never,
     getSession: () => ({ authenticated: true, employeeId: 'employee-a' }),
-    ensureFreshSession: async () => undefined,
+    ensureFreshSession: () => Promise.resolve(undefined),
     getIdentitySignal: () => new AbortController().signal,
     emit: vi.fn(),
   })

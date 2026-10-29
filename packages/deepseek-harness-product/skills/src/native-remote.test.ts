@@ -1,10 +1,15 @@
 /** Skill management through the actual Loader, Typert codecs, Gateway and owner Peer. */
+import type {} from '@deepseek-ai/dsh-agent-preset-registry'
+import type {} from '@deepseek-ai/dsh-commands'
 import { Context } from '@deepseek-ai/cordis'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
 import * as Include from '@deepseek-ai/cordis-plugin-include'
 import Skills from '@deepseek-ai/dsh-skill'
 import * as FileSkills from '@deepseek-ai/dsh-skill-filesystem'
-import Sessions from '@deepseek-ai/dsh-session'
+import Sessions, { SessionId } from '@deepseek-ai/dsh-session'
+import Projections from '@deepseek-ai/dsh-session-projection'
+import WorkingDirectory from '@deepseek-ai/dsh-working-directory'
+import FileSystem from '@deepseek-ai/dsh-fs-local'
 import Tools from '@deepseek-ai/dsh-tools'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import Typert from '@deepseek-ai/dsh-typert-registry'
@@ -35,9 +40,10 @@ async function boot() {
   onTestFinished(async () => { await ctx.fiber.dispose(); vi.unstubAllEnvs(); await rm(root, { recursive: true, force: true }) })
   await ctx.plugin(Loader)
   Object.assign(ctx.loader.builtins, { include: Include, skills: Skills, filesystem: FileSkills, sessions: Sessions, tools: Tools,
-    prompt: SystemPrompt, typert: Typert, gateway: Gateway, access: Access, manager: Managed })
+    prompt: SystemPrompt, projections: Projections, directory: WorkingDirectory, fs: FileSystem,
+    typert: Typert, gateway: Gateway, access: Access, manager: Managed })
   const config = join(root, 'cordis.yml')
-  await writeFile(config, ['skills', 'sessions', 'tools', 'prompt', 'typert', 'access', 'gateway', 'manager'].map(name => `- name: 'cordis:${name}'`).join('\n') + "\n- name: 'cordis:filesystem'\n  config:\n    watch: false\n")
+  await writeFile(config, ['skills', 'sessions', 'tools', 'prompt', 'projections', 'fs', 'directory', 'typert', 'access', 'gateway', 'manager'].map(name => `- name: 'cordis:${name}'`).join('\n') + "\n- name: 'cordis:filesystem'\n  config:\n    watch: false\n")
   await ctx.loader.create({ name: 'cordis:include', config: { path: pathToFileURL(config).href } })
   await ctx.loader.await()
   for (const entry of ctx.loader.entries()) await entry.fiber?.await()
@@ -45,6 +51,49 @@ async function boot() {
   const invoke = (method: string, args: Record<string, unknown>, signal?: AbortSignal) => ctx.typertGateway.invoke({ namespace: 'skillsManager', method, args, peer, signal })
   return { ctx, root, invoke }
 }
+it('reads project skills from the native current directory, including replay, without leaking another Session', async () => {
+  const { ctx, root, invoke } = await boot()
+  const original = join(root, 'original'), current = join(root, 'current')
+  for (const [path, name] of [[original, 'original-orders'], [current, 'current-orders']]) {
+    await mkdir(join(path, '.git'), { recursive: true })
+    await mkdir(join(path, '.dsh', 'skills', name), { recursive: true })
+    await writeFile(join(path, '.dsh', 'skills', name, 'SKILL.md'), `---\nname: ${name}\ndescription: Orders\n---\n${name}`)
+  }
+  const selected = ctx.sessions.create(SessionId('selected'), { meta: { cwd: original } })
+  const sibling = ctx.sessions.create(SessionId('sibling'), { meta: { cwd: original } })
+  const projectSkills = async (sessionId?: string) => {
+    const result = z.object({ roots: z.array(z.object({ scope: z.string(), skills: z.array(z.object({ name: z.string() })) })) })
+      .parse(await invoke('readState', { scope: sessionId === undefined ? {} : { sessionId }, refreshCompany: false }))
+    return result.roots.filter(item => item.scope === 'project').flatMap(item => item.skills.map(skill => skill.name))
+  }
+  expect(await projectSkills(selected.id)).toEqual(['original-orders'])
+  const change = selected.append('working-directory/change', { cwd: current })
+  expect(selected.header.cwd).toBe(original)
+  expect(ctx.workingDirectory.get(selected)).toBe(current)
+  const restored = ctx.sessions.create(SessionId('restored'), { meta: { cwd: original }, seed: [change] })
+  expect({
+    current: await projectSkills(selected.id),
+    restored: await projectSkills(restored.id),
+    sibling: await projectSkills(sibling.id),
+    absent: await projectSkills(),
+    unknown: await projectSkills('unknown'),
+  }).toMatchInlineSnapshot(`
+    {
+      "absent": [],
+      "current": [
+        "current-orders",
+      ],
+      "restored": [
+        "current-orders",
+      ],
+      "sibling": [
+        "original-orders",
+      ],
+      "unknown": [],
+    }
+  `)
+}, 30000)
+
 it.each(['listWorkspaces', 'readWorkspace'] as const)('reports a failed native workspace registry through %s without claiming it is empty or unregistered', async (method) => {
   const { ctx, root, invoke } = await boot()
   const failure = new Error('Workspace storage could not be read')
@@ -89,6 +138,26 @@ it('preserves creation, policy, upload, export and trash through native dispatch
   const guest = new Peer(ctx, { principal: { kind: 'skills-test-guest' } })
   ctx.remoteAccess.registerPolicy('skills-test-guest', { bindings: () => [{ resource: { kind: 'global' }, role: { name: 'test-wide', resource: 'global', actions: ['skillsManager/createSkill'] } }] })
   await expect(ctx.typertGateway.invoke({ namespace: 'skillsManager', method: 'createSkill', args: { request: { name: 'guest-orders', description: 'No', body: 'No' } }, peer: guest })).rejects.toMatchObject({ code: 'skills/operation', details: { code: 'error.proto.forbidden' } })
+}, 30000)
+
+it.each(['request', 'disposal'] as const)('does not write a skill after %s while waiting for company roots', async (kind) => {
+  const { ctx, root } = await boot()
+  let release!: (roots: { skillsRoot: string }) => void
+  const reading = new Promise<{ skillsRoot: string }>((resolve) => { release = resolve })
+  const read = vi.fn((_signal?: AbortSignal) => reading)
+  ctx.provide('companyContent', { read })
+  const controller = new AbortController()
+  const pending = ctx.skillsManager.createSkill({ name: 'cancelled-preparation', description: 'No', body: 'No' }, controller.signal)
+  const rejected = expect(pending).rejects.toMatchObject({ code: 'gateway/cancelled' })
+  await vi.waitFor(() => { expect(read).toHaveBeenCalledOnce() })
+  const manager = [...ctx.loader.entries()].find(entry => entry.options.name === 'cordis:manager')
+  const disposed = kind === 'disposal' ? manager?.fiber?.dispose() : undefined
+  if (kind === 'request') controller.abort()
+  await vi.waitFor(() => { expect(read.mock.calls[0][0]?.aborted).toBe(true) })
+  release({ skillsRoot: join(root, 'company') })
+  await rejected
+  await disposed
+  await expect(readFile(join(root, '.dsh/skills/cancelled-preparation/SKILL.md'))).rejects.toMatchObject({ code: 'ENOENT' })
 }, 30000)
 
 it('cancels queued mutations before they write and unmounts the service on disposal', async () => {

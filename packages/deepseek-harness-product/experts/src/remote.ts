@@ -52,13 +52,17 @@ export default class AgencyAgentsRemote extends TypertRemoteService {
   /** Claim an explicitly confirmed draft for its original Session and one editor window.
    * @param sessionId - Session owning the tool result.
    * @param proposalId - Exact proposal confirmed by the human.
+   * @param signal - Cancellation before the draft is claimed.
    * @returns Draft and current revision-checked editing inputs; rejects if unavailable.
    */
   @Remote('claimCreation')
-  async claimCreation(sessionId: SessionId, proposalId: string): Promise<CreationEditorData> {
+  async claimCreation(sessionId: SessionId, proposalId: string, signal: AbortSignal): Promise<CreationEditorData> {
+    signal.throwIfAborted()
     const drafts = this.ctx.get(CREATION_SERVICE) as CreationDrafts | undefined
-    const catalog = await this.library().catalog()
-    const teams = await this.teams().snapshot()
+    const catalog = await this.library().catalog(signal)
+    signal.throwIfAborted()
+    const teams = this.describeTeams(await this.teams().snapshot(undefined, signal))
+    signal.throwIfAborted()
     const draft = drafts?.claim(SessionId(sessionId), proposalId)
     if (!draft) throw new Error(readHostLocale(this.ctx) === 'zh' ? '草案未确认、已过期或已在其他窗口打开，请重新生成预览' : 'Draft is unconfirmed, expired or already opened elsewhere. Generate a new preview.')
     return { draft, catalog, teams }
@@ -80,34 +84,41 @@ export default class AgencyAgentsRemote extends TypertRemoteService {
     signal.throwIfAborted()
     const snapshot = await this.teams().snapshot(undefined, signal)
     signal.throwIfAborted()
-    const engine = this.ctx.get('agencyAgentsTeamEngine') as (() => TeamEngineStatus) | undefined
-    const nativeMembers = Object.fromEntries(snapshot.teams.flatMap(team => team.members.map(member => [nativeTeamMemberName(team.id, member.expertSlug), member.expertSlug])))
-    return { ...snapshot, nativeMembers, ...(engine ? { engine: engine() } : {}) }
+    return this.describeTeams(snapshot)
   }
 
   /**
    * Export one saved personal team with concrete member personas; no private slug escapes.
    * @param id - Personal team identifier.
    * @param expectedRevision - Revision read before preparing the submission.
+   * @param signal - Native Remote cancellation for catalog and persona reads.
    * @returns Resource key and Base64-encoded files for company review.
    */
   @Remote('exportTeam')
-  async exportTeam(id: string, expectedRevision: number): Promise<{ resourceKey: string; files: Record<string, string> }> {
+  async exportTeam(id: string, expectedRevision: number, signal: AbortSignal): Promise<{ resourceKey: string; files: Record<string, string> }> {
+    signal.throwIfAborted()
     const company = this.ctx.get('companyContent') as CompanyContentSource | undefined
-    const companyVersion = await company?.read()
-    const snapshot = await this.teams().snapshot()
+    const companyVersion = await company?.read(signal)
+    signal.throwIfAborted()
+    const snapshot = await this.teams().snapshot(undefined, signal)
+    signal.throwIfAborted()
     const team = snapshot.teams.find(item => item.id === id && !('company' in item && item.company))
     if (!team || snapshot.revision !== expectedRevision) throw new Error(teamText(readHostLocale(this.ctx), '专家团已更新，请刷新后提交'))
-    const catalog = await this.library().catalog()
+    const catalog = await this.library().catalog(signal)
+    signal.throwIfAborted()
     const experts = await Promise.all(team.members.map(async (member, index) => {
       const expert = catalog.experts.find(item => item.slug === member.expertSlug && !item.conflict)
       if (!expert) throw new Error(teamText(readHostLocale(this.ctx), '专家团成员已删除或冲突，请修复后提交'))
       return { key: `member-${index + 1}`, name: expert.name, description: expert.description,
         division: expert.division, emoji: expert.emoji,
-        prompt: (await personaSource(this.ctx).getPrompt(expert.slug, expert.division, readHostLocale(this.ctx))).prompt }
+        prompt: (await personaSource(this.ctx).getPrompt(expert.slug, expert.division, readHostLocale(this.ctx), undefined, signal)).prompt }
     }))
-    const latest = await this.teams().snapshot()
-    if (latest.revision !== expectedRevision || (await company?.read())?.sha256 !== companyVersion?.sha256) throw new Error(teamText(readHostLocale(this.ctx), '专家团已更新，请刷新后提交'))
+    signal.throwIfAborted()
+    const latest = await this.teams().snapshot(undefined, signal)
+    signal.throwIfAborted()
+    const latestCompany = await company?.read(signal)
+    signal.throwIfAborted()
+    if (latest.revision !== expectedRevision || latestCompany?.sha256 !== companyVersion?.sha256) throw new Error(teamText(readHostLocale(this.ctx), '专家团已更新，请刷新后提交'))
     const { id: _id, ...definition } = team
     const content = publishedTeamSchema.parse({ team: { ...definition,
       members: team.members.map((member, index) => ({ ...member, expertSlug: `member-${index + 1}` })) }, experts })
@@ -120,29 +131,53 @@ export default class AgencyAgentsRemote extends TypertRemoteService {
    * @param team - 待保存的个人专家团。
    * @param enabled - 保存后的启用选择。
    * @param expectedRevision - 调用方读取的官方配置修订号。
+   * @param signal - 当前请求的取消信号。
    * @returns 保存后的专家团快照。
    */
   @Remote('saveTeam')
-  async saveTeam(team: TeamInput, enabled: boolean, expectedRevision: number): Promise<TeamSnapshot> { return this.teams().save(team, enabled, expectedRevision) }
+  async saveTeam(team: TeamInput, enabled: boolean, expectedRevision: number, signal?: AbortSignal): Promise<TeamSnapshot> {
+    signal?.throwIfAborted()
+    const snapshot = await this.teams().save(team, enabled, expectedRevision)
+    signal?.throwIfAborted()
+    return this.describeTeams(snapshot)
+  }
 
   /**
    * 更新专家团选择。
    * @param id - 个人专家团标识。
    * @param enabled - 保存后的启用选择。
    * @param expectedRevision - 调用方读取的官方配置修订号。
+   * @param signal - 当前请求的取消信号。
    * @returns 修改后的专家团快照。
    */
   @Remote('setTeamEnabled')
-  async setTeamEnabled(id: string, enabled: boolean, expectedRevision: number): Promise<TeamSnapshot> { return this.teams().setEnabled(id, enabled, expectedRevision) }
+  async setTeamEnabled(id: string, enabled: boolean, expectedRevision: number, signal?: AbortSignal): Promise<TeamSnapshot> {
+    signal?.throwIfAborted()
+    const snapshot = await this.teams().setEnabled(id, enabled, expectedRevision)
+    signal?.throwIfAborted()
+    return this.describeTeams(snapshot)
+  }
 
   /**
    * 删除个人专家团。
    * @param id - 个人专家团标识。
    * @param expectedRevision - 调用方读取的官方配置修订号。
+   * @param signal - 当前请求的取消信号。
    * @returns 删除后的专家团快照。
    */
   @Remote('deleteTeam')
-  async deleteTeam(id: string, expectedRevision: number): Promise<TeamSnapshot> { return this.teams().remove(id, expectedRevision) }
+  async deleteTeam(id: string, expectedRevision: number, signal?: AbortSignal): Promise<TeamSnapshot> {
+    signal?.throwIfAborted()
+    const snapshot = await this.teams().remove(id, expectedRevision)
+    signal?.throwIfAborted()
+    return this.describeTeams(snapshot)
+  }
+
+  private describeTeams(snapshot: TeamSnapshot): TeamSnapshot {
+    const engine = this.ctx.get('agencyAgentsTeamEngine') as (() => TeamEngineStatus) | undefined
+    const nativeMembers = Object.fromEntries(snapshot.teams.flatMap(team => team.members.map(member => [nativeTeamMemberName(team.id, member.expertSlug), member.expertSlug])))
+    return { ...snapshot, nativeMembers, ...(engine ? { engine: engine() } : {}) }
+  }
 
   private library(): AgencyExpertLibrary {
     const library = this.ctx.get(AGENCY_LIBRARY_SERVICE) as AgencyExpertLibrary | undefined
@@ -159,9 +194,9 @@ export default class AgencyAgentsRemote extends TypertRemoteService {
   @Remote('getCatalog')
   async getCatalog(refreshCompany: boolean, signal: AbortSignal): Promise<CatalogSnapshot> {
     signal.throwIfAborted()
-    if (refreshCompany) await (this.ctx.get('companyContent') as CompanyContentSource | undefined)?.refresh()
+    if (refreshCompany) await (this.ctx.get('companyContent') as CompanyContentSource | undefined)?.refresh(signal)
     signal.throwIfAborted()
-    const catalog = await this.library().catalog()
+    const catalog = await this.library().catalog(signal)
     signal.throwIfAborted()
     return catalog
   }
@@ -169,11 +204,14 @@ export default class AgencyAgentsRemote extends TypertRemoteService {
   /**
    * 读取可编辑的个人专家。
    * @param slug - 稳定专家标识。
+   * @param signal - 当前读取的原生 Remote 取消信号。
    * @returns 可编辑的个人专家正文和元数据。
    */
   @Remote('getCustomExpert')
-  async getCustomExpert(slug: string): Promise<CustomExpertInput> {
-    const { deleted: _deleted, wasEnabled: _wasEnabled, ...expert } = await this.library().getCustom(slug)
+  async getCustomExpert(slug: string, signal: AbortSignal): Promise<CustomExpertInput> {
+    signal.throwIfAborted()
+    const expert = await this.library().getCustom(slug)
+    signal.throwIfAborted()
     return expert
   }
 
@@ -182,22 +220,30 @@ export default class AgencyAgentsRemote extends TypertRemoteService {
    * @param expert - 待保存的个人专家。
    * @param enabled - 保存后的启用选择。
    * @param expectedRevision - 调用方读取的官方配置修订号。
+   * @param signal - 当前请求的取消信号。
    * @returns 成功提交后的最新目录。
    */
   @Remote('saveCustomExpert')
-  async saveCustomExpert(expert: CustomExpertInput, enabled: boolean, expectedRevision: number): Promise<CatalogSnapshot> {
-    return this.library().saveCustom(expert, enabled, expectedRevision)
+  async saveCustomExpert(expert: CustomExpertInput, enabled: boolean, expectedRevision: number, signal?: AbortSignal): Promise<CatalogSnapshot> {
+    signal?.throwIfAborted()
+    const catalog = await this.library().saveCustom(expert, enabled, expectedRevision)
+    signal?.throwIfAborted()
+    return catalog
   }
 
   /**
    * 删除个人专家，保留并发写入检查。
    * @param slug - 稳定专家标识。
    * @param expectedRevision - 调用方读取的官方配置修订号。
+   * @param signal - 当前请求的取消信号。
    * @returns 删除完成后的最新目录。
    */
   @Remote('deleteCustomExpert')
-  async deleteCustomExpert(slug: string, expectedRevision: number): Promise<CatalogSnapshot> {
-    return this.library().deleteCustom(slug, expectedRevision)
+  async deleteCustomExpert(slug: string, expectedRevision: number, signal?: AbortSignal): Promise<CatalogSnapshot> {
+    signal?.throwIfAborted()
+    const catalog = await this.library().deleteCustom(slug, expectedRevision)
+    signal?.throwIfAborted()
+    return catalog
   }
 
   /**
@@ -216,21 +262,29 @@ export default class AgencyAgentsRemote extends TypertRemoteService {
    * 整体替换启用的专家 slug 列表。
    * @param enabled - 保存后的启用选择。
    * @param expectedRevision - 调用方读取的官方配置修订号。
+   * @param signal - 当前请求的取消信号。
    * @returns 已提交的启用选择及修订号。
    */
   @Remote('setEnabled')
-  async setEnabled(enabled: string[], expectedRevision: number): Promise<{ enabled: string[]; revision: number }> {
-    return this.library().setEnabled(enabled, expectedRevision)
+  async setEnabled(enabled: string[], expectedRevision: number, signal?: AbortSignal): Promise<{ enabled: string[]; revision: number }> {
+    signal?.throwIfAborted()
+    const result = await this.library().setEnabled(enabled, expectedRevision)
+    signal?.throwIfAborted()
+    return result
   }
 
   /**
    * 按需读取一位专家的 persona 正文，避免将完整提示词随客户端名册预加载。
    * @param slug - 稳定专家标识。
    * @param division - 专家所属分类。
+   * @param signal - 当前读取的原生 Remote 取消信号。
    * @returns 经当前访问检查读取的专家正文。
    */
   @Remote('getPrompt')
-  async getPrompt(slug: string, division: string): Promise<{ prompt: string }> {
-    return personaSource(this.ctx).getPrompt(slug, division, readHostLocale(this.ctx))
+  async getPrompt(slug: string, division: string, signal: AbortSignal): Promise<{ prompt: string }> {
+    signal.throwIfAborted()
+    const result = await personaSource(this.ctx).getPrompt(slug, division, readHostLocale(this.ctx), undefined, signal)
+    signal.throwIfAborted()
+    return result
   }
 }
