@@ -15,7 +15,8 @@
         "apps/desktop/tests/desktop-assembly.spec.ts",
         "packages/client/ui-sidebar-documentpreview/tests/document-preview-license-bundle.client.spec.ts",
         "scripts/build.spec.ts",
-        "apps/desktop/tests/prepare-package-set.spec.ts"
+        "apps/desktop/tests/prepare-package-set.spec.ts",
+        "packages/client/ui-settings-account/tests/apply.client.spec.ts"
       ],
       "files": [
         {
@@ -932,6 +933,11 @@
           "path": "packages/client/ui-settings-account/src/client/assets.d.ts",
           "before": null,
           "after": "5a0b5e153c4661cc68d131d4b0b833214e7a4a0eac935a4406c7de89925987de"
+        },
+        {
+          "path": "packages/client/ui-settings-account/tests/apply.client.spec.ts",
+          "before": "8b7981b244986c0ce8b07c693c6174112020293701c9b7a38ac94a90a36e8c7d",
+          "after": "563960986a357932e871652c984a04ff22b60d61780c47165490a51beb33d067"
         },
         {
           "path": "packages/client/ui-settings-general/src/client/DesktopUpdateIndicator.module.css",
