@@ -30,33 +30,6 @@ index 0000000000000000000000000000000000000000..e11cfac6f94decfa365efbd8accb2cdc
 +  dts: false,
 +  fixedExtension: false,
 +})
-diff --git a/scripts/build.spec.ts b/scripts/build.spec.ts
-index 1ac882468ff5e1c2764e4b3202d593e9d07732fb..943f49afd027a4d389cd7e17adbd960fca061ee3 100644
---- a/scripts/build.spec.ts
-+++ b/scripts/build.spec.ts
-@@ -9,7 +9,8 @@ const artifactGraph = {
-   'native': [],
-   'host-typert': [],
-   'host-src': ['native', 'host-typert'],
--  'host-bundle': ['host-src'],
-+  'host-generator': ['host-src'],
-+  'host-bundle': ['host-generator'],
-   'desktop-bundle': ['host-bundle'],
-   'client-src': ['desktop-bundle'],
-   'client-bundle': ['client-src'],
-@@ -98,10 +99,10 @@ describe('repository build steps', () => {
-     ])
-   })
- 
--  it('starts each aggregate check after its own package compilation in the complete build', () => {
-+  it('waits for public bundle declarations before the complete Host aggregate check', () => {
-     expect(graph(buildGates(root, 'complete'))).toEqual({
-       ...artifactGraph,
--      'host-check': ['host-src'],
-+      'host-check': ['host-bundle'],
-       'client-check': ['client-src'],
-     })
-   })
 diff --git a/scripts/compile-referenced-projects.ts b/scripts/compile-referenced-projects.ts
 index 492e277a6abc2a34447eb61eeeb069a1cae56624..d28a483a93231a29b01cd9dff361cab5a7e5606a 100644
 --- a/scripts/compile-referenced-projects.ts

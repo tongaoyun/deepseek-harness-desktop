@@ -1463,7 +1463,7 @@
         {
           "path": "scripts/build.spec.ts",
           "before": "268ec9d0e419f0b62fea0f87a6804cf015690dae9425c56c8fc72197d0692841",
-          "after": "0597a2dbdcacd2ef884af2febf3a47934d68a1792876793b88b0c84388b05f52"
+          "after": "47ea028c60e77c516caf64cb764ebddc346409ebdcb7a68684acc936da132e45"
         },
         {
           "path": "scripts/check-workspace-constraints.ts",
@@ -1783,11 +1783,6 @@
           "path": "packages/typert/generator/tsdown.config.ts",
           "before": null,
           "after": "84ef24730cfe02426ef8b3d5e51be0ad31eacfde8123a4f22dc84dde422ebe10"
-        },
-        {
-          "path": "scripts/build.spec.ts",
-          "before": "268ec9d0e419f0b62fea0f87a6804cf015690dae9425c56c8fc72197d0692841",
-          "after": "47ea028c60e77c516caf64cb764ebddc346409ebdcb7a68684acc936da132e45"
         },
         {
           "path": "scripts/compile-referenced-projects.ts",

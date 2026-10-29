@@ -12993,10 +12993,20 @@ index 3bb5b2fd3e73be2afa0611f2012206d2071c61dc..f9b6d13b5f03059b79608d3cabd673df
      dependencies:
        '@tanstack/virtual-core': 3.17.8
 diff --git a/scripts/build.spec.ts b/scripts/build.spec.ts
-index 1ac882468ff5e1c2764e4b3202d593e9d07732fb..26eaa2bc4f9effd5280954731a7e647923aa4fe6 100644
+index 1ac882468ff5e1c2764e4b3202d593e9d07732fb..943f49afd027a4d389cd7e17adbd960fca061ee3 100644
 --- a/scripts/build.spec.ts
 +++ b/scripts/build.spec.ts
-@@ -98,10 +98,10 @@ describe('repository build steps', () => {
+@@ -9,7 +9,8 @@ const artifactGraph = {
+   'native': [],
+   'host-typert': [],
+   'host-src': ['native', 'host-typert'],
+-  'host-bundle': ['host-src'],
++  'host-generator': ['host-src'],
++  'host-bundle': ['host-generator'],
+   'desktop-bundle': ['host-bundle'],
+   'client-src': ['desktop-bundle'],
+   'client-bundle': ['client-src'],
+@@ -98,10 +99,10 @@ describe('repository build steps', () => {
      ])
    })
  
