@@ -3718,12 +3718,15 @@ function superRefine(fn, params) {
 //#endregion
 //#region lib/types/company-team.js
 const text = (max) => string().trim().min(1).refine((value) => Array.from(value).length <= max);
+/** UUID-based identifiers accepted for editable personal teams. */
 const TEAM_CUSTOM_ID = /^team-custom-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
+/** Member identity, duty, and instructions in an editable team. */
 const teamMemberSchema = object({
 	expertSlug: text(128),
 	duty: text(100),
 	instructions: text(2e3)
 }).strict();
+/** Validated personal-team settings, including unique members and coordinator selection. */
 const teamInputSchema = object({
 	id: string().regex(TEAM_CUSTOM_ID).optional(),
 	name: text(40).refine((value) => !/[@\u0000-\u001f]/u.test(value)),
@@ -3751,6 +3754,7 @@ teamInputSchema.safeExtend({
 	id: string().regex(/^team-shared-[a-z0-9]+(?:-[a-z0-9]+)*$/u),
 	company: literal(true)
 });
+/** Company release document embeds every referenced member persona. */
 const publishedTeamSchema = object({
 	team: teamInputSchema.safeExtend({ id: never().optional() }),
 	experts: array(object({
@@ -3768,7 +3772,11 @@ const publishedTeamSchema = object({
 		message: "专家团必须包含每位成员的固定说明，不能引用本机私有专家"
 	});
 });
-/** Parse bounded UTF-8 JSON only after release path and digest validation. */
+/**
+* Parse bounded UTF-8 JSON only after release path and digest validation.
+* @param text - Decoded release document.
+* @returns Validated team with its embedded member personas.
+*/
 function publishedTeamDocument(text) {
 	if (new TextEncoder().encode(text).length > 2 * 1024 * 1024) throw new Error("专家团发布文件最多 2 MiB");
 	return publishedTeamSchema.parse(JSON.parse(text));
@@ -10431,20 +10439,14 @@ function companyContentRelease(value) {
 			const markdown = new TextDecoder("utf-8", { fatal: true }).decode(data).replaceAll("\r\n", "\n");
 			const [, frontmatter, body] = /^---\n([\s\S]*?)\n---\n([\s\S]+)$/u.exec(markdown) ?? [];
 			if (!frontmatter || !body?.trim() || markdown.includes("\0")) throw new Error("公司技能或专家说明无效");
-			if (path.endsWith("/SKILL.md")) {
-				const parsed = (0, import_dist.parseDocument)(frontmatter, { schema: "core" });
-				if (parsed.errors.length || parsed.warnings.length) throw new Error("公司技能 YAML 格式无效");
-				(0, import_dist.visit)(parsed, (_, node, ancestors) => {
-					if ((0, import_dist.isCollection)(node) && ancestors.filter(import_dist.isCollection).length >= 64) throw new Error("公司技能 YAML 嵌套最多 64 层");
-				});
-				const metadata = parsed.toJS({ maxAliasCount: 0 });
-				if (typeof metadata !== "object" || metadata === null || Array.isArray(metadata) || !("name" in metadata) || metadata.name !== path.split("/")[1] || !("description" in metadata) || typeof metadata.description !== "string" || !metadata.description.trim() || /[\r\n]/u.test(metadata.description)) throw new Error("公司技能必须包含与目录一致的名称和非空单行字符串简介");
-				validateSkillInvocation(metadata);
-			} else for (const key of ["name", "description"]) {
-				const values = frontmatter.split("\n").filter((line) => line.startsWith(`${key}:`));
-				const value = values[0]?.slice(key.length + 1).trim().replace(/^(?:"(.*)"|'(.*)')$/u, "$1$2");
-				if (values.length !== 1 || !value || /^[|>\[\{]/u.test(value)) throw new Error("请填写单行名称和简介");
-			}
+			const parsed = (0, import_dist.parseDocument)(frontmatter, { schema: "core" });
+			if (parsed.errors.length || parsed.warnings.length) throw new Error(path.endsWith("/SKILL.md") ? "公司技能 YAML 格式无效" : "公司专家 YAML 格式无效");
+			(0, import_dist.visit)(parsed, (_, node, ancestors) => {
+				if ((0, import_dist.isCollection)(node) && ancestors.filter(import_dist.isCollection).length >= 64) throw new Error(path.endsWith("/SKILL.md") ? "公司技能 YAML 嵌套最多 64 层" : "公司专家 YAML 嵌套最多 64 层");
+			});
+			const metadata = parsed.toJS({ maxAliasCount: 0 });
+			if (typeof metadata !== "object" || metadata === null || Array.isArray(metadata) || !("name" in metadata) || typeof metadata.name !== "string" || !metadata.name.trim() || /[\r\n]/u.test(metadata.name) || path.startsWith("skills/") && metadata.name !== path.split("/")[1] || !("description" in metadata) || typeof metadata.description !== "string" || !metadata.description.trim() || /[\r\n]/u.test(metadata.description)) throw new Error(path.endsWith("/SKILL.md") ? "公司技能必须包含与目录一致的名称和非空单行字符串简介" : "公司专家必须包含非空单行字符串名称和简介");
+			if (path.endsWith("/SKILL.md")) validateSkillInvocation(metadata);
 		}
 		if (path.startsWith("teams/") && path.length > 91) throw new Error("专家团标识最多 80 个字符");
 		if (path.startsWith("teams/")) publishedTeamDocument(new TextDecoder("utf-8", { fatal: true }).decode(data));
