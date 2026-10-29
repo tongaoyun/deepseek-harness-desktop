@@ -42,6 +42,9 @@ jobs:
           HTTPS_PROXY: ${{ secrets.DESKTOP_GITHUB_PROXY_URL }}
           NODE_USE_ENV_PROXY: '1'
         run: |
+          # npm is reachable directly; reserve the proxy for GitHub and external download hosts.
+          export NO_PROXY="${NO_PROXY:-${no_proxy:-localhost,127.0.0.1,::1}},registry.npmjs.org"
+          export no_proxy="$NO_PROXY"
           npm install -g pnpm@11.28.5 --prefer-offline --no-audit --fund=false \
             --registry=https://registry.npmjs.org/
           pnpm config set store-dir /pnpm-store
