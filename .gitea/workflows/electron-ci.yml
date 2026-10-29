@@ -76,6 +76,7 @@ jobs:
             packages/client/ui-settings-general/tests/shell.client.spec.ts \
             packages/client/ui-settings-general/tests/apply.client.spec.ts \
             scripts/upstream-boundaries.spec.ts \
+            scripts/build.spec.ts \
             scripts/rescope-vendor.spec.ts \
             scripts/verify-public-repository-links.spec.ts \
             scripts/verify-concrete-terms.spec.ts \

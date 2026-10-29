@@ -13,7 +13,8 @@
         "packages/preset/agent-preset-registry/tests/derive.spec.ts",
         "packages/client/ui-conversation/tests/draft-document.client.spec.ts",
         "apps/desktop/tests/desktop-assembly.spec.ts",
-        "packages/client/ui-sidebar-documentpreview/tests/document-preview-license-bundle.client.spec.ts"
+        "packages/client/ui-sidebar-documentpreview/tests/document-preview-license-bundle.client.spec.ts",
+        "scripts/build.spec.ts"
       ],
       "files": [
         {
@@ -384,17 +385,17 @@
         {
           "path": "docs/development.i18n.yaml",
           "before": "a1287e0713fd0b07ed2b741e6ff87663474eaf6ce47d1bda6b1035497f3ca049",
-          "after": "aa29364e4c84777971d202263d0de5748513256f5ee31bdad238278398d0ab81"
+          "after": "41acfaf36560f8ab22702318d0ce41159bb53f9f32dca9401a29406affe58ff6"
         },
         {
           "path": "docs/development.md",
           "before": "bb06597dfeaf30de75b9d8a9220a4be401e79a71aadc21bc2766bd77eabe3cde",
-          "after": "f483a68601f8cf7cbbff8166e495a69cba72c353d651bcde47fa383abb61ed1c"
+          "after": "ffe7f521fd746ff0e1ba7b000a3e066403a0f72c284f9fe0b5b671f936f8cbea"
         },
         {
           "path": "docs/development.zh.md",
           "before": "6f12f3d6c136d880ff322f490b4f5ab0fc34c18b28d1eede890805cb35861b96",
-          "after": "a1666b22ea36bd831b369e987a56d2726660ecdbb88ff80caddcca2a28e3ed94"
+          "after": "a7ee1397b82af7ec225fdb30e9f4b5879c12a433d8cf12b61fa1874424ffea55"
         },
         {
           "path": "docs/event-producer-consumer.i18n.yaml",
@@ -1460,6 +1461,11 @@
           "path": "scripts/build.spec.ts",
           "before": "268ec9d0e419f0b62fea0f87a6804cf015690dae9425c56c8fc72197d0692841",
           "after": "47ea028c60e77c516caf64cb764ebddc346409ebdcb7a68684acc936da132e45"
+        },
+        {
+          "path": "scripts/build.ts",
+          "before": "f0f24f368adf84d2231b2ffc94a684510cce995f26fd5ebfeac7d438ad9751b1",
+          "after": "09b74a1e01e0e6316524a8037417898de91730ff351f06167b433d9e36bc4ada"
         },
         {
           "path": "scripts/check-workspace-constraints.ts",

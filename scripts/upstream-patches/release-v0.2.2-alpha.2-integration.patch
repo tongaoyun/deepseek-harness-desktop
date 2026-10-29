@@ -3195,7 +3195,7 @@ index 25094e00e36f1686dea4984db5716ea2fae8221d..79aa3dbbfd1a71396b4fb477be8f2594
 +| `@deepseek-harness/product-desktop` | — | [`packages/deepseek-harness-product/desktop/src/index.ts`](../packages/deepseek-harness-product/desktop/src/index.ts) |
  <!-- END GENERATED config-catalog:library -->
 diff --git a/docs/development.i18n.yaml b/docs/development.i18n.yaml
-index 406a86b628e06c0c7afd4e340b4a3b5e283e83f5..2fe4aa74fed5937f52b7c348db1ab4dc84d5217c 100644
+index 406a86b628e06c0c7afd4e340b4a3b5e283e83f5..c03baf2192bae32ae3e6acd4e5d8b71ec97f86f4 100644
 --- a/docs/development.i18n.yaml
 +++ b/docs/development.i18n.yaml
 @@ -21,8 +21,8 @@
@@ -3204,13 +3204,13 @@ index 406a86b628e06c0c7afd4e340b4a3b5e283e83f5..2fe4aa74fed5937f52b7c348db1ab4dc
  /development-guide/contributor-reference/typescript-project-layout:
 -  en: eb79b6f8ea745a9f
 -  zh: de676c78231c823a
-+  en: a72a52604b974e77
-+  zh: f174d4a2a18cee4b
++  en: ab1074c49920bab1
++  zh: 6dba5a7d40ff3ec8
  /development-guide/contributor-reference/environment-variables:
    en: dba2c72ee6ffa930
    zh: b65c27fbb9129ec8
 diff --git a/docs/development.md b/docs/development.md
-index 406b6c1a7dafbb2e29286961eedd0a3553ecf1e7..36d0f47872a128e953eebafb51cee685173d8f69 100644
+index 406b6c1a7dafbb2e29286961eedd0a3553ecf1e7..47a5001853b90442c2f74acd9c3c11d337a3f766 100644
 --- a/docs/development.md
 +++ b/docs/development.md
 @@ -66,7 +66,7 @@ The repository uses isolated Host and Client aggregates. An ordinary package is
@@ -3222,8 +3222,17 @@ index 406b6c1a7dafbb2e29286961eedd0a3553ecf1e7..36d0f47872a128e953eebafb51cee685
  
  Host and Client stay two aggregate programs because both sides declaration-merge the cordis `Context` interface under the same keys with different services; one program seeing both merges reports a collision. The collision exists only inside a `ts.Program` — module resolution never triggers it — which is why the solution may reference both aggregates and one paths facade may span both sides. Three disciplines follow:
  
+@@ -89,7 +89,7 @@ tsdown --env.DSH_BUILD_FACE client
+ pnpm run build:web
+ ```
+ 
+-`pnpm run build:check` runs only `tsc -p tsconfig.host.json` and `tsc -p tsconfig.client.json` concurrently. Project mode checks each aggregate's repository-wide test and script program against the package declarations already on disk and never compiles a reference, so `build:check` neither detects nor rebuilds missing or stale `build:artifacts` output; missing output surfaces as compiler errors. `pnpm run build` runs both step sets as one [scheduled](../scripts/run-gates.ts) dependency graph: each aggregate check starts once its own face's package compilation finishes and overlaps the remaining artifact steps. In all three commands `DSH_GATE_CONCURRENCY` bounds concurrent steps (`1` runs them in dependency order) and `DSH_GATE_FAIL_FAST=1` stops the remaining steps at the first failure; otherwise a failure skips only its dependents, so independent errors are all reported. A failed step prints its own output, and any failure exits non-zero without writing the client build record.
++`pnpm run build:check` runs only `tsc -p tsconfig.host.json` and `tsc -p tsconfig.client.json` concurrently. Project mode checks each aggregate's repository-wide test and script program against the package declarations already on disk and never compiles a reference, so `build:check` neither detects nor rebuilds missing or stale `build:artifacts` output; missing output surfaces as compiler errors. `pnpm run build` runs both step sets as one [scheduled](../scripts/run-gates.ts) dependency graph: the Host aggregate waits for the Host bundle's public declarations, while the Client aggregate starts after Client package compilation. Both overlap later artifact steps. In all three commands `DSH_GATE_CONCURRENCY` bounds concurrent steps (`1` runs them in dependency order) and `DSH_GATE_FAIL_FAST=1` stops the remaining steps at the first failure; otherwise a failure skips only its dependents, so independent errors are all reported. A failed step prints its own output, and any failure exits non-zero without writing the client build record.
+ 
+ Choose the command by what the change needs:
+ 
 diff --git a/docs/development.zh.md b/docs/development.zh.md
-index 8dcedc893840cdbdd40b7fb158a8f20d5f4a9502..ea393ae42b3c30245823c0b79ac6feb5304b13c2 100644
+index 8dcedc893840cdbdd40b7fb158a8f20d5f4a9502..ec0276a8bda459e872a7933f693963c857694ea2 100644
 --- a/docs/development.zh.md
 +++ b/docs/development.zh.md
 @@ -70,7 +70,7 @@ pnpm run typecheck
@@ -3234,6 +3243,15 @@ index 8dcedc893840cdbdd40b7fb158a8f20d5f4a9502..ea393ae42b3c30245823c0b79ac6feb5
 +Host 和 Client aggregate 类型检查为 Node 老生代堆设置 8 GiB 上限。这是单个编译进程的上限；并发构建步骤还需要额外内存。构建默认并行运行；资源受限的 runner 可设置 `DSH_GATE_CONCURRENCY=1` 强制串行。
  
  Host 与 Client 保持两个 aggregate program，是因为两侧在相同键下以不同服务对 cordis `Context` 接口做声明合并；单一 program 同时看到两份合并会报冲突。这种冲突只存在于 `ts.Program` 内部——模块解析永远不会触发它——所以 solution 可以同时引用两个 aggregate，一个 paths 门面也可以横跨两侧。由此推出三条纪律：
+ 
+@@ -93,7 +93,7 @@ tsdown --env.DSH_BUILD_FACE client
+ pnpm run build:web
+ ```
+ 
+-`pnpm run build:check` 只并发运行 `tsc -p tsconfig.host.json` 与 `tsc -p tsconfig.client.json`。project mode 依据磁盘上已有的包声明检查各 aggregate 的仓库级测试和脚本 program，从不编译 reference，因此 `build:check` 既不检测也不重建缺失或过期的 `build:artifacts` 产物；产物缺失时表现为编译器错误。`pnpm run build` 把两组步骤作为一张[调度](../scripts/run-gates.ts)依赖图运行：每个 aggregate 检查在本 face 的包编译完成后立即开始，与其余产物步骤重叠执行。三个命令中，`DSH_GATE_CONCURRENCY` 限制并发步骤数（`1` 按依赖顺序执行），`DSH_GATE_FAIL_FAST=1` 在第一个失败时停止其余步骤；否则失败只跳过其依赖方，因此会报告所有相互独立的错误。失败步骤打印自身输出，任一失败都以非零状态退出且不写 client build record。
++`pnpm run build:check` 只并发运行 `tsc -p tsconfig.host.json` 与 `tsc -p tsconfig.client.json`。project mode 依据磁盘上已有的包声明检查各 aggregate 的仓库级测试和脚本 program，从不编译 reference，因此 `build:check` 既不检测也不重建缺失或过期的 `build:artifacts` 产物；产物缺失时表现为编译器错误。`pnpm run build` 把两组步骤作为一张[调度](../scripts/run-gates.ts)依赖图运行：Host aggregate 等待 Host bundle 的公共声明生成，Client aggregate 在 Client 包编译完成后开始；两者与后续产物步骤重叠执行。三个命令中，`DSH_GATE_CONCURRENCY` 限制并发步骤数（`1` 按依赖顺序执行），`DSH_GATE_FAIL_FAST=1` 在第一个失败时停止其余步骤；否则失败只跳过其依赖方，因此会报告所有相互独立的错误。失败步骤打印自身输出，任一失败都以非零状态退出且不写 client build record。
+ 
+ 按改动需要选择命令：
  
 diff --git a/docs/event-producer-consumer.i18n.yaml b/docs/event-producer-consumer.i18n.yaml
 index 9defd245a747bfc166dde886012a48e85420031e..ce4935174e96305c9ae2d27ad02ae5bf1a913b72 100644
@@ -12970,6 +12988,30 @@ index 1ac882468ff5e1c2764e4b3202d593e9d07732fb..943f49afd027a4d389cd7e17adbd960f
        'client-check': ['client-src'],
      })
    })
+diff --git a/scripts/build.ts b/scripts/build.ts
+index d18d157e26cbb542b1a29832c883a29058ce2cef..1a11b814d6577fd8116087115ffcddb2d5f1f6ee 100644
+--- a/scripts/build.ts
++++ b/scripts/build.ts
+@@ -74,8 +74,8 @@ export function parseBuildArguments(args: readonly string[]): BuildArguments {
+  * Artifact steps generate Typert from source before Host compilation, then bundle Host,
+  * Desktop, and Client artifacts before Web. Native output also precedes Host compilation.
+  * The typecheck scope generates Typert before compiling Host and Client packages; it writes no
+- * bundle. In complete and typecheck scopes each aggregate check waits only for its own face's
+- * package compilation; alone, the
++ * bundle. Each aggregate check waits for its own face's package compilation; the complete
++ * Host check also waits for bundle-owned public declarations. Alone, the
+  * checks have no predecessors and read whatever declarations already exist. The typecheck scope
+  * checks aggregates in build mode, which skips a program whose tsbuildinfo is current; the other
+  * scopes use project mode, which compiles no reference.
+@@ -112,7 +112,7 @@ export function buildGates(
+         displayCommand: `tsc ${scope === 'typecheck' ? '-b' : '-p'} tsconfig.${face}.json`,
+         command: process.execPath,
+         args: scope === 'typecheck' ? aggregateBuildArgs(face) : aggregateCheckArgs(face),
+-        needs: scope === 'check' ? [] : [`${face}-src`],
++        needs: scope === 'check' ? [] : scope === 'complete' && face === 'host' ? ['host-bundle'] : [`${face}-src`],
+         env,
+       })
+     }
 diff --git a/scripts/check-workspace-constraints.ts b/scripts/check-workspace-constraints.ts
 index 30d636c45080848dab333a39153dbf186530483d..b23295f94f66c2824cdc618100543e3bdac0de8d 100644
 --- a/scripts/check-workspace-constraints.ts
