@@ -117,7 +117,7 @@
     "@deepseek-ai/schemastery": "workspace:~",
     "@types/node": "^22.20.1",
     "react": "18.3.1",
-    "react-dom": "18.3.1",
+    "react-dom": "19.3.0",
     "tsdown": "^0.22.2",
     "typescript": "^6.0.3",
     "vitest": "^4.1.11",
