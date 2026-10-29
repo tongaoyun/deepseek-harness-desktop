@@ -1,6 +1,7 @@
 import type { Context } from '@deepseek-ai/cordis'
 import { defineTool } from '@deepseek-ai/dsh-tools'
-import { getProductData } from './data.ts'
+import { getProductData, scopedProductInvoker } from './data.ts'
+import { objectRecord, stringField } from './response-fields.ts'
 export const inject = ['productData', 'tools', 'systemPrompt']
 export interface Config { readonly knowledgeBaseIds: readonly string[] }
 interface KnowledgeHit {
@@ -29,22 +30,10 @@ const hitSchema = {
 function sourceMetadata(hits: readonly KnowledgeHit[]) {
   return { kind: 'product-knowledge-sources-v1', sources: hits.map(({ content: _content, score: _score, ...source }) => source) }
 }
-
 export function apply(ctx: Context, config: Config): void {
   const product = getProductData(ctx)
-  const lifecycle = new AbortController()
-  const pending = new Set<Promise<unknown>>()
-  const invoke = (method: 'knowledge.search' | 'knowledge.sources.read', input: unknown, signal: AbortSignal) => {
-    const combined = AbortSignal.any([signal, lifecycle.signal])
-    combined.throwIfAborted()
-    const operation = product.invoke(method, input, combined)
-    pending.add(operation)
-    return operation.finally(() => { pending.delete(operation) })
-  }
-  ctx.effect(() => async () => {
-    lifecycle.abort(new Error('Knowledge scope unloaded'))
-    await Promise.allSettled([...pending])
-  }, 'product-knowledge.requests')
+  const requests = scopedProductInvoker(product, 'Knowledge scope unloaded')
+  ctx.effect(() => requests.dispose, 'product-knowledge.requests')
   const ids = config.knowledgeBaseIds
   if (ids.length === 0) throw new Error('Knowledge tool requires an explicit selection')
   ctx.systemPrompt.section({
@@ -78,7 +67,7 @@ export function apply(ctx: Context, config: Config): void {
       if (args.query.trim() === '' || args.query.length > 2_000) throw new Error('query must be between 1 and 2000 characters')
       const limit = args.limit ?? 8
       if (limit < 1 || limit > 12) throw new Error('limit must be between 1 and 12')
-      const result = await invoke('knowledge.search', {
+      const result = await requests.invoke('knowledge.search', {
         query: args.query.trim(), knowledgeBaseRefs: [],
         knowledgeBaseIds: ids, restrictToKnowledgeBaseRefs: true, limit,
       }, exec.signal)
@@ -98,7 +87,7 @@ export function apply(ctx: Context, config: Config): void {
     presentResult: (_args, result) => ({ card: 'generic', kind: 'read', title: 'Knowledge source', content: result.content }),
     isConcurrencySafe: () => true,
     async execute(args, exec) {
-      const result = await invoke('knowledge.sources.read', { sourceId: args.sourceId }, exec.signal)
+      const result = await requests.invoke('knowledge.sources.read', { sourceId: args.sourceId }, exec.signal)
       const hit = knowledgeHit(result)
       if (hit.sourceId !== args.sourceId) throw new Error('Knowledge source does not match the requested fragment')
       if (!ids.includes(hit.knowledgeBaseId)) throw new Error('Knowledge source is outside the selected task scope')
@@ -106,7 +95,6 @@ export function apply(ctx: Context, config: Config): void {
     },
   })), 'product-knowledge.read')
 }
-
 function knowledgeHits(value: unknown): KnowledgeHit[] {
   if (!Array.isArray(value)) throw new Error('deepseek-harness product: invalid knowledge search response')
   return value.map(knowledgeHit)
@@ -122,14 +110,4 @@ function knowledgeHit(entry: unknown): KnowledgeHit {
     filename: stringField(record, 'filename'), locator: stringField(record, 'locator'),
     content: stringField(record, 'content'), score,
   }
-}
-
-function objectRecord(value: unknown, label: string): Record<string, unknown> {
-  if (typeof value !== 'object' || value === null || Array.isArray(value)) throw new Error(`Invalid ${label}`)
-  return value as Record<string, unknown>
-}
-
-function stringField(record: Record<string, unknown>, key: string): string {
-  if (typeof record[key] !== 'string') throw new Error(`Invalid knowledge field: ${key}`)
-  return record[key]
 }

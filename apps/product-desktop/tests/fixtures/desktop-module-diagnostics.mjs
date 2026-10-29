@@ -1,4 +1,4 @@
-/** Record credential-free Host module identities in workspace and installed acceptance profiles. */
+/** Record credential-free Host module identities after the product acceptance profile has booted. */
 import { writeFileSync } from 'node:fs'
 
 export const inject = ['appReady', 'loader']

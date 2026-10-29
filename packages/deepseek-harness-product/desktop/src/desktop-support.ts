@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto'
 import type { DeepSeekHarnessApiClient } from '@deepseek-harness/product'
 import type { ProductSession } from '@deepseek-harness/product/protocol'
 import { ProductError, productFailure } from '@deepseek-harness/product/errors'
+import { nativeHealth, type NativeMethod } from './native-health.ts'
 
 /** Validated deployment intervals; full reports are refreshed independently of presence. */
 export interface DesktopSupportPolicy {
@@ -36,7 +37,7 @@ export class DesktopSupport {
   constructor(private readonly options: {
     readonly policy: DesktopSupportPolicy
     readonly metadata: () => DeviceMetadata
-    readonly native: (method: string, payload: unknown, signal: AbortSignal) => Promise<unknown>
+    readonly native: (method: NativeMethod, signal: AbortSignal) => Promise<unknown>
   }) {}
 
   /** Dispatch support methods after authentication; supplied metadata and identity are ignored.
@@ -102,7 +103,7 @@ export class DesktopSupport {
   }
 
   private async deviceId(signal: AbortSignal): Promise<string> {
-    const identity = await this.options.native('device-identity.get', {}, signal)
+    const identity = await this.options.native('device-identity.get', signal)
     if (typeof identity !== 'object' || identity === null || !('deviceId' in identity)
       || typeof identity.deviceId !== 'string' || !identity.deviceId || identity.deviceId.length > 256) {
       throw new ProductError('DEVICE_IDENTITY_INVALID', 'Native device identity is unavailable', true)
@@ -117,23 +118,19 @@ export class DesktopSupport {
     try {
       const deviceId = await this.deviceId(signal)
       const metadata = this.options.metadata()
-      const health = await this.options.native('health', {}, signal)
-      if (typeof health !== 'object' || health === null || !('ready' in health) || health.ready !== true
-        || !('capabilities' in health) || !Array.isArray(health.capabilities)
-        || health.capabilities.length > 32 || health.capabilities.some((value: unknown) => typeof value !== 'string' || !/^[a-z][a-z0-9-]{1,40}$/.test(value))) {
-        throw new ProductError('DEVICE_HEALTH_INVALID', 'Native capability report is unavailable', true)
-      }
+      const health = nativeHealth(await this.options.native('health', signal))
       const payload = { deviceId, desktopVersion: metadata.desktopVersion, platform: metadata.platform,
         architecture: metadata.architecture, displayCount: metadata.displayScalePercents.length,
         displayScalePercents: metadata.displayScalePercents }
       const capabilities = [
-        ...(health.capabilities as readonly string[]).map(key => ({ key: `native.${key}`, status: 'READY', detail: `Native capability: ${key}` })),
+        ...health.capabilities.map(key => ({ key: `native.${key}`, status: 'READY', detail: `Native capability: ${key}` })),
         { key: 'credentials.encryption', status: metadata.encryptedStorage ? 'READY' : 'DEGRADED',
           detail: metadata.encryptedStorage ? 'OS credential encryption available' : 'OS credential encryption unavailable' },
       ]
       const signature = JSON.stringify({ payload, capabilities })
       const now = Date.now()
-      if (signature !== this.reportSignature || now - this.lastFullReport >= this.options.policy.reportIntervalMs) {
+      const elapsed = performance.now()
+      if (signature !== this.reportSignature || elapsed - this.lastFullReport >= this.options.policy.reportIntervalMs) {
         const result: unknown = await api.request('/api/v1/device-capabilities', { method: 'POST',
           headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...payload, capabilities }), signal })
         signal.throwIfAborted()
@@ -141,13 +138,14 @@ export class DesktopSupport {
           || typeof result.createdAt !== 'string' || !Number.isFinite(Date.parse(result.createdAt))) {
           throw new ProductError('INVALID_SERVER_RESPONSE', 'Device report receipt is missing', true)
         }
-        this.reportSignature = signature; this.lastFullReport = now
+        this.reportSignature = signature; this.lastFullReport = elapsed
         this.state = { status: 'READY', lastSeenAt: result.createdAt, capabilitiesReportedAt: result.createdAt }
       } else {
         await api.requestNoContent('/api/v1/device-capabilities/presence', { method: 'POST',
           headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload), signal })
         signal.throwIfAborted()
-        this.state = { ...this.state, status: 'READY', lastSeenAt: new Date(now).toISOString() }
+        this.state = { status: 'READY', lastSeenAt: new Date(now).toISOString(),
+          ...(this.state.capabilitiesReportedAt === undefined ? {} : { capabilitiesReportedAt: this.state.capabilitiesReportedAt }) }
       }
     } catch (error) {
       if (!signal.aborted) {

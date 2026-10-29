@@ -1,4 +1,5 @@
 /** Personal MCP configuration stays encrypted in main and reaches Host through a loopback relay. */
+import { addAbortListener } from 'node:events'
 import { createHash, randomUUID } from 'node:crypto'
 import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
@@ -444,16 +445,13 @@ export class PersonalConnectors {
     }
     const shared = cached
     shared.waiters += 1
-    let onAbort: (() => void) | undefined
     try {
-      return await new Promise<Client>((resolve, reject) => {
-        onAbort = () => { reject(signal.reason instanceof Error ? signal.reason : new Error('MCP connection reader cancelled')) }
-        signal.addEventListener('abort', onAbort, { once: true })
-        void shared.connection.then(resolve, reject)
-        if (signal.aborted) onAbort()
+      const cancelled = Promise.withResolvers<never>()
+      using _listener = addAbortListener(signal, () => {
+        cancelled.reject(signal.reason instanceof Error ? signal.reason : new Error('MCP connection reader cancelled'))
       })
+      return await Promise.race([cancelled.promise, shared.connection])
     } finally {
-      if (onAbort !== undefined) signal.removeEventListener('abort', onAbort)
       shared.waiters -= 1
       if (shared.waiters === 0 && !shared.connected) {
         shared.controller.abort(new Error('No remaining MCP connection readers'))

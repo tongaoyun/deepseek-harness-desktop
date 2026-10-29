@@ -328,6 +328,30 @@ export declare const TYPERT: unknown
 "
 `;
 
+exports[`WorkspaceAnalyzer > analyzes split builtin faces without declaring an automatically loaded client plugin 1`] = `
+[
+  {
+    "exports": [
+      ".",
+      ".",
+      ".",
+      ".",
+      ".",
+      ".",
+      ".",
+    ],
+    "face": "host",
+  },
+  {
+    "exports": [
+      "./client",
+      "./client",
+    ],
+    "face": "client",
+  },
+]
+`;
+
 exports[`WorkspaceAnalyzer > builds independent face models with an explicit cross-face type graph 1`] = `
 {
   "crossFaceLinks": [

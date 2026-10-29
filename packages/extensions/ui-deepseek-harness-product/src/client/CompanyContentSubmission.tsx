@@ -1,23 +1,22 @@
 /** Employee sharing of native documents; the main process owns authentication and upload. */
 import { useEffect, useRef, useState } from 'react'
-import { randomUUID } from '@deepseek-ai/dsh-util-crypto'
 import { Button, Modal } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import { NS } from '../locales.ts'
-import { productApi } from './product-api.ts'
+import { invokeProduct, productApi } from './product-api.ts'
 import css from '../DeepSeekHarnessProduct.module.css'
 
 interface Candidate { resourceKey: string; files: Record<string, string> }
 interface Intent { name: string; prepare: (signal: AbortSignal) => Promise<Candidate> }
 interface Status { status: 'SUBMITTED' | 'PUBLISHED' | 'REJECTED'; reviewNote: string }
-function statusOf(value: unknown): Status | null {
-  if (value === null) return null
-  if (typeof value !== 'object' || !('status' in value) || !['SUBMITTED', 'PUBLISHED', 'REJECTED'].includes(String(value.status))
-    || !('reviewNote' in value) || typeof value.reviewNote !== 'string') throw new Error('Invalid company submission status')
-  return { status: value.status as Status['status'], reviewNote: value.reviewNote }
+function statusOf(value: unknown, invalidMessage: string): Status {
+  if (typeof value !== 'object' || value === null || !('status' in value)
+    || (value.status !== 'SUBMITTED' && value.status !== 'PUBLISHED' && value.status !== 'REJECTED')
+    || !('reviewNote' in value) || typeof value.reviewNote !== 'string') throw new Error(invalidMessage)
+  return { status: value.status, reviewNote: value.reviewNote }
 }
 
-/** One lifecycle owns content preparation, submission and cancellation in the product shell. */
+/** Own preparation and submission; only inspection may report no existing submission. */
 export function CompanyContentSubmission({ t }: PropsLocale<typeof NS>) {
   const [intent, setIntent] = useState<Intent>()
   const [candidate, setCandidate] = useState<Candidate>()
@@ -42,15 +41,13 @@ export function CompanyContentSubmission({ t }: PropsLocale<typeof NS>) {
       if (!api) return
       operation.current?.abort()
       const controller = new AbortController(); operation.current = controller
-      const requestId = randomUUID()
-      controller.signal.addEventListener('abort', () => { api.cancel(requestId) }, { once: true })
       setIntent(next); setCandidate(undefined); setStatus(null); setError(''); setWorking(true)
       void next.prepare(controller.signal).then(async (value) => {
         controller.signal.throwIfAborted()
-        const inspected = await api.invoke('content.submissions.inspect', value, requestId, 120_000)
+        const inspected = await invokeProduct(api, 'content.submissions.inspect', value, controller.signal, 120_000)
         controller.signal.throwIfAborted()
-        if (typeof inspected !== 'object' || !inspected || !('status' in inspected)) throw new Error('Invalid content inspection')
-        setStatus(statusOf(inspected.status)); setCandidate(value)
+        if (typeof inspected !== 'object' || !inspected || !('status' in inspected)) throw new Error(translate.current('companySubmitFailed'))
+        setStatus(inspected.status === null ? null : statusOf(inspected.status, translate.current('companySubmitFailed'))); setCandidate(value)
       }).catch((reason: unknown) => { if (!controller.signal.aborted) setError(reason instanceof Error ? reason.message : translate.current('companySubmitFailed')) })
         .finally(() => { if (!controller.signal.aborted) setWorking(false) })
     }
@@ -82,11 +79,9 @@ export function CompanyContentSubmission({ t }: PropsLocale<typeof NS>) {
     const api = productApi(); if (!api) return
     writing.current = true; setWorking(true); setError('')
     const controller = new AbortController(); operation.current?.abort(); operation.current = controller
-    const requestId = randomUUID()
-    controller.signal.addEventListener('abort', () => { api.cancel(requestId) }, { once: true })
     try {
-      const result = await api.invoke('content.submissions.submit', candidate, requestId, 120_000)
-      controller.signal.throwIfAborted(); setStatus(statusOf(result))
+      const result = await invokeProduct(api, 'content.submissions.submit', candidate, controller.signal, 120_000)
+      controller.signal.throwIfAborted(); setStatus(statusOf(result, t('companySubmitFailed')))
     } catch (reason) { if (!controller.signal.aborted) setError(reason instanceof Error ? reason.message : t('companySubmitFailed')) }
     finally { if (operation.current === controller) { writing.current = false; if (!controller.signal.aborted) setWorking(false) } }
   }

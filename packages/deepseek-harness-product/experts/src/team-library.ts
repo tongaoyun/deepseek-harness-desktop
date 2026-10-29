@@ -1,7 +1,7 @@
 import { teamText, type TeamLocale } from './team-i18n.ts'
 import { randomUUID } from 'node:crypto'
-import type { CatalogSnapshot } from './expert-contract.ts'
-import type { ExpertSettingsStore } from './expert-library.ts'
+import { expertConflict, type CatalogSnapshot } from './expert-contract.ts'
+import { mutateExpertSettings, type ExpertSettingsStore } from './expert-library.ts'
 import {
   TEAM_CUSTOM_ID,
   teamInputSchema,
@@ -26,7 +26,7 @@ export function createTeamLibrary(
   })
   const check = (revision: number) => {
     if (!Number.isSafeInteger(revision) || revision !== store.revision())
-      throw new Error(tx('配置已更新，请读取最新内容后重试。'))
+      throw expertConflict(tx('配置已更新，请读取最新内容后重试。'))
   }
   const teams = (): ExpertTeam[] => read().custom
   const requireMembers = (team: TeamInput, snapshot: CatalogSnapshot) => {
@@ -40,6 +40,11 @@ export function createTeamLibrary(
     )
       throw new Error(tx('团队成员已删除或名称冲突，请替换后重试。'))
   }
+  const enableMembers = (team: Pick<ExpertTeam, 'members'>) => ({
+    op: 'set' as const,
+    path: ['enabled'],
+    value: [...new Set([...store.read().enabled, ...team.members.map(member => member.expertSlug)])],
+  })
   const library = {
     async snapshot(sessionId?: string, signal?: AbortSignal): Promise<TeamSnapshot> {
       const [all, shared] = await Promise.all([catalog(sessionId, signal), companyTeams(sessionId, signal)])
@@ -88,7 +93,7 @@ export function createTeamLibrary(
         ...value,
         id: value.id ?? `team-custom-${randomUUID()}`,
       }
-      await store.mutate(
+      await mutateExpertSettings(store,
         [
           {
             op: 'set',
@@ -103,22 +108,10 @@ export function createTeamLibrary(
               ...(enabled ? [team.id] : []),
             ],
           },
-          ...(enabled
-            ? [
-                {
-                  op: 'set' as const,
-                  path: ['enabled'],
-                  value: [
-                    ...new Set([
-                      ...store.read().enabled,
-                      ...team.members.map((m) => m.expertSlug),
-                    ]),
-                  ],
-                },
-              ]
-            : []),
+          ...(enabled ? [enableMembers(team)] : []),
         ],
         revision,
+        locale(),
       )
       return library.snapshot()
     },
@@ -132,7 +125,7 @@ export function createTeamLibrary(
       check(revision)
       if (typeof enabled !== 'boolean') throw new Error(tx('启用状态无效。'))
       if (enabled) requireMembers(team, all)
-      await store.mutate(
+      await mutateExpertSettings(store,
         [
           {
             op: 'set',
@@ -142,22 +135,10 @@ export function createTeamLibrary(
               ...(enabled ? [id] : []),
             ],
           },
-          ...(enabled
-            ? [
-                {
-                  op: 'set' as const,
-                  path: ['enabled'],
-                  value: [
-                    ...new Set([
-                      ...store.read().enabled,
-                      ...team.members.map((m) => m.expertSlug),
-                    ]),
-                  ],
-                },
-              ]
-            : []),
+          ...(enabled ? [enableMembers(team)] : []),
         ],
         revision,
+        locale(),
       )
       return library.snapshot()
     },
@@ -165,7 +146,7 @@ export function createTeamLibrary(
       check(revision)
       if (!TEAM_CUSTOM_ID.test(id) || !read().custom.some((t) => t.id === id))
         throw new Error(tx('只能删除已有的自定义专家团。'))
-      await store.mutate(
+      await mutateExpertSettings(store,
         [
           {
             op: 'set',
@@ -179,6 +160,7 @@ export function createTeamLibrary(
           },
         ],
         revision,
+        locale(),
       )
       return library.snapshot()
     },

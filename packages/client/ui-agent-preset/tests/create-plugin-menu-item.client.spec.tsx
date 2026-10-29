@@ -18,8 +18,7 @@ function unusedHook(): never {
 
 function view(roster: Partial<AgentPresetSettingsState> = {}, inMenu = false) {
   const agentPresets = createSnapshotStore<AgentPresetSettingsState>({
-    status: 'ready', error: null, options: [{ id: 'standard' }, { id: 'cordis' }],
-    presets: ['standard', 'cordis'].map(id => ({ id, isDefault: id === 'standard', selectable: true, defaultable: true })), ...roster,
+    status: 'ready', error: null, presets: [], options: [{ id: 'standard' }, { id: 'cordis' }], ...roster,
   })
   const calls: string[] = []
   const startCreatorDraft = vi.fn(() => { calls.push('start') })
@@ -83,8 +82,7 @@ describe('Create plugin menu item', () => {
   it('disables the same entry when Creator leaves the roster', () => {
     const actions = view()
     const original = item()
-    act(() => { actions.agentPresets.set({ status: 'ready', error: null, options: [{ id: 'standard' }],
-      presets: [{ id: 'standard', isDefault: true, selectable: true, defaultable: true }] }) })
+    act(() => { actions.agentPresets.set({ status: 'ready', error: null, presets: [], options: [{ id: 'standard' }] }) })
     expect(item()).toBe(original)
     expect(item()).toHaveProperty('disabled', true)
     expect(item().textContent).toContain(en.createPluginMissing)

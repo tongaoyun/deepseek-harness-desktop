@@ -1,7 +1,9 @@
-import type { SettingsPathOp } from '@deepseek-ai/dsh-settings'
+import { SettingsConflictError, type SettingsDescriptor, type SettingsPathOp } from '@deepseek-ai/dsh-settings'
+import { expertSettingsNamespace } from './settings.ts'
 
-type SettingsSchema = (value: any) => unknown
-type SettingsValidate = (value: any) => void
+/** Schemastery schemas accept a schema-specific input shape and return its normalized value. */
+type SettingsSchema = Schemastery<never, unknown> | ((value: never) => unknown)
+type SettingsValidate = (value: never) => void
 
 interface Registration {
   schema: SettingsSchema
@@ -33,6 +35,8 @@ export class MemorySettings {
     }
   }
 
+  register(ns: string, schema: Schemastery<never, unknown>, options?: { base?: unknown; validate?: SettingsValidate }): void
+  register(ns: string, schema: (value: unknown) => unknown, options?: { base?: unknown; validate?: SettingsValidate }): void
   register(ns: string, schema: SettingsSchema, options?: { base?: unknown; validate?: SettingsValidate }): void {
     const registration: Registration = {
       schema,
@@ -49,8 +53,11 @@ export class MemorySettings {
     return this.registrations.get(ns)?.resolved
   }
 
-  describe(): Array<{ ns: string; revision: number }> {
-    return [...this.registrations.entries()].map(([ns, registration]) => ({ ns, revision: registration.revision }))
+  describe(): SettingsDescriptor[] {
+    return [...this.registrations.entries()].map(([ns, registration]) => ({
+      ns: expertSettingsNamespace(ns), revision: registration.revision, autoGenerate: false, schema: {},
+      value: structuredClone(registration.resolved), applies: 'live',
+    }))
   }
 
   mutate(ns: string, ops: readonly SettingsPathOp[], expectedRevision?: number): Promise<void> {
@@ -59,7 +66,7 @@ export class MemorySettings {
       const registration = this.registrations.get(ns)
       if (registration === undefined) throw new Error(`settings namespace "${ns}" is not registered`)
       if (expectedRevision !== undefined && expectedRevision !== registration.revision) {
-        throw new Error(`settings conflict: expected ${expectedRevision}, actual ${registration.revision}`)
+        throw new SettingsConflictError(expertSettingsNamespace(ns), expectedRevision, registration.revision)
       }
       const section = { ...(this.section(ns) ?? {}) }
       for (const op of ops) applyPath(section, op)
@@ -88,8 +95,8 @@ export class MemorySettings {
   }
 
   private resolve(registration: Registration, section: Record<string, unknown> | undefined): unknown {
-    const value = registration.schema({ ...(registration.base as object ?? {}), ...(section ?? {}) })
-    registration.validate?.(value)
+    const value = Reflect.apply(registration.schema, undefined, [{ ...(registration.base as object ?? {}), ...(section ?? {}) }])
+    if (registration.validate !== undefined) Reflect.apply(registration.validate, undefined, [value])
     return value
   }
 }

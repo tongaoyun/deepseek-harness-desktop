@@ -4,6 +4,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import type { PresetDefinition } from '@deepseek-ai/dsh-agent-preset-registry'
 import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
 import * as McpClient from '@deepseek-ai/dsh-mcp-client'
+import * as NativeToolExecutor from '@deepseek-ai/dsh-tool-executor-native'
 import Tools from '@deepseek-ai/dsh-tools'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import { installConnectorDiscovery, discoveryOptions, type DiscoveryOptions, type ConnectorCatalog } from './connector-discovery.ts'
@@ -19,6 +20,11 @@ import { objectRecord, stringField } from './response-fields.ts'
 const KNOWLEDGE_PLUGIN = import.meta.resolve('@deepseek-harness/product-runtime/knowledge')
 export const inject = ['agentPresets', 'agents', 'sessions', 'sessionQuery', 'sessionProjections', 'systemPrompt', 'tools']
 export interface DeepSeekHarnessRuntimeControl {
+  /** Read task selections with caller cancellation forwarded to native Session observation.
+   * @param request Task identity; absent identity reads the current default mode.
+   * @param signal Cancellation for the complete read.
+   * @returns The pinned task selection, never a late result after cancellation.
+   */
   readCapabilities(request: ProductTaskCapabilityRequest, signal?: AbortSignal): Promise<ProductTaskCapabilities>
   prepareCapabilities(request: ProductTaskCapabilityRequest, signal?: AbortSignal): Promise<ProductTaskCapabilityResult>
   refreshConnectors(signal?: AbortSignal): Promise<{ connectedIds: string[]; unavailableIds: string[] }>
@@ -59,7 +65,7 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
   let catalog: ConnectorCatalog | undefined
   let privatePrompt: SystemPrompt | undefined
   let connectorInstructions = ''
-  installConnectorDiscovery(ctx, config.product, () => catalog, discovery)
+  await installConnectorDiscovery(ctx, config.product, () => catalog, discovery)
   let connectorStatus = 'Enterprise connector catalog is loading. Its tools are unavailable.'
   const lifetime = new AbortController()
   const abortConnectors = () => { lifetime.abort(new Error('Product runtime unloaded')) }
@@ -92,8 +98,12 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
         const background = owner.isolate('tools').isolate('systemPrompt')
         const prompt = background.plugin(SystemPrompt, { includeHarnessIdentity: false })
         await prompt
-        const tools = prompt.ctx.plugin(Tools, { mode: 'native' })
+        const tools = prompt.ctx.plugin(Tools)
         await tools
+        // Tool execution is an explicit per-scope capability in the native API.
+        // The isolated connector catalog must carry its own executor so prompt
+        // assembly and MCP definitions can be resolved before an Agent exists.
+        await prompt.ctx.plugin(NativeToolExecutor)
         connectors.push(...selected)
         const connected = await Promise.all(selected.map(async (connector) => {
           const child = tools.ctx.plugin({ name: McpClient.name, inject: McpClient.inject, apply: McpClient.apply },
@@ -158,7 +168,7 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
     await updateConnectorInstructions(signal)
     return next()
   })
-  config.publishControl({ readCapabilities: request => tasks.read(request),
+  config.publishControl({ readCapabilities: (request, signal) => tasks.read(request, signal),
     prepareCapabilities: (request, signal) => tasks.prepare(request, signal), refreshConnectors })
   ctx.effect(() => () => { config.publishControl(undefined) }, 'product.runtime-control')
 }

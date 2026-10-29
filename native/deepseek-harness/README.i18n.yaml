@@ -3,5 +3,5 @@
 # After editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write native/deepseek-harness/README.md
 /deepseek-harness-native:
-  en: 2935fc6e0807caac
-  zh: bb82561bea49aa95
+  en: 3a4359c6cbd9c997
+  zh: 5394aee8149e7dc9

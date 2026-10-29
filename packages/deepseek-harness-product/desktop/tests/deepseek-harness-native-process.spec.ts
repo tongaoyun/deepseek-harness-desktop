@@ -14,14 +14,17 @@ describe('DeepSeekHarnessNativeProcess', () => {
       let request = ''
       Object.assign(sidecar, { child: { stdin: { write: (chunk: string) => { request = chunk } } } })
       const controller = new AbortController()
-      const pending = sidecar.invoke('health', undefined, controller.signal)
+      controller.signal.addEventListener('abort', (event) => { event.stopImmediatePropagation() })
+      const pending = sidecar.invoke('health', controller.signal)
       const rejected = expect(pending).rejects.toThrow('cancel native')
       controller.abort(new Error('cancel native'))
+      const late = JSON.parse(request) as { request_id: string }
+      receiveNativeResponse(sidecar, { protocol: 'deepseek-harness.native.v1', request_id: late.request_id, result: {} })
       await rejected
       expect(vi.getTimerCount()).toBe(0)
       const envelope = JSON.parse(request) as { request_id: string }
       receiveNativeResponse(sidecar, { protocol: 'deepseek-harness.native.v1', request_id: envelope.request_id, result: {} })
-      await expect(sidecar.invoke('health', undefined, controller.signal)).rejects.toThrow('cancel native')
+      await expect(sidecar.invoke('health', controller.signal)).rejects.toThrow('cancel native')
     } finally { vi.useRealTimers() }
   })
 
@@ -98,4 +101,52 @@ describe('DeepSeekHarnessNativeProcess', () => {
 
     await expect(response).resolves.toEqual({ ready: true })
   })
+
+  it('fails pending work immediately when the sidecar violates the response protocol', async () => {
+    const sidecar = new DeepSeekHarnessNativeProcess(undefined, undefined)
+    Object.assign(sidecar, { child: { stdin: { write: vi.fn() } } })
+    const response = sidecar.invoke('health')
+    receiveNativeResponse(sidecar, { protocol: 'deepseek-harness.native.v0', request_id: 'pending', result: {} })
+    await expect(response).rejects.toThrow('incompatible response protocol')
+    expect(sidecar['pending'].size).toBe(0)
+  })
+
+  it('fails pending work when the sidecar sends an incomplete or extra-field envelope', async () => {
+    const sidecar = new DeepSeekHarnessNativeProcess(undefined, undefined)
+    Object.assign(sidecar, { child: { stdin: { write: vi.fn() } } })
+    const response = sidecar.invoke('health')
+    receiveNativeResponse(sidecar, {
+      protocol: 'deepseek-harness.native.v1', request_id: 'pending', result: {}, unexpected: true,
+    })
+    await expect(response).rejects.toThrow('incompatible response protocol')
+    expect(sidecar['pending'].size).toBe(0)
+  })
+})
+
+
+it('releases a native request immediately after a synchronous write failure', async () => {
+  vi.useFakeTimers()
+  try {
+    const sidecar = new DeepSeekHarnessNativeProcess(undefined, undefined)
+    const owner = new AbortController()
+    const remove = vi.spyOn(owner.signal, 'removeEventListener')
+    Object.assign(sidecar, { child: { stdin: { write: () => { throw new Error('Pipe closed') } } } })
+    await expect(sidecar.invoke('health', owner.signal)).rejects.toThrow('Pipe closed')
+    expect(vi.getTimerCount()).toBe(0)
+    expect(sidecar['pending'].size).toBe(0)
+    expect(remove).toHaveBeenCalledWith('abort', expect.any(Function))
+  } finally { vi.useRealTimers() }
+})
+
+it('rejects new native work while waiting for sidecar exit', async () => {
+  const sidecar = new DeepSeekHarnessNativeProcess(undefined, undefined)
+  const child = Object.assign(new EventEmitter(), { stdin: { write: vi.fn() }, kill: vi.fn(() => true) })
+  Object.assign(sidecar, { child })
+  const stopping = sidecar.stop()
+  try {
+    const request = sidecar.invoke('health')
+    child.emit('exit')
+    await expect(request).rejects.toThrow('stopping')
+    expect(child.stdin.write).not.toHaveBeenCalled()
+  } finally { child.emit('exit'); await stopping }
 })

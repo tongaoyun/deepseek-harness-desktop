@@ -18,21 +18,23 @@ import {
   customExpertInputSchema,
   isExpertEmoji,
   type ExpertSummary,
+  type CustomExpertInput,
 } from "./expert-contract.ts";
 import { expertSettingsNamespace } from "./settings.ts";
 import { MemorySettings } from "./settings-memory.ts";
 import { apply, DEFAULT_DIVISIONS } from "./index.ts";
 import { EXPERT_CATEGORIES } from "./names.ts";
 import AgencyAgentsRemote from "./remote.ts";
-import { acceptCatalog, refreshCatalog } from "./client/catalog.ts";
-import { acceptTeams, refreshTeams, subscribeTeams, teamState } from "./client/team-cache.ts";
+import { createExpertClientState } from './client/client-state.ts';
+import { ExpertTeams } from './client/team-cache.ts';
 import type { AgencyTeamsRemote } from "./client/remote.ts";
 import type { TeamSnapshot } from "./team-contract.ts";
 import type { AgencyCatalogRemote } from "./client/remote.ts";
 import type { CatalogSnapshot } from "./expert-contract.ts";
-import type { RemoteResult } from "@deepseek-ai/dsh-typert-protocol";
+import { RemoteError, remoteErrorOf, type RemoteResult } from "@deepseek-ai/dsh-typert-protocol";
 
 class TestSettings extends MemorySettings {
+  configure(): () => void { return () => {} }
   protected async persist(
     ns: SettingsNamespace,
     section: Record<string, unknown>,
@@ -103,6 +105,15 @@ function setup(
 }
 
 describe("自定义专家 Host 存储", () => {
+  it("公司自定义分类 constructor 保存后仍按原名展示", async () => {
+    const { library } = setup(undefined, async () => [{ ...builtin, division: "constructor", divisionZh: "constructor" }]);
+    const before = await library.catalog();
+    const created = await library.saveCustom({ ...input, division: "constructor" }, true, before.revision);
+    const expert = created.experts.find(item => item.custom)!;
+    expect(expert.divisionZh).toBe("constructor");
+    expect({ division: expert.division, divisionZh: expert.divisionZh }).toMatchSnapshot();
+  });
+
   it.each(EXPERT_CATEGORIES)("企业分类 $zh 支持保存、启用和重启读取", async category => {
     const { library, settings } = setup();
     const before = await library.catalog();
@@ -113,39 +124,6 @@ describe("自定义专家 Host 存储", () => {
     const restored = setup(settings.disk);
     expect((await restored.library.getCustom(expert.slug)).division).toBe(category.id);
     expect((await restored.library.catalog()).experts.find(item => item.slug === expert.slug)).toEqual(expert);
-  });
-
-  it("无旧记录时清理不访问尚未注册或已卸载的设置区", async () => {
-    const revision = vi.fn(() => { throw new Error("namespace unavailable"); });
-    const mutate = vi.fn();
-    const library = createExpertLibrary(async () => [builtin], {
-      read: () => ({ enabled: [], customExperts: [] }), revision, mutate,
-    }, ["engineering"], () => "zh");
-    await expect(library.cleanupDeleted()).resolves.toBeUndefined();
-    expect(revision).not.toHaveBeenCalled();
-    expect(mutate).not.toHaveBeenCalled();
-  });
-
-  it("启动时自动清理旧删除记录", async () => {
-    const ctx = new Context();
-    const settings = new TestSettings(ctx);
-    const slug = "custom-00000000-0000-4000-8000-000000000000";
-    settings.restore({ "agency-agents": {
-      enabled: [slug], customExperts: [{ ...input, slug, deleted: true }],
-    } });
-    ctx.provide("tools", { register: () => {} });
-    ctx.provide("systemPrompt", { section: () => {} });
-    const warning = vi.spyOn(console, "warn").mockImplementation(() => {});
-    try {
-      apply(ctx, { root: "", provider: "spawn", divisions: ["engineering"], ...volatileConfig(settings) } as never);
-      await vi.waitFor(() => expect(settings.disk["agency-agents"]).toMatchObject({
-        enabled: [], customExperts: [],
-      }));
-      expect(warning).not.toHaveBeenCalled();
-    } finally {
-      warning.mockRestore();
-      await ctx.fiber.dispose();
-    }
   });
 
   it("兼容旧 enabled 配置；新建、启用及重启恢复来自同一持久化文档", async () => {
@@ -340,12 +318,12 @@ describe("真实 Host 与 Remote 集成", () => {
     });
     apply(ctx, { root: "", provider: "spawn", divisions: ["engineering"], ...volatileConfig(settings) } as never);
     const remote = new AgencyAgentsRemote(ctx);
-    const initial = await remote.getCatalog(false);
+    const initial = await remote.getCatalog(false, new AbortController().signal);
     await expect(remote.setEnabled(['missing-expert'], initial.revision)).rejects.toThrow();
-    expect(await remote.getCatalog(false)).toEqual(initial);
+    expect(await remote.getCatalog(false, new AbortController().signal)).toEqual(initial);
     const saved = await remote.saveCustomExpert(input, true, initial.revision);
     const slug = saved.experts.find((expert) => expert.custom)!.slug;
-    expect(await remote.getPrompt(slug, input.division)).toEqual({
+    expect(await remote.getPrompt(slug, input.division, new AbortController().signal)).toEqual({
       prompt: input.prompt,
     });
     expect(
@@ -371,7 +349,7 @@ describe("真实 Host 与 Remote 集成", () => {
     ).rejects.toThrow();
     const deleted = await remote.deleteCustomExpert(slug, disabled.revision);
     await expect(remote.setEnabled([slug], deleted.revision)).rejects.toThrow();
-    expect(await remote.getCatalog(false)).toEqual(deleted);
+    expect(await remote.getCatalog(false, new AbortController().signal)).toEqual(deleted);
     await expect(
       tools
         .get("summon_expert")!
@@ -394,16 +372,17 @@ describe("动态名册异步一致性", () => {
       saveCustomExpert: unused,
       deleteCustomExpert: unused,
     };
-    const pending = refreshCatalog(remote);
-    expect(refreshCatalog(remote)).toBe(pending);
-    acceptCatalog(remote, {
+    const cache = createExpertClientState(remote);
+    const pending = cache.catalog.refresh();
+    expect(cache.catalog.refresh()).toBe(pending);
+    cache.catalog.accept({
       experts: [builtin],
       enabled: [builtin.slug],
       revision: 8,
     });
     resolve({ ok: true, value: { experts: [], enabled: [], revision: 7 } });
     expect((await pending).revision).toBe(8);
-    const restarted = refreshCatalog(remote);
+    const restarted = cache.catalog.refresh();
     resolve({ ok: true, value: { experts: [], enabled: [], revision: 0 } });
     expect((await restarted).experts).toEqual([]);
     expect((await restarted).revision).toBe(0);
@@ -415,15 +394,16 @@ describe("动态名册异步一致性", () => {
     const remote = {
       getTeams: () => new Promise<RemoteResult<TeamSnapshot>>(done => { resolve = done }),
     } as AgencyTeamsRemote
-    const pending = refreshTeams(remote)
-    expect(refreshTeams(remote)).toBe(pending)
-    acceptTeams(remote, { ...empty, revision: 4, enabledTeams: ["team-product"] })
+    const teams = new ExpertTeams(remote)
+    const pending = teams.refresh()
+    expect(teams.refresh()).toBe(pending)
+    teams.accept({ ...empty, revision: 4, enabledTeams: ["team-product"] })
     resolve({ ok: true, value: empty })
     expect((await pending).revision).toBe(4)
-    expect(teamState(remote)?.enabledTeams).toEqual(["team-product"])
+    expect(teams.getSnapshot()?.enabledTeams).toEqual(["team-product"])
     const seen: number[] = []
-    const stop = subscribeTeams(remote, () => { const current = teamState(remote); if (current) seen.push(current.revision) })
-    acceptTeams(remote, { ...empty, revision: 5, enabledTeams: [] })
+    const stop = teams.subscribe(() => { const current = teams.getSnapshot(); if (current) seen.push(current.revision) })
+    teams.accept({ ...empty, revision: 5, enabledTeams: [] })
     stop()
     expect(seen).toEqual([5])
   })
@@ -447,7 +427,7 @@ describe("审查回归", () => {
     snapshot = await library.deleteCustom(other.slug, snapshot.revision);
     expect(snapshot.experts.some(e => e.conflict)).toBe(false);
   });
-  it("满额删除释放配额；失败不丢数据，旧删除记录可清理", async () => {
+  it("满额删除释放配额；失败不丢数据", async () => {
     const records = Array.from({ length: 200 }, (_, i) => ({ ...input, name: `专家${i}`, slug: `custom-00000000-0000-4000-8000-${String(i).padStart(12, '0')}` }));
     const { library, settings } = setup({ 'agency-agents': { enabled: [records[0]!.slug], customExperts: records } });
     await expect(library.saveCustom(input, true, 0)).rejects.toThrow();
@@ -458,10 +438,6 @@ describe("审查回归", () => {
     const cleared = await library.deleteCustom(records[0]!.slug, 0);
     await expect(library.deleteCustom(records[1]!.slug, 0)).rejects.toThrow();
     expect((await library.saveCustom(input, true, cleared.revision)).experts.filter(e => e.custom)).toHaveLength(200);
-    const legacy = setup({ 'agency-agents': { enabled: [records[0]!.slug], customExperts: records.map(record => ({ ...record, deleted: true, wasEnabled: true })) } });
-    await legacy.library.cleanupDeleted();
-    expect((legacy.settings.disk['agency-agents'] as AgencySettings).customExperts).toEqual([]);
-    expect((await legacy.library.catalog()).enabled).toEqual([]);
   });
   it("启停拒绝不存在和已删除的专家", async () => {
     const { library } = setup();
@@ -474,9 +450,10 @@ describe("审查回归", () => {
   it("启停回执覆盖写入前的在途查询", async () => {
     let resolve!: (value: RemoteResult<CatalogSnapshot>) => void;
     const remote = { getCatalog: () => new Promise<RemoteResult<CatalogSnapshot>>(done => { resolve = done; }), setEnabled: async () => ({ ok: true as const, value: { enabled: [builtin.slug], revision: 2 } }) } as unknown as Parameters<typeof writeEnabled>[0];
-    acceptCatalog(remote, { experts: [builtin], enabled: [], revision: 1 });
-    const pending = refreshCatalog(remote);
-    const write = writeEnabled(remote, new Set([builtin.slug]), 1);
+    const cache = createExpertClientState(remote);
+    cache.catalog.accept({ experts: [builtin], enabled: [], revision: 1 });
+    const pending = cache.catalog.refresh();
+    const write = writeEnabled(remote, cache, new Set([builtin.slug]), 1);
     await Promise.resolve();
     resolve({ ok: true, value: { experts: [builtin], enabled: [], revision: 1 } });
     expect((await write).enabled.has(builtin.slug)).toBe(true);
@@ -500,55 +477,37 @@ describe("兼容与恢复入口", () => {
     const resolvers: Array<(value: RemoteResult<CatalogSnapshot>) => void> = [];
     let calls = 0;
     const remote = { getCatalog: () => { calls++; return new Promise<RemoteResult<CatalogSnapshot>>(done => resolvers.push(done)); }, setEnabled: async () => ({ ok: true as const, value: { enabled: [builtin.slug], revision: 2 } }) } as unknown as Parameters<typeof writeEnabled>[0];
-    acceptCatalog(remote, { experts: [builtin], enabled: [], revision: 1 });
-    const old = refreshCatalog(remote);
-    await writeEnabled(remote, new Set([builtin.slug]), 1);
-    const current = refreshCatalog(remote);
+    const cache = createExpertClientState(remote);
+    cache.catalog.accept({ experts: [builtin], enabled: [], revision: 1 });
+    const old = cache.catalog.refresh();
+    await writeEnabled(remote, cache, new Set([builtin.slug]), 1);
+    const current = cache.catalog.refresh();
     resolvers[0]!({ ok: true, value: { experts: [builtin], enabled: [], revision: 1 } });
     await old;
-    expect(refreshCatalog(remote)).toBe(current);
+    expect(cache.catalog.refresh()).toBe(current);
     expect(calls).toBe(2);
     resolvers[1]!({ ok: true, value: { experts: [builtin], enabled: [builtin.slug], revision: 2 } });
     expect((await current).enabled.has(builtin.slug)).toBe(true);
   });
 });
 
-describe("启动清理的修订号保护", () => {
-  it("前序排队写入成功后，旧快照清理失败且保留新专家", async () => {
-    const legacy = { ...input, slug: 'custom-00000000-0000-4000-8000-000000000093', deleted: true, wasEnabled: true };
-    const added = { ...input, name: '新专家', slug: 'custom-00000000-0000-4000-8000-000000000094' };
-    const { settings, library } = setup({ 'agency-agents': { enabled: [], customExperts: [legacy] } });
-    const writing = settings.mutate(expertSettingsNamespace('agency-agents'), [
-      { op: 'set', path: ['customExperts'], value: [legacy, added] },
-      { op: 'set', path: ['enabled'], value: [added.slug] },
-    ], 0);
-    const cleaning = library.cleanupDeleted();
-    const rejected = expect(cleaning).rejects.toThrow();
-    await writing;
-    await rejected;
-    expect((await library.catalog()).enabled).toContain(added.slug);
-    expect((settings.disk['agency-agents'] as AgencySettings).customExperts?.some(item => item.slug === added.slug)).toBe(true);
-    await library.cleanupDeleted();
-    expect((settings.disk['agency-agents'] as AgencySettings).customExperts).toEqual([added]);
-  });
-});
-
-
 describe("名册写入回执顺序", () => {
   it("延迟保存回执不能覆盖已读取的新名册或阻断后续查询", async () => {
     const latest = { experts: [builtin], enabled: [], revision: 3 };
     const remote = { getCatalog: async () => ({ ok: true as const, value: latest }) } as unknown as AgencyCatalogRemote;
-    acceptCatalog(remote, { experts: [builtin], enabled: [], revision: 2 });
-    const pending = refreshCatalog(remote);
-    const accepted = acceptCatalog(remote, { experts: [builtin], enabled: [builtin.slug], revision: 1 });
+    const cache = createExpertClientState(remote);
+    cache.catalog.accept({ experts: [builtin], enabled: [], revision: 2 });
+    const pending = cache.catalog.refresh();
+    const accepted = cache.catalog.accept({ experts: [builtin], enabled: [builtin.slug], revision: 1 });
     expect(accepted.revision).toBe(2);
     expect(accepted.enabled.size).toBe(0);
     expect((await pending).revision).toBe(3);
   });
   it("新读取仍允许宿主重启后的修订号回落", async () => {
     const remote = { getCatalog: async () => ({ ok: true as const, value: { experts: [builtin], enabled: [], revision: 0 } }) } as unknown as AgencyCatalogRemote;
-    acceptCatalog(remote, { experts: [builtin], enabled: [builtin.slug], revision: 9 });
-    expect((await refreshCatalog(remote)).revision).toBe(0);
+    const cache = createExpertClientState(remote);
+    cache.catalog.accept({ experts: [builtin], enabled: [builtin.slug], revision: 9 });
+    expect((await cache.catalog.refresh()).revision).toBe(0);
   });
 });
 
@@ -593,9 +552,9 @@ it.each(["删除", "改名"] as const)("他窗%s释放名称后，编辑器保�
   const oldSlug = previous.experts.find(item => item.custom)!.slug;
   if (action === "删除") await library.deleteCustom(oldSlug, previous.revision);
   else await library.saveCustom({ ...input, slug: oldSlug, name: "已改名的专家" }, true, previous.revision);
-  const saveCustomExpert = vi.fn(async (...args: Parameters<AgencyCatalogRemote["saveCustomExpert"]>) => {
-    try { return { ok: true as const, value: await library.saveCustom(...args) }; }
-    catch (error) { return { ok: false as const, error: { message: (error as Error).message } }; }
+  const saveCustomExpert = vi.fn(async (expert: CustomExpertInput, enabled: boolean, revision: number) => {
+    try { return { ok: true as const, value: await library.saveCustom(expert, enabled, revision) }; }
+    catch (error) { return { ok: false as const, error: remoteErrorOf(error) ?? new RemoteError("gateway/internal", error instanceof Error ? error.message : String(error), {}, { cause: error }) }; }
   });
   const remote = {
     getCatalog: async () => ({ ok: true as const, value: await library.catalog() }),

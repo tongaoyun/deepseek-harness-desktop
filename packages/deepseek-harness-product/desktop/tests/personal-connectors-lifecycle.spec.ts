@@ -114,6 +114,8 @@ it.each(['first', 'second'])('cancels the %s reader without cancelling another r
   test.hold()
   const first = new AbortController()
   const second = new AbortController()
+  first.signal.addEventListener('abort', (event) => { event.stopImmediatePropagation() })
+  second.signal.addEventListener('abort', (event) => { event.stopImmediatePropagation() })
   const firstResult = test.manager.enrich([test.entry], first.signal).then(value => ({ value }), (error: unknown) => ({ error }))
   await expect.poll(test.waiting).toBe(true)
   const secondResult = test.manager.enrich([test.entry], second.signal).then(value => ({ value }), (error: unknown) => ({ error }))

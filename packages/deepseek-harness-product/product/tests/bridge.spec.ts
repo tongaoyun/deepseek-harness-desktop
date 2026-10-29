@@ -141,13 +141,36 @@ describe('DeepSeekHarnessProductBridge', () => {
     await expect(bridge.invoke('bootstrap.get')).rejects.toThrow('unsupported method')
   })
 
-  it('routes allowlisted native capabilities through the main-process dispatcher', async () => {
-    const calls: Array<{ method: string; payload: unknown }> = []
-    const bridge = new DeepSeekHarnessProductBridge({
-      nativeInvoke: (method, payload) => { calls.push({ method, payload }); return Promise.resolve({ ready: true }) },
-    })
-    await expect(bridge.invoke('native.device-identity.get', { scope: 'employee' })).resolves.toEqual({ ready: true })
-    expect(calls).toEqual([{ method: 'device-identity.get', payload: { scope: 'employee' } }])
+  it.each([
+    'native.filesystem.list',
+    'native.filesystem.read',
+    'native.filesystem.write',
+    'native.secure-storage.get',
+    'native.secure-storage.set',
+    'native.secure-storage.delete',
+    'native.sqlite.query',
+    'native.sqlite.execute',
+    'native.dingtalk-auth.state',
+    'native.attachments.put',
+    'native.attachments.get',
+    'native.attachments.list',
+    'native.file-undo.record',
+    'native.file-undo.undo',
+    'native.image-preview.inspect',
+    'native.device-identity.get',
+  ])('rejects retired %s before dispatching native work', async (method) => {
+    const bridge = new DeepSeekHarnessProductBridge()
+    expect(isProductMethod(method)).toBe(false)
+    expect(isProductRuntimeMethod(method)).toBe(false)
+    await expect(bridge.invoke(method, {})).rejects.toThrow('unsupported method')
+  })
+
+  it('does not expose the main-owned installation identity through the product bridge', async () => {
+    const bridge = new DeepSeekHarnessProductBridge()
+    try {
+      expect(isProductMethod('native.device-identity.get')).toBe(false)
+      await expect(bridge.invoke('native.device-identity.get')).rejects.toThrow('unsupported method')
+    } finally { await bridge.dispose() }
   })
 
   it('does not publish a delayed connector save result to another employee', async () => {
@@ -411,13 +434,46 @@ describe('DeepSeekHarnessProductBridge', () => {
     expect(JSON.stringify(renderer)).not.toContain('employee-secret')
     expect(JSON.stringify(renderer)).not.toContain('private-connector-key')
     const { url: _url, headers: _headers, arguments: _arguments, environment: _environment, ...metadata } = connector
-    expect(renderer).toEqual([metadata])
+    expect(renderer).toEqual([{ ...metadata, tools: [{ name: 'orders.get', displayName: 'orders.get', access: 'READ' }] }])
 
     const runtime = await bridge.invokeRuntime('connectors.list')
     expect(runtime).toEqual([{ ...connector,
       url: 'https://deepseek-harness.test/root/api/v1/connectors/erp/mcp',
       headers: { 'x-connector-key': 'private-connector-key', Authorization: 'Bearer employee-secret', 'X-Harness-Connector-Version': '1.0.0' } }])
     await bridge.dispose()
+  })
+
+  it.each([
+    { headers: { 'x-connector-key': 42 }, problem: 'a non-string header value' },
+    { headers: { 'x-connector-key': 'line\nbreak' }, problem: 'a header containing a line break' },
+    { headers: { 'bad header': 'value' }, problem: 'an invalid header name' },
+  ])('rejects $problem before injecting employee credentials', async ({ headers }) => {
+    const connector = { id: 'erp', version: '1.0.0', name: 'ERP', status: 'ready', ready: true,
+      authorizationStatus: 'AUTHORIZED', authMode: 'oauth', transport: 'streamable-http',
+      url: '/api/v1/connectors/erp/mcp', headers, arguments: [], environment: {},
+      tools: [{ name: 'orders.get', access: 'READ' }] }
+    const bridge = new DeepSeekHarnessProductBridge({
+      serverUrl: 'https://deepseek-harness.test/root', sessionToken: 'employee-secret',
+      initialSession: { authenticated: true, employeeId: 'employee-1' },
+      fetch: catalogTransport({ ...immutableCatalog, '/api/v1/connectors': [connector] }),
+    })
+    try {
+      await expect(bridge.invokeRuntime('connectors.list')).rejects.toThrow(/invalid connector header/)
+    } finally { await bridge.dispose() }
+  })
+
+  it.each([
+    { tools: {}, problem: 'a malformed tool list' },
+    { tools: [null], problem: 'a malformed tool' },
+    { tools: [{ name: 'orders.get', access: 'UNKNOWN' }], problem: 'an unknown access policy' },
+    { tools: [{ name: 'orders.get', access: 'READ' }, { name: 'orders.get', access: 'WRITE' }], problem: 'duplicate tool names' },
+  ])('rejects $problem before returning a renderer catalog', async ({ tools }) => {
+    const bridge = new DeepSeekHarnessProductBridge({ serverUrl: 'https://deepseek-harness.test',
+      sessionToken: 'employee-session', initialSession: { authenticated: true, employeeId: 'employee-1' },
+      fetch: catalogTransport({ ...immutableCatalog, '/api/v1/connectors': [{ id: 'erp', name: 'ERP', tools }] }),
+    })
+    try { await expect(bridge.invoke('connectors.list')).rejects.toThrow() }
+    finally { await bridge.dispose() }
   })
 
   it.each(['connectors.authorization.status', 'connectors.authorization.revoke'])(

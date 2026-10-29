@@ -2,10 +2,10 @@ import type { ReactNode } from 'react'
 import { useState } from 'react'
 import { IconEllipsisOutlineRegular, IconEditOutlineRegular, IconShareOutlineRegular, IconTrashOutlineRegular, Menu, Tooltip, type MenuEntry } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { DeepSeekHarnessProductKey } from '../locales.ts'
-import type { ProductDetail } from './catalog-shared.tsx'
+import type { ProductItem } from './catalog-shared.tsx'
 import css from '../DeepSeekHarnessProduct.module.css'
 
-type ResourceAccess = Pick<ProductDetail, 'canEdit' | 'canSubmit' | 'canDelete' | 'reviewStatus' | 'version'>
+type ResourceAccess = Partial<Pick<ProductItem, 'canEdit' | 'canSubmit' | 'canDelete' | 'reviewStatus' | 'version'>>
 
 /** Owner actions shared by connector cards and details.
  * @param props - Resource permissions, mutation callbacks, pending state, and localized labels.

@@ -42,7 +42,9 @@ it('retains content after failure and closes stale dialogs on identity changes',
   expect(screen.getByRole<HTMLButtonElement>('button', { name: zh.companySubmitTitle }).disabled).toBe(false)
   await act(async () => f.changeIdentity())
   expect(screen.queryByRole('dialog')).toBeNull()
-  expect(f.cancel).toHaveBeenCalled()
+  // The failed request already settled; its abort listener was released and
+  // must not issue a second cancellation during identity cleanup.
+  expect(f.cancel).not.toHaveBeenCalled()
 })
 it('cancels preparation when closed or unmounted without submitting', async () => {
   const f = fixture()

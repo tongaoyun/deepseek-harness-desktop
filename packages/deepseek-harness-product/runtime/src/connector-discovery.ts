@@ -37,9 +37,9 @@ function unavailable(pin: Pin): ProductError {
     '已加载的连接器工具已变更或不可用。请刷新连接器；若版本已更新，请新建对话。原对话历史仍保留。', false,
     [{ kind: 'connector', id: pin.connectorId }])
 }
-/** Own discovery state, registrations, cancellation and replay without changing the Agent loop. */
-export function installConnectorDiscovery(ctx: Context, product: Pick<DeepSeekHarnessProductIpc, 'invoke'>,
-  catalog: () => ConnectorCatalog | undefined, options: DiscoveryOptions = {}): void {
+/** Own per-Agent discovery scopes; the caller must inject `tools` and the Agent/Session services. */
+export async function installConnectorDiscovery(ctx: Context, product: Pick<DeepSeekHarnessProductIpc, 'invoke'>,
+  catalog: () => ConnectorCatalog | undefined, options: DiscoveryOptions = {}): Promise<void> {
   const limits = discoveryOptions.parse(options)
   const identifier = z.string().regex(/^[A-Za-z0-9._-]{1,128}$/u)
   const requestSchema = z.union([
@@ -48,7 +48,7 @@ export function installConnectorDiscovery(ctx: Context, product: Pick<DeepSeekHa
     z.object({ connectorId: identifier, toolNames: z.array(identifier).min(1).max(limits.maxResults)
       .refine(names => new Set(names).size === names.length) }).strict(),
   ])
-  registerConnectorSelection(ctx)
+  const selection = await registerConnectorSelection(ctx)
   const states = new Map<Agent, State>()
   const lifetime = new AbortController()
   const operations = new Set<Promise<unknown>>()
@@ -88,11 +88,10 @@ export function installConnectorDiscovery(ctx: Context, product: Pick<DeepSeekHa
     state.loaded.set(pin.name, { pin, remove })
   }
   const readPins = (agent: Agent) => {
-    const selection = ctx.sessionProjections.stateOf(agent.session, 'productConnectorTools')
-    if (!selection) throw new ProductError('CONNECTOR_TOOL_PROJECTION_UNAVAILABLE', '连接器工具状态暂不可用，请重启软件后重试。', true)
-    if (selection.failure) throw new ProductError(selection.failure === 'missing' ? 'CONNECTOR_TOOL_SNAPSHOT_MISSING' : 'CONNECTOR_TOOL_SNAPSHOT_INVALID',
+    const state = selection.stateOf(agent.session)
+    if (state.failure) throw new ProductError(state.failure === 'missing' ? 'CONNECTOR_TOOL_SNAPSHOT_MISSING' : 'CONNECTOR_TOOL_SNAPSHOT_INVALID',
       '连接器工具记录无法恢复，请新建对话；原历史仍可查看。')
-    return selection.pins
+    return state.pins
   }
   const replay = (agent: Agent, state: State) => {
     delete state.invalid
@@ -107,7 +106,7 @@ export function installConnectorDiscovery(ctx: Context, product: Pick<DeepSeekHa
       state.invalid = cause instanceof ProductError ? cause : new ProductError('CONNECTOR_TOOL_SNAPSHOT_INVALID', '连接器工具记录无法恢复，请新建对话；原历史仍可查看。', false, [], { cause })
     }
   }
-  const attach = (agent: Agent) => {
+  const attach = (agent: Agent): undefined => {
     const scope = createScope(ctx, agent)
     const state: State = { scope, controller: new AbortController(), loaded: new Map() }
     scope.ctx.effect(() => () => { state.controller.abort(new Error('Conversation disposed')) }, 'connector-discovery.agent')
@@ -127,6 +126,7 @@ export function installConnectorDiscovery(ctx: Context, product: Pick<DeepSeekHa
       for (const { pin } of state.loaded.values()) if (!lookup(pin)) throw unavailable(pin)
       return next()
     })
+    return undefined
   }
   ctx.on('agent/created', ({ agent }) => { attach(agent) })
   const disposals = new Set<Promise<void>>()

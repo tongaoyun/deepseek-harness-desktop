@@ -47,10 +47,6 @@ Web 内置定义来自 `dsh-web-app` bundle。定义使用普通插件行；注�
 
 注册表不写入任何声明。`read` Remote 把一条声明的子插件列表按 entry-list YAML 方言（含 `!!js` 条件）渲染回来，供客户端展示 preset 的组成；没有任何接口接受 YAML 写回。新建 preset 或覆盖内置 preset 都是 bundle 补丁：插入一行 `@deepseek-ai/dsh-agent-preset`，或按该行 id 写覆盖补丁，再用 `plugin_manager` 安装到 profile；创造模式在对话中编写这类 bundle。
 
-选择操作在挂载前调用 `agent-preset/resolve-selection` waterfall。扩展通过 `next()` 委托后续处理，可以返回已注册的派生组合。注册表在解析前后检查回合边界；解析失败不会改变当前绑定或选择日志。
-
-隐藏的派生定义可以通过 `selectionBase` 指定可选择的基础模式，用于模式展示。`derive()` 在 `selectable: false` 时记录并展平该关联；注册时拒绝空值、自引用基础及可选择定义上的关联。由于声明并发启动，读取时若基础缺失，先等待 Host Loader 稳定，再将缺失、隐藏或含其他关联的基础标为不可用，拒绝新的绑定或选择。基础卸载或替换后，后续读取重新检查关联；现有版本租约继续保留。目录返回该关联，Session 选择和日志仍标识完整的执行组合。派生保留基础 Loader 解析上下文并复制插件行，不解析展示用 YAML。不要在 Host 行自身的激活过程中读取诊断，因为 Loader 稳定需要等待该激活完成。
-
 <a id="understand-the-implementation"></a>
 ## 理解实现
 
@@ -61,7 +57,7 @@ Web 内置定义来自 `dsh-web-app` bundle。定义使用普通插件行；注�
 
 preset 的服务提供方及其消费方必须共享同一个 `cordis:group` 隔离 realm。条目局部隔离不会沿 Agent 注册 scope 传播：组外的普通 Context 查找（包括 `agent.ctx`）仍选择 Host realm。`agentPresets.serviceFor()` 显式检查保留的组合，不改变普通服务查找。
 
-激活审计检查导入失败、缺失服务和向全局泄漏的服务。导入失败、激活失败和泄漏会拒绝挂载。等待 Host 服务的行保持挂载，每次读取和绑定都在 Host Loader 树结算后重新审计，因此启动顺序不决定结果。失败只禁用该定义的新绑定。会话日志保存 preset ID 和空白会话的切换记录；重启恢复使用该 ID 的当前定义，缺失时拒绝恢复。若空白会话已记录所请求的 preset 且正运行其当前版本，`select` 不做任何改动，也不追加切换记录或触发 `tools/change`。
+激活审计检查导入失败、缺失服务和向全局泄漏的服务。导入失败、激活失败和泄漏会拒绝挂载。等待 Host 服务的行保持挂载，每次读取和绑定都在 Host Loader 树结算后重新审计，因此启动顺序不决定结果。失败只禁用该定义的新绑定。`presetForSession(session)` 同步读取最新记录的预设 ID，未记录时返回 null。会话日志保存 preset ID 和空白会话的切换记录；重启恢复使用该 ID 的当前定义，缺失时拒绝恢复。若空白会话已记录所请求的 preset 且正运行其当前版本，`select` 不做任何改动，也不追加切换记录或触发 `tools/change`。
 
 `inspectCompositions()` 读取本注册表仍保留的全部代际；传入 Agent 上下文时只选择它绑定的精确代际，在此没有绑定时返回空列表。每个 `AgentPresetInspection` 包含 preset ID、纯数据形式的活动模块引用及解析基址，以及泄漏的服务名。检查器查询运行中的服务，而不是模块级挂载表；结果不包含 Loader 树或 fiber。这些记录定义在 [composition-inventory.ts](src/composition-inventory.ts) 中。
 

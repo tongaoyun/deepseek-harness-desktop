@@ -26,7 +26,7 @@ declare module '@deepseek-ai/cordis' {
 export class CompanyContent extends Service implements CompanyContentSource {
   private readonly lifecycle = new AbortController()
   private readonly pendingBindings = new Map<string, BindingRequest>()
-  private readonly operations = new Set<Promise<CompanyContentRoots>>()
+  private readonly operations = new Set<Promise<unknown>>()
   private readonly prompted = new WeakSet<Agent>()
 
   constructor(ctx: Context, private readonly product: Pick<DeepSeekHarnessProductIpc, 'invoke'>) {
@@ -60,14 +60,33 @@ export class CompanyContent extends Service implements CompanyContentSource {
     this.prompted.add(agent)
   }
 
-  /** Read the latest installed content without initiating a network check. */
-  async read(): Promise<CompanyContentRoots> {
-    return rootsSchema.parse(await this.product.invoke('runtime.companyContent.read', undefined, this.lifecycle.signal))
+  /** Read installed content without a network check.
+   * @param signal - Optional reader cancellation; omission uses the plugin lifetime.
+   * @returns Validated local catalog roots.
+   */
+  read(signal?: AbortSignal): Promise<CompanyContentRoots> {
+    return this.track(signal, async control => rootsSchema.parse(
+      await this.product.invoke('runtime.companyContent.read', undefined, control)))
   }
 
-  /** Refresh shared content through main; native pages retain their last successful snapshot. */
-  async refresh(): Promise<void> {
-    await this.product.invoke('runtime.companyContent.refresh', undefined, this.lifecycle.signal)
+  /** Refresh through main while keeping the last successful catalog available.
+   * @param signal - Optional caller cancellation; shared synchronization remains owned by main.
+   */
+  async refresh(signal?: AbortSignal): Promise<void> {
+    await this.track(signal, control => this.product.invoke('runtime.companyContent.refresh', undefined, control))
+  }
+
+  private async track<T>(signal: AbortSignal | undefined, operation: (signal: AbortSignal) => Promise<T>): Promise<T> {
+    const control = signal === undefined ? this.lifecycle.signal : AbortSignal.any([signal, this.lifecycle.signal])
+    const pending = Promise.resolve().then(async () => {
+      control.throwIfAborted()
+      const value = await operation(control)
+      control.throwIfAborted()
+      return value
+    })
+    this.operations.add(pending)
+    try { return await pending }
+    finally { this.operations.delete(pending) }
   }
 
   /** Resolve one real Session; resumed tasks and child Agents keep their original content.
@@ -76,8 +95,8 @@ export class CompanyContent extends Service implements CompanyContentSource {
    * @returns Roots revalidated by main; only concurrent requests share a check.
    */
   async forSession(sessionId: string, signal = this.lifecycle.signal): Promise<CompanyContentRoots> {
+    signal = AbortSignal.any([signal, this.lifecycle.signal])
     signal.throwIfAborted()
-    this.lifecycle.signal.throwIfAborted()
     let pending = this.pendingBindings.get(sessionId)
     if (!pending) {
       const session = this.ctx.sessions.get(SessionId(sessionId))
@@ -85,12 +104,13 @@ export class CompanyContent extends Service implements CompanyContentSource {
       const controller = new AbortController()
       const operationSignal = AbortSignal.any([controller.signal, this.lifecycle.signal])
       const result = (async () => {
-        using observation = await this.ctx.sessionQuery.observeSession(session.id)
+        using observation = await this.ctx.sessionQuery.observeSession(session.id, { signal: operationSignal })
         operationSignal.throwIfAborted()
         const value = await this.product.invoke('runtime.companyContent.pin', { sessionId,
           ...session.header.parentSession === undefined ? {} : { parentSessionId: session.header.parentSession },
           started: observation.events.some(event => event.type === 'request/header'),
         }, operationSignal)
+        operationSignal.throwIfAborted()
         return rootsSchema.parse(value)
       })()
       pending = { controller, result, readers: 0 }
@@ -105,7 +125,11 @@ export class CompanyContent extends Service implements CompanyContentSource {
     pending.readers++
     const cancelled = Promise.withResolvers<never>()
     using _listener = addAbortListener(signal, () => { cancelled.reject(signal.reason) })
-    try { return await Promise.race([pending.result, cancelled.promise]) }
+    try {
+      const value = await Promise.race([pending.result, cancelled.promise])
+      signal.throwIfAborted()
+      return value
+    }
     finally {
       if (--pending.readers === 0) {
         if (this.pendingBindings.get(sessionId) === pending) this.pendingBindings.delete(sessionId)

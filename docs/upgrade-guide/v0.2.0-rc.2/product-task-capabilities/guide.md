@@ -5,7 +5,7 @@ description: "独立产品包和任务快照取代内嵌运行时与旧选择协
 
 # 产品任务能力
 
-## 变更
+## Change
 
 `@deepseek-harness/desktop-assembly` 加载独立产品包，官方桌面可独立运行。preload 传输 `dshDesktop.extensions`，产品包校验方法并跨过 Electron 桥还原类型化错误。
 
@@ -23,7 +23,7 @@ description: "独立产品包和任务快照取代内嵌运行时与旧选择协
 
 知识库范围改为 `PERSONAL`、`DEPARTMENT`、`COMPANY`，每次目录和检索重新检查钉钉组织。版本 2 快照固定 `requiredKnowledgeBaseIds`。产品快照丢失或无效时，对应任务须显式恢复，官方 Session 历史不变。套件失权阻止执行和说明加载，不替换固定内容。
 
-## 迁移
+## Migration
 
 保留制品、快照和官方 Session 历史。不支持的独立技能或套件 Preset 需创建新任务。
 

@@ -1,0 +1,317 @@
+diff --git a/docs/subsystems/skills.i18n.yaml b/docs/subsystems/skills.i18n.yaml
+index c4fbc992b6b061322bebd61355edf02de57192a4..03eb0200986bca33e853b38348c6d5924af99f20 100644
+--- a/docs/subsystems/skills.i18n.yaml
++++ b/docs/subsystems/skills.i18n.yaml
+@@ -3,8 +3,8 @@
+ # After editing either side, bring the other along and re-record with:
+ #   pnpm run verify-translation-pairing --write docs/subsystems/skills.md
+ /skills:
+-  en: ad77015352a17ed6
+-  zh: 5c84933161845393
++  en: 9be624c84bafb983
++  zh: 6aee8418048ba0c2
+ /skills/provider-registry:
+   en: abe338b6c6d1ebd1
+   zh: c604db2de10a23c4
+diff --git a/docs/subsystems/skills.md b/docs/subsystems/skills.md
+index 3bfdbff4027b6de106b156fde526f35b62033525..12f18ceb517c6406408c7f4906820a7566069b38 100644
+--- a/docs/subsystems/skills.md
++++ b/docs/subsystems/skills.md
+@@ -6,6 +6,8 @@ The [skill capability family](../../packages/skill) includes the Service Definit
+ 
+ Source: [`packages/skill/skill/src/index.ts`](../../packages/skill/skill/src/index.ts), [`packages/skill/skill-filesystem/src/index.ts`](../../packages/skill/skill-filesystem/src/index.ts), [`packages/experimental/skill-badge/src/index.ts`](../../packages/experimental/skill-badge/src/index.ts), [`packages/skill/skill-office/src/index.ts`](../../packages/skill/skill-office/src/index.ts), [`packages/sandbox/sandbox-windows-acl/src/acl-skill.ts`](../../packages/sandbox/sandbox-windows-acl/src/acl-skill.ts), and [`packages/skill/tool-skill/src/index.ts`](../../packages/skill/tool-skill/src/index.ts).
+ 
++Filesystem and skill-management providers share the parsing helpers documented in the [filesystem provider](../../packages/skill/skill-filesystem/README.md), exposed through its `/document` entry.
++
+ ## Provider registry
+ 
+ `ctx.skills` combines local, embedded, remote, or other providers. Registration is synchronous; remote initialization and discovery belong in awaited `list()`. Provider objects, options, and candidates are borrowed readonly, while semantic fields are validated.
+@@ -348,5 +350,5 @@ A skill provider, runtime contribution, or provider-backed catalog may have chan
+ 'skills/change'(): void
+ ```
+ 
+-Source: [`packages/skill/skill/src/index.ts`](../../packages/skill/skill/src/index.ts)
++Source: [`packages/skill/skill/src/types.ts`](../../packages/skill/skill/src/types.ts)
+ <!-- END GENERATED cordis-surface -->
+diff --git a/docs/subsystems/skills.zh.md b/docs/subsystems/skills.zh.md
+index d93f8416fb4f4084cf6effc7b7e0ffae8caae5b0..042379bd9448f4a2345f0d46ba6cabffb9924664 100644
+--- a/docs/subsystems/skills.zh.md
++++ b/docs/subsystems/skills.zh.md
+@@ -6,6 +6,8 @@
+ 
+ 源码：[`packages/skill/skill/src/index.ts`](../../packages/skill/skill/src/index.ts)、[`packages/skill/skill-filesystem/src/index.ts`](../../packages/skill/skill-filesystem/src/index.ts)、[`packages/experimental/skill-badge/src/index.ts`](../../packages/experimental/skill-badge/src/index.ts)、[`packages/skill/skill-office/src/index.ts`](../../packages/skill/skill-office/src/index.ts)、[`packages/sandbox/sandbox-windows-acl/src/acl-skill.ts`](../../packages/sandbox/sandbox-windows-acl/src/acl-skill.ts) 与 [`packages/skill/tool-skill/src/index.ts`](../../packages/skill/tool-skill/src/index.ts)。
+ 
++文件系统与技能管理提供方共用[文件系统提供方文档](../../packages/skill/skill-filesystem/README.zh.md)所述的解析函数，通过该包的 `/document` 入口使用。
++
+ ## 提供方注册表
+ 
+ `ctx.skills` 组合本地、内嵌、远程或其他提供方。注册是同步的；远程初始化与发现属于 `list()` 的 await 阶段。提供方对象、选项与候选项以只读方式借用，语义字段会被校验。
+@@ -348,5 +350,5 @@ A skill provider, runtime contribution, or provider-backed catalog may have chan
+ 'skills/change'(): void
+ ```
+ 
+-Source: [`packages/skill/skill/src/index.ts`](../../packages/skill/skill/src/index.ts)
++Source: [`packages/skill/skill/src/types.ts`](../../packages/skill/skill/src/types.ts)
+ <!-- END GENERATED cordis-surface -->
+diff --git a/packages/skill/skill-filesystem/README.i18n.yaml b/packages/skill/skill-filesystem/README.i18n.yaml
+index 964de20efed5fed5bf174d42571ecbae7e1bbb7a..95b6ca1699c9377785c8fb7215a8d8556e7750dc 100644
+--- a/packages/skill/skill-filesystem/README.i18n.yaml
++++ b/packages/skill/skill-filesystem/README.i18n.yaml
+@@ -21,8 +21,8 @@
+   en: 012a123601c7d8f2
+   zh: 0e13f5e0d2e4ea7a
+ /deepseek-ai-dsh-skill-filesystem/use-this-package/skill-format:
+-  en: 78ac4e731c6a24c1
+-  zh: e8c33db4aa0cc527
++  en: b9168210af0658e5
++  zh: 665a2ff344cdf3fc
+ /deepseek-ai-dsh-skill-filesystem/use-this-package/roots-and-priority:
+   en: 265594f30ba5d848
+   zh: 5de6a94864cab8d6
+diff --git a/packages/skill/skill-filesystem/README.md b/packages/skill/skill-filesystem/README.md
+index 7d99666ca3ae0673128272ce7479bcd6f1c319f4..b9a390bd2d784e7dd6530b5a8f9063d0b36226c7 100644
+--- a/packages/skill/skill-filesystem/README.md
++++ b/packages/skill/skill-filesystem/README.md
+@@ -37,6 +37,8 @@ A skill is either a directory bundle `<name>/SKILL.md` or a flat file `<name>.md
+ 
+ `disable-model-invocation: true` keeps the skill out of model-facing catalogs and loaders; `user-invocable: false` keeps it out of human-facing commands, and omitted fields default to permitting their surface. The two keys accept YAML booleans plus the case-insensitive `true`/`false`, `yes`/`no`, `on`/`off`, and `1`/`0` forms; a rejected spelling or a non-boolean value drops the whole skill with a warning rather than silently permitting a surface.
+ 
++The public `@deepseek-ai/dsh-skill-filesystem/document` entry exports the same YAML and invocation-policy parsers used by this provider. Skill-management providers can reuse them without starting a filesystem watcher; invalid YAML throws, missing or non-mapping headers return `undefined`, and invocation parsing rejects legacy keys and invalid flags. The entry uses the standard emitted JavaScript tree and needs no separate bundle.
++
+ Catalog entries and loaded skills expose the resolved instruction-file path, so symlinked directories and flat files can open as regular-file previews. Reload locators and resource bases retain the discovered paths, including symlinks.
+ 
+ The catalog and the body have separate lifecycles: discovery parses frontmatter into the catalog entry, and every load re-reads the current file, so editing a skill body needs no versioning or cache invalidation.
+diff --git a/packages/skill/skill-filesystem/README.zh.md b/packages/skill/skill-filesystem/README.zh.md
+index 23c948c88b46c64aaa5ff4c5fb8511f228c6bbff..96504aee0f4c61391afe6b10753a657f33e353e3 100644
+--- a/packages/skill/skill-filesystem/README.zh.md
++++ b/packages/skill/skill-filesystem/README.zh.md
+@@ -37,6 +37,8 @@ skill 可以是被扫描根目录顶层的目录 bundle `<name>/SKILL.md`，也
+ 
+ `disable-model-invocation: true` 会把 skill 从面向模型的目录和 loader 中排除；`user-invocable: false` 会把它从面向用户的命令中排除，省略的字段默认允许对应接口调用。这两个键接受 YAML 布尔值，以及不区分大小写的 `true`/`false`、`yes`/`no`、`on`/`off` 和 `1`/`0` 形式；被拒绝的拼写或非布尔值会让整个 skill 随警告一起被丢弃，而不会静默允许某个接口。
+ 
++公开入口 `@deepseek-ai/dsh-skill-filesystem/document` 导出本提供方使用的 YAML 与调用策略解析器。技能管理提供方可直接复用，无需启动文件监视器；非法 YAML 抛出异常，缺少头部或头部不是映射时返回 `undefined`，调用策略解析拒绝旧字段和非法开关值。该入口使用标准 JavaScript 编译输出目录，无需单独打包。
++
+ 目录条目和已加载 skill 提供解析后的指令文件路径，使符号链接目录和扁平文件都能作为普通文件预览。重新加载的定位信息和资源根保留发现时的路径，包括符号链接。
+ 
+ 目录与正文具有独立的生命周期：发现阶段把 frontmatter 解析进目录条目，每次加载都会重新读取当前文件，因此编辑 skill 正文无需版本化或缓存失效。
+diff --git a/packages/skill/skill-filesystem/package.json b/packages/skill/skill-filesystem/package.json
+index ecc2a7a0226a5a54a68466ccb5520ab081e71c7a..de77ff1b0c120917b2520fd65c00d4b1c592ebaa 100644
+--- a/packages/skill/skill-filesystem/package.json
++++ b/packages/skill/skill-filesystem/package.json
+@@ -20,11 +20,16 @@
+     },
+     "./src/*": "./src/*",
+     "./package.json": "./package.json",
+-    "./locale/*.json": "./locale/*.json"
++    "./locale/*.json": "./locale/*.json",
++    "./document": {
++      "types": "./lib/types/document.d.ts",
++      "default": "./lib/types/document.js"
++    }
+   },
+   "files": [
+     "locale/*.json",
+     "lib/index.js",
++    "lib/types/**/*.js",
+     "lib/types/**/*.d.ts"
+   ],
+   "license": "MIT",
+diff --git a/packages/skill/skill-filesystem/src/document.ts b/packages/skill/skill-filesystem/src/document.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..d99e24d0bd956f33caf7b3492680f30f9ecaf8dd
+--- /dev/null
++++ b/packages/skill/skill-filesystem/src/document.ts
+@@ -0,0 +1,81 @@
++/** Shared YAML parsing for filesystem skills and skill-management providers. */
++import { parse as parseYaml } from 'yaml'
++import type { SkillInvocationPolicy } from '@deepseek-ai/dsh-skill'
++
++/** Read a complete YAML mapping before the Markdown body without normalizing body whitespace.
++ * @param raw Complete SKILL.md text, with an exact opening and closing delimiter line.
++ * @returns Parsed metadata and untouched body, or undefined for missing delimiters or a non-mapping header.
++ * @throws When YAML syntax, aliases, or duplicate keys are invalid.
++ */
++export function parseSkillFrontmatter(raw: string): { data: Record<string, unknown>; body: string } | undefined {
++  const firstLineEnd = raw.indexOf('\n')
++  if (firstLineEnd < 0) return undefined
++  const firstLine = raw.slice(0, firstLineEnd).replace(/\r$/, '')
++  if (firstLine !== '---') return undefined
++  const start = firstLineEnd + 1
++  const closing = findClosingFrontmatter(raw, start)
++  if (closing === undefined) return undefined
++  const yaml = raw.slice(start, closing.start)
++  const parsed: unknown = parseYaml(yaml)
++  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return undefined
++  return { data: parsed as Record<string, unknown>, body: raw.slice(closing.bodyStart) }
++}
++
++function findClosingFrontmatter(raw: string, start: number): { start: number; bodyStart: number } | undefined {
++  let lineStart = start
++  while (lineStart <= raw.length) {
++    const nextNewline = raw.indexOf('\n', lineStart)
++    const lineEnd = nextNewline < 0 ? raw.length : nextNewline
++    const line = raw.slice(lineStart, lineEnd).replace(/\r$/, '')
++    if (line === '---') {
++      return { start: lineStart, bodyStart: nextNewline < 0 ? raw.length : nextNewline + 1 }
++    }
++    if (nextNewline < 0) return undefined
++    lineStart = nextNewline + 1
++  }
++}
++
++/** Resolve native invocation permissions, rejecting legacy keys and invalid values.
++ * @param data Parsed YAML mapping; omitted flags permit both invocation channels.
++ * @returns The model and user invocation permissions.
++ * @throws When a legacy invocation key or unsupported boolean representation is present.
++ */
++export function parseSkillInvocationPolicy(data: Record<string, unknown>): SkillInvocationPolicy {
++  rejectLegacyInvocationKey(data, 'disableModelInvocation', 'disable-model-invocation')
++  rejectLegacyInvocationKey(data, 'modelInvocable', 'disable-model-invocation')
++  rejectLegacyInvocationKey(data, 'userInvocable', 'user-invocable')
++  const disableModelInvocation = frontmatterBoolean(data, 'disable-model-invocation')
++  const userInvocable = frontmatterBoolean(data, 'user-invocable')
++  return {
++    modelInvocable: disableModelInvocation !== true,
++    userInvocable: userInvocable !== false,
++  }
++}
++
++function rejectLegacyInvocationKey(data: Record<string, unknown>, legacy: string, canonical: string): void {
++  if (Object.hasOwn(data, legacy)) {
++    throw new Error(`frontmatter field "${legacy}" is unsupported; use "${canonical}"`)
++  }
++}
++
++function frontmatterBoolean(data: Record<string, unknown>, key: string): boolean | undefined {
++  if (!Object.hasOwn(data, key)) return undefined
++  const value = data[key]
++  if (typeof value === 'boolean') return value
++  if (value === 1 || value === '1') return true
++  if (value === 0 || value === '0') return false
++  if (typeof value === 'string') {
++    switch (value.toLowerCase()) {
++      case 'true':
++      case 'yes':
++      case 'on':
++        return true
++      case 'false':
++      case 'no':
++      case 'off':
++        return false
++    }
++  }
++  throw new TypeError(`frontmatter field "${key}" must be a boolean`)
++}
++
+diff --git a/packages/skill/skill-filesystem/src/index.ts b/packages/skill/skill-filesystem/src/index.ts
+index 3e7fcf96121997dc90c2018e5d1b46cf54e8d5db..7eb186eecc23f8688f3f44b02d41f4e49e3dd746 100644
+--- a/packages/skill/skill-filesystem/src/index.ts
++++ b/packages/skill/skill-filesystem/src/index.ts
+@@ -16,7 +16,7 @@ import type { Context } from '@deepseek-ai/cordis'
+ import chokidar from 'chokidar'
+ import z from '@deepseek-ai/schemastery'
+ import type Schema from '@deepseek-ai/schemastery'
+-import { parse as parseYaml } from 'yaml'
++import { parseSkillFrontmatter, parseSkillInvocationPolicy } from './document.ts'
+ import type { FileSystem, FsDirEntry, FsTarget } from '@deepseek-ai/dsh-fs'
+ import { canonicalizeWatchPath, resolveAgentsHome, resolveDshHome } from '@deepseek-ai/dsh-home-paths'
+ import {
+@@ -809,7 +809,7 @@ async function parseSkillFile(path: string, ctx: Context, signal?: AbortSignal,
+   }
+   let parsed
+   try {
+-    parsed = parseFrontmatter(raw.content)
++    parsed = parseSkillFrontmatter(raw.content)
+   } catch (error) {
+     ctx.logger.warn(`skill file ${path} ignored: invalid YAML frontmatter: ${errorMessage(error)}`)
+     return undefined
+@@ -830,7 +830,7 @@ async function parseSkillFile(path: string, ctx: Context, signal?: AbortSignal,
+   }
+   let invocation
+   try {
+-    invocation = parseInvocationPolicy(parsed.data)
++    invocation = parseSkillInvocationPolicy(parsed.data)
+   } catch (error) {
+     ctx.logger.warn(`skill file ${path} ignored: invalid invocation frontmatter: ${errorMessage(error)}`)
+     return undefined
+@@ -921,34 +921,6 @@ async function nodeEntryKind(fullPath: string, entry: { isDirectory(): boolean;
+   }
+ }
+ 
+-function parseFrontmatter(raw: string): { data: Record<string, unknown>; body: string } | undefined {
+-  const firstLineEnd = raw.indexOf('\n')
+-  if (firstLineEnd < 0) return undefined
+-  const firstLine = raw.slice(0, firstLineEnd).replace(/\r$/, '')
+-  if (firstLine !== '---') return undefined
+-  const start = firstLineEnd + 1
+-  const closing = findClosingFrontmatter(raw, start)
+-  if (closing === undefined) return undefined
+-  const yaml = raw.slice(start, closing.start)
+-  const parsed: unknown = parseYaml(yaml)
+-  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return undefined
+-  return { data: parsed as Record<string, unknown>, body: raw.slice(closing.bodyStart) }
+-}
+-
+-function findClosingFrontmatter(raw: string, start: number): { start: number; bodyStart: number } | undefined {
+-  let lineStart = start
+-  while (lineStart <= raw.length) {
+-    const nextNewline = raw.indexOf('\n', lineStart)
+-    const lineEnd = nextNewline < 0 ? raw.length : nextNewline
+-    const line = raw.slice(lineStart, lineEnd).replace(/\r$/, '')
+-    if (line === '---') {
+-      return { start: lineStart, bodyStart: nextNewline < 0 ? raw.length : nextNewline + 1 }
+-    }
+-    if (nextNewline < 0) return undefined
+-    lineStart = nextNewline + 1
+-  }
+-}
+-
+ async function findProjectRoot(cwd: string, fs: FileSystem | undefined): Promise<string> {
+   let current = cwd
+   while (true) {
+@@ -1004,45 +976,6 @@ function optionalString(data: Record<string, unknown>, key: string): { [K in typ
+   return typeof value === 'string' && value.length > 0 ? { [key]: value } : {}
+ }
+ 
+-function parseInvocationPolicy(data: Record<string, unknown>): SkillInvocationPolicy {
+-  rejectLegacyInvocationKey(data, 'disableModelInvocation', 'disable-model-invocation')
+-  rejectLegacyInvocationKey(data, 'modelInvocable', 'disable-model-invocation')
+-  rejectLegacyInvocationKey(data, 'userInvocable', 'user-invocable')
+-  const disableModelInvocation = frontmatterBoolean(data, 'disable-model-invocation')
+-  const userInvocable = frontmatterBoolean(data, 'user-invocable')
+-  return {
+-    modelInvocable: disableModelInvocation !== true,
+-    userInvocable: userInvocable !== false,
+-  }
+-}
+-
+-function rejectLegacyInvocationKey(data: Record<string, unknown>, legacy: string, canonical: string): void {
+-  if (Object.hasOwn(data, legacy)) {
+-    throw new Error(`frontmatter field "${legacy}" is unsupported; use "${canonical}"`)
+-  }
+-}
+-
+-function frontmatterBoolean(data: Record<string, unknown>, key: string): boolean | undefined {
+-  if (!Object.hasOwn(data, key)) return undefined
+-  const value = data[key]
+-  if (typeof value === 'boolean') return value
+-  if (value === 1 || value === '1') return true
+-  if (value === 0 || value === '0') return false
+-  if (typeof value === 'string') {
+-    switch (value.toLowerCase()) {
+-      case 'true':
+-      case 'yes':
+-      case 'on':
+-        return true
+-      case 'false':
+-      case 'no':
+-      case 'off':
+-        return false
+-    }
+-  }
+-  throw new TypeError(`frontmatter field "${key}" must be a boolean`)
+-}
+-
+ function optionalMetadata(data: Record<string, unknown>): { metadata?: Record<string, unknown> } {
+   const value = data.metadata
+   if (typeof value === 'object' && value !== null && !Array.isArray(value)) {

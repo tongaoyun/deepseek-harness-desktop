@@ -29,7 +29,7 @@ function workflow(name: string): Workflow {
 }
 
 describe('DeepSeekHarness Electron workflows', () => {
-  it('keeps internal CI, manual GitHub synchronization and scheduled release retention workflows', () => {
+  it('keeps internal CI, release retention and manual GitHub synchronization workflows', () => {
     const files = readdirSync(resolve(import.meta.dirname, '..', '.gitea', 'workflows'))
       .filter(name => /\.ya?ml$/u.test(name)).sort()
     expect(files).toEqual(['desktop-release-retention.yml', 'electron-ci.yml', 'github-desktop-sync.yml'])
@@ -39,12 +39,11 @@ describe('DeepSeekHarness Electron workflows', () => {
     const command = workflow('electron-ci.yml').jobs.desktop?.steps
       .find(step => step.name === 'Verify upstream and product contracts')?.run ?? ''
     expect(command).toContain('pnpm run build:artifacts\n')
-    for (const module of ['experts', 'skills']) {
-      const check = `pnpm exec tsc --noEmit -p packages/deepseek-harness-product/${module}/tsconfig.json`
-      expect(command).toContain(check)
-      expect(command).toContain(`pnpm exec vitest run --config packages/deepseek-harness-product/${module}/vitest.config.ts`)
-      expect(command.indexOf('pnpm run build:artifacts\n')).toBeLessThan(command.indexOf(check))
-    }
+    expect(command).not.toContain('packages/deepseek-harness-product/experts/tsconfig.json')
+    expect(command).not.toContain('packages/deepseek-harness-product/skills run typecheck')
+    expect(command).toMatch(/pnpm exec vitest run \\\n\s+packages\/deepseek-harness-product/u)
+    expect(command).not.toContain('--config packages/deepseek-harness-product/experts/vitest.config.ts')
+    expect(command).not.toContain('--config packages/deepseek-harness-product/skills/vitest.config.ts')
     expect(command).toContain('node --test apps/product-desktop/tests/company-content.test.mjs')
     expect(command).toContain('pnpm run typecheck\n')
     expect(command).not.toContain('pnpm run build:lib:host')

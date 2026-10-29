@@ -18,6 +18,7 @@ const messageKeys: Readonly<Record<string, DeepSeekHarnessProductKey>> = {
   CONNECTOR_SAVE_PENDING: 'connectorSavePending',
   EXTENSION_OWNER_REQUIRED: 'ownerRequired',
   EXTENSION_IMPORT_INVALID: 'importInvalid',
+  CAPABILITY_RESPONSE_INVALID: 'taskResponseInvalid',
   TASK_SNAPSHOT_INVALID: 'taskSnapshotUnavailable',
   TASK_SNAPSHOT_MISSING: 'taskSnapshotUnavailable',
   TASK_SNAPSHOT_UNAVAILABLE: 'taskSnapshotUnavailable',

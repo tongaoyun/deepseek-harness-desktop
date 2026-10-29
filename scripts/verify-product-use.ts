@@ -14,13 +14,19 @@ import { isAgentPresetEntry, isCordisGroupEntry, loadCordisYaml } from './cordis
 import { PRODUCT_PACKAGE_POLICY, type ProductPackagePolicy } from './product-package-policy.ts'
 import { collectRuntimeLocalSourceSpecifiers, collectRuntimeSourceSpecifiers } from './verify-client-packages.ts'
 
-const PROFILE_SOURCE = 'packages/boot/app-boot/src/profile.ts'
-const ON_DEMAND_SOURCE = 'packages/boot/app-boot/src/official-bundle-packages.ts'
+const PROFILE_SOURCE = 'packages/util/official-bundles/src/bundles.ts'
+const ON_DEMAND_SOURCE = PROFILE_SOURCE
 const PROFILES = ['acp', 'web', 'headless', 'sdk', 'sdk-minimal']
 const PICKER_SOURCE = 'packages/host/directory-picker-auto/src/index.ts'
 const ASSEMBLY_GLOB = ['packages/*/*/assembly.json', 'apps/*/assembly.json']
 const DYNAMIC_MOUNTS: Readonly<Record<string, readonly string[]>> = {
   [PICKER_SOURCE]: ['BACKEND_PACKAGES', 'SURFACE_PACKAGES'],
+}
+// These product-only client entries stay local to this source-plane gate;
+// putting them in the global client tsconfig would cross the extension rootDir.
+const PRODUCT_SOURCE_PATHS: Readonly<Record<string, string>> = {
+  '@deepseek-harness/product-experts/client': 'packages/deepseek-harness-product/experts/src/client/index.ts',
+  '@deepseek-harness/product-skills/client': 'packages/deepseek-harness-product/skills/src/client.ts',
 }
 
 interface Package {
@@ -104,10 +110,20 @@ export function verifyProductUse(
     return undefined
   }
   const resolveModule = (specifier: string, from: string): string | undefined => {
+    const productSource = PRODUCT_SOURCE_PATHS[specifier]
+    if (productSource !== undefined) return sourceFile(resolve(root, productSource))
     const resolved = ts.resolveModuleName(specifier, from, converted.options, host, resolutionCache).resolvedModule
     if (resolved === undefined || resolved.resolvedFileName.replaceAll('\\', '/').includes('/node_modules/')) return undefined
-    const path = resolve(resolved.resolvedFileName)
-    if (/(?:^|\/)lib\//.test(display(path)) || path.endsWith('.d.ts')) return undefined
+    let path = resolve(resolved.resolvedFileName)
+    if (/(?:^|\/)lib\//.test(display(path))) return undefined
+    // Generated Typert Remotes are checked-in source-plane JavaScript. TypeScript
+    // resolves their explicit `.js` imports to the paired declaration file;
+    // follow the runtime sibling so product-use scans the generated source.
+    if (path.endsWith('.d.ts')) {
+      const runtime = path.replace(/\.d\.ts$/u, '.js')
+      if (!existsSync(runtime)) return undefined
+      path = runtime
+    }
     return path
   }
   const scanSource = (path: string, reach: Reachability): void => {

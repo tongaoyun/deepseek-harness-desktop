@@ -5,11 +5,12 @@ import { Button, Modal } from '@deepseek-ai/dsh-client-ui-primitives'
 import { ProductError } from '@deepseek-harness/product/errors'
 import type { DeepSeekHarnessProductKey } from '../locales.ts'
 import css from '../DeepSeekHarnessProduct.module.css'
-import { items } from './catalog-shared.tsx'
+import { ProductCatalogSchema } from '@deepseek-harness/product/catalog'
 import { useKnowledgeRequests } from './knowledge-data.ts'
 import { isKnowledgeSaveUnconfirmed, productErrorMessage } from './product-errors.ts'
 import { useEditorCloseGuard } from './useEditorCloseGuard.ts'
 import { useKnowledgeSaveRecovery, type KnowledgeSaveDraft } from './knowledge-save-recovery.ts'
+import { KnowledgeEditorFooter } from './KnowledgeEditorFooter.tsx'
 
 interface KnowledgeBaseEditorProps {
   readonly onClose: () => void
@@ -72,9 +73,9 @@ function KnowledgeBaseEditorForm({ onClose, onCreated, t, restored, recovery }: 
     try {
       const response = await request('knowledge.bases.create', payload, controller.signal)
       if (controller.signal.aborted) return
-      const base = items([response])[0]
-      if (base === undefined || typeof response !== 'object' || response === null || !('id' in response)
-        || typeof response.id !== 'string' || response.id.trim() === '') {
+      const receipt = ProductCatalogSchema.safeParse([response])
+      const base = receipt.success ? receipt.data[0] : undefined
+      if (base === undefined) {
         throw new ProductError('IDEMPOTENCY_OPERATION_UNKNOWN', 'Personal library save receipt is invalid', true)
       }
       recovery.clear()
@@ -88,15 +89,8 @@ function KnowledgeBaseEditorForm({ onClose, onCreated, t, restored, recovery }: 
     finally { if (!controller.signal.aborted) setPending(false) }
   }
   return <Modal open title={t('knowledgeCreatePersonalBase')} closeLabel={t('close')} onClose={close.requestClose}
-    className={css.knowledgeBaseEditorModal as string} footer={<>
-      {close.confirming ? <>
-        <Button variant="ghost" size="sm" onClick={close.keepEditing}>{t('knowledgeKeepEditing')}</Button>
-        <Button variant="primary" size="sm" onClick={close.discard}>{t('knowledgeDiscardDraft')}</Button>
-      </> : <>
-        <Button variant="ghost" size="sm" disabled={pending} onClick={close.requestClose}>{t(unconfirmed ? 'knowledgeSuspendSave' : 'cancel')}</Button>
-        <Button variant="primary" size="sm" disabled={pending || name.trim() === ''} onClick={() => { void save() }}>{t(pending ? 'saving' : unconfirmed ? 'knowledgeRetrySave' : 'knowledgeCreate')}</Button>
-      </>}
-    </>}>{close.confirming ? <p>{t('knowledgeDiscardDraftConfirmation')}</p> : <form className={css.knowledgeEditorForm} onSubmit={(event) => { event.preventDefault(); void save() }}>
+    className={css.knowledgeBaseEditorModal as string} footer={<KnowledgeEditorFooter close={close} pending={pending}
+      disabled={name.trim() === ''} unconfirmed={unconfirmed} saveKey="knowledgeCreate" t={t} onSave={() => { void save() }} />}>{close.confirming ? <p>{t('knowledgeDiscardDraftConfirmation')}</p> : <form className={css.knowledgeEditorForm} onSubmit={(event) => { event.preventDefault(); void save() }}>
       <label>{t('knowledgeBaseName')}<input data-modal-autofocus value={name} maxLength={120} disabled={pending || unconfirmed}
         onChange={(event) => { if (pending || unconfirmed) return; setName(event.currentTarget.value); setError(''); delete operation.current.payload }} /></label>
       {error && <p role="alert" className={css.catalogError}>{error}</p>}

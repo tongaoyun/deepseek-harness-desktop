@@ -1,7 +1,6 @@
 import { useTeamLocale } from './team-locale.ts';
 import { LibraryConfirm } from './library-ui.tsx';
 import { Modal } from './plugin-ui.ts';
-import { useEscapeLayer } from './escape-layer.ts';
 import React from 'react';
 import { IconUsers, IconUser, IconFileText, IconChevronDown, IconPlus, IconArrowRight, IconBulb, IconCopy, IconSend, IconSearch, IconEye, IconCheck, IconTrash, IconRefresh, IconGripVertical, } from '@tabler/icons-react/dist/esm/tabler-icons-react.mjs';
 export { IconUsers, IconUser, IconFileText, IconChevronDown, IconPlus, IconArrowRight, IconBulb, IconCopy, IconSend, IconSearch, IconEye, IconCheck, IconTrash, IconRefresh, IconGripVertical, };
@@ -28,7 +27,7 @@ export function TeamAvatars({ team, experts, large = false, }: {
       {team.members.slice(0, 3).map((member) => (<Avatar key={member.expertSlug} expert={experts.find((e) => e.slug === member.expertSlug)} size={large ? 80 : 54}/>))}
     </div>);
 }
-/** 统一采用宿主官方原生居中模态窗口，彻底告别侧边抽屉。 */
+/** 专家团弹窗的键盘层级和焦点恢复由原生 Modal 管理。 */
 export function TeamDialog({ title, children, close, footer, className = '', }: {
     title: string;
     children: React.ReactNode;
@@ -36,14 +35,8 @@ export function TeamDialog({ title, children, close, footer, className = '', }: 
     footer?: React.ReactNode;
     className?: string;
 }) {
-    useEscapeLayer(true, close);
     const { tx } = useTeamLocale();
     const editor = className === 'agt-editor';
-    const opener = React.useRef<HTMLElement | null>(typeof document !== 'undefined' && document.activeElement instanceof HTMLElement ? document.activeElement : null);
-    React.useEffect(() => () => {
-        const node = opener.current;
-        queueMicrotask(() => { if (node?.isConnected) node.focus({ preventScroll: true }); });
-    }, []);
     const modalClass = [
         editor ? 'agt-editor-modal' : '',
         className === 'agt-picker' ? 'agt-picker' : '',

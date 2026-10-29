@@ -25,6 +25,7 @@ async function boot(input: DocumentPreviewInput) {
   rt.ctx.provide('resources', createResources())
   rt.ctx.provide('configForms', { developerTools: { enabled: createSnapshotStore(false) } } as never)
   rt.ctx.provide('sidebarRightTabs', { register: () => () => {} } as never)
+  rt.ctx.provide('fileDrag', { actions: { prepare: async () => ({ start: () => true, release: () => {} }), reportFailure: () => {} }, read: () => undefined } satisfies import('@deepseek-ai/cordis').Context['fileDrag'])
   const workspaceRead = vi.fn()
   const workspaceBytes = vi.fn(async () => byteResult())
   rt.remote.provideNamespaces({ workspaceFiles: { read: workspaceRead, readBytes: workspaceBytes } })

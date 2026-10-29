@@ -5,9 +5,9 @@ import { Button, IconLinkOutlineRegular, Modal } from '@deepseek-ai/dsh-client-u
 import { parseConnectorAuthorization, parseConnectorAuthorizationLaunch, ConnectorConfigurationSaveResultSchema, ConnectorDeviceConfigurationSchema, type ConnectorDeviceConfigurationSnapshot } from '@deepseek-harness/product/connector-draft'
 import { type DeepSeekHarnessProductKey } from '../locales.ts'
 import css from '../DeepSeekHarnessProduct.module.css'
-import { productApi, type ProductApi } from './product-api.ts'
+import { invokeProduct, productApi, type ProductApi } from './product-api.ts'
 import { productErrorMessage } from './product-errors.ts'
-import { type ProductDetail, AUTHORIZATION_TIMEOUT_MS, AUTHORIZATION_POLL_INTERVAL_MS, nextProductRequestId, abortableDelay, DetailIdentity } from './catalog-shared.tsx'
+import { type ProductDetail, AUTHORIZATION_TIMEOUT_MS, AUTHORIZATION_POLL_INTERVAL_MS, abortableDelay, DetailIdentity } from './catalog-shared.tsx'
 import { ConnectorTools } from './ConnectorTools.tsx'
 import { useEditorCloseGuard } from './useEditorCloseGuard.ts'
 
@@ -43,29 +43,16 @@ export function ConnectorDetail({ product, onCatalogChanged, t }: {
   const [refreshState, setRefreshState] = useState<'idle' | 'pending' | 'failed'>('idle')
   const [configuring, setConfiguring] = useState(false)
   const lifecycle = useRef<AbortController>(new AbortController())
-  const authorizationAbort = useRef<AbortController>()
-  const activeRequests = useRef(new Map<string, ProductApi>())
   const managedAuthorization = product.authMode === 'oauth'
   const readTools = product.tools.filter(tool => tool.access === 'READ')
   const writeTools = product.tools.filter(tool => tool.access === 'WRITE')
   useEffect(() => {
     const controller = new AbortController()
     lifecycle.current = controller
-    return () => {
-      controller.abort()
-      authorizationAbort.current?.abort()
-      for (const [requestId, api] of activeRequests.current) api.cancel(requestId)
-      activeRequests.current.clear()
-    }
+    return () => { controller.abort() }
   }, [])
-  const invoke = async (api: ProductApi, method: string): Promise<unknown> => {
-    const requestId = nextProductRequestId()
-    activeRequests.current.set(requestId, api)
-    try {
-      return await api.invoke(method, { id: product.id }, requestId)
-    } finally {
-      activeRequests.current.delete(requestId)
-    }
+  const invoke = async (api: ProductApi, method: string, signal: AbortSignal): Promise<unknown> => {
+    return invokeProduct(api, method, { id: product.id }, signal)
   }
   const refreshCatalog = async (): Promise<void> => {
     const signal = lifecycle.current.signal
@@ -83,19 +70,17 @@ export function ConnectorDetail({ product, onCatalogChanged, t }: {
   const authorize = async (): Promise<void> => {
     const api = productApi()
     if (api === undefined || authorizationPending || refreshState !== 'idle') return
-    const controller = new AbortController()
-    const signal = AbortSignal.any([controller.signal, lifecycle.current.signal])
-    authorizationAbort.current = controller
+    const lifetime = lifecycle.current.signal
+    const signal = AbortSignal.any([lifetime, AbortSignal.timeout(AUTHORIZATION_TIMEOUT_MS)])
     setAuthorizationPending(true)
     setAuthorizationError(false)
     try {
-      const launch = await invoke(api, 'connectors.authorization.begin')
+      const launch = await invoke(api, 'connectors.authorization.begin', signal)
       signal.throwIfAborted()
       parseConnectorAuthorizationLaunch(launch, product.id)
-      const expiresAt = Date.now() + AUTHORIZATION_TIMEOUT_MS
-      while (Date.now() < expiresAt) {
+      while (true) {
         await abortableDelay(AUTHORIZATION_POLL_INTERVAL_MS, signal)
-        const value = await invoke(api, 'connectors.authorization.status')
+        const value = await invoke(api, 'connectors.authorization.status', signal)
         signal.throwIfAborted()
         const { status } = parseConnectorAuthorization(value, product.id)
         if (status === 'AUTHORIZED') { await refreshCatalog(); return }
@@ -103,10 +88,9 @@ export function ConnectorDetail({ product, onCatalogChanged, t }: {
       }
       throw new Error('connector authorization did not complete')
     } catch {
-      if (!signal.aborted) setAuthorizationError(true)
+      if (!lifetime.aborted) setAuthorizationError(true)
     } finally {
-      if (authorizationAbort.current === controller) authorizationAbort.current = undefined
-      if (!signal.aborted) setAuthorizationPending(false)
+      if (!lifetime.aborted) setAuthorizationPending(false)
     }
   }
   const revoke = async (): Promise<void> => {
@@ -116,7 +100,7 @@ export function ConnectorDetail({ product, onCatalogChanged, t }: {
     setAuthorizationPending(true)
     setAuthorizationError(false)
     try {
-      const result = await invoke(api, 'connectors.authorization.revoke')
+      const result = await invoke(api, 'connectors.authorization.revoke', signal)
       signal.throwIfAborted()
       if (parseConnectorAuthorization(result, product.id).status !== 'REQUIRED') throw new Error('Connector revocation was not confirmed')
       await refreshCatalog()
@@ -185,17 +169,9 @@ function ConnectorDeviceConfiguration({ product, onClose, onSaved, t }: {
   const close = useEditorCloseGuard(dirty, pending, onClose)
   const lifecycle = useRef(new AbortController())
   const invoke = async (method: string, input: unknown, signal: AbortSignal): Promise<unknown> => {
-    signal.throwIfAborted()
     const api = productApi()
     if (!api) throw new Error('Product transport unavailable')
-    const requestId = nextProductRequestId()
-    const cancel = () => { api.cancel(requestId) }
-    signal.addEventListener('abort', cancel, { once: true })
-    try {
-      const value = await api.invoke(method, input, requestId, timeout * 2000 + 60_000)
-      signal.throwIfAborted()
-      return value
-    } finally { signal.removeEventListener('abort', cancel) }
+    return invokeProduct(api, method, input, signal, timeout * 2000 + 60_000)
   }
   const load = async (signal = lifecycle.current.signal): Promise<void> => {
     setError(undefined)

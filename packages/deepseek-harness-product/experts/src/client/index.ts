@@ -1,3 +1,9 @@
+import { bytesToBase64 } from '@deepseek-ai/dsh-util-crypto'
+import { createExpertClientState, type ExpertClientState } from './client-state.ts'
+import { commitBulk } from './bulk-operations.ts'
+import { LibraryConfirm } from './library-ui.tsx'
+import { CreationCard } from './creation-card.tsx'
+import type {} from '@deepseek-ai/dsh-client-ui-tool/client'
 import { Button, Input } from './plugin-ui.ts'
 import { SegmentedControl, SegmentedTabs, StateDot } from '@deepseek-ai/dsh-client-ui-primitives'
 import { LibraryCard } from './library-ui.tsx'
@@ -15,13 +21,14 @@ import React from 'react'
 import { CategorySelect } from './category-select.ts'
 import { ExpertDiscovery, DISCOVERY_CSS } from './expert-discovery.ts'
 import type { Context as CordisClientContext } from '@deepseek-ai/cordis'
+import type { ISessions } from '@deepseek-ai/dsh-api-session-controller/client'
 import type { SessionId } from '@deepseek-ai/dsh-client-connection/client'
 import type { InputTriggerSource, ReferenceInsert, TokenSpan } from '@deepseek-ai/dsh-client-ui-input-trigger/client'
 // Type-only: 拉入 api-remotes 的 ctx.remote 合并（client 侧 TypertClientRemote）。
 import type {} from '@deepseek-ai/dsh-api-remotes/client'
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
-import type { RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
+import type { RemoteResult, TypertRemoteNamespaceMap } from '@deepseek-ai/dsh-typert-protocol'
 // Type-only: 拉入 ctx.locale 的 Context merge（跨插件协作只走服务，不做值导入）。
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
@@ -29,11 +36,9 @@ import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
 import { EXPERT_DIVISION_ORDER, ZH_DIVISION, EN_DIVISION } from '../names.ts'
 import { EXPERT_AVATAR_URLS } from './avatars.ts'
 import { zh, en, type AgencyKey } from './locales.ts'
-import { TYPERT_REMOTE, type AgencyAgentsEnabledState, type AgencyAgentsPrompt } from './remote.ts'
-import { DEFAULT_EXPERT_EMOJI, type CustomExpertInput, type CatalogSnapshot } from '../expert-contract.ts'
+import { TYPERT_REMOTE } from './remote.ts'
+import { DEFAULT_EXPERT_EMOJI, isExpertConflict, type CustomExpertInput, type CatalogSnapshot } from '../expert-contract.ts'
 import { CustomExpertEditor, CustomDeleteDialog, CUSTOM_EDITOR_CSS } from './custom-editor.ts'
-import { acceptEnabled, acceptCatalog, catalogState, refreshCatalog, subscribeCatalog } from './catalog.ts'
-import { refreshTeams, teamState } from './team-cache.ts'
 import { installNativeTeamNames } from './native-team-names.ts'
 import type { AgencyCatalogRemote } from './remote.ts'
 
@@ -410,7 +415,7 @@ export const CARD_SETTINGS_CSS = `
 .aag-header-stat strong{color:var(--dsw-alias-label-primary);font-weight:500}
 .aag-card-action:focus-visible{outline:2px solid var(--dsw-alias-label-secondary);outline-offset:2px}
 .aag-card-filters{align-items:center;justify-content:flex-start;flex-wrap:wrap;gap:8px 12px;min-width:0}
-.aag-filter-actions{display:flex;align-items:center;gap:8px;margin-left:auto;flex:0 0 auto}
+.aag-filter-actions{display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin-left:auto;flex:0 1 auto;max-width:100%}
 .aag-icon-btn{box-sizing:border-box;width:22px!important;min-width:22px!important;height:22px!important;padding:0!important;border-radius:var(--dsw-radius-sm,8px);background:transparent;color:var(--dsw-alias-label-secondary);display:inline-flex;align-items:center;justify-content:center}
 .aag-icon-btn svg{display:block;width:16px;height:16px}
 .aag-icon-btn:hover:not(:disabled):not(.is-danger){color:var(--dsw-alias-link)!important;border-color:var(--dsw-alias-link)!important;background:transparent!important}
@@ -461,11 +466,8 @@ export const CSS = PLUGIN_UI_CSS + TEAM_CSS + COMPOSER_CSS + SETTINGS_CSS + CARD
   + MENU_NAME_OVERRIDE + `{${EXPERT_MENU_NAME_STYLE}}`
 
 /** 本插件 Remote 命名空间的 client 侧 face（ctx.remote.agencyAgents 的形状）。 */
-interface AgencyAgentsRemoteApi extends AgencyCatalogRemote, Partial<AgencyTeamsRemote> {
-  getEnabled(): Promise<RemoteResult<AgencyAgentsEnabledState>>
-  setEnabled(enabled: string[], expectedRevision: number): Promise<RemoteResult<AgencyAgentsEnabledState>>
-  getPrompt(slug: string, division: string): Promise<RemoteResult<AgencyAgentsPrompt>>
-}
+type AgencyAgentsRemoteApi = AgencyCatalogRemote & Partial<AgencyTeamsRemote>
+  & Pick<TypertRemoteNamespaceMap['agencyAgents'], 'getEnabled' | 'setEnabled' | 'getPrompt'>
 
 interface EnabledState {
   readonly enabled: ReadonlySet<string>
@@ -475,7 +477,7 @@ interface EnabledState {
 
 /** 将写失败映射到 agency 词条；非冲突错误返回 null，由调用方展示原始消息。 */
 export function writeErrorKey(error: unknown, options?: { readonly refreshed?: boolean }): AgencyKey | null {
-  if (error instanceof Error && error.message.includes('changed since it was read')) {
+  if (isExpertConflict(error)) {
     if (options?.refreshed === true) return 'error.conflict.refreshed'
     if (options?.refreshed === false) return 'error.conflict.refreshFailed'
     return 'error.conflict'
@@ -493,20 +495,14 @@ export function writeErrorMessage(
   return error instanceof Error ? error.message : String(error)
 }
 
-async function readEnabled(remote: AgencyAgentsRemoteApi): Promise<EnabledState> {
-  return refreshCatalog(remote)
-}
-
-export async function writeEnabled(remote: AgencyAgentsRemoteApi, enabled: ReadonlySet<string>, expectedRevision: number): Promise<EnabledState> {
-  const result = await remote.setEnabled([...enabled], expectedRevision)
-  if (!result.ok) throw new Error(result.error.message)
-  return acceptEnabled(remote, result.value)
-}
-
-async function readPrompt(remote: AgencyAgentsRemoteApi, slug: string, division: string): Promise<string> {
-  const result = await remote.getPrompt(slug, division)
-  if (!result.ok) throw new Error(result.error.message)
-  return result.value.prompt
+export async function writeEnabled(remote: AgencyAgentsRemoteApi, cache: ExpertClientState, enabled: ReadonlySet<string>, expectedRevision: number, signal?: AbortSignal): Promise<EnabledState> {
+  signal?.throwIfAborted()
+  const result = signal === undefined
+    ? await remote.setEnabled([...enabled], expectedRevision)
+    : await remote.setEnabled([...enabled], expectedRevision, signal)
+  if (!result.ok) throw result.error
+  signal?.throwIfAborted()
+  return cache.catalog.acceptEnabled(result.value)
 }
 
 function expertIcon(): React.ReactElement {
@@ -567,49 +563,26 @@ export interface ReferenceInsertionTarget {
   notify?(level: 'info' | 'error', text: string): void
 }
 
-/** 会话列表快照里能用来回退「当前主视图」的字段。 */
-export interface ReferenceSessionListSnapshot {
-  /** 主视图由 `retainedBy.mainView` 标记，不再有 `current`。 */
-  readonly byId?: Readonly<Record<string, {
-    readonly id?: SessionId
-    readonly retainedBy?: { readonly mainView?: number }
-  }>>
-}
-
-/** 取得指定会话或主视图的输入机。 */
-export interface ReferenceSessionAccess {
-  readonly list?: {
-    getSnapshot(): ReferenceSessionListSnapshot
-  }
-  scope?(id: SessionId): CordisClientContext | undefined
-  binding?(id: SessionId): { readonly ctx: CordisClientContext } | undefined
-}
-
-/** 全局目录入口没有 sessionId 时，按主视图 retain 查找目标。 */
+/** 原生 Session 服务的只读定位能力，不另建兼容接口。 */
+/** 全局目录入口没有 sessionId 时，按原生主视图 retain 查找目标。 */
 export function resolveTargetSessionId(
-  sessions: ReferenceSessionAccess,
+  sessions: Pick<ISessions, 'list'>,
   sessionId?: SessionId,
 ): SessionId | undefined {
   if (sessionId !== undefined) return sessionId
-  const snapshot = sessions.list?.getSnapshot()
-  if (snapshot?.byId === undefined) return undefined
-  const match = Object.entries(snapshot.byId).find(([, session]) => (session.retainedBy?.mainView ?? 0) > 0)
-  return match === undefined ? undefined : match[1].id ?? match[0] as SessionId
-}
-
-export interface ReferenceConversationAccess {
-  readonly input: { for(actx: CordisClientContext): ReferenceInsertionTarget | undefined }
+  return Object.values(sessions.list.getSnapshot().byId)
+    .find(session => (session.retainedBy.mainView ?? 0) > 0)?.id
 }
 
 export function resolveReferenceInsertionTarget(
-  sessions: ReferenceSessionAccess,
+  sessions: Pick<ISessions, 'list' | 'scope'>,
   sessionId?: SessionId,
-  getConversation?: (actx: CordisClientContext) => ReferenceConversationAccess | undefined,
+  getInput?: (actx: NonNullable<ReturnType<ISessions['scope']>>) => ReferenceInsertionTarget | undefined,
 ): ReferenceInsertionTarget | undefined {
   const targetSessionId = resolveTargetSessionId(sessions, sessionId)
   if (targetSessionId === undefined) return undefined
-  const actx = sessions.scope?.(targetSessionId) ?? sessions.binding?.(targetSessionId)?.ctx
-  return actx === undefined ? undefined : getConversation?.(actx)?.input.for(actx)
+  const actx = sessions.scope(targetSessionId)
+  return actx === undefined ? undefined : getInput?.(actx)
 }
 
 /** 将宿主剪贴板草稿转换为插入接口使用的单字符引用坐标。 */
@@ -658,6 +631,8 @@ export function insertExpertReference(
     const fillExample = (): void => {
       const next = target.state.getSnapshot()
       const nextText = expertDetectText(next)
+      // A later content revision belongs to another edit, even when its body is empty.
+      if (next.draftRev > snapshot.draftRev + 1) return
       // 键盘选择处于宿主编辑事务内，等引用提交后重新读取；用户新增正文优先。
       if (next.draftRev !== snapshot.draftRev && nextText.replace(/\uFFFC/gu, '').trim() !== '') return
       let applied = false
@@ -691,7 +666,7 @@ export function insertSelectedExpert(
 
 type ButtonProps = PropsLocale<'agency'> & {
   readonly remote: AgencyAgentsRemoteApi
-  readonly onEnabledChange?: (enabled: ReadonlySet<string>) => void
+  readonly cache: ExpertClientState
   /** 由 session slot 的 inject 回调注入，永远绑定当前编辑器所属会话。 */
   readonly insertReference?: (reference: ReferenceInsert) => boolean
   /** 异步启用前锁定目标编辑器，避免切换会话后把标签插入其他草稿。 */
@@ -715,8 +690,8 @@ export function AgentsButton(props: ButtonProps): React.ReactElement {
   const [menuLeft, setMenuLeft] = React.useState(0)
   const rootRef = React.useRef<HTMLDivElement | null>(null)
   const catalog = React.useSyncExternalStore(
-    listener => subscribeCatalog(props.remote, listener),
-    () => catalogState(props.remote),
+    listener => props.cache.catalog.subscribe(listener),
+    () => props.cache.catalog.getSnapshot(),
   )
   const close = (restoreFocus = false): void => {
     epoch.current++
@@ -774,10 +749,7 @@ export function AgentsButton(props: ButtonProps): React.ReactElement {
     // 名册已在缓存里时后台刷新，避免搜索框下闪「正在处理…」。
     if (catalog.experts.length === 0) setBusy(true)
     working.current = true
-    void readEnabled(props.remote).then((current) => {
-      if (request !== epoch.current) return
-      props.onEnabledChange?.(current.enabled)
-    }).catch((error: unknown) => {
+    void props.cache.catalog.refresh().catch((error: unknown) => {
       if (request === epoch.current) setInsertError(writeErrorMessage(error, { t: props.t }))
     }).finally(() => { working.current = false; setBusy(false) })
   }
@@ -801,13 +773,12 @@ export function AgentsButton(props: ButtonProps): React.ReactElement {
     try {
       const insert = props.prepareInsertion?.() ?? props.insertReference
       // 使用当前快照的修订号写入；冲突后刷新并交还用户重试，不静默覆盖。
-      let current: EnabledState = catalogState(props.remote)
+      let current: EnabledState = props.cache.catalog.getSnapshot()
       const expert = current.experts.find(item => item.slug === slug)
       if (expert === undefined || expert.conflict) throw new Error(props.t('custom.unavailable'))
       if (!current.enabled.has(slug)) {
-        current = await writeEnabled(props.remote, new Set([...current.enabled, slug]), current.revision)
+        current = await writeEnabled(props.remote, props.cache, new Set([...current.enabled, slug]), current.revision)
         newlyEnabled = current.enabled.has(slug)
-        props.onEnabledChange?.(current.enabled)
       }
       if (request !== epoch.current) return
       if (!current.enabled.has(slug) || !insertSelectedExpert(slug, props.getActive(), insert, current.experts)) {
@@ -818,7 +789,7 @@ export function AgentsButton(props: ButtonProps): React.ReactElement {
       close()
     } catch (error) {
       let refreshed = false
-      try { await readEnabled(props.remote); refreshed = true } catch { /* 保留原错误并明确刷新是否成功。 */ }
+      try { await props.cache.catalog.refresh(); refreshed = true } catch { /* 保留原错误并明确刷新是否成功。 */ }
       if (request === epoch.current) setInsertError(writeErrorMessage(error, { refreshed, t: props.t }))
     } finally {
       working.current = false
@@ -853,8 +824,8 @@ export function AgentsButton(props: ButtonProps): React.ReactElement {
         ],
         onChange: (value) => setMode(value === 'teams' ? 'teams' : 'experts'),
       }) : null,
-      mode === 'teams' && 'getTeams' in props.remote ? React.createElement(TeamLocaleContext.Provider, { value: props.getActive() }, React.createElement(TeamMenu, { remote: props.remote as TeamRemote,
-        prepareSelect: props.prepareTeamSelection, onSelected: () => close(), onExpertsChanged: () => { void readEnabled(props.remote).then(value => props.onEnabledChange?.(value.enabled)) } })) :
+      mode === 'teams' && 'getTeams' in props.remote ? React.createElement(TeamLocaleContext.Provider, { value: props.getActive() }, React.createElement(TeamMenu, { remote: props.remote as TeamRemote, cache: props.cache,
+        prepareSelect: props.prepareTeamSelection, onSelected: () => close() })) :
       React.createElement(ExpertDiscovery, { experts: results, enabled: catalog.enabled, locale: props.getActive(), t: props.t, avatarSrc: menuAvatar,
         query, onQuery: setQuery, busy, hasMore: searching && matches.length > results.length, onPick: slug => { void pick(slug) } }))
     : null
@@ -968,16 +939,18 @@ function ExpertCardWindow(props: {
 
 function ExpertCardsSettings(props: PropsLocale<'agency'> & {
   sharedHeader?: boolean
+  active?: boolean
+  startCreation?: (kind: 'expert' | 'team') => void
   source: 'custom' | 'company'
   onSourceChange: (source: 'custom' | 'company') => void
   onSummary?: (value: { source: 'custom' | 'company'; total: number; enabled: number } | null) => void
   remote: AgencyAgentsRemoteApi
+  cache: ExpertClientState
   getActive: () => 'zh' | 'en'
-  onEnabledChange?: (enabled: ReadonlySet<string>) => void
 }): React.ReactElement {
-  const cached = catalogState(props.remote)
+  const cached = props.cache.catalog.getSnapshot()
   const reloadEpoch = React.useRef(0)
-  React.useEffect(() => () => { reloadEpoch.current++ }, [props.remote])
+  React.useEffect(() => () => { reloadEpoch.current++ }, [props.remote, props.cache])
   const [state, setState] = React.useState<EnabledState | null>(cached.revision < 0 ? null : cached)
   React.useEffect(() => {
     if (state === null) { props.onSummary?.(null); return }
@@ -990,39 +963,46 @@ function ExpertCardsSettings(props: PropsLocale<'agency'> & {
   const [division, setDivision] = React.useState('')
   const [status, setStatus] = React.useState('')
   const [openPrompt, setOpenPrompt] = React.useState<OpenPrompt | null>(null)
-  const promptLock = React.useRef(false)
+  const detailRequest = React.useRef<AbortController | null>(null)
+  const cancelDetail = React.useCallback(() => { detailRequest.current?.abort(); detailRequest.current = null }, [])
+  React.useEffect(() => cancelDetail, [props.remote, props.cache, props.source, props.active, cancelDetail])
+  const lifetime = React.useRef<AbortController | undefined>(undefined)
+  React.useEffect(() => {
+    const controller = new AbortController()
+    lifetime.current = controller
+    return () => {
+      controller.abort()
+      if (lifetime.current === controller) lifetime.current = undefined
+    }
+  }, [props.remote, props.cache])
   const saving = React.useRef(false)
   const [isSaving, setIsSaving] = React.useState(false)
   const { source, onSourceChange } = props
   const [editor, setEditor] = React.useState<{ expert?: CustomExpertInput; enabled: boolean; revision: number } | null>(null)
   const [deleting, setDeleting] = React.useState<ExpertView | null>(null)
+  const [bulk, setBulk] = React.useState<{ targets: string[]; enabled: boolean } | null>(null)
+  const [bulkError, setBulkError] = React.useState<string | null>(null)
   const [deleteError, setDeleteError] = React.useState<string | null>(null)
   const [notice, setNotice] = React.useState<string | null>(null)
 
   const accept = (catalog: CatalogSnapshot): void => {
-    const current = acceptCatalog(props.remote, catalog)
+    const current = props.cache.catalog.accept(catalog)
     setState(current)
-    props.onEnabledChange?.(current.enabled)
     setError(null)
   }
   const fresh = (): EnabledState | null => {
     if (state === null) return null
-    const latest = catalogState(props.remote)
-    return latest.revision >= state.revision ? latest : state
+    const latest = props.cache.catalog.getSnapshot()
+    return latest.revision < 0 ? null : latest.revision >= state.revision ? latest : state
   }
   const openEditor = (expert?: ExpertView): void => {
     const current = fresh()
-    if (current === null || isSaving || promptLock.current) return
+    if (current === null || isSaving || detailRequest.current) return
     if (expert === undefined) { setEditor({ enabled: false, revision: current.revision }); return }
     const revision = current.revision
     const enabled = current.enabled.has(expert.slug)
     if (expert.custom) {
-      promptLock.current = true
-      void props.remote.getCustomExpert(expert.slug).then(result => {
-        if (!result.ok) throw new Error(result.error.message)
-        setEditor({ expert: result.value, enabled, revision })
-      }).catch((cause: unknown) => setError(cause instanceof Error ? cause.message : String(cause)))
-        .finally(() => { promptLock.current = false })
+      readDetail(signal => props.remote.getCustomExpert(expert.slug, signal), (expert) => { setEditor({ expert, enabled, revision }) })
     } else {
       withPrompt(expert, prompt => {
         const original = displayName(expert, props.getActive())
@@ -1040,13 +1020,17 @@ function ExpertCardsSettings(props: PropsLocale<'agency'> & {
     saving.current = true
     setIsSaving(true)
     setDeleteError(null)
-    void props.remote.deleteCustomExpert(slug, current.revision)
+    const signal = lifetime.current?.signal
+    signal?.throwIfAborted()
+    void props.remote.deleteCustomExpert(slug, current.revision, signal)
       .then(result => {
-        if (!result.ok) throw new Error(result.error.message)
+        signal?.throwIfAborted()
+        if (!result.ok) throw result.error
         accept(result.value)
         setDeleting(null)
         setNotice(props.t('custom.deleted'))
       }).catch((cause: unknown) => {
+        if (signal?.aborted) return
         const message = cause instanceof Error ? cause.message : String(cause)
         setDeleteError(message)
       }).finally(() => { saving.current = false; setIsSaving(false) })
@@ -1057,11 +1041,10 @@ function ExpertCardsSettings(props: PropsLocale<'agency'> & {
     const applySnapshot = (current: EnabledState): void => {
       setState(current)
       setInitialOrder((order) => order ?? sortExpertsByEnabled(current.experts, current.enabled).map((expert) => expert.slug))
-      props.onEnabledChange?.(current.enabled)
     }
-    const loadCatalog = (): Promise<void> => readEnabled(props.remote).then((current) => { if (alive) applySnapshot(current) })
+    const loadCatalog = (): Promise<void> => props.cache.catalog.refresh().then((current) => { if (alive) applySnapshot(current) })
     const pending = loadCatalog().then(async () => {
-      const current = await refreshCatalog(props.remote, true)
+      const current = await props.cache.catalog.refresh(true)
       if (!alive) return
       applySnapshot(current)
       setError(null)
@@ -1070,15 +1053,14 @@ function ExpertCardsSettings(props: PropsLocale<'agency'> & {
       if (alive) setError(err instanceof Error ? err.message : String(err))
     })
     return () => { alive = false }
-  }, [props.onEnabledChange, props.remote])
+  }, [props.remote, props.cache])
 
-  React.useEffect(() => subscribeCatalog(props.remote, () => {
-    const current = catalogState(props.remote)
-    if (current.revision < 0) return
+  React.useEffect(() => props.cache.catalog.subscribe(() => {
+    const current = props.cache.catalog.getSnapshot()
+    if (current.revision < 0) { cancelDetail(); setState(null); setInitialOrder(null); setDeleting(null); setBulk(null); setOpenPrompt(null); return }
     setState(current)
     setInitialOrder((order) => order ?? sortExpertsByEnabled(current.experts, current.enabled).map((expert) => expert.slug))
-    props.onEnabledChange?.(current.enabled)
-  }), [props.onEnabledChange, props.remote])
+  }), [props.remote, props.cache, cancelDetail])
 
   const toggle = (slug: string): void => {
     const current = fresh()
@@ -1090,22 +1072,22 @@ function ExpertCardsSettings(props: PropsLocale<'agency'> & {
     saving.current = true
     setIsSaving(true)
     setState({ ...current, enabled: next })
-    props.onEnabledChange?.(next)
-    void writeEnabled(props.remote, next, current.revision)
+    const signal = lifetime.current?.signal
+    signal?.throwIfAborted()
+    void writeEnabled(props.remote, props.cache, next, current.revision, signal)
       .then((current) => {
+        signal?.throwIfAborted()
         setState(current)
         setError(null)
-        props.onEnabledChange?.(current.enabled)
       })
       .catch(async (err: unknown) => {
+        if (signal?.aborted) return
         try {
-          const refreshed = await readEnabled(props.remote)
+          const refreshed = await props.cache.catalog.refresh()
           setState(refreshed)
-          props.onEnabledChange?.(refreshed.enabled)
           setError(writeErrorMessage(err, { refreshed: true, t: props.t }))
         } catch {
           setState(previous)
-          props.onEnabledChange?.(previous.enabled)
           setError(writeErrorMessage(err, { refreshed: false, t: props.t }))
         }
       })
@@ -1115,14 +1097,22 @@ function ExpertCardsSettings(props: PropsLocale<'agency'> & {
       })
   }
 
-  const withPrompt = (expert: ExpertView, action: (prompt: string) => Promise<void> | void): void => {
-    if (promptLock.current) return
-    promptLock.current = true
+  const readDetail = <T>(read: (signal: AbortSignal) => Promise<RemoteResult<T>>, accept: (value: T) => void): void => {
+    if (detailRequest.current || props.active === false) return
+    const controller = new AbortController()
+    detailRequest.current = controller
     setError(null)
-    void readPrompt(props.remote, expert.slug, expert.division)
-      .then(action)
-      .catch((err: unknown) => setError(err instanceof Error ? err.message : String(err)))
-      .finally(() => { promptLock.current = false })
+    void read(controller.signal).then((result) => {
+      controller.signal.throwIfAborted()
+      if (!result.ok) throw result.error
+      accept(result.value)
+    }).catch((err: unknown) => {
+      if (!controller.signal.aborted) setError(err instanceof Error ? err.message : String(err))
+    }).finally(() => { if (detailRequest.current === controller) detailRequest.current = null })
+  }
+
+  const withPrompt = (expert: ExpertView, action: (prompt: string) => void): void => {
+    readDetail(signal => props.remote.getPrompt(expert.slug, expert.division, signal), value => action(value.prompt))
   }
 
   const viewPrompt = (expert: ExpertView, returnFocus: HTMLButtonElement): void => {
@@ -1133,7 +1123,7 @@ function ExpertCardsSettings(props: PropsLocale<'agency'> & {
   if (error !== null) nodes.push(React.createElement('div', { key: 'error', className: 'aag-error', role: 'alert' }, error,
     React.createElement(Button, { onClick: () => {
       const request = ++reloadEpoch.current
-      void refreshCatalog(props.remote, true).then(current => {
+      void props.cache.catalog.refresh(true).then(current => {
         if (request !== reloadEpoch.current) return
         setState(current); setError(null)
       }).catch((cause: unknown) => {
@@ -1164,14 +1154,16 @@ function ExpertCardsSettings(props: PropsLocale<'agency'> & {
         React.createElement('span', { className: 'aag-header-stat' },
           props.t('summary.enabledPrefix'),
           React.createElement('strong', null, state === null ? '—' : enabledCount)))))
-    const filterActions = source === 'custom' ? React.createElement('div', { className: 'aag-filter-actions' },
+    const bulkActions = [true, false].map(next => React.createElement(Button, { key: next ? 'enable' : 'disable', disabled: isSaving || state === null || !filtered.some(expert => !expert.conflict && enabled.has(expert.slug) !== next), onClick: () => { setBulkError(null); setBulk({ targets: filtered.filter(expert => !expert.conflict && enabled.has(expert.slug) !== next).map(expert => expert.slug), enabled: next }) } }, props.t(next ? 'bulk.enable' : 'bulk.disable')))
+    const filterActions = React.createElement('div', { className: 'aag-filter-actions' }, bulkActions, source !== 'custom' ? null : React.createElement(React.Fragment, null,
+      props.startCreation ? React.createElement(Button, { disabled: isSaving, onClick: () => props.startCreation?.('expert') }, props.t('creation.expert')) : null,
       React.createElement(Button, {
-        type: 'primary',
-        size: 'small',
+        variant: 'primary',
+        size: 'sm',
         disabled: isSaving || state === null,
         icon: React.createElement(IconPlus, { size: 16, 'aria-hidden': true }),
         onClick: () => openEditor(),
-      }, props.t('custom.new'))) : null
+      }, props.t('custom.new'))))
     if (notice !== null) nodes.push(React.createElement('div', { key: 'notice', className: 'aag-custom-notice', role: 'status' }, notice))
     nodes.push(React.createElement('div', { key: 'filters', className: 'aag-filters aag-card-filters' },
       React.createElement('div', { className: 'aag-field aag-field-category' },
@@ -1198,7 +1190,7 @@ function ExpertCardsSettings(props: PropsLocale<'agency'> & {
         React.createElement('div', { className: 'aag-search-wrap' },
           React.createElement(Input, {
             id: 'aag-filter-search', className: 'aag-search',
-            value: query, prefix: React.createElement(Search, { size: 16, strokeWidth: 1.7, 'aria-hidden': true }),
+            value: query, icon: React.createElement(Search, { size: 16, strokeWidth: 1.7, 'aria-hidden': true }),
             autoComplete: 'off', spellCheck: false, placeholder: props.t('settings.search.placeholder'),
             'aria-label': props.t('settings.search'),
             onChange: (event: React.ChangeEvent<HTMLInputElement>) => setQuery(event.currentTarget.value),
@@ -1234,14 +1226,14 @@ function ExpertCardsSettings(props: PropsLocale<'agency'> & {
             ...(expert.custom && 'dshDesktop' in globalThis ? [{ id: 'submit-company', label: props.t('custom.submitCompany'), disabled: isSaving || state === null, onSelect: () => {
               document.dispatchEvent(new CustomEvent('dsh:company-content-submit', { cancelable: true, detail: {
                 kind: 'expert', name: expert.name, prepare: async (signal: AbortSignal) => {
-                  const result = await props.remote.getCustomExpert(expert.slug)
                   signal.throwIfAborted()
-                  if (!result.ok) throw new Error(result.error.message)
+                  const result = await props.remote.getCustomExpert(expert.slug, signal)
+                  signal.throwIfAborted()
+                  if (!result.ok) throw result.error
                   const value = result.value
                   const markdown = `---\nname: ${JSON.stringify(value.name)}\ndescription: ${JSON.stringify(value.description)}\n---\n${value.prompt}\n`
                   const encoded = new TextEncoder().encode(markdown)
-                  let binary = ''; for (const byte of encoded) binary += String.fromCharCode(byte)
-                  return { resourceKey: 'experts/' + expert.slug, files: { ['experts/' + value.division + '/' + expert.slug + '.md']: btoa(binary) } }
+                  return { resourceKey: 'experts/' + expert.slug, files: { ['experts/' + value.division + '/' + expert.slug + '.md']: bytesToBase64(encoded) } }
                 },
               } }))
             } }] : []),
@@ -1254,9 +1246,22 @@ function ExpertCardsSettings(props: PropsLocale<'agency'> & {
     }
   }
   return React.createElement('section', { className: 'aag-section', id: 'aag-expert-source-panel' }, nodes,
-    editor === null || state === null ? null : React.createElement(CustomExpertEditor, {
+    bulk === null ? null : React.createElement(LibraryConfirm, { title: props.t('bulk.title'), description: props.t('bulk.description', { action: props.t(bulk.enabled ? 'bulk.enableVerb' : 'bulk.disableVerb'), count: bulk.targets.length }), confirmLabel: props.t('bulk.confirm'), cancelLabel: props.t('bulk.cancel'), busy: isSaving, error: bulkError, close: () => setBulk(null), confirm: () => {
+      if (saving.current) return
+      saving.current = true; setIsSaving(true); setBulkError(null)
+      const signal = lifetime.current?.signal
+      signal?.throwIfAborted()
+      void commitBulk(props.remote, bulk.targets, bulk.enabled, signal).then(value => {
+        signal?.throwIfAborted()
+        const current = props.cache.catalog.acceptEnabled(value); setState(current); setBulk(null)
+      })
+        .catch((cause: unknown) => { if (!signal?.aborted) setBulkError(cause instanceof Error ? cause.message : String(cause)) })
+        .finally(() => { saving.current = false; setIsSaving(false) })
+    } }),
+    editor === null ? null : React.createElement(CustomExpertEditor, {
       ...editor, remote: props.remote, t: props.t, locale: props.getActive(),
-      divisions: [...new Set([...EXPERT_DIVISION_ORDER, ...state.experts.map(expert => expert.division)])],
+      signal: lifetime.current?.signal,
+      divisions: [...new Set([...EXPERT_DIVISION_ORDER, ...(state?.experts ?? []).map(expert => expert.division)])],
       onClose: () => setEditor(null), onSaved: (catalog: CatalogSnapshot) => {
         accept(catalog); setEditor(null); onSourceChange('custom'); setQuery(''); setDivision(''); setStatus(''); setNotice(props.t('custom.saved'))
       },
@@ -1269,7 +1274,12 @@ function ExpertCardsSettings(props: PropsLocale<'agency'> & {
     }))
 }
 
-export function AgencySettingsPanel(props: Omit<React.ComponentProps<typeof ExpertCardsSettings>, 'source' | 'onSourceChange'> & { prepareTeamSelection(): (team: ExpertTeam, example?: string) => boolean | Promise<boolean> }) {
+export function AgencySettingsPanel(props: Omit<React.ComponentProps<typeof ExpertCardsSettings>, 'source' | 'onSourceChange' | 'active'> & { prepareTeamSelection(): (team: ExpertTeam, example?: string) => boolean | Promise<boolean> }) {
+  const [creationError, setCreationError] = React.useState<string | null>(null)
+  const beginCreation = props.startCreation === undefined ? undefined : (kind: 'expert' | 'team'): void => {
+    setCreationError(null)
+    try { props.startCreation?.(kind) } catch (cause: unknown) { setCreationError(cause instanceof Error ? cause.message : String(cause)) }
+  }
   const tx = (key: string) => teamText(props.getActive(), key)
   const [source, setSource] = React.useState<'custom' | 'company'>('company')
   const [view, setView] = React.useState<'experts' | 'teams'>('experts')
@@ -1294,21 +1304,26 @@ export function AgencySettingsPanel(props: Omit<React.ComponentProps<typeof Expe
     React.createElement('header', { className: 'aag-toolbar' }, React.createElement('div', { className: 'aag-title-row' },
       React.createElement('h2', { className: 'aag-title' }, props.t('settings.title')), null)),
     React.createElement('p', { className: 'aag-note' }, props.t('settings.market.hint')),
+    creationError ? React.createElement('p', { className: 'aag-error', role: 'alert' }, creationError) : null,
     React.createElement(SegmentedTabs, { className: 'aag-market-tabs', label: props.t('settings.scope'), value: source, onChange: (value) => { if (value === 'company' || value === 'custom') setSource(value) }, items: [
       { value: 'company', id: 'aag-tab-market', panelId: 'aag-catalog-panel', label: props.t('settings.source.company') },
       { value: 'custom', id: 'aag-tab-mine', panelId: 'aag-catalog-panel', label: props.t('custom.source') },
     ] }),
     React.createElement('div', { id: 'aag-catalog-panel', role: 'tabpanel', 'aria-labelledby': source === 'company' ? 'aag-tab-market' : 'aag-tab-mine' },
       React.createElement('div', { className: 'aag-library-navigation' }, navigation),
-      React.createElement('div', { id: 'aag-library-panel-experts', role: 'tabpanel', 'aria-labelledby': 'aag-library-tab-experts', hidden: view !== 'experts' }, React.createElement(ExpertCardsSettings, { ...props, source, onSourceChange: (next) => { setSource(next); setView('experts') }, sharedHeader: true, onSummary: setExpertSummary })),
+      React.createElement('div', { id: 'aag-library-panel-experts', role: 'tabpanel', 'aria-labelledby': 'aag-library-tab-experts', hidden: view !== 'experts' }, React.createElement(ExpertCardsSettings, { ...props, startCreation: beginCreation, source, active: view === 'experts', onSourceChange: (next) => { setSource(next); setView('experts') }, sharedHeader: true, onSummary: setExpertSummary })),
       React.createElement('div', { id: 'aag-library-panel-teams', role: 'tabpanel', 'aria-labelledby': 'aag-library-tab-teams', hidden: view !== 'teams' }, React.createElement(TeamLocaleContext.Provider, { value: props.getActive() }, React.createElement(TeamsPanel, {
-        remote: props.remote as TeamRemote, source, active: view === 'teams', onSaved: () => setSource('custom'), sharedHeader: true, onSummary: setTeamSummary, prepareSelect: props.prepareTeamSelection,
-        onExpertsChanged: () => { void readEnabled(props.remote).then(value => props.onEnabledChange?.(value.enabled)) },
+        remote: props.remote as TeamRemote, cache: props.cache, startCreation: beginCreation ? () => beginCreation('team') : undefined, source, active: view === 'teams', onSaved: () => setSource('custom'), sharedHeader: true, onSummary: setTeamSummary, prepareSelect: props.prepareTeamSelection,
       })))))
 }
-export const inject = ['slots', 'inputTriggers', 'locale', 'remote', 'sessions', 'conversation']
+export const inject = ['slots', 'inputTriggers', 'locale', 'remote', 'sessions', 'conversation', 'layout']
 
 export async function apply(ctx: ClientContext): Promise<() => Promise<void>> {
+  // Read the mounted native Client Session service once and use its public contract.
+  // Widen only the lookup boundary so the Host SessionStore declaration cannot leak
+  // into this client entrypoint; no second session API is introduced.
+  const getService: (name: string) => unknown = ctx.get.bind(ctx)
+  const sessions = getService('sessions') as ISessions
   ctx.effect(() => {
     const tag = document.createElement('style')
     tag.dataset.plugin = PLUGIN_ID
@@ -1327,34 +1342,22 @@ export async function apply(ctx: ClientContext): Promise<() => Promise<void>> {
   // markers）。namespace 是独立的 Cordis 服务，必须在挂载后通过 ctx.get()
   // 获取；直接读取 ctx.remote.agencyAgents 会要求预先注入该服务并导致死锁。
   const disposeRemote = await ctx.remote.$mount(TYPERT_REMOTE)
-  const remote = ctx.get('remote.agencyAgents') as AgencyAgentsRemoteApi | undefined
+  const remote = ctx.get('remote.agencyAgents')
   if (remote === undefined) throw new Error(teamText(getActive(), 'agency-agents Remote 挂载后不可用'))
 
-  let enabledForMentions: ReadonlySet<string> | undefined
-  const lexiconListeners = new Set<() => void>()
-  const updateEnabledForMentions = (enabled: ReadonlySet<string>): void => {
-    const unchanged = enabledForMentions !== undefined
-      && enabledForMentions.size === enabled.size
-      && [...enabled].every((slug) => enabledForMentions?.has(slug) === true)
-    if (unchanged) return
-    enabledForMentions = new Set(enabled)
-    for (const listener of lexiconListeners) listener()
+  const cache = createExpertClientState(remote)
+  ctx.effect(() => () => { cache.catalog.dispose(); cache.teams.dispose() }, 'agency-agents: snapshots')
+
+  const refreshCatalog = (): void => {
+    void cache.catalog.refresh().catch((error: unknown) => console.warn('[agency-agents] 名册刷新失败：', error))
   }
-  const refreshEnabledForMentions = (): void => {
-    void readEnabled(remote).then((current) => updateEnabledForMentions(current.enabled)).catch((error: unknown) => console.warn('[agency-agents] 名册刷新失败：', error))
-  }
-  ctx.effect(() => subscribeCatalog(remote, () => {
-    updateEnabledForMentions(catalogState(remote).enabled)
-    for (const listener of lexiconListeners) listener()
-  }), 'agency-agents: catalog changes')
-  if (typeof remote.getTeams === 'function') void refreshTeams(remote as TeamRemote).catch((error: unknown) => console.warn('[agency-agents] 专家团预加载失败：', error))
-  void readEnabled(remote).catch((error: unknown) => console.warn('[agency-agents] 初始名册读取失败，目录页可重试：', error))
+  void cache.teams.refresh().catch((error: unknown) => console.warn('[agency-agents] 专家团预加载失败：', error))
+  void cache.catalog.refresh().catch((error: unknown) => console.warn('[agency-agents] 初始名册读取失败，目录页可重试：', error))
   ctx.effect(() => {
     const names = installNativeTeamNames(async () => {
-      if (!remote.getTeams) return new Map<string, string>()
-      const teamsRemote = remote as TeamRemote
-      const snapshot = teamState(teamsRemote) ?? await refreshTeams(teamsRemote)
-      const experts = catalogState(remote).experts
+      if (cache.catalog.getSnapshot().revision < 0) return new Map<string, string>()
+      const snapshot = cache.teams.getSnapshot() ?? await cache.teams.refresh()
+      const experts = cache.catalog.getSnapshot().experts
       const active = getActive()
       const members = new Map(Object.entries(snapshot.nativeMembers ?? {}).flatMap(([identity, slug]) => {
         const expert = experts.find(item => item.slug === slug && !item.conflict)
@@ -1367,18 +1370,18 @@ export async function apply(ctx: ClientContext): Promise<() => Promise<void>> {
       return { members, teams }
     }, error => console.warn('[agency-agents] 原生成员显示名读取失败：', error))
     const localeDispose = ctx.locale.subscribe(() => { void names.refresh() })
-    const catalogDispose = subscribeCatalog(remote, () => { void names.refresh() })
-    return () => { localeDispose(); catalogDispose(); names.dispose() }
+    const catalogDispose = cache.catalog.subscribe(() => { void names.refresh() })
+    const teamsDispose = cache.teams.subscribe(() => { void names.refresh() })
+    return () => { localeDispose(); catalogDispose(); teamsDispose(); names.dispose() }
   }, 'agency-agents: native member names')
   const resolveTarget = (sessionId?: SessionId): ReferenceInsertionTarget | undefined => resolveReferenceInsertionTarget(
-    ctx.sessions as unknown as ReferenceSessionAccess, sessionId,
-    (actx) => actx.get('conversation') as ReferenceConversationAccess | undefined,
+    sessions, sessionId,
+    (actx) => actx.conversation.input.for(actx),
   )
   const insertTask = (current: ReferenceInsertionTarget | undefined, reference: ReferenceInsert, sessionId?: SessionId, span?: TokenSpan): boolean => {
     if (current === undefined) return false
-    const sessions = ctx.sessions as unknown as ReferenceSessionAccess
     const id = resolveTargetSessionId(sessions, sessionId)
-    const actx = id === undefined ? undefined : sessions.scope?.(id) ?? sessions.binding?.(id)?.ctx
+    const actx = id === undefined ? undefined : sessions.scope(id)
     return insertExpertReference({
       state: current.state,
       insertReference: (ref, tokenSpan) => current.insertReference(ref, tokenSpan),
@@ -1386,14 +1389,16 @@ export async function apply(ctx: ClientContext): Promise<() => Promise<void>> {
       notify: (level, text) => current.notify?.(level, text),
     }, reference, undefined, span, t('discovery.exampleFailed'))
   }
-  // 同一缓存供工具栏和 @ 标签使用，语言切换不丢失已插入团队名称。
-  let teamCache: ExpertTeam[] = []
+  ctx.on('connection/reset', () => {
+    cache.catalog.reset()
+    cache.teams.reset()
+    refreshCatalog()
+    void cache.teams.refresh().catch((error: unknown) => console.warn('[agency-agents] 专家团重新加载失败：', error))
+  })
   const insertTeamTask = async (current: ReferenceInsertionTarget | undefined, team: ExpertTeam, example?: string, sessionId?: SessionId, span?: TokenSpan): Promise<boolean> => {
     if (!current) return false
-    teamCache = [...teamCache.filter(item => item.id !== team.id), team]
-    const sessions = ctx.sessions as unknown as ReferenceSessionAccess
     const id = resolveTargetSessionId(sessions, sessionId)
-    const actx = id === undefined ? undefined : sessions.scope?.(id) ?? sessions.binding?.(id)?.ctx
+    const actx = id === undefined ? undefined : sessions.scope(id)
     return insertTeamReference({ state: current.state, insertReference: (ref, tokenSpan) => current.insertReference(ref, tokenSpan),
       insertText: (text, tokenSpan) => actx?.bail(actx, 'slash/input-insert-text', { text, span: tokenSpan }) === true,
       notify: (level, text) => current.notify?.(level, text) }, team, example, span, getActive())
@@ -1417,11 +1422,38 @@ export async function apply(ctx: ClientContext): Promise<() => Promise<void>> {
     }
   }
 
+  const startCreation = (kind: 'expert' | 'team'): void => {
+    const id = resolveTargetSessionId(sessions)
+    const actx = id === undefined ? undefined : sessions.scope(id)
+    const input = actx === undefined ? undefined : ctx.conversation.input.for(actx)
+    if (!actx || !input) throw new Error(t('creation.noSession'))
+    const snapshot = input.state.getSnapshot()
+    const length = expertDetectText(snapshot).length
+    const text = t(kind === 'expert' ? 'creation.expertPrompt' : 'creation.teamPrompt')
+    if (actx.bail(actx, 'slash/input-insert-text', { text: (length ? '\n' : '') + text, span: { start: length, end: length, draftRev: snapshot.draftRev } }) !== true) {
+      input.notify('error', t('creation.failed')); return
+    }
+    ctx.layout.selectPanel(null)
+    input.focus()
+  }
+  ctx.slots.inject('tool.call.toolview', function* () {
+    for (const key of ['open_custom_expert_editor', 'open_expert_team_editor']) yield ctx.slots.register({
+      name: 'tool.call.toolview', key, locale: NS,
+      inject: (sessionId) => ({ remote: remote as TeamRemote, cache, getActive,
+        loadCreation: async (proposalId: string, signal: AbortSignal) => {
+          if (!sessionId) throw new Error(t('creation.noSession'))
+          const api = ctx.get('remote.agencyAgents')
+          return unwrap(api.claimCreation(sessionId, proposalId, signal))
+        },
+      }),
+    }, CreationCard)
+  })
+
   ctx.slots.inject('main', () => ctx.slots.register(
     { name: 'main', key: 'deepseek-harness-experts', locale: NS },
     (props) => React.createElement('div', { className: 'product-capability-page' },
       React.createElement('div', { className: 'product-capability-content' },
-        React.createElement(AgencySettingsPanel, { ...props, remote, getActive, onEnabledChange: updateEnabledForMentions, prepareTeamSelection: bindExpertInsertion().prepareTeamSelection }))),
+        React.createElement(AgencySettingsPanel, { ...props, remote, cache, getActive, startCreation, prepareTeamSelection: bindExpertInsertion().prepareTeamSelection }))),
   ))
 
   ctx.slots.inject('conversation.input.left', () => ctx.slots.register(
@@ -1429,42 +1461,40 @@ export async function apply(ctx: ClientContext): Promise<() => Promise<void>> {
       name: 'conversation.input.left', id: 'agency-agents', order: 0, locale: NS,
       ...({ inject: bindExpertInsertion } as Record<string, unknown>),
     },
-    (props) => React.createElement(AgentsButton, { ...props, remote, getActive, onEnabledChange: updateEnabledForMentions }),
+    (props) => React.createElement(AgentsButton, { ...props, remote, cache, getActive }),
   ))
 
-  const registerInputTriggerSources = (active: 'zh' | 'en'): (() => void) => {
+  const expertDivisions = (): string[] => [...new Set([...DIVISION_ORDER, ...cache.catalog.getSnapshot().experts.map(expert => expert.division)])]
+  const registerInputTriggerSources = (active: 'zh' | 'en', divisions: readonly string[]): (() => void) => {
     const disposers: Array<() => void> = []
     try {
-      const teamRemote = remote as TeamRemote
-      if (typeof teamRemote.getTeams === 'function') disposers.push(ctx.inputTriggers.registerSource({
+      disposers.push(ctx.inputTriggers.registerSource({
         trigger: '@', name: TEAM_REFERENCE_SOURCE, order: 99,
         candidates: async (_session, request) => {
-          const cached = teamState(teamRemote)
-          const snapshot = cached ?? await refreshTeams(teamRemote)
-          if (cached) void refreshTeams(teamRemote).catch((error: unknown) => console.warn('[agency-agents] 专家团刷新失败：', error))
-          teamCache = snapshot.teams
-          return teamCache.filter(team => snapshot.enabledTeams.includes(team.id) && `${team.name} ${team.description}`.toLowerCase().includes(String(request.query ?? '').toLowerCase())).map(team => ({ name: `${team.name} · ${teamText(active, '专家团')}`, hint: team.id, section: teamText(active, '专家团') }))
+          const cached = cache.teams.getSnapshot()
+          const snapshot = cached ?? await cache.teams.refresh()
+          if (cached) void cache.teams.refresh().catch((error: unknown) => console.warn('[agency-agents] 专家团刷新失败：', error))
+          return snapshot.teams.filter(team => snapshot.enabledTeams.includes(team.id) && `${team.name} ${team.description}`.toLowerCase().includes(String(request.query ?? '').toLowerCase())).map(team => ({ name: `${team.name} · ${teamText(active, '专家团')}`, hint: team.id, section: teamText(active, '专家团') }))
         },
         onPick: pick => {
-          const team = teamCache.find(team => team.id === pick.candidate.hint)
-          if (!team) return undefined
+          const snapshot = cache.teams.getSnapshot()
+          const team = snapshot?.teams.find(team => team.id === pick.candidate.hint)
+          if (!team || !snapshot?.enabledTeams.includes(team.id)) return undefined
           const target = resolveTarget(pick.session.sessionId)
           if (!target) return { insert: teamReference(team, active) }
           void insertTeamTask(target, team, undefined, pick.session.sessionId, pick.span).catch(error => target.notify?.('error', error instanceof Error ? error.message : teamText(active, '操作失败。')))
           return 'handled'
         },
         codec: {
-          clipboardText: id => teamText(active, '@专家团：{0}\u00a0', [teamCache.find(team => team.id === id)?.name ?? teamText(active, '已移除团队（请重新选择）')]),
+          clipboardText: id => teamText(active, '@专家团：{0}\u00a0', [cache.teams.getSnapshot()?.teams.find(team => team.id === id)?.name ?? teamText(active, '已移除团队（请重新选择）')]),
           serialize: async id => {
-            const [snapshot, catalog] = await Promise.all([refreshTeams(teamRemote), unwrap(teamRemote.getCatalog(false))])
-            teamCache = snapshot.teams
-            const team = teamCache.find(team => team.id === id)
-            if (!team || !snapshot.enabledTeams.includes(id) || team.members.some(member => !catalog.enabled.includes(member.expertSlug) || !catalog.experts.some(e => e.slug === member.expertSlug && !e.conflict))) throw new Error(teamText(active, '团队已停用或成员失效，请修复后再发送。'))
+            const [snapshot, catalog] = await Promise.all([cache.teams.refresh(), cache.catalog.refresh()])
+            const team = snapshot.teams.find(team => team.id === id)
+            if (!team || !snapshot.enabledTeams.includes(id) || team.members.some(member => !catalog.enabled.has(member.expertSlug) || !catalog.experts.some(e => e.slug === member.expertSlug && !e.conflict))) throw new Error(teamText(active, '团队已停用或成员失效，请修复后再发送。'))
             return teamText(active, '@专家团：{0}\u00a0', [team.name])
           },
         },
       }))
-      const divisions = [...new Set([...DIVISION_ORDER, ...catalogState(remote).experts.map(expert => expert.division)])]
       for (const [i, div] of divisions.entries()) {
         const source = {
           trigger: '@',
@@ -1472,10 +1502,9 @@ export async function apply(ctx: ClientContext): Promise<() => Promise<void>> {
           order: 100 + i,
           showGroupTitle: false,
           candidates: async (_session, req) => {
-            const current = await readEnabled(remote).catch(() => undefined)
+            const current = await cache.catalog.refresh().catch(() => undefined)
             if (current === undefined) return []
             const enabled = current.enabled
-            updateEnabledForMentions(enabled)
             const q = String(req.query ?? '').toLowerCase()
             return current.experts
               .filter((e) => e.division === div && enabled.has(e.slug) && (q === '' || matchExpertQuery(e, q)))
@@ -1487,30 +1516,29 @@ export async function apply(ctx: ClientContext): Promise<() => Promise<void>> {
           },
           onPick: (pick) => {
             const slug = pick.candidate.hint ?? ''
-            const expert = catalogState(remote).experts.find((item) => item.slug === slug && catalogState(remote).enabled.has(slug))
+            const expert = cache.catalog.getSnapshot().experts.find((item) => item.slug === slug && cache.catalog.getSnapshot().enabled.has(slug))
             if (expert === undefined) return undefined
             const reference = buildExpertReference(expert, getActive())
             const target = resolveTarget(pick.session.sessionId)
             if (target === undefined) return { insert: reference }
             return insertTask(target, reference, pick.session.sessionId, pick.span) ? 'handled' : undefined
           },
-          ...(i === 0 ? { warm: () => refreshEnabledForMentions() } : {}),
-          lexicon: () => enabledForMentions === undefined
-            ? undefined
-            : buildExpertMentionLexicon(catalogState(remote).experts.filter((expert) => !expert.teamMember && expert.division === div), enabledForMentions, getActive()),
-          subscribeLexicon: (_session, listener) => {
-            lexiconListeners.add(listener)
-            return () => { lexiconListeners.delete(listener) }
+          ...(i === 0 ? { warm: refreshCatalog } : {}),
+          lexicon: () => {
+            const current = cache.catalog.getSnapshot()
+            return current.revision < 0 ? undefined
+              : buildExpertMentionLexicon(current.experts.filter(expert => !expert.teamMember && expert.division === div), current.enabled, getActive())
           },
+          subscribeLexicon: (_session, listener) => cache.catalog.subscribe(listener),
           codec: {
-            clipboardText: (slug) => expertMentionFromReference(slug, getActive(), catalogState(remote).experts),
+            clipboardText: (slug) => expertMentionFromReference(slug, getActive(), cache.catalog.getSnapshot().experts),
             serialize: async (slug) => {
-              const current = await readEnabled(remote)
+              const current = await cache.catalog.refresh()
               if (!current.experts.some(expert => expert.slug === slug) || !current.enabled.has(slug)) throw new Error(t('custom.unavailable'))
               return expertMentionFromReference(slug, getActive(), current.experts)
             },
           },
-        } as InputTriggerSource & { readonly showGroupTitle?: boolean }
+        } satisfies InputTriggerSource
         disposers.push(ctx.inputTriggers.registerSource(source))
       }
     } catch (error) {
@@ -1524,22 +1552,28 @@ export async function apply(ctx: ClientContext): Promise<() => Promise<void>> {
 
   ctx.effect(() => {
     let active = getActive()
-    let disposeSources = registerInputTriggerSources(active)
-    const unsubscribe = ctx.locale.subscribe(() => {
+    let divisions = expertDivisions()
+    let disposeSources = registerInputTriggerSources(active, divisions)
+    const reconcile = (): void => {
       const next = getActive()
-      if (next === active) return
+      const nextDivisions = expertDivisions()
+      if (next === active && nextDivisions.length === divisions.length && nextDivisions.every((value, index) => value === divisions[index])) return
 
       disposeSources()
       try {
-        disposeSources = registerInputTriggerSources(next)
+        disposeSources = registerInputTriggerSources(next, nextDivisions)
         active = next
+        divisions = nextDivisions
       } catch (error) {
-        disposeSources = registerInputTriggerSources(active)
-        console.error('[agency-agents] @ 菜单分组语言切换失败，已恢复原语言来源：', error)
+        disposeSources = registerInputTriggerSources(active, divisions)
+        console.error('[agency-agents] @ 菜单来源更新失败，已恢复原来源：', error)
       }
-    })
+    }
+    const localeDispose = ctx.locale.subscribe(reconcile)
+    const catalogDispose = cache.catalog.subscribe(reconcile)
     return () => {
-      unsubscribe()
+      localeDispose()
+      catalogDispose()
       disposeSources()
     }
   }, 'agency-agents: @ menu sources')

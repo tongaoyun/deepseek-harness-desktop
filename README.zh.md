@@ -4,7 +4,7 @@
 
 ## DeepSeek Harness 下游桌面端
 
-本仓库扩展 DeepSeek Harness `dsh-v0.2.1-rc.2`，上游基线固定在 [`UPSTREAM_COMMIT`](UPSTREAM_COMMIT)。`apps/desktop` 运行官方 profile；`apps/product-desktop` 通过同一 Electron 壳组合企业扩展。
+本仓库扩展 DeepSeek Harness `dsh-v0.2.2-alpha.2`，上游基线固定在 [`UPSTREAM_COMMIT`](UPSTREAM_COMMIT)。`apps/desktop` 运行官方 profile；`apps/product-desktop` 通过同一 Electron 壳组合企业扩展。
 
 [产品子系统](docs/subsystems/deepseek-harness-product.md)通过独立的协议、运行时、桌面和 UI 包管理认证、目录、任务能力快照及桌面资源。Harness 的 Session、执行、审批和回放 API 是集成入口。[登记补丁](scripts/upstream-patches/manifest.json)记录每项官方差异及验证方式。
 

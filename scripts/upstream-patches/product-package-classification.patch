@@ -85,7 +85,7 @@ index 002af7c3b2c32d82d69fbb65fb5d8db23fa10a77..e9f157fa986ef43c4143f6aaf6f8234b
      `import type { Shape } from '${candidate}'`,
      `import { type Shape } from '${candidate}'`,
 diff --git a/scripts/verify-product-use.ts b/scripts/verify-product-use.ts
-index 0c3837d8a2097f02120d0f5730ff0650932126c7..4dcb05b34bdb28c3be6b267aefb346a93fce7d4e 100644
+index 0c3837d8a2097f02120d0f5730ff0650932126c7..9afbf395a1a9d9936937387dc23e61f110f5058e 100644
 --- a/scripts/verify-product-use.ts
 +++ b/scripts/verify-product-use.ts
 @@ -1,7 +1,7 @@
@@ -97,7 +97,7 @@ index 0c3837d8a2097f02120d0f5730ff0650932126c7..4dcb05b34bdb28c3be6b267aefb346a9
  import { fileURLToPath } from 'node:url'
  import { JSDOM } from 'jsdom'
  import ts from 'typescript'
-@@ -18,6 +18,7 @@ const PROFILE_SOURCE = 'packages/boot/app-boot/src/profile.ts'
+@@ -18,9 +18,16 @@ const PROFILE_SOURCE = 'packages/boot/app-boot/src/profile.ts'
  const ON_DEMAND_SOURCE = 'packages/boot/app-boot/src/official-bundle-packages.ts'
  const PROFILES = ['acp', 'web', 'headless', 'sdk', 'sdk-minimal']
  const PICKER_SOURCE = 'packages/host/directory-picker-auto/src/index.ts'
@@ -105,7 +105,16 @@ index 0c3837d8a2097f02120d0f5730ff0650932126c7..4dcb05b34bdb28c3be6b267aefb346a9
  const DYNAMIC_MOUNTS: Readonly<Record<string, readonly string[]>> = {
    [PICKER_SOURCE]: ['BACKEND_PACKAGES', 'SURFACE_PACKAGES'],
  }
-@@ -47,6 +48,8 @@ export interface ProductUseResult {
++// These product-only client entries stay local to this source-plane gate;
++// putting them in the global client tsconfig would cross the extension rootDir.
++const PRODUCT_SOURCE_PATHS: Readonly<Record<string, string>> = {
++  '@deepseek-harness/product-experts/client': 'packages/deepseek-harness-product/experts/src/client/index.ts',
++  '@deepseek-harness/product-skills/client': 'packages/deepseek-harness-product/skills/src/client.ts',
++}
+ 
+ interface Package {
+   directory: string
+@@ -47,6 +54,8 @@ export interface ProductUseResult {
    packageCount: number
    /** Distinct source modules reached across both selections. */
    sourceCount: number
@@ -114,7 +123,7 @@ index 0c3837d8a2097f02120d0f5730ff0650932126c7..4dcb05b34bdb28c3be6b267aefb346a9
    /** Effective compositions read, including Include files. */
    configCount: number
  }
-@@ -67,6 +70,7 @@ export function verifyProductUse(
+@@ -67,6 +76,7 @@ export function verifyProductUse(
    const configs = new Set<string>()
    const defaults: Reachability = { packages: new Set(), sources: new Set() }
    const optional: Reachability = { packages: new Set(), sources: new Set() }
@@ -122,7 +131,30 @@ index 0c3837d8a2097f02120d0f5730ff0650932126c7..4dcb05b34bdb28c3be6b267aefb346a9
    const config = ts.readConfigFile(resolve(root, 'tsconfig.base.json'), path => ts.sys.readFile(path))
    if (config.error !== undefined) throw new Error(ts.flattenDiagnosticMessageText(config.error.messageText, '\n'))
    const converted = ts.convertCompilerOptionsFromJson(
-@@ -184,6 +188,54 @@ export function verifyProductUse(
+@@ -100,10 +110,20 @@ export function verifyProductUse(
+     return undefined
+   }
+   const resolveModule = (specifier: string, from: string): string | undefined => {
++    const productSource = PRODUCT_SOURCE_PATHS[specifier]
++    if (productSource !== undefined) return sourceFile(resolve(root, productSource))
+     const resolved = ts.resolveModuleName(specifier, from, converted.options, host, resolutionCache).resolvedModule
+     if (resolved === undefined || resolved.resolvedFileName.replaceAll('\\', '/').includes('/node_modules/')) return undefined
+-    const path = resolve(resolved.resolvedFileName)
+-    if (/(?:^|\/)lib\//.test(display(path)) || path.endsWith('.d.ts')) return undefined
++    let path = resolve(resolved.resolvedFileName)
++    if (/(?:^|\/)lib\//.test(display(path))) return undefined
++    // Generated Typert Remotes are checked-in source-plane JavaScript. TypeScript
++    // resolves their explicit `.js` imports to the paired declaration file;
++    // follow the runtime sibling so product-use scans the generated source.
++    if (path.endsWith('.d.ts')) {
++      const runtime = path.replace(/\.d\.ts$/u, '.js')
++      if (!existsSync(runtime)) return undefined
++      path = runtime
++    }
+     return path
+   }
+   const scanSource = (path: string, reach: Reachability): void => {
+@@ -184,6 +204,54 @@ export function verifyProductUse(
        scanEntries(entries, filename, reach, new Set([...stack, filename]))
      }
    }
@@ -177,7 +209,7 @@ index 0c3837d8a2097f02120d0f5730ff0650932126c7..4dcb05b34bdb28c3be6b267aefb346a9
    const profilePath = resolve(root, PROFILE_SOURCE)
    const profileFile = ts.createSourceFile(profilePath, readFileSync(profilePath, 'utf8'), ts.ScriptTarget.Latest, true)
    const templates = literalDeclaration(profileFile, 'PROFILE_TEMPLATES')
-@@ -238,26 +290,31 @@ export function verifyProductUse(
+@@ -238,26 +306,31 @@ export function verifyProductUse(
        continue
      }
      if (entry.reason.trim() === '') failures.push(`${path} (${pkg.name}): package policy requires a reason`)
@@ -213,7 +245,7 @@ index 0c3837d8a2097f02120d0f5730ff0650932126c7..4dcb05b34bdb28c3be6b267aefb346a9
    switch (category) {
      case 'optional': return !path.startsWith('packages/test-support/')
      case 'test': return path.startsWith('packages/test-support/')
-@@ -265,6 +322,7 @@ function validCategory(path: string, category: ProductPackagePolicy['category'])
+@@ -265,6 +338,7 @@ function validCategory(path: string, category: ProductPackagePolicy['category'])
      case 'build': return path === 'packages/typert/generator'
      case 'web-distribution': return path === 'packages/client/web' || path === 'packages/client/ui-dockkit'
      case 'declarations': return path === 'packages/util/package-manifest'

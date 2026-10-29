@@ -54,6 +54,17 @@ export interface AgentPresetStage {
   introduce: boolean
 }
 
+/**
+ * Result of one attempt to hand a staged preset to the current Session: the Host applied it,
+ * it waits for a Session to appear, nothing changed (busy, already composed, started, or no
+ * stage), or the Host refused it.
+ */
+export type AgentPresetApplyOutcome =
+  | { readonly kind: 'applied' | 'staged' | 'unchanged' }
+  | { readonly kind: 'refused'; readonly reason: string }
+
+const UNCHANGED: AgentPresetApplyOutcome = { kind: 'unchanged' }
+
 /** Stages the next session's preset and applies it when one appears. */
 export class AgentPresetSeatController {
   /** Chip snapshot the renderer subscribes to. */
@@ -196,10 +207,10 @@ export class AgentPresetSeatController {
    * The refusal is stored for the chip's announcement and returned to callers
    * such as Settings that also report the result of their own write.
    * @param id - the preset to stage.
-   * @returns the refusal text, or undefined once the pick settled.
+   * @returns how the pick settled; a refusal carries its text.
    */
-  async select(id: string): Promise<string | undefined> {
-    if (this.store.getSnapshot().busy) return undefined
+  async select(id: string): Promise<AgentPresetApplyOutcome> {
+    if (this.store.getSnapshot().busy) return UNCHANGED
     this.stage(id)
     return await this.apply()
   }
@@ -255,7 +266,8 @@ export class AgentPresetSeatController {
     const session = this.currentSession()
     if (session === undefined || !session.blank || session.id !== expectedSessionId) return undefined
     this.stage(id)
-    return await this.apply()
+    const outcome = await this.apply()
+    return outcome.kind === 'refused' ? outcome.reason : undefined
   }
 
   /** Acknowledge the introduction cue once the chip has played it. */
@@ -271,10 +283,10 @@ export class AgentPresetSeatController {
    * Called both by `select()` and by whoever observes the current session
    * changing, because the session may appear either before or after the pick.
    * List updates do not repeat a selection while its response is pending.
-   * @returns this attempt's Host refusal, or undefined when successful or no switch starts.
+   * @returns how this attempt settled; only a Host commit of the staged preset is applied.
    */
-  async apply(): Promise<string | undefined> {
-    if (this.store.getSnapshot().busy) return
+  async apply(): Promise<AgentPresetApplyOutcome> {
+    if (this.store.getSnapshot().busy) return UNCHANGED
     const staged = this.staged.id
     const stageRevision = this.staged.revision
     let session = this.currentSession()
@@ -282,40 +294,40 @@ export class AgentPresetSeatController {
     const current = this.currentPreset(session)
     const refresh = this.refreshMissingPreset(current)
     if (refresh !== undefined) await refresh
-    if (this.store.getSnapshot().busy) return
+    if (this.store.getSnapshot().busy) return UNCHANGED
     session = this.currentSession()
     if (session?.id !== sessionId) {
       if (this.staged.revision === stageRevision) this.clearStage()
       this.reconcileCurrent()
-      return
+      return UNCHANGED
     }
     // Another picker may have staged a newer choice during the roster read.
-    if (this.staged.revision !== stageRevision) return
+    if (this.staged.revision !== stageRevision) return UNCHANGED
     if (staged === undefined) {
       const actual = this.currentPreset(session)
       const current = session === undefined ? this.fallback : this.shownPreset(actual)
       const currentUnavailable = this.unavailablePreset(actual)
       const shown = this.store.getSnapshot()
       if (current !== shown.current || currentUnavailable !== shown.currentUnavailable) this.set({ current, currentUnavailable })
-      return
+      return UNCHANGED
     }
-    if (session === undefined) return
+    if (session === undefined) return { kind: 'staged' }
     // A started session's history was produced under its own composition; the
     // host refuses the swap, so the stage is no longer meaningful.
     if (!session.blank || this.shownPreset(this.currentPreset(session)) === staged) {
       this.clearStage()
       this.reconcileCurrent()
-      return
+      return UNCHANGED
     }
     const completion = Promise.withResolvers<undefined>()
     this.pendingSelection = completion.promise
     this.clearStage()
-    const refuse = (reason: string) => {
+    const refuse = (reason: string): AgentPresetApplyOutcome => {
       this.set({
         error: { reason, preset: this.store.getSnapshot().options.find(option => option.id === staged) ?? { id: staged } },
       })
       this.reconcileCurrent()
-      return reason
+      return { kind: 'refused', reason }
     }
     try {
       this.set({ busy: true, error: null })
@@ -324,7 +336,7 @@ export class AgentPresetSeatController {
       const latest = this.currentSession()
       if (latest?.id !== session.id) {
         this.reconcileCurrent()
-        return
+        return UNCHANGED
       }
       if (!result.ok) {
         const { error } = result
@@ -338,10 +350,11 @@ export class AgentPresetSeatController {
       const refresh = this.refreshMissingPreset(result.value, result.value !== staged)
       if (refresh !== undefined) await refresh
       this.reconcileCurrent()
+      return result.value === staged ? { kind: 'applied' } : UNCHANGED
     } catch (error) {
       if (this.currentSession()?.id !== session.id) {
         this.reconcileCurrent()
-        return
+        return UNCHANGED
       }
       return refuse(error instanceof Error ? error.message : String(error))
     } finally {

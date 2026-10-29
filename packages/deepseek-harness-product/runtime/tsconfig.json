@@ -31,6 +31,12 @@
       "path": "../../../packages/core/tools"
     },
     {
+      "path": "../../../packages/core/tool-executor-native"
+    },
+    {
+      "path": "../../../packages/core/tool-executor-ptc"
+    },
+    {
       "path": "../../../packages/jobs/jobs"
     },
     {

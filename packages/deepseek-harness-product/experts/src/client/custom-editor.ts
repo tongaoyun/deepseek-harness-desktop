@@ -1,10 +1,9 @@
 import { LibraryConfirm, LibraryEditorFooter } from './library-ui.tsx'
 import { Button, Input, Modal } from './plugin-ui.ts'
-import { useEscapeLayer } from './escape-layer.ts'
 import React from 'react'
 import { CategorySelect } from './category-select.ts'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
-import { customExpertInputSchema, DEFAULT_EXPERT_EMOJI, type CatalogSnapshot, type CustomExpertInput } from '../expert-contract.ts'
+import { customExpertInputSchema, isExpertConflict, DEFAULT_EXPERT_EMOJI, type CatalogSnapshot, type CustomExpertInput } from '../expert-contract.ts'
 import type { AgencyCatalogRemote } from './remote.ts'
 import { EXPERT_AVATAR_URLS } from './avatars.ts'
 import { EN_DIVISION, ZH_DIVISION } from '../names.ts'
@@ -18,13 +17,14 @@ export interface CustomEditorProps {
   readonly revision: number
   readonly divisions: readonly string[]
   readonly remote: AgencyCatalogRemote
+  readonly signal?: AbortSignal
   readonly t: TranslateNS<'agency'>
   readonly locale: 'zh' | 'en'
   readonly onSaved: (catalog: CatalogSnapshot) => void
   readonly onClose: () => void
 }
 
-/** 右侧抽屉承载表单，确认层用独立弹窗，避免被抽屉挡住。 */
+/** 原生模态窗口承载表单，未保存修改由独立确认层保护。 */
 export function CustomExpertEditor(props: CustomEditorProps): React.ReactElement {
   const [initial, setInitial] = React.useState(() => ({
     ...props.expert,
@@ -47,7 +47,6 @@ export function CustomExpertEditor(props: CustomEditorProps): React.ReactElement
     if (JSON.stringify(draft) !== JSON.stringify(initial)) setDiscard(true)
     else props.onClose()
   }
-  useEscapeLayer(true, () => { if (discard) setDiscard(false); else close() })
   const set = (key: 'name' | 'description' | 'division' | 'prompt', value: string): void => {
     setDraft(current => ({ ...current, [key]: value }))
     setError(null)
@@ -57,10 +56,10 @@ export function CustomExpertEditor(props: CustomEditorProps): React.ReactElement
     saving.current = true;
     setBusy(true);
     setReview(null);
-    void loadEditorReview(props.remote, draft.slug, props.locale)
-      .then(setReview)
-      .catch((cause: unknown) => setError(cause instanceof Error ? cause.message : String(cause)))
-      .finally(() => { saving.current = false; setBusy(false); });
+    void loadEditorReview(props.remote, draft.slug, props.locale, props.signal)
+      .then((value) => { props.signal?.throwIfAborted(); setReview(value) })
+      .catch((cause: unknown) => { if (!props.signal?.aborted) setError(cause instanceof Error ? cause.message : String(cause)) })
+      .finally(() => { saving.current = false; if (!props.signal?.aborted) setBusy(false); });
   };
   const continueReview = (useLatest: boolean): void => {
     if (review === null) return;
@@ -81,16 +80,19 @@ export function CustomExpertEditor(props: CustomEditorProps): React.ReactElement
     saving.current = true
     setBusy(true)
     setError(null)
-    void props.remote.saveCustomExpert(parsed.data, enabled, revision).then(result => {
-      if (!result.ok) throw new Error(result.error.message)
+    props.signal?.throwIfAborted()
+    void props.remote.saveCustomExpert(parsed.data, enabled, revision, props.signal).then(result => {
+      props.signal?.throwIfAborted()
+      if (!result.ok) throw result.error
       props.onSaved(result.value)
     }).catch((cause: unknown) => {
+      if (props.signal?.aborted) return
       const message = cause instanceof Error ? cause.message : String(cause)
-      const conflict = /changed since it was read|其他窗口|another window/iu.test(message);
+      const conflict = isExpertConflict(cause);
       setNeedsReview(conflict);
       if (conflict) setReview(null);
       setError(conflict ? props.t("custom.conflict") : message);
-    }).finally(() => { saving.current = false; setBusy(false) })
+    }).finally(() => { saving.current = false; if (!props.signal?.aborted) setBusy(false) })
   }
   const label = (text: string, control: React.ReactNode, required = false): React.ReactElement => h('label', { className: 'aag-custom-field' },
     h('span', null, text, required ? h('small', null, props.t('custom.required')) : null), control)

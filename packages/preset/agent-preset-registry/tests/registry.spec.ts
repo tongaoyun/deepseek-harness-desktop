@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { createScope } from '@deepseek-ai/dsh-scope'
-import { assembleContextFor } from '@deepseek-ai/dsh-agent'
+import AgentRegistry, { assembleContextFor } from '@deepseek-ai/dsh-agent'
 import { entryListProblem } from '../src/index.ts'
 import { currentKey, harness, declare, contribution, agentOn, liveRegistries, plugin } from './harness.ts'
 import { omitsGeneratedPage } from '../../../settings/settings/tests/live-config.ts'
@@ -87,27 +87,6 @@ describe('declarative preset revisions', () => {
     expect(await ctx.agentPresets.resolve()).toEqual({ id: 'standard' })
   })
 
-  it('keeps historical presets resolvable without offering or defaulting to them', async () => {
-    const ctx = await harness({ live: true })
-    contexts.push(ctx)
-    await declare(ctx, contribution('standard'))
-    await declare(ctx, {
-      ...contribution('historical'),
-      selectable: false,
-      defaultable: false,
-    })
-    await liveRegistries.get(ctx)!.update({ selectedDefault: 'historical' })
-
-    expect(ctx.agentPresets.defaultId).toBe('standard')
-    const roster = await ctx.agentPresets.remoteExportList()
-    expect(roster.presets).toEqual(expect.arrayContaining([
-      expect.objectContaining({ id: 'standard', selectable: true, defaultable: true, isDefault: true }),
-      expect.objectContaining({ id: 'historical', selectable: false, defaultable: false, isDefault: false }),
-    ]))
-    await using historical = await ctx.agentPresets.acquireScope('historical')
-    expect(ctx.tools.schemas(historical.key).map(tool => tool.name)).toEqual(['historical'])
-  })
-
   it('rebinds a blank scope and preserves a child inheriting its former revision', async () => {
     const ctx = await setup()
     await declare(ctx, contribution('standard'))
@@ -129,39 +108,9 @@ describe('declarative preset revisions', () => {
     await declare(ctx, contribution('minimal'))
     const agent = await agentOn(ctx, 'selection')
     expect(await ctx.agentPresets.select(agent, 'minimal')).toBe('minimal')
-    expect(ctx.sessionProjections.stateOf(agent.session, 'agentPreset')).toBe('minimal')
+    expect(ctx.sessionProjections.checkpoint(agent.session).agentPreset?.val).toBe('minimal')
     agent.session.append('turn/start', { turn: 1 })
     await expect(ctx.agentPresets.select(agent, 'standard')).rejects.toThrow('already started')
-  })
-
-  it('resolves selection through a disposable extension and logs the resolved Preset', async () => {
-    const ctx = await setup()
-    await declare(ctx, contribution('standard'))
-    await declare(ctx, contribution('minimal'))
-    const agent = await agentOn(ctx, 'resolved-selection')
-    const release = ctx.on('agent-preset/resolve-selection', async (_agent, _requested, next) => {
-      await next()
-      return 'minimal'
-    })
-    expect(await ctx.agentPresets.select(agent, 'standard')).toBe('minimal')
-    expect(ctx.sessionProjections.stateOf(agent.session, 'agentPreset')).toBe('minimal')
-    release()
-    expect(await ctx.agentPresets.select(agent, 'standard')).toBe('standard')
-  })
-
-  it('rechecks the turn guard after asynchronous selection preparation', async () => {
-    const ctx = await setup()
-    await declare(ctx, contribution('standard'))
-    await declare(ctx, contribution('minimal'))
-    const agent = await agentOn(ctx, 'concurrent-preparation')
-    ctx.on('agent-preset/resolve-selection', async (_agent, _requested, next) => {
-      const id = await next()
-      agent.session.append('turn/start', { turn: 1 })
-      return id
-    })
-    await expect(ctx.agentPresets.select(agent, 'minimal')).rejects.toThrow('already started')
-    expect(ctx.agentPresets.composedPreset(agent.ctx)).toBe('standard')
-    expect(ctx.sessionProjections.stateOf(agent.session, 'agentPreset')).not.toBe('minimal')
   })
 
   it('inventories active and disabled child entries and declared display metadata', async () => {
@@ -297,6 +246,7 @@ it('ignores a retired modeSelectionEnabled field in the user patch', async () =>
 it('keeps its own instance off the generated Settings pages', () => omitsGeneratedPage(async (ctx) => {
   await ctx.plugin(Loader)
   await ctx.plugin(SessionProjectionRegistry)
+  await ctx.plugin(AgentRegistry)
   return ctx.plugin(AgentPresets, { default: 'standard' })
 }))
 
@@ -327,7 +277,7 @@ it('serializes competing blank-session selections and recovers after a failed se
     ctx.agentPresets.select(agent, 'absent'), ctx.agentPresets.select(agent, 'minimal'), ctx.agentPresets.select(agent, 'standard'),
   ])
   expect(results.map(row => row.status)).toEqual(['rejected', 'fulfilled', 'fulfilled'])
-  expect(ctx.sessionProjections.stateOf(agent.session, 'agentPreset')).toBe('standard')
+  expect(ctx.sessionProjections.checkpoint(agent.session).agentPreset?.val).toBe('standard')
 })
 
 it('retains a newly acquired generation when a previous activation is replaced', async () => {
@@ -368,11 +318,11 @@ it('logs the default preset a blank Session runs once it is selected without a r
   const ctx = await setup()
   await declare(ctx, contribution('standard'))
   const agent = await agentOn(ctx, 'unrecorded')
-  expect(ctx.sessionProjections.stateOf(agent.session, 'agentPreset')).toBeNull()
+  expect(ctx.agentPresets.presetForSession(agent.session)).toBeNull()
 
   expect(await ctx.agentPresets.select(agent, 'standard')).toBe('standard')
 
-  expect(ctx.sessionProjections.stateOf(agent.session, 'agentPreset')).toBe('standard')
+  expect(ctx.agentPresets.presetForSession(agent.session)).toBe('standard')
 })
 
 it('recomposes and logs a repeated selection once the preset definition was replaced', async () => {
@@ -399,7 +349,7 @@ it('does not lose the durable selection when a tools observer rejects notificati
   const agent = await agentOn(ctx, 'observer')
   ctx.on('tools/change', () => { throw new Error('observer refused') })
   expect(await ctx.agentPresets.select(agent, 'minimal')).toBe('minimal')
-  expect(ctx.sessionProjections.stateOf(agent.session, 'agentPreset')).toBe('minimal')
+  expect(ctx.sessionProjections.checkpoint(agent.session).agentPreset?.val).toBe('minimal')
 })
 
 it('inventories failed conditional entries without executing their expressions again', async () => {

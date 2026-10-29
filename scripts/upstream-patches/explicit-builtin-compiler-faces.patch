@@ -1,0 +1,115 @@
+diff --git a/packages/typert/generator/README.i18n.yaml b/packages/typert/generator/README.i18n.yaml
+index f0ae35ad127937e0716edecae61c106d33d21bee..9dc0c7f95d0c8e2b9139d886fb2ac6a1d0436358 100644
+--- a/packages/typert/generator/README.i18n.yaml
++++ b/packages/typert/generator/README.i18n.yaml
+@@ -42,8 +42,8 @@
+   en: 89d9205446b496a6
+   zh: d7bcae876c1905ec
+ /deepseek-ai-dsh-typert-generator/understand-the-implementation/analysis-and-faces:
+-  en: a844aafcafbc27b6
+-  zh: 8efe7d472361bbc2
++  en: 6369d349635c07bc
++  zh: 4ae29923c38d9393
+ /deepseek-ai-dsh-typert-generator/understand-the-implementation/emission-and-publication-contract:
+   en: 2f6f72eecffc33c2
+   zh: ded33dbc1d9a4ea5
+diff --git a/packages/typert/generator/README.md b/packages/typert/generator/README.md
+index 1a33a22a2bcc2828b7efaaac95ed9076a0dc6b46..413370bb85b4da79e03d61226bbe1b2ccba3dca3 100644
+--- a/packages/typert/generator/README.md
++++ b/packages/typert/generator/README.md
+@@ -109,7 +109,7 @@ The generator is built on one separation: extraction and emission are decoupled
+ 
+ ### Analysis and faces
+ 
+-Host and Client are independent TypeScript programs. Direct project references establish compiler-face membership, while `dsh.client` package subpaths establish runtime-face contribution; `package.json#exports` marks every cross-package public boundary, and imports or re-exports are the only cross-face edges. A relative import that resolves inside the referencing package is followed through that module's re-exports until a package specifier appears, so package-local forwarding modules keep their original declaration references; a relative import that resolves into another package fails. `check` mode fails on syntax or semantic diagnostics, missing public annotations, private cross-package references, and reachable declaration merges the model cannot retain losslessly; `write` mode inserts checker-derived annotations and returns a clean check-mode model. Types owned by NPM dependencies remain `external` references instead of being expanded. A stream method's return type may be `Iterable<Out>`, `AsyncIterable<Out>`, or the protocol's `RemoteStream<Out, In>`, recognized by symbol and declaring package like the standard-library wrappers; a second type argument other than `never` yields the descriptor's uplink codec, and the generated Client signature returns `RemoteStreamHandle<Out, In>`.
++Host and Client are independent TypeScript programs. Direct project references establish compiler-face membership; packages with explicit Host and Client tsconfigs and a `./client` export retain separate export sets even without a `dsh.client` declaration. `dsh.client` package subpaths establish runtime-face contribution; `package.json#exports` marks every cross-package public boundary, and imports or re-exports are the only cross-face edges. A relative import that resolves inside the referencing package is followed through that module's re-exports until a package specifier appears, so package-local forwarding modules keep their original declaration references; a relative import that resolves into another package fails. `check` mode fails on syntax or semantic diagnostics, missing public annotations, private cross-package references, and reachable declaration merges the model cannot retain losslessly; `write` mode inserts checker-derived annotations and returns a clean check-mode model. Types owned by NPM dependencies remain `external` references instead of being expanded. A stream method's return type may be `Iterable<Out>`, `AsyncIterable<Out>`, or the protocol's `RemoteStream<Out, In>`, recognized by symbol and declaring package like the standard-library wrappers; a second type argument other than `never` yields the descriptor's uplink codec, and the generated Client signature returns `RemoteStreamHandle<Out, In>`.
+ 
+ ### Emission and publication contract
+ 
+diff --git a/packages/typert/generator/README.zh.md b/packages/typert/generator/README.zh.md
+index 536eb139af790ce685eb90d348f10f684e1ea176..3d7bb440f14bc1f8d8727742648f458bceb64e8a 100644
+--- a/packages/typert/generator/README.zh.md
++++ b/packages/typert/generator/README.zh.md
+@@ -109,7 +109,7 @@ JSON、YAML、SVG、PNG、JPEG 和 WebP 资源导出不提供 TypeScript 声明
+ 
+ ### 分析与 face
+ 
+-Host 与 Client 是两个独立的 TypeScript 程序。直接项目引用确定编译器 face 的成员归属，`dsh.client` 包子路径则确定运行时 face 的贡献；`package.json#exports` 划定所有跨包公开边界，跨 face 的边只能来自导入或重新导出。解析到本包内部模块的相对导入会沿该模块的重新导出继续追踪，直到出现包说明符，因此包内转发模块保留原始声明引用；解析到其他包的相对导入会失败。`check` 模式遇到语法或语义诊断、缺失的公开类型标注、跨包私有引用，以及模型无法无损保留的可达声明合并时都会失败；`write` 模式插入类型检查器推导出的标注，并返回无诊断的 check 模式模型。NPM 依赖拥有的类型继续以 `external` 引用表示，不会被展开。流方法的返回类型可以是 `Iterable<Out>`、`AsyncIterable<Out>` 或协议包的 `RemoteStream<Out, In>`，后者与标准库包装器一样按符号名与声明所在包识别；第二个类型参数不为 `never` 时产出描述符的上行编解码器，生成的 Client 签名则返回 `RemoteStreamHandle<Out, In>`。
++Host 与 Client 是两个独立的 TypeScript 程序。直接项目引用确定编译器 face 的成员归属；同时提供显式 Host/Client tsconfig 与 `./client` 导出的包，即使没有 `dsh.client` 声明，也按编译入口分别确定导出。`dsh.client` 包子路径确定运行时 face 的贡献；`package.json#exports` 划定所有跨包公开边界，跨 face 的边只能来自导入或重新导出。解析到本包内部模块的相对导入会沿该模块的重新导出继续追踪，直到出现包说明符，因此包内转发模块保留原始声明引用；解析到其他包的相对导入会失败。`check` 模式遇到语法或语义诊断、缺失的公开类型标注、跨包私有引用，以及模型无法无损保留的可达声明合并时都会失败；`write` 模式插入类型检查器推导出的标注，并返回无诊断的 check 模式模型。NPM 依赖拥有的类型继续以 `external` 引用表示，不会被展开。流方法的返回类型可以是 `Iterable<Out>`、`AsyncIterable<Out>` 或协议包的 `RemoteStream<Out, In>`，后者与标准库包装器一样按符号名与声明所在包识别；第二个类型参数不为 `never` 时产出描述符的上行编解码器，生成的 Client 签名则返回 `RemoteStreamHandle<Out, In>`。
+ 
+ ### 生成与发布约定
+ 
+diff --git a/packages/typert/generator/src/analyzer.ts b/packages/typert/generator/src/analyzer.ts
+index e4e4d9f8a23073d949945b1404c8977dac5e380d..8ce3220478eb16392a97d73275a9fbded4e798ff 100644
+--- a/packages/typert/generator/src/analyzer.ts
++++ b/packages/typert/generator/src/analyzer.ts
+@@ -559,7 +559,10 @@ export class WorkspaceAnalyzer {
+           manifest,
+           ...(exportSubpaths === undefined ? {} : { exportSubpaths }),
+         })
+-        if (!isDualFacePackage(manifest)) {
++        const splitFaces = existsSync(join(packageRoot, 'tsconfig.host.json'))
++          && existsSync(join(packageRoot, 'tsconfig.client.json'))
++          && clientExportSubpaths(manifest).length > 0
++        if (!isDualFacePackage(manifest) && !splitFaces) {
+           registrations.push(register(face))
+         } else if (configPath === join(packageRoot, 'tsconfig.json')) {
+           registrations.push(
+diff --git a/packages/typert/generator/tests/__snapshots__/type-model.spec.ts.snap b/packages/typert/generator/tests/__snapshots__/type-model.spec.ts.snap
+index b297faf103aa9db656f59ca424bd7e978232e46a..986ddc87f3a445592f5574d43bc01cc0408ebe79 100644
+--- a/packages/typert/generator/tests/__snapshots__/type-model.spec.ts.snap
++++ b/packages/typert/generator/tests/__snapshots__/type-model.spec.ts.snap
+@@ -328,6 +328,30 @@ export declare const TYPERT: unknown
+ "
+ `;
+ 
++exports[`WorkspaceAnalyzer > analyzes split builtin faces without declaring an automatically loaded client plugin 1`] = `
++[
++  {
++    "exports": [
++      ".",
++      ".",
++      ".",
++      ".",
++      ".",
++      ".",
++      ".",
++    ],
++    "face": "host",
++  },
++  {
++    "exports": [
++      "./client",
++      "./client",
++    ],
++    "face": "client",
++  },
++]
++`;
++
+ exports[`WorkspaceAnalyzer > builds independent face models with an explicit cross-face type graph 1`] = `
+ {
+   "crossFaceLinks": [
+diff --git a/packages/typert/generator/tests/type-model.spec.ts b/packages/typert/generator/tests/type-model.spec.ts
+index 2cfb3327115a077a51ade4b5e30b1476ffe4948e..d2296d240331b2f4c93fc1c2ab07402fd3c9991f 100644
+--- a/packages/typert/generator/tests/type-model.spec.ts
++++ b/packages/typert/generator/tests/type-model.spec.ts
+@@ -1178,6 +1178,18 @@ describe('WorkspaceAnalyzer', { timeout: 60_000 }, () => {
+     ])
+   })
+ 
++  it('analyzes split builtin faces without declaring an automatically loaded client plugin', () => {
++    const root = copyFixture('typert-split-builtin-')
++    configureDualRuntimeClient(root, true)
++    const manifestPath = join(root, 'packages/client/package.json')
++    const manifest = JSON.parse(readFileSync(manifestPath, 'utf8')) as Record<string, unknown>
++    delete manifest.dsh
++    writeFileSync(manifestPath, JSON.stringify(manifest))
++    const model = new WorkspaceAnalyzer({ root, packages: ['@fixture/client'], checkDiagnostics: false }).analyze()
++    expect(model.faces.map(face => ({ face: face.face, exports: face.packages[0]?.exports.map(item => item.subpath) })))
++      .toMatchSnapshot()
++  })
++
+   it('accepts package export forms while skipping artifact-only rows and unexported packages', { timeout: 180_000 }, () => {
+     const root = copyFixture('typert-export-forms-')
+     const hostRoot = join(root, 'packages/host')

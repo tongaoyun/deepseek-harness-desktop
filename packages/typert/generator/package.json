@@ -1,7 +1,7 @@
 {
   "name": "@deepseek-ai/dsh-typert-generator",
   "description": "TypeScript project analyzer and model-driven Typert artifact generator",
-  "version": "0.2.1-rc.2",
+  "version": "0.2.2-alpha.2",
   "publishConfig": {
     "access": "public"
   },
@@ -44,5 +44,9 @@
     "@deepseek-ai/dsh-typert-registry": "workspace:*",
     "@deepseek-ai/cordis": "workspace:~",
     "zod": "4.4.3"
+  },
+  "scripts": {
+    "build": "tsc -b && tsdown --config-loader native --config tsdown.config.ts",
+    "typecheck": "tsc --noEmit"
   }
 }

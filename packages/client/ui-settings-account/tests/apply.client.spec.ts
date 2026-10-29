@@ -19,11 +19,11 @@ import type { AccountSectionInjected } from '../src/client/AccountSection.tsx'
 import { CONTACT_CONFIG_GLOBAL } from '../src/contact-config.ts'
 import { AccountPlatformHost } from '../src/client/AccountPlatformHost.tsx'
 import type { AccountPlatformHostInjected } from '../src/client/AccountPlatformHost.tsx'
-import { AccountMenu } from '../src/client/AccountMenu.tsx'
 import { AccountQuotaNotice } from '../src/client/AccountQuotaNotice.tsx'
 import type { AccountQuotaNoticeInjected } from '../src/client/AccountQuotaNotice.tsx'
 
 const it = createClientTest({ roster: webApp })
+const withoutAccountAccess = createClientTest({ roster: webApp }, { access: action => action !== 'account/watch' })
 const SELF = '@deepseek-ai/dsh-client-ui-settings-account'
 const view: AccountView = {
   status: 'signed-out', attempt: null,
@@ -41,9 +41,7 @@ function bonus(orderId: string, message = 'Awarded 5.00'): AccountBonusBatch {
   }
 }
 function operations(c: TestClient): AccountSectionInjected {
-  const entry = c.ctx.slots.entries('settings.launcher')
-    .find(candidate => candidate.component === AccountMenu)
-  const injected: object = entry!.inject!()
+  const injected: object = c.ctx.slots.entries('settings.launcher')[0]!.inject!()
   return injected as AccountSectionInjected
 }
 /** The account take-over registered into the Chat-owned frame-wide quota notice chain. */
@@ -71,13 +69,22 @@ it('registers account sign-in in a plain browser without the Desktop-only surfac
   for (const reload of [false, true]) {
     if (reload) await c.reload(SELF)
     await c.mock.streams.opened('account/watch', reload ? 2 : 1)
-    expect(c.ctx.slots.entries('settings.launcher').filter(entry => entry.component === AccountMenu)).toHaveLength(1)
+    expect(c.ctx.slots.entries('settings.launcher')).toHaveLength(1)
     expect(c.ctx.slots.entries('settings.models.sign-in')).toHaveLength(1)
     expect(quotaNoticeEntry(c)).toBeDefined()
     expect(platformHostEntry(c)).toBeUndefined()
     expect(c.ctx.slots.entries('shell.overlay').some(entry => entry.options.id === 'desktop-onboarding')).toBe(false)
     expect(operations(c).hooks.account.getSnapshot().desktopOnboardingVisible).toBe(false)
   }
+}, 60_000)
+
+withoutAccountAccess('opens no account stream and registers no account surface while the current Peer may not watch the account', async ({ start }) => {
+  const c = await start()
+  expect(c.mock.streams.end('account/watch')).toBe(0)
+  expect(c.ctx.slots.entries('settings.launcher')).toHaveLength(0)
+  expect(quotaNoticeEntry(c)).toBeUndefined()
+  expect(c.ctx.slots.entries('settings.models.sign-in')).toHaveLength(0)
+  expect(c.ctx.slots.entries('settings.section').some(entry => entry.options.id === 'account')).toBe(false)
 }, 60_000)
 
 it('claims account balance notices from the frame-wide quota chain and declines generic quota', async ({ start }) => {
@@ -153,8 +160,7 @@ it('shares account actions across seats, publishes dialog ownership, and opens c
   expect(signedOutAgain.searchParams.has('prefill_uid')).toBe(false)
   expect(signedOutAgain.searchParams.get('hide_uid')).toBe('1')
   await c.unload(SELF)
-  expect(c.ctx.slots.entries('settings.launcher')
-    .some(entry => entry.component === AccountMenu)).toBe(false)
+  expect(c.ctx.slots.entries('settings.launcher')).toHaveLength(0)
 }, 60_000)
 
 it('prefills the native device description from the Desktop bridge on every click', async ({ start }) => {
@@ -316,7 +322,8 @@ it('coalesces refreshes, publishes independent failures, and rejects stale respo
   await c.unload(SELF)
   pendingAgain.resolve(ok(profile))
   await request
-  expect(actions.hooks.account.getSnapshot().details?.profile).toEqual({ status: 'failed' })
+  // Unloading ends the grant, which clears the account state; the late profile publishes nothing.
+  expect(actions.hooks.account.getSnapshot()).toMatchObject({ view: undefined, details: undefined })
 }, 60_000)
 
 for (const desktop of [false, true]) it(`uses the browser or Desktop login carrier (Desktop: ${desktop}) and exposes operation errors`, async ({ start, mock }) => {

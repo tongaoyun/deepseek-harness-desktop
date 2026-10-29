@@ -17,7 +17,7 @@ const actions = {
   useSessions: unusedSlot, useSessionStatus: unusedSlot, useSessionRetainInfo: unusedSlot,
   useWorkspaces: unusedSlot, useResource: unusedSlot, useAccess: unusedSlot, renderFactorySlot: unusedSlot,
 }
-afterEach(() => { cleanup(); vi.useRealTimers(); vi.unstubAllGlobals() })
+afterEach(() => { cleanup(); vi.useRealTimers(); vi.unstubAllGlobals(); vi.restoreAllMocks() })
 function transport(handler: (method: string) => Promise<unknown>) {
   const invoke = vi.fn(async (_namespace: string, method: string, _payload?: unknown, _requestId?: string) => (
     { ok: true, result: await handler(method) }))
@@ -109,6 +109,87 @@ it('continues pending authorization until the matching connector is authorized',
   await act(async () => { await vi.advanceTimersByTimeAsync(1_000) })
   expect(polls).toBe(2)
   expect(changed).toHaveBeenCalledOnce()
+})
+
+function authorizationClock(): void {
+  vi.useFakeTimers()
+  // Node's intrinsic AbortSignal timer is outside Vitest's fake timer clock.
+  vi.spyOn(AbortSignal, 'timeout').mockImplementation((milliseconds) => {
+    const controller = new AbortController()
+    setTimeout(() => { controller.abort(new DOMException('Authorization timed out', 'TimeoutError')) }, milliseconds)
+    return controller.signal
+  })
+}
+
+it.each((['begin', 'status'] as const).flatMap(phase => (['resolve', 'reject'] as const).map(outcome => ({ phase, outcome }))))(
+  'ends authorization at its deadline while $phase is pending and ignores its late $outcome during retry', async ({ phase, outcome }) => {
+    authorizationClock()
+    const pending = Promise.withResolvers<unknown>()
+    const changed = vi.fn(async () => {})
+    let retry = false
+    const method = `connectors.authorization.${phase}`
+    const api = transport(async operation => !retry && operation === method ? pending.promise
+      : operation.endsWith('.begin') ? launch : { connectorId: 'erp', status: 'AUTHORIZED' })
+    render(<ConnectorDetail product={localDetail(items([{ ...descriptor, authorizationStatus: 'REQUIRED' }])[0]!)}
+      onCatalogChanged={changed} t={t} />)
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: zh.authorize })) })
+    await act(async () => { await vi.advanceTimersByTimeAsync(59_999) })
+    expect(screen.queryByRole('alert')).toBeNull()
+    const old = api.invoke.mock.calls.find(call => call[1] === method)!
+    await act(async () => { await vi.advanceTimersByTimeAsync(1) })
+    expect(screen.getByRole('alert').textContent).toMatchSnapshot()
+    expect(screen.getByRole<HTMLButtonElement>('button', { name: zh.authorize }).disabled).toBe(false)
+    expect(api.cancel).toHaveBeenCalledWith('product', old[3])
+    retry = true
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: zh.authorize })) })
+    const calls = api.invoke.mock.calls.length
+    await act(async () => {
+      if (outcome === 'resolve') pending.resolve(phase === 'begin' ? launch : { connectorId: 'erp', status: 'AUTHORIZED' })
+      else pending.reject(new Error('Late authorization failure'))
+    })
+    expect(changed).not.toHaveBeenCalled()
+    expect(api.invoke).toHaveBeenCalledTimes(calls)
+    await act(async () => { await vi.advanceTimersByTimeAsync(1_000) })
+    expect(changed).toHaveBeenCalledOnce()
+    expect(screen.queryByRole('alert')).toBeNull()
+    const fresh = api.invoke.mock.calls.filter(call => call[1] === method).at(-1)!
+    expect(fresh[3]).not.toBe(old[3])
+  })
+
+it.each([-3_600_000, 3_600_000])('keeps the authorization deadline when the system clock changes by %i ms', async (clockChange) => {
+  authorizationClock()
+  const changed = vi.fn(async () => {})
+  const api = transport(async operation => operation.endsWith('.begin') ? launch : { connectorId: 'erp', status: 'PENDING' })
+  render(<ConnectorDetail product={localDetail(items([{ ...descriptor, authorizationStatus: 'REQUIRED' }])[0]!)}
+    onCatalogChanged={changed} t={t} />)
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: zh.authorize })); await vi.advanceTimersByTimeAsync(1_000) })
+  vi.setSystemTime(Date.now() + clockChange)
+  await act(async () => { await vi.advanceTimersByTimeAsync(58_999) })
+  expect(screen.queryByRole('alert')).toBeNull()
+  await act(async () => { await vi.advanceTimersByTimeAsync(1) })
+  expect(screen.getByRole('alert').textContent).toBe(zh.authorizationFailed)
+  expect(screen.getByRole<HTMLButtonElement>('button', { name: zh.authorize }).disabled).toBe(false)
+  const calls = api.invoke.mock.calls.length
+  await act(async () => { await vi.advanceTimersByTimeAsync(5_000) })
+  expect(api.invoke).toHaveBeenCalledTimes(calls)
+  expect(changed).not.toHaveBeenCalled()
+})
+
+it('releases cancellation listeners after authorization succeeds', async () => {
+  authorizationClock()
+  const changed = vi.fn(async () => {})
+  const api = transport(async operation => operation.endsWith('.begin') ? launch : { connectorId: 'erp', status: 'AUTHORIZED' })
+  const view = render(<ConnectorDetail product={localDetail(items([{ ...descriptor, authorizationStatus: 'REQUIRED' }])[0]!)}
+    onCatalogChanged={changed} t={t} />)
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: zh.authorize })); await vi.advanceTimersByTimeAsync(1_000) })
+  expect(changed).toHaveBeenCalledOnce()
+  const calls = api.invoke.mock.calls.length
+  await act(async () => { await vi.advanceTimersByTimeAsync(60_000) })
+  expect(screen.queryByRole('alert')).toBeNull()
+  expect(api.invoke).toHaveBeenCalledTimes(calls)
+  expect(api.cancel).not.toHaveBeenCalled()
+  view.unmount()
+  expect(api.cancel).not.toHaveBeenCalled()
 })
 
 it.each(['authorize', 'revoke', 'configure'] as const)('retains catalog connector details and retries only reads after confirmed %s', async (operation) => {

@@ -10,6 +10,7 @@ import { KnowledgeFolderPicker } from './KnowledgeFolderPicker.tsx'
 import { isKnowledgeSaveUnconfirmed, productErrorMessage } from './product-errors.ts'
 import { useEditorCloseGuard } from './useEditorCloseGuard.ts'
 import { useKnowledgeSaveRecovery, type KnowledgeSaveDraft } from './knowledge-save-recovery.ts'
+import { KnowledgeEditorFooter } from './KnowledgeEditorFooter.tsx'
 
 /** A manager's create or edit action captured before opening the form. */
 export type KnowledgeEditorTarget = { readonly kind: 'markdown'; readonly document?: KnowledgeDocument; readonly folderId?: string | null }
@@ -46,7 +47,7 @@ export function KnowledgeEditor(props: KnowledgeEditorProps): ReactNode {
     {recovery.error ? <><p role="alert">{t('knowledgeRecoveryFailed')}</p>
       <Button onClick={() => { void recovery.reload() }}>{t('retry')}</Button></> : <ProductLoading label={t('loading')} />}
   </Modal>
-  return <KnowledgeEditorForm {...props} restored={recovery.draft} recovery={recovery.recovery} />
+  return <KnowledgeEditorForm key={scope} {...props} restored={recovery.draft} recovery={recovery.recovery} />
 }
 
 /** Preserve content and retry identity; suspended saves can be resumed without repeating a new write.
@@ -190,15 +191,9 @@ function KnowledgeEditorForm({ knowledgeBaseId, target, onClose, onSaved, t, res
   const editable = target.kind !== 'markdown' || target.document === undefined || metadata !== undefined
   return <Modal open title={t(titleKey)} closeLabel={t('close')} onClose={close.requestClose}
     className={(target.kind === 'folder' ? css.knowledgeBaseEditorModal : css.knowledgeEditorModal) as string}
-    contentClassName={css.knowledgeEditorContent as string} footer={<>
-      {close.confirming ? <>
-        <Button variant="ghost" size="sm" onClick={close.keepEditing}>{t('knowledgeKeepEditing')}</Button>
-        <Button variant="primary" size="sm" onClick={close.discard}>{t('knowledgeDiscardDraft')}</Button>
-      </> : <>
-        <Button variant="ghost" size="sm" disabled={pending} onClick={close.requestClose}>{t(unconfirmed ? 'knowledgeSuspendSave' : 'cancel')}</Button>
-        <Button variant="primary" size="sm" disabled={pending || loading || conflict || !valid || !editable} onClick={() => { void save() }}>{t(pending ? 'saving' : unconfirmed ? 'knowledgeRetrySave' : 'knowledgeSave')}</Button>
-      </>}
-    </>}>
+    contentClassName={css.knowledgeEditorContent as string} footer={<KnowledgeEditorFooter close={close} pending={pending}
+      loading={loading} disabled={conflict || !valid || !editable} unconfirmed={unconfirmed} saveKey="knowledgeSave"
+      t={t} onSave={() => { void save() }} />}>
     {close.confirming ? <p>{t('knowledgeDiscardDraftConfirmation')}</p> : <form className={css.knowledgeEditorForm} onSubmit={(event) => { event.preventDefault(); if (valid && editable) void save() }}>
       <label>{t(target.kind === 'folder' ? 'knowledgeFolderName' : 'knowledgeDocumentTitle')}
         <input data-modal-autofocus value={title} maxLength={target.kind === 'folder' ? 80 : 120} disabled={pending || loading || unconfirmed}

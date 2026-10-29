@@ -2,12 +2,8 @@
 
 [English](README.md) | 中文
 
-Electron sidecar 实现 Renderer 通过 preload 白名单调用的原生产品能力。它使用逐行 JSON-RPC 协议：
+这是产品自有的 Electron sidecar，通过逐行 JSON 协议 `deepseek-harness.native.v1` 提供 `health` 和 `device-identity.get`。它不持有 Harness Session 状态，也不执行智能体。
 
-```text
-deepseek-harness.native.v1
-```
+`health` 上报 sidecar 就绪状态和 `device-identity` 能力。Electron 使用安装标识上报设备；sidecar 从 `DEEPSEEK_HARNESS_NATIVE_DATA_DIR` 下的 `device/device-id` 读取既有标识，仅在文件缺失时创建。既有标识和数据目录内的其他文件均保留。凭据加密由 Electron 独立检查。
 
-sidecar 不持有任何 Harness Session 状态，只提供受限产品操作：`filesystem.list/read/write`、`attachments.put/get/list`、`secure-storage.get/set`、`sqlite.query/execute`、`dingtalk-auth.state`、`device-identity.get`、`image-preview.inspect` 和 `file-undo.record/undo`。路径相对于 Electron 管理的数据目录，SQLite 只有显式选择 execute 方法时才允许写入，文件载荷使用 hex 编码且限制为 8 MiB。Electron 启动 sidecar 并校验每个方法；Renderer 不会取得 sidecar 进程句柄，白名单凭据操作会返回其声明的结果。
-
-协议不提供旧 Tauri `invoke` 兼容路径。
+Electron 主进程在启动产品服务前校验就绪状态、协议及设备标识能力。产品桥接不向页面暴露 `native.*` 方法或原始安装标识，不提供通用文件、附件、数据库、凭据、认证、预览或撤销操作。设备策略配置见[升级说明](../../docs/upgrade-guide/v0.2.1-rc.2/product-native-sidecar/guide.zh.md)。

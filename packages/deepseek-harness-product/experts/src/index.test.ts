@@ -1,17 +1,20 @@
 import { createTestContext } from '../tests/context.ts'
 import { createActivationProbe } from '../tests/activation-probe.ts'
 import { fileURLToPath } from 'node:url'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
+import type { SettingsDescriptor } from '@deepseek-ai/dsh-settings'
+import type { ISessions } from '@deepseek-ai/dsh-api-session-controller/client'
 import type { SessionId } from '@deepseek-ai/dsh-client-connection/client'
 import z from '@deepseek-ai/schemastery'
-import { Config, SUMMON_EXPERTS_CONCURRENCY, SUMMON_EXPERTS_MAX, SUMMON_TASK_MAX_CHARS, apply, inject, loadCatalog, createAgencyPersonaSource, mapPool, parseFrontmatter, resolveCatalogRoot, resolveExpert, sanitize, stripBom, toSummonItemResult, truncate, unquote, validateSummonSpecs } from './index.ts'
+import { Config, SUMMON_EXPERTS_CONCURRENCY, SUMMON_EXPERTS_MAX, SUMMON_TASK_MAX_CHARS, apply, inject, loadCatalog, createAgencyPersonaSource, mapPool, parseFrontmatter, resolveCatalogRoot, resolveExpert, sanitize, stripBom, toSummonItemResult, truncate, validateSummonSpecs } from './index.ts'
 import AgencyAgentsRemote, { readExpertPrompt, readLocalizedExpertPrompt } from './remote.ts'
 import { AGENCY_AGENTS_DESCRIPTORS } from './remote-contract.ts'
+import { expertConflict } from './expert-contract.ts'
 import { buildExpertMentionLexicon, buildExpertReference, CARD_SETTINGS_CSS, compareExpertName, COMPOSER_CSS, EXPERT_AVATAR_POOL_INDEXES, expertAvatarIndex, expertAvatarIndexForDivision, expertDivisionFilterValues, expertMentionFromReference, filterExperts, formatExpertMention, formatExpertMentionInsertion, inject as clientInject, inputTriggerCandidateName, inputTriggerSourceId, inputTriggerSourceName, insertExpertReference, insertSelectedExpert, keepComposerFocus, matchExpertQuery, normalizeExpertQuery, resolveExpertMenuPosition, resolveReferenceInsertionTarget, resolveTargetSessionId, SETTINGS_CSS, sortExpertsByEnabled, sortExpertsByOrder, writeErrorKey, writeErrorMessage } from './client/index.ts'
 import { en, zh, type AgencyKey } from './client/locales.ts'
 import { ROSTER } from './fixtures/roster.ts'
@@ -19,7 +22,16 @@ import { enHost, formatHost, matchDivision, readHostLocale, renderExpertList, re
 import { TYPERT_REMOTE } from './client/remote.ts'
 import { readAgencySettings, expertSettingsNamespace } from './settings.ts'
 
-const PACKAGE_MANIFEST = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8')) as {
+function sessionList(rows: readonly { id: SessionId; main?: boolean }[]): ISessions['list'] {
+  return {
+    getSnapshot: () => ({ ids: rows.map(row => row.id), phase: 'ready', projectionsBySession: {},
+      byId: Object.fromEntries(rows.map(row => [row.id, { id: row.id, displayTitle: row.id, running: false,
+        retainedBy: row.main ? { mainView: 1 } : {}, blank: false, updatedAt: 0 }])) }),
+    subscribe: () => () => {},
+  }
+}
+
+let PACKAGE_MANIFEST: {
   packageManager?: string
   engines?: { node?: string }
   peerDependencies?: Record<string, string>
@@ -27,10 +39,18 @@ const PACKAGE_MANIFEST = JSON.parse(await readFile(new URL('../package.json', im
   devDependencies?: Record<string, string>
   dsh?: { client?: { inject?: string[] } }
 }
+beforeAll(async () => {
+  PACKAGE_MANIFEST = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8')) as typeof PACKAGE_MANIFEST
+})
+
+function localeDescriptor(preference: unknown): SettingsDescriptor {
+  return { ns: expertSettingsNamespace('locale'), revision: 0, autoGenerate: false, schema: {}, value: { preference }, applies: 'live' }
+}
 
 function alphaSettings(enabled: readonly string[], locale?: 'zh' | 'en') {
   return {
-    describe: () => [{ ns: 'agency-agents', revision: 0 }],
+    configure: () => () => {},
+    describe: () => [{ ns: 'agency-agents', revision: 0 }, localeDescriptor(locale)],
     get: (namespace: string): unknown => {
       if (namespace === 'agency-agents') return { enabled: [...enabled] }
       if (namespace === 'locale' && locale !== undefined) return { preference: locale }
@@ -41,7 +61,12 @@ function alphaSettings(enabled: readonly string[], locale?: 'zh' | 'en') {
 
 /** 测试里的宿主配置走 0.2 volatile 字段；已自带 get() 的配置保持原样。 */
 function applyOnHost(ctx: Context, config: Parameters<typeof apply>[1]): void {
+  // Registration fakes retain the production disposer contract for effect-owned tools.
+  const register = ctx.tools.register.bind(ctx.tools)
+  Object.assign(ctx.tools, { register: (tool: Parameters<typeof register>[0]) => { const dispose = register(tool); return typeof dispose === 'function' ? dispose : () => {} } })
+  if (typeof ctx.effect !== 'function') Object.assign(ctx, { effect: (setup: () => unknown) => { setup(); return () => {} } })
   if (typeof ctx.get !== 'function') Object.assign(ctx, { get: () => undefined })
+  if (typeof ctx.on !== 'function') Object.assign(ctx, { on: () => () => {} })
   const current = config as { enabled?: unknown }
   if (current.enabled !== null && typeof current.enabled === 'object' && typeof (current.enabled as { get?: unknown }).get === 'function') {
     apply(ctx, config)
@@ -164,20 +189,6 @@ describe('stripBom', () => {
   })
 })
 
-describe('unquote', () => {
-  it('剥离双引号', () => {
-    expect(unquote('"📘"')).toBe('📘')
-  })
-
-  it('剥离单引号', () => {
-    expect(unquote("'x'")).toBe('x')
-  })
-
-  it('无引号原样返回', () => {
-    expect(unquote('abc')).toBe('abc')
-  })
-})
-
 describe('truncate', () => {
   it('超长截断并追加省略号', () => {
     expect(truncate('abcdef', 3)).toBe('abc…')
@@ -193,6 +204,35 @@ describe('truncate', () => {
 })
 
 describe('parseFrontmatter', () => {
+  it('reads YAML multiline scalars, escaped quotes and comments without treating them as literal metadata', () => {
+    expect(parseFrontmatter(`---
+name: "A \\"quoted\\" expert"
+description: >-
+  First line
+  second line
+descriptionEn: |
+  English first
+  English second
+emoji: "📘" # catalog icon
+---
+  Persona instructions.
+`)).toEqual({ name: 'A "quoted" expert', description: 'First line second line',
+      descriptionEn: 'English first\nEnglish second\n', emoji: '📘', body: 'Persona instructions.' })
+  })
+
+  it.each([
+    'name: First\nname: Second\ndescription: D',
+    'name: [broken\ndescription: D',
+    '- name: List\n- description: D',
+  ])('does not publish malformed or non-mapping YAML metadata: %s', header => {
+    expect(parseFrontmatter(`---\n${header}\n---\nPersona instructions.`)).toBeUndefined()
+  })
+
+  it('requires text fields instead of converting YAML collections and numbers to display text', () => {
+    expect(parseFrontmatter('---\nname: [expert]\ndescription: 123\n---\nInstructions.'))
+      .toEqual({ name: undefined, description: undefined, descriptionEn: undefined, emoji: undefined, body: 'Instructions.' })
+  })
+
   it('解析带引号的 emoji', () => {
     const parsed = parseFrontmatter('---\nname: X\ndescription: D\ndescriptionEn: E\nemoji: "📘"\n---\nbody')
     expect(parsed?.name).toBe('X')
@@ -216,6 +256,26 @@ describe('loadCatalog', () => {
 
   afterEach(async () => {
     await rm(dir, { recursive: true, force: true })
+  })
+
+  it('uses the same YAML metadata for incremental catalog reads and lazy prompt reads', async () => {
+    await mkdir(join(dir, 'engineering'), { recursive: true })
+    await writeFile(join(dir, 'engineering', 'yaml-expert.md'), `---
+name: YAML Expert
+description: >-
+  Reviews schemas
+  and migrations.
+emoji: "📘" # icon
+---
+  Review the requested schema.
+`)
+    const catalog = await loadCatalog(dir, ['engineering'])
+    const metadata = { name: catalog.get('yaml-expert')?.name, description: catalog.get('yaml-expert')?.description,
+      emoji: catalog.get('yaml-expert')?.emoji }
+    expect(metadata).toEqual({ name: 'YAML Expert', description: 'Reviews schemas and migrations.', emoji: '📘' })
+    expect(metadata).toMatchSnapshot()
+    await expect(createAgencyPersonaSource(dir, ['engineering']).getPrompt('yaml-expert', 'engineering', 'en'))
+      .resolves.toEqual({ prompt: 'Review the requested schema.' })
   })
 
   it('递归加载 division 子目录中的智能体', async () => {
@@ -809,7 +869,7 @@ describe('AgencyAgentsRemote（Host↔Client 读写链路）', () => {
   })
 
   it('将 Settings revision 冲突映射到 i18n key，并区分刷新成败', () => {
-    const conflict = new Error('settings namespace "agency-agents" changed since it was read (expected revision 0, now 1)')
+    const conflict = expertConflict('The configuration revision is stale')
     expect(writeErrorKey(conflict)).toBe('error.conflict')
     expect(writeErrorKey(conflict, { refreshed: true })).toBe('error.conflict.refreshed')
     expect(writeErrorKey(conflict, { refreshed: false })).toBe('error.conflict.refreshFailed')
@@ -819,7 +879,7 @@ describe('AgencyAgentsRemote（Host↔Client 读写链路）', () => {
   })
 
   it('冲突文案走传入的 t，非冲突错误忽略 refreshed 并原样返回', () => {
-    const conflict = new Error('settings namespace "agency-agents" changed since it was read (expected revision 0, now 1)')
+    const conflict = expertConflict('The configuration revision is stale')
     const tEn = (key: AgencyKey): string => en[key]
     expect(writeErrorMessage(conflict, { refreshed: true, t: tEn })).toBe(en['error.conflict.refreshed'])
     expect(writeErrorMessage(conflict, { refreshed: false, t: tEn })).toBe(en['error.conflict.refreshFailed'])
@@ -896,18 +956,16 @@ describe('AgencyAgentsRemote（Host↔Client 读写链路）', () => {
       } as unknown as Context
       applyOnHost(pluginCtx, { root, provider: 'spawn', divisions: ['engineering'] })
 
-      const remoteCtx = {
-        reflect: { provide: () => undefined },
+      const remoteCtx = createTestContext({
         get: (name: string) => name === 'agencyAgentsPersona' ? promptSource : undefined,
         typert: { register: () => undefined },
         settings: {
-          get: (namespace: string) => namespace === 'locale' ? { preference: 'zh' } : { enabled: [] },
-          describe: () => [{ ns: 'agency-agents', revision: 0 }],
+          describe: () => [localeDescriptor('zh')],
         },
-      } as unknown as Context
+      })
       const remote = new AgencyAgentsRemote(remoteCtx)
 
-      await expect(remote.getPrompt('reviewer', 'engineering')).resolves.toEqual({ prompt: 'Custom persona' })
+      await expect(remote.getPrompt('reviewer', 'engineering', new AbortController().signal)).resolves.toEqual({ prompt: 'Custom persona' })
     } finally {
       await rm(root, { recursive: true, force: true })
     }
@@ -915,18 +973,16 @@ describe('AgencyAgentsRemote（Host↔Client 读写链路）', () => {
 
   it('persona 服务尚未挂载时按中英文失败关闭，不回退到其他目录', async () => {
     for (const locale of ['zh', 'en'] as const) {
-      const ctx = {
-        reflect: { provide: () => undefined },
+      const ctx = createTestContext({
         get: () => undefined,
         typert: { register: () => undefined },
         settings: {
-          get: (namespace: string) => namespace === 'locale' ? { preference: locale } : { enabled: [] },
-          describe: () => [{ ns: 'agency-agents', revision: 0 }],
+          describe: () => [localeDescriptor(locale)],
         },
-      } as unknown as Context
+      })
       const remote = new AgencyAgentsRemote(ctx)
 
-      await expect(remote.getPrompt('chief-executive-officer', 'company')).rejects.toThrow(
+      await expect(remote.getPrompt('chief-executive-officer', 'company', new AbortController().signal)).rejects.toThrow(
         formatHost(locale, 'error.personaSourceUnavailable'),
       )
     }
@@ -948,7 +1004,7 @@ describe('AgencyAgentsRemote（Host↔Client 读写链路）', () => {
     expect(getPrompt?.parameters.map((p) => p.wire)).toEqual(['slug', 'division'])
   })
 
-  it('严格 codec 同时提供 create 与 schema，兼容 alpha.1 与 alpha.2 宿主', () => {
+  it('严格 codec 使用当前原生 create 工厂且不宣称旧版宿主兼容', () => {
     const codecs = AGENCY_AGENTS_DESCRIPTORS.flatMap((descriptor) => [
       descriptor.result,
       ...descriptor.parameters.map((parameter) => parameter.codec),
@@ -959,7 +1015,7 @@ describe('AgencyAgentsRemote（Host↔Client 读写链路）', () => {
       if (codec.mode !== 'strict') continue
       expect(typeof codec.create).toBe('function')
       expect(typeof codec.create().parse).toBe('function')
-      expect(typeof (codec as { schema?: { parse?: unknown } }).schema?.parse).toBe('function')
+      expect('schema' in codec).toBe(false)
     }
   })
 })
@@ -978,11 +1034,10 @@ describe('宿主 i18n', () => {
     expect(resolveHostLocale(null)).toBe('en')
     expect(resolveHostLocale('')).toBe('en')
     expect(readHostLocale({})).toBe('en')
-    expect(readHostLocale({ settings: { get: () => ({ preference: 'en' }) } })).toBe('en')
-    expect(readHostLocale({ settings: { describe: () => [{ ns: 'locale', value: { preference: 'en' } }] } })).toBe('en')
+    expect(readHostLocale({ settings: { describe: () => [localeDescriptor('en')] } })).toBe('en')
     expect(zh['settings.nav']).toBe('专家')
     expect(en['settings.nav']).toBe('Experts')
-    expect(readHostLocale({ settings: { get: () => { throw new Error('missing') } } })).toBe('en')
+    expect(readHostLocale({ settings: { describe: () => { throw new Error('missing') } } })).toBe('en')
     expect(readHostLocale({
       get settings(): never {
         throw new Error('cannot get property "settings" without inject')
@@ -1425,49 +1480,25 @@ describe('@ 菜单分组标题本地化', () => {
     expect(expertMentionFromReference('missing-expert', 'en')).toBe('@Removed expert (please reselect)\u00A0')
   })
 
-  it('slot 未提供 sessionId 时回退解析当前会话输入机', () => {
-    const actx = {} as Context
+  it('slot 未提供 sessionId 时使用原生主视图会话及 scope 定位输入机', () => {
+    const actx = {} as NonNullable<ReturnType<ISessions['scope']>>
     const target = {
       state: { getSnapshot: () => ({ draft: '', draftRev: 1 }) },
       insertReference: (): boolean => true,
     }
-    const calls: string[] = []
-
-    const resolved = resolveReferenceInsertionTarget({
-      list: { getSnapshot: () => ({ byId: { 'current-session': { id: 'current-session' as SessionId, retainedBy: { mainView: 1 } } } }) },
-      binding: (id: string) => {
-        calls.push(id)
-        return { ctx: actx }
-      },
-    }, undefined, (context: Context) => context === actx
-      ? { input: { for: (candidate: Context) => candidate === actx ? target : undefined } }
-      : undefined)
-
-    expect(resolved).toBe(target)
-    expect(calls).toEqual(['current-session'])
+    const list = sessionList([{ id: 'current-session' as SessionId, main: true }])
+    const scope = vi.fn(() => actx)
+    expect(resolveReferenceInsertionTarget({ list, scope }, undefined, context => context === actx ? target : undefined)).toBe(target)
+    expect(scope).toHaveBeenCalledWith('current-session')
+    expect(resolveReferenceInsertionTarget({ list, scope: () => undefined }, undefined, () => target)).toBeUndefined()
   })
 
-  it('按 retainedBy.mainView 反查主视图会话', () => {
-    expect(resolveTargetSessionId({
-      list: {
-        getSnapshot: () => ({
-          byId: {
-            other: { id: 'other' as SessionId, retainedBy: {} },
-            main: { id: 'main-view' as SessionId, retainedBy: { mainView: 1 } },
-          },
-        }),
-      },
-    })).toBe('main-view')
-    expect(resolveTargetSessionId({
-      list: { getSnapshot: () => ({ byId: { parked: { retainedBy: {} } } }) },
-    })).toBeUndefined()
-    expect(resolveTargetSessionId({
-      list: {
-        getSnapshot: () => ({
-          byId: { main: { id: 'main-view' as SessionId, retainedBy: { mainView: 1 } } },
-        }),
-      },
-    }, 'explicit' as SessionId)).toBe('explicit')
+  it('按原生 retainedBy.mainView 查找主视图，并优先使用显式会话', () => {
+    const list = sessionList([{ id: 'other' as SessionId }, { id: 'main-view' as SessionId, main: true }])
+    expect(resolveTargetSessionId({ list })).toBe('main-view')
+    expect(resolveTargetSessionId({ list }, 'explicit' as SessionId)).toBe('explicit')
+    expect(resolveTargetSessionId({ list: sessionList([{ id: 'parked' as SessionId }]) })).toBeUndefined()
+    expect(resolveTargetSessionId({ list: sessionList([]) })).toBeUndefined()
   })
 
   it('打开专家菜单时保持编辑器焦点，保证候选项可定位 chip 插入位置', () => {
@@ -1555,40 +1586,41 @@ describe('list_experts 语言切换', () => {
     expect(describeSettings).toHaveBeenCalledTimes(readsAfterApply)
   })
 
-  it('已注册团队工具的说明和参数说明随宿主语言切换', () => {
+  it('已注册团队工具的说明和参数说明随宿主语言切换', async () => {
     let locale = 'zh'
     const tools: Array<{ name: string; description: string; parameters: unknown }> = []
-    const ctx = {
+    const ctx = createTestContext({
       tools: { register: (tool: typeof tools[number]) => tools.push(tool) },
       subagents: { getProvider: () => undefined },
       systemPrompt: { section: () => undefined },
-      on: () => () => undefined,
-      settings: { ...alphaSettings([]), get: () => ({ preference: locale }) },
+      settings: { ...alphaSettings([]), describe: () => [localeDescriptor(locale)] },
       inject: () => undefined,
-      reflect: { provide: () => undefined },
-    } as unknown as Context
+    })
     applyOnHost(ctx, { root: dir, provider: 'spawn', divisions: ['engineering'] })
     const teams = tools.filter(tool => ['list_expert_teams', 'get_expert_team', 'summon_expert_team'].includes(tool.name))
     expect(teams).toHaveLength(3)
     for (const tool of teams) expect(tool.description).toMatch(/[\u3400-\u9fff]/u)
     locale = 'en'
+    ctx.emit('settings/document-updated', expertSettingsNamespace('locale'), 1)
+    await Promise.resolve()
     for (const tool of teams) expect(JSON.stringify({ description: tool.description, parameters: tool.parameters })).not.toMatch(/[\u3400-\u9fff]/u)
     locale = 'zh'
+    ctx.emit('settings/document-updated', expertSettingsNamespace('locale'), 2)
+    await Promise.resolve()
     for (const tool of teams) expect(tool.description).toMatch(/[\u3400-\u9fff]/u)
   })
 
-  it('专家团任务参数同样禁止把带引号的源码写进工具 JSON', () => {
+  it('专家团任务参数同样禁止把带引号的源码写进工具 JSON', async () => {
     let locale = 'en'
     const tools: Array<{ name: string; description: string; parameters: unknown }> = []
     const sections: Array<{ name: string; text: (context: unknown) => string }> = []
-    const ctx = {
+    const ctx = createTestContext({
       tools: { register: (tool: typeof tools[number]) => tools.push(tool) },
       subagents: { getProvider: () => undefined },
       systemPrompt: { section: (section: { name: string; text: (context: unknown) => string }) => sections.push(section) },
-      settings: { ...alphaSettings([]), get: () => ({ preference: locale }) },
+      settings: { ...alphaSettings([]), describe: () => [localeDescriptor(locale)] },
       inject: () => undefined,
-      reflect: { provide: () => undefined },
-    } as unknown as Context
+    })
     applyOnHost(ctx, { root: dir, provider: 'spawn', divisions: ['engineering'] })
     const team = tools.find(tool => tool.name === 'summon_expert_team')
     const english = JSON.stringify(team?.parameters ?? {})
@@ -1596,6 +1628,8 @@ describe('list_experts 语言切换', () => {
     expect(english).toContain('20000')
     expect(english).not.toContain('{0}')
     locale = 'zh'
+    ctx.emit('settings/document-updated', expertSettingsNamespace('locale'), 2)
+    await Promise.resolve()
     const prompt = sections.find(section => section.name === 'agency:teams')?.text({ agent: { session: { header: {} } } }) ?? ''
     expect(prompt).toContain('不要把源码、CSS、HTML 或带引号的代码写进工具参数')
   })

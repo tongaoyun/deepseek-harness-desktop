@@ -7,6 +7,7 @@ import { Context } from '@deepseek-ai/cordis'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import Tools from '@deepseek-ai/dsh-tools'
+import * as NativeToolExecutor from '@deepseek-ai/dsh-tool-executor-native'
 import Skills from '@deepseek-ai/dsh-skill'
 import * as FileSkills from '@deepseek-ai/dsh-skill-filesystem'
 import * as ToolSkill from '@deepseek-ai/dsh-tool-skill'
@@ -27,6 +28,14 @@ const emitMessage = (message: object) => EventEmitter.prototype.emit.call(proces
 const ordersRead = publicToolName(connectorServerName('erp'), 'orders_read')
 const ordersWrite = publicToolName(connectorServerName('erp'), 'orders_write')
 const undeclared = publicToolName(connectorServerName('erp'), 'undeclared')
+
+async function executeTool(ctx: Context, agent: Parameters<Context['tools']['execute']>[0]['agent'], name: string,
+  args: Record<string, unknown>, callId: ToolCallId, signal = new AbortController().signal) {
+  const batch = await ctx.tools.execute({ calls: [{ type: 'tool-call', name, id: callId, arguments: JSON.stringify(args) }], ...agent === undefined ? {} : { agent }, signal })
+  const result = batch.results[0]?.result
+  if (result === undefined) throw new Error(`Executor omitted result for ${name}`)
+  return result
+}
 
 class FixtureAdapter extends LlmAdapter {
   readonly requests: GenerateOptions[] = []
@@ -121,6 +130,8 @@ it('loads native skills with authorized MCP and exact knowledge scope, replays a
   let companyCacheInvalid = false
   let companyPinPending = false
   const pendingPins: string[] = []
+  let companyCatalogPending = false
+  const pendingCompanyCatalog: string[] = []
   let knowledgePending = false
   let pendingRequest: string | undefined
   const cancelled: string[] = []
@@ -130,6 +141,10 @@ it('loads native skills with authorized MCP and exact knowledge scope, replays a
     callback?.(null)
     if (message.type === 'extension-cancel') cancelled.push(String(message.requestId))
     if (message.type === 'extension-invoke') {
+      if (companyCatalogPending && (message.method === 'runtime.companyContent.read' || message.method === 'runtime.companyContent.refresh')) {
+        pendingCompanyCatalog.push(String(message.requestId))
+        return true
+      }
       if (message.method === 'runtime.companyContent.pin' && companyPinPending) {
         pendingPins.push(String(message.requestId))
         return true
@@ -186,6 +201,7 @@ it('loads native skills with authorized MCP and exact knowledge scope, replays a
   await ctx.plugin(Loader)
   await ctx.plugin(SystemPrompt)
   await ctx.plugin(Tools)
+  await ctx.plugin(NativeToolExecutor)
   await ctx.plugin(Skills)
   await ctx.plugin(FileSkills, { customSkillDirs: [join(root, 'skills')], includeDefaultRoots: false, watch: false })
   await ctx.plugin(LlmRuntime)
@@ -228,7 +244,7 @@ it('loads native skills with authorized MCP and exact knowledge scope, replays a
       expect(brokenStartupPending).toBe(true)
       expect(ctx.tools.schemas().map(tool => tool.name)).not.toContain(ordersWrite)
     })
-    await ctx.tools.execute({ name: ordersWrite, arguments: {}, callId: ToolCallId('startup-write'), signal: new AbortController().signal })
+    await executeTool(ctx, undefined, ordersWrite, {}, ToolCallId('startup-write'))
     expect(decisions.at(-1)).toBe('deny')
     expect(mcpCalls).toEqual([])
   } finally {
@@ -359,12 +375,25 @@ it('loads native skills with authorized MCP and exact knowledge scope, replays a
   emitMessage({ type: 'extension-result', requestId: pendingPins[0], result: roots })
   emitMessage({ type: 'extension-result', requestId: pendingPins[2], result: roots })
   expect(await recheck).toEqual(roots)
+  companyCatalogPending = true
+  for (const method of ['read', 'refresh'] as const) {
+    const controller = new AbortController()
+    const pending = companyContent[method](controller.signal)
+    const rejected = expect(pending).rejects.toThrow('Catalog reader stopped')
+    await vi.waitFor(() => { expect(pendingCompanyCatalog).toHaveLength(method === 'read' ? 1 : 2) })
+    const id = pendingCompanyCatalog.at(-1)!
+    controller.abort(new Error('Catalog reader stopped'))
+    await rejected
+    expect(cancelled).toContain(id)
+    emitMessage({ type: 'extension-result', requestId: id, result: roots })
+  }
+  companyCatalogPending = false
+  expect(await companyContent.read()).toEqual(roots)
   companyPinPending = false
-  const execute = (name: string) => ctx.tools.execute({ agent: handle.agent, name, arguments: {},
-    callId: ToolCallId('check-' + name), signal: new AbortController().signal })
+  const execute = (name: string) => executeTool(ctx, handle.agent, name, {}, ToolCallId('check-' + name))
   await execute(ordersWrite); expect(decisions.at(-1)).toBe('ask')
   await execute(undeclared); expect(decisions.at(-1)).toBe('deny')
-  await ctx.tools.execute({ name: ordersWrite, arguments: {}, callId: ToolCallId('workspace-write'), signal: new AbortController().signal })
+  await executeTool(ctx, undefined, ordersWrite, {}, ToolCallId('workspace-write'))
   expect(decisions.at(-1)).toBe('deny')
   connectorVersion = '2.0.0'
   expect((await execute(ordersRead)).isError).toBe(true)
@@ -383,7 +412,7 @@ it('loads native skills with authorized MCP and exact knowledge scope, replays a
   expect(JSON.stringify(restored.agent.session.snapshotEvents())).toContain('Find policy.')
   expect(await readFile(join(root, 'product-knowledge-tasks-v1', selected + '.json'), 'utf8')).toBe(snapshot)
   readAccess = 'WRITE'
-  await ctx.tools.execute({ agent: restored.agent, name: ordersRead, arguments: {}, callId: ToolCallId('restored-write'), signal: new AbortController().signal })
+  await executeTool(ctx, restored.agent, ordersRead, {}, ToolCallId('restored-write'))
   expect(decisions.at(-1)).toBe('ask')
   expect(mcpCalls).toEqual(['orders_read'])
   mcpAvailable = false
@@ -423,11 +452,11 @@ it('loads native skills with authorized MCP and exact knowledge scope, replays a
   expect(typeof (await request(91, 'connectors.refresh', { ids: ['erp'] })).error).toBe('string')
   expect(await request(92, 'connectors.refresh')).toMatchObject({ result: { connectedIds: ['erp'], unavailableIds: ['broken'] } })
   expect(ctx.tools.schemas(degraded.agent).map(tool => tool.name)).not.toContain(ordersRead)
-  await ctx.tools.execute({ agent: degraded.agent, name: 'connector_search_tools', arguments: { query: 'orders', limit: 2 }, callId: ToolCallId('discover-recovered'), signal: new AbortController().signal })
+  await executeTool(ctx, degraded.agent, 'connector_search_tools', { query: 'orders', limit: 2 }, ToolCallId('discover-recovered'))
   expect(ctx.tools.schemas(degraded.agent).map(tool => tool.name)).toContain(ordersRead)
-  await ctx.tools.execute({ name: ordersWrite, arguments: {}, agent: degraded.agent, callId: ToolCallId('recovered-write'), signal: new AbortController().signal })
+  await executeTool(ctx, degraded.agent, ordersWrite, {}, ToolCallId('recovered-write'))
   expect(decisions.at(-1)).toBe('ask')
-  await ctx.tools.execute({ name: undeclared, arguments: {}, callId: ToolCallId('recovered-undeclared'), signal: new AbortController().signal })
+  await executeTool(ctx, undefined, undeclared, {}, ToolCallId('recovered-undeclared'))
   expect(decisions.at(-1)).toBe('deny')
   catalogPending = true
   const cancelledRefresh = request(93, 'connectors.refresh')
@@ -436,7 +465,7 @@ it('loads native skills with authorized MCP and exact knowledge scope, replays a
   emitMessage({ type: 'extension-control-cancel', namespace: 'product', requestId: 93 })
   expect(await cancelledRefresh).toMatchObject({ failure: { code: 'PRODUCT_REQUEST_CANCELLED' } })
   expect(cancelled).toContain(cancelledCatalog)
-  expect((await ctx.tools.execute({ agent: degraded.agent, name: ordersRead, arguments: {}, callId: ToolCallId('cancelled-refresh-read'), signal: new AbortController().signal })).isError).toBe(true)
+  expect((await executeTool(ctx, degraded.agent, ordersRead, {}, ToolCallId('cancelled-refresh-read'))).isError).toBe(true)
   catalogPending = false
   pendingCatalog = undefined
   expect(await request(94, 'connectors.refresh')).toMatchObject({ result: { connectedIds: ['erp'] } })
@@ -484,9 +513,14 @@ it('loads native skills with authorized MCP and exact knowledge scope, replays a
   companyPinPending = true
   const unloadingCompanyCheck = expect(restoredCompanyContent.forSession(restored.agent.id)).rejects.toThrow('unloaded')
   await vi.waitFor(() => { expect(pendingPins).toHaveLength(4) })
+  companyCatalogPending = true
+  const unloadingCompanyRead = expect(restoredCompanyContent.read()).rejects.toThrow(/unloaded|Host stopped/)
+  const unloadingCompanyRefresh = expect(restoredCompanyContent.refresh()).rejects.toThrow(/unloaded|Host stopped/)
+  await vi.waitFor(() => { expect(pendingCompanyCatalog).toHaveLength(4) })
   const unloading = ctx.loader.resolve('product-runtime').fiber
   await ctx.loader.root.update([]); await ctx.loader.await(); await unloading?.dispose()
-  await unloadingCompanyCheck
+  await Promise.all([unloadingCompanyCheck, unloadingCompanyRead, unloadingCompanyRefresh])
+  expect(cancelled).toEqual(expect.arrayContaining(pendingCompanyCatalog))
   expect(cancelled).toContain(pendingPins[3])
   companyPinPending = false
   // Plugin release joins the operation but deliberately sends no response to a closed IPC owner.

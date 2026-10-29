@@ -23,7 +23,7 @@ it('adds application resources and icons through a platform-specific assembly', 
     ],
   }))
   const env = { DSH_DESKTOP_ASSEMBLY_MANIFEST: manifest, DSH_DESKTOP_APP_ID: 'com.example.desktop',
-    DSH_DESKTOP_TARGET_PLATFORM: 'win32', DSH_DESKTOP_UNSIGNED: '1' }
+    DSH_DESKTOP_TARGET_PLATFORM: 'win32', DSH_DESKTOP_UNSIGNED: '1', DSH_DESKTOP_MANDATORY_UPDATE_ENABLED: '0' }
   const assembly = readDesktopAssembly(env, 'win32')
   expect(assembly).toMatchObject({
     runtimePackages: ['example-extension'], packageDirectories: [join(root, 'extension')],

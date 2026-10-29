@@ -65,7 +65,7 @@ export function AgentPresetLabel({
   const shownPreset = selectionPresetId(preset, presets)
   const option = options.find(entry => entry.id === shownPreset)
   const text = option === undefined ? undefined : presetDisplayText(option, t)
-  const label = isUnavailablePreset(preset, presets) ? t('compositionUnavailable') : text?.name ?? shownPreset
+  const label = status === 'ready' && isUnavailablePreset(preset, presets) ? t('compositionUnavailable') : text?.name ?? shownPreset
   return (
     <span className={css.label} title={text?.description ?? t('headerHint')}>
       <IconAgentPresetOutlineRegular size={14} className={css.icon} />

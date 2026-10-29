@@ -1,15 +1,15 @@
 ---
-kind: package-library
+kind: package-reference
 description: "认证产品桌面用户，管理凭据、原生操作与产品资源。"
 ---
 
 # 产品桌面
 
-## 概述
+## Summary
 
 进入企业工作区前通过钉钉登录。员工令牌由 Electron 主进程使用操作系统加密存储。可信桌面扩展管理产品请求和原生 sidecar。
 
-## 目录
+## Table of Contents
 
 - [组合](#assembly)
 - [设备与反馈](#device-and-feedback)
@@ -21,6 +21,10 @@ description: "认证产品桌面用户，管理凭据、原生操作与产品资
 ## 组合
 
 `createExtension` 向官方壳提供启动准备、产品分发、事件和关闭钩子。产品组合负责 `desktop-extension.json`、`assembly.json`、服务端资源与原生二进制。官方 profile 默认不加载产品扩展。参见[产品子系统](../../../docs/subsystems/deepseek-harness-product.md)。
+
+同一扩展的并发 Host 准备请求共享一个操作；关闭会取消并等待准备、认证、目录同步、桥接和 sidecar 的实际结束。重复关闭共享同一个清理结果，避免退出期间重复销毁资源或让迟到的启动结果继续写入配置。
+
+企业登录、工作区配置和推理 overlay 准备完成前不启动 Host。桌面壳将认证后环境和有序 overlay 交给原生 profile 启动器，加载产品运行时与内建专家、技能；员工令牌留在主进程。通用扩展传输与页面重载规则见 [Desktop](../../../apps/desktop/README.md#low-level-development-overrides)。
 
 通过 `pnpm --dir apps/product-desktop run package <target>` 打包产品，未签名制品添加 `--unsigned`。该入口为官方构建流程选择产品组合。内部桌面 CI 与发布流程使用此入口；根目录的 `package:desktop:*` 命令打包不含产品资源的官方桌面。
 
@@ -81,35 +85,35 @@ description: "认证产品桌面用户，管理凭据、原生操作与产品资
 <a id="device-and-feedback"></a>
 ## 设备与反馈
 
-`DesktopSupport` 在员工认证后上报主进程提供的应用版本、平台、架构、显示缩放及原生方法可用性。设备标识为原生安装标识派生的稳定 UUIDv8。打包的 `product.json` 必须提供 `support.heartbeatIntervalMs`（60,000–3,600,000）及 `support.reportIntervalMs`（不小于心跳间隔，不超过 86,400,000）。完整能力上报之间发送在线心跳，元信息变更触发完整上报。失败保留可见的异常状态，在窗口聚焦或下一周期重试，不阻塞对话。账号切换取消请求并重置员工状态；关闭时取消并等待在途操作，再停止 sidecar。
+`DesktopSupport` 在员工认证后上报主进程提供的应用版本、平台、架构、显示缩放及原生方法可用性。设备标识为原生安装标识派生的稳定 UUIDv8，原始标识不通过产品桥接提供给页面。启动和上报共用健康结果校验，要求当前协议、就绪状态和设备标识能力；不满足时拒绝启动或本次上报。打包的 `product.json` 必须提供 `support.heartbeatIntervalMs`（60,000–3,600,000）及 `support.reportIntervalMs`（不小于心跳间隔，不超过 86,400,000）。完整能力上报之间发送在线心跳，元信息变更触发完整上报。失败保留可见的异常状态，在窗口聚焦或下一周期重试，不阻塞对话；恢复成功清除失败码，保留最近完整上报时间。账号切换取消请求并重置员工状态；关闭时取消并等待在途操作，再停止 sidecar。
 
 产品设置入口提供员工主动反馈，包含正文、分类及最多四张主动选择的 PNG/JPEG/WebP 截图，每张不超过 5 MiB。主进程校验内容、补充真实版本和设备 ID，并使用员工范围内的 UUID 幂等键提交；渲染进程仅收到非空回执 ID。失败、取消或回执无效时保留草稿及重试键，修改内容生成新键。设备上报和反馈不收集对话历史、本地路径、员工令牌或运行 Bootstrap 密钥。产品不提供桌面执行审计 API。
 
-<a id="model-experience"></a>
-## 模型体验
-
-### 产品桌面
-
-#### 模型看到的内容
-
-主进程通过 `prepareHost` 向 Host 提供推理配置。本地 MCP 代理将上游凭据替换为私有代理凭证，并逐请求检查连接器可用性。员工令牌留在主进程，Renderer 不接收员工令牌或运行时 Bootstrap 机密。
-
-#### Token 影响
-
-认证和原生操作不增加模型 Token。
-
-#### KV Cache 影响
-
-此包不组装模型请求或缓存条目。
-
-## 已知限制与延期工作
-<a id="known-limitations-and-deferred-work"></a>
-
-- 真实钉钉登录需要可访问的产品服务。打包和原生二进制依赖目标平台工具链，签名和部署是独立操作。
-
 <a id="dev-note"></a>
-### 开发备注
+## Dev Note
 
 关闭时取消认证轮询、停止产品刷新并结束 sidecar。方法白名单属于产品协议，preload 传输命名空间请求，壳校验请求来源。构建并准备本地 macOS 运行时后，执行 `DSH_DESKTOP_SMOKE=1 DSH_SNAPSHOT=replay pnpm exec vitest run --config vitest.web.config.ts apps/web/tests/deepseek-harness-catalog.e2e.ts`，用独立产品服务夹具验证两种 Electron profile。
 
 设备状态没有独立读取 IPC。`support.device.report` 用主进程元数据上报设备和在线状态，返回无凭据的上报结果；反馈通过 `support.feedback.submit` 发送。
+
+<a id="model-experience"></a>
+## Model Experience
+
+### Product desktop
+
+#### What the model sees
+
+主进程通过 `prepareHost` 向 Host 提供推理配置。本地 MCP 代理将上游凭据替换为私有代理凭证，并逐请求检查连接器可用性。员工令牌留在主进程，Renderer 不接收员工令牌或运行时 Bootstrap 机密。
+
+#### Token effect
+
+认证和原生操作不增加模型 Token。
+
+#### KV Cache effect
+
+此包不组装模型请求或缓存条目。
+
+## Known Limitations and Deferred Work
+<a id="known-limitations-and-deferred-work"></a>
+
+- 真实钉钉登录需要可访问的产品服务。打包和原生二进制依赖目标平台工具链，签名和部署是独立操作。

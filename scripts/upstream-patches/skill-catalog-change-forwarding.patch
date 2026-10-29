@@ -1,0 +1,442 @@
+diff --git a/packages/api/remotes/README.i18n.yaml b/packages/api/remotes/README.i18n.yaml
+index 3339260812921a8fb5f2c470bcdf92b0c2bf5d22..f52dce8762d8083cf5ce157745d37f0d9e0adda5 100644
+--- a/packages/api/remotes/README.i18n.yaml
++++ b/packages/api/remotes/README.i18n.yaml
+@@ -18,8 +18,8 @@
+   en: a80d44e0683768a5
+   zh: 379833ac180e5418
+ /deepseek-ai-dsh-api-remotes/forwarded-host-events:
+-  en: 31bb9a2f50094b84
+-  zh: 226c055739d5def7
++  en: 30bf4b9c9ce5842e
++  zh: 81034a80ad32a7b6
+ /deepseek-ai-dsh-api-remotes/build-boundary:
+   en: 7a9934a3ba5b185f
+   zh: 40457fd5707f57f0
+diff --git a/packages/api/remotes/README.md b/packages/api/remotes/README.md
+index bde4e4c93a6e1e201f1c90f9960c68f0c2556ec2..4c7956d59ed0511859b6d71bb8e9e68006de429d 100644
+--- a/packages/api/remotes/README.md
++++ b/packages/api/remotes/README.md
+@@ -48,7 +48,7 @@ An `emit` entry may declare `resources`, readers keyed by `TypertResourceMap` ki
+ 
+ The Host entry registers an independent allowlist listener set and queue for each Client stream. It rejects non-JSON ordinary-event arguments before enqueueing. For a waterfall, it projects only the top-level Agent identity and JSON request fields; a Client result must also be lossless JSON, while `next()` delegates to the following Host listener. Each scoped waterfall request must carry its routed Agent directly as `request.agent`; the Host rejects a missing or mismatched identity before forwarding. The source attaches all listeners synchronously before `ctx.typertGateway.registerRemoteEvents()` exposes Gateway's internal `$events` logical stream, so its first `ready` item proves that incremental delivery is active and carries the Host home for Client path display. Withdrawing the registration aborts active streams.
+ 
+-The payload-free `schedule/changed` event invalidates Schedule task queries; Clients re-read after a notification and reconnect. The payload-free `permission-presets/catalog-changed` event invalidates the process catalog. A Client subscribes before its first `permissionPresets.catalog()` read and re-reads the complete snapshot after a notification; the event carries no catalog state and changes no Session sequence.
++The payload-free `skills/change` event invalidates skill catalogs without changing the selected preset. The payload-free `schedule/changed` event invalidates Schedule task queries; Clients re-read after a notification and reconnect. The payload-free `permission-presets/catalog-changed` event invalidates the process catalog. A Client subscribes before its first `permissionPresets.catalog()` read and re-reads the complete snapshot after a notification; the event carries no catalog state and changes no Session sequence.
+ 
+ <a id="build-boundary"></a>
+ ## Build boundary
+diff --git a/packages/api/remotes/README.zh.md b/packages/api/remotes/README.zh.md
+index 680e41e0450ba61ceb79f4e007d4675cde54a7cf..ca1ddc004fbcfb945dae4120057b11c133dae1c2 100644
+--- a/packages/api/remotes/README.zh.md
++++ b/packages/api/remotes/README.zh.md
+@@ -48,7 +48,7 @@ Client 组合挂载 Office 转换、Commands、凭据、settings、Goal、Schedu
+ 
+ Host entry 为每条 Client 流独立注册一组 allowlist listener 和一个队列，并在普通事件入队前拒绝非 JSON 参数。对于 waterfall，它只投影顶层 agent 身份与 JSON 请求字段；Client 结果也必须能无损表示为 JSON，而 `next()` 会委托给后续 Host listener。每个作用域 waterfall 请求都必须以 `request.agent` 直接携带路由所用的 agent；Host 会在转发前拒绝缺失或不匹配的身份。该 source 在 `ctx.typertGateway.registerRemoteEvents()` 暴露 Gateway 内部的 `$events` 逻辑流前同步挂好所有 listener，因此首个 `ready` 项既能证明增量投递已就绪，也会携带供 Client 显示路径的 Host home。撤回注册会中止活动流。
+ 
+-无 payload 的 `schedule/changed` 事件使 Schedule 任务查询失效；Client 在收到通知及重连后重新读取。无 payload 的 `permission-presets/catalog-changed` 事件使进程目录失效。Client 在首次读取 `permissionPresets.catalog()` 前先订阅，并在通知后重新读取完整快照；该事件不携带目录状态，也不改变 Session 序号。
++无 payload 的 `skills/change` 事件使技能目录失效，不改变所选预设。无 payload 的 `schedule/changed` 事件使 Schedule 任务查询失效；Client 在收到通知及重连后重新读取。无 payload 的 `permission-presets/catalog-changed` 事件使进程目录失效。Client 在首次读取 `permissionPresets.catalog()` 前先订阅，并在通知后重新读取完整快照；该事件不携带目录状态，也不改变 Session 序号。
+ 
+ <a id="build-boundary"></a>
+ ## 构建边界
+diff --git a/packages/api/remotes/package.json b/packages/api/remotes/package.json
+index c0ae5bdf8208530251abc6ec7f05c1b1e671acd1..f0752715087130541f7cefbf64ba9e8e203ad62f 100644
+--- a/packages/api/remotes/package.json
++++ b/packages/api/remotes/package.json
+@@ -98,6 +98,7 @@
+     "@deepseek-ai/dsh-office-to-pdf": "workspace:*",
+     "@deepseek-ai/dsh-api-account-controller": "workspace:*",
+     "@deepseek-ai/dsh-deepseek-account": "workspace:*",
+-    "@deepseek-ai/dsh-client-product-analytics": "workspace:*"
++    "@deepseek-ai/dsh-client-product-analytics": "workspace:*",
++    "@deepseek-ai/dsh-skill": "workspace:*"
+   }
+ }
+diff --git a/packages/api/remotes/src/remote-events.ts b/packages/api/remotes/src/remote-events.ts
+index 545c4a47d2faeb3c9eb180fbfeb705d0987b2192..744b7832232c3ce3806ae09e3587748d72fa18fd 100644
+--- a/packages/api/remotes/src/remote-events.ts
++++ b/packages/api/remotes/src/remote-events.ts
+@@ -13,6 +13,7 @@ import type {} from '@deepseek-ai/dsh-permission-presets/types'
+ import type {} from '@deepseek-ai/dsh-plugin-manager/types'
+ import type {} from '@deepseek-ai/dsh-plugin-market/types'
+ import type {} from '@deepseek-ai/dsh-schedule/client'
++export type {} from '@deepseek-ai/dsh-skill/types'
+ import type { TypertForwardableEventEntry } from '@deepseek-ai/dsh-typert-protocol'
+ 
+ /**
+@@ -32,6 +33,7 @@ export const API_REMOTE_FORWARDED_EVENTS = [
+   { event: 'api-session/removed', mode: 'emit', resources: { session: (sessionId): SessionId => sessionId } },
+   { event: 'api-session/status', mode: 'emit', resources: { session: (sessionId): SessionId => sessionId } },
+   { event: 'commands/change', mode: 'emit' },
++  { event: 'skills/change', mode: 'emit' },
+   { event: 'deepseek-account/session-expired', mode: 'emit' },
+   { event: 'deepseek-account/model-sign-in-required', mode: 'emit' },
+   { event: 'credentials/record-updated', mode: 'emit' },
+diff --git a/packages/api/remotes/tests/remote-events.host.spec.ts b/packages/api/remotes/tests/remote-events.host.spec.ts
+index 977257ee442929ffa5c6223c539d7c0ee8a6c8c7..faf6b6c46af643deee5b0418dfec9f27c882e15e 100644
+--- a/packages/api/remotes/tests/remote-events.host.spec.ts
++++ b/packages/api/remotes/tests/remote-events.host.spec.ts
+@@ -123,6 +123,14 @@ describe('Remote event Host source', () => {
+       },
+     })
+ 
++    ctx.emit('skills/change')
++    for (const stream of [first, second]) {
++      await expect(stream.next()).resolves.toEqual({
++        done: false,
++        value: { event: 'skills/change', args: [] },
++      })
++    }
++
+     emitRaw(ctx, 'schedule/changed', [])
+     await expect(first.next()).resolves.toEqual({
+       done: false,
+diff --git a/packages/api/remotes/tsconfig.client.json b/packages/api/remotes/tsconfig.client.json
+index 70181b08c58fe4a0267f57584f98126c4c130865..6825551f4b780253753556e6e6ed5ecf4a667d58 100644
+--- a/packages/api/remotes/tsconfig.client.json
++++ b/packages/api/remotes/tsconfig.client.json
+@@ -11,7 +11,9 @@
+     "src/types.ts"
+   ],
+   "references": [
+-    { "path": "../../client/product-analytics/tsconfig.client.json" },
++    {
++      "path": "../../client/product-analytics/tsconfig.client.json"
++    },
+     {
+       "path": "../../../vendor/cordis"
+     },
+@@ -113,6 +115,9 @@
+     },
+     {
+       "path": "../../credentials/deepseek-account"
++    },
++    {
++      "path": "../../skill/skill"
+     }
+   ]
+ }
+diff --git a/packages/api/remotes/tsconfig.host.json b/packages/api/remotes/tsconfig.host.json
+index 3fd7ea3bc4d7f6ed6c46e442736af35c63deb17c..3b9cc7790e6d865f475a96a5f01f30af4c57d546 100644
+--- a/packages/api/remotes/tsconfig.host.json
++++ b/packages/api/remotes/tsconfig.host.json
+@@ -91,6 +91,9 @@
+     },
+     {
+       "path": "../../credentials/deepseek-account"
++    },
++    {
++      "path": "../../skill/skill"
+     }
+   ]
+ }
+diff --git a/packages/client/ui-skill/README.i18n.yaml b/packages/client/ui-skill/README.i18n.yaml
+index 59386d4b391377010e0f303b354e8ed2740e3ccd..18afae1569c3eb9c4b1491aa277b0e7cde8a6a6e 100644
+--- a/packages/client/ui-skill/README.i18n.yaml
++++ b/packages/client/ui-skill/README.i18n.yaml
+@@ -21,14 +21,14 @@
+   en: 2ba1a6158c85b46e
+   zh: 9ab58ceef8743849
+ /deepseek-ai-dsh-client-ui-skill/use-this-package/the-skill-tool-row:
+-  en: 270bc37a226ed247
+-  zh: 15a1c4c82c3a1f00
++  en: 85853c23b67b22dd
++  zh: 0a14aaf28be6d210
+ /deepseek-ai-dsh-client-ui-skill/understand-the-implementation:
+   en: df2a0ee9d2638f41
+   zh: 3b4af7e505e990ca
+ /deepseek-ai-dsh-client-ui-skill/understand-the-implementation/candidate-flow:
+-  en: e8921ef18728794c
+-  zh: dabc89ee5186d8c6
++  en: de293c5cdcb3e399
++  zh: 89232c2d10ba5537
+ /deepseek-ai-dsh-client-ui-skill/understand-the-implementation/registration:
+   en: 4b06a66c56d19ff9
+   zh: d9c8d118f73d89bb
+@@ -51,8 +51,8 @@
+   en: da53c649077dad7e
+   zh: 845f77793f8e10a2
+ /deepseek-ai-dsh-client-ui-skill/known-limitations-and-deferred-work:
+-  en: 3c5dd1c12e5a5d61
+-  zh: 19e27163cb94dbc1
++  en: 472dfbfa8086e3d5
++  zh: ec028e23351840b3
+ /deepseek-ai-dsh-client-ui-skill/known-limitations-and-deferred-work/dev-note:
+   en: e67f633dc6fe7773
+   zh: 3bb0c20c93f16f98
+diff --git a/packages/client/ui-skill/README.md b/packages/client/ui-skill/README.md
+index fcc361b188e0b6a9d4272ab42bc742f51f5b8ba0..616f5525e15aa4394c2c16580358ae7ea7a5f19b 100644
+--- a/packages/client/ui-skill/README.md
++++ b/packages/client/ui-skill/README.md
+@@ -37,7 +37,7 @@ The `preparing` stage shows only the skill icon and title, with no requested ski
+ 
+ A collapsed row renders the skill glyph, `Skill` title, and requested skill name on the same secondary font-size axis, line height, row height, and glyph scaling as ordinary Tool rows. Every lifecycle state retains the ordinary skill glyph; running calls carry one left-to-right highlight across the title, separator, and skill name, while failures replace the name with the first error line and interruptions retain their explicit status text. A settled row expands into a bounded `Instructions` card containing the exact durable tool output, with the standard trajectory `Inspect` affordance when available; this expanded card keeps its own typography. The row derives its name, lifecycle, and body only from the frozen call/result slice supplied by ui-tool, never from the current catalog, so replay stays stable when installed skills or their descriptions change. Text and icons are tertiary at rest and secondary on hover; error and interruption text retains its semantic color.
+ 
+-Hovering over `/name` highlights the entire reference. Clicking a known skill opens its provider-supplied `SKILL.md` path in the right Sidebar while keeping the token editable. An uncached click shares the per-Session catalog fetch and opens when it completes, retaining the clicked Session address. Preset changes, plugin manager operations, connection resets, and plugin disposal cancel pending previews; a later click fetches the current catalog again. Skills without a file path remain invocable but have no file preview.
++Hovering over `/name` highlights the entire reference. Clicking a known skill opens its provider-supplied `SKILL.md` path in the right Sidebar while keeping the token editable. An uncached click shares the per-Session catalog fetch and opens when it completes, retaining the clicked Session address. Skill catalog changes, preset changes, plugin manager operations, connection resets, and plugin disposal cancel pending previews; a later click fetches the current catalog again. Skills without a file path remain invocable but have no file preview.
+ 
+ -----
+ 
+@@ -51,7 +51,7 @@ The source implements no adjudication hooks and no reference codec: the pick lan
+ 
+ ### Candidate flow
+ 
+-Catalogs cache per ordinary session with a single-flight fetch; the scope-birth `warm` hook prewarms the session's entry, the forwarded `agent-preset/selected` owner event drops that one session's entry (the catalog belongs to the preset, and a blank session may switch after the warm), the forwarded `plugin-manager/changed` event clears everything (a manager operation may add or remove skill providers that every session reads), and `connection/reset` clears everything. Catalog-addressed continuable children resolve no skill candidates locally because the existing skill RPC requires an attached session; viewing their persisted history must not activate them. The list RPC rides the plugin's root-context connection captured at registration; draft chip visuals derive from the `lexicon` scan.
++Catalogs cache per ordinary session with a single-flight fetch; the scope-birth `warm` hook prewarms the session's entry, the forwarded `agent-preset/selected` owner event drops that one session's entry (the catalog belongs to the preset, and a blank session may switch after the warm), the forwarded `skills/change` and `plugin-manager/changed` events clear everything (a manager operation may add or remove skill providers that every session reads), and `connection/reset` clears everything. Catalog-addressed continuable children resolve no skill candidates locally because the existing skill RPC requires an attached session; viewing their persisted history must not activate them. The list RPC rides the plugin's root-context connection captured at registration; draft chip visuals derive from the `lexicon` scan.
+ 
+ Each catalog fetch requires an existing retained Client Session and waits for its initial history open to succeed before sending `skills/list`. A temporary `skillCatalog` reference holds that Session until the fetch settles. An unretained Session or a failed open rejects without sending the RPC; preset invalidation, plugin manager operations, connection reset, and plugin disposal also cancel a pending history wait.
+ 
+@@ -104,8 +104,7 @@ These limits define where the reference and the row fall back to generic behavio
+ - **Result-only history pages use the generic row** — keyed dispatch needs the paired call in the runtime window; pagination that leaves the call outside has no tool identity. This client presentation feature does not extend the history wire contract to recover it.
+ - **Text is the truth** — the reference is plain draft text; a hand-typed identical token is the same reference, and the host gesture boundary judges the sent text, not the menu interaction. Chip visuals derive from the lexicon scan; no occurrence identity, position tracking, or structured reference payload exists on the prompt wire.
+ - **A menu opened before the prewarm settles** shows no skill candidates for that keystroke; the next keystroke re-polls the settled cache.
+-- **Catalog changes without a forwarded event keep cached catalogs** — an HMR reload after a CLI or hand edit announces no `plugin-manager/changed` event, and adding or removing a `SKILL.md` on disk forwards no event at all, so an open session lists its previous skills until a preset switch, plugin manager operation, or connection reset.
+-- **Draft skill highlighting waits for the next catalog fetch** — a preset switch, plugin manager operation, or connection reset empties the session's lexicon, so with the menu closed an existing `/name` in the draft loses its skill highlight until the `/` menu fetches the catalog again; an open menu fetches it immediately.
++- **Draft skill highlighting waits for the next catalog fetch** — a skill catalog change, preset switch, plugin manager operation, or connection reset empties the session's lexicon, so with the menu closed an existing `/name` in the draft loses its skill highlight until the `/` menu fetches the catalog again; an open menu fetches it immediately.
+ 
+ <a id="dev-note"></a>
+ ### Dev Note
+diff --git a/packages/client/ui-skill/README.zh.md b/packages/client/ui-skill/README.zh.md
+index 6594d3807d185a7b07d63aa51c5a841a5fa6dd85..50bad812918f8bd5d8e1dca7763965011e9bff7b 100644
+--- a/packages/client/ui-skill/README.zh.md
++++ b/packages/client/ui-skill/README.zh.md
+@@ -37,7 +37,7 @@ kind: "package-reference"
+ 
+ 收起的行显示 skill 图标、`Skill` 标题与请求加载的 skill 名称，并与普通工具行使用相同的 secondary 字号轴、行高、行高度和图标缩放。所有生命周期状态都保留普通 skill 图标；运行中的调用以同一道高光从左到右扫过标题、分隔符与 skill 名称，失败时以错误首行替换名称，中断则保留明确状态文本。已结算的行展开为一个尺寸受限的 `Instructions` 卡片，其中原样呈现持久化的工具输出；可用时还会提供标准轨迹的 `Inspect` 入口，展开卡片保留自身排版。该行的名称、生命周期与正文只派生自 ui-tool 提供的冻结调用／结果切片，绝不读取当前目录，因此即使已安装的 skill 或其描述发生变化，回放仍保持稳定。 文字和图标默认使用 tertiary 色，悬停使用 secondary 色；错误和中断文字保留各自的语义色。
+ 
+-鼠标移入 `/name` 时，背景覆盖整个引用。点击已知 skill 会在右侧栏打开提供方给出的 `SKILL.md` 路径，同时保留文本的可编辑性。缓存未就绪时，点击复用该 Session 的目录请求，在完成后按点击时的 Session 地址打开预览。切换预设、插件管理操作、重置连接和插件释放会取消待处理的预览；后续点击重新获取当前目录。没有文件路径的 skill 仍可调用，但没有文件预览。
++鼠标移入 `/name` 时，背景覆盖整个引用。点击已知 skill 会在右侧栏打开提供方给出的 `SKILL.md` 路径，同时保留文本的可编辑性。缓存未就绪时，点击复用该 Session 的目录请求，在完成后按点击时的 Session 地址打开预览。技能目录变更、切换预设、插件管理操作、重置连接和插件释放会取消待处理的预览；后续点击重新获取当前目录。没有文件路径的 skill 仍可调用，但没有文件预览。
+ 
+ -----
+ 
+@@ -51,7 +51,7 @@ source 不实现任何裁决钩子，也没有引用 codec：pick 落下字面
+ 
+ ### 候选流程
+ 
+-目录按普通会话缓存，拉取走 single-flight；scope 创建时的 `warm` 钩子预热该会话的缓存项，转发的 owner 事件 `agent-preset/selected` 丢弃该会话这一项（目录属于 preset，而空会话可能在预热之后才切换），转发的 `plugin-manager/changed` 事件清空全部缓存（插件管理操作可能增删每个会话都会读取的 skill provider），`connection/reset` 清空全部缓存。由目录寻址的可继续 subagent 在客户端解析为没有 skill 候选，因为现有 skill RPC 要求会话已挂载；查看其持久化历史不得激活它。列表 RPC 使用插件注册时捕获的根上下文连接；草稿 chip 视觉由 `lexicon` 扫描派生。
++目录按普通会话缓存，拉取走 single-flight；scope 创建时的 `warm` 钩子预热该会话的缓存项，转发的 owner 事件 `agent-preset/selected` 丢弃该会话这一项（目录属于 preset，而空会话可能在预热之后才切换），转发的 `skills/change` 和 `plugin-manager/changed` 事件清空全部缓存（插件管理操作可能增删每个会话都会读取的 skill provider），`connection/reset` 清空全部缓存。由目录寻址的可继续 subagent 在客户端解析为没有 skill 候选，因为现有 skill RPC 要求会话已挂载；查看其持久化历史不得激活它。列表 RPC 使用插件注册时捕获的根上下文连接；草稿 chip 视觉由 `lexicon` 扫描派生。
+ 
+ 每次目录拉取都要求客户端已持有该会话，并等待首次历史打开成功后才发送 `skills/list`。临时的 `skillCatalog` 引用持续持有会话，直到拉取结束。未被持有的会话或打开失败会直接拒绝，不发送 RPC；预设失效、插件管理操作、连接重置和插件释放也会取消正在等待的历史打开。
+ 
+@@ -104,8 +104,7 @@ source 不实现任何裁决钩子，也没有引用 codec：pick 落下字面
+ - **仅含工具结果的 history 页使用通用行**：键控分派要求配对的工具调用位于运行时窗口内；分页将工具调用留在窗口外时，工具结果没有工具身份。这项客户端呈现功能不会为了恢复该身份而扩展 history 协议约定。
+ - **文本是唯一依据**：引用是普通的草稿文本；手动键入的相同 token 就是同一个引用，宿主手势边界评判的是发出的文本，而不是菜单交互。chip 视觉由 lexicon 扫描派生；提示词协议上没有 occurrence 身份、位置跟踪或结构化引用载荷。
+ - **预热落定之前打开的菜单**：在那次击键下不显示 skill 候选；下一次击键会重新轮询已落定的缓存。
+-- **没有转发事件的目录变更保留已缓存的目录**：CLI 或手动编辑后由 HMR 应用的重载不发出 `plugin-manager/changed` 事件，在磁盘上增删 `SKILL.md` 也不会转发任何事件，已打开的会话会继续列出之前的 skill，直到切换预设、执行插件管理操作或重置连接。
+-- **草稿中的 skill 高亮等待下一次目录拉取**：切换预设、插件管理操作或重置连接会清空该会话的 lexicon；菜单关闭时，草稿里已有的 `/name` 会失去 skill 高亮，直到 `/` 菜单重新拉取目录；菜单打开时会立即重新拉取。
++- **草稿中的 skill 高亮等待下一次目录拉取**：技能目录变更、切换预设、插件管理操作或重置连接会清空该会话的 lexicon；菜单关闭时，草稿里已有的 `/name` 会失去 skill 高亮，直到 `/` 菜单重新拉取目录；菜单打开时会立即重新拉取。
+ 
+ <a id="dev-note"></a>
+ ### 开发备注
+diff --git a/packages/client/ui-skill/package.json b/packages/client/ui-skill/package.json
+index 1f7fe22db5e1f307824f7571bc19c27c75ff7ecf..52fa48c2e8ecde7bf03aaddbc41c29a0aed70c1e 100644
+--- a/packages/client/ui-skill/package.json
++++ b/packages/client/ui-skill/package.json
+@@ -69,7 +69,8 @@
+     "react-dom": "^18.2.0",
+     "@deepseek-ai/dsh-client-ui-sidebar-right": "workspace:*",
+     "@deepseek-ai/dsh-util-values": "workspace:*",
+-    "@deepseek-ai/dsh-util-workspace-path": "workspace:*"
++    "@deepseek-ai/dsh-util-workspace-path": "workspace:*",
++    "@deepseek-ai/dsh-skill": "workspace:*"
+   },
+   "files": [
+     "locale/*.json",
+diff --git a/packages/client/ui-skill/src/client/index.ts b/packages/client/ui-skill/src/client/index.ts
+index c00dc119fd60eccc149f3570912af3b52706640d..38735f2ee713a55f637bd651ef4649ba584a871d 100644
+--- a/packages/client/ui-skill/src/client/index.ts
++++ b/packages/client/ui-skill/src/client/index.ts
+@@ -19,7 +19,7 @@
+  * snapshot locally, so one session costs one RPC. The scope-birth warm hook
+  * prewarms the session's key; a preset switch drops that one key (the
+  * catalog is the preset's, and a blank session may switch after the warm);
+- * plugin-manager/changed clears everything — a manager operation may add or
++ * skills/change and plugin-manager/changed clear everything — a manager operation may add or
+  * remove providers any session's catalog reads; connection/reset clears
+  * everything — the host catalog may differ across generations. A shared
+  * in-flight fetch deliberately outlives any single menu interaction: closing
+@@ -39,6 +39,7 @@ import type { SkillEntry } from '@deepseek-ai/dsh-api-remotes/client'
+ import type {} from '@deepseek-ai/dsh-api-session-controller/client'
+ // Type-only: the forwarded `plugin-manager/changed` declaration.
+ import type {} from '@deepseek-ai/dsh-plugin-manager/types'
++import type {} from '@deepseek-ai/dsh-skill/types'
+ import type { SessionId } from '@deepseek-ai/dsh-session/types'
+ import type { InputTriggerServiceContract, InputTriggerSource } from '@deepseek-ai/dsh-client-ui-input-trigger/client'
+ import { fileAddressFor } from '@deepseek-ai/dsh-util-workspace-path'
+@@ -253,6 +254,7 @@ export function apply(ctx: ClientContext): void {
+   // naming what changed, and a switched plugin may register providers in the
+   // global layer every session reads, so each one drops every cached catalog.
+   ctx.remote.$on('plugin-manager/changed', clearAll)
++  ctx.remote.$on('skills/change', clearAll)
+   ctx.on('connection/reset', clearAll)
+   ctx.effect(() => {
+     const unregister = inputTriggers.registerSource(source)
+diff --git a/packages/client/ui-skill/tests/browser-plugin.client.spec.ts b/packages/client/ui-skill/tests/browser-plugin.client.spec.ts
+index b426da40fdf6884e4efb19e6b502d276cf498c2e..d7c0f4a2b2a15b3ae5e84ed91dd75c8ca3e06b31 100644
+--- a/packages/client/ui-skill/tests/browser-plugin.client.spec.ts
++++ b/packages/client/ui-skill/tests/browser-plugin.client.spec.ts
+@@ -365,6 +365,19 @@ describe('catalog cache', () => {
+     expect(payloads[2]).toEqual({ sessionId: 's1' })
+   })
+ 
++  it('skills/change reloads every session without a preset change', async () => {
++    const { list, payloads } = countingList()
++    const { source, remote } = await bench(list)
++    await source.candidates(proj('s1'), req(''))
++    await source.candidates(proj('s2'), req(''))
++    remote.emit('skills/change', [])
++    expect(source.lexicon!(proj('s1'))).toBeUndefined()
++    expect(source.lexicon!(proj('s2'))).toBeUndefined()
++    await source.candidates(proj('s1'), req(''))
++    await source.candidates(proj('s2'), req(''))
++    expect(payloads).toHaveLength(4)
++  })
++
+   it('connection/reset clears every cached session', async () => {
+     const { list, payloads } = countingList()
+     const { ctx, source } = await bench(list)
+@@ -550,7 +563,7 @@ describe('reference preview', () => {
+     expect(list.mock.calls.map(([payload]) => payload)).toEqual([{ sessionId: 'first' }, { sessionId: 'second' }])
+   })
+ 
+-  it.each(['reset', 'preset', 'plugin', 'dispose'] as const)('cancels a pending preview on %s even if the RPC completes late', async (reason) => {
++  it.each(['reset', 'preset', 'plugin', 'skills', 'dispose'] as const)('cancels a pending preview on %s even if the RPC completes late', async (reason) => {
+     const gate = Promise.withResolvers<ListResult>()
+     const { ctx, source, remote, fiber, openResource } = await bench(() => gate.promise)
+     const session = proj('preview')
+@@ -561,6 +574,7 @@ describe('reference preview', () => {
+     if (reason === 'reset') ctx.emit('connection/reset')
+     else if (reason === 'preset') remote.emit('agent-preset/selected', [session.sessionId, 'minimal'])
+     else if (reason === 'plugin') remote.emit('plugin-manager/changed', [{ reason: 'plugin' }])
++    else if (reason === 'skills') remote.emit('skills/change', [])
+     else await fiber.dispose()
+     expect(listener).toHaveBeenCalledTimes(1)
+     gate.resolve({ ok: true, value: { skills: rows } })
+diff --git a/packages/client/ui-skill/tsconfig.json b/packages/client/ui-skill/tsconfig.json
+index cf3c43a1cdb3c14e6c2422e5b7a1ab07ed9c32dc..39aefac93556852fd3300be2cd23f57793e7f8cb 100644
+--- a/packages/client/ui-skill/tsconfig.json
++++ b/packages/client/ui-skill/tsconfig.json
+@@ -49,6 +49,9 @@
+     },
+     {
+       "path": "../../util/workspace-path"
++    },
++    {
++      "path": "../../skill/skill"
+     }
+   ]
+ }
+diff --git a/packages/skill/skill/README.i18n.yaml b/packages/skill/skill/README.i18n.yaml
+index bf3676faba3da9d6dd156db189fefb0f0eb56dc3..8698592afde4d5bdd4e73c20561acb2b6e370bbf 100644
+--- a/packages/skill/skill/README.i18n.yaml
++++ b/packages/skill/skill/README.i18n.yaml
+@@ -15,8 +15,8 @@
+   en: d152484eb41ac6b4
+   zh: 09388d293f9be9cb
+ /deepseek-ai-dsh-skill/use-this-package:
+-  en: cb13ae81a3e0ae68
+-  zh: e709d66f4b6b4dd5
++  en: 5f23b65bcea22dfd
++  zh: 25074c239cca1380
+ /deepseek-ai-dsh-skill/use-this-package/when-to-choose-it:
+   en: ce05cda6706f18b7
+   zh: 3262ebdaf645cb9a
+diff --git a/packages/skill/skill/README.md b/packages/skill/skill/README.md
+index 34a408f00167adf7246927c7c1bd1e07155c27d2..c6ca67a7e2f934aaf77d80fa4e512465660937f4 100644
+--- a/packages/skill/skill/README.md
++++ b/packages/skill/skill/README.md
+@@ -27,6 +27,8 @@ Use this package to give agents and users one catalog of reusable, task-specific
+ 
+ Mount the plugin to give a composition one skill registry. Skill sources (providers) and consumers (the model-facing catalog and loader, or your own code) all talk to `ctx.skills`; the registry merges everything any provider reports, so one lookup sees skills from every source.
+ 
++The client-safe `@deepseek-ai/dsh-skill/types` entry declares the payload-free `skills/change` notification; consumers invalidate their own catalogs and refetch with their lookup options. The entry uses the standard emitted JavaScript tree, which is included with its declarations in the package payload.
++
+ ### When to choose it
+ 
+ Use `dsh-skill` when agents should load skills from more than one source through one interface, or when the source of skills is not the local filesystem. Avoid it when a composition needs no skill loading at all — the plugin adds a service and a per-lookup discovery cost. The shipped local provider (`dsh-skill-filesystem`) and the model-facing consumer (`dsh-tool-skill`) are separate packages; mount them alongside when the deployment wants local skills and model access.
+diff --git a/packages/skill/skill/README.zh.md b/packages/skill/skill/README.zh.md
+index e849c312b7af526aea1015d4fd6f7c8608bfa267..4743c56aae2d7eb04c3cb55d285ba49111031503 100644
+--- a/packages/skill/skill/README.zh.md
++++ b/packages/skill/skill/README.zh.md
+@@ -27,6 +27,8 @@ kind: "package-reference"
+ 
+ 挂载插件即可让组合拥有一个统一的 skill 注册表。skill 来源（提供方）和消费方（面向模型的目录与 loader，或你自己的代码）都通过 `ctx.skills` 交互；注册表合并任意提供方报告的一切内容，因此一次查找就能看到所有来源的 skill。
+ 
++客户端安全的 `@deepseek-ai/dsh-skill/types` 入口声明无载荷的 `skills/change` 通知；消费方使自身目录缓存失效，再按自己的查询选项读取。 该入口使用标准 JavaScript 编译输出目录，与声明文件一同纳入软件包。
++
+ ### 何时选择
+ 
+ 当 agent 需要通过同一个接口从多个来源加载 skill，或 skill 来源并非本地文件系统时，选择 `dsh-skill`。当组合完全不需要加载 skill 时，请避免使用——插件会增加一个服务以及每次查找的发现成本。随附的本地提供方（`dsh-skill-filesystem`）和面向模型的消费方（`dsh-tool-skill`）是独立包；部署需要本地 skill 和模型访问时，请一并挂载。
+diff --git a/packages/skill/skill/package.json b/packages/skill/skill/package.json
+index 43086f03072e968a08fbc45f53ae772b0adf34fa..dbd4e0a3233a16dc3b2b74c19b9c7fd824c6c733 100644
+--- a/packages/skill/skill/package.json
++++ b/packages/skill/skill/package.json
+@@ -20,11 +20,16 @@
+     },
+     "./src/*": "./src/*",
+     "./package.json": "./package.json",
+-    "./locale/*.json": "./locale/*.json"
++    "./locale/*.json": "./locale/*.json",
++    "./types": {
++      "types": "./lib/types/types.d.ts",
++      "default": "./lib/types/types.js"
++    }
+   },
+   "files": [
+     "locale/*.json",
+     "lib/index.js",
++    "lib/types/**/*.js",
+     "lib/types/**/*.d.ts"
+   ],
+   "license": "MIT",
+diff --git a/packages/skill/skill/src/index.ts b/packages/skill/skill/src/index.ts
+index 9c6bbf0ccfc87dfce966de1c9e83cb66275066af..835f51be1bdb896465c1b8d3fdbd2fbd48ca635e 100644
+--- a/packages/skill/skill/src/index.ts
++++ b/packages/skill/skill/src/index.ts
+@@ -10,6 +10,7 @@
+  * @module @deepseek-ai/dsh-skill
+  */
+ 
++export type {} from './types.ts'
+ import { Context, Service } from '@deepseek-ai/cordis'
+ import type {} from '@deepseek-ai/dsh-llm'
+ import { assertNever } from '@deepseek-ai/dsh-util-values'
+@@ -284,17 +285,6 @@ declare module '@deepseek-ai/cordis' {
+   interface Context {
+     skills: SkillRegistry
+   }
+-
+-  interface Events {
+-    /**
+-     * A skill provider, runtime contribution, or provider-backed catalog may
+-     * have changed. This is an unfiltered invalidation notification; consumers
+-     * refetch the catalog for their own lookup options. Listener failures are
+-     * contained and cannot veto the registry mutation.
+-     * @mode emit
+-     */
+-    'skills/change'(): void
+-  }
+ }
+ 
+ interface IndexedCandidate {
+diff --git a/packages/skill/skill/src/types.ts b/packages/skill/skill/src/types.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..bfa548dfd8e640de263fb65e7f1ab2ed33df8d27
+--- /dev/null
++++ b/packages/skill/skill/src/types.ts
+@@ -0,0 +1,15 @@
++/** Client-safe skill catalog invalidation notification. */
++import type {} from '@deepseek-ai/cordis'
++
++declare module '@deepseek-ai/cordis' {
++  interface Events {
++    /**
++     * A skill provider, runtime contribution, or provider-backed catalog may
++     * have changed. This is an unfiltered invalidation notification; consumers
++     * refetch the catalog for their own lookup options. Listener failures are
++     * contained and cannot veto the registry mutation.
++     * @mode emit
++     */
++    'skills/change'(): void
++  }
++}

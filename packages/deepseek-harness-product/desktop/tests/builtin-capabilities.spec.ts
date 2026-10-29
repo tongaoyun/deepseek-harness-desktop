@@ -13,7 +13,7 @@ it('mounts fixed Host modules and keeps their content configuration identity', (
 
 it.each(['experts', 'skills'])('does not advertise %s as an installable client plugin', (module) => {
   const manifest: unknown = JSON.parse(readFileSync(new URL(`../../${module}/package.json`, import.meta.url), 'utf8'))
-  expect(manifest).toHaveProperty('private', true)
+  expect(manifest).toMatchObject({ private: true })
   expect(manifest).not.toHaveProperty('dsh')
   expect(manifest).not.toHaveProperty(['exports', './cordis.patch.yml'])
 })

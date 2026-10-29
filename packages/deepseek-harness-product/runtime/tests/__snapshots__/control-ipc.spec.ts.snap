@@ -1,0 +1,92 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`cancels native Session observation for tasks.capabilities.prepare and allows a later request 1`] = `
+{
+  "cancelled": {
+    "error": "Product request cancelled",
+    "failure": {
+      "code": "PRODUCT_REQUEST_CANCELLED",
+      "dependencyChecks": [],
+      "message": "Product request cancelled",
+      "resources": [],
+      "retryable": true,
+    },
+    "requestId": 1,
+    "type": "extension-control",
+  },
+  "retried": {
+    "requestId": 1,
+    "result": {
+      "basePresetId": "minimal",
+      "knowledgeBaseIds": [],
+    },
+    "type": "extension-control",
+  },
+}
+`;
+
+exports[`cancels native Session observation for tasks.capabilities.read and allows a later request 1`] = `
+{
+  "cancelled": {
+    "error": "Product request cancelled",
+    "failure": {
+      "code": "PRODUCT_REQUEST_CANCELLED",
+      "message": "Product request cancelled",
+      "resources": [],
+      "retryable": true,
+    },
+    "requestId": 1,
+    "type": "extension-control",
+  },
+  "retried": {
+    "requestId": 1,
+    "result": {
+      "basePresetId": "minimal",
+      "knowledgeBaseIds": [],
+    },
+    "type": "extension-control",
+  },
+}
+`;
+
+exports[`rejects invalid task requests through the real Loader before inspecting Sessions ({"connectorIds":["obsolete"]}) 1`] = `
+{
+  "error": "Invalid task capability request",
+  "failure": {
+    "code": "CAPABILITY_REQUEST_INVALID",
+    "message": "Invalid task capability request",
+    "resources": [],
+    "retryable": false,
+  },
+  "requestId": 1,
+  "type": "extension-control",
+}
+`;
+
+exports[`rejects invalid task requests through the real Loader before inspecting Sessions ({"knowledgeBaseIds":[42]}) 1`] = `
+{
+  "error": "Invalid task capability request",
+  "failure": {
+    "code": "CAPABILITY_REQUEST_INVALID",
+    "message": "Invalid task capability request",
+    "resources": [],
+    "retryable": false,
+  },
+  "requestId": 1,
+  "type": "extension-control",
+}
+`;
+
+exports[`rejects invalid task requests through the real Loader before inspecting Sessions ({"sessionId":" "}) 1`] = `
+{
+  "error": "Invalid task capability request",
+  "failure": {
+    "code": "CAPABILITY_REQUEST_INVALID",
+    "message": "Invalid task capability request",
+    "resources": [],
+    "retryable": false,
+  },
+  "requestId": 1,
+  "type": "extension-control",
+}
+`;

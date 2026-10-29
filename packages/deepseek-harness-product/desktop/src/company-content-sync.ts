@@ -1,4 +1,5 @@
 /** Main owns refresh coalescing, employee isolation and durable Session bindings. */
+import { addAbortListener } from 'node:events'
 import { createHash, randomUUID } from 'node:crypto'
 import { lstat, mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
@@ -55,7 +56,7 @@ export class CompanyContentSync {
     return this.roots
   }
 
-  /** Check once per configured interval; concurrent expert and skill pages share work.
+  /** Check once per configured monotonic interval; concurrent expert and skill pages share work.
    * @param signal - Cancel this caller without aborting other catalog readers.
    * @returns Completion after the validated catalog and its pointer commit together.
    */
@@ -63,7 +64,7 @@ export class CompanyContentSync {
     signal?.throwIfAborted()
     this.lifecycle.signal.throwIfAborted()
     if (this.pending) return awaitShared(this.pending, signal)
-    if (Date.now() - this.lastChecked < this.options.refreshIntervalMs) return Promise.resolve()
+    if (performance.now() - this.lastChecked < this.options.refreshIntervalMs) return Promise.resolve()
     const operation = this.track(async () => {
       const value = await this.options.load(this.lifecycle.signal)
       const roots = await installCompanyContent(this.options.root, this.options.employeeId, value, this.lifecycle.signal)
@@ -71,7 +72,7 @@ export class CompanyContentSync {
       this.lifecycle.signal.throwIfAborted()
       this.roots = roots
       this.confirmed = true
-      this.lastChecked = Date.now()
+      this.lastChecked = performance.now()
     })
     this.pending = operation
     void operation.finally(() => { if (this.pending === operation) this.pending = undefined }).catch(() => undefined)
@@ -174,9 +175,11 @@ function missing(error: unknown): boolean {
 function awaitShared<T>(pending: Promise<T>, signal?: AbortSignal): Promise<T> {
   if (!signal) return pending
   signal.throwIfAborted()
-  return new Promise<T>((resolve, reject) => {
-    const abort = () => { reject(signal.reason instanceof Error ? signal.reason : new Error('Company content request cancelled')) }
-    signal.addEventListener('abort', abort, { once: true })
-    void pending.then(resolve, reject).finally(() => { signal.removeEventListener('abort', abort) })
-  })
+  return (async () => {
+    const cancelled = Promise.withResolvers<never>()
+    using _listener = addAbortListener(signal, () => {
+      cancelled.reject(signal.reason instanceof Error ? signal.reason : new Error('Company content request cancelled'))
+    })
+    return await Promise.race([cancelled.promise, pending])
+  })()
 }

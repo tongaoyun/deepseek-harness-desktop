@@ -1,9 +1,12 @@
+import { deadline } from '@deepseek-ai/dsh-timeout';
+import { discardSkillResponse, readSkillResponse } from './response-bytes.ts';
 import type { Archive, Repository, RepositoryInput, RepositorySkill, RepositoryState, InstallRecord, CatalogInstallRecord, Serialize, SkillRequest, Log, CodedError, MutationOptions, SkillRoot } from "./types.ts";
 // 公开 GitHub 仓库目录：直连归档下载服务、固定内容快照安装，不执行仓库代码。
 import { promises as fs } from "node:fs";
 import { join, resolve } from "node:path";
 import { createHash, randomUUID } from "node:crypto";
 import { unzipSync } from "fflate";
+import { writeFileAtomic } from "@deepseek-ai/dsh-atomic-write";
 import { managerHomePath, resolveWorkspaceTarget, repositoryDestinations, trashRootPath, listTrash, restoreTrash as restoreSkillTrash, permanentlyDeleteTrash, parseSkillDoc, importUploadedSkill, deleteSkill, setSkillEnabled, readManagerState, state, createWorkspaceIndex, type indexRegisteredWorkspaces } from "./core.ts";
 import { createRepositoryUpdater, fileIndex, signature, readSkillTree, repositoryInstallRoot, recordInstallRoot, selectInstallRecord } from "./repository-updates.ts";
 
@@ -116,23 +119,6 @@ export function decodeRepositoryArchive(bytes: Uint8Array) {
   return result;
 }
 
-async function readResponse(response: Response, limit: number) {
-  if (!response.ok) throw Object.assign(failure(`仓库访问失败（HTTP ${response.status}），请稍后重试`, "error.repo.network"), { httpStatus: response.status });
-  if (Number(response.headers.get("content-length")) > limit) throw failure("仓库归档超过 32 MiB", "error.repo.tooLarge");
-  const reader = response.body?.getReader();
-  if (!reader) throw failure("仓库响应为空", "error.repo.network");
-  const chunks = []; let length = 0;
-  try {
-    for (;;) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      length += value.length;
-      if (length > limit) throw failure("仓库归档超过 32 MiB", "error.repo.tooLarge");
-      chunks.push(value);
-    }
-  } finally { await reader.cancel(); }
-  return Buffer.concat(chunks, length);
-}
 
 export function createRepositoryManager({ fetchImpl = globalThis.fetch, log, registeredWorkspaces, onWorkspaceIndexBuild }: {fetchImpl?: typeof fetch; log?: Log; registeredWorkspaces?: () => string[] | undefined; onWorkspaceIndexBuild?: () => void} = {}) {
   const file = join(managerHomePath(), "repositories.json");
@@ -164,11 +150,7 @@ export function createRepositoryManager({ fetchImpl = globalThis.fetch, log, reg
     if (bytes > STATE_READ_LIMIT || bytes > STATE_LIMIT && !(allowShrink && bytes < await currentStateBytes())) throw failure("安装来源状态超过 16 MiB。请先清理不需要的回收记录，仍有效的安装副本会保留。", "error.repo.capacity");
     await fs.mkdir(managerHomePath(), { recursive: true });
     if ((await fs.lstat(managerHomePath())).isSymbolicLink()) throw failure("仓库状态目录不能是链接");
-    const temporary = `${file}.${randomUUID()}.tmp`;
-    try {
-      await fs.writeFile(temporary, text, { encoding: "utf8", flag: "wx" });
-      await fs.rename(temporary, file);
-    } finally { await fs.rm(temporary, { force: true }); }
+    await writeFileAtomic(file, text, { mode: 0o600, dirMode: 0o700 });
   }
   async function currentStateBytes() {
     try { return (await fs.lstat(file)).size; } catch { return 0; }
@@ -180,13 +162,24 @@ export function createRepositoryManager({ fetchImpl = globalThis.fetch, log, reg
     parseRepositoryInput({ url: `${repo.owner}/${repo.name}`, ref: repo.ref, subdirectory: repo.subdirectory });
     return repo;
   }
-  async function request(url: string) {
+  async function request(url: string, signal?: AbortSignal) {
     try {
-      const response = await fetchImpl(url, { redirect: "error", signal: AbortSignal.timeout(60000), headers: { Accept: "application/zip", "User-Agent": "dsh-skills-manager" } });
-      return await readResponse(response, LIMIT);
+      using timeout = deadline(signal, 60000, 'SKILLS_REPOSITORY_TIMEOUT');
+      const active = timeout.signal;
+      active.throwIfAborted();
+      const response = await fetchImpl(url, { redirect: "error", signal: active, headers: { Accept: "application/zip", "User-Agent": "dsh-skills-manager" } });
+      if (!response.ok) {
+        discardSkillResponse(response);
+        throw Object.assign(failure(`仓库访问失败（HTTP ${response.status}），请稍后重试`, "error.repo.network"), { httpStatus: response.status });
+      }
+      if (!response.body) throw failure("仓库响应为空", "error.repo.network");
+      const bytes = await readSkillResponse(response, LIMIT, active, failure("仓库归档超过 32 MiB", "error.repo.tooLarge"));
+      active.throwIfAborted();
+      return bytes;
     } catch (caught) { const error = caught as CodedError;
+      signal?.throwIfAborted();
       if (typeof error.code === "string" && error.code.startsWith("error.repo.")) throw error;
-      throw failure("仓库网络请求失败，请检查网络后重试", "error.repo.network");
+      throw Object.assign(failure("仓库网络请求失败，请检查网络后重试", "error.repo.network"), { cause: error });
     }
   }
   async function cacheDirectory() {
@@ -198,9 +191,8 @@ export function createRepositoryManager({ fetchImpl = globalThis.fetch, log, reg
   }
   async function cacheArchive(repo: Repository, bytes: Uint8Array) {
     const version = hash(bytes), dir = await cacheDirectory();
-    const target = join(dir, `${repo.id}-${version}.zip`), temporary = join(dir, randomUUID() + ".tmp");
-    try { await fs.writeFile(temporary, bytes, { flag: "wx" }); await fs.rename(temporary, target); }
-    finally { await fs.rm(temporary, { force: true }); }
+    const target = join(dir, `${repo.id}-${version}.zip`);
+    await writeFileAtomic(target, bytes, { mode: 0o600, dirMode: 0o700 });
     return version;
   }
   async function pruneCache(repo: Repository) {
@@ -220,10 +212,10 @@ export function createRepositoryManager({ fetchImpl = globalThis.fetch, log, reg
       return decodeRepositoryArchive(bytes);
     } catch { throw failure("扫描缓存缺失或损坏，请重新检查更新后操作"); }
   }
-  async function fetchBranch(repo: Repository): Promise<Buffer> {
+  async function fetchBranch(repo: Repository, signal?: AbortSignal): Promise<Buffer> {
     const refs = repo.ref && repo.ref !== "HEAD" ? [`refs/heads/${repo.ref}`, `refs/tags/${repo.ref}`] : ["HEAD", "refs/heads/main", "refs/heads/master"];
     for (let i = 0; i < refs.length; i++) {
-      try { return await request(`https://codeload.github.com/${repo.owner}/${repo.name}/zip/${refs[i].split("/").map(encodeURIComponent).join("/")}`); }
+      try { return await request(`https://codeload.github.com/${repo.owner}/${repo.name}/zip/${refs[i].split("/").map(encodeURIComponent).join("/")}`, signal); }
       catch (caught) { const error = caught as CodedError; if (error.httpStatus !== 404 || i === refs.length - 1) throw error; }
     }
     throw failure("仓库分支不存在");
@@ -500,9 +492,11 @@ export function createRepositoryManager({ fetchImpl = globalThis.fetch, log, reg
       refreshVersions.set(id, (refreshVersions.get(id) || 0) + 1);
       return { id };
     }, false),
-    refresh: async ({ id }: {id: string}) => {
+    /** Caller cancellation stops download and queued commits; without it only the download deadline applies. Started file commits finish atomically. */
+    refresh: async ({ id }: {id: string}, signal?: AbortSignal) => {
       const { repo, version } = await serialize(async () => {
         const repo = { ...repository(await read(), id) };
+        signal?.throwIfAborted();
         const version = (refreshVersions.get(id) || 0) + 1;
         refreshVersions.set(id, version);
         return { repo, version };
@@ -511,7 +505,7 @@ export function createRepositoryManager({ fetchImpl = globalThis.fetch, log, reg
       let skills: RepositorySkill[] = [];
       let scanError: Repository["error"] = null;
       try {
-        bytes = await fetchBranch(repo);
+        bytes = await fetchBranch(repo, signal);
         const entries = decodeRepositoryArchive(bytes);
         for (const [path, bytes] of Object.entries(entries)) {
           if (path !== "SKILL.md" && !path.endsWith("/SKILL.md")) continue;
@@ -526,10 +520,11 @@ export function createRepositoryManager({ fetchImpl = globalThis.fetch, log, reg
           if (files.length > 1000) throw failure("技能文件数量超限");
           skills.push({ path: directory, files, name: name || directory.split("/").pop() || repo.name, description, body: parsed.body.trim(), documentHash: hash(bytes), valid: parsed.hasFrontmatter && /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(name) && !/^(con|prn|aux|nul|com[1-9]|lpt[1-9])$/i.test(name) && name.length <= 100 && !!description });
         }
-      } catch (caught) { const error = caught as CodedError; scanError = { code: error.code || "error.repo.invalid", error: error.message }; }
+      } catch (caught) { signal?.throwIfAborted(); const error = caught as CodedError; scanError = { code: error.code || "error.repo.invalid", error: error.message }; }
       // 网络阶段不持锁；提交时重读最新状态，旧快照不得覆盖安装和订阅变更。
       return serialize(async () => {
         const data = await read(), current = repository(data, id);
+        signal?.throwIfAborted();
         if (refreshVersions.get(id) !== version) return current;
         if (["owner", "name", "ref", "subdirectory"].some(key => current[key as keyof Repository] !== repo[key as keyof Repository])) throw failure("仓库来源已变化，请重新刷新");
         if (scanError) current.error = scanError;
@@ -611,15 +606,16 @@ export function createRepositoryManager({ fetchImpl = globalThis.fetch, log, reg
     }),
     install: ({ id, path, root: requestedRoot, workspace }: SkillRequest, registered?: string[]) => serialize(async () => {
       // 工作区只开放项目 DSH，不能与 Shared Agent 组合；路径必须来自宿主登记列表。
-      let root: any, workspaceRoot: string | undefined;
+      let root: SkillRoot, workspaceRoot: string | undefined;
       if (workspace !== undefined) {
         if (requestedRoot !== undefined && requestedRoot !== "dsh") throw failure("工作区只能安装到项目 DSH skills");
         const target = await resolveWorkspaceTarget(workspace, registered);
-        if ("ok" in target && target.ok === false) throw failure(target.error, target.code, target.params);
+        if (!("root" in target)) throw failure(target.error, target.code, target.params);
         // 保留真实的项目根 key（project-dsh:<hash>）：启用策略与回收站都按它认根。
-        root = (target as { root: any }).root;
+        root = target.root;
         workspaceRoot = root.projectRoot;
       } else root = await recordInstallRoot({ root: requestedRoot });
+      const recordRoot = workspaceRoot ? "dsh" : repositoryInstallRoot(root.key).key;
       const data = await read(), repo = repository(data, id);
       const skill = repo.skills.find((s) => s.path === path);
       if (!skill || !skill.valid) throw failure("技能不存在或格式无效");
@@ -634,9 +630,9 @@ export function createRepositoryManager({ fetchImpl = globalThis.fetch, log, reg
       const entries = Object.entries(archive).filter(([p]) => p.startsWith(prefix)).map(([p, bytes]) => ({ path: p.slice(prefix.length), data: Buffer.from(bytes).toString("base64") }));
       if (!entries.some((e) => e.path === "SKILL.md")) throw failure("仓库技能内容已失效");
       // 同名记录只替换同一位置：用户级按 root 区分 DSH 与 Shared Agent，工作区按项目根区分。
-            // 另一处的安装或回收记录必须保留，否则恢复时会丢失仓库来源。
-            data.installs = data.installs.filter((i) => !(i.name === skill.name && (i.workspace ?? null) === (workspaceRoot ?? null) && i.root === (workspaceRoot ? "dsh" : root.key)));
-      const record: InstallRecord = { id, path, root: workspaceRoot ? "dsh" : root.key, ...(workspaceRoot ? { workspace: workspaceRoot } : {}), source: { owner: repo.owner, name: repo.name, ref: repo.ref, subdirectory: repo.subdirectory }, name: skill.name, commit: repo.commit, complete: false, files: entries.map((e) => ({ path: e.path, hash: hash(Buffer.from(e.data, "base64")) })) };
+      // 另一处的安装或回收记录必须保留，否则恢复时会丢失仓库来源。
+      data.installs = data.installs.filter((i) => !(i.name === skill.name && (i.workspace ?? null) === (workspaceRoot ?? null) && i.root === recordRoot));
+      const record: InstallRecord = { id, path, root: recordRoot, ...(workspaceRoot ? { workspace: workspaceRoot } : {}), source: { owner: repo.owner, name: repo.name, ref: repo.ref, subdirectory: repo.subdirectory }, name: skill.name, commit: repo.commit, complete: false, files: entries.map((e) => ({ path: e.path, hash: hash(Buffer.from(e.data, "base64")) })) };
       data.installs.push(record);
       await write(data);
       let copied = false;

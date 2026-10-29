@@ -1,8 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { Context } from '@deepseek-ai/cordis'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
-import { SessionInputShell } from '../src/client/input/facade.ts'
 import type { DraftSnapshot } from '../src/client/contract/draft-editor.ts'
 import { createConversationStore, readConversationDraft, readConversationViewPreference } from '../src/client/stores.ts'
 
@@ -20,23 +18,23 @@ afterEach(() => {
 describe('createConversationStore', () => {
   it('owns draft, selected View, and one-shot View requests', () => {
     const store = createConversationStore().create()
-    expect(store.getSnapshot()).toEqual({ draft: '', view: null, viewRequest: null })
+    expect(store.store.getSnapshot()).toEqual({ draft: '', view: null, viewRequest: null })
 
     store.actions.setDraft('hello')
     store.actions.setView('chat')
-    expect(store.getSnapshot()).toEqual({
+    expect(store.store.getSnapshot()).toEqual({
       draft: 'hello',
       view: 'chat',
       viewRequest: null,
     })
 
     store.actions.openView('trajectory', 'call-1')
-    expect(store.getSnapshot()).toMatchObject({
+    expect(store.store.getSnapshot()).toMatchObject({
       view: 'trajectory',
       viewRequest: { view: 'trajectory', focus: 'call-1' },
     })
     store.actions.completeViewRequest()
-    expect(store.getSnapshot().viewRequest).toBeNull()
+    expect(store.store.getSnapshot().viewRequest).toBeNull()
   })
 
   it('persists per Session scope and clears the persisted value', () => {
@@ -47,7 +45,7 @@ describe('createConversationStore', () => {
     expect(localStorage.getItem(`${KEY}.sess-2`)).toBeNull()
 
     const restored = createConversationStore().create('sess-1')
-    expect(restored.getSnapshot()).toMatchObject({
+    expect(restored.store.getSnapshot()).toMatchObject({
       draft: 'draft for one',
       view: 'chat',
     })
@@ -61,25 +59,7 @@ describe('createConversationStore', () => {
     const first = handle.create()
     const second = handle.create()
     first.actions.setDraft('only first')
-    expect(second.getSnapshot().draft).toBe('')
-  })
-
-  it('persists a draft assigned before the composer mounts and restores it after remount', () => {
-    const shell = new SessionInputShell({
-      actx: {} as Context,
-      defaultSink: vi.fn(),
-      commandAttachments: { serialize: () => Promise.resolve([]), release: () => {}, unsupportedNotice: token => token },
-    })
-    shell.setDraft('Transferred task draft')
-    const handle = createConversationStore()
-    const store = handle.create('replacement-session')
-    const unbind = shell.bindDraftPersistence(store.actions.setDraft)
-    shell.persistCurrentDraft()
-    expect(handle.create('replacement-session').getSnapshot().draft).toEqual({ text: 'Transferred task draft', references: [] })
-    unbind()
-    shell.setDraft('Detached editor draft')
-    expect(handle.create('replacement-session').getSnapshot().draft).toEqual({ text: 'Transferred task draft', references: [] })
-    shell.dispose()
+    expect(second.store.getSnapshot().draft).toBe('')
   })
 
   it('reads only a usable persisted View preference', () => {

@@ -1,8 +1,10 @@
 /** Main-process product bridge. It owns credentials and exposes only product methods. */
 
 import { DeepSeekHarnessApiClient, DeepSeekHarnessApiError } from './http-client.ts'
-import { assertProductMethod, assertProductPayload, type KnowledgeFileMethod, type ProductEvent, type ProductMethod, type ProductRuntimeMethod, type ProductSession } from './protocol.ts'
+import { assertProductMethod, assertProductPayload, parseTaskCapabilityRequest, parseTaskCapabilities, parseTaskCapabilityResult,
+  type KnowledgeFileMethod, type ProductEvent, type ProductMethod, type ProductRuntimeMethod, type ProductSession } from './protocol.ts'
 import { ProductCatalogManager } from './catalog-manager.ts'
+import { ConnectorCatalogToolsSchema } from './catalog.ts'
 import { invokeKnowledge, type KnowledgeUpload } from './knowledge-bridge.ts'
 export type { KnowledgeUpload, KnowledgeUploadPending } from './knowledge-bridge.ts'
 import { ProductError } from './errors.ts'
@@ -55,8 +57,6 @@ export interface ProductBridgeOptions {
   /** Testable main-process HTTP transport. Renderer code never supplies this function. */
   readonly fetch?: typeof fetch
   readonly persistSession?: (session: ProductSession, sessionToken: string | undefined) => void | Promise<void>
-  /** Main-process native capability dispatcher. Renderer code never receives this function. */
-  readonly nativeInvoke?: (method: string, payload: unknown, signal?: AbortSignal) => Promise<unknown>
   /** Dispatch task capability operations to the trusted runtime. */
   readonly taskCapabilities?: (method: 'read' | 'prepare', payload: Readonly<Record<string, unknown>>, signal?: AbortSignal) => Promise<unknown>
   /** Dispatch knowledge selections and document rendering to the Host. */
@@ -79,7 +79,6 @@ export class DeepSeekHarnessProductBridge {
   private session: ProductSession
   private readonly listeners = new Set<(event: ProductEvent) => void>()
   private readonly api?: DeepSeekHarnessApiClient
-  private readonly nativeInvoke?: ProductBridgeOptions['nativeInvoke']
   private readonly optionsTaskCapabilities?: ProductBridgeOptions['taskCapabilities']
   private readonly connectorManagement?: ProductBridgeOptions['connectorManagement']
   private readonly connectorRuntime?: ProductBridgeOptions['connectorRuntime']
@@ -99,7 +98,6 @@ export class DeepSeekHarnessProductBridge {
     this.sessionToken = options.sessionToken
     this.session = options.initialSession ?? (options.sessionToken === undefined ? { authenticated: false } : { authenticated: true })
     this.persistSession = options.persistSession
-    this.nativeInvoke = options.nativeInvoke
     this.optionsTaskCapabilities = options.taskCapabilities
     this.connectorManagement = options.connectorManagement
     this.connectorRuntime = options.connectorRuntime
@@ -224,10 +222,6 @@ export class DeepSeekHarnessProductBridge {
     assertProductMethod(method)
     const input = assertProductPayload(payload)
     if (method === 'auth.getSession') return this.session
-    if (method.startsWith('native.')) {
-      if (this.nativeInvoke === undefined) throw new Error('deepseek-harness product: native sidecar is unavailable')
-      return this.nativeInvoke(method.slice('native.'.length), input, signal)
-    }
     if (this.api === undefined) throw new Error('deepseek-harness product: server URL is not configured')
     if (method === 'auth.beginDingTalk') {
       this.authorizationAttempt?.controller.abort(new Error('DingTalk authorization was superseded'))
@@ -374,7 +368,9 @@ export class DeepSeekHarnessProductBridge {
       await this.ensureFreshSession()
       signal?.throwIfAborted()
       if (this.optionsTaskCapabilities === undefined) throw new Error('Product task runtime is unavailable')
-      return this.optionsTaskCapabilities(method.endsWith('.read') ? 'read' : 'prepare', input, signal)
+      const request = parseTaskCapabilityRequest(input)
+      const value = await this.optionsTaskCapabilities(method.endsWith('.read') ? 'read' : 'prepare', request, signal)
+      return method === 'tasks.capabilities.read' ? parseTaskCapabilities(value) : parseTaskCapabilityResult(value, request)
     }
     if (method === 'connectors.authorization.status') {
       const result = await this.api.request(
@@ -577,6 +573,9 @@ function runtimeConnector(value: unknown, api: DeepSeekHarnessApiClient, session
     throw new Error('deepseek-harness product: invalid connector authentication mode')
   }
   if (record.transport !== 'streamable-http' || authMode === 'none') return record
+  if (!/^[\x21-\x7e]+$/.test(sessionToken)) {
+    throw new Error('deepseek-harness product: invalid employee session token')
+  }
   if (typeof record.url !== 'string' || record.url === '') {
     throw new Error('deepseek-harness product: authenticated connector URL is missing')
   }
@@ -585,10 +584,31 @@ function runtimeConnector(value: unknown, api: DeepSeekHarnessApiClient, session
   if (endpoint.href !== expected.href || endpoint.username || endpoint.password) {
     throw new Error('deepseek-harness product: authenticated connector must use the product server proxy')
   }
-  const headers = typeof record.headers === 'object' && record.headers !== null && !Array.isArray(record.headers)
-    ? record.headers as Record<string, string> : {}
+  const headers = connectorHeaders(record.headers)
   const version = z.string().min(1).max(128).parse(record.version)
   return { ...record, url: endpoint.href, headers: { ...headers, Authorization: `Bearer ${sessionToken}`, 'X-Harness-Connector-Version': version } }
+}
+
+/**
+ * Keep server supplied connector headers inside the authenticated main-process
+ * boundary. A cast here would allow non-string values or CR/LF injection to
+ * reach the MCP transport and turn a malformed catalog into a late request
+ * failure.
+ */
+function connectorHeaders(value: unknown): Record<string, string> {
+  if (value === undefined) return {}
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    throw new Error('deepseek-harness product: invalid connector headers')
+  }
+  const headers: Record<string, string> = {}
+  for (const [name, headerValue] of Object.entries(value)) {
+    if (!/^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/.test(name)
+      || typeof headerValue !== 'string' || /[\r\n]/.test(headerValue)) {
+      throw new Error('deepseek-harness product: invalid connector header')
+    }
+    headers[name] = headerValue
+  }
+  return headers
 }
 
 function rendererConnector(value: unknown): unknown {
@@ -597,8 +617,7 @@ function rendererConnector(value: unknown): unknown {
   const metadata = ['id', 'name', 'displayName', 'summary', 'description', 'category', 'icon', 'author', 'version',
     'status', 'ready', 'authMode', 'authorizationStatus', 'transport', 'minimumDesktopVersion',
     'visibility', 'ownerEmployeeId', 'canEdit', 'canSubmit', 'canDelete', 'reviewStatus', 'configurationStatus', 'canConfigure', 'managed']
-  const tools = Array.isArray(record.tools) ? record.tools.map((tool: Record<string, unknown>) =>
-    Object.fromEntries(['name', 'displayName', 'description', 'access'].filter(key => key in tool).map(key => [key, tool[key]]))) : []
+  const tools = ConnectorCatalogToolsSchema.parse(record.tools)
   return { ...Object.fromEntries(metadata.filter(key => key in record).map(key => [key, record[key]])), tools }
 }
 

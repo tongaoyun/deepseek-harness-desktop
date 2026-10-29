@@ -1,5 +1,6 @@
 /** 专家团共享词条；中文原文作为稳定键，插值不参与翻译匹配。 */
 export const TEAM_EN = {
+  '通过对话创建专家团': 'Create team in chat',
   '默认执行方式': 'Default execution mode',
   '原生智能体团队': 'Native Agent Team',
   '普通子代理': 'Standard subagents',

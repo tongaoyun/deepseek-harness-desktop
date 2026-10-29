@@ -5,9 +5,9 @@ import { Button, IconChevronDownOutlineRegular, IconLinkOutlineRegular, IconPlus
 import { ConnectorRefreshResultSchema, ExtensionRemovalResultSchema, ExtensionSubmissionResultSchema } from '@deepseek-harness/product/connector-draft'
 import { NS, type DeepSeekHarnessProductKey } from '../locales.ts'
 import css from '../DeepSeekHarnessProduct.module.css'
-import { productApi, type ProductApi } from './product-api.ts'
+import { invokeProduct, productApi, type ProductApi } from './product-api.ts'
 import { productErrorMessage } from './product-errors.ts'
-import { type Catalog, type ProductItem, type ProductDetail, type DeepSeekHarnessCatalogActions, METHODS, CATEGORY_KEYS, AUTHORIZATION_TIMEOUT_MS, nextProductRequestId, items, normalizedSearch, localizedCategory, itemMetadata, localDetail } from './catalog-shared.tsx'
+import { type Catalog, type ProductItem, type ProductDetail, type DeepSeekHarnessCatalogActions, METHODS, CATEGORY_KEYS, AUTHORIZATION_TIMEOUT_MS, items, normalizedSearch, localizedCategory, itemMetadata, localDetail } from './catalog-shared.tsx'
 import { ConnectorDetailModal } from './ConnectorView.tsx'
 import { ConnectorEditor } from './ConnectorEditor.tsx'
 import { ResourceActionsMenu } from './ResourceActionsMenu.tsx'
@@ -20,7 +20,7 @@ type CatalogSectionProps = PropsRuntime<'main'> & PropsLocale<typeof NS> & Props
 }
 interface ReadScope {
   generation: number
-  readonly requests: Map<string, ProductApi>
+  readonly requests: Set<AbortController>
 }
 
 /** Employee catalogs retain drafts and never mutate the active conversation. */
@@ -45,27 +45,32 @@ export function DeepSeekHarnessCatalogSection(props: CatalogSectionProps): React
   const [confirmation, setConfirmation] = useState<{ action: 'submit' | 'delete'; id: string; version: string; name: string }>()
   const [managementPending, setManagementPending] = useState(false)
   const [managementError, setManagementError] = useState<string>()
-  const catalogReads = useRef<ReadScope>({ generation: 0, requests: new Map() })
-  const detailReads = useRef<ReadScope>({ generation: 0, requests: new Map() })
-  const writes = useRef(new Map<string, ProductApi>())
+  const catalogReads = useRef<ReadScope>({ generation: 0, requests: new Set() })
+  const detailReads = useRef<ReadScope>({ generation: 0, requests: new Set() })
+  const writes = useRef(new Set<AbortController>())
   const managementLifetime = useRef(0)
   const employee = useRef<string | undefined>(undefined)
   const [identityRevision, setIdentityRevision] = useState(0)
   const cancelReads = (scope: ReadScope = detailReads.current): number => {
     scope.generation += 1
-    for (const [requestId, api] of scope.requests) api.cancel(requestId)
+    for (const controller of scope.requests) controller.abort()
     scope.requests.clear()
     return scope.generation
   }
 
-  const synchronizeIdentity = (session: Awaited<ReturnType<ProductApi['getSession']>>): void => {
+  const cancelWrites = (): void => {
+    for (const controller of writes.current) controller.abort()
+    writes.current.clear()
+  }
+
+  const synchronizeIdentity = (session: Awaited<ReturnType<ProductApi['getSession']>>, activeScope?: ReadScope): void => {
     const identity = session.authenticated === true ? session.employeeId ?? '' : undefined
     if (employee.current === identity) return
     employee.current = identity
-    cancelReads()
+    if (activeScope !== catalogReads.current) cancelReads(catalogReads.current)
+    if (activeScope !== detailReads.current) cancelReads()
     managementLifetime.current += 1
-    for (const [requestId, api] of writes.current) api.cancel(requestId)
-    writes.current.clear()
+    cancelWrites()
     setIdentityRevision(value => value + 1)
     setEntries([])
     setCatalogLoaded(false)
@@ -77,22 +82,15 @@ export function DeepSeekHarnessCatalogSection(props: CatalogSectionProps): React
 
   const read = async (api: ProductApi, method: string, payload?: unknown, timeoutMs?: number,
     scope: ReadScope = detailReads.current): Promise<unknown> => {
-    const requestId = nextProductRequestId()
-    scope.requests.set(requestId, api)
+    const controller = new AbortController()
+    scope.requests.add(controller)
     let timer: ReturnType<typeof setTimeout> | undefined
     try {
-      const request = api.invoke(method, payload, requestId)
-      if (timeoutMs === undefined) return await request
-      const timeout = new Promise<never>((_, reject) => {
-        timer = setTimeout(() => {
-          try { api.cancel(requestId) }
-          finally { reject(new Error('authorization request timed out')) }
-        }, timeoutMs)
-      })
-      return await Promise.race([request, timeout])
+      if (timeoutMs !== undefined) timer = setTimeout(() => { controller.abort(new Error('authorization request timed out')) }, timeoutMs)
+      return await invokeProduct(api, method, payload, controller.signal)
     } finally {
       if (timer !== undefined) clearTimeout(timer)
-      scope.requests.delete(requestId)
+      scope.requests.delete(controller)
     }
   }
 
@@ -112,7 +110,7 @@ export function DeepSeekHarnessCatalogSection(props: CatalogSectionProps): React
     try {
       const session = await api.getSession()
       if (currentGeneration !== scope.generation) return
-      synchronizeIdentity(session)
+      synchronizeIdentity(session, scope)
       if (session.authenticated !== true) {
         setAuthRequired(true)
         setEntries([])
@@ -179,8 +177,7 @@ export function DeepSeekHarnessCatalogSection(props: CatalogSectionProps): React
       cancelReads(catalogReads.current)
       cancelReads()
       managementLifetime.current += 1
-      for (const [requestId, api] of writes.current) api.cancel(requestId)
-      writes.current.clear()
+      cancelWrites()
     }
   }, [catalog])
 
@@ -240,12 +237,12 @@ export function DeepSeekHarnessCatalogSection(props: CatalogSectionProps): React
     if (!api || !confirmation || managementPending) return
     const target = confirmation
     const lifetime = managementLifetime.current
-    const requestId = nextProductRequestId()
-    writes.current.set(requestId, api)
+    const controller = new AbortController()
+    writes.current.add(controller)
     setManagementPending(true); setManagementError(undefined)
     try {
-      const value = await api.invoke(target.action === 'submit' ? 'extensions.submit' : 'extensions.connector.delete',
-        { kind: 'connector', id: target.id, version: target.version }, requestId)
+      const value = await invokeProduct(api, target.action === 'submit' ? 'extensions.submit' : 'extensions.connector.delete',
+        { kind: 'connector', id: target.id, version: target.version }, controller.signal)
       if (lifetime !== managementLifetime.current) return
       const receipt = (target.action === 'submit' ? ExtensionSubmissionResultSchema : ExtensionRemovalResultSchema).parse(value)
       if (receipt.id !== target.id || ('version' in receipt && receipt.version !== target.version)) throw new Error('Connector receipt mismatch')
@@ -256,7 +253,7 @@ export function DeepSeekHarnessCatalogSection(props: CatalogSectionProps): React
     } catch (error) {
       if (lifetime === managementLifetime.current) setManagementError(productErrorMessage(error, t, target.action === 'delete' ? 'deleteFailed' : 'saveFailed'))
     } finally {
-      writes.current.delete(requestId)
+      writes.current.delete(controller)
       if (lifetime === managementLifetime.current) setManagementPending(false)
     }
   }

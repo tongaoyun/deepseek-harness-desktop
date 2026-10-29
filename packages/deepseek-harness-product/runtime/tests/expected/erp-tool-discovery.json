@@ -6,7 +6,7 @@
   "discoveredSchemaBytes": 605,
   "initialDiscoverySchemaBytes": 1496,
   "selectedSchemaBytesIncludingDiscovery": 2100,
-  "successfulReadCalls": 5,
+  "successfulReadCalls": 3,
   "successfulWriteCalls": 1,
   "approvalOutcomes": [
     "rejected",
@@ -131,6 +131,21 @@
           ],
           "additionalProperties": false
         }
+      }
+    ]
+  },
+  "ptcExecution": {
+    "calls": [
+      "catalog_read_00",
+      "catalog_read_00"
+    ],
+    "modelTools": [
+      "run_code"
+    ],
+    "resumedResult": [
+      {
+        "type": "text",
+        "text": "{\n  \"content\": [\n    {\n      \"type\": \"text\",\n      \"text\": \"Executed catalog_read_00\"\n    }\n  ]\n}"
       }
     ]
   },

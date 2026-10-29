@@ -1,74 +1,44 @@
-import { adoptSharedRevision, catalogState } from './catalog.ts';
-import { acceptTeams, refreshTeams, subscribeTeams, teamState } from './team-cache.ts';
-import { useTeamLocale, localizedExperts } from './team-locale.ts';
+import type { ExpertClientState } from './client-state.ts'
 import React from 'react';
-import type { ExpertTeam, TeamSnapshot } from '../team-contract.ts';
-import type { ExpertSummary } from '../expert-contract.ts';
+import type { ExpertTeam } from '../team-contract.ts';
 import { TeamDetails, unwrap, type TeamRemote } from './team-ui.tsx';
 import { TeamAvatars, TeamConfirm, teamIssue, IconEye } from './team-shared.tsx';
 import { Input } from './plugin-ui.ts';
+import { useTeamDirectoryView } from './team-directory.ts';
 export function TeamMenu(props: {
+    cache: ExpertClientState;
     remote: TeamRemote;
     prepareSelect?(): (team: ExpertTeam, example?: string) => boolean | Promise<boolean>;
     onSelected(): void;
-    onExpertsChanged?(): void;
 }) {
-    const { locale, tx } = useTeamLocale();
-
-    const [snapshot, setSnapshot] = React.useState<TeamSnapshot | null>(() => teamState(props.remote));
-    const [rawExperts, setExperts] = React.useState<ExpertSummary[]>(() => {
-        const catalog = catalogState(props.remote);
-        return catalog.revision < 0 ? [] : [...catalog.experts];
-    });
-    const experts = localizedExperts(rawExperts, locale);
+    const { locale, tx, error, setError, directory, snapshot, experts } = useTeamDirectoryView({ cache: props.cache, remote: props.remote, fallback: "专家团加载失败" });
     const [query, setQuery] = React.useState('');
-    const [error, setError] = React.useState('');
     const [busy, setBusy] = React.useState(false);
     const [detail, setDetail] = React.useState<ExpertTeam | null>(null);
     const [confirm, setConfirm] = React.useState<{
         team: ExpertTeam;
         example?: string;
     } | null>(null);
-    const alive = React.useRef(true);
     React.useEffect(() => {
-        alive.current = true;
-        void load();
-        const unsubscribe = subscribeTeams(props.remote, () => {
-            if (!alive.current)
-                return;
-            const next = teamState(props.remote);
-            if (next)
-                setSnapshot(next);
-        });
-        return () => {
-            alive.current = false;
-            unsubscribe();
-        };
-    }, [props.remote]);
+        setBusy(false);
+        setError('');
+        setDetail(null);
+        setConfirm(null);
+        // The shared directory hook owns subscriptions and request cancellation.
+    }, [props.remote, props.cache]);
+    React.useEffect(() => {
+        if (!snapshot) {
+            setDetail(null);
+            setConfirm(null);
+        }
+    }, [snapshot]);
     const load = async () => {
-        try {
-            const teams = await refreshTeams(props.remote);
-            if (!alive.current)
-                return;
-            setSnapshot(teams);
-            const known = catalogState(props.remote);
-            if (known.revision >= 0)
-                setExperts([...known.experts]);
-            else {
-                const catalog = await unwrap(props.remote.getCatalog(false));
-                if (alive.current)
-                    setExperts(catalog.experts);
-            }
-            if (alive.current)
-                setError('');
-        }
-        catch (cause) {
-            if (alive.current)
-                setError(cause instanceof Error ? tx(cause.message) : tx("专家团加载失败"));
-        }
+        await directory.refresh();
+        if (!directory.getSignal()?.aborted) setError('');
     };
     const pick = async (team: ExpertTeam, example?: string, confirmed = false) => {
-        if (busy || !snapshot)
+        const signal = directory.getSignal();
+        if (busy || !snapshot || !signal || signal.aborted)
             return;
         if (!confirmed &&
             (!snapshot.enabledTeams.includes(team.id) ||
@@ -80,26 +50,25 @@ export function TeamMenu(props: {
         setBusy(true);
         try {
             if (confirmed) {
-                const next = await unwrap(props.remote.setTeamEnabled(team.id, true, snapshot.revision));
-                if (!alive.current)
+                const next = await unwrap(props.remote.setTeamEnabled(team.id, true, snapshot.revision, signal));
+                if (signal.aborted)
                     return;
-                acceptTeams(props.remote, next);
-                adoptSharedRevision(props.remote, next.revision, next.enabledExperts);
-                setSnapshot(next);
-                props.onExpertsChanged?.();
+                const accepted = props.cache.teams.accept(next);
+                props.cache.catalog.adoptRevision(accepted.revision, accepted.enabledExperts);
             }
-            if (!alive.current)
+            if (signal.aborted)
                 return;
-            if (!await insert?.(team, example))
-                throw new Error(tx("无法插入团队，请确认当前聊天草稿后重试。"));
+            const inserted = await insert?.(team, example);
+            if (signal.aborted) return;
+            if (!inserted) throw new Error(tx("无法插入团队，请确认当前聊天草稿后重试。"));
             props.onSelected();
         }
         catch (cause) {
-            if (alive.current)
+            if (!signal.aborted)
                 setError(cause instanceof Error ? tx(cause.message) : tx("选择失败。"));
         }
         finally {
-            if (alive.current)
+            if (!signal.aborted)
                 setBusy(false);
         }
     };

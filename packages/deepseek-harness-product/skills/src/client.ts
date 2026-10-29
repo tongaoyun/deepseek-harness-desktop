@@ -1,5 +1,6 @@
 import * as React from "react";
-import type { Translate, ApiRoutes, ModalProps, SessionSnapshot, SectionProps, ViewProps, Filters, ClientContext, ManagerSnapshot, Detail, TrashItem } from './client-types.ts';
+import { bytesToBase64 } from '@deepseek-ai/dsh-util-crypto';
+import type { Translate, SkillMethod, SkillInput, SkillOutput, ModalProps, SectionProps, ViewProps, Filters, ClientContext, ManagerSnapshot, Detail, TrashItem } from './client-types.ts';
 import type { SkillView, RootView, SkillRoot, CodedError, ImportResult, Diagnostic } from './types.ts';
 type SearchSkill = Partial<SkillView> & {kindLabel?: string; statusLabel?: string; rootKey?: string; rootLabel?: string};
 type UploadFile = File & {_dssmPath?: string};
@@ -11,14 +12,15 @@ type ModalState = 'detail' | 'create' | 'import' | ConfirmModal | null;
 import { createRepositoryUI, repositoryLocales } from "./repository-ui.ts";
 import { createDestinationKit, defaultDestination, destinationPayload, destinationReady, destinationLocales, destinationCss, type DestinationValue } from "./destination-picker.ts";
 import { createSourceSelect } from "./source-select.ts";
-import { resolveApiUrl } from "./api-base.ts";
-import { Button as PrimitiveButton, Modal as PrimitiveModal, SegmentedTabs, StateDot } from "@deepseek-ai/dsh-client-ui-primitives";
-import { Input, foldChevron } from "./plugin-ui.ts";
+import { createSkillApi, TYPERT_REMOTE } from "./remote-client.ts";
+import type {} from "@deepseek-ai/dsh-api-gateway/client";
+import { Button as PrimitiveButton, Modal as PrimitiveModal, SegmentedTabs, StateDot, fileSizeText, type SegmentedTab } from "@deepseek-ai/dsh-client-ui-primitives";
+import { Input, TextArea, foldChevron } from "./plugin-ui.ts";
+import { SkillBody } from "./skill-body.ts";
 
 // dsh-skills-manager client half：按全局与项目作用域切换的多 Agent Skills 管理面板。
     var react = React;
     var h = react.createElement;
-    var MUTATION_HEADERS = { "content-type": "application/json", "x-dsh-skills-manager": "1" };
     const NS = "skills-manager";
     declare module "@deepseek-ai/dsh-client-ui-slots" {
       interface LocaleNamespaceMap { "skills-manager": string }
@@ -35,8 +37,10 @@ import { Input, foldChevron } from "./plugin-ui.ts";
         "summary.total.one": "{count} 个技能", "summary.total.other": "{count} 个技能", "summary.enabled.one": "{count} 个已启用", "summary.enabled.other": "{count} 个已启用", "summary.disabled.one": "{count} 个已停用", "summary.disabled.other": "{count} 个已停用", "table.skill": "技能名称与描述", "table.status": "调用状态",
         "filter.workspace": "工作区", "filter.source": "来源", "filter.all": "全部来源", "filter.option": "{name}（{count}）", "search": "搜索", "search.placeholder": "搜索技能名称或描述", "search.clear": "清除搜索",
         "empty.company": "市场暂无技能，审核发布后会展示在这里。", "empty.search": "没有匹配的技能。", "empty.source": "该来源目录不存在或暂时没有技能。", "loading": "正在加载技能…", "note.missing": "未提供简介", "skill.linked": "外部目录链接，只读", "source.toggle": "启停来源", "skill.toggle": "启停技能", "category.toggle": "启停分类", "category.create": "新建分类", "category.uncategorized": "未分类", "category.assign": "归入{name}", "category.rename": "重命名", "category.delete": "删除分类", "category.note": "分类只记在这个来源里，不移动文件。", "category.name": "分类名称", "category.empty": "还没有技能。从条目的「更多」归入。", "category.progress": "{count} 项 · {enabled}/{usable} 启用", "category.actions": "分类操作", "category.created": "已添加分类「{name}」。文件没有新建目录。", "category.renamed": "已重命名。技能文件名没有变化。", "category.deleted": "已删除分类「{name}」。技能回到未分类，没有进回收站。", "category.assigned": "已将 {name} 归入「{category}」。文件没有移动。", "category.dragTip": "拖拽调整顺序或移动到其他分类", "category.moved": "已调整技能 {name} 的分类或顺序。", "confirm.category.title": "删除分类？", "confirm.category.desc": "「{name}」会消失，里面的技能回到未分类。文件不会移动。", "error.category.duplicate": "已有同名分类: {name}", "error.category.name": "分类名称不能为空，且不能超过 24 个字符", "error.category.notFound": "分类不存在", "error.category.root": "技能来源不存在: {root}", "error.category.position": "技能排序位置无效", "error.category.target": "排序目标不属于目标分类",
-        "detail.title": "技能详情", "detail.description": "简介", "detail.document": "SKILL.md", "detail.body": "正文", "detail.frontmatter": "Frontmatter", "detail.diagnostics": "诊断", "detail.path": "源文件", "detail.noIssues": "未发现诊断问题。",
+        "detail.title": "技能详情", "detail.description": "简介", "detail.document": "SKILL.md", "detail.body": "正文", "detail.frontmatter": "Frontmatter", "detail.diagnostics": "诊断", "detail.path": "源文件", "detail.noIssues": "未发现诊断问题。", "detail.copyBody": "复制正文", "detail.copying": "复制中…", "detail.copied": "已复制", "detail.copyFailed": "复制失败，请手动复制",
         "create.title": "创建技能", "create.name": "名称", "create.name.placeholder": "例如 code-review-helper", "create.description": "简介", "create.description.placeholder": "一句话说明什么时候使用", "create.body": "正文（Markdown）", "create.body.placeholder": "写下技能要遵循的指令、步骤和边界…", "create.chat.note": "创建的技能不会挂仓库更新，也不会修改原文件。",
+        "error.upload.picker": "无法打开文件选择器：{error}。请重试或拖拽技能到导入区。",
+        "error.workspace.registryUnavailable": "无法读取工作区登记，请重试。",
         "import.title": "导入技能", "upload.drop.title": "拖拽技能到此处", "upload.drop.copy": "支持 .zip、技能文件夹或单个 SKILL.md", "upload.selected.one": "{count} 个文件 · {size}", "upload.selected.other": "{count} 个文件 · {size}", "upload.remove": "移除所选内容", "upload.requirements": "文件要求", "upload.requirement.skill": "压缩包或文件夹需包含 SKILL.md", "upload.requirement.frontmatter": "SKILL.md 需包含 YAML 格式的技能名称和描述", "upload.requirement.copy": "导入时复制完整内容，不修改原始来源", "upload.importing": "正在安装…", "status.selected": "已选择", "select.file.invalid": "请选择 .zip 或单个 SKILL.md。", "select.folder.invalid": "所选文件夹中没有找到 SKILL.md。", "error.browse.absolute": "目录路径必须是绝对路径：{path}", "error.browse.unreadable": "无法读取目录：{path}", "error.browse.notDirectory": "不是目录：{path}",
         "trash.title": "回收站", "trash.empty": "回收站为空。", "trash.deletedAt": "删除于 {time}", "trash.source": "来源：{source}",
         "confirm.trash.title": "移到回收站？", "confirm.trash.desc": "“{name}”将从当前技能来源移入回收站，之后可以恢复到原位置。", "confirm.delete.title": "永久删除？", "confirm.delete.desc": "“{name}”将从回收站永久删除，无法恢复。",
@@ -65,8 +69,10 @@ import { Input, foldChevron } from "./plugin-ui.ts";
         "summary.total.one": "{count} skill", "summary.total.other": "{count} skills", "summary.enabled.one": "{count} enabled", "summary.enabled.other": "{count} enabled", "summary.disabled.one": "{count} disabled", "summary.disabled.other": "{count} disabled", "table.skill": "Skill name and description", "table.status": "Invocation status",
         "filter.workspace": "Workspace", "filter.source": "Source", "filter.all": "All sources", "filter.option": "{name} ({count})", "search": "Search", "search.placeholder": "Search skill names or descriptions", "search.clear": "Clear search",
         "empty.company": "No skills in the marketplace yet. Approved publications will appear here.", "empty.search": "No matching skills.", "empty.source": "This source does not exist or has no skills yet.", "loading": "Loading skills…", "note.missing": "No description provided", "skill.linked": "External directory link, read-only", "source.toggle": "Toggle source", "skill.toggle": "Toggle skill", "category.toggle": "Toggle category", "category.create": "New category", "category.uncategorized": "Uncategorized", "category.assign": "Move to {name}", "category.rename": "Rename", "category.delete": "Delete category", "category.note": "Categories stay in this source and do not move files.", "category.name": "Category name", "category.empty": "No skills yet. Use More on a skill to place it here.", "category.progress": "{count} · {enabled}/{usable} enabled", "category.actions": "Category actions", "category.created": "Added category “{name}”. No directory was created.", "category.renamed": "Renamed. Skill file names are unchanged.", "category.deleted": "Deleted category “{name}”. Skills returned to Uncategorized and were not trashed.", "category.assigned": "Moved {name} to “{category}”. The file was not moved.", "category.dragTip": "Drag to reorder or move to another category", "category.moved": "Updated the category or order for {name}.", "confirm.category.title": "Delete category?", "confirm.category.desc": "“{name}” will be removed. Its skills return to Uncategorized. Files are not moved.", "error.category.duplicate": "A category with this name already exists: {name}", "error.category.name": "Category name is required and must be at most 24 characters", "error.category.notFound": "Category not found", "error.category.root": "Skill source not found: {root}", "error.category.position": "Invalid skill ordering position", "error.category.target": "The target skill is not in the destination category",
-        "detail.title": "Skill details", "detail.description": "Description", "detail.document": "SKILL.md", "detail.body": "Body", "detail.frontmatter": "Frontmatter", "detail.diagnostics": "Diagnostics", "detail.path": "Source file", "detail.noIssues": "No diagnostic issues found.",
+        "detail.title": "Skill details", "detail.description": "Description", "detail.document": "SKILL.md", "detail.body": "Body", "detail.frontmatter": "Frontmatter", "detail.diagnostics": "Diagnostics", "detail.path": "Source file", "detail.noIssues": "No diagnostic issues found.", "detail.copyBody": "Copy body", "detail.copying": "Copying…", "detail.copied": "Copied", "detail.copyFailed": "Copy failed; select text to copy",
         "create.title": "Create skill", "create.name": "Name", "create.name.placeholder": "e.g. code-review-helper", "create.description": "Description", "create.description.placeholder": "One sentence describing when to use it", "create.body": "Body (Markdown)", "create.body.placeholder": "Write the instructions, steps, and boundaries…", "create.chat.note": "Created skills are not linked to repository updates, and no source file is modified.",
+        "error.upload.picker": "Could not open the file picker: {error}. Try again or drop the skill into the import area.",
+        "error.workspace.registryUnavailable": "Could not read registered workspaces. Try again.",
         "import.title": "Import skill", "upload.drop.title": "Drop a skill here", "upload.drop.copy": "Supports .zip, a skill folder, or one SKILL.md", "upload.selected.one": "{count} file · {size}", "upload.selected.other": "{count} files · {size}", "upload.remove": "Remove selection", "upload.requirements": "File requirements", "upload.requirement.skill": "Archives and folders must contain SKILL.md", "upload.requirement.frontmatter": "SKILL.md must include a YAML name and description", "upload.requirement.copy": "Import copies all content and never modifies the source", "upload.importing": "Installing…", "status.selected": "Selected", "select.file.invalid": "Choose a .zip archive or one SKILL.md.", "select.folder.invalid": "No SKILL.md was found in the selected folder.", "error.browse.absolute": "Folder path must be absolute: {path}", "error.browse.unreadable": "Could not read folder: {path}", "error.browse.notDirectory": "Not a folder: {path}",
         "trash.title": "Trash", "trash.empty": "Trash is empty.", "trash.deletedAt": "Deleted {time}", "trash.source": "Source: {source}",
         "confirm.trash.title": "Move to trash?", "confirm.trash.desc": "“{name}” will move out of its current skill source and can be restored to the same location later.", "confirm.delete.title": "Delete forever?", "confirm.delete.desc": "“{name}” will be permanently deleted from trash and cannot be recovered.",
@@ -89,10 +95,10 @@ import { Input, foldChevron } from "./plugin-ui.ts";
 
     Object.assign(DICT.zh, repositoryLocales.zh, destinationLocales.zh);
     Object.assign(DICT.en, repositoryLocales.en, destinationLocales.en);
+function createSkillsPage(localeService: ClientContext["locale"]) {
     var SourceSelect = createSourceSelect(react);
     var destinationKit = createDestinationKit({ react, SourceSelect, translateError });
     var DestinationPicker = destinationKit.DestinationPicker;
-    var useRepositoryUI = createRepositoryUI({ react: react, Modal: Modal, Input: Input, Button: PrimitiveButton, SourceSelect: SourceSelect, destination: destinationKit, api: callApi, headers: MUTATION_HEADERS, translateError: translateError, getLocale: hostLocale });
     var CSS = destinationCss + `.dssm-library-panel{display:flex;flex-direction:column;gap:14px}.dssm-sources{display:flex;flex-direction:column;gap:9px}.dssm-scope-tabs{display:grid!important;box-sizing:border-box!important;width:100%;height:32px!important;min-height:32px!important;max-height:32px!important;padding:2px!important;border-radius:var(--dsw-radius-sm,8px)!important;border:0.5px solid var(--dsw-alias-border-l2)!important;background:var(--dsw-alias-bg-layer-1)!important}.dssm-scope-tabs>span[aria-hidden="true"],.dssm-scope-tabs>[class*="indicator"]{width:calc((100% - 4px)/4)!important;inset:2px auto 2px 2px!important;border-radius:6px!important;border:0.5px solid var(--dsw-alias-border-l3,rgba(255,255,255,.12))!important;background:var(--dsw-alias-bg-layer-3,rgba(255,255,255,.08))!important;box-shadow:none!important}.dssm-scope-tabs [role=tab]{display:inline-flex!important;align-items:center!important;justify-content:center!important;gap:6px!important;height:28px!important;padding:0 12px!important;border-radius:6px!important;font-size:13px!important;line-height:20px!important;color:var(--dsw-alias-label-secondary)!important;text-align:center!important;box-sizing:border-box!important;transition:color 150ms ease!important}.dssm-scope-tabs [role=tab]:hover{color:var(--dsw-alias-label-primary)!important}.dssm-scope-tabs [role=tab][aria-selected="true"]{color:var(--dsw-alias-label-primary)!important;font-weight:600!important}.dssm-scope-tabs [role=tab] svg{flex:none;display:block}.dssm-source-head{display:flex;align-items:center;gap:8px;min-width:0;padding:8px 12px}.dssm-source-toggle{display:flex;align-items:center;gap:8px;flex:1;min-width:0;overflow:hidden;padding:0;border:0;background:transparent;color:inherit;font:inherit;text-align:left;cursor:pointer}.dssm-source-toggle:focus-visible{outline:var(--dsw-focus-ring-width,1px) solid var(--dsw-focus-ring-color,var(--dsw-alias-brand-primary));outline-offset:2px}.dssm-fold-chevron{flex:none;color:var(--dsw-alias-label-tertiary);transform:rotate(-90deg);transition:transform 160ms ease}.dssm-fold-chevron.is-open{transform:rotate(0deg)}@media (prefers-reduced-motion:reduce){.dssm-fold-chevron{transition:none}}.dssm-source-label{display:flex;align-items:center;gap:10px;min-width:0;flex:1}.dssm-drag-handle{cursor:grab;color:var(--dsw-alias-label-tertiary,#888);font-size:13px;line-height:1;display:inline-flex;align-items:center;justify-content:center;width:16px;height:22px;border-radius:var(--dsw-radius-sm,8px);flex-shrink:0;user-select:none;transition:color 0.15s}.dssm-skill-row:hover .dssm-drag-handle{color:var(--dsw-alias-label-secondary,#b9b9b9)}.dssm-drag-handle:active{cursor:grabbing}.dssm-cat.drag-over{border-color:var(--dsw-alias-brand-primary,#3b82f6);box-shadow:0 0 0 1px var(--dsw-alias-brand-primary,#3b82f6)}.dssm-skill-row.dragging{opacity:0.4;background:var(--dsw-alias-bg-layer-2,var(--dsw-alias-interactive-bg-hover,transparent))}.dssm-skill-row.drop-before{box-shadow:inset 0 2px 0 var(--dsw-alias-brand-primary,#3b82f6)}.dssm-skill-row.drop-after{box-shadow:inset 0 -2px 0 var(--dsw-alias-brand-primary,#3b82f6)}.dssm-skill-row{display:flex;align-items:center;gap:8px;margin:0;padding:11px 13px;border:0;border-top:0.5px solid var(--dsw-alias-border-l1,#3a3a3a);border-radius:0;background:transparent}.dssm-skill-copy{display:flex;flex-direction:column;gap:3px;min-width:0;flex:1}.dssm-skill-actions{display:flex;align-items:center;gap:8px;flex:none;flex-wrap:nowrap}.dssm-skill-desc{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--dsw-alias-label-tertiary,#a0a0a0);font-size:12px;line-height:18px}.dssm-icon-danger{color:var(--dsw-alias-state-error-primary,#ef7272)}.dssm-skill-row .dssm-name{font-size:14px;font-weight:650;color:var(--dsw-alias-label-primary,#eeeeee)}.dssm-skill-actions{display:flex;align-items:center;gap:8px;flex:none}.dssm-source{overflow:hidden;border:0.5px solid var(--dsw-alias-border-l2,#494949);border-radius:var(--dsw-radius-xl,20px);background:transparent}.dssm-textarea{box-sizing:border-box;display:block;width:100%;min-height:160px;margin:0;padding:8px 12px;border:0.5px solid var(--dsw-alias-border-l4);border-radius:var(--dsw-radius-md,12px);background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-primary);font:inherit;font-size:14px;line-height:22px;resize:vertical}.dssm-textarea:focus,.dssm-textarea:focus-visible{outline:none;border-color:var(--dsw-alias-state-business-primary)}.dssm-textarea[readonly]{resize:none}.dssm-source-title{font-size:14px;font-weight:650;white-space:nowrap;flex:none}.dssm-source-path{min-width:0;max-width:50%;margin-left:auto;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--dsw-alias-label-tertiary,#a0a0a0);font-size:11px}.dssm-source-actions{display:flex;flex:none;align-items:center;gap:8px;margin-left:12px}.dssm-cat{margin:0 10px 8px;border:0.5px solid var(--dsw-alias-border-l1,#3a3a3a);border-radius:var(--dsw-radius-lg,16px)}.dssm-cat-head{display:flex;align-items:center;gap:8px;min-height:40px;padding:0 8px 0 6px}.dssm-cat-main{display:flex;align-items:center;gap:8px;flex:1;min-width:0;min-height:36px;padding:4px;border:0;background:transparent;color:inherit;font:inherit;text-align:left;cursor:pointer}.dssm-cat-title{font-size:14px;font-weight:700;display:inline-flex;align-items:center}.dssm-cat-note{margin:2px 16px 8px}.dssm-fallback{margin-top:4px;color:var(--dsw-alias-label-secondary,#b9b9b9)}.dssm-section{box-sizing:border-box;display:flex;width:100%;min-width:0;padding:2px 0 36px;container-type:inline-size;flex-direction:column;gap:14px;color:var(--dsw-alias-label-primary,#eeeeee);font-family:inherit}.dssm-head{display:flex;flex-direction:column;align-items:stretch;gap:16px}.dssm-title-block{min-width:0}.dssm-title-row{display:flex;align-items:center;gap:8px 12px;min-width:0;flex-wrap:wrap}.dssm-feedback-links{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.dssm-feedback-links>span[data-mpi-check]{display:inline-flex;align-items:center}.dssm-title{margin:0;font-size:24px;line-height:32px;font-weight:600;letter-spacing:-.4px;white-space:nowrap}.dssm-desc{margin:12px 0 0;color:var(--dsw-alias-label-tertiary,#a0a0a0);font-size:14px;line-height:22px}.dssm-actions{display:flex;flex-wrap:wrap;gap:8px;margin-left:0;flex:none}.dssm-upload-link:focus-visible,.dssm-file-remove:focus-visible{outline:2px solid var(--dsw-alias-brand-primary,var(--dsw-alias-label-primary,#f2f2f2));outline-offset:2px}.dssm-summary{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));overflow:hidden;border:0.5px solid var(--dsw-alias-border-l2,#494949);border-radius:var(--dsw-radius-lg,16px);background:var(--dsw-alias-bg-layer-1)}.dssm-stat{padding:4px 10px;border-right:0.5px solid var(--dsw-alias-border-l1,#3a3a3a);font-size:12px;line-height:18px;color:var(--dsw-alias-label-secondary,#b9b9b9)}.dssm-stat:last-child{border-right:0}.dssm-stat strong{margin-right:4px;color:var(--dsw-alias-label-primary,#eeeeee);font-size:14px;font-weight:650}.dssm-filters{display:flex;align-items:center;gap:8px;flex-wrap:nowrap;width:100%!important;min-width:0;box-sizing:border-box}.dssm-filter-actions{display:flex;align-items:center;gap:8px;flex:none;margin-left:auto}.dssm-filters .dssm-search{flex:1 1 0;min-width:160px;max-width:none}.dssm-filters .dssm-source-filter,.dssm-filters .dssm-status-filter,.dssm-filters .dssm-project-filter,.dssm-filters .dssm-menu-select-wrap,.dssm-filters span[class*="_root_"],.dssm-filters .dssm-source-select-menu,.dssm-filters .dssm-menu-select-trigger{width:auto!important;min-width:0!important;display:inline-flex!important;flex:none}.dssm-field .dssm-menu-select-wrap,.dssm-destination-pair .dssm-menu-select-wrap,.dssm-destination-pair span[class*="_root_"]{display:flex!important;width:100%!important;min-width:0!important;height:auto!important;padding:0!important;margin:0!important;border:0!important;background:transparent!important}.dssm-destination-pair .dssm-menu-select-trigger,.dssm-form .dssm-menu-select-trigger{display:flex!important;width:100%!important;height:36px!important;border-radius:var(--dsw-radius-md,10px)!important;padding:0 12px!important;box-sizing:border-box!important}.dssm-source-select-menu{min-width:130px;max-width:280px}.dssm-menu-select-trigger{display:inline-flex;align-items:center;justify-content:space-between;gap:6px;height:32px;padding:0 10px;border:0.5px solid var(--dsw-alias-border-l2);border-radius:var(--dsw-radius-sm,8px);background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-primary);font:inherit;font-size:13px;line-height:20px;cursor:pointer;user-select:none;width:max-content;min-width:8em;transition:border-color 120ms ease,background 120ms ease}.dssm-menu-select-trigger:hover:not(:disabled){border-color:var(--dsw-alias-border-l3,#555)}.dssm-menu-select-trigger.is-open,.dssm-menu-select-trigger:focus-visible{border-color:var(--dsw-alias-brand-primary)!important;outline:var(--dsw-focus-ring-width,1px) solid var(--dsw-focus-ring-color,var(--dsw-alias-brand-primary))!important;outline-offset:0!important}.dssm-menu-select-trigger:disabled{opacity:.5;cursor:default}.dssm-menu-select-label{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1;text-align:left}.dssm-menu-select-arrow{color:var(--dsw-alias-label-secondary);flex-shrink:0}.dssm-count{color:var(--dsw-alias-label-tertiary,#a0a0a0);font-size:12px;white-space:nowrap;flex:none}.dssm-name{overflow-wrap:anywhere;font-size:13px;font-weight:570}.dssm-note{overflow-wrap:anywhere;margin-top:2px;color:var(--dsw-alias-label-secondary,#b9b9b9);font-size:11px;line-height:17px}.dssm-enabled{color:var(--dsw-alias-state-success-primary,#51b976);font-size:12px;white-space:nowrap}.dssm-disabled{color:var(--dsw-alias-state-warn-primary,#d49245);font-size:12px;white-space:nowrap}.dssm-shadowed{color:var(--dsw-alias-label-tertiary,#a0a0a0);font-size:12px;white-space:nowrap}.dssm-trash-count{padding:2px 7px;border-radius:999px;corner-shape:round;background:var(--dsw-alias-interactive-bg-hover,rgba(128,128,128,.12));color:var(--dsw-alias-label-secondary,#b9b9b9);font-size:11px}.dssm-empty{padding:25px 14px;color:var(--dsw-alias-label-tertiary,#a0a0a0);font-size:12px;text-align:center}.dssm-feedback{padding:9px 11px;border:0.5px solid var(--dsw-alias-border-l2,#494949);border-radius:var(--dsw-radius-lg,16px);color:var(--dsw-alias-label-secondary,#b9b9b9);font-size:12px}.dssm-warning{border-color:var(--dsw-alias-state-warn-primary,#d49245);color:var(--dsw-alias-state-warn-primary,#d49245)}.dssm-error{border-color:var(--dsw-alias-state-error-primary,#ef7272);color:var(--dsw-alias-state-error-primary,#ef7272)}.dssm-form,.dssm-field,.dssm-detail-section{display:flex;flex-direction:column}.dssm-form{gap:12px}.dssm-detail{display:flex;flex-direction:column;gap:12px;min-width:0}.dssm-detail .dssm-desc{margin:0}.dssm-field{gap:6px}.dssm-label{font-size:12px;color:var(--dsw-alias-label-secondary,#b9b9b9)}.dssm-detail-title{font-size:14px;line-height:22px;font-weight:650}.dssm-help{margin:0;color:var(--dsw-alias-label-tertiary,#a0a0a0);font-size:11px;line-height:18px}.dssm-batch-list{display:flex;flex-direction:column;gap:6px;max-height:360px;overflow-y:auto;margin:12px 0;padding:2px}.dssm-batch-item{display:flex;align-items:center;gap:10px;padding:8px 12px;border:0.5px solid var(--dsw-alias-border-l1,#3a3a3a);border-radius:var(--dsw-radius-lg,16px);background:var(--dsw-alias-bg-layer-1,var(--dsw-alias-interactive-bg-hover,transparent));cursor:pointer;user-select:none;transition:background 0.15s,border-color 0.15s}.dssm-batch-item:hover{background:var(--dsw-alias-bg-layer-2,var(--dsw-alias-interactive-bg-hover,transparent));border-color:var(--dsw-alias-border-l2,#494949)}.dssm-batch-item.selected{border-color:var(--dsw-alias-brand-primary,#3b82f6);background:var(--dsw-alias-state-business-tertiary)}.dssm-batch-item input[type="checkbox"]{cursor:pointer;margin:0;flex-shrink:0;width:15px;height:15px}.dssm-batch-info{display:flex;flex-direction:column;gap:2px;min-width:0;flex:1}.dssm-batch-name-row{display:flex;align-items:center;justify-content:space-between;gap:8px;min-width:0}.dssm-batch-name{font-size:13px;font-weight:600;color:var(--dsw-alias-label-primary,#eee);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.dssm-batch-cat-tag{font-size:10px;padding:1px 6px;border-radius:var(--dsw-radius-xs,4px);background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-secondary,#b9b9b9);white-space:nowrap;flex-shrink:0}.dssm-batch-desc{font-size:12px;line-height:16px;color:var(--dsw-alias-label-tertiary,#a0a0a0);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-top:2px}.dssm-modal-actions{display:flex;justify-content:flex-end;flex-wrap:wrap;gap:8px}.dssm-hidden-input{display:none}.dssm-dropzone{box-sizing:border-box;display:flex;width:100%;min-height:170px;flex-direction:column;align-items:center;justify-content:center;gap:7px;padding:22px;border:1px dashed var(--dsw-alias-border-l3,#555555);border-radius:var(--dsw-radius-lg,16px);background:var(--dsw-alias-bg-layer-1,var(--dsw-alias-interactive-bg-hover,transparent));color:var(--dsw-alias-label-secondary,#b9b9b9);transition:border-color 180ms ease,background 180ms ease}.dssm-dropzone:hover,.dssm-dropzone-active{border-color:var(--dsw-alias-brand-primary,var(--dsw-alias-label-primary,#f2f2f2));background:var(--dsw-alias-interactive-bg-hover,rgba(128,128,128,.12))}.dssm-dropzone-title{color:var(--dsw-alias-label-primary,#eeeeee);font-size:14px;font-weight:620}.dssm-dropzone-copy{font-size:12px;line-height:18px;text-align:center}.dssm-upload-choices{display:flex;align-items:center;gap:7px}.dssm-upload-link,.dssm-file-remove{padding:0;border:0;background:transparent;font:inherit;font-size:12px;cursor:pointer}.dssm-upload-link{color:var(--dsw-alias-label-secondary,#b9b9b9)}.dssm-upload-link:hover{color:var(--dsw-alias-label-primary,#eeeeee);text-decoration:underline}.dssm-upload-link:disabled{opacity:.45;cursor:default}.dssm-upload-divider{color:var(--dsw-alias-label-tertiary,#a0a0a0);font-size:11px}.dssm-file{display:flex;align-items:center;gap:9px;padding:10px 11px;border:0.5px solid var(--dsw-alias-border-l2,#494949);border-radius:var(--dsw-radius-lg,16px);background:var(--dsw-alias-bg-layer-1,var(--dsw-alias-interactive-bg-hover,transparent));color:var(--dsw-alias-label-primary,#eeeeee);font-size:12px}.dssm-file-kind{display:inline-flex;min-width:30px;height:24px;align-items:center;justify-content:center;border-radius:var(--dsw-radius-sm,8px);background:var(--dsw-alias-interactive-bg-hover,rgba(128,128,128,.12));color:var(--dsw-alias-label-secondary,#b9b9b9);font-size:9px;font-weight:700}.dssm-file-name{min-width:0;overflow:hidden;flex:1;text-overflow:ellipsis;white-space:nowrap}.dssm-file-meta{color:var(--dsw-alias-label-tertiary,#a0a0a0);font-size:11px;white-space:nowrap}.dssm-file-remove{width:24px;height:24px;color:var(--dsw-alias-label-secondary,#b9b9b9);font-size:18px}.dssm-upload-requirements{padding:1px 1px 0}.dssm-upload-requirements ul{display:flex;margin:7px 0 0;padding-left:18px;flex-direction:column;gap:5px;color:var(--dsw-alias-label-tertiary,#a0a0a0);font-size:11px;line-height:17px}.dssm-detail-section{gap:7px}.dssm-detail-path{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:14px;line-height:22px}.dssm-detail-section .dssm-note,.dssm-diag{font-size:14px;line-height:22px}.dssm-detail-path{padding:8px 10px;border-radius:var(--dsw-radius-lg,16px);background:var(--dsw-alias-bg-layer-1,var(--dsw-alias-interactive-bg-hover,transparent));color:var(--dsw-alias-label-secondary,#b9b9b9);word-break:break-all}.dssm-diag{padding:8px 10px;border-left:2px solid var(--dsw-alias-state-warn-primary,#d49245);background:var(--dsw-alias-bg-layer-1,var(--dsw-alias-interactive-bg-hover,transparent));color:var(--dsw-alias-label-secondary,#b9b9b9)}.dssm-trash-panel{display:flex;flex-direction:column;gap:10px}.dssm-trash-item{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:8px;padding:11px 13px;border:0.5px solid var(--dsw-alias-border-l2,rgba(128,128,128,.2));border-radius:var(--dsw-radius-xl,20px);background:transparent}.dssm-trash-main{min-width:0;display:flex;flex-direction:column;gap:6px}.dssm-trash-item .dssm-name{font-size:14px;line-height:20px;color:var(--dsw-alias-label-primary,inherit)}.dssm-trash-meta{display:flex;align-items:center;flex-wrap:wrap;gap:6px 12px;font-size:11px;line-height:17px;color:var(--dsw-alias-label-tertiary,#909090);overflow-wrap:anywhere}.dssm-trash-source{min-width:0;background:transparent;color:var(--dsw-alias-label-tertiary,#a0a0a0)}.dssm-trash-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 @container(max-width:400px){.dssm-source-path{display:none}}@media(max-width:760px){.dssm-summary{grid-template-columns:repeat(2,minmax(0,1fr))}}@media(max-width:720px){.dssm-title-row{flex-wrap:wrap}}@container(max-width:520px){.dssm-trash-item{grid-template-columns:minmax(0,1fr)}.dssm-skill-row{flex-wrap:wrap}.dssm-skill-actions{width:100%;margin-inline-start:0;justify-content:flex-end}.dssm-trash-actions{justify-content:flex-end}.dssm-head{flex-direction:column}.dssm-actions{width:100%;margin-left:0}.dssm-actions button{flex:1}.dssm-summary{grid-template-columns:1fr}}.dssm-row-state{display:flex;align-items:center;justify-content:flex-end;gap:8px}
 .dssm-enable-switch{box-sizing:border-box;position:relative;flex:0 0 auto;width:36px;height:20px;padding:2px;border:0;border-radius:999px;corner-shape:round;background:var(--dsw-alias-border-l3,#555);cursor:pointer}.dssm-enable-switch[aria-checked=true]{background:var(--dsw-alias-brand-primary)}.dssm-enable-switch:disabled{cursor:default;opacity:.5}.dssm-enable-switch:focus-visible{outline:var(--dsw-focus-ring-width,1px) solid var(--dsw-focus-ring-color,var(--dsw-alias-state-business-primary));outline-offset:2px}.dssm-enable-switch-thumb{display:block;width:16px;height:16px;border-radius:50%;corner-shape:round;background:var(--dsw-alias-label-primary-foreground,#fff);transition:transform 120ms ease;pointer-events:none}.dssm-enable-switch[aria-checked=false] .dssm-enable-switch-thumb{background:var(--dsw-alias-switch-thumb,#fff)}.dssm-enable-switch[aria-checked=true] .dssm-enable-switch-thumb{transform:translateX(16px)}
@@ -101,6 +107,10 @@ import { Input, foldChevron } from "./plugin-ui.ts";
 .dssm-stat strong{display:inline-block;min-width:2ch;font-variant-numeric:tabular-nums}
 .dssm-market-source{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--dsw-alias-label-secondary)}
 .dssm-modal{max-height:100%}
+.dssm-modal.dssm-modal-wide{width:min(760px,100%)}
+.dssm-detail-actions{display:flex;justify-content:flex-end;margin:8px 0}
+.dssm-detail-body{min-height:0;font-family:ui-monospace,SFMono-Regular,Consolas,monospace;line-height:1.6}
+.dssm-detail-body[readonly]{resize:vertical}
 .dssm-modal-content{flex:1;min-height:0;overflow:hidden}
 .dssm-modal-content>div:last-child{flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain;scrollbar-gutter:stable}
 
@@ -111,16 +121,14 @@ import { Input, foldChevron } from "./plugin-ui.ts";
       if (payload instanceof Error && !(payload as CodedError).code) return payload.message;
       if (payload && typeof payload === "object") {
         const item = payload as Diagnostic & {message?: unknown};
-        if (item.code) { var params = Object.assign({}, item.params || {}); if (params.action) params.action = translateOrFallback(t, "action." + params.action, String(params.action)); var translated = t(item.code, params); if (typeof translated === "string" && translated !== item.code) return translated; if (translated === item.code) return item.error !== undefined ? translateError(t, item.error) : item.code; }
+        if (typeof item.code === "string" && item.code) { var params = Object.assign({}, item.params || {}); if (params.action) params.action = translateOrFallback(t, "action." + params.action, String(params.action)); var translated = t(item.code, params); if (typeof translated === "string" && translated !== item.code) return translated; if (translated === item.code) return item.error !== undefined ? translateError(t, item.error) : item.code; }
         if (item.error !== undefined) return translateError(t, item.error); if (item.message !== undefined) return String(item.message);
       }
       return String(payload == null ? "" : payload);
     }
-    function parseApiResponse<T = unknown>(response: Response): Promise<T> { return response.json().catch(function () { var error: CodedError = new Error("non-json response"); error.code = "error.proto.nonJson"; error.params = { status: response.status }; throw error; }).then(function (value: unknown) { const payload = value as {ok?: boolean; data: T}; if (!response.ok || payload.ok === false) throw payload; return payload.data; }); }
-    function callApi<K extends keyof ApiRoutes>(path: K, options?: RequestInit): Promise<ApiRoutes[K]> { return fetch(resolveApiUrl(`/api/dsh-skills-manager${path}`), options).then(parseApiResponse<ApiRoutes[K]>); }
     function isSkillEnabled(skill: Partial<SkillView>): boolean { if (skill.enabled !== undefined) return skill.enabled === true; return !!(skill.invocationPolicyValid && skill.modelInvocable && skill.userInvocable && skill.managerEnabled !== false); }
     function countKey(key: string, count: number) { return key + (Number(count) === 1 ? ".one" : ".other"); }
-    var localeService: ClientContext["locale"] | undefined;
+
     // getLocale().active 是宿主对 locale.preference 的最终有效解析，不读取网页/浏览器语言。
     function hostLocale() { return localeService?.getSnapshot().active; }
     function formatTrashTime(t: Translate, value: string) { return new Date(value).toLocaleString(hostLocale() || t("format.locale")); }
@@ -184,8 +192,7 @@ import { Input, foldChevron } from "./plugin-ui.ts";
       if (lower.endsWith(".zip")) return size > MAX_UPLOAD_ARCHIVE_BYTES ? { error: { code: "error.upload.archiveTooLarge", params: { limit: MAX_UPLOAD_ARCHIVE_BYTES } } } : { kind: "zip", name: name, files: list, count: 1, size: size };
       return { error: { code: "select.file.invalid" } };
     }
-    function bytesToBase64(buffer: ArrayBuffer) { var bytes = new Uint8Array(buffer), binary = "", chunk = 0x8000; for (var i = 0; i < bytes.length; i += chunk) binary += String.fromCharCode(...bytes.subarray(i, Math.min(i + chunk, bytes.length))); return btoa(binary); }
-    function buildUploadPayload(selection: UploadSelection) { return Promise.all(selection.files.map(function (file) { return file.arrayBuffer().then(function (buffer) { return { path: uploadFilePath(file), data: bytesToBase64(buffer) }; }); })).then(function (entries) { return selection.kind === "zip" ? { name: selection.name, zip: entries[0].data } : { name: selection.name, entries: entries }; }); }
+    function buildUploadPayload(selection: UploadSelection) { return Promise.all(selection.files.map(function (file) { return file.arrayBuffer().then(function (buffer) { return { path: uploadFilePath(file), data: bytesToBase64(new Uint8Array(buffer)) }; }); })).then(function (entries) { return selection.kind === "zip" ? { name: selection.name, zip: entries[0].data } : { name: selection.name, entries: entries }; }); }
     function readDroppedEntry(entry: FileSystemEntry, prefix: string, output: UploadFile[]): Promise<void> { if (entry.isFile) return new Promise<void>(function (resolve, reject) { (entry as FileSystemFileEntry).file(function (file: UploadFile) { file._dssmPath = prefix + file.name; output.push(file); resolve(); }, reject); }); if (!entry.isDirectory) return Promise.resolve(); return new Promise<void>(function (resolve, reject) { var reader = (entry as FileSystemDirectoryEntry).createReader(), children: FileSystemEntry[] = []; function next() { reader.readEntries(function (batch) { if (!batch.length) { Promise.all(children.map(function (child) { return readDroppedEntry(child, prefix + entry.name + "/", output); })).then(function () { resolve(); }, reject); return; } children = children.concat(batch); next(); }, reject); } next(); }); }
     function droppedFiles(dataTransfer: DataTransfer) { var items = Array.from(dataTransfer && dataTransfer.items || []), entries = items.map(function (item) { return item.webkitGetAsEntry && item.webkitGetAsEntry(); }).filter((entry): entry is FileSystemEntry => !!entry); if (!entries.length) return Promise.resolve(Array.from(dataTransfer && dataTransfer.files || [])); var files: UploadFile[] = []; return Promise.all(entries.map(function (entry) { return readDroppedEntry(entry, "", files); })).then(function () { return files; }); }
     function SkillSwitch(props: {on: boolean; label: string; disabled?: boolean; onClick: () => void}) {
@@ -204,7 +211,18 @@ import { Input, foldChevron } from "./plugin-ui.ts";
       return h("svg", { viewBox: "0 0 16 16", width: 16, height: 16, "aria-hidden": true, focusable: "false" }, [3.5, 8, 12.5].map(function (cx) { return h("circle", { key: cx, cx: cx, cy: 8, r: 1.15, fill: "none", stroke: "currentColor", strokeWidth: 1.5 }); }));
     }
     function iconButton(label: string, icon: React.ReactNode, onClick: () => void, danger?: boolean, disabled?: boolean) {
-      return h(PrimitiveButton, { variant: "outline", size: "sm", className: "dssm-icon-action" + (danger ? " dssm-icon-danger" : ""), disabled: disabled, "aria-label": label, title: label, icon: icon, style: { width: 22, minWidth: 22, height: 22, padding: 0, display: "inline-flex", alignItems: "center", justifyContent: "center", borderRadius: "var(--dsw-radius-sm, 8px)" }, onClick: onClick } as any);
+      const props: React.ComponentProps<typeof PrimitiveButton> = {
+        variant: "outline",
+        size: "sm",
+        className: "dssm-icon-action" + (danger ? " dssm-icon-danger" : ""),
+        disabled,
+        "aria-label": label,
+        title: label,
+        icon,
+        style: { width: 22, minWidth: 22, height: 22, padding: 0, display: "inline-flex", alignItems: "center", justifyContent: "center", borderRadius: "var(--dsw-radius-sm, 8px)" },
+        onClick,
+      };
+      return h(PrimitiveButton, props);
     }
     function enableSwitch(on: boolean, label: string, disabled: boolean | undefined, onToggle: () => void) {
       return h("button", {
@@ -321,55 +339,23 @@ import { Input, foldChevron } from "./plugin-ui.ts";
       );
     }
 
-    // 禁用提交按钮会让浏览器把焦点丢到 body；下一次渲染恢复焦点，避免 Escape 传到宿主设置。
-    function recoverModalFocus(modal: HTMLElement | null, active: Element | null, body: HTMLElement) { if (modal && active === body) modal.focus(); }
+    // 键盘、焦点与弹层生命周期由原生 Modal 管理。
     function Modal(props: ModalProps) {
-      var bodyRef = react.useRef<HTMLDivElement>(null);
-      var closeRef = react.useRef(props.onClose);
-      closeRef.current = props.onClose;
-      react.useLayoutEffect(function () {
-        if (typeof document === "undefined") return;
-        var panel = bodyRef.current;
-        if (panel) recoverModalFocus(panel, document.activeElement, document.body);
-      });
-      react.useEffect(function () {
-        if (typeof document === "undefined") return;
-        function onKey(event: KeyboardEvent) {
-          if (event.key !== "Escape") return;
-          event.preventDefault();
-          event.stopImmediatePropagation();
-          closeRef.current();
-        }
-        document.addEventListener("keydown", onKey, true);
-        return function () { document.removeEventListener("keydown", onKey, true); };
-      }, []);
       return h(PrimitiveModal, {
               open: true,
               title: props.title,
               description: props.description,
               footer: props.footer,
               onClose: props.onClose,
-              closeLabel: props.closeLabel || "Close",
+              closeLabel: props.closeLabel,
               className: ["dssm-modal", props.className].filter(Boolean).join(" "),
               contentClassName: ["dssm-modal-content", props.contentClassName].filter(Boolean).join(" "),
-            }, props.children ? h("div", { ref: bodyRef }, props.children) : undefined);
+            }, props.children ? h("div", null, props.children) : undefined);
     }
 
-    function currentSessionId(snapshot?: SessionSnapshot) {
-      if (!snapshot) return undefined;
-      var byId = snapshot.byId || {};
-      var ids = Array.isArray(snapshot.ids) && snapshot.ids.length ? snapshot.ids : Object.keys(byId);
-      for (var i = 0; i < ids.length; i++) {
-        var row = byId[ids[i]];
-        if (row && row.retainedBy && row.retainedBy.mainView) return ids[i];
-      }
-      for (var id in byId) {
-        if (ids.indexOf(id) !== -1) continue;
-        if (byId[id] && byId[id].retainedBy && byId[id].retainedBy!.mainView) return id;
-      }
-    }
     function SkillManagerSection(props: SectionProps) {
-      var sessionId = props.useSessions ? props.useSessions(currentSessionId) : undefined;
+      const sessionId = props.useSessions(snapshot => Object.values(snapshot.byId)
+        .find(session => (session.retainedBy.mainView ?? 0) > 0)?.id);
       var scopes = react.useState("market"), filtersState = react.useState<Record<string, Filters>>({}), expandedState = react.useState<Record<string, boolean>>({});
       // 按会话重挂载请求和表单状态，旧会话的异步响应不能覆盖新会话页面。
       return h(SkillManagerView, Object.assign({}, props, { key: sessionId || "no-session", sessionId: sessionId, scope: scopes[0], setScope: scopes[1], savedFilters: filtersState[0], setSavedFilters: filtersState[1], expanded: expandedState[0], setExpanded: expandedState[1] }));
@@ -380,16 +366,23 @@ import { Input, foldChevron } from "./plugin-ui.ts";
 
     function SkillManagerView(props: ViewProps) {
       var t = props.t;
-      function sessionApi<K extends keyof ApiRoutes>(path: K, options?: RequestInit): Promise<ApiRoutes[K]> {
-        var headers: Record<string, string> = Object.fromEntries(new Headers(options?.headers).entries());
-        if (props.sessionId) headers["x-dsh-skills-session"] = props.sessionId;
-        return callApi(path, Object.assign({}, options, { headers: headers }));
-      }
+      const sessionApi = react.useMemo(() => props.apiForSession(props.sessionId), [props.apiForSession, props.sessionId]);
+      const callApi = props.api;
+      const useRepositoryUI = react.useMemo(() => createRepositoryUI({ react, Modal, Input, Button: PrimitiveButton, SourceSelect, destination: destinationKit, api: callApi, translateError, getLocale: hostLocale }), [callApi]);
       var ss = react.useState<{loading: boolean; error: string | null; data: ManagerSnapshot | null}>({ loading: true, error: null, data: null }), snapshot = ss[0], setSnapshot = ss[1];
       var bs = react.useState(false), busy = bs[0], setBusy = bs[1];
-      var scope = props.scope, setScope = props.setScope;
+      var scope = props.scope;
+      function setScope(value: React.SetStateAction<string>) { setModal(null); props.setScope(value); }
       var expanded = props.expanded, setExpanded = props.setExpanded, savedFilters = props.savedFilters, setSavedFilters = props.setSavedFilters;
-      var ms = react.useState<ModalState>(null), modal = ms[0], setModal = ms[1];
+      var ms = react.useState<ModalState>(null), modal = ms[0];
+      function setModal(value: ModalState) {
+        if (value !== "detail" && readRequests.current.has("detail")) {
+          cancelRead("detail");
+          setBusy(false);
+          setDetail(null);
+        }
+        ms[1](value);
+      }
       var asState = react.useState(""), addSearch = asState[0], setAddSearch = asState[1];
       var aselState = react.useState<Record<string, boolean>>({}), addSelection = aselState[0], setAddSelection = aselState[1];
       var rs = react.useState<ResultMessage | null>(null), result = rs[0] && rs[0].scope === scope ? rs[0] : null;
@@ -399,10 +392,9 @@ import { Input, foldChevron } from "./plugin-ui.ts";
       var cns = react.useState(""), categoryName = cns[0], setCategoryName = cns[1];
       var cds = react.useState<DestinationValue>(defaultDestination()), createDestination = cds[0], setCreateDestination = cds[1];
       var ids = react.useState<DestinationValue>(defaultDestination()), importDestination = ids[0], setImportDestination = ids[1];
-      var wss = react.useState<ApiRoutes["/workspaces"]["items"]>([]), workspaceRows = wss[0], setWorkspaceRows = wss[1];
+      var wss = react.useState<SkillOutput<"listWorkspaces">["items"]>([]), workspaceRows = wss[0], setWorkspaceRows = wss[1];
       var wps = react.useState(""), selectedWorkspace = wps[0], setSelectedWorkspace = wps[1];
       var selectedWorkspaceRef = react.useRef("");
-      var workspaceListRequest = react.useRef(0);
       var wls = react.useState<{ loading: boolean; loaded: boolean; error: string | null }>({ loading: false, loaded: false, error: null }), workspaceList = wls[0], setWorkspaceList = wls[1];
       var wds = react.useState<Record<string, { loading: boolean; loaded: boolean; error: string | null; roots: RootView[] }>>({}), workspaceDetails = wds[0], setWorkspaceDetails = wds[1];
       var us = react.useState<UploadSelection | null>(null), upload = us[0], setUpload = us[1];
@@ -412,54 +404,100 @@ import { Input, foldChevron } from "./plugin-ui.ts";
       var importInputRef = react.useRef<HTMLInputElement>(null);
       var folderInputRef = react.useRef<HTMLInputElement>(null);
       var pickerOpenRef = react.useRef(false);
-      var workspaceRequests = react.useRef<Record<string, number>>({});
-      var workspaceEpoch = react.useRef(0);
-      react.useEffect(function () { return function () { workspaceEpoch.current++; }; }, []);
-      var catalogRequest = react.useRef(0);
+      react.useEffect(function () {
+        if (modal !== "import") return;
+        const inputs = [importInputRef.current, folderInputRef.current];
+        function release() { pickerOpenRef.current = false; }
+        for (const input of inputs) input?.addEventListener("cancel", release);
+        return function () {
+          for (const input of inputs) input?.removeEventListener("cancel", release);
+          release();
+        };
+      }, [modal]);
+      const readRequests = react.useRef(new Map<string, AbortController>());
+      const lifetime = react.useRef(new AbortController());
+      function cancelRead(key: string) {
+        readRequests.current.get(key)?.abort();
+        readRequests.current.delete(key);
+      }
+      function beginRead(key: string) {
+        cancelRead(key);
+        const request = new AbortController();
+        if (lifetime.current.signal.aborted) request.abort();
+        else readRequests.current.set(key, request);
+        return request;
+      }
+      function finishRead(key: string, request: AbortController) {
+        if (readRequests.current.get(key) === request) readRequests.current.delete(key);
+      }
+      react.useEffect(() => {
+        lifetime.current = new AbortController();
+        return () => {
+          lifetime.current.abort();
+          for (const request of readRequests.current.values()) request.abort();
+          readRequests.current.clear();
+        };
+      }, []);
       function refresh(silent: boolean, checkCompany = false) {
-        var request = ++catalogRequest.current;
+        const request = beginRead("catalog");
+        if (request.signal.aborted) return Promise.resolve();
         if (!silent) setSnapshot(previous => ({ ...previous, loading: true, error: null }));
-        return sessionApi(checkCompany ? "/state?refreshCompany=1" : "/state").then(function (data) {
-          if (request === catalogRequest.current) setSnapshot({ loading: false, error: null, data: data });
+        return sessionApi("readState", { scope: {}, refreshCompany: checkCompany }, request.signal).then(function (data) {
+          if (request.signal.aborted) return;
+          setSnapshot({ loading: false, error: null, data: data });
           return data;
         }).catch(function (error) {
-          if (request === catalogRequest.current) setSnapshot(previous => ({ ...previous, loading: false, error: translateError(t, error) }));
-        });
+          if (!request.signal.aborted) setSnapshot(previous => ({ ...previous, loading: false, error: translateError(t, error) }));
+        }).finally(() => { finishRead("catalog", request); });
       }
       react.useEffect(function () {
-        var alive = true;
-        void refresh(false).then(() => { if (alive) return refresh(true, true); });
-        return () => { alive = false; catalogRequest.current++; };
+        void refresh(false).then(value => { if (value !== undefined) return refresh(true, true); });
+        return () => { cancelRead("catalog"); };
       }, []);
-      function post<K extends keyof ApiRoutes>(path: K, body: unknown, successKey?: string | null, successParams?: object): Promise<ApiRoutes[K]> { if (inflightRef.current) return Promise.reject({ error: "operation already in progress" }); inflightRef.current = true; setBusy(true); setResult(null); return sessionApi(path, { method: "POST", headers: MUTATION_HEADERS, body: JSON.stringify(body || {}) }).then(function (data) { setResult({ ok: true, text: successKey ? t(successKey, successParams || data || {}) : t("result.updated") }); var scopedWorkspace = body && typeof (body as { workspace?: unknown }).workspace === "string" ? (body as { workspace: string }).workspace : ""; return Promise.all([refresh(true), scopedWorkspace ? loadWorkspaceDetail(scopedWorkspace) : null]).then(function () { return data; }); }).catch(function (error) { setResult({ ok: false, text: t("error.action", { error: translateError(t, error) }) }); throw error; }).finally(function () { inflightRef.current = false; setBusy(false); }); }
-      function openDetail(root: RootView, skill: SkillView, workspacePath?: string) { setBusy(true); setDetail(null); setModal("detail"); sessionApi("/detail", { method: "POST", headers: MUTATION_HEADERS, body: JSON.stringify(workspacePath ? { root: root.key, name: skill.name, workspace: workspacePath } : { root: root.key, name: skill.name }) }).then(setDetail).catch(function (error) { setResult({ ok: false, text: t("error.action", { error: translateError(t, error) }) }); setModal(null); }).finally(function () { setBusy(false); }); }
+      function post<K extends SkillMethod>(path: K, body: SkillInput<K>, successKey?: string | null, successParams?: object): Promise<SkillOutput<K>> { const signal = lifetime.current.signal; if (signal.aborted) return Promise.reject(signal.reason); if (inflightRef.current) return Promise.reject({ error: "operation already in progress" }); inflightRef.current = true; setBusy(true); setResult(null); return sessionApi(path, body, signal).then(function (data) { if (!signal.aborted) setResult({ ok: true, text: successKey ? t(successKey, successParams || data || {}) : t("result.updated") }); var operationScope = "target" in body ? body.target : "request" in body ? body.request : "scope" in body ? body.scope : undefined; var scopedWorkspace = operationScope && "workspace" in operationScope && typeof operationScope.workspace === "string" ? operationScope.workspace : ""; return Promise.all([refresh(true), scopedWorkspace ? loadWorkspaceDetail(scopedWorkspace) : null]).then(function () { return data; }); }).catch(function (error) { if (!signal.aborted) setResult({ ok: false, text: t("error.action", { error: translateError(t, error) }) }); throw error; }).finally(function () { inflightRef.current = false; if (!signal.aborted) setBusy(false); }); }
+      function openDetail(root: RootView, skill: SkillView, workspacePath?: string) {
+        const request = beginRead("detail");
+        if (request.signal.aborted) return;
+        setBusy(true); setDetail(null); setModal("detail");
+        void sessionApi("readDetail", { target: { root: root.key, name: skill.name, ...workspacePath ? { workspace: workspacePath } : {} } }, request.signal)
+          .then(value => { if (!request.signal.aborted) setDetail(value); })
+          .catch(error => {
+            if (request.signal.aborted) return;
+            setResult({ ok: false, text: t("error.action", { error: translateError(t, error) }) });
+            setModal(null);
+          }).finally(() => {
+            if (!request.signal.aborted) setBusy(false);
+            finishRead("detail", request);
+          });
+      }
       function updateForm(key: string, value: string) { setForm(Object.assign({}, form, { [key]: value })); }
-      function submitCreate() { if (!destinationReady(createDestination, workspaceRows, userDestinations)) return; post("/create", Object.assign({}, form, { root: undefined }, destinationPayload(createDestination)), null).then(function (data) { setModal(null); setForm({ root: "dsh", name: "", description: "", body: "" }); setResult({ ok: true, text: t("result.created", { name: data.name }) + (createDestination.scope === "workspace" ? " · " + t("dest.createdInWorkspace") : "") }); }).catch(function () {}); }
+      function submitCreate() { if (!destinationReady(createDestination, workspaceRows, userDestinations)) return; post("createSkill", { request: Object.assign({}, form, { root: undefined }, destinationPayload(createDestination)) }, null).then(function (data) { setModal(null); setForm({ root: "dsh", name: "", description: "", body: "" }); setResult({ ok: true, text: t("result.created", { name: data.name }) + (createDestination.scope === "workspace" ? " · " + t("dest.createdInWorkspace") : "") }); }).catch(function () {}); }
       function selectUploadFiles(files: ArrayLike<UploadFile> | null) { pickerOpenRef.current = false; var selected = inspectUploadSelection(files); if (!selected) return; if (selected.error) { setUpload(null); setResult({ ok: false, text: translateError(t, selected.error) }); return; } setUpload(selected); setResult(null); }
-      function openNativePicker(ref: React.RefObject<HTMLInputElement>) { if (busy || pickerOpenRef.current || !ref.current) return; pickerOpenRef.current = true; ref.current.value = ""; function release() { setTimeout(function () { pickerOpenRef.current = false; }, 0); } window.addEventListener("focus", release, { once: true }); ref.current.click(); setTimeout(function () { pickerOpenRef.current = false; }, 30000); }
-      function submitImport() { if (!upload || !destinationReady(importDestination, workspaceRows, userDestinations)) return; buildUploadPayload(upload).then(function (payload) { return post("/upload", Object.assign({}, payload, destinationPayload(importDestination)), null); }).then(function (data) { var summary = summarizeImportResult(t, data); setResult({ ok: summary.ok, warning: summary.warning, text: summary.text }); if (summary.imported) { setModal(null); setUpload(null); } }).catch(function () {}); }
+      function openNativePicker(ref: React.RefObject<HTMLInputElement>) { if (busy || pickerOpenRef.current || !ref.current) return; pickerOpenRef.current = true; ref.current.value = ""; try { ref.current.click(); } catch (error) { pickerOpenRef.current = false; setResult({ ok: false, text: t("error.upload.picker", { error: translateError(t, error) }) }); } }
+      function submitImport() { if (!upload || !destinationReady(importDestination, workspaceRows, userDestinations)) return; buildUploadPayload(upload).then(function (payload) { return post("uploadSkill", { request: Object.assign({}, payload, destinationPayload(importDestination)) }, null); }).then(function (data) { var summary = summarizeImportResult(t, data); setResult({ ok: summary.ok, warning: summary.warning, text: summary.text }); if (summary.imported) { setModal(null); setUpload(null); } }).catch(function () {}); }
       var data = snapshot.data || { roots: [], writeDestinations: [], projects: [], trash: [], warnings: [] }, allRoots = data.roots || [];
       var filterKey = scope === "market" ? "market" : scope === "project" ? "project" : "user", filters = savedFilters[filterKey] || { query: "", source: "", status: "" }, query = filters.query, source = filters.source;
       function updateFilter(key: string, value: string) { setSavedFilters(function (previous) { return Object.assign({}, previous, { [filterKey]: Object.assign({}, filters, { [key]: value }) }); }); }
       function setQuery(value: string) { updateFilter("query", value); }
-      function setSource(value: string) { updateFilter("source", value); }
+      function setSource(value: string) { setModal(null); updateFilter("source", value); }
       var selectedDetail = workspaceDetails[selectedWorkspace];
       var roots = scope === "trash" ? [] : scope === "project" ? visibleSkillRoots(selectedDetail?.roots || []) : scopeSkillRoots(allRoots).filter(function (root) { return scope === "market" ? root.key === "company" : root.key !== "company"; });
       var filteredOptionsRoots = roots.filter(function (r) { return r.key === "company" || (r.skills || []).length > 0; });
       var activeSource = scope === "user" && filteredOptionsRoots.some(function (root) { return root.key === source; }) ? source : "";
-      function workspacePath(row: ApiRoutes["/workspaces"]["items"][number]) { return row.registeredPaths[0] || ""; }
+      function workspacePath(row: SkillOutput<"listWorkspaces">["items"][number]) { return row.registeredPaths[0] || ""; }
       function selectWorkspace(path: string) {
         if (!workspaceRows.some(function (row) { return row.available && workspacePath(row) === path; })) return;
+        setModal(null);
         selectedWorkspaceRef.current = path;
         setSelectedWorkspace(path);
         if (!workspaceDetails[path]) loadWorkspaceDetail(path);
       }
       function loadWorkspaces(readSelected = scope === "project", forceDetail = false) {
-        var epoch = workspaceEpoch.current, request = ++workspaceListRequest.current;
-        var current = function () { return epoch === workspaceEpoch.current && request === workspaceListRequest.current; };
+        const request = beginRead("workspaces");
+        if (request.signal.aborted) return Promise.resolve([]);
         setWorkspaceList(previous => ({ ...previous, loading: true, error: null }));
-        return callApi("/workspaces").then(function (listed) {
-          if (!current()) return [];
+        return callApi("listWorkspaces", {}, request.signal).then(function (listed) {
+          if (request.signal.aborted) return [];
           var items = listed.items || [];
           setWorkspaceRows(items);
           setWorkspaceList({ loading: false, loaded: true, error: null });
@@ -470,24 +508,30 @@ import { Input, foldChevron } from "./plugin-ui.ts";
           if (readSelected && path && (forceDetail || !workspaceDetails[path])) loadWorkspaceDetail(path);
           return items;
         }).catch(function (error) {
-          if (!current()) return [];
+          if (request.signal.aborted) return [];
           setWorkspaceRows([]);
           selectedWorkspaceRef.current = "";
           setSelectedWorkspace("");
           setWorkspaceList({ loading: false, loaded: true, error: translateError(t, error) });
           return [];
-        });
+        }).finally(() => { finishRead("workspaces", request); });
       }
       // 只读所选登记路径：详情按路径缓存，操作完成后只重新读取原工作区。
       function loadWorkspaceDetail(path: string) {
-        var epoch = workspaceEpoch.current, request = (workspaceRequests.current[path] || 0) + 1;
-        workspaceRequests.current[path] = request;
-        var current = function () { return epoch === workspaceEpoch.current && request === workspaceRequests.current[path]; };
-        setWorkspaceDetails(function (previous) { return Object.assign({}, previous, { [path]: { loading: true, loaded: previous[path]?.loaded ?? false, error: null, roots: previous[path] ? previous[path].roots : [] } }); });
-        return callApi("/workspace-skills", { method: "POST", headers: MUTATION_HEADERS, body: JSON.stringify({ workspace: path }) }).then(function (detail) { if (current()) setWorkspaceDetails(function (previous) { return Object.assign({}, previous, { [path]: { loading: false, loaded: true, error: null, roots: detail.roots || [] } }); }); }).catch(function (error) { if (current()) setWorkspaceDetails(function (previous) { return Object.assign({}, previous, { [path]: { loading: false, loaded: true, error: translateError(t, error), roots: [] } }); }); });
+        const key = "workspace:" + path;
+        const request = beginRead(key);
+        if (request.signal.aborted) return Promise.resolve();
+        setWorkspaceDetails(previous => ({ ...previous, [path]: { loading: true, loaded: previous[path]?.loaded ?? false, error: null, roots: previous[path]?.roots ?? [] } }));
+        return callApi("readWorkspace", { workspace: path }, request.signal).then(value => {
+          if (!request.signal.aborted) setWorkspaceDetails(previous => ({ ...previous, [path]: { loading: false, loaded: true, error: null, roots: value.roots } }));
+        }).catch(error => {
+          if (!request.signal.aborted) setWorkspaceDetails(previous => ({ ...previous, [path]: { loading: false, loaded: true, error: translateError(t, error), roots: [] } }));
+        }).finally(() => { finishRead(key, request); });
       }
       function refreshWorkspaceDetails() {
-        workspaceEpoch.current++;
+        for (const key of readRequests.current.keys()) {
+          if (key === "workspaces" || key.startsWith("workspace:")) cancelRead(key);
+        }
         setWorkspaceDetails(previous => {
           var path = selectedWorkspaceRef.current, current = previous[path];
           return current?.loaded ? { [path]: { ...current, loading: false } } : {};
@@ -547,7 +591,7 @@ import { Input, foldChevron } from "./plugin-ui.ts";
         );
       }
       function renderSkill(root: RootView, skill: SkillView, workspacePath?: string) {
-        var scoped = function (extra: Record<string, unknown>) { return workspacePath ? Object.assign({}, extra, { workspace: workspacePath }) : extra; };
+        var scoped = function <T extends object>(extra: T) { return workspacePath ? Object.assign({}, extra, { workspace: workspacePath }) : extra; };
         var enabled = isSkillEnabled(skill);
         var showSwitch = root.toggleable !== false;
         var statusKey = skill.shadowedBy ? "status.shadowed" : skill.loadable === false ? "status.invalid" : enabled ? "status.enabled" : "status.disabled";
@@ -572,17 +616,17 @@ import { Input, foldChevron } from "./plugin-ui.ts";
           h(SourceSelect, { action: true, icon: moreIcon(), label: t("btn.more"), disabled: busy, options: menu, onChange: function (action) {
           if (action === "detail") openDetail(root, skill, workspacePath);
           if (action === "submit-company") document.dispatchEvent(new CustomEvent("dsh:company-content-submit", { cancelable: true,
-            detail: { name: skill.declaredName || skill.name, prepare: (signal: AbortSignal) => sessionApi("/export", { method: "POST", headers: MUTATION_HEADERS, body: JSON.stringify(scoped({ root: root.key, name: skill.name })), signal }) } }));
+            detail: { name: skill.declaredName || skill.name, prepare: (signal: AbortSignal) => sessionApi("exportSkill", { target: scoped({ root: root.key, name: skill.name }) }, signal) } }));
           if (action.indexOf("category:") === 0) {
             var categoryId = action.slice("category:".length);
             var category = categories.find(function (item) { return item.id === categoryId; });
-            post("/category-assign", scoped({ root: root.key, name: skill.name, category: categoryId }), "category.assigned", { name: skill.name, category: category ? category.name : t("category.uncategorized") });
+            post("assignCategory", { target: scoped({ root: root.key, name: skill.name, category: categoryId }) }, "category.assigned", { name: skill.name, category: category ? category.name : t("category.uncategorized") });
           }
           if (action === "update") { repositoryUI.focusSource(skill.installSource!, skill.name); setScope("repositories"); }
           if (action === "trash") setModal({ type: "trash-confirm", root: root.key, name: skill.name, workspace: workspacePath });
         } }),
         ];
-        skillActions.push(h("div", { className: "dssm-row-state" }, showStatus ? renderSkillStatusIcon(statusKey, statusTitle, cls) : null, showSwitch ? enableSwitch(enabled, t("skill.toggle") + " " + skill.name, busy || root.enabled === false || (skill.loadable === false && !(enabled && skill.managerOverride === true)), function () { post(enabled ? "/disable" : "/enable", scoped({ root: root.key, name: skill.name })); }) : null));
+        skillActions.push(h("div", { className: "dssm-row-state" }, showStatus ? renderSkillStatusIcon(statusKey, statusTitle, cls) : null, showSwitch ? enableSwitch(enabled, t("skill.toggle") + " " + skill.name, busy || root.enabled === false || (skill.loadable === false && !(enabled && skill.managerOverride === true)), function () { post("setSkillEnabled", { target: scoped({ root: root.key, name: skill.name }), enabled: !enabled }); }) : null));
         var skillName = skill.declaredName || skill.name;
         var description = skill.description || t("note.missing");
         var canDrag = root.key !== "company" && (root.mutable === true || !!(root.categories && root.categories.length));
@@ -623,7 +667,7 @@ import { Input, foldChevron } from "./plugin-ui.ts";
             clearDragHighlights(e.currentTarget as HTMLElement);
             if (!dragInfo || dragInfo.root !== root.key || dragInfo.name === skill.name) return;
             var rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-            post("/category-move", scoped({ root: root.key, name: dragInfo.name, category: skill.categoryId || "", targetName: skill.name, position: e.clientY < rect.top + rect.height / 2 ? "before" : "after" }), "category.moved", { name: dragInfo.name });
+            post("moveInCategory", { target: scoped({ root: root.key, name: dragInfo.name, category: skill.categoryId || "", targetName: skill.name, position: e.clientY < rect.top + rect.height / 2 ? "before" : "after" }) }, "category.moved", { name: dragInfo.name });
           }
         },
         canDrag ? h("div", { className: "dssm-drag-handle", title: t("category.dragTip") }, "⋮⋮") : null,
@@ -639,7 +683,7 @@ import { Input, foldChevron } from "./plugin-ui.ts";
         var scoped = workspacePath ? { root: root.key, workspace: workspacePath } : { root: root.key };
         var actions: React.ReactNode[] = [];
         actions.push(iconButton(t("category.create"), strokeIcon("M8 2.5v11M2.5 8h11"), function () { setCategoryName(""); setModal({ type: "category-create", root: root.key, workspace: workspacePath }); }, false, busy));
-        if (canToggleSource(root)) actions.push(h(SkillSwitch, { on: root.enabled, disabled: busy, label: t("source.toggle") + " " + displayName, onClick: function () { post(root.enabled ? "/source-disable" : "/source-enable", scoped); } }));
+        if (canToggleSource(root)) actions.push(h(SkillSwitch, { on: root.enabled, disabled: busy, label: t("source.toggle") + " " + displayName, onClick: function () { post("setSourceEnabled", { target: scoped, enabled: !root.enabled }); } }));
         return h("span", { className: "dssm-source-actions", onClick: function (event: React.MouseEvent) { event.stopPropagation(); } }, actions);
       }
       function AntdFolderClosed() {
@@ -665,7 +709,7 @@ import { Input, foldChevron } from "./plugin-ui.ts";
         var usable = counted.filter(function (row) { return row.skill.loadable !== false; });
         var enabledCount = usable.filter(function (row) { return isSkillEnabled(row.skill); }).length;
         var allOn = usable.length > 0 && enabledCount === usable.length;
-        var scoped = function (extra: Record<string, unknown>) { return workspacePath ? Object.assign({}, extra, { workspace: workspacePath }) : extra; };
+        var scoped = function <T extends object>(extra: T) { return workspacePath ? Object.assign({}, extra, { workspace: workspacePath }) : extra; };
         return h("section", {
           key: root.key + ":" + (bucket.id || "none"),
           className: "dssm-cat",
@@ -692,7 +736,7 @@ import { Input, foldChevron } from "./plugin-ui.ts";
               var dragData = JSON.parse(e.dataTransfer.getData("text/plain") || "{}");
               if (dragData && dragData.name && dragData.root === root.key) {
                 if (dragData.currentCategoryId !== bucket.id) {
-                  post("/category-assign", scoped({ root: root.key, name: dragData.name, category: bucket.id }), "category.assigned", { name: dragData.name, category: bucket.name });
+                  post("assignCategory", { target: scoped({ root: root.key, name: dragData.name, category: bucket.id }) }, "category.assigned", { name: dragData.name, category: bucket.name });
                 }
               }
             } catch (_err) {
@@ -723,7 +767,7 @@ import { Input, foldChevron } from "./plugin-ui.ts";
               bucket.locked ? null : iconButton(t("category.rename"), strokeIcon("M9.2 2.8l4 4L6.2 13.8H2.2v-4z"), function () { setCategoryName(bucket.name); setModal({ type: "category-rename", root: root.key, id: bucket.id, name: bucket.name, workspace: workspacePath }); }, false, busy),
               bucket.locked ? null : iconButton(t("category.delete"), strokeIcon("M3.5 4.5h9M6.5 4.5V3h3v1.5M5 4.5l.7 8.5h4.6L11 4.5"), function () { setModal({ type: "category-delete", root: root.key, id: bucket.id, name: bucket.name, workspace: workspacePath }); }, true, busy),
               enableSwitch(allOn, t("category.toggle") + " " + bucket.name, busy || root.enabled === false || usable.length === 0, function () {
-                post(allOn ? "/category-disable" : "/category-enable", scoped({ root: root.key, category: bucket.id }));
+                post("setCategoryEnabled", { target: scoped({ root: root.key, category: bucket.id }), enabled: !allOn });
               }))),
           open ? (bucket.skills.length ? h("div", { className: "dssm-skill-list" }, bucket.skills.map(function (row) { return renderSkill(root, row.skill, workspacePath); })) : h("div", { className: "dssm-empty" }, t("category.empty"))) : null);
       }
@@ -792,7 +836,7 @@ import { Input, foldChevron } from "./plugin-ui.ts";
                   h("time", { dateTime: item.deletedAt }, t("trash.deletedAt", { time: formatTrashTime(t, item.deletedAt) })),
                   h("span", { className: "dssm-trash-source" }, t("trash.source", { source: trashRootLabel(item) })))),
               h("div", { className: "dssm-trash-actions" },
-                iconButton(t("btn.restore"), strokeIcon("M3.5 6.5A4.5 4.5 0 1 1 5 11.5M3.5 3.5v3h3"), function () { post("/trash-restore", trashRestoreBody(item), "result.restored", { name: item.name }).catch(function () {}); }, false, busy),
+                iconButton(t("btn.restore"), strokeIcon("M3.5 6.5A4.5 4.5 0 1 1 5 11.5M3.5 3.5v3h3"), function () { post("restoreTrash", { id: (trashRestoreBody(item)).id, scope: trashRestoreBody(item) }, "result.restored", { name: item.name }).catch(function () {}); }, false, busy),
                 iconButton(t("btn.delete.forever"), strokeIcon("M3.5 4.5h9M6.5 4.5V3h3v1.5M5 4.5l.7 8.5h4.6L11 4.5"), function () { setModal({ type: "delete-confirm", id: item.id, name: item.name }); }, true, busy)));
           }) : h("div", { className: "dssm-empty" }, t("trash.empty")));
       }
@@ -806,7 +850,7 @@ import { Input, foldChevron } from "./plugin-ui.ts";
           h("path", { d: d })
         );
       }
-      var tabItems = ["user", "project", "repositories", "trash"].map(function (value) {
+      function scopeTab(value: string): SegmentedTab<string> {
         var text = t("scope." + value);
         var count = value === "trash" ? (data.trash || []).length : 0;
         var icon = getTabIcon(value);
@@ -816,11 +860,12 @@ import { Input, foldChevron } from "./plugin-ui.ts";
           panelId: "dssm-scope-panel",
           label: count > 0 ? [icon, text, h("span", { className: "dssm-trash-count" }, count)] : [icon, text]
         };
-      });
+      }
+      var tabItems: readonly [SegmentedTab<string>, ...SegmentedTab<string>[]] = [scopeTab("user"), scopeTab("project"), scopeTab("repositories"), scopeTab("trash")];
       var tabs = scope === "market" ? null : h(SegmentedTabs, { key: "tabs", className: "dssm-scope-tabs", label: t("scope.label"), value: scope, onChange: function (next: string) { setScope(next); if (next === "project" || next === "trash") loadWorkspaces(next === "project"); if (next === "trash") refresh(true); }, items: tabItems });
-      var skillControls = [ scope === "project" ? null : h("div", { key: "summary", className: "dssm-summary", "aria-busy": !snapshot.data }, ([["total", "summary.total"], ["enabled", "summary.enabled"], ["disabled", "summary.disabled"]] as const).map(function (item) { return h("div", { key: item[1], className: "dssm-stat" }, h("strong", null, snapshot.data ? summary[item[0]] : "—"), t(countKey(item[1], summary[item[0]]), { count: summary[item[0]] }).replace(String(summary[item[0]]), "")); })), h("div", { key: "filters", className: "dssm-filters" }, scope === "project" || scope === "market" ? null : h("div", { className: "dssm-source-filter" }, h(SourceSelect, { value: activeSource, label: t("filter.source"), options: options, onChange: setSource })), h("div", { className: "dssm-status-filter" }, h(SourceSelect, { value: filters.status, label: t("filter.status"), options: [{ value: "", label: t("filter.statusAll") }].concat(["enabled", "disabled"].map(function (value) { return { value: value, label: t("status." + value) }; })), onChange: function (value) { updateFilter("status", value); } })), scope === "project" ? h("div", { className: "dssm-project-filter" }, h(SourceSelect, { value: selectedWorkspace, label: t("filter.workspace"), disabled: workspaceList.loading || !workspaceRows.length, options: workspaceRows.map(function (row) { return { value: workspacePath(row), label: row.name + (!row.available ? " · " + t("workspace.unavailable") : "") + (workspaceRows.filter(function (other) { return other.name === row.name; }).length > 1 ? " · " + workspacePath(row) : ""), disabled: !row.available || !workspacePath(row) }; }), onChange: selectWorkspace })) : null, h(Input, { className: "dssm-search", allowClear: true, value: query, "aria-label": t("search"), placeholder: t("search.placeholder"), onChange: function (e) { setQuery(e.target.value); } }),
+      var skillControls = [ scope === "project" ? null : h("div", { key: "summary", className: "dssm-summary", "aria-busy": !snapshot.data }, ([["total", "summary.total"], ["enabled", "summary.enabled"], ["disabled", "summary.disabled"]] as const).map(function (item) { return h("div", { key: item[1], className: "dssm-stat" }, h("strong", null, snapshot.data ? summary[item[0]] : "—"), t(countKey(item[1], summary[item[0]]), { count: summary[item[0]] }).replace(String(summary[item[0]]), "")); })), h("div", { key: "filters", className: "dssm-filters" }, scope === "project" || scope === "market" ? null : h("div", { className: "dssm-source-filter" }, h(SourceSelect, { value: activeSource, label: t("filter.source"), options: options, onChange: setSource })), h("div", { className: "dssm-status-filter" }, h(SourceSelect, { value: filters.status, label: t("filter.status"), options: [{ value: "", label: t("filter.statusAll") }].concat(["enabled", "disabled"].map(function (value) { return { value: value, label: t("status." + value) }; })), onChange: function (value) { updateFilter("status", value); } })), scope === "project" ? h("div", { className: "dssm-project-filter" }, h(SourceSelect, { value: selectedWorkspace, label: t("filter.workspace"), disabled: workspaceList.loading || !workspaceRows.length, options: workspaceRows.map(function (row) { return { value: workspacePath(row), label: row.name + (!row.available ? " · " + t("workspace.unavailable") : "") + (workspaceRows.filter(function (other) { return other.name === row.name; }).length > 1 ? " · " + workspacePath(row) : ""), disabled: !row.available || !workspacePath(row) }; }), onChange: selectWorkspace })) : null, h(Input, { className: "dssm-search", value: query, "aria-label": t("search"), placeholder: t("search.placeholder"), onChange: function (e) { setQuery(e.target.value); } }),
         scope !== "trash" ? h("div", { className: "dssm-filter-actions" },
-          scope === "market" ? roots.filter(canToggleSource).map(function (root) { return h("div", { key: root.key, className: "dssm-market-source" }, h("span", null, t("market.source")), h(SkillSwitch, { on: root.enabled, disabled: busy, label: t("market.source"), onClick: function () { post(root.enabled ? "/source-disable" : "/source-enable", { root: root.key }); } })); }) : null,
+          scope === "market" ? roots.filter(canToggleSource).map(function (root) { return h("div", { key: root.key, className: "dssm-market-source" }, h("span", null, t("market.source")), h(SkillSwitch, { on: root.enabled, disabled: busy, label: t("market.source"), onClick: function () { post("setSourceEnabled", { target: { root: root.key }, enabled: !root.enabled }); } })); }) : null,
           iconButton(t("btn.refresh"), strokeIcon("M13.5 8A5.5 5.5 0 118 2.5c2.3 0 4.3 1.4 5.1 3.5m.4-3.5v3.5H10"), function () { refresh(false, true); if (scope === "project") refreshWorkspaceDetails(); }, false, busy || snapshot.loading),
           scope === "market" ? null : h(PrimitiveButton, { variant: "outline", size: "sm", icon: strokeIcon("M2.5 10.5v2a1 1 0 001 1h9a1 1 0 001-1v-2M8 2.5v7M5 5.5l3-3 3 3"), onClick: openImport, disabled: busy }, t("import.global")),
           scope === "market" ? null : h(PrimitiveButton, { variant: "primary", size: "sm", icon: strokeIcon("M8 2.5v11M2.5 8h11"), onClick: openCreate, disabled: busy }, t("btn.create"))
@@ -833,7 +878,7 @@ import { Input, foldChevron } from "./plugin-ui.ts";
       ] });
       var content: React.ReactNode[] = [bodyContent[0], bodyContent[1], primaryTabs, h("div", { key: "catalog-panel", id: "dssm-library-panel", role: "tabpanel", "aria-labelledby": "dssm-library-tab-" + (market ? "market" : "mine"), className: "dssm-library-panel" }, tabs, ...bodyContent.slice(2))];
 
-      if (modal === "create") content.push(h(Modal, { key: "create", title: t("create.title"), closeLabel: t("btn.close"), onClose: function () { setModal(null); } }, h("div", { className: "dssm-form" }, h(DestinationPicker, { t: t, value: createDestination, disabled: busy, allowAgents: true, workspaces: workspaceRows, loading: workspaceList.loading, userDestinations: userDestinations, onChange: function (next: Partial<DestinationValue>) { setCreateDestination(Object.assign({}, createDestination, next)); } }), [["name", "create.name", "create.name.placeholder"], ["description", "create.description", "create.description.placeholder"]].map(function (field) {        return h("label", { key: field[0], className: "dssm-field" }, h("span", { className: "dssm-label" }, t(field[1])), h(Input, { value: form[field[0]], placeholder: t(field[2]), onChange: function (e: React.ChangeEvent<HTMLInputElement>) { updateForm(field[0], e.target.value); } })); }), h("label", { className: "dssm-field" }, h("span", { className: "dssm-label" }, t("create.body")), h(Input.TextArea, { rows: 8, value: form.body, placeholder: t("create.body.placeholder"), onChange: function (e: React.ChangeEvent<HTMLTextAreaElement>) { updateForm("body", e.target.value); } })), h("p", { className: "dssm-help" }, t("create.chat.note"))), h("div", { className: "dssm-modal-actions" }, hostButton(t("btn.cancel"), function () { setModal(null); }, "outline"), hostButton(t("btn.create.now"), submitCreate, "primary", busy || !form.name.trim() || !form.description.trim() || !form.body.trim() || !destinationReady(createDestination, workspaceRows, userDestinations)))));
+      if (modal === "create") content.push(h(Modal, { key: "create", title: t("create.title"), closeLabel: t("btn.close"), onClose: function () { setModal(null); } }, h("div", { className: "dssm-form" }, h(DestinationPicker, { t: t, value: createDestination, disabled: busy, allowAgents: true, workspaces: workspaceRows, loading: workspaceList.loading, userDestinations: userDestinations, onChange: function (next: Partial<DestinationValue>) { setCreateDestination(Object.assign({}, createDestination, next)); } }), [["name", "create.name", "create.name.placeholder"], ["description", "create.description", "create.description.placeholder"]].map(function (field) {        return h("label", { key: field[0], className: "dssm-field" }, h("span", { className: "dssm-label" }, t(field[1])), h(Input, { value: form[field[0]], placeholder: t(field[2]), onChange: function (e: React.ChangeEvent<HTMLInputElement>) { updateForm(field[0], e.target.value); } })); }), h("label", { className: "dssm-field" }, h("span", { className: "dssm-label" }, t("create.body")), h(TextArea, { rows: 8, value: form.body, placeholder: t("create.body.placeholder"), onChange: function (e: React.ChangeEvent<HTMLTextAreaElement>) { updateForm("body", e.target.value); } })), h("p", { className: "dssm-help" }, t("create.chat.note"))), h("div", { className: "dssm-modal-actions" }, hostButton(t("btn.cancel"), function () { setModal(null); }, "outline"), hostButton(t("btn.create.now"), submitCreate, "primary", busy || !form.name.trim() || !form.description.trim() || !form.body.trim() || !destinationReady(createDestination, workspaceRows, userDestinations)))));
       if (modal === "import") content.push(h(Modal, { key: "import", className: "dssm-modal-import", title: t("import.title"), closeLabel: t("btn.close"), onClose: function () { pickerOpenRef.current = false; setUpload(null); setResult(null); setModal(null); } },
         h("input", { ref: importInputRef, className: "dssm-hidden-input", type: "file", accept: ".zip,.md", onChange: function (event) { selectUploadFiles(event.target.files); event.target.value = ""; } }),
         h("input", { ref: folderInputRef, className: "dssm-hidden-input", type: "file", multiple: true, webkitdirectory: "", directory: "", onChange: function (event) { selectUploadFiles(event.target.files); event.target.value = ""; } }),
@@ -842,14 +887,14 @@ import { Input, foldChevron } from "./plugin-ui.ts";
           h("span", { className: "dssm-dropzone-copy" }, t("upload.drop.copy")),
           h("div", { className: "dssm-upload-choices" }, h("button", { type: "button", className: "dssm-upload-link", disabled: busy, onClick: function (event: React.MouseEvent<HTMLButtonElement>) { event.stopPropagation(); openNativePicker(folderInputRef); } }, t("btn.folder.pick")), h("span", { className: "dssm-upload-divider" }, "/"), h("button", { type: "button", className: "dssm-upload-link", disabled: busy, onClick: function (event: React.MouseEvent<HTMLButtonElement>) { event.stopPropagation(); openNativePicker(importInputRef); } }, t("btn.file.pick")))
         ),
-        upload ? h("div", { className: "dssm-file", title: upload.name }, h("span", { className: "dssm-file-kind", "aria-hidden": "true" }, upload.kind === "zip" ? "ZIP" : upload.kind === "folder" ? "DIR" : "MD"), h("span", { className: "dssm-file-name" }, upload.name), h("span", { className: "dssm-file-meta" }, t(countKey("upload.selected", upload.count), { count: upload.count, size: upload.size < 1024 ? upload.size + " B" : Math.ceil(upload.size / 1024) + " KB" })), h("button", { type: "button", className: "dssm-file-remove", "aria-label": t("upload.remove"), onClick: function () { setUpload(null); } }, "×")) : null,
+        upload ? h("div", { className: "dssm-file", title: upload.name }, h("span", { className: "dssm-file-kind", "aria-hidden": "true" }, upload.kind === "zip" ? "ZIP" : upload.kind === "folder" ? "DIR" : "MD"), h("span", { className: "dssm-file-name" }, upload.name), h("span", { className: "dssm-file-meta" }, t(countKey("upload.selected", upload.count), { count: upload.count, size: fileSizeText(upload.size) })), h("button", { type: "button", className: "dssm-file-remove", "aria-label": t("upload.remove"), onClick: function () { setUpload(null); } }, "×")) : null,
         h(DestinationPicker, { t: t, value: importDestination, disabled: busy, allowAgents: true, workspaces: workspaceRows, loading: workspaceList.loading, userDestinations: userDestinations, onChange: function (next: Partial<DestinationValue>) { setImportDestination(Object.assign({}, importDestination, next)); } }),
         result ? h("div", { className: "dssm-feedback" + (result.warning ? " dssm-warning" : result.ok ? "" : " dssm-error"), role: "alert" }, result.text) : null,
         h("div", { className: "dssm-upload-requirements" }, h("div", { className: "dssm-label" }, t("upload.requirements")), h("ul", null, h("li", null, t("upload.requirement.skill")), h("li", null, t("upload.requirement.frontmatter")), h("li", null, t("upload.requirement.copy")))),
         h("div", { className: "dssm-modal-actions" }, hostButton(t("btn.cancel"), function () { pickerOpenRef.current = false; setUpload(null); setResult(null); setModal(null); }, "outline"), hostButton(busy ? t("upload.importing") : t("btn.import.now"), submitImport, "primary", busy || !upload || !destinationReady(importDestination, workspaceRows, userDestinations)))
-      ));      if (modal === "detail") content.push(h(Modal, { key: "detail", wide: true, title: t("detail.title"), closeLabel: t("btn.close"), onClose: function () { setModal(null); } }, detail ? h("div", { className: "dssm-detail" }, h("div", { className: "dssm-name" }, detail.declaredName || detail.name), detail.description ? h("p", { className: "dssm-desc" }, detail.description) : null, h("div", { className: "dssm-detail-path" }, detail.path), detail.diagnostics.length ? detail.diagnostics.map(function (item, index) { return h("div", { key: index, className: "dssm-diag" }, t(item.code!, item.params || {})); }) : null, h(Input.TextArea, { readOnly: true, value: detail.body || "", autoSize: { minRows: 6, maxRows: 16 } })) : readLoading(t("loading"))));
-      if (modal && typeof modal === "object" && modal.type === "trash-confirm") content.push(h(Modal, { key: "trash-confirm", title: t("confirm.trash.title"), description: t("confirm.trash.desc", { name: modal.name }), closeLabel: t("btn.close"), onClose: function () { setModal(null); }, footer: h(React.Fragment, null, hostButton(t("btn.cancel"), function () { setModal(null); }, "outline"), hostButton(t("btn.trash"), function () { post("/delete", Object.assign({ root: (modal as Extract<ConfirmModal, {type: "trash-confirm"}>).root, name: (modal as Extract<ConfirmModal, {name: string}>).name }, (modal as { workspace?: string }).workspace ? { workspace: (modal as { workspace?: string }).workspace } : {}), "result.trashed", { name: (modal as Extract<ConfirmModal, {name: string}>).name }).then(function () { setModal(null); }).catch(function () {}); }, "danger", busy)) }));
-      if (modal && typeof modal === "object" && modal.type === "delete-confirm") content.push(h(Modal, { key: "delete-confirm", title: t("confirm.delete.title"), description: t("confirm.delete.desc", { name: modal.name }), closeLabel: t("btn.close"), onClose: function () { setModal(null); }, footer: h(React.Fragment, null, hostButton(t("btn.cancel"), function () { setModal(null); }, "outline"), hostButton(t("btn.delete.forever"), function () { post("/trash-delete", { id: (modal as Extract<ConfirmModal, {type: "delete-confirm"}>).id }, "result.deleted", { name: (modal as Extract<ConfirmModal, {name: string}>).name }).then(function () { setModal(null); }).catch(function () {}); }, "danger", busy)) }));
+      ));      if (modal === "detail") content.push(h(Modal, { key: "detail", className: "dssm-modal-wide", title: t("detail.title"), closeLabel: t("btn.close"), onClose: function () { setModal(null); } }, detail ? h("div", { className: "dssm-detail" }, h("div", { className: "dssm-name" }, detail.declaredName || detail.name), detail.description ? h("p", { className: "dssm-desc" }, detail.description) : null, h("div", { className: "dssm-detail-path" }, detail.path), detail.diagnostics.length ? detail.diagnostics.map(function (item, index) { return h("div", { key: index, className: "dssm-diag" }, t(item.code!, item.params || {})); }) : null, h(SkillBody, { body: detail.body || "", t })) : readLoading(t("loading"))));
+      if (modal && typeof modal === "object" && modal.type === "trash-confirm") content.push(h(Modal, { key: "trash-confirm", title: t("confirm.trash.title"), description: t("confirm.trash.desc", { name: modal.name }), closeLabel: t("btn.close"), onClose: function () { setModal(null); }, footer: h(React.Fragment, null, hostButton(t("btn.cancel"), function () { setModal(null); }, "outline"), hostButton(t("btn.trash"), function () { post("trashSkill", { target: Object.assign({ root: (modal as Extract<ConfirmModal, {type: "trash-confirm"}>).root, name: (modal as Extract<ConfirmModal, {name: string}>).name }, (modal as { workspace?: string }).workspace ? { workspace: (modal as { workspace?: string }).workspace } : {}) }, "result.trashed", { name: (modal as Extract<ConfirmModal, {name: string}>).name }).then(function () { setModal(null); }).catch(function () {}); }, "danger", busy)) }));
+      if (modal && typeof modal === "object" && modal.type === "delete-confirm") content.push(h(Modal, { key: "delete-confirm", title: t("confirm.delete.title"), description: t("confirm.delete.desc", { name: modal.name }), closeLabel: t("btn.close"), onClose: function () { setModal(null); }, footer: h(React.Fragment, null, hostButton(t("btn.cancel"), function () { setModal(null); }, "outline"), hostButton(t("btn.delete.forever"), function () { post("deleteTrash", { id: ({ id: (modal as Extract<ConfirmModal, {type: "delete-confirm"}>).id }).id }, "result.deleted", { name: (modal as Extract<ConfirmModal, {name: string}>).name }).then(function () { setModal(null); }).catch(function () {}); }, "danger", busy)) }));
       if (modal && typeof modal === "object" && (modal.type === "category-create" || modal.type === "category-rename")) {
         var renaming = modal.type === "category-rename";
         var categoryModal = modal;
@@ -858,13 +903,13 @@ import { Input, foldChevron } from "./plugin-ui.ts";
         var submitCategory = function () {
           if (busy || !canSubmit) return;
           var request = renaming
-            ? post("/category-rename", { root: categoryModal.root, id: (categoryModal as Extract<ConfirmModal, {type: "category-rename"}>).id, name: nameTrimmed, workspace: categoryModal.workspace }, "category.renamed")
-            : post("/category-create", { root: categoryModal.root, name: nameTrimmed, workspace: categoryModal.workspace }, "category.created", { name: nameTrimmed });
+            ? post("renameCategory", { target: { root: categoryModal.root, id: (categoryModal as Extract<ConfirmModal, {type: "category-rename"}>).id, name: nameTrimmed, workspace: categoryModal.workspace } }, "category.renamed")
+            : post("createCategory", { target: { root: categoryModal.root, name: nameTrimmed, workspace: categoryModal.workspace } }, "category.created", { name: nameTrimmed });
           request.then(function () { setModal(null); }).catch(function () {});
         };
         content.push(h(Modal, { key: modal.type, title: renaming ? t("category.rename") : t("category.create"), closeLabel: t("btn.close"), onClose: function () { setModal(null); } },
           h("div", { className: "dssm-form" },
-            h("label", { className: "dssm-field" }, h("span", { className: "dssm-label" }, t("category.name")), h(Input, { value: categoryName, maxLength: 24, "aria-label": t("category.name"), onChange: function (event) { setCategoryName(event.target.value); }, onPressEnter: submitCategory })),
+            h("label", { className: "dssm-field" }, h("span", { className: "dssm-label" }, t("category.name")), h(Input, { value: categoryName, maxLength: 24, "aria-label": t("category.name"), onChange: function (event) { setCategoryName(event.target.value); }, onKeyDown: function (event: React.KeyboardEvent<HTMLInputElement>) { if (event.key === "Enter" && !event.nativeEvent.isComposing && event.nativeEvent.keyCode !== 229) { event.preventDefault(); submitCategory(); } } })),
             h("p", { className: "dssm-help" }, t("category.note"))
           ),
           h("div", { className: "dssm-modal-actions" },
@@ -881,7 +926,7 @@ import { Input, foldChevron } from "./plugin-ui.ts";
         var candidateNames = new Set(addModal.skills.map(function (s) { return s.name; }));
         var chosenCount = Object.keys(addSelection).filter(function (k) { return addSelection[k] && candidateNames.has(k); }).length;
         content.push(h(Modal, { key: "category-add", title: t("category.selectSkills", { name: addModal.name }), closeLabel: t("btn.close"), onClose: function () { setAddSelection({}); setAddSearch(""); setModal(null); } },
-          h(Input, { placeholder: t("search.placeholder"), value: addSearch, allowClear: true, onChange: function (e) { setAddSearch(e.target.value); } }),
+          h(Input, { placeholder: t("search.placeholder"), value: addSearch, onChange: function (e) { setAddSearch(e.target.value); } }),
           h("div", { className: "dssm-batch-list" },
             availableList.length ? availableList.map(function (item) {
               var isChecked = !!addSelection[item.name];
@@ -902,11 +947,11 @@ import { Input, foldChevron } from "./plugin-ui.ts";
               var names = Object.keys(addSelection).filter(function (k) { return addSelection[k] && candidateNames.has(k); });
               if (!names.length) { setAddSelection({}); setAddSearch(""); setModal(null); return; }
               if (inflightRef.current) return;
-              var scoped = function (extra: Record<string, unknown>) { return addModal.workspace ? Object.assign({}, extra, { workspace: addModal.workspace }) : extra; };
+              var scoped = function <T extends object>(extra: T) { return addModal.workspace ? Object.assign({}, extra, { workspace: addModal.workspace }) : extra; };
               inflightRef.current = true;
               setBusy(true); setAddSelection({}); setAddSearch(""); setModal(null);
               names.reduce<Promise<unknown>>(function (p, name) {
-                return p.then(function () { return sessionApi("/category-assign", { method: "POST", headers: MUTATION_HEADERS, body: JSON.stringify(scoped({ root: addModal.root, name: name, category: addModal.id })) }); });
+                return p.then(function () { return sessionApi("assignCategory", { target: scoped({ root: addModal.root, name: name, category: addModal.id }) }, lifetime.current.signal); });
               }, Promise.resolve()).then(function () {
                 setResult({ ok: true, text: t("category.batchAssigned", { count: names.length, category: addModal.name }) });
               }).catch(function (err: unknown) {
@@ -921,17 +966,24 @@ import { Input, foldChevron } from "./plugin-ui.ts";
           )
         ));
       }
-      if (modal && typeof modal === "object" && modal.type === "category-delete") content.push(h(Modal, { key: "category-delete", title: t("confirm.category.title"), description: t("confirm.category.desc", { name: modal.name }), closeLabel: t("btn.close"), onClose: function () { setModal(null); }, footer: h(React.Fragment, null, hostButton(t("btn.cancel"), function () { setModal(null); }, "outline"), hostButton(t("category.delete"), function () { post("/category-delete", { root: (modal as Extract<ConfirmModal, {type: "category-delete"}>).root, id: (modal as Extract<ConfirmModal, {type: "category-delete"}>).id, workspace: (modal as Extract<ConfirmModal, {type: "category-delete"}>).workspace }, "category.deleted", { name: (modal as Extract<ConfirmModal, {type: "category-delete"}>).name }).then(function () { setModal(null); }).catch(function () {}); }, "danger", busy)) }));
+      if (modal && typeof modal === "object" && modal.type === "category-delete") content.push(h(Modal, { key: "category-delete", title: t("confirm.category.title"), description: t("confirm.category.desc", { name: modal.name }), closeLabel: t("btn.close"), onClose: function () { setModal(null); }, footer: h(React.Fragment, null, hostButton(t("btn.cancel"), function () { setModal(null); }, "outline"), hostButton(t("category.delete"), function () { post("deleteCategory", { target: { root: (modal as Extract<ConfirmModal, {type: "category-delete"}>).root, id: (modal as Extract<ConfirmModal, {type: "category-delete"}>).id, workspace: (modal as Extract<ConfirmModal, {type: "category-delete"}>).workspace } }, "category.deleted", { name: (modal as Extract<ConfirmModal, {type: "category-delete"}>).name }).then(function () { setModal(null); }).catch(function () {}); }, "danger", busy)) }));
       return h("section", { className: "dssm-section" }, content);
     }
 
+    return SkillManagerSection;
+}
+
 /** Register the builtin skills page in the product main area. */
-export const inject = ['slots', 'locale'];
-export function apply(ctx: ClientContext): void {
-  localeService = ctx.locale;
+export const inject = ['slots', 'locale', 'remote'];
+export async function apply(ctx: ClientContext): Promise<void> {
+  const dispose = await ctx.remote.$mount(TYPERT_REMOTE);
+  ctx.effect(() => dispose);
+  const apiForSession = (sessionId?: string) => createSkillApi(ctx.remote, sessionId);
+  const api = apiForSession();
+  const SkillManagerSection = createSkillsPage(ctx.locale);
   ctx.effect(() => ctx.locale.register(NS, DICT));
   ctx.slots.inject('main', () => ctx.slots.register({
     name: 'main', key: 'deepseek-harness-skills', locale: NS,
   }, props => h('div', { className: 'product-capability-page' },
-    h('div', { className: 'product-capability-content' }, h(SkillManagerSection, { ...props, t: (key: string, params?: object) => props.t(key, { ...params }) })))));
+    h('div', { className: 'product-capability-content' }, h(SkillManagerSection, { ...props, api, apiForSession, t: (key: string, params?: object) => props.t(key, { ...params }) })))));
 }

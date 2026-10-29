@@ -8,6 +8,7 @@ import Sessions, { SessionId } from '@deepseek-ai/dsh-session'
 import SessionProjections from '@deepseek-ai/dsh-session-projection'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import Tools from '@deepseek-ai/dsh-tools'
+import * as NativeToolExecutor from '@deepseek-ai/dsh-tool-executor-native'
 import { expect, it, onTestFinished } from 'vitest'
 import * as CapabilityPrompt from '../src/capability-prompt.ts'
 
@@ -21,6 +22,7 @@ it('retains a blocked generation for its existing Agent after the same task iden
   await ctx.plugin(SessionProjections)
   await ctx.plugin(SystemPrompt)
   await ctx.plugin(Tools)
+  await ctx.plugin(NativeToolExecutor)
   await ctx.plugin(Llm)
   await ctx.plugin(AgentLoop, { agents: [] })
   await ctx.plugin(Presets, { default: 'task' })

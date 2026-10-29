@@ -30,13 +30,13 @@ export function validateAgencySettings(value: AgencySettings, locale: 'zh' | 'en
     teamNames.add(normalizeName(team.name))
   }
   const records = z.array(customExpertSchema).parse(value.customExperts ?? [])
-  if (records.filter(item => !item.deleted).length > CUSTOM_EXPERT_LIMIT) throw customError('limit', locale)
+  if (records.length > CUSTOM_EXPERT_LIMIT) throw customError('limit', locale)
   const ids = new Set<string>()
   const names = new Set<string>()
   for (const expert of value.customExperts ?? []) {
-    if (ids.has(expert.slug) || (!expert.deleted && names.has(normalizeName(expert.name)))) throw customError('duplicate', locale)
+    if (ids.has(expert.slug) || names.has(normalizeName(expert.name))) throw customError('duplicate', locale)
     ids.add(expert.slug)
-    if (!expert.deleted) names.add(normalizeName(expert.name))
+    names.add(normalizeName(expert.name))
   }
 }
 
@@ -45,19 +45,36 @@ export interface ExpertSettingsStore {
   revision(): number
   mutate(ops: SettingsPathOp[], expectedRevision: number): Promise<void>
 }
+/** Commit personal expert or team settings, preserving native transaction conflict semantics.
+ * @param store Authoritative revision-checked settings writer.
+ * @param ops Atomic settings edits.
+ * @param expectedRevision Revision confirmed by the caller.
+ * @param locale Language for a rejected stale write.
+ * @returns Completion after persistence; failed writes never publish a success snapshot.
+ */
+export async function mutateExpertSettings(store: ExpertSettingsStore, ops: SettingsPathOp[], expectedRevision: number, locale: 'zh' | 'en'): Promise<void> {
+  try {
+    await store.mutate(ops, expectedRevision)
+  } catch (error: unknown) {
+    if (typeof error === 'object' && error !== null && 'code' in error && error.code === 'SETTINGS_CONFLICT') {
+      throw customError('conflict', locale, { cause: error })
+    }
+    throw error
+  }
+}
 export interface AgencyExpertLibrary {
-  catalog(): Promise<CatalogSnapshot>
+  /** Read the current catalog; an optional signal cancels source preparation and discards late results. */
+  catalog(signal?: AbortSignal): Promise<CatalogSnapshot>
   getCustom(slug: string): Promise<CustomExpert>
   saveCustom(input: CustomExpertInput, enabled: boolean, expectedRevision: number): Promise<CatalogSnapshot>
   deleteCustom(slug: string, expectedRevision: number): Promise<CatalogSnapshot>
   setEnabled(enabled: string[], expectedRevision: number): Promise<{ enabled: string[]; revision: number }>
-  cleanupDeleted(): Promise<void>
 }
 export const normalizeName = (value: string): string => value.trim().toLowerCase()
 
 /** 合并只读基础名册与自定义数据；依赖宿主的持久化事务和修订号仲裁。 */
 export function createExpertLibrary(
-  base: () => Promise<ReadonlyArray<ExpertSummary>>,
+  base: (signal?: AbortSignal) => Promise<ReadonlyArray<ExpertSummary>>,
   store: ExpertSettingsStore,
   divisions: readonly string[],
   locale: () => 'zh' | 'en',
@@ -90,7 +107,7 @@ export function createExpertLibrary(
   }
   const project = (catalogExperts: readonly ExpertSummary[], state: ReturnType<typeof read>): CatalogSnapshot => {
     const ready = projectCatalog(catalogExperts)
-    const custom = state.customExperts.filter(item => !item.deleted).map(summary)
+    const custom = state.customExperts.map(summary)
     const experts = [...ready,
       ...custom.map(expert => ({ ...expert, conflict: [...ready, ...custom.filter(other => other !== expert)].some(other => overlaps(expert, other)) }))]
     const available = new Set(experts.filter(expert => !expert.conflict).map(expert => expert.slug))
@@ -99,23 +116,24 @@ export function createExpertLibrary(
   const assertWritable = (slug: string): void => {
     if (!CUSTOM_EXPERT_SLUG.test(slug)) throw customError('readonly', locale())
   }
-  const activeRecords = (records: CustomExpert[]): CustomExpert[] => records.filter(item => !item.deleted).map(({ deleted: _deleted, wasEnabled: _wasEnabled, ...item }) => item)
   const persist = async (state: ReturnType<typeof read>, revision: number): Promise<CatalogSnapshot> => {
-    await store.mutate([
-      { op: 'set', path: ['customExperts'], value: activeRecords(state.customExperts) },
+    await mutateExpertSettings(store, [
+      { op: 'set', path: ['customExperts'], value: state.customExperts },
       { op: 'set', path: ['enabled'], value: [...new Set(state.enabled)] },
-    ], revision)
+    ], revision, locale())
     return library.catalog()
   }
   const library: AgencyExpertLibrary = {
-    async catalog() {
-      const catalogExperts = await base()
+    async catalog(signal) {
+      signal?.throwIfAborted()
+      const catalogExperts = await base(signal)
+      signal?.throwIfAborted()
       const state = read()
       return project(catalogExperts, state)
     },
     async getCustom(slug) {
       assertWritable(slug)
-      const expert = read().customExperts.find(item => item.slug === slug && !item.deleted)
+      const expert = read().customExperts.find(item => item.slug === slug)
       if (expert === undefined) throw customError('missing', locale())
       return expert
     },
@@ -127,19 +145,19 @@ export function createExpertLibrary(
       const value = parsed.data
       if (!divisions.includes(value.division) && !catalogExperts.some(item => item.division === value.division)) throw customError('division', locale())
       const state = read()
-      if (value.slug !== undefined && !state.customExperts.some(item => item.slug === value.slug && !item.deleted)) throw customError('missing', locale())
-      if (value.slug === undefined && state.customExperts.filter(item => !item.deleted).length >= CUSTOM_EXPERT_LIMIT) throw customError('limit', locale())
+      if (value.slug !== undefined && !state.customExperts.some(item => item.slug === value.slug)) throw customError('missing', locale())
+      if (value.slug === undefined && state.customExperts.length >= CUSTOM_EXPERT_LIMIT) throw customError('limit', locale())
       const expert: CustomExpert = { ...value, slug: value.slug ?? `custom-${randomUUID()}` }
       const next = state.customExperts.filter(item => item.slug !== expert.slug)
       next.push(expert)
-      assertUnique(summary(expert), [...catalogExperts, ...next.filter(item => !item.deleted && item.slug !== expert.slug).map(summary)])
+      assertUnique(summary(expert), [...catalogExperts, ...next.filter(item => item.slug !== expert.slug).map(summary)])
       return persist({ customExperts: next, enabled: [...state.enabled.filter(slug => slug !== expert.slug), ...(enabled ? [expert.slug] : [])] }, expectedRevision)
     },
     async deleteCustom(slug, expectedRevision) {
       assertWritable(slug)
       checkRevision(expectedRevision)
       const state = read()
-      if (!state.customExperts.some(item => item.slug === slug && !item.deleted)) throw customError('missing', locale())
+      if (!state.customExperts.some(item => item.slug === slug)) throw customError('missing', locale())
       return persist({
         customExperts: state.customExperts.filter(item => item.slug !== slug),
         enabled: state.enabled.filter(item => item !== slug),
@@ -152,23 +170,11 @@ export function createExpertLibrary(
       const available = new Set(project(catalogExperts, state).experts.filter(expert => !expert.conflict).map(expert => expert.slug))
       if (enabled.some(slug => !available.has(slug))) throw customError('unavailable', locale())
       const next = [...new Set(enabled)]
-      await store.mutate([
-        { op: 'set', path: ['customExperts'], value: activeRecords(state.customExperts) },
+      await mutateExpertSettings(store, [
+        { op: 'set', path: ['customExperts'], value: state.customExperts },
         { op: 'set', path: ['enabled'], value: next },
-      ], expectedRevision)
+      ], expectedRevision, locale())
       return { enabled: next, revision: store.revision() }
-    },
-    async cleanupDeleted() {
-      const state = read()
-      if (!state.customExperts.some(item => item.deleted !== undefined || item.wasEnabled !== undefined)) return
-      // 默认源及卸载回退无需访问设置区；快照与修订号之间没有异步间隙。
-      const expectedRevision = store.revision()
-      const records = activeRecords(state.customExperts)
-      const deleted = new Set(state.customExperts.filter(item => item.deleted).map(item => item.slug))
-      await store.mutate([
-        { op: 'set', path: ['customExperts'], value: records },
-        { op: 'set', path: ['enabled'], value: state.enabled.filter(slug => !deleted.has(slug)) },
-      ], expectedRevision)
     },
   }
   return library

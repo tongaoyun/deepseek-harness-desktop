@@ -1,4 +1,5 @@
 /** Product protocol adapter over the desktop's namespace-only transport. */
+import { randomUUID } from '@deepseek-ai/dsh-util-crypto'
 import { isProductFailure, ProductError } from '@deepseek-harness/product/errors'
 
 /** Credential-free product transport available to renderer consumers. */
@@ -13,6 +14,32 @@ interface Transport {
   cancel(namespace: string, requestId: string): void
   subscribe(namespace: string, listener: (event: unknown) => void): () => void
 }
+
+/** Invoke one product operation with one cancellation path shared by all views.
+ * @param api - Product transport adapter.
+ * @param method - Product operation name.
+ * @param payload - Operation payload.
+ * @param signal - Caller cancellation signal.
+ * @param timeoutMs - Optional transport timeout.
+ * @returns Operation result from the product bridge.
+ */
+export async function invokeProduct(api: ProductApi, method: string, payload: unknown, signal: AbortSignal,
+  timeoutMs?: number): Promise<unknown> {
+  signal.throwIfAborted()
+  const requestId = randomUUID()
+  const cancelled = Promise.withResolvers<never>()
+  const cancel = (): void => {
+    cancelled.reject(signal.reason instanceof Error ? signal.reason : new Error('Product request cancelled', { cause: signal.reason }))
+    try { api.cancel(requestId) } catch { /* The request is already being torn down. */ }
+  }
+  signal.addEventListener('abort', cancel, { once: true })
+  try {
+    const value = await Promise.race([api.invoke(method, payload, requestId, timeoutMs), cancelled.promise])
+    signal.throwIfAborted()
+    return value
+  } finally { signal.removeEventListener('abort', cancel) }
+}
+
 /** Bind product methods to the desktop namespace transport.
  * @returns Product adapter, or undefined outside an extended desktop.
  */

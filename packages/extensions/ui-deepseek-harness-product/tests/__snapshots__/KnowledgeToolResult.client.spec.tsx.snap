@@ -1,0 +1,5 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`reports denied citation access in en after closing live content 1`] = `"Search knowledge交付政策.md产品部第 2 页Access to selected knowledge bases has been revoked. Refresh and select again. (KNOWLEDGE_ACCESS_REVOKED)"`;
+
+exports[`reports denied citation access in zh after closing live content 1`] = `"检索知识库交付政策.md产品部第 2 页所选知识库已失去访问权限，请刷新并重新选择。 (KNOWLEDGE_ACCESS_REVOKED)"`;

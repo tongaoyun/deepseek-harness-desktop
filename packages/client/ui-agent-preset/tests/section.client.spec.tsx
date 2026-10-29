@@ -4,7 +4,6 @@ import { afterEach, expect, it, vi } from 'vitest'
 import { allowAllAccess, bindSnapshotSelector } from '@deepseek-ai/dsh-client-test-runtime'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import { Modal } from '@deepseek-ai/dsh-client-ui-primitives'
-import type { AgentPresetRow } from '@deepseek-ai/dsh-agent-preset-registry/types'
 import { AgentPresetSection, type AgentPresetSectionProps } from '../src/client/AgentPresetSection.tsx'
 import type { AgentPresetSectionState } from '../src/client/section-store.ts'
 import { en } from '../src/client/locales.ts'
@@ -13,16 +12,11 @@ const translations: ReadonlyMap<string, string> = new Map(Object.entries(en))
 function unusedHook(): never {
   throw new Error('This section does not read global slot sources')
 }
-type RowInput = Omit<AgentPresetRow, 'selectable' | 'defaultable'>
-  & Partial<Pick<AgentPresetRow, 'selectable' | 'defaultable'>>
-type ViewInput = Omit<Partial<AgentPresetSectionState>, 'rows'> & { rows?: readonly RowInput[] }
-const completeRow = (row: RowInput): AgentPresetRow => ({ selectable: true, defaultable: true, ...row })
-
-function view(partial: ViewInput = {}, startCreatorDraft?: () => void, outerClose?: () => void, enabled = true) {
-  const { rows = [{ id: 'standard', isDefault: true }, { id: 'mine', name: 'Mine', isDefault: false }], ...rest } = partial
+function view(partial: Partial<AgentPresetSectionState> = {}, startCreatorDraft?: () => void, outerClose?: () => void, enabled = true) {
   const developerTools = createSnapshotStore(enabled)
   const store = createSnapshotStore<AgentPresetSectionState>({ status: 'ready', error: null,
-    saving: false, rows: rows.map(completeRow), view: null, ...rest })
+    saving: false, rows: [{ selectable: true, defaultable: true, id: 'standard', isDefault: true }, { selectable: true, defaultable: true, id: 'mine', name: 'Mine', isDefault: false }],
+    view: null, ...partial })
   const actions = { load: vi.fn(async () => {}), view: vi.fn(async () => {}), closeView: vi.fn(), makeDefault: vi.fn(async () => {}),
     close: vi.fn() }
   const props: AgentPresetSectionProps = { ...actions,
@@ -44,9 +38,9 @@ function rowFor(id: string): HTMLElement {
 }
 it.each([false, true])('offers Standard, Creator and custom defaults with Coding Tools %s', (enabled) => {
   const actions = view({ rows: [
-    { id: 'standard', isDefault: false }, { id: 'ptc', isDefault: false },
-    { id: 'minimal', isDefault: true }, { id: 'cordis', isDefault: false },
-    { id: 'mine', name: 'Mine', isDefault: false },
+    { selectable: true, defaultable: true, id: 'standard', isDefault: false }, { selectable: true, defaultable: true, id: 'ptc', isDefault: false },
+    { selectable: true, defaultable: true, id: 'minimal', isDefault: true }, { selectable: true, defaultable: true, id: 'cordis', isDefault: false },
+    { selectable: true, defaultable: true, id: 'mine', name: 'Mine', isDefault: false },
   ] }, vi.fn(), undefined, enabled)
   expect(screen.queryByRole('button', { name: `${en.setDefault}: ${en.presetPtcName}` }) !== null).toBe(enabled)
   expect(screen.queryByRole('button', { name: `${en.inUse}: ${en.presetMinimalName}` }) !== null).toBe(enabled)
@@ -60,8 +54,8 @@ it.each([false, true])('offers Standard, Creator and custom defaults with Coding
 })
 it('updates visible settings choices without writing defaults from the renderer', () => {
   const actions = view({ rows: [
-    { id: 'standard', isDefault: false }, { id: 'ptc', isDefault: false },
-    { id: 'minimal', isDefault: true }, { id: 'cordis', isDefault: false },
+    { selectable: true, defaultable: true, id: 'standard', isDefault: false }, { selectable: true, defaultable: true, id: 'ptc', isDefault: false },
+    { selectable: true, defaultable: true, id: 'minimal', isDefault: true }, { selectable: true, defaultable: true, id: 'cordis', isDefault: false },
   ] })
   const rows = actions.store.getSnapshot().rows
   act(() => { actions.developerTools.set(false) })
@@ -76,7 +70,7 @@ it('updates visible settings choices without writing defaults from the renderer'
   expect(rowFor('ptc')).toBeTruthy()
 })
 it.each(['ptc', 'minimal'])('keeps a named custom %s override selectable with Coding Tools off', (id) => {
-  const actions = view({ rows: [{ id, name: 'My mode', isDefault: false }] }, undefined, undefined, false)
+  const actions = view({ rows: [{ selectable: true, defaultable: true, id, name: 'My mode', isDefault: false }] }, undefined, undefined, false)
   fireEvent.click(screen.getByRole('button', { name: `${en.setDefault}: My mode` }))
   expect(actions.makeDefault).toHaveBeenCalledWith(id)
 })
@@ -97,12 +91,12 @@ it('replaces the default preset group tag with its new-task default status', () 
   expect(within(rowFor('mine')).getByText(en.customGroup)).toBeTruthy()
 })
 it('omits an empty group instead of leaving a heading behind', () => {
-  view({ rows: [{ id: 'standard', isDefault: true }] })
+  view({ rows: [{ selectable: true, defaultable: true, id: 'standard', isDefault: true }] })
   expect(screen.getByRole('heading', { name: en.builtInGroup })).toBeTruthy()
   expect(screen.queryByRole('heading', { name: en.customGroup })).toBeNull()
 })
 it('keeps the custom group and its Creator entry while the roster has none', () => {
-  view({ rows: [{ id: 'cordis', isDefault: true }] }, vi.fn())
+  view({ rows: [{ selectable: true, defaultable: true, id: 'cordis', isDefault: true }] }, vi.fn())
   const group = screen.getByRole('heading', { name: en.customGroup }).closest('section')
   expect(group).not.toBeNull()
   expect(within(group!).queryByRole('list')).toBeNull()
@@ -110,13 +104,13 @@ it('keeps the custom group and its Creator entry while the roster has none', () 
 })
 it('launches a Creator-mode task from the entry and closes the settings dialog', () => {
   const launch = vi.fn()
-  const actions = view({ rows: [{ id: 'cordis', isDefault: true }] }, launch)
+  const actions = view({ rows: [{ selectable: true, defaultable: true, id: 'cordis', isDefault: true }] }, launch)
   fireEvent.click(screen.getByRole('button', { name: en.creatorDraft }))
   expect(launch).toHaveBeenCalledOnce()
   expect(actions.close).toHaveBeenCalledOnce()
 })
 it('offers no Creator entry without the conversation flow or the cordis preset', () => {
-  view({ rows: [{ id: 'cordis', isDefault: true }] })
+  view({ rows: [{ selectable: true, defaultable: true, id: 'cordis', isDefault: true }] })
   expect(screen.queryByRole('button', { name: en.creatorDraft })).toBeNull()
   cleanup()
   view({}, vi.fn())
@@ -124,14 +118,14 @@ it('offers no Creator entry without the conversation flow or the cordis preset',
 })
 it('disables the Creator entry while a default is being saved', () => {
   const launch = vi.fn()
-  view({ saving: true, rows: [{ id: 'cordis', isDefault: true }] }, launch)
+  view({ saving: true, rows: [{ selectable: true, defaultable: true, id: 'cordis', isDefault: true }] }, launch)
   const button = screen.getByRole<HTMLButtonElement>('button', { name: en.creatorDraft })
   expect(button.disabled).toBe(true)
   fireEvent.click(button)
   expect(launch).not.toHaveBeenCalled()
 })
 it('reads a declared composition read-only from every card, broken ones included', () => {
-  const actions = view({ rows: [{ id: 'standard', isDefault: true }, { id: 'broken', isDefault: false, broken: 'Missing plugin' }] })
+  const actions = view({ rows: [{ selectable: true, defaultable: true, id: 'standard', isDefault: true }, { selectable: true, defaultable: true, id: 'broken', isDefault: false, broken: 'Missing plugin' }] })
   expect(screen.queryByRole('dialog')).toBeNull()
   fireEvent.click(within(rowFor('standard')).getByRole('button', { name: `${en.view}: ${en.presetStandardName}` }))
   expect(actions.view).toHaveBeenCalledWith('standard')
@@ -178,15 +172,15 @@ it('clears an open viewer when the settings section unmounts', () => {
 })
 it('shows roster errors without hiding the roster', () => {
   const actions = view({ error: 'Roster stale', rows: [
-    { id: 'broken', isDefault: false, broken: 'Missing plugin' },
-    { id: 'mine', name: 'Mine', isDefault: false },
+    { selectable: true, defaultable: true, id: 'broken', isDefault: false, broken: 'Missing plugin' },
+    { selectable: true, defaultable: true, id: 'mine', name: 'Mine', isDefault: false },
   ] })
   expect(screen.getAllByRole('alert').map(node => node.textContent)).toEqual(['Roster stale', 'Missing plugin'])
   fireEvent.click(screen.getByRole('button', { name: `${en.setDefault}: Mine` }))
   expect(actions.makeDefault).toHaveBeenCalledWith('mine')
 })
 it('keeps a broken card focusable for diagnostics and refuses to select it', () => {
-  const actions = view({ rows: [{ id: 'broken', isDefault: false, broken: 'Missing plugin' }] })
+  const actions = view({ rows: [{ selectable: true, defaultable: true, id: 'broken', isDefault: false, broken: 'Missing plugin' }] })
   const card = screen.getByRole<HTMLButtonElement>('button', { name: 'Failed to load: broken' })
   expect(card.disabled).toBe(false)
   expect(card.getAttribute('aria-disabled')).toBe('true')
@@ -199,7 +193,7 @@ it.each([
   ['minimal', en.presetMinimalName, 'What is included', 'Compare performance on a small bug fix'],
   ['cordis', en.presetCordisName, 'What you can create', 'Add a UI'],
 ])('opens both help sections for %s without changing the default', (id, name, heading, exampleTitle) => {
-  const actions = view({ rows: [{ id, isDefault: false }] })
+  const actions = view({ rows: [{ selectable: true, defaultable: true, id, isDefault: false }] })
   const trigger = within(rowFor(id)).getByRole('button', { name: `${en.modeExplanation}: ${name}` })
   trigger.focus()
   fireEvent.click(trigger)
@@ -260,7 +254,7 @@ it('connects keyboard selection to the visible guide panel', () => {
   expect(within(dialog).queryByRole('tabpanel', { name: en.modeExplanation })).toBeNull()
 })
 it('does not attach built-in claims to named or unknown presets', () => {
-  view({ rows: [{ id: 'ptc', name: 'My PTC', isDefault: false }, { id: 'third-party', isDefault: false }] })
+  view({ rows: [{ selectable: true, defaultable: true, id: 'ptc', name: 'My PTC', isDefault: false }, { selectable: true, defaultable: true, id: 'third-party', isDefault: false }] })
   expect(screen.queryByRole('button', { name: new RegExp(en.modeExplanation) })).toBeNull()
   expect(screen.queryByRole('button', { name: new RegExp(en.howToUse) })).toBeNull()
 })
@@ -292,8 +286,8 @@ it.each([false, true])('only offers a description tooltip when the card clips it
   vi.spyOn(Element.prototype, 'clientHeight', 'get').mockReturnValue(80)
   const disconnect = vi.spyOn(ResizeObserver.prototype, 'disconnect')
   vi.useFakeTimers()
-  view({ rows: [{ id: 'mine', isDefault: false, description: 'Preset description' }] })
-  fireEvent.mouseEnter(screen.getByText('Preset description'))
+  view({ rows: [{ selectable: true, defaultable: true, id: 'mine', isDefault: false, description: 'Preset description' }] })
+  fireEvent.pointerEnter(screen.getByText('Preset description'))
   act(() => { vi.advanceTimersByTime(400) })
   expect(screen.queryByRole('tooltip')?.textContent ?? null).toBe(overflow ? 'Preset description' : null)
   cleanup()
@@ -301,7 +295,7 @@ it.each([false, true])('only offers a description tooltip when the card clips it
 })
 it('renders descriptions and allows selection without resize observation', () => {
   vi.stubGlobal('ResizeObserver', undefined)
-  const actions = view({ rows: [{ id: 'mine', name: 'Mine', isDefault: false, description: 'Preset description' }] })
+  const actions = view({ rows: [{ selectable: true, defaultable: true, id: 'mine', name: 'Mine', isDefault: false, description: 'Preset description' }] })
   expect(screen.getByText('Preset description')).toBeTruthy()
   fireEvent.click(screen.getByRole('button', { name: `${en.setDefault}: Mine` }))
   expect(actions.makeDefault).toHaveBeenCalledWith('mine')

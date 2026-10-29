@@ -29,6 +29,7 @@ it.each([false, true])('settles startup after parent IPC disconnect (boot failur
   writeFileSync(join(root, 'package.json'), '{"type":"module"}')
   writeFileSync(join(modules, 'dsh-app-boot', 'package.json'), '{"type":"module","exports":"./index.js"}')
   writeFileSync(join(modules, 'dsh-app-boot', 'index.js'), `
+    export class StartupError extends Error {}
     export const loadProfileDirectory = () => ({ skippedBundles: [] });
     export const reportSkippedBundles = () => {};
     export const loadLayeredEnv = () => ({});
@@ -37,7 +38,7 @@ it.each([false, true])('settles startup after parent IPC disconnect (boot failur
   writeFileSync(join(modules, 'dsh', 'profile-boot.js'), `
     import { writeFileSync } from 'node:fs';
     export function runProfile(options) {
-      process.send({ type: 'booting', packageManager: options.packageManager });
+      process.send({ type: 'booting', packageManager: options.packageManager, patchFiles: options.patchFiles });
       return new Promise((resolve, reject) => process.once('disconnect', () => {
         if (${String(fail)}) { reject(new Error('fixture boot failure')); return; }
         resolve({ ctx: { plugin: async () => {}, effect: () => {}, on: () => {}, inject: () => {},
@@ -50,7 +51,9 @@ it.each([false, true])('settles startup after parent IPC disconnect (boot failur
   copyFileSync(join(hostDirectory, 'lib', 'index.js'), entry)
   const pnpm = join(root, 'bundled-pnpm.mjs')
   const nodeBin = join(root, 'bin')
-  const child = fork(entry, [root, root, root, pnpm, nodeBin], { execArgv: [], stdio: ['ignore', 'ignore', 'pipe', 'ipc'] })
+  const overlays = [join(root, 'product.cordis.patch.yml'), join(root, 'inference.cordis.patch.yml')]
+  const child = fork(entry, [root, root, root, pnpm, nodeBin], { execArgv: [], stdio: ['ignore', 'ignore', 'pipe', 'ipc'],
+    env: { ...process.env, DSH_DESKTOP_PROFILE_PATCHES: JSON.stringify(overlays) } })
   let stderr = ''
   child.stderr!.setEncoding('utf8').on('data', (chunk: string) => { stderr += chunk })
   const exited = new Promise<number | null>(resolve => child.once('exit', resolve))
@@ -62,12 +65,28 @@ it.each([false, true])('settles startup after parent IPC disconnect (boot failur
   })
   try {
     const boot = await new Promise<{
+      patchFiles: string[]
       packageManager: { command: string; args: string[]; env: Record<string, string> }
     }>((resolve, reject) => {
-      child.once('message', resolve)
+      child.on('message', (message) => {
+        if (typeof message === 'object' && message !== null && 'type' in message && message.type === 'booting' && 'packageManager' in message) {
+          if (!('patchFiles' in message) || !Array.isArray(message.patchFiles)) {
+            reject(new Error('Host did not expose its overlay selection')); return
+          }
+          const patchFiles: unknown[] = message.patchFiles
+          if (!patchFiles.every((path): path is string => typeof path === 'string')) {
+            reject(new Error('Host overlay selection contains a non-string path')); return
+          }
+          resolve({
+            packageManager: message.packageManager as { command: string; args: string[]; env: Record<string, string> },
+            patchFiles,
+          })
+        }
+      })
       child.once('error', reject)
       child.once('exit', (code) => { reject(new Error(`Host exited before booting: ${String(code)} ${stderr}`)) })
     })
+    expect(boot.patchFiles).toEqual(overlays)
     expect(boot.packageManager.command).toBe(process.execPath)
     expect(boot.packageManager.args).toEqual(['--expose-internals', pnpm])
     expect(boot.packageManager.env.ELECTRON_RUN_AS_NODE).toBe('1')

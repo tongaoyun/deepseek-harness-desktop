@@ -5,11 +5,11 @@ description: "产品桌面支持配置和反馈 HTTP 要求变更，桌面执行
 
 # 产品设备与反馈支持
 
-## 变更
+## Change
 
 产品桌面装配的 `product.json` 必须包含 `support` 对象。员工认证后启动设备能力上报和在线心跳。反馈提交必须带 UUID `Idempotency-Key`；管理员更新反馈必须提供 `expectedUpdatedAt`。设备总览返回服务端分页及独立的在线与能力上报时间。桌面执行审计接口移除，官方 Session 历史仍保留在本地。
 
-## 迁移
+## Migration
 
 1. 先升级产品服务端并执行数据库迁移。已有反馈和设备报告继续可用，历史内部知识库操作审计数据保留。
 2. 在产品装配的 `product.json` 中添加 `"support": { "heartbeatIntervalMs": 300000, "reportIntervalMs": 86400000 }`。心跳范围为 60,000–3,600,000 毫秒；完整上报间隔不小于心跳间隔，不超过一天。参见[桌面包](../../../../packages/deepseek-harness-product/desktop/README.md#device-and-feedback)。

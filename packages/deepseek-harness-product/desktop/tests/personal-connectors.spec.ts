@@ -10,6 +10,12 @@ import { ConnectorDraftSchema } from '@deepseek-harness/product/connector-draft'
 import { PersonalConnectors } from '../src/personal-connectors.ts'
 import { ConnectorProxy } from '../src/connector-proxy.ts'
 
+it('rejects query-bearing MCP endpoints at the shared draft boundary', () => {
+  expect(() => ConnectorDraftSchema.parse({ kind: 'connector', id: 'query-mcp', version: '1.0.0',
+    name: 'Query MCP', summary: 'Query MCP', category: 'other', transport: 'streamable-http',
+    url: 'https://example.test/mcp?tenant=hidden' })).toThrow()
+})
+
 it('discovers real MCP annotations without business calls, encrypts secrets, isolates failures and revokes device access', async () => {
   const root = await mkdtemp(join(tmpdir(), 'personal-mcp-test-'))
   onTestFinished(() => rm(root, { recursive: true, force: true }))

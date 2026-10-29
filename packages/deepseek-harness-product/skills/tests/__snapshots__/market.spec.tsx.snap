@@ -1,0 +1,53 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`copies the exact skill body from company and local details (en) 1`] = `
+{
+  "action": "Copy body",
+  "bodyLabel": "Body",
+  "readOnly": true,
+  "rows": 16,
+}
+`;
+
+exports[`copies the exact skill body from company and local details (zh) 1`] = `
+{
+  "action": "复制正文",
+  "bodyLabel": "正文",
+  "readOnly": true,
+  "rows": 16,
+}
+`;
+
+exports[`shows a workspace registry failure instead of an empty project directory (en) 1`] = `
+{
+  "locale": "en",
+  "message": "Cannot read the workspace list: Could not read registered workspaces. Try again.",
+}
+`;
+
+exports[`shows a workspace registry failure instead of an empty project directory (zh) 1`] = `
+{
+  "locale": "zh",
+  "message": "无法读取工作区列表：无法读取工作区登记，请重试。",
+}
+`;
+
+exports[`submits a category with Enter but keeps IME composition in the input (en) 1`] = `
+{
+  "inputLabel": "Category name",
+  "saved": {
+    "name": "Finance",
+    "root": "dsh",
+  },
+}
+`;
+
+exports[`submits a category with Enter but keeps IME composition in the input (zh) 1`] = `
+{
+  "inputLabel": "分类名称",
+  "saved": {
+    "name": "Finance",
+    "root": "dsh",
+  },
+}
+`;

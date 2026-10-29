@@ -1,7 +1,8 @@
 /** Validate credential-free knowledge responses received through product IPC. */
+import { randomUUID } from '@deepseek-ai/dsh-util-crypto'
 import { useCallback, useEffect, useRef } from 'react'
 import { productFailure } from '@deepseek-harness/product/errors'
-import { nextProductRequestId, text } from './catalog-shared.tsx'
+import { text } from './catalog-shared.tsx'
 import { productApi } from './product-api.ts'
 
 /** Document metadata and optional manager-only editable text. */
@@ -24,14 +25,6 @@ export interface KnowledgeDocument {
   readonly previewMaxBytes?: number
   readonly downloadMaxBytes?: number
   readonly uploadMaxBytes?: number
-}
-
-/** One indexed passage from a currently authorized document. */
-export interface KnowledgeChunk {
-  readonly id: string
-  readonly documentId: string
-  readonly content: string
-  readonly locator: string
 }
 
 /** Stable product folder identity, distinct from its visible name. */
@@ -117,26 +110,21 @@ export function knowledgePage<T>(value: unknown, read: (entry: unknown) => T): K
   return { items: page.items.map(read), page: number(page.page), size: number(page.size), total: number(page.total) }
 }
 
-/** Read one indexed passage.
- * @param value Passage response.
- * @returns Content and stable document identity.
- */
-export function knowledgeChunk(value: unknown): KnowledgeChunk {
-  const row = record(value)
-  return { id: string(row.id), documentId: string(row.documentId), content: string(row.content), locator: string(row.locator) }
-}
-
-/** Read bounded binary chunks into one preview buffer and always release the main-process transfer.
+/** Read bounded binary chunks and attempt to close the main-process transfer on completion or failure.
  * @param request The cancellable product transport for this mounted reader.
  * @param payload Stable resource IDs and whether official Office conversion is needed.
  * @param signal Reader cancellation signal.
  * @returns Read-only original or converted bytes without URLs, paths, or credentials.
+ * @throws A read failure without waiting for cleanup; cleanup failures are logged separately.
+ * Successful reads require a close acknowledgement.
  */
 export async function readKnowledgeFile(request: ReturnType<typeof useKnowledgeRequests>,
   payload: { readonly knowledgeBaseId: string; readonly documentId: string; readonly rendered?: boolean },
   signal: AbortSignal): Promise<KnowledgePreviewFile> {
   const transfer = record(await request('knowledge.documents.preview.open', payload, signal))
   const transferId = string(transfer.transferId)
+  const close = async () => { await request('knowledge.documents.preview.close', { transferId }) }
+  let file: KnowledgePreviewFile
   try {
     const byteLength = number(transfer.byteLength)
     const maxBytes = number(transfer.maxBytes)
@@ -161,10 +149,14 @@ export async function readKnowledgeFile(request: ReturnType<typeof useKnowledgeR
       offset += chunk.data.byteLength
     }
     signal.throwIfAborted()
-    return { data, mediaType, ...(Array.isArray(missingFonts) ? { missingFonts: missingFonts as string[] } : {}) }
-  } finally {
-    await request('knowledge.documents.preview.close', { transferId })
+    file = { data, mediaType, ...(Array.isArray(missingFonts) ? { missingFonts: missingFonts as string[] } : {}) }
+  } catch (failure) {
+    void close().catch((error: unknown) => { console.warn('Knowledge preview cleanup failed', error) })
+    throw failure
   }
+  await close()
+  signal.throwIfAborted()
+  return file
 }
 
 /** Read one server-owned folder.
@@ -209,7 +201,7 @@ export function useKnowledgeRequests(): (method: string, payload: unknown, signa
     const api = productApi()
     if (api === undefined) throw new Error('Product transport unavailable')
     if (signal?.aborted) throw new Error('Knowledge request cancelled')
-    const id = nextProductRequestId()
+    const id = randomUUID()
     let cancelled = false
     const cancel = () => { if (!cancelled) { cancelled = true; api.cancel(id) } }
     requests.current.set(id, cancel)

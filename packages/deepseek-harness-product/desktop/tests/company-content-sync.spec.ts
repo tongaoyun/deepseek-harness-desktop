@@ -33,8 +33,9 @@ async function fixture() {
     await rm(root, { force: true, recursive: true })
     vi.restoreAllMocks()
   })
-  const now = vi.spyOn(Date, 'now').mockReturnValue(100_000)
-  return { root, load, create, now }
+  const now = vi.spyOn(performance, 'now').mockReturnValue(100_000)
+  const wall = vi.spyOn(Date, 'now').mockReturnValue(100_000)
+  return { root, load, create, now, wall }
 }
 
 it('shows local content before the first request settles and coalesces page checks', async () => {
@@ -51,6 +52,22 @@ it('shows local content before the first request settles and coalesces page chec
   expect(sync.read().version).toBe('1.0.0')
   await sync.refresh()
   expect(load).toHaveBeenCalledOnce()
+})
+
+it.each(['backward', 'forward'] as const)('keeps the refresh interval independent of a %s wall-clock jump', async (direction) => {
+  const { create, load, now: elapsed, wall } = await fixture()
+  const sync = create()
+  await sync.prepare()
+  await sync.refresh()
+  load.mockResolvedValue(release('2.0.0'))
+  wall.mockReturnValue(direction === 'backward' ? 100_000 - 9 * 3600_000 : 100_000 + 9 * 3600_000)
+  elapsed.mockReturnValue(direction === 'backward' ? 102_000 : 100_500)
+  await sync.refresh()
+  expect(load).toHaveBeenCalledTimes(direction === 'backward' ? 2 : 1)
+  elapsed.mockReturnValue(102_000)
+  await sync.refresh()
+  expect(load).toHaveBeenCalledTimes(2)
+  expect(sync.read().version).toBe('2.0.0')
 })
 
 it('new tasks use the new version while old tasks and child tasks keep their content after restart', async () => {
@@ -202,11 +219,12 @@ it('cancels one page waiter without cancelling a concurrent reader', async () =>
   const sync = create()
   await sync.prepare()
   const page = new AbortController()
+  page.signal.addEventListener('abort', (event) => { event.stopImmediatePropagation() })
   const cancelled = expect(sync.refresh(page.signal)).rejects.toThrow('Page closed')
   const other = sync.refresh()
   page.abort(new Error('Page closed'))
-  await cancelled
   remote.resolve(release('1.0.0'))
+  await cancelled
   await other
   expect(sync.read().version).toBe('1.0.0')
   expect(load).toHaveBeenCalledOnce()

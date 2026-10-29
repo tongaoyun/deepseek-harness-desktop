@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { useEffect, useState } from 'react'
 import { act, fireEvent, within } from '@testing-library/react'
-import { describe, expect, onTestFinished } from 'vitest'
+import { describe, expect, onTestFinished, vi } from 'vitest'
 import { createClientTest, webApp } from '@deepseek-ai/dsh-client-test-runtime/src/assembly/index.ts'
 import type { PropsRenderFactories, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { MainPanelId } from '@deepseek-ai/dsh-client-ui-layout/client'
@@ -13,6 +13,13 @@ const PANEL = 'test-settings-page' as MainPanelId
 
 describe('shared settings section view', () => {
   it('shares a registered page across main and settings, suspends covered instances, and follows Loader lifecycle', async ({ start }) => {
+    // jsdom has no layout or scrolling implementation.
+    const previous = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'scrollIntoView')
+    Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', { configurable: true, value: vi.fn() })
+    onTestFinished(() => {
+      if (previous) Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', previous)
+      else Reflect.deleteProperty(HTMLElement.prototype, 'scrollIntoView')
+    })
     const c = await start()
     const view = within(c.container!)
     const shell = () => (c.ctx.slots.entries('sidebar.settings')[0]!.store as ReturnType<typeof createSettingsShellStore>).create()

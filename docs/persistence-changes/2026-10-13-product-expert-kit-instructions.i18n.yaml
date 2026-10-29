@@ -1,0 +1,28 @@
+# Bilingual-pair consistency record for 2026-10-13-product-expert-kit-instructions.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write docs/persistence-changes/2026-10-13-product-expert-kit-instructions.md
+/:
+  en: 3d5a424ae7d7e46b
+  zh: c22a8e4a62d8cc1a
+/2026-10-13-product-expert-kit-instructions:
+  en: c8125f27f6ea0268
+  zh: e1db92ba10007abf
+/2026-10-13-product-expert-kit-instructions/summary:
+  en: a8406cd855ef93b0
+  zh: 736a6e57457a862e
+/2026-10-13-product-expert-kit-instructions/table-of-contents:
+  en: 6cf314a069ceb451
+  zh: 30d34dfb232b31b2
+/2026-10-13-product-expert-kit-instructions/declaration:
+  en: 6907136f28e48c90
+  zh: 6907136f28e48c90
+/2026-10-13-product-expert-kit-instructions/compatibility:
+  en: 4c53e63d262ff597
+  zh: a90942606fe3e7bf
+/2026-10-13-product-expert-kit-instructions/verification:
+  en: c351a850ad24148e
+  zh: 61fad6883275c6cc
+/2026-10-13-product-expert-kit-instructions/dev-note:
+  en: b75c8458928b72b9
+  zh: 02cbcc6baa338b07

@@ -1,6 +1,5 @@
 import { Button, Modal } from './plugin-ui.ts'
 import { Switch as PrimitiveSwitch } from '@deepseek-ai/dsh-client-ui-primitives'
-import { useEscapeLayer } from './escape-layer.ts'
 import React from 'react'
 
 export interface LibraryMenuItem {
@@ -37,7 +36,7 @@ export function LibraryEditorFooter(props: {
         {!props.editing && (
           <Button disabled={props.busy || props.blocked} onClick={props.save}>{props.saveLabel}</Button>
         )}
-        <Button type="primary" disabled={props.busy || props.blocked} onClick={props.primary}>{props.primaryLabel}</Button>
+        <Button variant="primary" disabled={props.busy || props.blocked} onClick={props.primary}>{props.primaryLabel}</Button>
       </div>
     </footer>
   )
@@ -122,7 +121,6 @@ export function LibraryConfirm(props: {
   confirm(): void
   close(): void
 }) {
-  useEscapeLayer(true, () => { if (!props.busy) props.close() })
   const extra = props.error ? <p className="aag-error" role="alert">{props.error}</p> : null
   const body = props.children || extra ? <>{props.children}{extra}</> : undefined
   return (
@@ -130,7 +128,7 @@ export function LibraryConfirm(props: {
       open
       title={props.title}
       description={props.description}
-      onCancel={() => { if (!props.busy) props.close() }}
+      onClose={() => { if (!props.busy) props.close() }}
       footer={[
         <Button key="cancel" variant="outline" disabled={props.busy} onClick={() => { if (!props.busy) props.close() }}>{props.cancelLabel}</Button>,
         <Button key="confirm" variant={props.danger ? 'outline' : 'primary'} danger={props.danger} disabled={props.busy} loading={props.busy} onClick={props.confirm}>{props.confirmLabel}</Button>,

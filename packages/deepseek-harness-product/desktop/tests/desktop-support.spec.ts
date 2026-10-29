@@ -6,8 +6,8 @@ import { DesktopSupport } from '../src/desktop-support.ts'
 afterEach(() => vi.restoreAllMocks())
 const policy = { heartbeatIntervalMs: 300000, reportIntervalMs: 86400000 }
 function fixture(transport: typeof fetch) {
-  const native = vi.fn(async (method: string) => method === 'device-identity.get' ? { deviceId: 'private-installation-id' }
-    : { ready: true, capabilities: ['filesystem', 'secure-storage'] })
+  const native = vi.fn<(method: string) => Promise<unknown>>(async method => method === 'device-identity.get' ? { deviceId: 'private-installation-id' }
+    : { ready: true, protocol: 'deepseek-harness.native.v1', capabilities: ['device-identity'] })
   const support = new DesktopSupport({ policy, native, metadata: () => ({ desktopVersion: '0.2.1-alpha.2',
     platform: 'darwin', architecture: 'arm64', displayScalePercents: [200], encryptedStorage: true }) })
   const bridge = new DeepSeekHarnessProductBridge({ serverUrl: 'https://product.test', fetch: transport,
@@ -41,11 +41,39 @@ it('reports true main metadata, reuses stable installation identity and sends on
     expect(report).toMatchObject({ desktopVersion: '0.2.1-alpha.2', platform: 'darwin', architecture: 'arm64', displayCount: 1, displayScalePercents: [200] })
     expect(report.deviceId).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-8[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/)
     expect(presence.deviceId).toEqual(report.deviceId)
+    expect(report.capabilities).toEqual([
+      { key: 'native.device-identity', status: 'READY', detail: 'Native capability: device-identity' },
+      { key: 'credentials.encryption', status: 'READY', detail: 'OS credential encryption available' },
+    ])
     expect(report).not.toHaveProperty('employeeId')
     expect(new Headers(calls[0]!.init?.headers).get('authorization')).toBe('Bearer fixture-private-token')
     expect(state).toMatchObject({ status: 'READY', capabilitiesReportedAt: '2026-10-13T00:00:00Z' })
     expect(JSON.stringify([state, report])).not.toMatch(/private-token|private-installation|userData/)
     expect(isProductRuntimeMethod('support.feedback.submit')).toBe(false)
+  } finally { await f.close() }
+})
+
+it.each(['backward', 'forward'] as const)('keeps device-report intervals independent of a %s system-clock jump', async (direction) => {
+  const originalTime = Date.parse('2026-10-27T08:00:00Z')
+  const wall = vi.spyOn(Date, 'now').mockReturnValue(originalTime)
+  const elapsed = vi.spyOn(performance, 'now').mockReturnValue(100_000)
+  const paths: string[] = []
+  const f = fixture(async (url) => {
+    paths.push(new URL(requestUrl(url)).pathname)
+    return paths.at(-1)?.endsWith('/presence') ? new Response(null, { status: 204 })
+      : Response.json({ success: true, data: { createdAt: '2026-10-27T08:00:00Z' } })
+  })
+  try {
+    await f.bridge.invoke('support.device.report')
+    wall.mockReturnValue(originalTime + (direction === 'forward' ? 2 : -2) * policy.reportIntervalMs)
+    elapsed.mockReturnValue(100_000 + (direction === 'forward' ? policy.heartbeatIntervalMs : policy.reportIntervalMs))
+    const state = await f.bridge.invoke('support.device.report')
+    expect(paths).toEqual(['/api/v1/device-capabilities', direction === 'forward'
+      ? '/api/v1/device-capabilities/presence' : '/api/v1/device-capabilities'])
+    if (direction === 'forward') expect(state).toMatchObject({
+      lastSeenAt: new Date(originalTime + 2 * policy.reportIntervalMs).toISOString(),
+      capabilitiesReportedAt: '2026-10-27T08:00:00Z',
+    })
   } finally { await f.close() }
 })
 
@@ -120,5 +148,36 @@ it('rejects malformed device receipts and retries rather than caching a successf
     expect(transport.mock.calls.map(call => requestUrl(call[0]))).toEqual([
       'https://product.test/api/v1/device-capabilities', 'https://product.test/api/v1/device-capabilities',
     ])
+  } finally { await f.close() }
+})
+
+it('clears an earlier presence failure after a successful heartbeat', async () => {
+  vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+  const transport = vi.fn<typeof fetch>(async () => Response.json({ success: true, data: { createdAt: '2026-10-13T00:00:00Z' } }))
+  const f = fixture(transport)
+  try {
+    await f.bridge.invoke('support.device.report')
+    transport.mockRejectedValueOnce(new Error('offline'))
+    await expect(f.bridge.invoke('support.device.report')).rejects.toThrow()
+    transport.mockResolvedValueOnce(new Response(null, { status: 204 }))
+    const state = await f.bridge.invoke('support.device.report')
+    expect(state).toMatchObject({ status: 'READY', capabilitiesReportedAt: '2026-10-13T00:00:00Z' })
+    expect(state).not.toHaveProperty('failureCode')
+  } finally { await f.close() }
+})
+
+it.each([
+  null,
+  { ready: true, protocol: 'deepseek-harness.native.v0', capabilities: ['device-identity'] },
+  { ready: true, protocol: 'deepseek-harness.native.v1', capabilities: ['filesystem'] },
+  { ready: true, protocol: 'deepseek-harness.native.v1', capabilities: ['device-identity', 'device-identity'] },
+])('does not report an unusable sidecar as ready: %j', async (health) => {
+  vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+  const transport = vi.fn<typeof fetch>()
+  const f = fixture(transport)
+  f.native.mockResolvedValueOnce({ deviceId: 'private-installation-id' }).mockResolvedValueOnce(health)
+  try {
+    await expect(f.bridge.invoke('support.device.report')).rejects.toMatchObject({ code: 'DEVICE_HEALTH_INVALID' })
+    expect(transport).not.toHaveBeenCalled()
   } finally { await f.close() }
 })

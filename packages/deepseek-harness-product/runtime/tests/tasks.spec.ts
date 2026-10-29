@@ -76,6 +76,51 @@ it('pins exact knowledge IDs, preserves loader resolution and restores after a r
   const raw = await readFile(join(f.root, `${prepared.presetId}.json`), 'utf8')
   expect(raw).not.toMatch(/expertKit|skill|Authorization|headers/)
 })
+it.each(['read', 'prepare'] as const)('does not inspect or mutate a task when %s is already cancelled', async (method) => {
+  const f = await setup()
+  f.query.observeSession.mockClear()
+  const controller = new AbortController()
+  const reason = new Error('Task page closed')
+  controller.abort(reason)
+  await expect(f.tasks[method]({ sessionId: 'session' }, controller.signal)).rejects.toBe(reason)
+  expect(f.query.observeSession).not.toHaveBeenCalled()
+  expect(f.register).not.toHaveBeenCalled()
+  expect(f.deps.validateKnowledge).not.toHaveBeenCalled()
+})
+
+it.each(['read', 'prepare'] as const)('disposes a late observation and rejects %s after cancellation', async (method) => {
+  const f = await setup()
+  const controller = new AbortController()
+  const reason = new Error('Task page closed')
+  const dispose = vi.fn()
+  f.query.observeSession.mockImplementationOnce(async () => {
+    controller.abort(reason)
+    return { header: { agentPreset: 'standard' }, projections: { values: { agentPreset: 'standard' } },
+      events: [], [Symbol.dispose]: dispose }
+  })
+  await expect(f.tasks[method]({ sessionId: 'session' }, controller.signal)).rejects.toBe(reason)
+  expect(dispose).toHaveBeenCalledOnce()
+  expect(f.register).not.toHaveBeenCalled()
+  expect(f.deps.validateKnowledge).not.toHaveBeenCalled()
+})
+
+it('rejects a cancelled final Session read while retaining the committed immutable snapshot for reuse', async () => {
+  const f = await setup()
+  const controller = new AbortController()
+  const reason = new Error('Task page closed after snapshot commit')
+  const observe = f.query.observeSession.getMockImplementation()!
+  f.query.observeSession.mockImplementationOnce(observe).mockImplementationOnce(async () => {
+    controller.abort(reason)
+    return observe()
+  })
+  await expect(f.tasks.prepare({ sessionId: 'session', knowledgeBaseIds: ['manuals'] }, controller.signal)).rejects.toBe(reason)
+  const files = await readdir(f.root)
+  expect(files).toHaveLength(1)
+  expect(files[0]).toMatch(/^product-task-[a-f0-9]{64}\.json$/)
+  const result = await f.tasks.prepare({ sessionId: 'session', knowledgeBaseIds: ['manuals'] })
+  expect(`${result.presetId}.json`).toBe(files[0])
+  expect(f.register).toHaveBeenCalledOnce()
+})
 it('preserves knowledge when switching the official execution mode', async () => {
   const f = await setup()
   const first = await f.tasks.prepare({ knowledgeBaseIds: ['manuals'] })

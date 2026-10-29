@@ -3,6 +3,7 @@ import { Context } from '@deepseek-ai/cordis'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import Tools from '@deepseek-ai/dsh-tools'
+import * as NativeToolExecutor from '@deepseek-ai/dsh-tool-executor-native'
 import LlmRuntime, { LlmAdapter, ToolCallId, createUserMessage, type GenerateOptions, type StreamChunk } from '@deepseek-ai/dsh-llm'
 import Sessions, { SessionId } from '@deepseek-ai/dsh-session'
 import SessionProjections from '@deepseek-ai/dsh-session-projection'
@@ -13,6 +14,14 @@ import { expect, it, onTestFinished, vi } from 'vitest'
 import * as Library from '../src/knowledge-library.ts'
 
 const savedContent = '# Review outcome\n\nThe policy is approved for internal testing.'
+
+async function executeTool(ctx: Context, agent: Parameters<Context['tools']['execute']>[0]['agent'], name: string,
+  args: Record<string, unknown>, callId: ToolCallId, signal = new AbortController().signal) {
+  const batch = await ctx.tools.execute({ calls: [{ type: 'tool-call', name, id: callId, arguments: JSON.stringify(args) }], ...agent === undefined ? {} : { agent }, signal })
+  const result = batch.results[0]?.result
+  if (result === undefined) throw new Error(`Executor omitted result for ${name}`)
+  return result
+}
 
 class RecordingAdapter extends LlmAdapter {
   readonly requests: GenerateOptions[] = []
@@ -37,6 +46,7 @@ async function fixture(outcome: ApprovalOutcome) {
   await ctx.plugin(Loader)
   await ctx.plugin(SystemPrompt)
   await ctx.plugin(Tools)
+  await ctx.plugin(NativeToolExecutor)
   await ctx.plugin(LlmRuntime)
   await ctx.plugin(Sessions)
   await ctx.plugin(SessionProjections)
@@ -106,8 +116,7 @@ it('searches and pages all writable destinations beyond the previous 128-entry l
       name: `Destination ${index}`, scope: 'PERSONAL', canManage: true, ownerName: 'Employee', apiKey: 'private-key' })),
     { id: 'read-only', name: 'Destination 128', scope: 'COMPANY', canManage: false },
   ].reverse())
-  const execute = async (args: Record<string, unknown>) => ctx.tools.execute({ agent: handle.agent,
-    name: 'knowledge_destinations', arguments: args, callId: ToolCallId('page'), signal: new AbortController().signal })
+  const execute = async (args: Record<string, unknown>) => executeTool(ctx, handle.agent, 'knowledge_destinations', args, ToolCallId('page'))
   const second = await execute({ page: 2, size: 100 })
   const output = second.content.filter(block => block.type === 'text').map(block => block.text).join('')
   expect(output).toContain('base-128')
@@ -134,8 +143,8 @@ it('cancels and awaits in-flight destination requests during plugin unload', asy
     signal?.throwIfAborted()
     return []
   })
-  const request = ctx.tools.execute({ agent: handle.agent, name: 'knowledge_destinations', arguments: {},
-    callId: ToolCallId('pending'), signal: new AbortController().signal })
+  const controller = new AbortController()
+  const request = executeTool(ctx, handle.agent, 'knowledge_destinations', {}, ToolCallId('pending'), controller.signal)
   onTestFinished(() => settle?.())
   await vi.waitFor(() => { expect(settle).toBeDefined() })
   let disposed = false

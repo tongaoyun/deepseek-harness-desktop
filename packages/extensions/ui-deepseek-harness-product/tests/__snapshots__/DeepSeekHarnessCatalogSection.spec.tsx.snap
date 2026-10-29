@@ -1,5 +1,12 @@
 // Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
 
+exports[`DeepSeekHarness capability navigation > rejects malformed knowledge identities and recovers to server-issued resources on retry 1`] = `
+{
+  "failure": "产品目录暂时无法加载，请稍后重试。",
+  "recovered": "Company policy",
+}
+`;
+
 exports[`DeepSeekHarness capability navigation > shows all categories in enterprise order and retains a way to clear a disappearing category 1`] = `
 [
   "全部分类",

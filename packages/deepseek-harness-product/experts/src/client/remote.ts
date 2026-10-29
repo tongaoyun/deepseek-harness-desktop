@@ -1,64 +1,14 @@
-import type { TeamInput, TeamSnapshot } from '../team-contract.ts'
-/**
- * 手写的 Typert Remote 贡献（等价 generator 的 typert.remote-client 产物）。
- * 本插件的名册、管理及启停方法采用手写贡献，避免依赖 monorepo
- * 专用 generator；严格 descriptor 与 host 共用同一来源，避免两侧契约漂移。
- */
-import type { RemoteResult, TypertRemoteContribution } from '@deepseek-ai/dsh-typert-protocol'
-import { AGENCY_AGENTS_DESCRIPTORS } from '../remote-contract.ts'
-import type { CatalogSnapshot, CustomExpertInput } from '../expert-contract.ts'
+import type { RemoteResult, TypertRemoteNamespaceMap } from '@deepseek-ai/dsh-typert-protocol'
+import type {} from '../generated/typert.remote-client.js'
 
-export interface AgencyTeamsRemote {
-  exportTeam(id: string, expectedRevision: number): Promise<RemoteResult<{ resourceKey: string; files: Record<string, string> }>>
-  getTeams(): Promise<RemoteResult<TeamSnapshot>>
-  saveTeam(team: TeamInput, enabled: boolean, expectedRevision: number): Promise<RemoteResult<TeamSnapshot>>
-  setTeamEnabled(id: string, enabled: boolean, expectedRevision: number): Promise<RemoteResult<TeamSnapshot>>
-  deleteTeam(id: string, expectedRevision: number): Promise<RemoteResult<TeamSnapshot>>
-}
-export interface AgencyCatalogRemote {
-  getCatalog(refreshCompany: boolean): Promise<RemoteResult<CatalogSnapshot>>
-  getCustomExpert(slug: string): Promise<RemoteResult<CustomExpertInput>>
-  saveCustomExpert(expert: CustomExpertInput, enabled: boolean, expectedRevision: number): Promise<RemoteResult<CatalogSnapshot>>
-  deleteCustomExpert(slug: string, expectedRevision: number): Promise<RemoteResult<CatalogSnapshot>>
-}
+export { TYPERT_REMOTE, TYPERT_REMOTE as default } from '../remote-contract.ts'
 
-export interface AgencyAgentsEnabledState {
-  readonly enabled: string[]
-  readonly revision: number
-}
-
-export interface AgencyAgentsPrompt {
-  readonly prompt: string
-}
-
-declare module '@deepseek-ai/dsh-typert-protocol' {
-  interface TypertRemoteNamespace$agencyAgents extends AgencyCatalogRemote, AgencyTeamsRemote {
-    getEnabled: () => Promise<RemoteResult<AgencyAgentsEnabledState>>
-    setEnabled: (enabled: string[], expectedRevision: number) => Promise<RemoteResult<AgencyAgentsEnabledState>>
-    getPrompt: (slug: string, division: string) => Promise<RemoteResult<AgencyAgentsPrompt>>
-  }
-  interface TypertRemoteMap {
-    'agencyAgents/exportTeam': AgencyTeamsRemote['exportTeam']
-    'agencyAgents/getTeams': AgencyTeamsRemote['getTeams']
-    'agencyAgents/saveTeam': AgencyTeamsRemote['saveTeam']
-    'agencyAgents/setTeamEnabled': AgencyTeamsRemote['setTeamEnabled']
-    'agencyAgents/deleteTeam': AgencyTeamsRemote['deleteTeam']
-    'agencyAgents/getCatalog': AgencyCatalogRemote['getCatalog']
-    'agencyAgents/getCustomExpert': AgencyCatalogRemote['getCustomExpert']
-    'agencyAgents/saveCustomExpert': AgencyCatalogRemote['saveCustomExpert']
-    'agencyAgents/deleteCustomExpert': AgencyCatalogRemote['deleteCustomExpert']
-    'agencyAgents/getEnabled': () => Promise<RemoteResult<AgencyAgentsEnabledState>>
-    'agencyAgents/setEnabled': (enabled: string[], expectedRevision: number) => Promise<RemoteResult<AgencyAgentsEnabledState>>
-    'agencyAgents/getPrompt': (slug: string, division: string) => Promise<RemoteResult<AgencyAgentsPrompt>>
-  }
-  interface TypertRemoteNamespaceMap {
-    'agencyAgents': TypertRemoteNamespace$agencyAgents
-  }
-}
-
-/** 产品 UI 使用的专家 Remote 贡献声明。 */
-export const TYPERT_REMOTE: TypertRemoteContribution = {
-  package: '@deepseek-harness/product-experts',
-  descriptors: AGENCY_AGENTS_DESCRIPTORS,
-}
-export default TYPERT_REMOTE
+type AgencyAgentsRemote = TypertRemoteNamespaceMap['agencyAgents']
+/** Catalog calls derived from the actual Host Remote methods. */
+export type AgencyCatalogRemote = Pick<AgencyAgentsRemote, 'getCatalog' | 'getCustomExpert' | 'saveCustomExpert' | 'deleteCustomExpert'>
+/** Team calls derived from the actual Host Remote methods. */
+export type AgencyTeamsRemote = Pick<AgencyAgentsRemote, 'exportTeam' | 'getTeams' | 'saveTeam' | 'setTeamEnabled' | 'deleteTeam'>
+type RemoteValue<Call extends (...args: never[]) => Promise<RemoteResult<unknown>>> =
+  Awaited<ReturnType<Call>> extends RemoteResult<infer Value> ? Value : never
+/** Saved selection returned by the native Remote. */
+export type AgencyAgentsEnabledState = RemoteValue<AgencyAgentsRemote['getEnabled']>

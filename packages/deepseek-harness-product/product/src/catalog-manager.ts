@@ -27,14 +27,13 @@ export interface ProductCatalogManagerOptions {
 export class ProductCatalogManager {
   private refreshOperation: Promise<void> | undefined
   private refreshTimer: ReturnType<typeof setTimeout> | undefined
-  private epoch = 0
+  private generation = new AbortController()
   private signature: string | undefined
   private readonly snapshot = new Map<CatalogMethod, unknown>()
   private readonly failures = new Map<CatalogMethod, unknown>()
   private readonly revisions = new Map<CatalogMethod, number>()
   private readonly lifecycle = new AbortController()
-  private readonly operations = new Set<Promise<void>>()
-  private closed = false
+  private readonly operations = new Set<Promise<unknown>>()
 
   constructor(private readonly options: ProductCatalogManagerOptions) {}
 
@@ -43,16 +42,12 @@ export class ProductCatalogManager {
    * @returns Completion after all remote requests settle.
    */
   async refresh(signal?: AbortSignal): Promise<void> {
-    if (this.closed) throw new Error('Product catalog has been disposed')
+    this.lifecycle.signal.throwIfAborted()
     if (signal === undefined && this.refreshOperation !== undefined) return this.refreshOperation
-    const requestSignal = signal === undefined ? this.lifecycle.signal : AbortSignal.any([signal, this.lifecycle.signal])
-    requestSignal.throwIfAborted()
-    const refresh = this.loadSnapshot(requestSignal).finally(() => {
-      this.operations.delete(refresh)
+    const refresh = this.track(signal, control => this.loadSnapshot(control)).finally(() => {
       if (this.refreshOperation === refresh) this.refreshOperation = undefined
       this.schedule()
     })
-    this.operations.add(refresh)
     if (signal === undefined) this.refreshOperation = refresh
     return refresh
   }
@@ -60,41 +55,58 @@ export class ProductCatalogManager {
   /** Read a catalog; knowledge always queries the server.
    * @param method - Catalog operation.
    * @param signal - Optional cancellation for a fresh remote read.
-   * @returns Complete employee-visible catalog.
+   * @returns Complete employee-visible catalog; reset, identity change, or disposal rejects pending reads.
    */
   async read(method: ProductMethod, signal?: AbortSignal): Promise<unknown> {
     if (!isCatalogMethod(method)) throw new Error(`deepseek-harness product: method ${method} is not available`)
-    if (signal !== undefined || method === 'knowledge.bases.list') {
-      signal?.throwIfAborted()
-      const epoch = this.epoch
-      const revision = this.nextRevision(method)
-      try {
-        const value = await this.options.api?.listAll(CATALOG_ROUTES[method], 100, signal)
-        if (value === undefined) throw new Error('Product server is unavailable')
-        signal?.throwIfAborted()
-        if (epoch === this.epoch && !this.closed && revision === this.revisions.get(method)) {
-          this.snapshot.set(method, value)
-          this.failures.delete(method)
+    return this.track(signal, async (control) => {
+      if (signal !== undefined || method === 'knowledge.bases.list') {
+        const revision = this.nextRevision(method)
+        try {
+          const value = await this.options.api?.listAll(CATALOG_ROUTES[method], 100, control)
+          control.throwIfAborted()
+          if (value === undefined) throw new Error('Product server is unavailable')
+          if (revision === this.revisions.get(method)) {
+            this.snapshot.set(method, value)
+            this.failures.delete(method)
+          }
+          return value
+        } catch (error) {
+          control.throwIfAborted()
+          if (revision === this.revisions.get(method)) this.failures.set(method, error)
+          throw error
         }
-        return value
-      } catch (error) {
-        if (epoch === this.epoch && !this.closed && !signal?.aborted && revision === this.revisions.get(method)) {
-          this.failures.set(method, error)
-        }
-        throw error
       }
-    }
-    if (!this.snapshot.has(method)) {
-      try { await this.refresh() }
-      catch (error) { if (!this.snapshot.has(method)) throw this.failures.get(method) ?? error }
-    }
-    const value = this.snapshot.get(method) ?? []
-    return value
+      if (!this.snapshot.has(method)) {
+        try { await this.refresh() }
+        catch (error) {
+          control.throwIfAborted()
+          if (!this.snapshot.has(method)) throw this.failures.get(method) ?? error
+        }
+      }
+      return this.snapshot.get(method) ?? []
+    })
   }
 
-  /** Drop employee-scoped state when authentication identity changes. */
+  private async track<T>(signal: AbortSignal | undefined, operation: (signal: AbortSignal) => Promise<T>): Promise<T> {
+    const control = AbortSignal.any([this.lifecycle.signal, this.generation.signal, this.options.getIdentitySignal(),
+      ...signal === undefined ? [] : [signal]])
+    control.throwIfAborted()
+    const pending = Promise.resolve().then(async () => {
+      control.throwIfAborted()
+      const value = await operation(control)
+      control.throwIfAborted()
+      return value
+    })
+    this.operations.add(pending)
+    try { return await pending }
+    finally { this.operations.delete(pending) }
+  }
+
+  /** Cancel pending reads and drop cached catalogs after identity or catalog changes. */
   reset(): void {
-    this.epoch += 1
+    this.generation.abort(new Error('Product catalog was reset'))
+    this.generation = new AbortController()
     this.snapshot.clear()
     this.failures.clear()
     this.revisions.clear()
@@ -106,7 +118,7 @@ export class ProductCatalogManager {
   schedule(): void {
     if (this.refreshTimer !== undefined) clearTimeout(this.refreshTimer)
     this.refreshTimer = undefined
-    if (this.closed || !this.options.getSession().authenticated || this.options.api === undefined) return
+    if (this.lifecycle.signal.aborted || !this.options.getSession().authenticated || this.options.api === undefined) return
     this.refreshTimer = setTimeout(() => {
       this.refreshTimer = undefined
       void this.refresh().catch(() => undefined)
@@ -114,9 +126,8 @@ export class ProductCatalogManager {
     this.refreshTimer.unref()
   }
 
-  /** Stop the manager's background timer. */
+  /** Cancel catalog reads and refreshes, stop the timer, and await transport settlement. */
   async dispose(): Promise<void> {
-    this.closed = true
     this.lifecycle.abort(new Error('Product catalog has been disposed'))
     if (this.refreshTimer !== undefined) clearTimeout(this.refreshTimer)
     this.refreshTimer = undefined
@@ -124,12 +135,10 @@ export class ProductCatalogManager {
   }
 
   private async loadSnapshot(signal: AbortSignal): Promise<void> {
-    signal = AbortSignal.any([signal, this.options.getIdentitySignal()])
     const api = this.options.api
     if (api === undefined) throw new Error('deepseek-harness product: server URL is not configured')
     await this.options.ensureFreshSession()
     signal.throwIfAborted()
-    const epoch = this.epoch
     const employeeId = this.options.getSession().employeeId
     const routes = Object.entries(CATALOG_ROUTES) as [CatalogMethod, string][]
     const requests = await Promise.all(routes.map(async ([method, route]) => {
@@ -139,7 +148,7 @@ export class ProductCatalogManager {
     }))
     signal.throwIfAborted()
     const current = this.options.getSession()
-    if (this.closed || epoch !== this.epoch || !current.authenticated || employeeId !== current.employeeId) return
+    if (!current.authenticated || employeeId !== current.employeeId) return
     for (const { method, revision, result } of requests) {
       if (revision !== this.revisions.get(method)) continue
       if (result.status === 'fulfilled') {
@@ -147,7 +156,12 @@ export class ProductCatalogManager {
         this.failures.delete(method)
       } else this.failures.set(method, result.reason)
     }
-    const nextSignature = JSON.stringify([[...this.snapshot], [...this.failures.keys()]])
+    // Compare payloads as well as routes. A same-route update must invalidate
+    // renderer caches even when the catalog shape and keys stay unchanged.
+    const nextSignature = JSON.stringify({
+      snapshot: [...this.snapshot.entries()],
+      failures: [...this.failures.keys()],
+    })
     const changed = nextSignature !== this.signature
     this.signature = nextSignature
     if (changed && requests.some(entry => entry.result.status === 'fulfilled')) this.emitChanged()
@@ -170,5 +184,5 @@ export class ProductCatalogManager {
 }
 
 function isCatalogMethod(method: ProductMethod): method is CatalogMethod {
-  return method in CATALOG_ROUTES
+  return Object.hasOwn(CATALOG_ROUTES, method)
 }

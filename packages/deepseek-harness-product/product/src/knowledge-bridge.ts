@@ -1,7 +1,7 @@
 /** Validated knowledge operations over the authenticated product server. */
 import type { DeepSeekHarnessApiClient } from './http-client.ts'
 import { ProductError } from './errors.ts'
-import type { KnowledgePdfParseMode } from './protocol.ts'
+import { isKnowledgeResourceId, type KnowledgePdfParseMode } from './protocol.ts'
 
 /** Native file selection is owned by the desktop; renderer payloads contain no paths. */
 export interface KnowledgeUpload {
@@ -179,7 +179,7 @@ function invalid(fieldName: string): never {
 }
 function decodedResource(input: Readonly<Record<string, unknown>>, key: string): string {
   const value = input[key]
-  if (typeof value !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$/u.test(value)) invalid(key)
+  if (!isKnowledgeResourceId(value)) invalid(key)
   return value
 }
 function resource(input: Readonly<Record<string, unknown>>, key: string): string {

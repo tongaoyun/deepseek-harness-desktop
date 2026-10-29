@@ -274,15 +274,16 @@ test('uses native hosted development runners or explicitly configured signing ma
     { target: 'mac-arm64', runner: 'macos-15', arch: 'arm64' },
     { target: 'mac-x64', runner: 'macos-15-intel', arch: 'x64' },
   ])
+  const preflightSteps = workflow.jobs.preflight.steps
   const steps = workflow.jobs.package.steps
-  assert.match(steps.find(step => step.name === 'Test acceptance process cleanup').run,
+  assert.match(preflightSteps.find(step => step.name === 'Test acceptance process cleanup').run,
     /node --test apps\/product-desktop\/tests\/acceptance-process\.test\.mjs/u)
-  assert.match(steps.find(step => step.name === 'Test Electron close lifecycle').run,
+  assert.match(preflightSteps.find(step => step.name === 'Test Electron close lifecycle').run,
     /pnpm exec vitest run apps\/product-desktop\/tests\/close-electron\.spec\.ts/u)
   for (const name of ['Package Windows', 'Validate Windows signatures and installer lifecycle']) {
     assert.equal(steps.find(step => step.name === name).shell, 'pwsh')
   }
-  assert.ok(steps.findIndex(step => step.name === 'Fetch stored Harness baseline') < steps.findIndex(step => step.run?.includes('verify:upstream')))
+  assert.ok(preflightSteps.findIndex(step => step.name === 'Fetch stored Harness baseline') < preflightSteps.findIndex(step => step.run?.includes('verify:upstream')))
   assert.ok(steps.findIndex(step => step.name === 'Install locked dependencies') < steps.findIndex(step => step.name === 'Verify source and native architecture'))
   assert.match(steps.find(step => step.name === 'Package Windows').run, /apps\/product-desktop run package win-x64 @ModeArgs/u)
   assert.match(steps.find(step => step.name === 'Package Windows').run, /PACKAGE_SIGNING -eq 'signed'/u)

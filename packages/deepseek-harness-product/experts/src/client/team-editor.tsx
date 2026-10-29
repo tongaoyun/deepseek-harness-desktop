@@ -2,7 +2,7 @@ import { useTeamLocale, localizedExperts } from './team-locale.ts';
 import { LibraryEditorFooter } from './library-ui.tsx';
 import React from 'react';
 import { effectiveCoordinator, teamInputSchema, type TeamInput, type TeamSnapshot, } from '../team-contract.ts';
-import type { ExpertSummary } from '../expert-contract.ts';
+import { isExpertConflict, type ExpertSummary } from '../expert-contract.ts';
 import { Button, Input } from './plugin-ui.ts';
 import { SegmentedControl } from '@deepseek-ai/dsh-client-ui-primitives';
 import { CategorySelect } from './category-select.ts';
@@ -86,7 +86,7 @@ function MemberPicker(props: {
         </div>
         <div className="aag-field aag-field-search">
           <div className="aag-search-wrap">
-            <Input className="aag-search" aria-label={props.tx("搜索团队成员")} autoFocus autoComplete="off" spellCheck={false} placeholder={props.tx("搜索专家、职责或领域")} prefix={<IconSearch size={16}/>} value={props.query} onChange={(event) => props.onQuery(event.target.value)}/>
+            <Input className="aag-search" aria-label={props.tx("搜索团队成员")} data-modal-autofocus autoComplete="off" spellCheck={false} placeholder={props.tx("搜索专家、职责或领域")} icon={<IconSearch size={16}/>} value={props.query} onChange={(event) => props.onQuery(event.target.value)}/>
           </div>
         </div>
       </div>
@@ -196,7 +196,7 @@ export function TeamEditor(props: {
         catch (cause) {
             const message = cause instanceof Error ? tx(cause.message) : tx("保存失败，请重试。");
             setError(message);
-            if (/changed since it was read|其他窗口|another window|配置已更新|修订/iu.test(message)) {
+            if (isExpertConflict(cause)) {
                 setNeedsReview(true);
                 setReview(null);
                 setConfirm(null);

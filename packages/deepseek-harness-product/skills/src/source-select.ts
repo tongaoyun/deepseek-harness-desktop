@@ -1,7 +1,6 @@
 import type * as React from "react";
 import type { SourceSelectProps } from "./client-types.ts";
 import { Menu, Button, type MenuEntry } from "@deepseek-ai/dsh-client-ui-primitives";
-import { handleSourceMenuEscape } from "./source-select-model.ts";
 
 /**
  * 宿主官方原语 Menu 规范封装的筛选与操作菜单。
@@ -16,14 +15,6 @@ export function createSourceSelect(react: typeof React) {
     const open = openState[0];
     const setOpen = openState[1];
 
-    react.useEffect(function () {
-      if (!open || typeof window === "undefined") return undefined;
-      function onKey(event: KeyboardEvent) {
-        handleSourceMenuEscape(event, function () { setOpen(false); });
-      }
-      window.addEventListener("keydown", onKey, true);
-      return function () { window.removeEventListener("keydown", onKey, true); };
-    }, [open]);
 
     const items = react.useMemo<readonly MenuEntry[]>(function () {
       return props.options.map(function (opt) {
@@ -55,9 +46,7 @@ export function createSourceSelect(react: typeof React) {
             style: props.icon ? { width: 22, minWidth: 22, height: 22, padding: 0, display: "inline-flex", alignItems: "center", justifyContent: "center", borderRadius: "var(--dsw-radius-sm, 8px)" } : undefined,
             "aria-label": props.label,
             title: props.label,
-            onClick: function () {
-              if (!props.disabled) setOpen(function (prev) { return !prev; });
-            },
+            onClick: function () { if (!props.disabled) setOpen(prev => !prev); },
             icon: props.icon,
           }, props.icon ? null : props.label),
           items: items,
@@ -89,9 +78,7 @@ export function createSourceSelect(react: typeof React) {
           "aria-expanded": open,
           disabled: props.disabled,
           className: "dssm-menu-select-trigger" + (open ? " is-open" : ""),
-          onClick: function () {
-            if (!props.disabled) setOpen(function (prev) { return !prev; });
-          },
+          onClick: function () { if (!props.disabled) setOpen(prev => !prev); },
         },
           h("span", { className: "dssm-menu-select-label" }, currentText),
           h("svg", {

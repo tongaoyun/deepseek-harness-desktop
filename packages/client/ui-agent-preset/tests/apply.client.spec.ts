@@ -39,7 +39,7 @@ function developerTools(enabled = true): { configForms: { developerTools: { enab
 const ROSTER_ONE = {
   ok: true as const,
   value: {
-    presets: [{ id: 'standard', isDefault: true, selectable: true, defaultable: true }],
+    presets: [{ selectable: true, defaultable: true, id: 'standard', isDefault: true }],
   },
 }
 
@@ -48,8 +48,8 @@ const ROSTER_AUTHORED = {
   ok: true as const,
   value: {
     presets: [
-      { id: 'standard', isDefault: true, selectable: true, defaultable: true },
-      { id: 'mine', isDefault: false, selectable: true, defaultable: true },
+      { selectable: true, defaultable: true, id: 'standard', isDefault: true },
+      { selectable: true, defaultable: true, id: 'mine', isDefault: false },
     ],
   },
 }
@@ -59,28 +59,29 @@ const ROSTER_MOVED = {
   ok: true as const,
   value: {
     presets: [
-      { id: 'standard', isDefault: false, selectable: true, defaultable: true },
-      { id: 'minimal', isDefault: true, selectable: true, defaultable: true },
+      { selectable: true, defaultable: true, id: 'standard', isDefault: false },
+      { selectable: true, defaultable: true, id: 'minimal', isDefault: true },
     ],
   },
 }
 
-type RowInput = Omit<AgentPresetRow, 'selectable' | 'defaultable'>
-  & Partial<Pick<AgentPresetRow, 'selectable' | 'defaultable'>>
-
 async function bench(options: {
   failSettingsUpdate?: boolean
   selectGate?: Promise<void>
+  /** The Host refuses every selection. */
+  selectRefused?: boolean
+  /** The preset the Host reports after a selection, when it differs from the request. */
+  selectResult?: string
   settingsRosterGate?: Promise<undefined>
   describeGate?: Promise<undefined>
-  presets?: RowInput[]
+  presets?: AgentPresetRow[]
   developerToolsEnabled?: boolean
 } = {}) {
   const ctx = new Context()
   // The host's answer, mutable so a spec can move the default the way the
   // settings surface does and watch who re-reads it.
   let ROSTER: { ok: true; value: { presets: AgentPresetRow[] } } = options.presets === undefined
-    ? ROSTER_ONE : { ok: true, value: { presets: options.presets.map(row => ({ selectable: true, defaultable: true, ...row })) } }
+    ? ROSTER_ONE : { ok: true, value: { presets: options.presets } }
   const moveDefault = (): void => { ROSTER = ROSTER_MOVED }
   await ctx.plugin(SlotRegistry).await()
   const locale = new LocaleRuntime(ctx)
@@ -167,7 +168,9 @@ async function bench(options: {
     },
     select: (_agentId: SessionId, agentPreset: string) => {
       calls.push(`select:${agentPreset}`)
-      return Promise.resolve(options.selectGate).then(() => ({ ok: true as const, value: agentPreset }))
+      return Promise.resolve(options.selectGate).then(() => options.selectRefused === true
+        ? { ok: false as const, error: new RemoteError('gateway/internal', 'selection refused', {}) }
+        : { ok: true as const, value: options.selectResult ?? agentPreset })
     },
   }
   ctx.provide('remote.agentPresets', agentPresets as never)
@@ -429,7 +432,7 @@ describe('ui-agent-preset apply', () => {
     await section.load()
     await section.makeDefault('standard')
     expect(section.hooks.agentPresetSection.getSnapshot().rows)
-      .toEqual(ROSTER_ONE.value.presets)
+      .toEqual([{ selectable: true, defaultable: true, id: 'standard', isDefault: true }])
     await section.view('standard')
     expect(section.hooks.agentPresetSection.getSnapshot().view)
       .toEqual({ id: 'standard', title: 'standard', content: '# standard\n[]\n' })
@@ -701,7 +704,7 @@ describe('ui-agent-preset apply', () => {
       .inject as unknown as () => AgentPresetSectionInjected)()
     await section.load()
     expect(section.hooks.agentPresetSection.getSnapshot().rows)
-      .toEqual(ROSTER_ONE.value.presets)
+      .toEqual([{ selectable: true, defaultable: true, id: 'standard', isDefault: true }])
 
     await section.makeDefault('minimal')
 
@@ -806,8 +809,8 @@ describe('ui-agent-preset apply', () => {
     .flatMap(preset => ['unbound', 'inactive bound'].map(source => ({ preset, source }))))(
     'clears the staged $preset choice on Coding Tools off without changing the Session ($source)', async ({ preset, source }) => {
       const { ctx, slots, calls, setDeveloperTools } = await bench({ presets: [
-        ...ROSTER_MOVED.value.presets, { id: 'ptc', isDefault: false },
-        { id: 'cordis', isDefault: false }, { id: 'mine', name: 'Mine', isDefault: false },
+        ...ROSTER_MOVED.value.presets, { selectable: true, defaultable: true, id: 'ptc', isDefault: false },
+        { selectable: true, defaultable: true, id: 'cordis', isDefault: false }, { selectable: true, defaultable: true, id: 'mine', name: 'Mine', isDefault: false },
       ] })
       declareRoot(slots)
       declareConversation(slots)
@@ -895,7 +898,7 @@ describe('ui-agent-preset apply', () => {
 
   it.each(['ptc', 'minimal'])('resets an accepted disabled %s default once, without restoring it on enable', async (id) => {
     const b = await bench({ developerToolsEnabled: false, presets: [
-      { id: 'standard', isDefault: false }, { id, isDefault: true },
+      { selectable: true, defaultable: true, id: 'standard', isDefault: false }, { selectable: true, defaultable: true, id, isDefault: true },
     ] })
     b.ctx.provide('sessions', sessionsDouble(b.ctx, { byId: {} }) as never)
     declareRoot(b.slots)
@@ -912,8 +915,8 @@ describe('ui-agent-preset apply', () => {
   it.each([['standard', undefined], ['cordis', undefined], ['mine', 'Mine'], ['ptc', 'Custom PTC'], ['minimal', 'Custom Minimal']] as const)(
     'keeps the allowed default %s (%s) when Coding Tools are disabled', async (id, name) => {
       const b = await bench({ developerToolsEnabled: false, presets: [
-        { id, isDefault: true, ...(name === undefined ? {} : { name }) },
-        ...(id === 'standard' ? [] : [{ id: 'standard', isDefault: false }]),
+        { selectable: true, defaultable: true, id, isDefault: true, ...(name === undefined ? {} : { name }) },
+        ...(id === 'standard' ? [] : [{ selectable: true, defaultable: true, id: 'standard', isDefault: false }]),
       ] })
       b.ctx.provide('sessions', sessionsDouble(b.ctx, { byId: {} }) as never)
       declareRoot(b.slots)
@@ -973,8 +976,8 @@ describe('ui-agent-preset apply', () => {
   it.each([['cordis', true], ['mine', true], ['ptc', true], ['minimal', true], ['ptc', false], ['minimal', false]] as const)(
     'resets only the default while the current task uses %s (blank: %s)', async (preset, blank) => {
       const b = await bench({ presets: [
-        { id: 'standard', isDefault: false }, { id: 'minimal', isDefault: true }, { id: 'ptc', isDefault: false },
-        { id: 'cordis', isDefault: false }, { id: 'mine', name: 'Mine', isDefault: false },
+        { selectable: true, defaultable: true, id: 'standard', isDefault: false }, { selectable: true, defaultable: true, id: 'minimal', isDefault: true }, { selectable: true, defaultable: true, id: 'ptc', isDefault: false },
+        { selectable: true, defaultable: true, id: 'cordis', isDefault: false }, { selectable: true, defaultable: true, id: 'mine', name: 'Mine', isDefault: false },
       ] })
       declareRoot(b.slots)
       declareConversation(b.slots)
@@ -1082,7 +1085,7 @@ describe('ui-agent-preset apply', () => {
     conversation()
   })
 
-  it('lets the new-session flow compose the creator preset on a blank main Session', async () => {
+  it('stages Creator only on a main blank that does not list another preset', async () => {
     const { ctx, slots, calls } = await bench()
     declareRoot(slots)
     const conversation = declareConversation(slots)
@@ -1106,10 +1109,19 @@ describe('ui-agent-preset apply', () => {
     section.startCreatorDraft?.()
     expect(uiWorkspace.starts).toEqual([{ workspaceId: undefined, options: { clearPreviousDraft: false, agentPreset: 'cordis' } }])
 
-    // The Host composes the reused Session; the chip only follows its projection.
+    // Navigation opens another blank for Creator, so the Standard main blank is neither staged nor switched.
+    expect(seat.hooks.agentPresetSeat.getSnapshot().current).toBe('standard')
+    sessions.notify()
+    await Promise.resolve()
+    expect(seat.hooks.agentPresetSeat.getSnapshot().current).toBe('standard')
+    expect(calls).not.toContain('select:cordis')
+
+    // A blank whose listed preset is already Creator is staged and follows its projection.
     state.byId.s1 = { id: 's1', blank: true, projectionValues: { agentPreset: 'cordis' } }
     sessions.notify()
+    section.startCreatorDraft?.()
     await vi.waitFor(() => { expect(seat.hooks.agentPresetSeat.getSnapshot().current).toBe('cordis') })
+    expect(seat.hooks.agentPresetSeat.getSnapshot().introduce).toBe(true)
     expect(calls).not.toContain('select:cordis')
     conversation()
   })
@@ -1179,6 +1191,154 @@ describe('ui-agent-preset apply', () => {
     // section hides its button rather than staging into nowhere.
     const section = (slots.entries('settings.section')[0]!.inject as unknown as () => AgentPresetSectionInjected)()
     expect(section.startCreatorDraft).toBeUndefined()
+  })
+})
+
+/** Official presets plus one custom preset whose id and name must not leave the Client. */
+const ANALYTICS_ROSTER: AgentPresetRow[] = [
+  { selectable: true, defaultable: true, id: 'standard', isDefault: true }, { selectable: true, defaultable: true, id: 'cordis', isDefault: false },
+  { selectable: true, defaultable: true, id: 'ptc', isDefault: false }, { selectable: true, defaultable: true, id: 'minimal', isDefault: false },
+  { selectable: true, defaultable: true, id: 'private-id', name: 'Private name', isDefault: false },
+]
+
+/**
+ * Mount the picker with a recording analytics service. Without `bound` the chip
+ * is the unbound new-session seat; otherwise it binds Session `blank`, which is
+ * the main view's current Session unless `current` is false.
+ */
+async function analyticsBench(
+  options: Parameters<typeof bench>[0] = {},
+  bound?: { preset?: string; blank: boolean; current?: boolean },
+) {
+  const b = await bench({ presets: ANALYTICS_ROSTER, ...options })
+  declareRoot(b.slots)
+  declareConversation(b.slots)
+  b.ctx.provide('conversation', {} as never)
+  const sessions = sessionsDouble(b.ctx, bound === undefined ? { byId: {} } : {
+    ...bound.current === false ? {} : { current: 'blank' },
+    byId: { blank: {
+      id: 'blank', blank: bound.blank,
+      projectionValues: bound.preset === undefined ? {} : { agentPreset: bound.preset },
+    } },
+  })
+  b.ctx.provide('sessions', sessions as never)
+  b.ctx.provide('uiWorkspace', uiWorkspaceDouble() as never)
+  const track = vi.fn()
+  b.ctx.provide('productAnalytics', { enabled: true, track } as never)
+  await b.ctx.plugin({ inject: [...inject], apply }).await()
+  const seat = (b.slots.entries('conversation.hero.agentPreset')[0]!.inject as
+    (sessionId?: SessionId) => AgentPresetSeatInjected & Record<string, unknown>)(
+    bound === undefined ? undefined : SessionId('blank'))
+  await seat.load()
+  return { ...b, seat, sessions, track }
+}
+
+describe('agent preset switch analytics', () => {
+  it('reports unbound picks staged for the next Session, except equal modes and custom targets', async () => {
+    const b = await analyticsBench()
+    try {
+      await expect(b.seat.select('cordis')).resolves.toBeUndefined()
+      expect(b.track).toHaveBeenCalledExactlyOnceWith('agent_preset_switch', {
+        switch_from: 'standard', switch_to: 'creator', code_work_view_enabled: true,
+      })
+      await b.seat.select('cordis')
+      expect(b.track).toHaveBeenCalledOnce()
+      await b.seat.select('private-id')
+      expect(b.track).toHaveBeenCalledOnce()
+      await b.seat.select('ptc')
+      expect(b.track).toHaveBeenLastCalledWith('agent_preset_switch', {
+        switch_from: 'other', switch_to: 'ptc', code_work_view_enabled: true,
+      })
+      expect(b.track).toHaveBeenCalledTimes(2)
+      expect(b.calls.filter(call => call.startsWith('select:'))).toEqual([])
+      expect(JSON.stringify(b.track.mock.calls)).not.toContain('private-id')
+      expect(JSON.stringify(b.track.mock.calls)).not.toContain('Private name')
+    } finally { await b.ctx.fiber.dispose() }
+  })
+
+  it('reports a bound pick once the Host applies it, and ignores picks made while it is pending', async () => {
+    const gate = Promise.withResolvers<undefined>()
+    const b = await analyticsBench({ selectGate: gate.promise }, { preset: 'standard', blank: true })
+    try {
+      const selecting = b.seat.select('minimal')
+      await expect(b.seat.select('cordis')).resolves.toBeUndefined()
+      expect(b.track).not.toHaveBeenCalled()
+      gate.resolve(undefined)
+      await expect(selecting).resolves.toBeUndefined()
+      expect(b.calls.filter(call => call.startsWith('select:'))).toEqual(['select:minimal'])
+      expect(b.track).toHaveBeenCalledExactlyOnceWith('agent_preset_switch', {
+        switch_from: 'standard', switch_to: 'minimal', code_work_view_enabled: true,
+      })
+    } finally { gate.resolve(undefined); await b.ctx.fiber.dispose() }
+  })
+
+  it('does not report a bound pick that only waits for its Session to become current', async () => {
+    const b = await analyticsBench({}, { preset: 'standard', blank: true, current: false })
+    try {
+      await b.seat.select('cordis')
+      expect(b.seat.hooks.agentPresetSeat.getSnapshot().current).toBe('cordis')
+      expect(b.calls.filter(call => call.startsWith('select:'))).toEqual([])
+      expect(b.track).not.toHaveBeenCalled()
+    } finally { await b.ctx.fiber.dispose() }
+  })
+
+  it.each([
+    { name: 'a started Session', options: {}, bound: { preset: 'standard', blank: false } },
+    { name: 'a Host result other than the pick', options: { selectResult: 'standard' }, bound: { preset: 'standard', blank: true } },
+    { name: 'an unknown source mode', options: {}, bound: { blank: true } },
+  ])('does not report $name', async ({ options, bound }) => {
+    const b = await analyticsBench(options, bound)
+    try {
+      await expect(b.seat.select('cordis')).resolves.toBeUndefined()
+      expect(b.track).not.toHaveBeenCalled()
+    } finally { await b.ctx.fiber.dispose() }
+  })
+
+  it.each(['refused', 'thrown'] as const)('returns the reason of a %s pick without reporting it', async (failure) => {
+    const gate = Promise.withResolvers<undefined>()
+    const b = await analyticsBench(
+      { selectGate: gate.promise, selectRefused: failure === 'refused' },
+      { preset: 'standard', blank: true },
+    )
+    try {
+      const selecting = b.seat.select('cordis')
+      if (failure === 'thrown') gate.reject(new Error('connection lost'))
+      else gate.resolve(undefined)
+      await expect(selecting).resolves.toBe(failure === 'thrown' ? 'connection lost' : 'selection refused')
+      expect(b.track).not.toHaveBeenCalled()
+    } finally { gate.resolve(undefined); await b.ctx.fiber.dispose() }
+  })
+
+  it('records the Coding Tools setting known at the pick and reports nothing while it is unknown', async () => {
+    const described = Promise.withResolvers<undefined>()
+    const b = await analyticsBench({ describeGate: described.promise })
+    try {
+      expect(b.ctx.configForms.get('ui-settings').getSnapshot().value).toBeUndefined()
+      await b.seat.select('cordis')
+      expect(b.track).not.toHaveBeenCalled()
+      described.resolve(undefined)
+      await vi.waitFor(() => { expect(b.ctx.configForms.get('ui-settings').getSnapshot().status).toBe('ready') })
+      expect(b.track).not.toHaveBeenCalled()
+      // Turning Coding Tools off clears the stage, so the chip falls back to the default.
+      await b.setDeveloperTools(false)
+      expect(b.seat.hooks.agentPresetSeat.getSnapshot().current).toBe('standard')
+      await b.seat.select('cordis')
+      expect(b.track).toHaveBeenCalledExactlyOnceWith('agent_preset_switch', {
+        switch_from: 'standard', switch_to: 'creator', code_work_view_enabled: false,
+      })
+    } finally { described.resolve(undefined); await b.ctx.fiber.dispose() }
+  })
+
+  it('does not report a default change or its blank-Session synchronization', async () => {
+    const b = await analyticsBench({}, { preset: 'standard', blank: true })
+    try {
+      const section = (b.slots.entries('settings.section')[0]!.inject as
+        () => AgentPresetSectionInjected & Record<string, unknown>)()
+      await section.load()
+      await section.makeDefault('minimal')
+      expect(b.calls).toContain('select:minimal')
+      expect(b.track).not.toHaveBeenCalled()
+    } finally { await b.ctx.fiber.dispose() }
   })
 })
 
@@ -1338,7 +1498,7 @@ describe('AgentPresetSeatController reconciliation', () => {
       ...developerTools(),
       remote: { agentPresets: {
         select,
-        list: () => Promise.resolve({ ok: true, value: { presets: [{ id: 'standard', isDefault: true }] } }),
+        list: () => Promise.resolve({ ok: true, value: { presets: [{ selectable: true, defaultable: true, id: 'standard', isDefault: true }] } }),
       } },
     } as never, () => ({ id: SessionId('uncomposed'), blank: true }))
 
@@ -1373,7 +1533,7 @@ describe('AgentPresetSeatController reconciliation', () => {
 
     // The surface reporting this names the preset itself, so carrying the
     // roster's own "preset X failed to mount" frame would say it twice.
-    expect(await controller.select('broken')).toBe(reason)
+    expect(await controller.select('broken')).toEqual({ kind: 'refused', reason })
     const first = controller.store.getSnapshot().error
     expect(first).toEqual({ preset: { id: 'broken' }, reason })
     await controller.select('broken')
@@ -1386,5 +1546,95 @@ describe('AgentPresetSeatController reconciliation', () => {
     expect(controller.store.getSnapshot().error).toBe(second)
     controller.dismissRefusal(second)
     expect(controller.store.getSnapshot().error).toBe(reason)
+  })
+})
+
+describe('AgentPresetSeatController apply outcomes', () => {
+  type SessionView = { id: SessionId; blank: boolean; projectionValues?: { agentPreset?: string } }
+  type SelectReply = { ok: true; value: string } | { ok: false; error: RemoteError }
+  const blankStandard: SessionView = { id: SessionId('blank'), blank: true, projectionValues: { agentPreset: 'standard' } }
+
+  function seatOver(current: () => SessionView | undefined, reply?: (preset: string) => Promise<SelectReply>) {
+    const select = vi.fn((_id: SessionId, preset: string) => reply?.(preset) ?? Promise.resolve({ ok: true as const, value: preset }))
+    const controller = new AgentPresetSeatController({ ...developerTools(), remote: { agentPresets: {
+      select,
+      list: async () => ({ ok: true, value: { presets: ['standard', 'minimal'].map(id => ({
+        id, isDefault: id === 'standard', selectable: true, defaultable: true,
+      })) } }),
+    } } } as never, current)
+    return { controller, select }
+  }
+
+  it('stages a pick while no Session is current', async () => {
+    const { controller, select } = seatOver(() => undefined)
+    await expect(controller.select('minimal')).resolves.toEqual({ kind: 'staged' })
+    expect(controller.store.getSnapshot().current).toBe('minimal')
+    expect(select).not.toHaveBeenCalled()
+  })
+
+  it('reports a display synchronization without a stage as unchanged', async () => {
+    const { controller, select } = seatOver(() => blankStandard)
+    await expect(controller.apply()).resolves.toEqual({ kind: 'unchanged' })
+    expect(controller.store.getSnapshot().current).toBe('standard')
+    expect(select).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    { name: 'a started Session', session: { ...blankStandard, blank: false }, pick: 'minimal' },
+    { name: 'a Session already using the pick', session: blankStandard, pick: 'standard' },
+  ])('leaves $name unchanged and drops the stage', async ({ session, pick }) => {
+    let current: SessionView = session
+    const { controller, select } = seatOver(() => current)
+    await expect(controller.select(pick)).resolves.toEqual({ kind: 'unchanged' })
+    current = { ...blankStandard, id: SessionId('next') }
+    await expect(controller.apply()).resolves.toEqual({ kind: 'unchanged' })
+    expect(select).not.toHaveBeenCalled()
+  })
+
+  it('is applied only when the Host commits the staged preset', async () => {
+    const { controller, select } = seatOver(() => blankStandard)
+    await expect(controller.select('minimal')).resolves.toEqual({ kind: 'applied' })
+    expect(select).toHaveBeenCalledExactlyOnceWith(SessionId('blank'), 'minimal')
+    expect(controller.store.getSnapshot()).toMatchObject({ current: 'minimal', busy: false, error: null })
+  })
+
+  it('is unchanged when the Host settles on another preset', async () => {
+    const { controller } = seatOver(() => blankStandard, () => Promise.resolve({ ok: true, value: 'standard' }))
+    await expect(controller.select('minimal')).resolves.toEqual({ kind: 'unchanged' })
+    expect(controller.store.getSnapshot()).toMatchObject({ current: 'standard', busy: false, error: null })
+  })
+
+  it('leaves picks and applies made while a selection is pending unchanged', async () => {
+    const reply = Promise.withResolvers<SelectReply>()
+    const { controller, select } = seatOver(() => blankStandard, () => reply.promise)
+    const first = controller.select('minimal')
+    await expect(controller.select('cordis')).resolves.toEqual({ kind: 'unchanged' })
+    await expect(controller.apply()).resolves.toEqual({ kind: 'unchanged' })
+    expect(controller.store.getSnapshot()).toMatchObject({ current: 'minimal', busy: true })
+    reply.resolve({ ok: true, value: 'minimal' })
+    await expect(first).resolves.toEqual({ kind: 'applied' })
+    expect(select).toHaveBeenCalledOnce()
+  })
+
+  it.each([
+    {
+      name: 'a Host refusal with a cause',
+      reply: () => Promise.resolve({ ok: false as const, error: new RemoteError(
+        'agent-preset/invalid', 'agent-presets: preset "minimal" failed to mount: gone', { agentPreset: 'minimal', reason: 'gone' },
+      ) }),
+      reason: 'gone',
+    },
+    {
+      name: 'a Host refusal without a cause',
+      reply: () => Promise.resolve({ ok: false as const, error: new RemoteError('gateway/internal', 'selection refused', {}) }),
+      reason: 'selection refused',
+    },
+    { name: 'a transport exception', reply: () => Promise.reject(new Error('connection lost')), reason: 'connection lost' },
+  ])('is refused with the bare reason of $name', async ({ reply, reason }) => {
+    const { controller } = seatOver(() => blankStandard, reply)
+    await expect(controller.select('minimal')).resolves.toEqual({ kind: 'refused', reason })
+    expect(controller.store.getSnapshot()).toMatchObject({
+      current: 'standard', busy: false, error: { preset: { id: 'minimal' }, reason },
+    })
   })
 })

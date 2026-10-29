@@ -47,24 +47,14 @@ it('rejects login origins in production', () => {
     .toThrow('must not configure allowedAuthOrigins')
 })
 
-it('allows optional native updates without starting the mandatory policy service only when explicitly disabled', () => {
-  expect(resolveDesktopPolicyEnvironment({ DSH_DESKTOP_MANDATORY_UPDATE_ENABLED: '0' })).toBeUndefined()
-  expect(() => resolveDesktopPolicyEnvironment({ DSH_DESKTOP_MANDATORY_UPDATE_ENABLED: '1' })).toThrow(/HTTPS origin/u)
-  for (const value of ['', 'false', '2']) {
-    expect(() => resolveDesktopPolicyEnvironment({ DSH_DESKTOP_MANDATORY_UPDATE_ENABLED: value })).toThrow(/must be 0 or 1/u)
-  }
-  expect(() => { validateDesktopPackageEnvironment({ DSH_DESKTOP_APP_ID: 'com.example.desktop',
-    DSH_DESKTOP_AUTO_UPDATE_ENV: 'production', DSH_DESKTOP_UPDATE_URL: 'https://downloads.example.com/',
-    DSH_DESKTOP_MANDATORY_UPDATE_ENABLED: '0' }, { platform: 'win32', arch: 'x64' }) }).toThrow(/DSH_DESKTOP_WINDOWS_CER_FILE/u)
-})
-
-it.each([{ prepareOnly: true }, {}])('fails before signing/preparation when policy is absent in %j', (options) => {
+it.each([{ unsigned: true }, { prepareOnly: true }, {}])('requires policy outside local macOS builds in %j', (options) => {
   for (const platform of ['win32', 'darwin'] as const) {
+    if (platform === 'darwin' && options.unsigned) {
+      expect(() => { validateDesktopPackageEnvironment({ DSH_DESKTOP_APP_ID: 'com.example.test' }, { platform, arch: 'x64' }, options) })
+        .not.toThrow()
+      continue
+    }
     expect(() => { validateDesktopPackageEnvironment({ DSH_DESKTOP_APP_ID: 'com.example.test' }, { platform, arch: 'x64' }, options) })
       .toThrow('DSH_DESKTOP_MANDATORY_UPDATE_TEST_ORIGIN')
   }
-})
-
-it.each(['win32', 'darwin'] as const)('allows unsigned %s packaging without a mandatory-update policy', (platform) => {
-  expect(() => { validateDesktopPackageEnvironment({ DSH_DESKTOP_APP_ID: 'com.example.test' }, { platform, arch: 'x64' }, { unsigned: true }) }).not.toThrow()
 })

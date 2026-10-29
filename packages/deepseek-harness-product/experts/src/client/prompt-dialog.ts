@@ -1,5 +1,4 @@
 import { Button, Input, Modal } from './plugin-ui.ts'
-import { useEscapeLayer } from './escape-layer.ts'
 import React from 'react'
 
 /** 提示词预览。关闭后把焦点还给打开它的按钮。 */
@@ -16,13 +15,12 @@ export function PromptDialog(props: {
       if (props.returnFocus.isConnected) props.returnFocus.focus({ preventScroll: true })
     })
   }
-  useEscapeLayer(true, close)
   return React.createElement(Modal, {
     open: true,
     title: props.title,
-    onCancel: close,
+    onClose: close,
     footer: [
-      React.createElement(Button, { key: 'close', type: 'primary', autoFocus: true, onClick: close }, props.closeLabel),
+      React.createElement(Button, { key: 'close', variant: 'primary', 'data-modal-autofocus': true, onClick: close }, props.closeLabel),
     ],
   }, React.createElement(Input.TextArea, {
     className: 'aag-prompt-body',

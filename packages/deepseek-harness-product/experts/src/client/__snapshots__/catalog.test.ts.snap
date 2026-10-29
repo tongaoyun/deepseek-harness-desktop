@@ -1,0 +1,28 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`displays the company category __proto__ as text in English 1`] = `
+[
+  {
+    "division": "__proto__",
+    "divisionEn": "__proto__",
+  },
+]
+`;
+
+exports[`displays the company category constructor as text in English 1`] = `
+[
+  {
+    "division": "constructor",
+    "divisionEn": "constructor",
+  },
+]
+`;
+
+exports[`displays the company category toString as text in English 1`] = `
+[
+  {
+    "division": "toString",
+    "divisionEn": "toString",
+  },
+]
+`;

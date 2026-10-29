@@ -25,8 +25,6 @@ import { pdfFixture } from '../../../packages/client/ui-sidebar-documentpreview/
 import { realOfficeBytes } from './office-fixture.ts'
 import { closeElectronAcceptance } from '../../product-desktop/scripts/close-electron.mjs'
 import { prepareNativeProductUpdate, type NativeProductUpdateQualification } from '../../product-desktop/tests/native-product-update.mjs'
-import { DeepSeekHarnessApiClient } from '@deepseek-harness/product'
-import { CompanyContentSync } from '../../../packages/deepseek-harness-product/desktop/src/company-content-sync.ts'
 
 const packageDir = join(REPO_ROOT, 'packages/extensions/ui-deepseek-harness-product')
 const expectedDir = fileURLToPath(new URL('./expected/deepseek-harness-catalog', import.meta.url))
@@ -57,12 +55,12 @@ async function setCodingView(page: Page, enabled: boolean): Promise<void> {
 
 const connectors = [
   { id: 'erp', displayName: 'Order management', summary: 'Orders, inventory, and fulfillment', category: 'business-systems',
-    visibility: 'COMPANY', reviewStatus: 'PUBLISHED', availabilityStatus: 'AVAILABLE', authMode: 'employee-bearer', status: 'ACTIVE', tools: [
+    availabilityStatus: 'AVAILABLE', authMode: 'employee-bearer', status: 'ACTIVE', tools: [
       { name: 'orders_read', displayName: 'Read orders', description: 'Query order status and totals.', access: 'READ' },
       { name: 'orders_update', displayName: 'Update orders', description: 'Change order delivery details.', access: 'WRITE' },
     ] },
   { id: 'crm', displayName: 'Customer workspace', summary: 'Customer profiles and sales activity', category: 'business-systems',
-    visibility: 'COMPANY', reviewStatus: 'PUBLISHED', availabilityStatus: 'AUTHORIZATION_REQUIRED', authMode: 'oauth', authorizationStatus: 'REQUIRED', tools: [] },
+    availabilityStatus: 'AUTHORIZATION_REQUIRED', authMode: 'oauth', authorizationStatus: 'REQUIRED', tools: [] },
 ]
 const organizationKnowledge = [
   { id: 'personal-notes', name: 'Personal notes', scope: 'PERSONAL', companyId: 'fixture-company', ownerEmployeeId: 'fixture-employee', ownerName: 'Fixture user', canRead: true, canManage: true },
@@ -456,7 +454,6 @@ it('keeps native themes and responsive catalogs while using official details and
         return { kind: 'CURRENT_SESSION', presetId: 'standard', capabilities, dependencyChecks: [] }
       }
       case 'connectors.list': return [...connectorCatalog, ...personalResources.filter(row => row.kind === 'connector')]
-      case 'connectors.refresh': return { connectedIds: connectorCatalog.map(row => row.id), unavailableIds: [] }
       case 'extensions.save': {
         if (failSave) { failSave = false; throw new Error('Transient fixture save failure') }
         personalResources.push({ ...payload, headers: {}, environment: {}, canEdit: true, canSubmit: true, canDelete: true, visibility: 'PERSONAL', reviewStatus: 'DRAFT' })
@@ -617,10 +614,10 @@ it('keeps native themes and responsive catalogs while using official details and
 
   await snapshot('extension-navigation', 'nav[aria-label="Global panels"]')
 
-  for (const [label, heading] of [['Expert kits', 'Expert Kits'], ['Skills', 'Skills']] as const) {
+  for (const [label, sectionId] of [['Expert kits', 'agency-agents'], ['Skills', 'skills-manager']] as const) {
     await page.getByRole('button', { name: label, exact: true }).click()
-    await page.getByRole('heading', { name: heading, exact: true }).waitFor()
-    expect(await page.getByText('This extension page is unavailable. Enable the plugin in Settings and try again.', { exact: true }).count()).toBe(0)
+    const unavailable = page.locator(`[data-extension-page="${sectionId}"]`).getByRole('alert')
+    await unavailable.getByText('This extension page is unavailable. Enable the plugin in Settings and try again.', { exact: true }).waitFor()
     expect(await page.getByRole('dialog', { name: 'Settings', exact: true }).count()).toBe(0)
   }
   await page.locator(`[data-row-key="session:${originalSession}"]`).click()
@@ -654,11 +651,10 @@ it('keeps native themes and responsive catalogs while using official details and
   await page.locator('ul[data-catalog="connectors"]').waitFor()
   await snapshot('connector-directory', '[class*="catalogPage"]')
   const beforeFilter = calls.filter(method => method === 'tasks.capabilities.prepare').length
-  await page.getByRole('tab', { name: 'Mine', exact: true }).click()
-  expect(await page.getByText('Order management', { exact: true }).count()).toBe(0)
+  await page.getByRole('tab', { name: 'Connected 1', exact: true }).click()
   expect(await page.getByText('Customer workspace', { exact: true }).count()).toBe(0)
   expect(calls.filter(method => method === 'tasks.capabilities.prepare')).toHaveLength(beforeFilter)
-  await page.getByRole('tab', { name: 'Mine', exact: true }).press('ArrowLeft')
+  await page.getByRole('tab', { name: 'Connected 1', exact: true }).press('ArrowLeft')
   await page.getByText('Customer workspace', { exact: true }).waitFor()
   await page.getByRole('button', { name: /Order management Orders/ }).click()
   const connectorDialog = page.getByRole('dialog', { name: 'Connector details' })
@@ -1026,11 +1022,11 @@ for (const { mode, installed, surface } of desktopCarriers) {
       onTestFinished(() => model.close())
       const catalogRows: Record<string, object[]> = {
         '/api/v1/connectors': [{ id: 'erp', version: '1.0.0', name: 'Order management', displayName: 'Order management',
-          visibility: 'COMPANY', reviewStatus: 'PUBLISHED', status: 'ready', ready: true, authorizationStatus: 'AUTHORIZED', authMode: 'employee-bearer',
+          status: 'ready', ready: true, authorizationStatus: 'AUTHORIZED', authMode: 'employee-bearer',
           transport: 'streamable-http', url: '/api/v1/connectors/erp/mcp', arguments: [], headers: {}, environment: {},
           tools: [{ name: 'orders_read', access: 'READ' }] },
         { id: 'local-unconfigured', version: '1.0.0', name: 'Device configuration missing',
-          visibility: 'COMPANY', reviewStatus: 'PUBLISHED', status: 'needs-configuration', ready: false, authorizationStatus: 'AUTHORIZED', authMode: 'none',
+          status: 'needs-configuration', ready: false, authorizationStatus: 'AUTHORIZED', authMode: 'none',
           transport: 'stdio', command: 'fixture-unconfigured', arguments: [], headers: {}, environment: {}, tools: [] }],
         '/api/v1/knowledge-bases': [...organizationKnowledge,
           { id: 'policy', name: 'Operations playbook', scope: 'COMPANY', companyId: 'fixture-company', ownerName: 'Fixture company', referenceKey: 'company:policy', canRead: true, canManage: false }],
@@ -1054,8 +1050,6 @@ for (const { mode, installed, surface } of desktopCarriers) {
         } else if (path === '/api/v1/bootstrap') {
           response.end(JSON.stringify({ success: true, data: { modelApiKey: 'fixture-model-key',
             endpoints: { litellm: model.baseURL + '/v1' }, models: ['deepseek-v4-flash'] } }))
-        } else if (path === '/api/v1/company-content') {
-          response.end(JSON.stringify({ success: true, data: null }))
         } else if (path === '/api/v1/device-capabilities' || path === '/api/v1/device-capabilities/presence') {
           void fixtureRequestBody(request).then((body) => {
             deviceReports.push(body)
@@ -1154,12 +1148,7 @@ for (const { mode, installed, surface } of desktopCarriers) {
             response.end(JSON.stringify({ success: true, data: contents.items, pageIndex: page,
               pageSize: size, totalCount: contents.total, totalPages: Math.ceil(contents.total / size) }))
           } else if (parts[7] === 'preview' && parts[8] === 'metadata') {
-            const original = knowledgeOriginal(parts[6] ?? '', largePreview)
-            response.end(JSON.stringify({ success: true, data: {
-              ...knowledgeDocuments(baseId).find(row => row.id === parts[6]),
-              sizeBytes: original.data.byteLength,
-              contentVersion: createHash('sha256').update(original.data).digest('hex'),
-            } }))
+            response.end(JSON.stringify({ success: true, data: knowledgeDocuments(baseId).find(row => row.id === parts[6]) }))
           } else if (parts[7] === 'preview' || parts[7] === 'download') {
             const original = knowledgeOriginal(parts[6] ?? '', largePreview)
             response.setHeader('content-type', original.mediaType)
@@ -1179,11 +1168,6 @@ for (const { mode, installed, surface } of desktopCarriers) {
           const source = { sourceId: 'policy-source', documentId: 'document-1', filename: 'Order review.md',
             content: 'Check order totals before changing delivery details.', locator: 'Section 1' }
           response.end(JSON.stringify({ success: true, data: path === '/api/v1/knowledge-searches' ? [source] : source }))
-        } else if (/^\/api\/v1\/connectors\/[^/]+\/configuration-template$/u.test(path)) {
-          const connector = catalogRows['/api/v1/connectors']!.find(row => 'id' in row && row.id === path.split('/')[4])
-          if (!connector) response.statusCode = 404
-          response.end(JSON.stringify(connector ? { success: true, data: connector }
-            : { success: false, errCode: 'CONNECTOR_NOT_FOUND' }))
         } else if (path === '/api/v1/connectors/erp/mcp') {
           void (async () => {
             const chunks: Buffer[] = []
@@ -1233,23 +1217,6 @@ for (const { mode, installed, surface } of desktopCarriers) {
           } finally { await rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }) }
         }
       })
-      // New native Sessions must confirm company content before their first model step.
-      const companyApi = new DeepSeekHarnessApiClient({ baseUrl: origin, getSessionToken: () => secret })
-      const company = new CompanyContentSync({ root: join(root, 'company-fixture-check'), employeeId: 'fixture-employee',
-        refreshIntervalMs: 1000, load: signal => companyApi.request('/api/v1/company-content', { signal }) })
-      onTestFinished(() => company.close())
-      await company.prepare()
-      expect(await company.pin({ sessionId: 'fixture-first-turn', started: false })).toMatchObject({ version: '0' })
-      // Native file protection compares authoritative metadata with streamed bytes.
-      for (const documentId of ['document-1', 'document-2', 'document-3', 'document-4']) {
-        const url = `${origin}/api/v1/knowledge-bases/personal-notes/documents/${documentId}/preview`
-        const metadata = z.object({ data: z.object({ sizeBytes: z.number(), contentVersion: z.string() }) })
-          .parse(await (await fetch(`${url}/metadata`)).json()).data
-        const bytes = new Uint8Array(await (await fetch(url)).arrayBuffer())
-        expect(metadata, `Native preview fixture ${documentId} must describe its streamed bytes`).toMatchObject({
-          sizeBytes: bytes.byteLength, contentVersion: createHash('sha256').update(bytes).digest('hex'),
-        })
-      }
       const electronExecutable: unknown = installed ?? createRequire(join(REPO_ROOT, 'apps/desktop/package.json'))('electron')
       if (typeof electronExecutable !== 'string') throw new Error('Electron executable is unavailable')
       if (installed !== undefined) {
@@ -1760,17 +1727,10 @@ for (const { mode, installed, surface } of desktopCarriers) {
           .toMatchObject({ basePresetId: 'standard', knowledgeBaseIds: ['policy'] })
         await page.getByRole('button', { name: /^(Connectors|连接器)$/, exact: true }).click()
         await page.getByRole('button', { name: /Order management/ }).waitFor()
-        await page.getByRole('button', { name: /Device configuration missing/ }).waitFor()
-        expect(await invoke('connectors.list')).toEqual(expect.arrayContaining([
-          expect.objectContaining({ id: 'erp', ready: true }),
-          expect.objectContaining({ id: 'local-unconfigured', ready: false }),
-        ]))
-        await page.getByRole('tab', { name: /^(Mine|我的)$/, exact: true }).click()
-        await page.getByText(/^(No personal connectors yet\. Use Add to create one\.|还没有自己创建的连接器，可通过“添加”创建。)$/, { exact: true }).waitFor()
-        expect(await page.getByRole('button', { name: /Order management/ }).count()).toBe(0)
+        await page.getByText(/^(Needs configuration|待配置)$/, { exact: true }).waitFor()
+        const connectedCatalog = page.getByRole('tab', { name: /^(Connected|已连接)\s*1$/ })
+        await connectedCatalog.click()
         expect(await page.getByRole('button', { name: /Device configuration missing/ }).count()).toBe(0)
-        await page.getByRole('tab', { name: /^(Marketplace|市场)$/, exact: true }).click()
-        await page.getByRole('button', { name: /Device configuration missing/ }).waitFor()
         await page.getByRole('button', { name: /Order management/ }).click()
         expect(await page.getByRole('dialog').getByRole('checkbox').count()).toBe(0)
         await expect.poll(() => invoke('tasks.capabilities.read', { sessionId }))

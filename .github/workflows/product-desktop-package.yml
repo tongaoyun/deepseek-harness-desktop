@@ -34,9 +34,23 @@ jobs:
         with:
           ref: ${{ inputs.source_sha }}
           persist-credentials: false
+          fetch-depth: 1
+      - name: Fetch stored Harness baseline
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh auth setup-git
+          tag="$(cat UPSTREAM_TAG)"
+          git fetch --depth=1 origin "refs/tags/${tag}:refs/tags/${tag}"
+      - uses: pnpm/action-setup@v5.0.0
       - uses: actions/setup-node@v7.0.0
         with:
           node-version: '24'
+          cache: pnpm
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install locked dependencies
+        run: pnpm install --frozen-lockfile
       - name: Validate signing machine configuration
         env:
           PACKAGE_SIGNING: ${{ inputs.signing }}
@@ -47,6 +61,30 @@ jobs:
           SIGNING_RUNNERS: ${{ vars.DESKTOP_SIGNING_RUNNERS }}
           SIGNING_CONFIG_DIRS: ${{ vars.DESKTOP_SIGNING_CONFIG_DIRS }}
         run: node apps/product-desktop/scripts/signing-runners.mjs
+      # These checks are source-wide and identical for every target. Keeping
+      # them here avoids running the same suite three times on release hosts.
+      - name: Verify upstream and product delivery contracts
+        run: pnpm run verify:upstream
+      - name: Test product source synchronization
+        run: node --test apps/product-desktop/tests/github-delivery.test.mjs
+      - name: Test native product update publication
+        run: node --test apps/product-desktop/tests/product-updates.test.mjs apps/product-desktop/tests/internal-updates.test.mjs apps/product-desktop/tests/native-update-integrity.test.mjs apps/product-desktop/tests/packaging-assembly.test.mjs
+      - name: Test native update confirmation and configuration
+        run: >-
+          pnpm exec vitest run
+          apps/desktop/tests/desktop-auto-update-environment.spec.ts
+          apps/desktop/tests/desktop-package-environment.spec.ts
+          apps/desktop/tests/desktop-policy-environment.spec.ts
+          apps/desktop/tests/update-coordinator.spec.ts
+          apps/desktop/tests/update-schedule.spec.ts
+      - name: Test acceptance process cleanup
+        run: node --test apps/product-desktop/tests/acceptance-process.test.mjs apps/product-desktop/tests/office-process-diagnostics.test.mjs
+      - name: Test Electron close lifecycle
+        run: pnpm exec vitest run apps/product-desktop/tests/close-electron.spec.ts apps/product-desktop/tests/office-fixture.spec.ts apps/product-desktop/tests/native-update-dialog.spec.ts
+      - name: Test upstream boundaries
+        run: pnpm exec vitest run scripts/upstream-boundaries.spec.ts
+      - name: Test product sidecar
+        run: cargo test --manifest-path native/deepseek-harness/Cargo.toml
   package:
     needs: preflight
     name: ${{ matrix.target }} ${{ inputs.signing }}
@@ -85,16 +123,13 @@ jobs:
           ref: ${{ inputs.source_sha }}
           fetch-depth: 1
           persist-credentials: false
-      - name: Fetch stored Harness baseline
+      - name: Read package build date
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          gh auth setup-git
           build_date="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" --jq '.created_at')"
           printf 'PACKAGE_BUILD_DATE=%s\n' "$build_date" >> "$GITHUB_ENV"
-          tag="$(cat UPSTREAM_TAG)"
-          git fetch --depth=1 origin "refs/tags/${tag}:refs/tags/${tag}"
       - name: Set up pnpm
         uses: pnpm/action-setup@v5.0.0
       - name: Set up Node
@@ -111,28 +146,6 @@ jobs:
           PACKAGE_SOURCE_SHA: ${{ inputs.source_sha }}
           PACKAGE_ARCH: ${{ matrix.arch }}
         run: node apps/product-desktop/scripts/github-package.mjs prepare
-      - name: Verify upstream and product delivery contracts
-        run: pnpm run verify:upstream
-      - name: Test product source synchronization
-        run: node --test apps/product-desktop/tests/github-delivery.test.mjs
-      - name: Test native product update publication
-        run: node --test apps/product-desktop/tests/product-updates.test.mjs apps/product-desktop/tests/internal-updates.test.mjs apps/product-desktop/tests/native-update-integrity.test.mjs apps/product-desktop/tests/packaging-assembly.test.mjs
-      - name: Test native update confirmation and configuration
-        run: >-
-          pnpm exec vitest run
-          apps/desktop/tests/desktop-auto-update-environment.spec.ts
-          apps/desktop/tests/desktop-package-environment.spec.ts
-          apps/desktop/tests/desktop-policy-environment.spec.ts
-          apps/desktop/tests/update-coordinator.spec.ts
-          apps/desktop/tests/update-schedule.spec.ts
-      - name: Test acceptance process cleanup
-        run: node --test apps/product-desktop/tests/acceptance-process.test.mjs apps/product-desktop/tests/office-process-diagnostics.test.mjs
-      - name: Test Electron close lifecycle
-        run: pnpm exec vitest run apps/product-desktop/tests/close-electron.spec.ts apps/product-desktop/tests/office-fixture.spec.ts apps/product-desktop/tests/native-update-dialog.spec.ts
-      - name: Test upstream boundaries
-        run: pnpm exec vitest run scripts/upstream-boundaries.spec.ts
-      - name: Test product sidecar
-        run: cargo test --manifest-path native/deepseek-harness/Cargo.toml
       - name: Test Windows packaging arguments
         if: matrix.target == 'win-x64'
         shell: pwsh

@@ -4,7 +4,7 @@ import { chmod, copyFile, lstat, mkdir, mkdtemp, open, readdir, rm, unlink, type
 import { extname, join } from 'node:path'
 import type { DeepSeekHarnessApiClient } from '@deepseek-harness/product'
 import { ProductError } from '@deepseek-harness/product/errors'
-import type { KnowledgeFileChunk, KnowledgeFileMethod, KnowledgeFileTransfer, KnowledgeTransferId, ProductSession } from '@deepseek-harness/product/protocol'
+import { isKnowledgeResourceId, parseKnowledgeDocumentPreviewMetadata, type KnowledgeFileChunk, type KnowledgeFileMethod, type KnowledgeFileTransfer, type KnowledgeTransferId, type ProductSession } from '@deepseek-harness/product/protocol'
 import { KNOWLEDGE_FILE_CHUNK_BYTES, type KnowledgeFilePolicy } from './knowledge-file-policy.ts'
 import { waitForNativeDialog } from './native-dialog.ts'
 
@@ -250,20 +250,15 @@ export class KnowledgeFiles {
     const value: unknown = await api.request(`/api/v1/knowledge-bases/${encodeURIComponent(identity.knowledgeBaseId)}/documents/${encodeURIComponent(identity.documentId)}/preview/metadata`, { signal })
     signal.throwIfAborted()
     this.currentEmployee(employeeId)
-    if (typeof value !== 'object' || value === null || !('id' in value) || value.id !== identity.documentId
-      || !('knowledgeBaseId' in value) || value.knowledgeBaseId !== identity.knowledgeBaseId
-      || !('filename' in value) || typeof value.filename !== 'string' || value.filename === '' || value.filename.length > 1024
-      || !('contentVersion' in value) || typeof value.contentVersion !== 'string' || value.contentVersion === '' || value.contentVersion.length > 256
-      || !('sizeBytes' in value) || typeof value.sizeBytes !== 'number' || !Number.isSafeInteger(value.sizeBytes) || value.sizeBytes < 0
-      || !('previewMaxBytes' in value) || typeof value.previewMaxBytes !== 'number' || !Number.isSafeInteger(value.previewMaxBytes) || value.previewMaxBytes < 1
-      || !('downloadMaxBytes' in value) || typeof value.downloadMaxBytes !== 'number' || !Number.isSafeInteger(value.downloadMaxBytes) || value.downloadMaxBytes < 1) {
+    const metadata = parseKnowledgeDocumentPreviewMetadata(value,
+      { id: identity.documentId, knowledgeBaseId: identity.knowledgeBaseId }, { requireLimits: true })
+    if (metadata.previewMaxBytes === undefined || metadata.downloadMaxBytes === undefined) {
       throw new ProductError('INVALID_SERVER_RESPONSE', 'Invalid original file metadata', false)
     }
-    const sourceType = 'sourceType' in value && typeof value.sourceType === 'string' ? value.sourceType : undefined
-    const exportFilename = fileName(sourceType === 'manual' && !/\.md$/iu.test(value.filename) ? `${value.filename}.md` : value.filename)
-    return { ...identity, filename: value.filename, exportFilename, sourceType,
-      contentVersion: value.contentVersion, sizeBytes: value.sizeBytes,
-      previewMaxBytes: value.previewMaxBytes, downloadMaxBytes: value.downloadMaxBytes }
+    const exportFilename = fileName(metadata.sourceType === 'manual' && !/\.md$/iu.test(metadata.filename) ? `${metadata.filename}.md` : metadata.filename)
+    return { ...identity, filename: metadata.filename, exportFilename, sourceType: metadata.sourceType,
+      contentVersion: metadata.contentVersion, sizeBytes: metadata.sizeBytes,
+      previewMaxBytes: metadata.previewMaxBytes, downloadMaxBytes: metadata.downloadMaxBytes }
   }
 
   private async reauthorize(entry: Transfer, api: DeepSeekHarnessApiClient, employeeId: string, signal: AbortSignal): Promise<void> {
@@ -363,7 +358,7 @@ function ids(input: Readonly<Record<string, unknown>>): Identity {
   if (!id(input.knowledgeBaseId) || !id(input.documentId)) invalid()
   return { knowledgeBaseId: input.knowledgeBaseId, documentId: input.documentId }
 }
-function id(value: unknown): value is string { return typeof value === 'string' && /^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$/u.test(value) }
+const id = isKnowledgeResourceId
 function transferId(value: unknown): KnowledgeTransferId {
   if (typeof value !== 'string' || !/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/u.test(value)) invalid()
   return value as KnowledgeTransferId
