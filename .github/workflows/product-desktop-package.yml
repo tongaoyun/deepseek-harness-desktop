@@ -141,6 +141,11 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
       - name: Install locked dependencies
         run: pnpm install --frozen-lockfile
+      # The product desktop bundle imports the built product entrypoints. Build
+      # them before packaging so workspace package exports resolve on every
+      # native runner, including the macOS package command.
+      - name: Build product modules for packaging and acceptance tests
+        run: pnpm --filter @deepseek-harness/product-skills --filter @deepseek-harness/product-experts build
       - name: Verify source and native architecture
         env:
           PACKAGE_SOURCE_SHA: ${{ inputs.source_sha }}
@@ -167,8 +172,6 @@ jobs:
           mode_args=()
           if [ "$PACKAGE_SIGNING" != signed ]; then mode_args+=(--unsigned); fi
           pnpm --dir apps/product-desktop run package "$PACKAGE_TARGET" "${mode_args[@]}" --build-version "$PACKAGE_VERSION"
-      - name: Build product modules for acceptance tests
-        run: pnpm --filter @deepseek-harness/product-skills --filter @deepseek-harness/product-experts build
       - name: Test builtin product capabilities
         run: >-
           pnpm exec vitest run

@@ -285,6 +285,11 @@ test('uses native hosted development runners or explicitly configured signing ma
   }
   assert.ok(preflightSteps.findIndex(step => step.name === 'Fetch stored Harness baseline') < preflightSteps.findIndex(step => step.run?.includes('verify:upstream')))
   assert.ok(steps.findIndex(step => step.name === 'Install locked dependencies') < steps.findIndex(step => step.name === 'Verify source and native architecture'))
+  const productModulesIndex = steps.findIndex(step => step.name === 'Build product modules for packaging and acceptance tests')
+  assert.ok(productModulesIndex > steps.findIndex(step => step.name === 'Install locked dependencies'))
+  assert.ok(productModulesIndex < steps.findIndex(step => step.name === 'Package Windows'))
+  assert.ok(productModulesIndex < steps.findIndex(step => step.name === 'Package macOS'))
+  assert.match(steps[productModulesIndex].run, /@deepseek-harness\/product-skills.*@deepseek-harness\/product-experts.*build/u)
   assert.match(steps.find(step => step.name === 'Package Windows').run, /apps\/product-desktop run package win-x64 @ModeArgs/u)
   assert.match(steps.find(step => step.name === 'Package Windows').run, /PACKAGE_SIGNING -eq 'signed'/u)
   const windowsArgumentsIndex = steps.findIndex(step => step.name === 'Test Windows packaging arguments')
