@@ -141,6 +141,28 @@ describe('release pack CLI', () => {
     if (concurrency !== '2') expect(hooks).toEqual(expectedHooks)
   }, 120_000)
 
+  it.each(['1', '2'])('packs only exact filtered members without running omitted hooks (concurrency=%s)', async (concurrency) => {
+    const root = fixture()
+    packageFixture(root, 'vendor/alpha', '@deepseek-ai/alpha')
+    packageFixture(root, 'vendor/zebra', '@deepseek-ai/zebra')
+    const result = await runPack(root, ['--concurrency', concurrency, '--filter', '@deepseek-ai/alpha'])
+    expect(result.status, result.stderr).toBe(0)
+    expect(readPublishOrder(join(root, 'packed'))).toEqual(['deepseek-ai-alpha-1.2.3.tgz'])
+    expect(readFileSync(join(root, 'hooks.log'), 'utf8')).not.toContain('zebra')
+    expect(existsSync(join(root, 'packed/deepseek-ai-zebra-1.2.3.tgz'))).toBe(false)
+  })
+
+  it('rejects unknown package filters before replacing staged packages', async () => {
+    const root = fixture()
+    packageFixture(root, 'vendor/alpha', '@deepseek-ai/alpha')
+    write(join(root, 'packed/retained.txt'), 'previous output\n')
+    const result = await runPack(root, ['--filter', '@deepseek-ai/missing'])
+    expect(result.status).not.toBe(0)
+    expect(result.stderr).toContain('unknown vendor package filter: @deepseek-ai/missing')
+    expect(readFileSync(join(root, 'packed/retained.txt'), 'utf8')).toBe('previous output\n')
+    expect(existsSync(join(root, 'hooks.log'))).toBe(false)
+  })
+
   it('overlaps two independent packs and keeps later packages within the concurrency limit', async () => {
     const root = fixture()
     const names = ['alpha', 'bravo', 'charlie'].map(name => `@deepseek-ai/${name}`)

@@ -1,5 +1,6 @@
 /** Build one release target with matching Electron and dsh architecture. */
 import { readDesktopAssembly } from './desktop-assembly.mjs'
+import { desktopPackagePlan } from './desktop-package-plan.ts'
 
 import { spawn } from 'node:child_process'
 import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
@@ -481,7 +482,7 @@ export async function packageTarget(
         { cwd: APP_ROOT, env: electronBuilderEnv, timeoutMs: 60_000 })
     })
   }
-  await execute(invocation.unsigned ? ['run', 'build', '--profile', 'local'] : ['run', 'build:official'], buildEnv, REPOSITORY_ROOT)
+  await execute(['run', 'build:artifacts', '--profile', invocation.unsigned ? 'local' : 'official'], buildEnv, REPOSITORY_ROOT)
   const assembly = readDesktopAssembly(buildEnv, target.platform)
   for (const step of assembly.buildSteps) await execute(step, buildEnv, REPOSITORY_ROOT)
   let preparationFailure: { error: unknown } | undefined
@@ -490,24 +491,18 @@ export async function packageTarget(
     try { await execute(args, env, cwd) }
     catch (error) { preparationFailure ??= { error }; throw error }
   }
+  const plan = desktopPackagePlan(REPOSITORY_ROOT, target, assembly)
   const pack = async (): Promise<void> => {
     await executePreparation([
       ...(invocation.unsigned
         ? ['exec', 'tsx', 'apps/desktop/scripts/pack-local-packages.ts']
         : ['run', 'release:pack', '--family', 'dsh']),
-      '--out', buildPaths.packedDsh, ...packArguments,
+      '--out', buildPaths.packedDsh, ...plan.dsh.flatMap(name => ['--filter', name]), ...packArguments,
     ], buildEnv, REPOSITORY_ROOT)
-    await executePreparation([
-      '--dir',
-      'apps/desktop-host',
-      'pack',
-      '--pack-destination',
-      buildPaths.packedDsh,
-    ], buildEnv, REPOSITORY_ROOT)
-    for (const directory of assembly.packageDirectories) {
+    for (const directory of plan.privateDirectories) {
       await executePreparation(['--dir', directory, 'pack', '--pack-destination', buildPaths.packedDsh], buildEnv, REPOSITORY_ROOT)
     }
-    await executePreparation(['run', 'release:pack', '--family', 'vendor', '--out', buildPaths.packedVendor, ...packArguments], buildEnv, REPOSITORY_ROOT)
+    await executePreparation(['run', 'release:pack', '--family', 'vendor', '--out', buildPaths.packedVendor, ...plan.vendor.flatMap(name => ['--filter', name]), ...packArguments], buildEnv, REPOSITORY_ROOT)
     rmSync(buildPaths.packedLandlock, { recursive: true, force: true })
     mkdirSync(buildPaths.packedLandlock, { recursive: true })
     await executePreparation(['--dir', 'native/system', 'run', 'build:ts'], buildEnv, REPOSITORY_ROOT)

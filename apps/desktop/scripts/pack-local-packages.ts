@@ -12,7 +12,7 @@ import { packFamilyMembers, parsePackConcurrency } from '../../../scripts/releas
 
 async function main(): Promise<void> {
   const { values } = parseArgs({
-    options: { out: { type: 'string' }, concurrency: { type: 'string' } },
+    options: { out: { type: 'string' }, concurrency: { type: 'string' }, filter: { type: 'string', multiple: true } },
     allowPositionals: false,
   })
   if (values.out === undefined) throw new Error('desktop local pack: --out must name the package staging directory')
@@ -21,7 +21,7 @@ async function main(): Promise<void> {
   const environment = resolveClientBuildEnvironment(repositoryClientBuildEnvironment(root), 'local')
   readClientBuildRecord(root, environment)
   const destination = resolve(root, values.out)
-  const packed = await packFamilyMembers(root, releaseFamily('dsh'), destination, concurrency)
+  const packed = await packFamilyMembers(root, releaseFamily('dsh'), destination, concurrency, values.filter)
   console.log(`desktop local pack: ${String(packed.length)} tarball(s) in ${destination}`)
 }
 

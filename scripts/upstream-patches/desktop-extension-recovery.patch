@@ -116,7 +116,7 @@ index 31bbbffe151c7311b4c593187084971ac7e93113..f8eacf9abc71ad5bfaeea105687988a4
      runtimeDir,
      source: process.argv[4] ?? join(runtimeDir, '..', 'runtime', 'primary-runtime'),
 diff --git a/apps/desktop/README.i18n.yaml b/apps/desktop/README.i18n.yaml
-index e7fced6b8ead704e92d6c84bdab7664c8140a4ed..2f6fc65d42fe8a45d57c8c710ea79d80e80ccb50 100644
+index e7fced6b8ead704e92d6c84bdab7664c8140a4ed..02d67104353b364d378af8230a4be3748a608ac1 100644
 --- a/apps/desktop/README.i18n.yaml
 +++ b/apps/desktop/README.i18n.yaml
 @@ -12,23 +12,23 @@
@@ -153,7 +153,7 @@ index e7fced6b8ead704e92d6c84bdab7664c8140a4ed..2f6fc65d42fe8a45d57c8c710ea79d80
  /deepseek-harness-desktop/bundled-command-runtime:
    en: 372297005b57a08b
    zh: 074a635ac17e4362
-@@ -48,8 +48,8 @@
+@@ -48,11 +48,11 @@
    en: 67dc7ef3e293236a
    zh: 1b224db684a2d1d7
  /deepseek-harness-desktop/develop/welcome-window-appearance:
@@ -162,8 +162,13 @@ index e7fced6b8ead704e92d6c84bdab7664c8140a4ed..2f6fc65d42fe8a45d57c8c710ea79d80
 +  en: 33f9a804c5b58f5b
 +  zh: e07ad738d58b53d3
  /deepseek-harness-desktop/package:
-   en: ac31ebdd9de54f34
-   zh: 921e534d5c4b3a16
+-  en: ac31ebdd9de54f34
+-  zh: 921e534d5c4b3a16
++  en: 4e6a0c7a92b21203
++  zh: c35712345d691948
+ /deepseek-harness-desktop/windows-installer-interface:
+   en: 9b90a2651a6d2b52
+   zh: 86d4d9c4358aad80
 @@ -60,20 +60,17 @@
    en: 67bf0a18faa7aa76
    zh: 782e14ce62bb939f

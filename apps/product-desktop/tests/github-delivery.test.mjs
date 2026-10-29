@@ -354,6 +354,32 @@ test('uses native hosted development runners or explicitly configured signing ma
   }
 })
 
+test('isolates reusable downloads and Rust compilation by native target before packaging', () => {
+  const workflow = yaml.load(readFileSync(new URL('../../../.github/workflows/product-desktop-package.yml', import.meta.url), 'utf8'))
+  const job = workflow.jobs.package
+  const steps = job.steps
+  const install = steps.findIndex(step => step.name === 'Install locked dependencies')
+  const downloads = steps.find(step => step.name === 'Cache desktop downloads and package store')
+  const rust = steps.find(step => step.name === 'Cache Rust compilation')
+  for (const cache of [downloads, rust]) {
+    assert.match(cache.uses, /^actions\/cache@/u)
+    assert.ok(steps.indexOf(cache) < install)
+    assert.match(cache.with.key, /runner\.os.*matrix\.target/u)
+    assert.match(cache.with['restore-keys'], /runner\.os.*matrix\.target/u)
+    assert.doesNotMatch(cache.with.path, /desktop-build|artifacts|certificate|keychain/u)
+  }
+  assert.equal(job.env.DSH_DESKTOP_PACKAGE_CACHE_DIR, '${{ runner.temp }}/harness-desktop-package-cache')
+  assert.equal(job.env.ELECTRON_BUILDER_CACHE, '${{ runner.temp }}/harness-desktop-builder-cache')
+  assert.match(downloads.with.path, /env\.DSH_DESKTOP_PACKAGE_CACHE_DIR/u)
+  assert.match(downloads.with.path, /env\.ELECTRON_BUILDER_CACHE/u)
+  assert.match(downloads.with.key, /pnpm-lock\.yaml.*primary-runtime\/lock\.json/u)
+  assert.equal(steps.find(step => step.name === 'Set up Rust').id, 'rust')
+  assert.match(rust.with.key, /steps\.rust\.outputs\.cachekey/u)
+  assert.match(rust.with.key, /Cargo\.lock.*Cargo\.toml.*src\/\*\*/u)
+  assert.match(rust.with.path, /env\.CARGO_TARGET_DIR/u)
+  assert.equal(job.env.CARGO_TARGET_DIR, '${{ runner.temp }}/harness-desktop-rust')
+})
+
 test('internal synchronization fetches main and its own baseline without disclosing the token', () => {
   const source = readFileSync(new URL('../../../.gitea/workflows/github-desktop-sync.yml', import.meta.url), 'utf8')
   const workflow = yaml.load(source)

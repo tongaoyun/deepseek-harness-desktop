@@ -116,3 +116,14 @@ it('rejects an invalid local pack concurrency before replacing packages', async 
   expect(result.output).toContain('--concurrency must be a positive integer')
   expect(existsSync(join(root, 'packed'))).toBe(false)
 }, testTimeout)
+
+it('packs an exact local selection without packing unrelated workspace packages', async () => {
+  const root = fixture()
+  write(root, 'packages/util/unselected/package.json', JSON.stringify({
+    name: '@deepseek-ai/dsh-unselected', version: '1.2.3',
+    scripts: { prepack: 'node -e "process.exit(19)"' },
+  }))
+  const result = await pack(root, false, ['--filter', '@deepseek-ai/dsh-probe'])
+  expect(result.code, result.output).toBe(0)
+  expect(readdirSync(join(root, 'packed'))).toEqual(['deepseek-ai-dsh-probe-1.2.3.tgz'])
+}, testTimeout)

@@ -28,6 +28,12 @@ node apps/product-desktop/scripts/sync-github.mjs --repository OWNER/deepseek-ha
 
 内网 runner 下载有界 ZIP，按中央目录仅解压普通文件并校验清单，完成后清理临时压缩包。公开下载仓库只接收安装文件和元数据，不推送源码。
 
+## 构建性能
+
+main CI 执行完整类型检查；原生打包使用 `build:artifacts`，保留本地或正式品牌配置、生成声明和构建记录校验。打包前按官方 CLI、Desktop Host 和产品装配根计算生产依赖闭包，仅打包选中的工作区；安装包组装时再次从实际 tarball 核对依赖闭包和 Host 入口文件。
+
+GitHub 按系统及架构缓存 Electron、锁定的 Node/Python 与 Office 下载、桌面运行时 pnpm store、electron-builder 工具以及 Rust registry、Git 依赖和编译中间产物。下载缓存随依赖锁更新，Rust 缓存同时区分工具链与源码；无精确命中时复用同目标的旧缓存，由下载校验和 Cargo 增量构建确认有效性。首次运行仍需填充缓存。构建产物、安装状态和签名凭据不进入这些缓存，真实安装、启动和自动更新验收每次执行。
+
 ## 下载与恢复
 
 下载仓库须先初始化默认分支，至少有一条提交。空仓库可以接收 Release 草稿附件，但无法完成发布；先确认仓库初始化，再启动大文件构建及上传。
