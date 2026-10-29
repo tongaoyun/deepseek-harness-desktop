@@ -44,5 +44,9 @@
     "@deepseek-ai/dsh-typert-registry": "workspace:*",
     "@deepseek-ai/cordis": "workspace:~",
     "zod": "4.4.3"
+  },
+  "scripts": {
+    "build": "tsc -b && tsdown --config-loader native --config tsdown.config.ts",
+    "typecheck": "tsc --noEmit"
   }
 }

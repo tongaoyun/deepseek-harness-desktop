@@ -13,7 +13,7 @@ import { pnpmCommand } from './release/process.ts'
 type CompilationMode = 'checked' | 'benchmark-emit'
 
 /** Identifier of one package-library build step. */
-export type LibraryStepId = 'host-src' | 'host-bundle' | 'host-typert' | 'desktop-bundle' | 'client-src' | 'client-bundle'
+export type LibraryStepId = 'host-src' | 'host-generator' | 'host-bundle' | 'host-typert' | 'desktop-bundle' | 'client-src' | 'client-bundle'
 
 /** One package-library build step as a shell-free child-process invocation. */
 export interface LibraryStep {
@@ -178,7 +178,8 @@ export function libraryBuildSteps(root: string, faces: 'host' | 'all', mode: Com
   const host: LibraryStep[] = [
     typertStep(),
     compilerStep(root, 'host', mode, ['host-typert']),
-    pnpmStep('host-bundle', 'Host bundle', ['exec', 'tsdown', '--config-loader', 'native', '--env.DSH_BUILD_FACE', 'host'], ['host-src']),
+    pnpmStep('host-generator', 'Typert generator runtime', ['--filter', '@deepseek-ai/dsh-typert-generator', 'run', 'build'], ['host-src']),
+    pnpmStep('host-bundle', 'Host bundle', ['exec', 'tsdown', '--config-loader', 'native', '--env.DSH_BUILD_FACE', 'host'], ['host-generator']),
   ]
   if (faces === 'host') return host
   return [
