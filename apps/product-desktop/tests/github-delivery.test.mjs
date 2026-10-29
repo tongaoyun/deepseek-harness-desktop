@@ -289,6 +289,7 @@ test('uses native hosted development runners or explicitly configured signing ma
   assert.ok(productModulesIndex > steps.findIndex(step => step.name === 'Install locked dependencies'))
   assert.ok(productModulesIndex < steps.findIndex(step => step.name === 'Package Windows'))
   assert.ok(productModulesIndex < steps.findIndex(step => step.name === 'Package macOS'))
+  assert.match(steps[productModulesIndex].run, /@deepseek-ai\/dsh-typert-generator build/u)
   assert.match(steps[productModulesIndex].run, /@deepseek-harness\/product-skills.*@deepseek-harness\/product-experts.*build/u)
   assert.match(steps.find(step => step.name === 'Package Windows').run, /apps\/product-desktop run package win-x64 @ModeArgs/u)
   assert.match(steps.find(step => step.name === 'Package Windows').run, /PACKAGE_SIGNING -eq 'signed'/u)
