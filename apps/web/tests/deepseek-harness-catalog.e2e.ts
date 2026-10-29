@@ -17,6 +17,7 @@ import { developmentRuntimeDirectory, resolveDesktopBuildTarget } from '../../de
 import { createPluginProfile } from '../../desktop/src/project-manager.ts'
 import { DESKTOP_HOST_PROTOCOL_VERSION } from '../../desktop/src/host-protocol.ts'
 import { parseDesktopRelease } from '../../desktop/src/release.ts'
+import { companyContentRelease, contentDigest } from '@deepseek-harness/product/company-content'
 import type { ProductTaskCapabilities } from '@deepseek-harness/product/protocol'
 import { startMockLlmServer } from '@deepseek-ai/dsh-llm-mock-server'
 import { ToolCallId, createAssistantMessage, createToolResultMessage, createUserMessage } from '@deepseek-ai/dsh-llm'
@@ -1039,6 +1040,13 @@ for (const { mode, installed, surface } of desktopCarriers) {
       const folderRows: { id: string; name: string; parentId: string | null; updatedAt: string }[] = [{
         id: 'folder-policies', name: 'Policies', parentId: null, updatedAt: '2026-10-10T01:00:00Z',
       }]
+      const companyRelease = companyContentRelease({ version: '1.0.0-fixture', sha256: contentDigest({}), files: {} })
+      const missingFixtureRoutes: string[] = []
+      onTestFinished(({ task }) => {
+        if (task.result?.state === 'fail') console.error('Desktop fixture diagnostics:', {
+          missingRoutes: missingFixtureRoutes, modelRequests: model.requests.map(request => request.path),
+        })
+      })
       let largePreview = false
       const server = createServer((request, response) => {
         const url = new URL(request.url ?? '/', 'http://localhost')
@@ -1047,6 +1055,11 @@ for (const { mode, installed, surface } of desktopCarriers) {
         if (path === '/api/v1/employee-auth/session/refresh') {
           response.end(JSON.stringify({ success: true, data: { sessionToken: secret, expiresAt,
             employee: { employeeId: 'fixture-employee', employeeName: 'Fixture user' } } }))
+        } else if (path === '/api/v1/company-content') {
+          response.end(JSON.stringify({ success: true, data: companyRelease }))
+        } else if (path === '/api/v1/connectors/erp/configuration-template') {
+          response.end(JSON.stringify({ success: true, data: { ...catalogRows['/api/v1/connectors']![0],
+            url: new URL('/api/v1/connectors/erp/mcp', origin).href } }))
         } else if (path === '/api/v1/bootstrap') {
           response.end(JSON.stringify({ success: true, data: { modelApiKey: 'fixture-model-key',
             endpoints: { litellm: model.baseURL + '/v1' }, models: ['deepseek-v4-flash'] } }))
@@ -1193,6 +1206,7 @@ for (const { mode, installed, surface } of desktopCarriers) {
           response.end(JSON.stringify({ success: true, data, pageIndex: 1, pageSize: 100,
             totalCount: data.length, totalPages: 1 }))
         } else {
+          missingFixtureRoutes.push(`${request.method} ${path}`)
           response.statusCode = 404
           response.end(JSON.stringify({ success: false, errCode: 'FIXTURE_ROUTE_MISSING' }))
         }
