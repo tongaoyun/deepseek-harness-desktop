@@ -12,7 +12,8 @@
         "scripts/verify-product-use.spec.ts",
         "packages/preset/agent-preset-registry/tests/derive.spec.ts",
         "packages/client/ui-conversation/tests/draft-document.client.spec.ts",
-        "apps/desktop/tests/desktop-assembly.spec.ts"
+        "apps/desktop/tests/desktop-assembly.spec.ts",
+        "packages/client/ui-sidebar-documentpreview/tests/document-preview-license-bundle.client.spec.ts"
       ],
       "files": [
         {
@@ -1048,7 +1049,7 @@
         {
           "path": "packages/client/ui-sidebar-documentpreview/src/client/image/ImageBody.tsx",
           "before": "1c9a4f396d11857e120fa1c28fbd35d98be110130f22eba710a4fc5c11c75702",
-          "after": "7acb0674a70baa9f09b4deb38ec0382d150a0508f4fa78b83c03ff52e9dac6d7"
+          "after": "1a855648451cb4d106acf5b9165822ede75878b170c430564ff85b44bf166496"
         },
         {
           "path": "packages/client/ui-sidebar-documentpreview/src/client/index.ts",
@@ -1066,19 +1067,9 @@
           "after": "3be773348eb91bd938c65e4e3c6efd0e65e40af3831d1d7a9ef8f747e4965e03"
         },
         {
-          "path": "packages/client/ui-sidebar-documentpreview/src/client/office/OfficeBody.tsx",
-          "before": "8f4f13519e3938b1f4d74d5aa1ac6e53f7798b7aa2fce553aa8835dfa4e8da27",
-          "after": "437fa85a02272e5bac07fc26b21c274a1348ce504d678c803af62d64fd5250d4"
-        },
-        {
           "path": "packages/client/ui-sidebar-documentpreview/src/client/pdf/pdf.tsx",
           "before": "62398432150c88965ad970a2bfab21aa1ac3f6908ebbd1c57ab53beb145c4b97",
-          "after": "34ca533e8995dfb601bd8bee827a99139cbb6bbc01de958158e08fb2a777e4c1"
-        },
-        {
-          "path": "packages/client/ui-sidebar-documentpreview/src/client/retain-tab.ts",
-          "before": null,
-          "after": "e2d11894952026a855e5f16adea03c154914da3c22379b387ebe9274d78ee4b7"
+          "after": "a5d95112328457689f20bf2e2a442a24ce733bdbe5a65966fc898896b4906886"
         },
         {
           "path": "packages/client/ui-sidebar-documentpreview/src/client/text/TextBody.tsx",
@@ -1089,6 +1080,11 @@
           "path": "packages/client/ui-sidebar-documentpreview/tests/apply.client.spec.ts",
           "before": "6fac4c55ed74f03166529ffd72ad30d87e1f2bbdf4698c03e2e75996c762bdf1",
           "after": "e96e17452a24e0f71ff37f37de20f8a14a64f617f0b313de41b1331f5dc49542"
+        },
+        {
+          "path": "packages/client/ui-sidebar-documentpreview/tests/document-preview-license-bundle.client.spec.ts",
+          "before": "7d6455a71d7e2f197ee50e06fc5ec43d685928d33037c26ea0e50a49a4ed356b",
+          "after": "97fb2c3d40dbee2e0d2e2fe8a1758ae2987358429e69c4fb0140edecdfdef67c"
         },
         {
           "path": "packages/client/ui-sidebar-documentpreview/tests/document-surface.client.spec.tsx",
@@ -1198,7 +1194,7 @@
         {
           "path": "packages/extensions/cordis-client-runner/src/client/slot-catalog.ts",
           "before": "194a46f168fbacc63be719d32e81b98e95c913e9318bd44f5bf1e3f029994a05",
-          "after": "44b682ed25eab09af6a5c8f4179ad0a8766834bf6b6325905cb6100d039ba7f4"
+          "after": "c5aa6b4c5765af24b7da33253787505a9fa157a9b3921a27dac455308b2ccecd"
         },
         {
           "path": "packages/extensions/tool-cordis/src/api-catalog.ts",
@@ -1443,7 +1439,7 @@
         {
           "path": "pnpm-lock.yaml",
           "before": "349ecef16eae1c2166b74661fdff552b9825945894b89461b3a29f825daa6f76",
-          "after": "22f0bb12487fc725c350e18c9a358c5103c9202d2281d30723f8e1ff12d8dc11"
+          "after": "dcbde5c6c59b691754bb18c8f8868402dfff14a077c3eda9c1290d28d0940260"
         },
         {
           "path": "README.i18n.yaml",

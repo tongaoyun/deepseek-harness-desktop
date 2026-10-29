@@ -8580,7 +8580,7 @@ index 135609acdd0faa2ab1488835a02c14b18c56bc7b..abb55d22afd11a05f11ea9d7b5fb552b
      try {
        return createBasicHtmlDocument(data)
 diff --git a/packages/client/ui-sidebar-documentpreview/src/client/image/ImageBody.tsx b/packages/client/ui-sidebar-documentpreview/src/client/image/ImageBody.tsx
-index 08c2ec3b0db048ed372897fcf01b5628caee9bd2..591d10ccb6d4ebbeb39b4abf817f350e84568970 100644
+index 08c2ec3b0db048ed372897fcf01b5628caee9bd2..45faa01ca410dbc1bd451432ce877e14edfcebcb 100644
 --- a/packages/client/ui-sidebar-documentpreview/src/client/image/ImageBody.tsx
 +++ b/packages/client/ui-sidebar-documentpreview/src/client/image/ImageBody.tsx
 @@ -1,5 +1,5 @@
@@ -8590,15 +8590,7 @@ index 08c2ec3b0db048ed372897fcf01b5628caee9bd2..591d10ccb6d4ebbeb39b4abf817f350e
  import { DraggableImage } from '@deepseek-ai/dsh-client-ui-primitives'
  import { bindImagePan } from './pan.ts'
  import type { PropsLocale, PropsStore } from '@deepseek-ai/dsh-client-ui-slots'
-@@ -10,6 +10,7 @@ import { hostFileOf } from '../rpc.ts'
- import { ZoomViewport, zoomSurfaceClass } from '../zoom/ZoomViewport.tsx'
- import { DEFAULT_ZOOM, type ZoomInjected, type ZoomStore } from '../zoom/store.ts'
- import type { ZoomLabels, ZoomPreference } from '../zoom/types.ts'
-+import { useRetainedTab } from '../retain-tab.ts'
- import type {} from './locales.ts'
- import css from './ImageBody.module.css'
- 
-@@ -66,14 +67,35 @@ export function ImageBody(props: ImageBodyProps): ReactNode {
+@@ -66,14 +66,36 @@ export function ImageBody(props: ImageBodyProps): ReactNode {
    const { tab } = props.useTabInfo()
    const preference = props.useStore(state => state.byTab[tab.id] ?? DEFAULT_ZOOM)
    const path = useMemo(() => hostFileOf(resourceAddress).path, [resourceAddress])
@@ -8610,7 +8602,8 @@ index 08c2ec3b0db048ed372897fcf01b5628caee9bd2..591d10ccb6d4ebbeb39b4abf817f350e
    }, [props.actions, tab.id])
  
 -  useEffect(() => { props.retainTab(tab.id, tab.signal) }, [props.retainTab, tab.id, tab.signal])
-+  useRetainedTab(props.retainTab, tab.id, tab.signal)
++  const { retainTab } = props
++  useEffect(() => { retainTab(tab.id, tab.signal) }, [retainTab, tab.id, tab.signal])
 +
 +  return <ImageDocumentView path={path} data={content.kind === 'bytes' ? content.data : undefined}
 +    preference={preference} onPreference={setPreference} signal={tab.signal}
@@ -8813,29 +8806,8 @@ index 714d68bafeff523e07b971e6b62939d004027ade..11a1c9567f6c37a2fcbf0b4a124114e3
    const copyLabel = t('code.copy')
    const copiedLabel = t('code.copied')
    const footnotes = t('footnotes')
-diff --git a/packages/client/ui-sidebar-documentpreview/src/client/office/OfficeBody.tsx b/packages/client/ui-sidebar-documentpreview/src/client/office/OfficeBody.tsx
-index 3215f97a246626946142bb767d57836baa930bcd..07f92d538ffd0ecaa9954f1c7fec54a46cfa4077 100644
---- a/packages/client/ui-sidebar-documentpreview/src/client/office/OfficeBody.tsx
-+++ b/packages/client/ui-sidebar-documentpreview/src/client/office/OfficeBody.tsx
-@@ -6,6 +6,7 @@ import { Button, FileTypeIcon, classifyFileType } from '@deepseek-ai/dsh-client-
- import { pathPartsOf } from '@deepseek-ai/dsh-util-workspace-path'
- import type { UseSidebarRightTabInfo } from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
- import type { DocumentBodyOwner, DocumentPreviewProps } from '../document/contract.ts'
-+import { useRetainedTab } from '../retain-tab.ts'
- import { hostFileOf } from '../rpc.ts'
- import { LoadingIndicator } from '../LoadingIndicator.tsx'
- import type { OfficeLoadInjected } from './face.ts'
-@@ -49,7 +50,7 @@ export function OfficeBody(props: OfficeBodyProps): ReactNode {
-   const held = props.useStore(state => state.byTab[tab.id])
-   const view = held?.revision === revision ? held : undefined
-   const settled = view?.file !== undefined || view?.failure !== undefined
--  useEffect(() => { retainTab(tab.id, tab.signal) }, [retainTab, tab.id, tab.signal])
-+  useRetainedTab(retainTab, tab.id, tab.signal)
-   // Metadata may replace callbacks without advancing the content revision.
-   useEffect(() => {
-     if (request === undefined || settled || tab.signal.aborted) return
 diff --git a/packages/client/ui-sidebar-documentpreview/src/client/pdf/pdf.tsx b/packages/client/ui-sidebar-documentpreview/src/client/pdf/pdf.tsx
-index bafa88f214dacb1be47de62fb1d7af625d99f896..05c468e436f73afe972a5ae17d19e6d06600ed94 100644
+index bafa88f214dacb1be47de62fb1d7af625d99f896..b72f72cba9d335c9b3cea7e8f08312348a30fbf4 100644
 --- a/packages/client/ui-sidebar-documentpreview/src/client/pdf/pdf.tsx
 +++ b/packages/client/ui-sidebar-documentpreview/src/client/pdf/pdf.tsx
 @@ -1,5 +1,5 @@
@@ -8845,15 +8817,7 @@ index bafa88f214dacb1be47de62fb1d7af625d99f896..05c468e436f73afe972a5ae17d19e6d0
  import { Button } from '@deepseek-ai/dsh-client-ui-primitives'
  import type { PropsLocale, PropsStore } from '@deepseek-ai/dsh-client-ui-slots'
  import type { TabId } from '@deepseek-ai/dsh-client-ui-dockkit'
-@@ -11,6 +11,7 @@ import { PdfWorkerFailure } from './errors.ts'
- import { pdfTextRenderer } from './text.ts'
- import type { ZoomViewportProps } from '../zoom/ZoomViewport.tsx'
- import type { ZoomLabels, ZoomPreference } from '../zoom/types.ts'
-+import { useRetainedTab } from '../retain-tab.ts'
- import type {} from './locales.ts'
- import css from './PdfBody.module.css'
- 
-@@ -31,6 +32,19 @@ export interface PdfBodyInjected {
+@@ -31,6 +31,19 @@ export interface PdfBodyInjected {
  /** Standard document props plus the PDF entry's locale, viewing store, and lifetime callback. */
  export type PdfBodyProps = DocumentPreviewProps & PropsLocale<'sidebarPdf'> & PropsStore<PdfStore> & PdfBodyInjected
  
@@ -8873,7 +8837,7 @@ index bafa88f214dacb1be47de62fb1d7af625d99f896..05c468e436f73afe972a5ae17d19e6d0
  type LoadState =
    | { readonly kind: 'loaded'; readonly data: Uint8Array<ArrayBuffer>; readonly document: PdfDocument }
    | { readonly kind: 'failed'; readonly data: Uint8Array<ArrayBuffer>; readonly error: unknown }
-@@ -45,44 +59,51 @@ const FIT_WIDTH: ZoomPreference = { kind: 'fit-width' }
+@@ -45,44 +58,52 @@ const FIT_WIDTH: ZoomPreference = { kind: 'fit-width' }
  export function PdfBody(props: PdfBodyProps & { readonly loading: ReactNode }): ReactNode {
    const { tab } = props.useTabInfo()
    const view = props.useStore(state => state.byTab[tab.id] ?? DEFAULT_PDF_VIEW)
@@ -8884,7 +8848,8 @@ index bafa88f214dacb1be47de62fb1d7af625d99f896..05c468e436f73afe972a5ae17d19e6d0
 +  const setPreference = useCallback((value: ZoomPreference): void => {
 +    props.actions.zoom(tab.id, value)
 +  }, [props.actions, tab.id])
-+  useRetainedTab(props.retainTab, tab.id, tab.signal)
++  const { retainTab } = props
++  useEffect(() => { retainTab(tab.id, tab.signal) }, [retainTab, tab.id, tab.signal])
 +  return <PdfDocumentView data={props.content.kind === 'bytes' ? props.content.data : undefined}
 +    signal={tab.signal} view={view} onPage={pageVisible} onZoom={setPreference}
 +    scrollportRef={props.scrollportRef} ZoomViewport={props.ZoomViewport}
@@ -8958,27 +8923,6 @@ index bafa88f214dacb1be47de62fb1d7af625d99f896..05c468e436f73afe972a5ae17d19e6d0
      {pages}
    </ZoomViewport>
  }
-diff --git a/packages/client/ui-sidebar-documentpreview/src/client/retain-tab.ts b/packages/client/ui-sidebar-documentpreview/src/client/retain-tab.ts
-new file mode 100644
-index 0000000000000000000000000000000000000000..726f9821bbcfea97ab9e644907e8c0b6490761ba
---- /dev/null
-+++ b/packages/client/ui-sidebar-documentpreview/src/client/retain-tab.ts
-@@ -0,0 +1,15 @@
-+import { useEffect } from 'react'
-+import type { TabId } from '@deepseek-ai/dsh-client-ui-dockkit'
-+
-+/** Keep tab-scoped document state alive until the owning tab record is disposed.
-+ * @param retainTab - Registers the tab with the document preview store.
-+ * @param tabId - Identifier of the tab that owns the preview.
-+ * @param signal - Abort signal for the tab lifecycle.
-+ */
-+export function useRetainedTab(
-+  retainTab: (tabId: TabId, signal: AbortSignal) => void,
-+  tabId: TabId,
-+  signal: AbortSignal,
-+): void {
-+  useEffect(() => { retainTab(tabId, signal) }, [retainTab, tabId, signal])
-+}
 diff --git a/packages/client/ui-sidebar-documentpreview/src/client/text/TextBody.tsx b/packages/client/ui-sidebar-documentpreview/src/client/text/TextBody.tsx
 index 0c26163903c2cfdeb57b635fcb8c81da89f2b264..0660028730c87cb8cf5f83301c1886b951971fb7 100644
 --- a/packages/client/ui-sidebar-documentpreview/src/client/text/TextBody.tsx
@@ -9060,6 +9004,19 @@ index b1a8caac0ab7cc20b9b598fbcebd73233659976a..3c27116f450460a910f65a0776a3c19e
      expect(dictionaries.size).toBe(0)
    })
  
+diff --git a/packages/client/ui-sidebar-documentpreview/tests/document-preview-license-bundle.client.spec.ts b/packages/client/ui-sidebar-documentpreview/tests/document-preview-license-bundle.client.spec.ts
+index d42317f4b81d1c2470ba692172638b55dc686b51..14e6e6812e8dec9a54557116787dcaac010346de 100644
+--- a/packages/client/ui-sidebar-documentpreview/tests/document-preview-license-bundle.client.spec.ts
++++ b/packages/client/ui-sidebar-documentpreview/tests/document-preview-license-bundle.client.spec.ts
+@@ -58,7 +58,7 @@ describe('published document preview licenses', () => {
+ 
+       const client = run('tar', ['-xOf', resolve(packageRoot, packed.filename), 'package/lib/client.js'], packageRoot, task.timeout)
+       const pdf = run('tar', ['-xOf', resolve(packageRoot, packed.filename), 'package/lib/client.pdf.js'], packageRoot, task.timeout)
+-      expect([...client.matchAll(/require\.async\("(\.\/client[^"/]*\.js)"\)/gu)].map(match => match[1]))
++      expect([...new Set([...client.matchAll(/require\.async\("(\.\/client[^"/]*\.js)"\)/gu)].map(match => match[1]))])
+         .toEqual(['./client.frontmatter-fields.js', './client.pdf.js', './client.excel.js'])
+       expect(client).not.toMatch(/\brequire\("\.\/client[^"/]*\.js"\)/u)
+       expect([...pdf.matchAll(/require\("(\.\/client[^"/]*\.js)"\)/gu)].map(match => match[1]))
 diff --git a/packages/client/ui-sidebar-documentpreview/tests/document-surface.client.spec.tsx b/packages/client/ui-sidebar-documentpreview/tests/document-surface.client.spec.tsx
 new file mode 100644
 index 0000000000000000000000000000000000000000..829d9812e89108ff8816f5e9c29ab1a25786613c
@@ -9864,7 +9821,7 @@ index 8777befdb01422740acd5e878f38d3fec888d50a..2c72c8203fca2d385a2e6e99f3f592df
      name: 'RegisterFactory',
      declaration: 'export interface RegisterFactory {\n    <F extends keyof SlotFactoryMap & string>(options: RegisterFactoryOptions<F>, component: SlotComponent<FactoryComponentPropsOf<F>>): () => void;\n}',
 diff --git a/packages/extensions/cordis-client-runner/src/client/slot-catalog.ts b/packages/extensions/cordis-client-runner/src/client/slot-catalog.ts
-index 7341c2c743f92d059243f7aa47db63f58a4da2da..c37f475b184130048af105d20d6e1e581ff5c964 100644
+index 7341c2c743f92d059243f7aa47db63f58a4da2da..57fad58c3ae398e45b6cef1037c098d69fe2dc73 100644
 --- a/packages/extensions/cordis-client-runner/src/client/slot-catalog.ts
 +++ b/packages/extensions/cordis-client-runner/src/client/slot-catalog.ts
 @@ -751,7 +751,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
@@ -10394,15 +10351,6 @@ index 7341c2c743f92d059243f7aa47db63f58a4da2da..c37f475b184130048af105d20d6e1e58
    },
    {
      key: 'sidebar.right.pane.tab',
-@@ -4249,7 +4467,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
-     ],
-     replaceRisk: 'none',
-     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'sidebar.right.tab.document.office.pdf\', () => ctx.slots.register(\n      { name: \'sidebar.right.tab.document.office.pdf\', key: \'<one key the owner dispatches>\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
--    source: 'packages/client/ui-sidebar-documentpreview/src/client/office/OfficeBody.tsx:19',
-+    source: 'packages/client/ui-sidebar-documentpreview/src/client/office/OfficeBody.tsx:20',
-   },
-   {
-     key: 'sidebar.right.tab.document.unpreviewable',
 @@ -4773,7 +4991,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
      ],
      replaceRisk: 'shadows-shipped-ui',
@@ -11976,7 +11924,7 @@ index 3feb65d17109c713f4d8fde9b000fbee919dab7d..700b0f2e422077f63e8b7e86a7ff6c97
    if (!ctx.get('agents')) await ctx.plugin(AgentRegistry)
    if (!ctx.get('fs')) await ctx.plugin(FileSystem)
 diff --git a/pnpm-lock.yaml b/pnpm-lock.yaml
-index 3bb5b2fd3e73be2afa0611f2012206d2071c61dc..f9b6d13b5f03059b79608d3cabd673df4899451b 100644
+index 3bb5b2fd3e73be2afa0611f2012206d2071c61dc..ffb2ffc8f9742ae5bc6891beb6c69985759acc18 100644
 --- a/pnpm-lock.yaml
 +++ b/pnpm-lock.yaml
 @@ -770,6 +770,9 @@ importers:
@@ -12794,7 +12742,7 @@ index 3bb5b2fd3e73be2afa0611f2012206d2071c61dc..f9b6d13b5f03059b79608d3cabd673df
  
    packages/deliverables/deliverable-file-references:
      devDependencies:
-@@ -11759,6 +12416,87 @@ importers:
+@@ -11759,6 +12416,90 @@ importers:
          specifier: ^18.2.0
          version: 18.3.1
  
@@ -12842,6 +12790,9 @@ index 3bb5b2fd3e73be2afa0611f2012206d2071c61dc..f9b6d13b5f03059b79608d3cabd673df
 +      '@deepseek-ai/dsh-client-ui-settings':
 +        specifier: workspace:*
 +        version: link:../../client/ui-settings
++      '@deepseek-ai/dsh-client-ui-settings-general':
++        specifier: workspace:*
++        version: link:../../client/ui-settings-general
 +      '@deepseek-ai/dsh-client-ui-sidebar':
 +        specifier: workspace:*
 +        version: link:../../client/ui-sidebar
@@ -12882,7 +12833,7 @@ index 3bb5b2fd3e73be2afa0611f2012206d2071c61dc..f9b6d13b5f03059b79608d3cabd673df
    packages/feedback/command-feedback:
      dependencies:
        zod:
-@@ -19991,10 +20729,18 @@ packages:
+@@ -19991,10 +20732,18 @@ packages:
    '@mixmark-io/domino@2.2.0':
      resolution: {integrity: sha512-Y28PR25bHXUg88kCV7nivXrP2Nj2RueZ3/l/jdx6J9f8J4nsEGcgX0Qe6lt7Pa+J79+kPiJU3LguR6O/6zrLOw==}
  
@@ -12901,7 +12852,7 @@ index 3bb5b2fd3e73be2afa0611f2012206d2071c61dc..f9b6d13b5f03059b79608d3cabd673df
    '@modelcontextprotocol/core@2.2.0':
      resolution: {integrity: sha512-iLhmprRmWI8EcosOA3wVvww22z02NkgqhV4fBH6f/odQBsi7xnJc0HGmi21yWO+/iKw2yzqVE127Zhna5/+JXw==}
      engines: {node: '>=20'}
-@@ -20027,6 +20773,10 @@ packages:
+@@ -20027,6 +20776,10 @@ packages:
      resolution: {integrity: sha512-kKaFkyAh6oipvc9+EAbJ552JafnMnOq5nzmzWkp1jJdBhTAAGpmIpWihUG1+rfNhmEFM98gUZDdCHCDD4v6a7Q==}
      hasBin: true
  
@@ -12912,7 +12863,7 @@ index 3bb5b2fd3e73be2afa0611f2012206d2071c61dc..f9b6d13b5f03059b79608d3cabd673df
    '@modelcontextprotocol/server@2.2.0':
      resolution: {integrity: sha512-qFnltjus6Gk8Lx6J1w2RXmr3YPN22MNT6qD6zjAkaiWIlFIFxWClz0rXHNuJF/KSUyn5YGhkSvXkWDbQHVLFEQ==}
      engines: {node: '>=20'}
-@@ -21035,6 +21785,14 @@ packages:
+@@ -21035,6 +21788,14 @@ packages:
      resolution: {integrity: sha512-4BAffykYOgO+5nzBWYwE3W90sBgLJoUPRWWcL8wlyiM8IB8ipJz3UMJ9KXQd1RKQXpKp8Tutn80HZtWsu2u76w==}
      engines: {node: '>=10'}
  
@@ -12927,7 +12878,7 @@ index 3bb5b2fd3e73be2afa0611f2012206d2071c61dc..f9b6d13b5f03059b79608d3cabd673df
    '@tanstack/react-virtual@3.14.10':
      resolution: {integrity: sha512-SRyoUbdFMRHuYXMijV5H4ZarQWpXkj3iANq8OFre+pybeVap8ZJjZ3Nz9bVjx4d8PfobVUQUdKyyyHYk3E+djw==}
      peerDependencies:
-@@ -27683,6 +28441,16 @@ snapshots:
+@@ -27683,6 +28444,16 @@ snapshots:
  
    '@mixmark-io/domino@2.2.0': {}
  
@@ -12944,7 +12895,7 @@ index 3bb5b2fd3e73be2afa0611f2012206d2071c61dc..f9b6d13b5f03059b79608d3cabd673df
    '@modelcontextprotocol/client@2.2.0':
      dependencies:
        '@modelcontextprotocol/core': 2.2.0
-@@ -27693,10 +28461,21 @@ snapshots:
+@@ -27693,10 +28464,21 @@ snapshots:
        pkce-challenge: 5.0.1
        zod: 4.4.3
  
@@ -12966,7 +12917,7 @@ index 3bb5b2fd3e73be2afa0611f2012206d2071c61dc..f9b6d13b5f03059b79608d3cabd673df
    '@modelcontextprotocol/node@2.0.0(@modelcontextprotocol/server@2.2.0)(hono@4.13.7)':
      dependencies:
        '@hono/node-server': 1.19.17(hono@4.13.7)
-@@ -27748,6 +28527,11 @@ snapshots:
+@@ -27748,6 +28530,11 @@ snapshots:
        - supports-color
        - zod
  
@@ -12978,7 +12929,7 @@ index 3bb5b2fd3e73be2afa0611f2012206d2071c61dc..f9b6d13b5f03059b79608d3cabd673df
    '@modelcontextprotocol/server@2.2.0':
      dependencies:
        '@modelcontextprotocol/core': 2.2.0
-@@ -28455,6 +29239,13 @@ snapshots:
+@@ -28455,6 +29242,13 @@ snapshots:
      dependencies:
        defer-to-connect: 2.0.1
  

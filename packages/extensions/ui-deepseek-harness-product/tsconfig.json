@@ -26,6 +26,7 @@
     { "path": "../../../packages/client/ui-sidebar/tsconfig.json" },
     { "path": "../../../packages/client/ui-sidebar-documentpreview/tsconfig.client.json" },
     { "path": "../../../packages/client/ui-slots/tsconfig.json" },
+    { "path": "../../../packages/client/ui-settings-general/tsconfig.client.json" },
     { "path": "../../../packages/client/ui-workspace/tsconfig.json" },
     { "path": "../../../packages/core/session" },
     { "path": "../../../packages/util/crypto" },

@@ -24,7 +24,7 @@ import { SESSION_FORMAT_VERSION, Session, SessionId } from '@deepseek-ai/dsh-ses
 import { pdfFixture } from '../../../packages/client/ui-sidebar-documentpreview/tests/pdf-fixture.ts'
 import { realOfficeBytes } from './office-fixture.ts'
 import { closeElectronAcceptance } from '../../product-desktop/scripts/close-electron.mjs'
-import { prepareNativeProductUpdate, type NativeProductUpdateQualification } from '../../product-desktop/tests/native-product-update.mjs'
+import { dialogWithButton, prepareNativeProductUpdate, type NativeProductUpdateQualification } from '../../product-desktop/tests/native-product-update.mjs'
 
 const packageDir = join(REPO_ROOT, 'packages/extensions/ui-deepseek-harness-product')
 const expectedDir = fileURLToPath(new URL('./expected/deepseek-harness-catalog', import.meta.url))
@@ -1021,11 +1021,11 @@ for (const { mode, installed, surface } of desktopCarriers) {
         successText: 'Fixture review complete.', apiKey: 'fixture-model-key' })
       onTestFinished(() => model.close())
       const catalogRows: Record<string, object[]> = {
-        '/api/v1/connectors': [{ id: 'erp', version: '1.0.0', name: 'Order management', displayName: 'Order management',
+        '/api/v1/connectors': [{ id: 'erp', version: '1.0.0', name: 'Order management', displayName: 'Order management', reviewStatus: 'PUBLISHED',
           status: 'ready', ready: true, authorizationStatus: 'AUTHORIZED', authMode: 'employee-bearer',
           transport: 'streamable-http', url: '/api/v1/connectors/erp/mcp', arguments: [], headers: {}, environment: {},
           tools: [{ name: 'orders_read', access: 'READ' }] },
-        { id: 'local-unconfigured', version: '1.0.0', name: 'Device configuration missing',
+        { id: 'local-unconfigured', version: '1.0.0', name: 'Device configuration missing', reviewStatus: 'PUBLISHED',
           status: 'needs-configuration', ready: false, authorizationStatus: 'AUTHORIZED', authMode: 'none',
           transport: 'stdio', command: 'fixture-unconfigured', arguments: [], headers: {}, environment: {}, tools: [] }],
         '/api/v1/knowledge-bases': [...organizationKnowledge,
@@ -1443,14 +1443,15 @@ for (const { mode, installed, surface } of desktopCarriers) {
         expect(await page.getByRole('menuitem', { name: /^(Check for updates|检查更新)$/, exact: true }).count()).toBe(1)
         const signing = z.enum(['signed', 'unsigned', 'internal']).default('unsigned').parse(process.env.PACKAGE_SIGNING)
         if (installed === undefined || signing === 'unsigned') {
-          const [updatePage] = await Promise.all([
-            app.waitForEvent('window'),
-            page.getByRole('menuitem', { name: /^(Check for updates|检查更新)$/, exact: true }).click(),
-          ])
-          await expect.poll(() => updatePage.locator('#title').textContent()).toMatch(/Automatic updates are unavailable|当前版本暂不支持自动更新/u)
-          expect(await updatePage.locator('#technical-details').isHidden()).toBe(true)
-          expect(await updatePage.locator('#detail').textContent()).toMatch(/Current version:|当前版本：/u)
-          expect(await updatePage.locator('#detail').textContent()).toContain(applicationVersion)
+          await page.getByRole('menuitem', { name: /^(Check for updates|检查更新)$/, exact: true }).click()
+          const updatePage = await dialogWithButton(app, /^(Close|关闭)$/)
+          await expect.poll(() => updatePage.title()).toMatch(/^(Update Failed|更新失败)$/u)
+          await expect.poll(() => updatePage.locator('#title').textContent()).toMatch(/Could not check for updates\. Please try again later\.|检查更新失败，请稍后重试。/u)
+          expect(await updatePage.locator('#technical-details').getAttribute('open')).toBeNull()
+          expect(await updatePage.locator('#technical-details-content').isVisible()).toBe(false)
+          await updatePage.locator('#technical-details-label').click()
+          await expect.poll(() => updatePage.locator('#technical-details-content').innerText()).toMatch(/no packaged update source/u)
+          await updatePage.locator('#technical-details-label').click()
           for (const width of [1440, 390]) {
             await updatePage.setViewportSize({ width, height: 900 })
             expect(await updatePage.locator('main').evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true)
@@ -1458,7 +1459,13 @@ for (const { mode, installed, surface } of desktopCarriers) {
           }
           await updatePage.locator('#close').click()
           await expect.poll(() => app!.windows().length).toBe(1)
-          expect(await page.getByRole('button', { name: /^(Retry update|重试更新)$/ }).count()).toBe(0)
+          const retryUpdate = page.getByRole('button', { name: /^(Retry update|重试更新)$/, exact: true })
+          await retryUpdate.waitFor()
+          await retryUpdate.click()
+          const retriedUpdatePage = await dialogWithButton(app, /^(Close|关闭)$/)
+          await expect.poll(() => retriedUpdatePage.title()).toMatch(/^(Update Failed|更新失败)$/u)
+          await retriedUpdatePage.locator('#close').click()
+          await expect.poll(() => app!.windows().length).toBe(1)
           await page.getByRole('button', { name: /^(More menu|更多菜单)$/, exact: true }).click()
         }
         await page.getByRole('menuitem', { name: /^(Feedback|反馈)$/, exact: true }).click()
@@ -1727,10 +1734,9 @@ for (const { mode, installed, surface } of desktopCarriers) {
           .toMatchObject({ basePresetId: 'standard', knowledgeBaseIds: ['policy'] })
         await page.getByRole('button', { name: /^(Connectors|连接器)$/, exact: true }).click()
         await page.getByRole('button', { name: /Order management/ }).waitFor()
-        await page.getByText(/^(Needs configuration|待配置)$/, { exact: true }).waitFor()
-        const connectedCatalog = page.getByRole('tab', { name: /^(Connected|已连接)\s*1$/ })
-        await connectedCatalog.click()
-        expect(await page.getByRole('button', { name: /Device configuration missing/ }).count()).toBe(0)
+        await page.getByRole('button', { name: /Device configuration missing/ }).waitFor()
+        expect(await page.getByText(/^(Needs configuration|待配置)$/, { exact: true }).count()).toBe(0)
+        expect(await page.getByRole('tab', { name: /^(Connected|已连接)/ }).count()).toBe(0)
         await page.getByRole('button', { name: /Order management/ }).click()
         expect(await page.getByRole('dialog').getByRole('checkbox').count()).toBe(0)
         await expect.poll(() => invoke('tasks.capabilities.read', { sessionId }))

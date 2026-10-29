@@ -13,6 +13,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-sidebar/client'
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import type {} from '@deepseek-ai/dsh-client-ui-workspace/client'
 import type {} from '@deepseek-ai/dsh-client-ui-commands/client'
+import type { DesktopUpdateBridge } from '@deepseek-ai/dsh-client-ui-settings-general/types'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { IconDatabaseOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives'
 import { en, NS, zh } from '../locales.ts'
@@ -45,14 +46,14 @@ export function apply(ctx: ClientContext): void {
   ctx.plugin(Experts)
   ctx.plugin(Skills)
   registerKnowledgeToolResults(ctx)
-  const carrier = (globalThis as { dshDesktop?: { protocolVersion?: number; updates?: { check(): Promise<void> } } }).dshDesktop
+  const carrier = (globalThis as { dshDesktop?: { protocolVersion?: number; updates?: Pick<DesktopUpdateBridge, 'open'> } }).dshDesktop
   const updates = carrier?.protocolVersion === 1 ? carrier.updates : undefined
   ctx.slots.inject('settings.launcher', () => ctx.slots.register({
     // The browser slot facade assigns the product's shadowing rank. Supplying
     // a fixed value here bypasses that rank and can leave the official account
     // launcher as the winner when the product package is reloaded.
     name: 'settings.launcher', locale: NS,
-    inject: () => updates === undefined ? {} : { openSoftwareUpdate: () => updates.check() },
+    inject: () => updates === undefined ? {} : { openSoftwareUpdate: () => updates.open() },
   }, DeepSeekHarnessSettingsMenu))
   const t = ctx.locale.bind(NS)
   const actions = createHarnessActions(ctx)

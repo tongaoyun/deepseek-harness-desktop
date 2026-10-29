@@ -10,7 +10,6 @@ import { hostFileOf } from '../rpc.ts'
 import { ZoomViewport, zoomSurfaceClass } from '../zoom/ZoomViewport.tsx'
 import { DEFAULT_ZOOM, type ZoomInjected, type ZoomStore } from '../zoom/store.ts'
 import type { ZoomLabels, ZoomPreference } from '../zoom/types.ts'
-import { useRetainedTab } from '../retain-tab.ts'
 import type {} from './locales.ts'
 import css from './ImageBody.module.css'
 
@@ -71,7 +70,8 @@ export function ImageBody(props: ImageBodyProps): ReactNode {
     props.actions.zoom(tab.id, value)
   }, [props.actions, tab.id])
 
-  useRetainedTab(props.retainTab, tab.id, tab.signal)
+  const { retainTab } = props
+  useEffect(() => { retainTab(tab.id, tab.signal) }, [retainTab, tab.id, tab.signal])
 
   return <ImageDocumentView path={path} data={content.kind === 'bytes' ? content.data : undefined}
     preference={preference} onPreference={setPreference} signal={tab.signal}
