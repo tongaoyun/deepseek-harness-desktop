@@ -1,4 +1,4 @@
-/** Select and copy the local npm tarball closures that supply Desktop dsh and its private Host. */
+/** Select and copy local npm tarball closures for Desktop dsh, its private Host and application roots. */
 
 import { createHash } from 'node:crypto'
 import {
@@ -26,6 +26,7 @@ import {
 import { capture } from '../../../scripts/release/process.ts'
 import { tarballFiles } from '../../../scripts/release/tarball.ts'
 import { desktopTargetPlatform, resolveDesktopBuildTarget, resolveDesktopTargetBuildPaths } from './desktop-build-paths.mjs'
+import { readDesktopAssembly } from './desktop-assembly.mjs'
 
 const DSH_PACKAGE = '@deepseek-ai/dsh'
 const ROOT_PACKAGES = [DSH_PACKAGE, DESKTOP_HOST_PACKAGE] as const
@@ -62,15 +63,17 @@ function dependencyNames(manifest: Readonly<Record<string, unknown>>, section: s
 }
 
 /**
- * Select workspace dependencies rooted at dsh and its private Host; npm resolves external packages.
+ * Select workspace dependencies rooted at dsh, its private Host and application packages; npm resolves external packages.
  * Reads the repository workspace manifest and package manifests to distinguish required local packages from npm-resolved externals.
  * @param available - Packed packages indexed by package name.
  * @param target - Platform and architecture of the installer payload.
+ * @param runtimePackages - Additional application roots declared by the Desktop assembly.
  * @returns Selected packages sorted by name.
  */
 export function selectDesktopPackageClosure(
   available: ReadonlyMap<string, PackedDesktopPackage>,
   target: ReturnType<typeof desktopTargetPlatform>,
+  runtimePackages: readonly string[] = [],
 ): PackedDesktopPackage[] {
   const workspace = yaml.load(readFileSync(join(REPOSITORY_ROOT, 'pnpm-workspace.yaml'), 'utf8')) as { packages: string[] }
   const workspaceNames = new Set(globSync(workspace.packages.map(pattern => `${pattern}/package.json`), { cwd: REPOSITORY_ROOT })
@@ -95,7 +98,7 @@ export function selectDesktopPackageClosure(
         && supportsTarget(optional.manifest, 'cpu', target.arch)) visit(dependency)
     }
   }
-  for (const name of ROOT_PACKAGES) {
+  for (const name of [...ROOT_PACKAGES, ...runtimePackages]) {
     if (!available.has(name)) throw new Error(`desktop package set: packed inputs omit ${name}`)
     visit(name)
   }
@@ -147,11 +150,13 @@ export function assertDesktopHostPackageFiles(files: readonly string[]): void {
  * @param inputs - Release tarball directories.
  * @param output - Destination package-set directory.
  * @param target - Platform and architecture of the installer payload.
+ * @param runtimePackages - Additional application roots declared by the Desktop assembly.
  */
 export function prepareDesktopPackageSet(
   inputs: readonly string[], output: string, target: ReturnType<typeof desktopTargetPlatform>,
+  runtimePackages: readonly string[] = [],
 ): void {
-  const selected = selectDesktopPackageClosure(packedPackages(inputs), target)
+  const selected = selectDesktopPackageClosure(packedPackages(inputs), target, runtimePackages)
   const host = selected.find(packed => packed.manifest.name === DESKTOP_HOST_PACKAGE)
   if (host === undefined) throw new Error(`desktop package set: selected closure omits ${DESKTOP_HOST_PACKAGE}`)
   assertDesktopHostPackageFiles(tarballFiles(host.tarball))
@@ -193,7 +198,9 @@ function main(): void {
   })
   const inputs = (values.from ?? defaultInputs).map(path => resolve(REPOSITORY_ROOT, path))
   const output = values.out === undefined ? buildPaths.packageSet : resolve(REPOSITORY_ROOT, values.out)
-  prepareDesktopPackageSet(inputs, output, desktopTargetPlatform(resolveDesktopBuildTarget()))
+  const target = desktopTargetPlatform(resolveDesktopBuildTarget())
+  const assembly = readDesktopAssembly(process.env, target.platform)
+  prepareDesktopPackageSet(inputs, output, target, assembly.runtimePackages)
   console.log(`desktop package set: prepared ${output}`)
 }
 

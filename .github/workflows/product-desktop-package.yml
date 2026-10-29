@@ -82,7 +82,7 @@ jobs:
       - name: Test Electron close lifecycle
         run: pnpm exec vitest run apps/product-desktop/tests/close-electron.spec.ts apps/product-desktop/tests/office-fixture.spec.ts apps/product-desktop/tests/native-update-dialog.spec.ts
       - name: Test upstream boundaries
-        run: pnpm exec vitest run scripts/upstream-boundaries.spec.ts
+        run: pnpm exec vitest run scripts/upstream-boundaries.spec.ts scripts/build.spec.ts apps/desktop/tests/prepare-package-set.spec.ts
       - name: Test product sidecar
         run: cargo test --manifest-path native/deepseek-harness/Cargo.toml
   package:

@@ -99,6 +99,24 @@ describe('desktop package-set selection', () => {
   })
 })
 
+it.each([
+  ['win32', 'x64'], ['darwin', 'arm64'], ['darwin', 'x64'],
+] as const)('includes declared application roots and their dependencies for %s/%s', (platform, arch) => {
+  const available = new Map<string, PackedDesktopPackage>([
+    ['@deepseek-ai/dsh', packed('@deepseek-ai/dsh')],
+    ['@deepseek-ai/dsh-desktop-host', packed('@deepseek-ai/dsh-desktop-host')],
+    ['example-extension', packed('example-extension', { dependencies: { 'example-shared': '1.0.0' } })],
+    ['example-shared', packed('example-shared')],
+    ['unused-extension', packed('unused-extension')],
+  ])
+  const selected = selectDesktopPackageClosure(available, { platform, arch }, ['example-extension'])
+    .map(entry => entry.manifest.name)
+  expect(selected).toEqual(['@deepseek-ai/dsh', '@deepseek-ai/dsh-desktop-host', 'example-extension', 'example-shared'])
+  available.delete('example-extension')
+  expect(() => selectDesktopPackageClosure(available, { platform, arch }, ['example-extension']))
+    .toThrow('packed inputs omit example-extension')
+})
+
 const macProvider = '@deepseek-ai/dsh-experimental-cua-macos'
 const cuaBundle = '@deepseek-ai/dsh-cua-bundle'
 const targetManifests = () => new Map<string, PackedDesktopPackage>([
@@ -142,7 +160,9 @@ it('copies no macOS tarball into the Windows package set', () => {
   onTestFinished(() => { rmSync(root, { recursive: true, force: true }) })
   const inputs = join(root, 'inputs')
   mkdirSync(inputs)
-  for (const [name, entry] of targetManifests()) {
+  const available = targetManifests()
+  available.set('example-extension', packed('example-extension'))
+  for (const [name, entry] of available) {
     const stem = name.replace('@deepseek-ai/', '')
     const folder = join(root, stem, 'package')
     mkdirSync(folder, { recursive: true })
@@ -156,9 +176,21 @@ it('copies no macOS tarball into the Windows package set', () => {
     execFileSync('tar', ['-czf', join(inputs, `${stem}.tgz`), '-C', join(folder, '..'), 'package'])
   }
   const output = join(root, 'output')
-  prepareDesktopPackageSet([inputs], output, { platform: 'win32', arch: 'x64' })
+  prepareDesktopPackageSet([inputs], output, { platform: 'win32', arch: 'x64' }, ['example-extension'])
   expect(readdirSync(join(output, DESKTOP_PACKAGES_DIR))).not.toContain('dsh-experimental-cua-macos.tgz')
-  prepareDesktopPackageSet([inputs], output, { platform: 'darwin', arch: 'arm64' })
+  expect(readFileSync(join(output, DESKTOP_PACKAGES_DIR, 'example-extension.tgz')))
+    .toEqual(readFileSync(join(inputs, 'example-extension.tgz')))
+  prepareDesktopPackageSet([inputs], output, { platform: 'darwin', arch: 'arm64' }, ['example-extension'])
   expect(readFileSync(join(output, DESKTOP_PACKAGES_DIR, 'dsh-experimental-cua-macos.tgz')))
     .toEqual(readFileSync(join(inputs, 'dsh-experimental-cua-macos.tgz')))
+  const assembly = join(root, 'assembly.json')
+  writeFileSync(assembly, JSON.stringify({ runtimePackages: ['example-extension'], resources: [] }))
+  execFileSync(process.execPath, ['--import', 'tsx/esm', join(import.meta.dirname, '../scripts/prepare-package-set.ts'),
+    '--from', inputs, '--out', output], {
+    cwd: join(import.meta.dirname, '../../..'), timeout: 30_000,
+    env: { ...process.env, DSH_DESKTOP_ASSEMBLY_MANIFEST: assembly,
+      DSH_DESKTOP_TARGET_PLATFORM: 'win32', DSH_DESKTOP_TARGET_ARCH: 'x64' },
+  })
+  expect(readFileSync(join(output, DESKTOP_PACKAGES_DIR, 'example-extension.tgz')))
+    .toEqual(readFileSync(join(inputs, 'example-extension.tgz')))
 })

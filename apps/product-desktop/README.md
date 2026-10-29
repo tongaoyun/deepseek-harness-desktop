@@ -37,4 +37,4 @@ Gitea 负责开发评审和 CI；手动工作流“同步桌面构建到 GitHub�
 <a id="local-checks"></a>
 ## 本地检查
 
-按改动选择产品回归、真实 Loader/profile 或安装后验收；只改文档不重跑安装流程。[验收说明](docs/acceptance.md)列出入口、结果和限制，仓库级检查见[测试文档](../../docs/testing.zh.md)。
+按改动选择产品回归、真实 Loader/profile 或安装后验收；只改文档不重跑安装流程。完整构建中的 Host 总检查等待产品 bundle 声明生成，避免读取正在重建的文件。[验收说明](docs/acceptance.md)列出入口、结果和限制，仓库级检查见[测试文档](../../docs/testing.zh.md)。
