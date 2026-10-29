@@ -145,7 +145,12 @@ jobs:
       # them before packaging so workspace package exports resolve on every
       # native runner, including the macOS package command.
       - name: Build product modules for packaging and acceptance tests
-        run: pnpm --filter @deepseek-harness/product-skills --filter @deepseek-harness/product-experts build
+        run: |
+          # Product tsdown configs load the generator's compiled plugin from
+          # its package export. A fresh CI checkout has no generated lib/ yet,
+          # so build that workspace dependency explicitly before the products.
+          pnpm --filter @deepseek-ai/dsh-typert-generator build
+          pnpm --filter @deepseek-harness/product-skills --filter @deepseek-harness/product-experts build
       - name: Verify source and native architecture
         env:
           PACKAGE_SOURCE_SHA: ${{ inputs.source_sha }}
