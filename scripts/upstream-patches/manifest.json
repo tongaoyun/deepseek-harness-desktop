@@ -1764,6 +1764,37 @@
         }
       ],
       "diff": "desktop-asar-placeholders.patch"
+    },
+    {
+      "id": "typert-generator-runtime-build",
+      "purpose": "让干净工作区先构建 Typert 生成器运行时，再执行 Host bundle，避免依赖被忽略的本地产物。",
+      "tests": [
+        "scripts/build.spec.ts",
+        "scripts/upstream-boundaries.spec.ts"
+      ],
+      "diff": "typert-generator-runtime-build.patch",
+      "files": [
+        {
+          "path": "packages/typert/generator/package.json",
+          "before": "0b91776306cd3ed4d66c0ebb31540175ea42bf6d03043cdbd46993d87aa6a645",
+          "after": "171de34a27cd5dd9b8314a5ccd16fb6aa768108bae7e17cb58608e371239a699"
+        },
+        {
+          "path": "packages/typert/generator/tsdown.config.ts",
+          "before": null,
+          "after": "84ef24730cfe02426ef8b3d5e51be0ad31eacfde8123a4f22dc84dde422ebe10"
+        },
+        {
+          "path": "scripts/build.spec.ts",
+          "before": "268ec9d0e419f0b62fea0f87a6804cf015690dae9425c56c8fc72197d0692841",
+          "after": "47ea028c60e77c516caf64cb764ebddc346409ebdcb7a68684acc936da132e45"
+        },
+        {
+          "path": "scripts/compile-referenced-projects.ts",
+          "before": "09e675b0723380d08ebbacfcc6964a76ab235a785a19a388548bb0302bb31f39",
+          "after": "e9fe2cd8dcc1a57b18660b8c35b0bb318b18050f9697eba5810d4b1317a57a5b"
+        }
+      ]
     }
   ]
 }

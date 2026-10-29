@@ -1,0 +1,82 @@
+diff --git a/packages/typert/generator/package.json b/packages/typert/generator/package.json
+index 85297741ded4c4bd2f1fc3880927832f7252189a..e66d9ce9e982948eddd495ad74d9043b7acc795e 100644
+--- a/packages/typert/generator/package.json
++++ b/packages/typert/generator/package.json
+@@ -44,5 +44,9 @@
+     "@deepseek-ai/dsh-typert-registry": "workspace:*",
+     "@deepseek-ai/cordis": "workspace:~",
+     "zod": "4.4.3"
++  },
++  "scripts": {
++    "build": "tsc -b && tsdown --config-loader native --config tsdown.config.ts",
++    "typecheck": "tsc --noEmit"
+   }
+ }
+diff --git a/packages/typert/generator/tsdown.config.ts b/packages/typert/generator/tsdown.config.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..e11cfac6f94decfa365efbd8accb2cdc78791ab7
+--- /dev/null
++++ b/packages/typert/generator/tsdown.config.ts
+@@ -0,0 +1,12 @@
++import { defineConfig } from 'tsdown'
++
++/** Emit the runtime entry consumed by source workspace build tools. */
++export default defineConfig({
++  entry: { index: 'src/index.ts' },
++  outDir: 'lib',
++  format: 'esm',
++  platform: 'node',
++  clean: false,
++  dts: false,
++  fixedExtension: false,
++})
+diff --git a/scripts/build.spec.ts b/scripts/build.spec.ts
+index 1ac882468ff5e1c2764e4b3202d593e9d07732fb..943f49afd027a4d389cd7e17adbd960fca061ee3 100644
+--- a/scripts/build.spec.ts
++++ b/scripts/build.spec.ts
+@@ -9,7 +9,8 @@ const artifactGraph = {
+   'native': [],
+   'host-typert': [],
+   'host-src': ['native', 'host-typert'],
+-  'host-bundle': ['host-src'],
++  'host-generator': ['host-src'],
++  'host-bundle': ['host-generator'],
+   'desktop-bundle': ['host-bundle'],
+   'client-src': ['desktop-bundle'],
+   'client-bundle': ['client-src'],
+@@ -98,10 +99,10 @@ describe('repository build steps', () => {
+     ])
+   })
+ 
+-  it('starts each aggregate check after its own package compilation in the complete build', () => {
++  it('waits for public bundle declarations before the complete Host aggregate check', () => {
+     expect(graph(buildGates(root, 'complete'))).toEqual({
+       ...artifactGraph,
+-      'host-check': ['host-src'],
++      'host-check': ['host-bundle'],
+       'client-check': ['client-src'],
+     })
+   })
+diff --git a/scripts/compile-referenced-projects.ts b/scripts/compile-referenced-projects.ts
+index 492e277a6abc2a34447eb61eeeb069a1cae56624..d28a483a93231a29b01cd9dff361cab5a7e5606a 100644
+--- a/scripts/compile-referenced-projects.ts
++++ b/scripts/compile-referenced-projects.ts
+@@ -13,7 +13,7 @@ import { pnpmCommand } from './release/process.ts'
+ type CompilationMode = 'checked' | 'benchmark-emit'
+ 
+ /** Identifier of one package-library build step. */
+-export type LibraryStepId = 'host-src' | 'host-bundle' | 'host-typert' | 'desktop-bundle' | 'client-src' | 'client-bundle'
++export type LibraryStepId = 'host-src' | 'host-generator' | 'host-bundle' | 'host-typert' | 'desktop-bundle' | 'client-src' | 'client-bundle'
+ 
+ /** One package-library build step as a shell-free child-process invocation. */
+ export interface LibraryStep {
+@@ -178,7 +178,8 @@ export function libraryBuildSteps(root: string, faces: 'host' | 'all', mode: Com
+   const host: LibraryStep[] = [
+     typertStep(),
+     compilerStep(root, 'host', mode, ['host-typert']),
+-    pnpmStep('host-bundle', 'Host bundle', ['exec', 'tsdown', '--config-loader', 'native', '--env.DSH_BUILD_FACE', 'host'], ['host-src']),
++    pnpmStep('host-generator', 'Typert generator runtime', ['--filter', '@deepseek-ai/dsh-typert-generator', 'run', 'build'], ['host-src']),
++    pnpmStep('host-bundle', 'Host bundle', ['exec', 'tsdown', '--config-loader', 'native', '--env.DSH_BUILD_FACE', 'host'], ['host-generator']),
+   ]
+   if (faces === 'host') return host
+   return [
