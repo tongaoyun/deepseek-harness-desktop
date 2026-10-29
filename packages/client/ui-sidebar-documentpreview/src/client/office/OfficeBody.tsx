@@ -6,7 +6,6 @@ import { Button, FileTypeIcon, classifyFileType } from '@deepseek-ai/dsh-client-
 import { pathPartsOf } from '@deepseek-ai/dsh-util-workspace-path'
 import type { UseSidebarRightTabInfo } from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
 import type { DocumentBodyOwner, DocumentPreviewProps } from '../document/contract.ts'
-import { useRetainedTab } from '../retain-tab.ts'
 import { hostFileOf } from '../rpc.ts'
 import { LoadingIndicator } from '../LoadingIndicator.tsx'
 import type { OfficeLoadInjected } from './face.ts'
@@ -50,7 +49,7 @@ export function OfficeBody(props: OfficeBodyProps): ReactNode {
   const held = props.useStore(state => state.byTab[tab.id])
   const view = held?.revision === revision ? held : undefined
   const settled = view?.file !== undefined || view?.failure !== undefined
-  useRetainedTab(retainTab, tab.id, tab.signal)
+  useEffect(() => { retainTab(tab.id, tab.signal) }, [retainTab, tab.id, tab.signal])
   // Metadata may replace callbacks without advancing the content revision.
   useEffect(() => {
     if (request === undefined || settled || tab.signal.aborted) return

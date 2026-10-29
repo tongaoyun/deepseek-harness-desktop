@@ -11,7 +11,6 @@ import { PdfWorkerFailure } from './errors.ts'
 import { pdfTextRenderer } from './text.ts'
 import type { ZoomViewportProps } from '../zoom/ZoomViewport.tsx'
 import type { ZoomLabels, ZoomPreference } from '../zoom/types.ts'
-import { useRetainedTab } from '../retain-tab.ts'
 import type {} from './locales.ts'
 import css from './PdfBody.module.css'
 
@@ -65,7 +64,8 @@ export function PdfBody(props: PdfBodyProps & { readonly loading: ReactNode }): 
   const setPreference = useCallback((value: ZoomPreference): void => {
     props.actions.zoom(tab.id, value)
   }, [props.actions, tab.id])
-  useRetainedTab(props.retainTab, tab.id, tab.signal)
+  const { retainTab } = props
+  useEffect(() => { retainTab(tab.id, tab.signal) }, [retainTab, tab.id, tab.signal])
   return <PdfDocumentView data={props.content.kind === 'bytes' ? props.content.data : undefined}
     signal={tab.signal} view={view} onPage={pageVisible} onZoom={setPreference}
     scrollportRef={props.scrollportRef} ZoomViewport={props.ZoomViewport}

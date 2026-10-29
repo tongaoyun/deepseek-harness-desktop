@@ -17,6 +17,7 @@ import { developmentRuntimeDirectory, resolveDesktopBuildTarget } from '../../de
 import { createPluginProfile } from '../../desktop/src/project-manager.ts'
 import { DESKTOP_HOST_PROTOCOL_VERSION } from '../../desktop/src/host-protocol.ts'
 import { parseDesktopRelease } from '../../desktop/src/release.ts'
+import { companyContentRelease, contentDigest } from '@deepseek-harness/product/company-content'
 import type { ProductTaskCapabilities } from '@deepseek-harness/product/protocol'
 import { startMockLlmServer } from '@deepseek-ai/dsh-llm-mock-server'
 import { ToolCallId, createAssistantMessage, createToolResultMessage, createUserMessage } from '@deepseek-ai/dsh-llm'
@@ -24,7 +25,7 @@ import { SESSION_FORMAT_VERSION, Session, SessionId } from '@deepseek-ai/dsh-ses
 import { pdfFixture } from '../../../packages/client/ui-sidebar-documentpreview/tests/pdf-fixture.ts'
 import { realOfficeBytes } from './office-fixture.ts'
 import { closeElectronAcceptance } from '../../product-desktop/scripts/close-electron.mjs'
-import { prepareNativeProductUpdate, type NativeProductUpdateQualification } from '../../product-desktop/tests/native-product-update.mjs'
+import { dialogWithButton, prepareNativeProductUpdate, type NativeProductUpdateQualification } from '../../product-desktop/tests/native-product-update.mjs'
 
 const packageDir = join(REPO_ROOT, 'packages/extensions/ui-deepseek-harness-product')
 const expectedDir = fileURLToPath(new URL('./expected/deepseek-harness-catalog', import.meta.url))
@@ -69,7 +70,7 @@ const organizationKnowledge = [
 ]
 const parserDiagnostic = 'anydoc malformed archive; internal source path: /private/parser/uploads/document.docx'
 
-function knowledgeDocuments(baseId: string) {
+function knowledgeDocuments(baseId: string, large = false) {
   return Array.from({ length: baseId === 'personal-notes' ? 21 : 2 }, (_, index) => ({
     id: `document-${index + 1}`, knowledgeBaseId: baseId,
     filename: index === 0 ? 'Order review.md' : index === 2 ? 'Office policy.docx' : index === 3 ? 'Order totals.xlsx'
@@ -77,7 +78,7 @@ function knowledgeDocuments(baseId: string) {
     mediaType: index === 0 || index === 20 ? 'text/markdown' : index === 2 ? 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
       : index === 3 ? 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' : 'application/pdf',
     contentVersion: createHash('sha256').update(`${baseId}:document-${index + 1}:original-v1`).digest('hex'),
-    sizeBytes: 2_048, status: index === 1 ? 'FAILED' : 'READY', chunkCount: 51, updatedAt: '2026-10-10T01:00:00Z',
+    sizeBytes: knowledgeOriginal(`document-${index + 1}`, large).data.byteLength, status: index === 1 ? 'FAILED' : 'READY', chunkCount: 51, updatedAt: '2026-10-10T01:00:00Z',
     ...(index === 1 ? { failureMessage: parserDiagnostic.repeat(20) } : {}),
     sourceType: index === 0 ? 'manual' : 'file', canManage: baseId === 'personal-notes',
     folderId: index === 1 ? 'folder-policies' : null,
@@ -1021,11 +1022,11 @@ for (const { mode, installed, surface } of desktopCarriers) {
         successText: 'Fixture review complete.', apiKey: 'fixture-model-key' })
       onTestFinished(() => model.close())
       const catalogRows: Record<string, object[]> = {
-        '/api/v1/connectors': [{ id: 'erp', version: '1.0.0', name: 'Order management', displayName: 'Order management',
+        '/api/v1/connectors': [{ id: 'erp', version: '1.0.0', name: 'Order management', displayName: 'Order management', reviewStatus: 'PUBLISHED',
           status: 'ready', ready: true, authorizationStatus: 'AUTHORIZED', authMode: 'employee-bearer',
           transport: 'streamable-http', url: '/api/v1/connectors/erp/mcp', arguments: [], headers: {}, environment: {},
           tools: [{ name: 'orders_read', access: 'READ' }] },
-        { id: 'local-unconfigured', version: '1.0.0', name: 'Device configuration missing',
+        { id: 'local-unconfigured', version: '1.0.0', name: 'Device configuration missing', reviewStatus: 'PUBLISHED',
           status: 'needs-configuration', ready: false, authorizationStatus: 'AUTHORIZED', authMode: 'none',
           transport: 'stdio', command: 'fixture-unconfigured', arguments: [], headers: {}, environment: {}, tools: [] }],
         '/api/v1/knowledge-bases': [...organizationKnowledge,
@@ -1039,6 +1040,13 @@ for (const { mode, installed, surface } of desktopCarriers) {
       const folderRows: { id: string; name: string; parentId: string | null; updatedAt: string }[] = [{
         id: 'folder-policies', name: 'Policies', parentId: null, updatedAt: '2026-10-10T01:00:00Z',
       }]
+      const companyRelease = companyContentRelease({ version: '1.0.0-fixture', sha256: contentDigest({}), files: {} })
+      const missingFixtureRoutes: string[] = []
+      onTestFinished(({ task }) => {
+        if (task.result?.state === 'fail') console.error('Desktop fixture diagnostics:', {
+          missingRoutes: missingFixtureRoutes, modelRequests: model.requests.map(request => request.path),
+        })
+      })
       let largePreview = false
       const server = createServer((request, response) => {
         const url = new URL(request.url ?? '/', 'http://localhost')
@@ -1047,6 +1055,11 @@ for (const { mode, installed, surface } of desktopCarriers) {
         if (path === '/api/v1/employee-auth/session/refresh') {
           response.end(JSON.stringify({ success: true, data: { sessionToken: secret, expiresAt,
             employee: { employeeId: 'fixture-employee', employeeName: 'Fixture user' } } }))
+        } else if (path === '/api/v1/company-content') {
+          response.end(JSON.stringify({ success: true, data: companyRelease }))
+        } else if (path === '/api/v1/connectors/erp/configuration-template') {
+          response.end(JSON.stringify({ success: true, data: { ...catalogRows['/api/v1/connectors']![0],
+            url: new URL('/api/v1/connectors/erp/mcp', origin).href } }))
         } else if (path === '/api/v1/bootstrap') {
           response.end(JSON.stringify({ success: true, data: { modelApiKey: 'fixture-model-key',
             endpoints: { litellm: model.baseURL + '/v1' }, models: ['deepseek-v4-flash'] } }))
@@ -1148,7 +1161,7 @@ for (const { mode, installed, surface } of desktopCarriers) {
             response.end(JSON.stringify({ success: true, data: contents.items, pageIndex: page,
               pageSize: size, totalCount: contents.total, totalPages: Math.ceil(contents.total / size) }))
           } else if (parts[7] === 'preview' && parts[8] === 'metadata') {
-            response.end(JSON.stringify({ success: true, data: knowledgeDocuments(baseId).find(row => row.id === parts[6]) }))
+            response.end(JSON.stringify({ success: true, data: knowledgeDocuments(baseId, largePreview).find(row => row.id === parts[6]) }))
           } else if (parts[7] === 'preview' || parts[7] === 'download') {
             const original = knowledgeOriginal(parts[6] ?? '', largePreview)
             response.setHeader('content-type', original.mediaType)
@@ -1193,6 +1206,7 @@ for (const { mode, installed, surface } of desktopCarriers) {
           response.end(JSON.stringify({ success: true, data, pageIndex: 1, pageSize: 100,
             totalCount: data.length, totalPages: 1 }))
         } else {
+          missingFixtureRoutes.push(`${request.method} ${path}`)
           response.statusCode = 404
           response.end(JSON.stringify({ success: false, errCode: 'FIXTURE_ROUTE_MISSING' }))
         }
@@ -1443,14 +1457,15 @@ for (const { mode, installed, surface } of desktopCarriers) {
         expect(await page.getByRole('menuitem', { name: /^(Check for updates|检查更新)$/, exact: true }).count()).toBe(1)
         const signing = z.enum(['signed', 'unsigned', 'internal']).default('unsigned').parse(process.env.PACKAGE_SIGNING)
         if (installed === undefined || signing === 'unsigned') {
-          const [updatePage] = await Promise.all([
-            app.waitForEvent('window'),
-            page.getByRole('menuitem', { name: /^(Check for updates|检查更新)$/, exact: true }).click(),
-          ])
-          await expect.poll(() => updatePage.locator('#title').textContent()).toMatch(/Automatic updates are unavailable|当前版本暂不支持自动更新/u)
-          expect(await updatePage.locator('#technical-details').isHidden()).toBe(true)
-          expect(await updatePage.locator('#detail').textContent()).toMatch(/Current version:|当前版本：/u)
-          expect(await updatePage.locator('#detail').textContent()).toContain(applicationVersion)
+          await page.getByRole('menuitem', { name: /^(Check for updates|检查更新)$/, exact: true }).click()
+          const updatePage = await dialogWithButton(app, /^(Close|关闭)$/)
+          await expect.poll(() => updatePage.title()).toMatch(/^(Update Failed|更新失败)$/u)
+          await expect.poll(() => updatePage.locator('#title').textContent()).toMatch(/Could not check for updates\. Please try again later\.|检查更新失败，请稍后重试。/u)
+          expect(await updatePage.locator('#technical-details').getAttribute('open')).toBeNull()
+          expect(await updatePage.locator('#technical-details-content').isVisible()).toBe(false)
+          await updatePage.locator('#technical-details-label').click()
+          await expect.poll(() => updatePage.locator('#technical-details-content').innerText()).toMatch(/no packaged update source/u)
+          await updatePage.locator('#technical-details-label').click()
           for (const width of [1440, 390]) {
             await updatePage.setViewportSize({ width, height: 900 })
             expect(await updatePage.locator('main').evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true)
@@ -1458,7 +1473,13 @@ for (const { mode, installed, surface } of desktopCarriers) {
           }
           await updatePage.locator('#close').click()
           await expect.poll(() => app!.windows().length).toBe(1)
-          expect(await page.getByRole('button', { name: /^(Retry update|重试更新)$/ }).count()).toBe(0)
+          const retryUpdate = page.getByRole('button', { name: /^(Retry update|重试更新)$/, exact: true })
+          await retryUpdate.waitFor()
+          await retryUpdate.click()
+          const retriedUpdatePage = await dialogWithButton(app, /^(Close|关闭)$/)
+          await expect.poll(() => retriedUpdatePage.title()).toMatch(/^(Update Failed|更新失败)$/u)
+          await retriedUpdatePage.locator('#close').click()
+          await expect.poll(() => app!.windows().length).toBe(1)
           await page.getByRole('button', { name: /^(More menu|更多菜单)$/, exact: true }).click()
         }
         await page.getByRole('menuitem', { name: /^(Feedback|反馈)$/, exact: true }).click()
@@ -1727,10 +1748,9 @@ for (const { mode, installed, surface } of desktopCarriers) {
           .toMatchObject({ basePresetId: 'standard', knowledgeBaseIds: ['policy'] })
         await page.getByRole('button', { name: /^(Connectors|连接器)$/, exact: true }).click()
         await page.getByRole('button', { name: /Order management/ }).waitFor()
-        await page.getByText(/^(Needs configuration|待配置)$/, { exact: true }).waitFor()
-        const connectedCatalog = page.getByRole('tab', { name: /^(Connected|已连接)\s*1$/ })
-        await connectedCatalog.click()
-        expect(await page.getByRole('button', { name: /Device configuration missing/ }).count()).toBe(0)
+        await page.getByRole('button', { name: /Device configuration missing/ }).waitFor()
+        expect(await page.getByText(/^(Needs configuration|待配置)$/, { exact: true }).count()).toBe(0)
+        expect(await page.getByRole('tab', { name: /^(Connected|已连接)/ }).count()).toBe(0)
         await page.getByRole('button', { name: /Order management/ }).click()
         expect(await page.getByRole('dialog').getByRole('checkbox').count()).toBe(0)
         await expect.poll(() => invoke('tasks.capabilities.read', { sessionId }))

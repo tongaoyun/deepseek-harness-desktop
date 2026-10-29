@@ -42,7 +42,7 @@ description: "通过官方界面插槽提供连接器、知识库与产品支持
 <a id="dev-note"></a>
 ## Dev Note
 
-使用产品包回归与真实 Loader 测试验证公开接口和插件生命周期。
+使用产品包回归与真实 Loader 测试验证公开接口和插件生命周期。检查更新复用原生 `DesktopUpdateBridge.open()`，由桌面主进程展示更新状态和错误。
 
 <a id="model-experience"></a>
 ## Model Experience

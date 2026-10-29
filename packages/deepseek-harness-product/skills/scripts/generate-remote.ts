@@ -4,6 +4,7 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import ts from 'typescript'
+import { skillResultType } from './result-type.ts'
 
 /** Generate or verify this package's source-plane contracts.
  * @param check Reject stale generated files instead of rewriting them.
@@ -24,12 +25,9 @@ export async function generateSkillRemote(check = false): Promise<void> {
     let results = '/** Generated from owning operation results by scripts/generate-remote.ts. Do not edit. */\nexport interface SkillManagerResults {\n'
     for (const property of checker.getPropertiesOfType(checker.getTypeAtLocation(declaration))) {
       const type = checker.getTypeOfSymbolAtLocation(property, declaration)
-      let text = checker.typeToString(type, undefined,
+      const text = checker.typeToString(type, undefined,
         ts.TypeFormatFlags.NoTruncation | ts.TypeFormatFlags.UseFullyQualifiedType | ts.TypeFormatFlags.InTypeAlias)
-      const prefix = packageRoot.replace(/\/$/u, '') + '/src/'
-      text = text.replaceAll(prefix, '../').replaceAll(', { with: { "resolution-mode": "import" } }', '')
-      text = text.replace(/import\("(\.\.\/[^" ]+)"\)/gu, (_match, path: string) => `import("${path}.ts")`)
-      results += `  ${property.name}: ${text};\n`
+      results += `  ${property.name}: ${skillResultType(text, packageRoot)};\n`
     }
     results += '}\n'
     await mkdir(output, { recursive: true })

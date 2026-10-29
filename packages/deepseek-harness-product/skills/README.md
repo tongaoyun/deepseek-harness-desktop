@@ -35,7 +35,7 @@ Host 模块通过产品 profile 固定装配，普通 ESM 客户端模块合入�
 <a id="dev-note"></a>
 ## Dev Note
 
-当前实现由包级类型检查和产品 Loader 测试验证。
+Remote 结果类型使用相对源码导入，Windows 与 macOS 构建校验相同的已提交生成文件。当前实现由包级类型检查和产品 Loader 测试验证。
 
 <a id="model-experience"></a>
 ## Model Experience

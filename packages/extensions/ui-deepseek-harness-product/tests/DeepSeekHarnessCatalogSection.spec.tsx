@@ -288,7 +288,7 @@ describe('DeepSeekHarness capability navigation', () => {
 
   it('registers capability panels in the sidebar and none in Settings', () => {
     const openUpdate = vi.fn(async () => {})
-    Object.defineProperty(globalThis, 'dshDesktop', { configurable: true, value: { protocolVersion: 1, updates: { check: openUpdate } } })
+    Object.defineProperty(globalThis, 'dshDesktop', { configurable: true, value: { protocolVersion: 1, updates: { open: openUpdate } } })
     const registrations: Array<{ options: Record<string, unknown>; component: unknown }> = []
     const selectPanel = vi.fn()
     const registerCommand = vi.fn((_command: CommandContribution) => () => {})
