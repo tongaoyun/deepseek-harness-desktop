@@ -243,7 +243,7 @@ it.each([
   const failedAt = stages.findIndex(stage => stage.startsWith(failure))
   expect(failedAt).toBeGreaterThanOrEqual(0)
   expect(stages.slice(failedAt + 1)).toEqual(
-    target === 'win-x64' && failure.startsWith('exec tsx') ? ['run prepare:runtime'] : [])
+    failure.startsWith('exec tsx') ? ['run prepare:runtime'] : [])
   expect(stages.some(stage => stage.startsWith('--dir apps/desktop-host pack'))).toBe(false)
   expect(writeFileSync).not.toHaveBeenCalled()
 })
@@ -267,7 +267,8 @@ it.each([
     ...environment, CSC_LINK: 'unused.p12', CSC_KEY_PASSWORD: 'unused-secret', APPLE_API_KEY: 'unused.p8',
     DSH_DESKTOP_MACOS_SIGNING_IDENTITY: 'Unused identity', DSH_DESKTOP_MACOS_TEAM_ID: 'TEAMID1234',
   }, run)
-  expect(stages.at(-2)).toBe(`exec electron-builder --config electron-builder.config.mjs --mac --${target === 'mac-arm64' ? 'arm64' : 'x64'} --publish never${directory ? ' --dir' : ''}`)
+  if (directory) expect(stages.at(-2)).toBe(`exec electron-builder --config electron-builder.config.mjs --mac --${target === 'mac-arm64' ? 'arm64' : 'x64'} --publish never --dir`)
+  else expect(stages.at(-2)).toContain('--mac zip')
   expect(stages.at(-1)).toBe('exec tsx scripts/smoke-packaged-runtime.ts --unsigned')
   for (const call of run.run.mock.calls) {
     expect(call[3].env).toMatchObject({ DSH_DESKTOP_UNSIGNED: '1', CSC_IDENTITY_AUTO_DISCOVERY: 'false' })
@@ -421,4 +422,45 @@ it.each([undefined, '7'])('applies file-owned compression only to the final nota
   expect(zip?.[3].env.ELECTRON_BUILDER_COMPRESSION_LEVEL).toBe(level ?? '3')
   expect(dmg?.[3].env.ELECTRON_BUILDER_COMPRESSION_LEVEL).toBe('9')
   expect(writeFileSync).toHaveBeenCalledOnce()
+})
+
+it.each(['mac-arm64', 'mac-x64'] as const)('overlaps %s packing and runtime preparation before assembling packages', async (target) => {
+  const { run, stages } = supervisor()
+  const pack = Promise.withResolvers<undefined>()
+  const runtime = Promise.withResolvers<undefined>()
+  run.run.mockImplementation(async (stage) => {
+    stages.push(stage)
+    if (stage.startsWith('exec tsx apps/desktop/scripts/pack-local-packages.ts')) await pack.promise
+    if (stage === 'run prepare:runtime') await runtime.promise
+  })
+  const operation = packageTarget(parseDesktopPackageInvocation([target, '--unsigned'], 'darwin', target === 'mac-arm64' ? 'arm64' : 'x64'), environment, run)
+  try {
+    await vi.waitFor(() => {
+      expect(stages.some(stage => stage.startsWith('exec tsx apps/desktop/scripts/pack-local-packages.ts'))).toBe(true)
+      expect(stages).toContain('run prepare:runtime')
+    })
+    runtime.resolve(undefined)
+    await setImmediate()
+    expect(stages).not.toContain('run prepare:packages')
+    pack.resolve(undefined)
+    await operation
+    expect(stages).toContain('run prepare:packages')
+  } finally {
+    pack.resolve(undefined)
+    runtime.resolve(undefined)
+    await operation
+  }
+})
+
+it.each(['mac-arm64', 'mac-x64'] as const)('applies configured ZIP compression to %s unsigned artifacts after assembling the application once', async (target) => {
+  const { run, stages } = supervisor()
+  await packageTarget(parseDesktopPackageInvocation([target, '--unsigned'], 'darwin', target === 'mac-arm64' ? 'arm64' : 'x64'),
+    { ...environment, DSH_DESKTOP_MACOS_ZIP_COMPRESSION_LEVEL: '1' }, run)
+  const builder = run.run.mock.calls.filter(([stage]) => stage.startsWith('exec electron-builder'))
+  expect(builder).toHaveLength(3)
+  expect(builder[0]![0]).toContain('--dir')
+  expect(builder[1]![0]).toContain('--mac dmg')
+  expect(builder[2]![0]).toContain('--mac zip')
+  expect(builder[2]![3].env.ELECTRON_BUILDER_COMPRESSION_LEVEL).toBe('1')
+  expect(stages.at(-1)).toBe('exec tsx scripts/smoke-packaged-runtime.ts --unsigned')
 })

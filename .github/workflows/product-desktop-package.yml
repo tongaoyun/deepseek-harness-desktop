@@ -50,7 +50,7 @@ jobs:
           cache: pnpm
       - uses: dtolnay/rust-toolchain@stable
       - name: Install locked dependencies
-        run: pnpm install --frozen-lockfile
+        run: pnpm install --frozen-lockfile --prefer-offline
       - name: Validate signing machine configuration
         env:
           PACKAGE_SIGNING: ${{ inputs.signing }}
@@ -108,9 +108,6 @@ jobs:
         shell: bash
     env:
       DSH_TELEMETRY_DISABLED: '1'
-      DSH_DESKTOP_PACKAGE_CACHE_DIR: ${{ runner.temp }}/harness-desktop-package-cache
-      ELECTRON_BUILDER_CACHE: ${{ runner.temp }}/harness-desktop-builder-cache
-      CARGO_TARGET_DIR: ${{ runner.temp }}/harness-desktop-rust
       NPM_CONFIG_REGISTRY: https://registry.npmjs.org/
       DSH_DESKTOP_NPM_REGISTRY: https://registry.npmjs.org/
       NPM_CONFIG_FETCH_RETRIES: '4'
@@ -143,12 +140,25 @@ jobs:
       - name: Set up Rust
         id: rust
         uses: dtolnay/rust-toolchain@stable
+      - name: Configure desktop cache directories
+        run: |
+          node --input-type=module <<'NODE'
+          import { appendFileSync } from 'node:fs'
+          import { join } from 'node:path'
+          for (const [key, directory] of [
+            ['DSH_DESKTOP_PACKAGE_CACHE_DIR', 'harness-desktop-package-cache'],
+            ['ELECTRON_BUILDER_CACHE', 'harness-desktop-builder-cache'],
+            ['CARGO_TARGET_DIR', 'harness-desktop-rust'],
+            ['PNPM_CONFIG_CACHE_DIR', 'harness-pnpm-metadata-cache'],
+          ]) appendFileSync(process.env.GITHUB_ENV, `${key}=${join(process.env.RUNNER_TEMP, directory)}\n`)
+          NODE
       - name: Cache desktop downloads and package store
         uses: actions/cache@v6.1.0
         with:
           path: |
             ${{ env.DSH_DESKTOP_PACKAGE_CACHE_DIR }}
             ${{ env.ELECTRON_BUILDER_CACHE }}
+            ${{ env.PNPM_CONFIG_CACHE_DIR }}
           key: desktop-downloads-v1-${{ runner.os }}-${{ matrix.target }}-${{ hashFiles('pnpm-lock.yaml', 'scripts/primary-runtime/lock.json') }}
           restore-keys: |
             desktop-downloads-v1-${{ runner.os }}-${{ matrix.target }}-
@@ -163,17 +173,7 @@ jobs:
           restore-keys: |
             desktop-rust-v1-${{ runner.os }}-${{ matrix.target }}-${{ steps.rust.outputs.cachekey }}-
       - name: Install locked dependencies
-        run: pnpm install --frozen-lockfile
-      # The product desktop bundle imports the built product entrypoints. Build
-      # them before packaging so workspace package exports resolve on every
-      # native runner, including the macOS package command.
-      - name: Build product modules for packaging and acceptance tests
-        run: |
-          # Product tsdown configs load the generator's compiled plugin from
-          # its package export. A fresh CI checkout has no generated lib/ yet,
-          # so build that workspace dependency explicitly before the products.
-          pnpm --filter @deepseek-ai/dsh-typert-generator build
-          pnpm --filter @deepseek-harness/product-skills --filter @deepseek-harness/product-experts build
+        run: pnpm install --frozen-lockfile --prefer-offline
       - name: Verify source and native architecture
         env:
           PACKAGE_SOURCE_SHA: ${{ inputs.source_sha }}

@@ -227,7 +227,7 @@
         {
           "path": "apps/desktop/scripts/package-target.ts",
           "before": "2d5648300b8093b39a211a52d328bbbf28a9d883c81bd7ff55bbc7aed3878eb7",
-          "after": "8bc1f22324ddef344cc20a99067861be5c0a6237695598cca61d4cb92c76189b"
+          "after": "8e87cf564f082e07063119785eb56ccbf0f42447bd2bd4fc589ba58b40c649e4"
         },
         {
           "path": "apps/desktop/scripts/prepare-package-set.ts",
@@ -1652,7 +1652,7 @@
         {
           "path": "apps/desktop/tests/package-target-stages.spec.ts",
           "before": "9571d6ec4115eb8e732e7a4ebcd3955250dba84d3225f4426d4a0f26bd20de1c",
-          "after": "3428d07c866b29082448eb3a9539db962049773814f539b4650575f383e2b994"
+          "after": "912a07b3352a2374ad9312c6c6584f7dbd95b98ef8b1ce9e1206c7c64d3f55a9"
         },
         {
           "path": "scripts/release/pack.spec.ts",
@@ -1663,6 +1663,16 @@
           "path": "scripts/release/pack.ts",
           "before": "77e315b9ab816dc6fae1034363d71901f3b82c0129ae3b914a94994d24a3afbd",
           "after": "ca71b63f6756029fa78789de632d4b6399126146b0d5b5501583f0e831ad6422"
+        },
+        {
+          "path": "apps/desktop/scripts/prepare-runtime.ts",
+          "before": "ee9f6976361cbe8eceb698e7155ca76b3639a5b9f3d636af85f7337b07a956d2",
+          "after": "595eba884af6590659cf6523ca3db7f8f9f8e869ac7fecc3956143f470e9b8d1"
+        },
+        {
+          "path": "apps/desktop/tests/runtime-preparation.spec.ts",
+          "before": "ce91740806c14c3f70d1f0ed0baba0d4a9ef947aab91775e22e72dfc0c1dcced",
+          "after": "18c0f0322bb1dd70c23d812b8cf645029ae8dfbc612111e76ecca7ced233c90f"
         }
       ],
       "diff": "release-v0.2.2-alpha.2-integration.patch"

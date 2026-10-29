@@ -516,13 +516,8 @@ export async function packageTarget(
   }
   const prepareRuntime = () => executePreparation(
     ['run', 'prepare:runtime', ...(signPrimaryRuntime ? ['--defer-primary-runtime-smoke'] : [])], downloadEnv)
-  if (target.platform === 'win32') {
-    const results = await Promise.allSettled([pack(), prepareRuntime()])
-    for (const result of results) if (result.status === 'rejected') throw result.reason
-  } else {
-    await pack()
-    await prepareRuntime()
-  }
+  const preparation = await Promise.allSettled([pack(), prepareRuntime()])
+  for (const result of preparation) if (result.status === 'rejected') throw result.reason
   if (signPrimaryRuntime) await execute(['run', 'sign:primary-runtime'], electronBuilderEnv)
   await execute(['run', 'prepare:packages'], targetEnv)
   await execute(['run', 'prepare:dsh', ...(signPrimaryRuntime ? ['--defer-runtime-smoke'] : [])], downloadEnv)
@@ -552,7 +547,7 @@ export async function packageTarget(
     await withMacOSNotarizationProxy(mac?.notarizationProxy,
       () => notarizeMacOS({ appPath, ...resolveMacOSNotarizationEnvironment(environment) }), undefined, undefined, proxyEvent)
   } else {
-    if (target.platform === 'darwin' && invocation.skipNotarization && !invocation.directory) {
+    if (target.platform === 'darwin' && (invocation.unsigned || invocation.skipNotarization) && !invocation.directory) {
       await execute(desktopElectronBuilderArguments(target, true, undefined, assembly.builderConfig), electronBuilderEnv)
       const appPath = join(artifactsRoot, target.arch === 'arm64' ? 'mac-arm64' : 'mac', 'DeepSeek Harness.app')
       for (const format of ['dmg', 'zip'] as const) {

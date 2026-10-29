@@ -1,8 +1,12 @@
 import type { ElectronApplication, Page } from 'playwright'
 
+/** Explicit restart authorization, with or without active tasks. */
+export const restartConfirmation: RegExp
+
 interface UpdateDialogWindow {
   isClosed(): boolean
   url(): string
+  getByRole(role: 'button'): { allTextContents(): Promise<string[]> }
   getByRole(role: 'button', options: { name: string | RegExp; exact: true }): { isVisible(): Promise<boolean> }
 }
 

@@ -1442,7 +1442,7 @@ index 79136479f078e86647d799cd52788931644ba2a1..0127fe072545047442f62cec5294c5aa
  }
  
 diff --git a/apps/desktop/scripts/package-target.ts b/apps/desktop/scripts/package-target.ts
-index b6bc6efb6370e6a795c2a3c8d4bf726da6575bc1..d6f87da8dea4c060d6fb2280d1332c770f53d5b3 100644
+index b6bc6efb6370e6a795c2a3c8d4bf726da6575bc1..dec0986ea348a29241d1327dc5844498637c161d 100644
 --- a/apps/desktop/scripts/package-target.ts
 +++ b/apps/desktop/scripts/package-target.ts
 @@ -1,4 +1,6 @@
@@ -1512,7 +1512,22 @@ index b6bc6efb6370e6a795c2a3c8d4bf726da6575bc1..d6f87da8dea4c060d6fb2280d1332c77
      rmSync(buildPaths.packedLandlock, { recursive: true, force: true })
      mkdirSync(buildPaths.packedLandlock, { recursive: true })
      await executePreparation(['--dir', 'native/system', 'run', 'build:ts'], buildEnv, REPOSITORY_ROOT)
-@@ -526,12 +529,12 @@ export async function packageTarget(
+@@ -513,25 +516,20 @@ export async function packageTarget(
+   }
+   const prepareRuntime = () => executePreparation(
+     ['run', 'prepare:runtime', ...(signPrimaryRuntime ? ['--defer-primary-runtime-smoke'] : [])], downloadEnv)
+-  if (target.platform === 'win32') {
+-    const results = await Promise.allSettled([pack(), prepareRuntime()])
+-    for (const result of results) if (result.status === 'rejected') throw result.reason
+-  } else {
+-    await pack()
+-    await prepareRuntime()
+-  }
++  const preparation = await Promise.allSettled([pack(), prepareRuntime()])
++  for (const result of preparation) if (result.status === 'rejected') throw result.reason
+   if (signPrimaryRuntime) await execute(['run', 'sign:primary-runtime'], electronBuilderEnv)
+   await execute(['run', 'prepare:packages'], targetEnv)
+   await execute(['run', 'prepare:dsh', ...(signPrimaryRuntime ? ['--defer-runtime-smoke'] : [])], downloadEnv)
    if (signPrimaryRuntime) await execute(['run', 'sign:primary-runtime', '--dsh'], electronBuilderEnv)
    if (invocation.prepareOnly) return
    const buildMacArtifact = (artifact: DesktopPrepackagedArtifact) => execute(
@@ -1527,7 +1542,7 @@ index b6bc6efb6370e6a795c2a3c8d4bf726da6575bc1..d6f87da8dea4c060d6fb2280d1332c77
        '--config.mac.notarize=false',
      ], electronBuilderEnv)
      await execute(['exec', 'tsx', 'scripts/smoke-packaged-runtime.ts'], targetEnv)
-@@ -543,20 +546,20 @@ export async function packageTarget(
+@@ -543,20 +541,20 @@ export async function packageTarget(
        environment: electronBuilderEnv,
      }, buildMacArtifact), undefined, undefined, proxyEvent)
    } else if (target.platform === 'darwin' && !invocation.unsigned && !invocation.skipNotarization) {
@@ -1538,8 +1553,9 @@ index b6bc6efb6370e6a795c2a3c8d4bf726da6575bc1..d6f87da8dea4c060d6fb2280d1332c77
      await withMacOSNotarizationProxy(mac?.notarizationProxy,
        () => notarizeMacOS({ appPath, ...resolveMacOSNotarizationEnvironment(environment) }), undefined, undefined, proxyEvent)
    } else {
-     if (target.platform === 'darwin' && invocation.skipNotarization && !invocation.directory) {
+-    if (target.platform === 'darwin' && invocation.skipNotarization && !invocation.directory) {
 -      await execute(desktopElectronBuilderArguments(target, true), electronBuilderEnv)
++    if (target.platform === 'darwin' && (invocation.unsigned || invocation.skipNotarization) && !invocation.directory) {
 +      await execute(desktopElectronBuilderArguments(target, true, undefined, assembly.builderConfig), electronBuilderEnv)
        const appPath = join(artifactsRoot, target.arch === 'arm64' ? 'mac-arm64' : 'mac', 'DeepSeek Harness.app')
        for (const format of ['dmg', 'zip'] as const) {
@@ -1638,6 +1654,31 @@ index 4cffa7018b48f8fdd5a0547e9d869c6612d12ad5..b6f613e48ed10493ac2d8f6355a14d55
    console.log(`desktop package set: prepared ${output}`)
  }
  
+diff --git a/apps/desktop/scripts/prepare-runtime.ts b/apps/desktop/scripts/prepare-runtime.ts
+index 4e338532721aae17610b3234468c6e7069fb665f..a2cd8676edf53a2f5652cbaac0fedf4bee0fcdb8 100644
+--- a/apps/desktop/scripts/prepare-runtime.ts
++++ b/apps/desktop/scripts/prepare-runtime.ts
+@@ -55,16 +55,10 @@ async function main(): Promise<void> {
+   mkdirSync(RUNTIME_ROOT, { recursive: true })
+   const preparePrimary = () => packagingStep(process.env.DSH_DESKTOP_PACKAGING_RUN_DIR, 'prepare:primary-runtime',
+     () => preparePrimaryRuntime({ deferSmoke: values['defer-primary-runtime-smoke'] }))
+-  let nodeVersion: string
+-  if (target.platform === 'win32') {
+-    const [electron, primary] = await Promise.allSettled([prepareElectron(target), preparePrimary()])
+-    if (electron.status === 'rejected') throw electron.reason
+-    if (primary.status === 'rejected') throw primary.reason
+-    nodeVersion = electron.value
+-  } else {
+-    nodeVersion = await prepareElectron(target)
+-    await preparePrimary()
+-  }
++  const [electron, primary] = await Promise.allSettled([prepareElectron(target), preparePrimary()])
++  if (electron.status === 'rejected') throw electron.reason
++  if (primary.status === 'rejected') throw primary.reason
++  const nodeVersion = electron.value
+   const { pnpm } = await readPrimaryRuntime(join(RUNTIME_ROOT, 'primary-runtime'))
+   if (pnpm === undefined) throw new Error('desktop runtime: primary-runtime manifest has no pnpm version')
+   await packagingStep(process.env.DSH_DESKTOP_PACKAGING_RUN_DIR, 'prepare:cli', async () => { prepareCli(target) })
 diff --git a/apps/desktop/scripts/prepare-windows-runtime-cache.ps1 b/apps/desktop/scripts/prepare-windows-runtime-cache.ps1
 new file mode 100644
 index 0000000000000000000000000000000000000000..284eb1881ff16a5f5d49cb0155dd2b2eba8166f4
@@ -2698,7 +2739,7 @@ index 14d55a0a8b2be11da698ec7dc0a045401cf780d6..a155f50cc740ebbdee1733a6d731faac
 +  expect(readdirSync(join(root, 'packed'))).toEqual(['deepseek-ai-dsh-probe-1.2.3.tgz'])
 +}, testTimeout)
 diff --git a/apps/desktop/tests/package-target-stages.spec.ts b/apps/desktop/tests/package-target-stages.spec.ts
-index 37bd38384ffa9796f3e499d324afa20073e3127e..9ccd875b49c1e303576a9a94b3ebbb600791c02d 100644
+index 37bd38384ffa9796f3e499d324afa20073e3127e..16142505a8edf8d933d6e6ac6f3f45f711f2de3e 100644
 --- a/apps/desktop/tests/package-target-stages.spec.ts
 +++ b/apps/desktop/tests/package-target-stages.spec.ts
 @@ -151,7 +151,7 @@ it.each([undefined, '2'])('uses bounded Windows packing while retaining signing
@@ -2747,6 +2788,70 @@ index 37bd38384ffa9796f3e499d324afa20073e3127e..9ccd875b49c1e303576a9a94b3ebbb60
    ['mac-arm64', 'exec tsx apps/desktop/scripts/pack-local-packages.ts'],
    ['win-x64', 'exec tsx apps/desktop/scripts/pack-local-packages.ts'],
  ] as const)('stops unsigned %s packaging when %s fails', async (target, failure) => {
+@@ -243,7 +243,7 @@ it.each([
+   const failedAt = stages.findIndex(stage => stage.startsWith(failure))
+   expect(failedAt).toBeGreaterThanOrEqual(0)
+   expect(stages.slice(failedAt + 1)).toEqual(
+-    target === 'win-x64' && failure.startsWith('exec tsx') ? ['run prepare:runtime'] : [])
++    failure.startsWith('exec tsx') ? ['run prepare:runtime'] : [])
+   expect(stages.some(stage => stage.startsWith('--dir apps/desktop-host pack'))).toBe(false)
+   expect(writeFileSync).not.toHaveBeenCalled()
+ })
+@@ -267,7 +267,8 @@ it.each([
+     ...environment, CSC_LINK: 'unused.p12', CSC_KEY_PASSWORD: 'unused-secret', APPLE_API_KEY: 'unused.p8',
+     DSH_DESKTOP_MACOS_SIGNING_IDENTITY: 'Unused identity', DSH_DESKTOP_MACOS_TEAM_ID: 'TEAMID1234',
+   }, run)
+-  expect(stages.at(-2)).toBe(`exec electron-builder --config electron-builder.config.mjs --mac --${target === 'mac-arm64' ? 'arm64' : 'x64'} --publish never${directory ? ' --dir' : ''}`)
++  if (directory) expect(stages.at(-2)).toBe(`exec electron-builder --config electron-builder.config.mjs --mac --${target === 'mac-arm64' ? 'arm64' : 'x64'} --publish never --dir`)
++  else expect(stages.at(-2)).toContain('--mac zip')
+   expect(stages.at(-1)).toBe('exec tsx scripts/smoke-packaged-runtime.ts --unsigned')
+   for (const call of run.run.mock.calls) {
+     expect(call[3].env).toMatchObject({ DSH_DESKTOP_UNSIGNED: '1', CSC_IDENTITY_AUTO_DISCOVERY: 'false' })
+@@ -422,3 +423,44 @@ it.each([undefined, '7'])('applies file-owned compression only to the final nota
+   expect(dmg?.[3].env.ELECTRON_BUILDER_COMPRESSION_LEVEL).toBe('9')
+   expect(writeFileSync).toHaveBeenCalledOnce()
+ })
++
++it.each(['mac-arm64', 'mac-x64'] as const)('overlaps %s packing and runtime preparation before assembling packages', async (target) => {
++  const { run, stages } = supervisor()
++  const pack = Promise.withResolvers<undefined>()
++  const runtime = Promise.withResolvers<undefined>()
++  run.run.mockImplementation(async (stage) => {
++    stages.push(stage)
++    if (stage.startsWith('exec tsx apps/desktop/scripts/pack-local-packages.ts')) await pack.promise
++    if (stage === 'run prepare:runtime') await runtime.promise
++  })
++  const operation = packageTarget(parseDesktopPackageInvocation([target, '--unsigned'], 'darwin', target === 'mac-arm64' ? 'arm64' : 'x64'), environment, run)
++  try {
++    await vi.waitFor(() => {
++      expect(stages.some(stage => stage.startsWith('exec tsx apps/desktop/scripts/pack-local-packages.ts'))).toBe(true)
++      expect(stages).toContain('run prepare:runtime')
++    })
++    runtime.resolve(undefined)
++    await setImmediate()
++    expect(stages).not.toContain('run prepare:packages')
++    pack.resolve(undefined)
++    await operation
++    expect(stages).toContain('run prepare:packages')
++  } finally {
++    pack.resolve(undefined)
++    runtime.resolve(undefined)
++    await operation
++  }
++})
++
++it.each(['mac-arm64', 'mac-x64'] as const)('applies configured ZIP compression to %s unsigned artifacts after assembling the application once', async (target) => {
++  const { run, stages } = supervisor()
++  await packageTarget(parseDesktopPackageInvocation([target, '--unsigned'], 'darwin', target === 'mac-arm64' ? 'arm64' : 'x64'),
++    { ...environment, DSH_DESKTOP_MACOS_ZIP_COMPRESSION_LEVEL: '1' }, run)
++  const builder = run.run.mock.calls.filter(([stage]) => stage.startsWith('exec electron-builder'))
++  expect(builder).toHaveLength(3)
++  expect(builder[0]![0]).toContain('--dir')
++  expect(builder[1]![0]).toContain('--mac dmg')
++  expect(builder[2]![0]).toContain('--mac zip')
++  expect(builder[2]![3].env.ELECTRON_BUILDER_COMPRESSION_LEVEL).toBe('1')
++  expect(stages.at(-1)).toBe('exec tsx scripts/smoke-packaged-runtime.ts --unsigned')
++})
 diff --git a/apps/desktop/tests/package-target.spec.ts b/apps/desktop/tests/package-target.spec.ts
 index ba647d76ac740f2aa7e40fab69cffbed44c7b9e0..f0a2accc282e43623ca42e0558897d178357a39a 100644
 --- a/apps/desktop/tests/package-target.spec.ts
@@ -2920,6 +3025,58 @@ index 0000000000000000000000000000000000000000..6542ea7ccbd786ffa925468f3bcdf450
 +    expect(operation).not.toHaveBeenCalled()
 +  })
 +})
+diff --git a/apps/desktop/tests/runtime-preparation.spec.ts b/apps/desktop/tests/runtime-preparation.spec.ts
+index 5da6e9815d0b170142b274db59eda3d49bacf10a..1e83822612880e1694548808c3e7213d578d2c5a 100644
+--- a/apps/desktop/tests/runtime-preparation.spec.ts
++++ b/apps/desktop/tests/runtime-preparation.spec.ts
+@@ -121,8 +121,9 @@ it.each([
+   expect(existsSync(join(state.root, 'runtime', 'versions.json'))).toBe(false)
+ })
+ 
+-it.each(['electron', 'primary'] as const)('overlaps Windows payloads and waits for %s to finish last before publishing CLI and versions', async (last) => {
+-  state.target = 'win-x64'
++it.each(['win-x64', 'mac-arm64', 'mac-x64'] as const)('overlaps %s payloads and drains each completion order before publishing CLI and versions', async (target) => {
++  state.target = target
++  const last = target === 'mac-arm64' ? 'primary' : 'electron'
+   const electron = Promise.withResolvers<undefined>()
+   const primary = Promise.withResolvers<undefined>()
+   const started = new Set<string>()
+@@ -157,8 +158,8 @@ it.each(['electron', 'primary'] as const)('overlaps Windows payloads and waits f
+   }
+ })
+ 
+-it.each(['electron', 'primary'] as const)('drains the sibling after Windows %s failure without publishing CLI or versions', async (failed) => {
+-  state.target = 'win-x64'
++it.each([['win-x64', 'electron'], ['win-x64', 'primary'], ['mac-arm64', 'electron'], ['mac-arm64', 'primary'], ['mac-x64', 'electron'], ['mac-x64', 'primary']] as const)('drains the sibling after %s %s failure without publishing CLI or versions', async (target, failed) => {
++  state.target = target
+   const electron = Promise.withResolvers<undefined>()
+   const primary = Promise.withResolvers<undefined>()
+   const started = new Set<string>()
+@@ -190,24 +191,3 @@ it.each(['electron', 'primary'] as const)('drains the sibling after Windows %s f
+     await outcome
+   }
+ })
+-
+-it.each(['mac-arm64', 'mac-x64'] as const)('keeps %s primary preparation after Electron extraction', async (target) => {
+-  state.target = target
+-  const electron = Promise.withResolvers<undefined>()
+-  let extracting = false
+-  state.extractElectron.mockImplementation(async () => {
+-    extracting = true
+-    await electron.promise
+-  })
+-  const outcome = import('../scripts/prepare-runtime.ts').then(() => undefined, (error: unknown) => error)
+-  try {
+-    await vi.waitFor(() => { expect(extracting).toBe(true) }, { timeout: 5000 })
+-    expect(state.preparePrimary).not.toHaveBeenCalled()
+-    electron.resolve(undefined)
+-    expect(await outcome).toBeUndefined()
+-    expect(state.preparePrimary).toHaveBeenCalledOnce()
+-  } finally {
+-    electron.resolve(undefined)
+-    await outcome
+-  }
+-})
 diff --git a/apps/desktop/tests/web-document.spec.ts b/apps/desktop/tests/web-document.spec.ts
 index 0fd9b591b1572548b17565785c4a00c5b33f2b68..9c6665c458957fd16940db728cc3f4fddfefc0df 100644
 --- a/apps/desktop/tests/web-document.spec.ts

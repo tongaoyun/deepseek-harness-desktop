@@ -24,6 +24,9 @@ const packager = createRequire(builder.resolve('app-builder-lib'))
 const asar = packager('@electron/asar')
 const windows = process.platform === 'win32'
 
+/** Explicit restart authorization, with or without active tasks. */
+export const restartConfirmation = /^(Install and Restart|安装并重启|Stop tasks and update|停止任务并更新)$/
+
 async function descendants(parent) {
   if (windows) {
     const result = await run('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command',
@@ -55,15 +58,24 @@ async function descendants(parent) {
  */
 export async function dialogWithButton(application, name, timeout = 120_000) {
   let matching
-  await expect.poll(async () => {
-    for (const page of application.windows()) {
-      if (page.isClosed() || page.url() !== 'dsh-app://shell/update-dialog.html') continue
-      const visible = await page.getByRole('button', { name, exact: true }).isVisible()
-        .catch(error => { if (page.isClosed()) return false; throw error })
-      if (visible) { matching = page; return true }
-    }
-    return false
-  }, { timeout }).toBe(true)
+  const observations = []
+  try {
+    await expect.poll(async () => {
+      for (const page of application.windows()) {
+        if (page.isClosed() || page.url() !== 'dsh-app://shell/update-dialog.html') continue
+        const buttons = await page.getByRole('button').allTextContents()
+          .catch(error => { if (page.isClosed()) return []; throw error })
+        const key = JSON.stringify(buttons)
+        if (observations.at(-1) !== key) { observations.push(key); console.log('Native update confirmation buttons:', key) }
+        const visible = await page.getByRole('button', { name, exact: true }).isVisible()
+          .catch(error => { if (page.isClosed()) return false; throw error })
+        if (visible) { matching = page; return true }
+      }
+      return false
+    }, { timeout }).toBe(true)
+  } catch (error) {
+    throw new Error(`Native update confirmation ${name} was not available; observed buttons: ${observations.join(' → ')}; documents: ${application.windows().map(page => page.url()).join(', ')}`, { cause: error })
+  }
   return matching
 }
 
@@ -216,7 +228,7 @@ app.whenReady().then(() => writeFileSync(${JSON.stringify(directory)} + '/boot-'
       await page.getByRole('menuitem', { name: /^(Check for updates|检查更新)$/, exact: true }).click()
       const dialog = await dialogWithButton(application, /^(Download update|下载更新)$/)
       await dialog.getByRole('button', { name: /^(Download update|下载更新)$/, exact: true }).click()
-      const install = await dialogWithButton(application, /^(Install and Restart|安装并重启)$/)
+      const install = await dialogWithButton(application, restartConfirmation)
       await install.locator('#close').click()
       assert.equal(await application.evaluate(({ app }) => app.getVersion()), initialVersion)
       await expect.poll(() => composer.textContent()).toBe(draft)
@@ -224,7 +236,7 @@ app.whenReady().then(() => writeFileSync(${JSON.stringify(directory)} + '/boot-'
       await page.getByRole('button', { name: /^(More menu|更多菜单)$/, exact: true }).click()
       await expect.poll(() => application.windows().length).toBe(1)
       await page.getByRole('menuitem', { name: /^(Check for updates|检查更新)$/, exact: true }).click()
-      const ready = await dialogWithButton(application, /^(Install and Restart|安装并重启)$/)
+      const ready = await dialogWithButton(application, restartConfirmation)
       const oldPid = application.process().pid
       initialPid = oldPid
       const previousChildren = await descendants(oldPid)
@@ -236,7 +248,7 @@ app.whenReady().then(() => writeFileSync(${JSON.stringify(directory)} + '/boot-'
       const debuggingPort = join(userData, 'DevToolsActivePort')
       await rm(debuggingPort)
       releaseOwnership()
-      await ready.getByRole('button', { name: /^(Install and Restart|安装并重启)$/, exact: true }).click()
+      await ready.getByRole('button', { name: restartConfirmation, exact: true }).click()
       await exited
       console.log('Native product update: old process exited; waiting for native restart')
       const bootFile = join(directory, `boot-${version}.json`)

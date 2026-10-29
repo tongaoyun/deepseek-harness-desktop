@@ -12,6 +12,7 @@ for (const platform of ['darwin', 'win32']) {
     const root = await mkdtemp(join(tmpdir(), 'harness-product-assembly-test-'))
     t.after(() => rm(root, { recursive: true, force: true }))
     const assembly = productPackagingAssembly(fileURLToPath(new URL('../../../packages/deepseek-harness-product/desktop/assembly.json', import.meta.url)), root)
+    assert.deepEqual(assembly.buildSteps, [])
     const manifest = join(root, 'assembly.json')
     await writeFile(manifest, JSON.stringify(assembly))
     const config = createElectronBuilderConfig({ DSH_DESKTOP_ASSEMBLY_MANIFEST: manifest,

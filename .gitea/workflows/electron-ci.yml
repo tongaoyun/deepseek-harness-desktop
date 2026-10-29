@@ -48,7 +48,8 @@ jobs:
           npm install -g pnpm@11.28.5 --prefer-offline --no-audit --fund=false \
             --registry=https://registry.npmjs.org/
           pnpm config set store-dir /pnpm-store
-          pnpm install --frozen-lockfile --registry=https://registry.npmjs.org/
+          pnpm config set cache-dir /pnpm-store/metadata-cache
+          pnpm install --frozen-lockfile --prefer-offline --registry=https://registry.npmjs.org/
       - name: Verify upstream and product contracts
         run: |
           pnpm run verify:upstream

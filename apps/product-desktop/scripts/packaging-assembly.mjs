@@ -13,6 +13,8 @@ export function productPackagingAssembly(manifestPath, cargoTargetDirectory) {
   const base = dirname(manifestPath)
   return {
     ...source,
+    // The product entrypoint builds and verifies the Cargo binary before delegation.
+    buildSteps: [],
     ...(source.builderConfig === undefined ? {} : { builderConfig: resolve(base, source.builderConfig) }),
     packageDirectories: source.packageDirectories.map(path => resolve(base, path)),
     icons: Object.fromEntries(Object.entries(source.icons).map(([key, path]) => [key, resolve(base, path)])),

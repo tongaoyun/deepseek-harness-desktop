@@ -121,8 +121,9 @@ it.each([
   expect(existsSync(join(state.root, 'runtime', 'versions.json'))).toBe(false)
 })
 
-it.each(['electron', 'primary'] as const)('overlaps Windows payloads and waits for %s to finish last before publishing CLI and versions', async (last) => {
-  state.target = 'win-x64'
+it.each(['win-x64', 'mac-arm64', 'mac-x64'] as const)('overlaps %s payloads and drains each completion order before publishing CLI and versions', async (target) => {
+  state.target = target
+  const last = target === 'mac-arm64' ? 'primary' : 'electron'
   const electron = Promise.withResolvers<undefined>()
   const primary = Promise.withResolvers<undefined>()
   const started = new Set<string>()
@@ -157,8 +158,8 @@ it.each(['electron', 'primary'] as const)('overlaps Windows payloads and waits f
   }
 })
 
-it.each(['electron', 'primary'] as const)('drains the sibling after Windows %s failure without publishing CLI or versions', async (failed) => {
-  state.target = 'win-x64'
+it.each([['win-x64', 'electron'], ['win-x64', 'primary'], ['mac-arm64', 'electron'], ['mac-arm64', 'primary'], ['mac-x64', 'electron'], ['mac-x64', 'primary']] as const)('drains the sibling after %s %s failure without publishing CLI or versions', async (target, failed) => {
+  state.target = target
   const electron = Promise.withResolvers<undefined>()
   const primary = Promise.withResolvers<undefined>()
   const started = new Set<string>()
@@ -187,27 +188,6 @@ it.each(['electron', 'primary'] as const)('drains the sibling after Windows %s f
   } finally {
     electron.resolve(undefined)
     primary.resolve(undefined)
-    await outcome
-  }
-})
-
-it.each(['mac-arm64', 'mac-x64'] as const)('keeps %s primary preparation after Electron extraction', async (target) => {
-  state.target = target
-  const electron = Promise.withResolvers<undefined>()
-  let extracting = false
-  state.extractElectron.mockImplementation(async () => {
-    extracting = true
-    await electron.promise
-  })
-  const outcome = import('../scripts/prepare-runtime.ts').then(() => undefined, (error: unknown) => error)
-  try {
-    await vi.waitFor(() => { expect(extracting).toBe(true) }, { timeout: 5000 })
-    expect(state.preparePrimary).not.toHaveBeenCalled()
-    electron.resolve(undefined)
-    expect(await outcome).toBeUndefined()
-    expect(state.preparePrimary).toHaveBeenCalledOnce()
-  } finally {
-    electron.resolve(undefined)
     await outcome
   }
 })
