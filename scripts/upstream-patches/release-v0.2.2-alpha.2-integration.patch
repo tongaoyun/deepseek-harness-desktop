@@ -1243,7 +1243,7 @@ index ff09b8b783952179ceb1e9bed7e4aee989176005..c371dfaecd180cedc6c0074573044d17
      DSH_DESKTOP_OPEN_DEVTOOLS: options.openDevtools,
      ELECTRON_ENABLE_LOGGING: '1',
 diff --git a/apps/desktop/scripts/electron-builder-config.mjs b/apps/desktop/scripts/electron-builder-config.mjs
-index cf0c19e8952f7ce1b5d987e7bb51723fc7a58ea3..83474ed2fcaf51afb28223de7fce3368218ff88e 100644
+index cf0c19e8952f7ce1b5d987e7bb51723fc7a58ea3..4739fab583de4b2f6ce69641ef6a7ad7aba21cd7 100644
 --- a/apps/desktop/scripts/electron-builder-config.mjs
 +++ b/apps/desktop/scripts/electron-builder-config.mjs
 @@ -1,4 +1,5 @@
@@ -1252,7 +1252,18 @@ index cf0c19e8952f7ce1b5d987e7bb51723fc7a58ea3..83474ed2fcaf51afb28223de7fce3368
  import { officePackageDirectories } from '../../../scripts/libreoffice-packages.mjs'
  import { X509Certificate } from 'node:crypto'
  import { readFileSync } from 'node:fs'
-@@ -104,6 +105,7 @@ export function createElectronBuilderConfig(
+@@ -66,7 +67,9 @@ export function createElectronBuilderConfig(
+   if (skipNotarization && (unsigned || resolvedPlatform !== 'darwin')) throw new Error('Skipping notarization requires a signed macOS build')
+   const packagesMacOS = targetPlatform === 'darwin' || (targetPlatform === undefined && hostPlatform === 'darwin')
+   const packagesWindows = resolvedPlatform === 'win32'
+-  const policy = packagesMacOS && unsigned ? undefined : resolveDesktopPolicyEnvironment(env)
++  // Unsigned artifacts are development packages and must remain self-contained;
++  // mandatory-update policy is only embedded in signed distributions.
++  const policy = unsigned ? undefined : resolveDesktopPolicyEnvironment(env)
+   if (resolvedPlatform === 'win32') installWindowsDirectoryInstaller()
+   const macOSSigning = packagesMacOS && !unsigned ? resolveMacOSSigningEnvironment(env) : undefined
+   if (packagesMacOS && !unsigned && !skipNotarization) resolveMacOSNotarizationEnvironment(env)
+@@ -104,6 +107,7 @@ export function createElectronBuilderConfig(
    const buildVersion = resolveDesktopBuildVersion(env, productVersion)
    if (update?.channel === 'latest' && buildVersion.includes('-')) throw new Error('desktop package: latest requires a stable version')
    const packaged = resolveDesktopBuildCommit(env)
@@ -1260,7 +1271,7 @@ index cf0c19e8952f7ce1b5d987e7bb51723fc7a58ea3..83474ed2fcaf51afb28223de7fce3368
    return {
      appId,
      protocols: [{ name: 'DeepSeek Harness', schemes: ['dsh'] }],
-@@ -157,12 +159,13 @@ export function createElectronBuilderConfig(
+@@ -157,12 +161,13 @@ export function createElectronBuilderConfig(
      asarUnpack: unpack,
      extraResources: [
        { from: buildPaths.runtime, to: 'runtime' },
@@ -1277,7 +1288,7 @@ index cf0c19e8952f7ce1b5d987e7bb51723fc7a58ea3..83474ed2fcaf51afb28223de7fce3368
        category: 'public.app-category.developer-tools',
        // macOS matches the application locale against this bundle, not Electron Framework resources.
        extendInfo: {
-@@ -243,7 +246,7 @@ export function createElectronBuilderConfig(
+@@ -243,7 +248,7 @@ export function createElectronBuilderConfig(
        )
      },
      win: {

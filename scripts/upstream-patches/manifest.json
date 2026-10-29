@@ -213,7 +213,7 @@
         {
           "path": "apps/desktop/scripts/electron-builder-config.mjs",
           "before": "54c286edc4d3707a313444c73af58c47cb802d4ed68e68013e0642c488368931",
-          "after": "6daee0d5c6832000b3b04c4f2fc7451ab297f7e3b0a001ddb1da295f0598bf01"
+          "after": "e828b9c2d019e9893a74ee91d602c59ef6e2436b97834918e2f0b4cc972dbfb2"
         },
         {
           "path": "apps/desktop/scripts/office-engine-runtime.ts",
