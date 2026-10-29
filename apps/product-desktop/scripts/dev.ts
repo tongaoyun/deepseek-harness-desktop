@@ -3,7 +3,7 @@ import { spawn } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { fileURLToPath, pathToFileURL } from 'node:url'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 import { productDevelopmentEnvironment } from './environment.ts'
 
 const root = fileURLToPath(new URL('../../..', import.meta.url))
@@ -16,7 +16,7 @@ const run = (command: string, args: string[], env = process.env) => new Promise<
   process.once('SIGTERM', stop)
   child.once('exit', () => { process.off('SIGINT', stop); process.off('SIGTERM', stop) })
 })
-const native = process.env.DEEPSEEK_HARNESS_NATIVE_BINARY ?? join(root, 'native/deepseek-harness/target/release',
+const native = process.env.DEEPSEEK_HARNESS_NATIVE_BINARY ?? join(resolve(root, process.env.CARGO_TARGET_DIR ?? 'native/deepseek-harness/target'), 'release',
   process.platform === 'win32' ? 'deepseek-harness-native.exe' : 'deepseek-harness-native')
 if (!existsSync(native)) await run('cargo', ['build', '--release', '--manifest-path', join(root, 'native/deepseek-harness/Cargo.toml')])
 const require = createRequire(import.meta.url)

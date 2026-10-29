@@ -123,7 +123,10 @@ it('packs an exact local selection without packing unrelated workspace packages'
     name: '@deepseek-ai/dsh-unselected', version: '1.2.3',
     scripts: { prepack: 'node -e "process.exit(19)"' },
   }))
-  const result = await pack(root, false, ['--filter', '@deepseek-ai/dsh-probe'])
+  // Exceed cmd.exe's 8191-character limit while retaining the same exact selection.
+  const filters = Array.from({ length: 400 }, () => ['--filter', '@deepseek-ai/dsh-probe']).flat()
+  expect(filters.join(' ').length).toBeGreaterThan(8191)
+  const result = await pack(root, false, filters)
   expect(result.code, result.output).toBe(0)
   expect(readdirSync(join(root, 'packed'))).toEqual(['deepseek-ai-dsh-probe-1.2.3.tgz'])
 }, testTimeout)

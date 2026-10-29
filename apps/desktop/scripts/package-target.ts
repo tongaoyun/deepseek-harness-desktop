@@ -494,15 +494,16 @@ export async function packageTarget(
   const plan = desktopPackagePlan(REPOSITORY_ROOT, target, assembly)
   const pack = async (): Promise<void> => {
     await executePreparation([
+      'exec', process.execPath, '--import', 'tsx/esm',
       ...(invocation.unsigned
-        ? ['exec', 'tsx', 'apps/desktop/scripts/pack-local-packages.ts']
-        : ['run', 'release:pack', '--family', 'dsh']),
+        ? ['apps/desktop/scripts/pack-local-packages.ts']
+        : ['scripts/release/pack.ts', '--family', 'dsh']),
       '--out', buildPaths.packedDsh, ...plan.dsh.flatMap(name => ['--filter', name]), ...packArguments,
     ], buildEnv, REPOSITORY_ROOT)
     for (const directory of plan.privateDirectories) {
       await executePreparation(['--dir', directory, 'pack', '--pack-destination', buildPaths.packedDsh], buildEnv, REPOSITORY_ROOT)
     }
-    await executePreparation(['run', 'release:pack', '--family', 'vendor', '--out', buildPaths.packedVendor, ...plan.vendor.flatMap(name => ['--filter', name]), ...packArguments], buildEnv, REPOSITORY_ROOT)
+    await executePreparation(['exec', process.execPath, '--import', 'tsx/esm', 'scripts/release/pack.ts', '--family', 'vendor', '--out', buildPaths.packedVendor, ...plan.vendor.flatMap(name => ['--filter', name]), ...packArguments], buildEnv, REPOSITORY_ROOT)
     rmSync(buildPaths.packedLandlock, { recursive: true, force: true })
     mkdirSync(buildPaths.packedLandlock, { recursive: true })
     await executePreparation(['--dir', 'native/system', 'run', 'build:ts'], buildEnv, REPOSITORY_ROOT)

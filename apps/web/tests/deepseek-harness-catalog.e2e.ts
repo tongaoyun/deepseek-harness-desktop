@@ -1310,7 +1310,7 @@ for (const { mode, installed, surface } of desktopCarriers) {
           ...mode === 'official' ? {} : {
             DEEPSEEK_HARNESS_SERVER_URL: origin, DEEPSEEK_HARNESS_SESSION_TOKEN: secret,
             ...installed === undefined ? { DSH_DESKTOP_EXTENSION: pathToFileURL(join(REPO_ROOT, 'packages/deepseek-harness-product/desktop/lib/index.js')).href,
-              DEEPSEEK_HARNESS_NATIVE_BINARY: join(REPO_ROOT, 'native/deepseek-harness/target/release',
+              DEEPSEEK_HARNESS_NATIVE_BINARY: join(resolve(REPO_ROOT, process.env.CARGO_TARGET_DIR ?? 'native/deepseek-harness/target'), 'release',
                 process.platform === 'win32' ? 'deepseek-harness-native.exe' : 'deepseek-harness-native') } : {},
           },
         }, timeout: 60_000 }

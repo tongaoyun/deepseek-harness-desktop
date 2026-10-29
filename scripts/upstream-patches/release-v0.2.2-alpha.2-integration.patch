@@ -1442,7 +1442,7 @@ index 79136479f078e86647d799cd52788931644ba2a1..0127fe072545047442f62cec5294c5aa
  }
  
 diff --git a/apps/desktop/scripts/package-target.ts b/apps/desktop/scripts/package-target.ts
-index b6bc6efb6370e6a795c2a3c8d4bf726da6575bc1..dec0986ea348a29241d1327dc5844498637c161d 100644
+index b6bc6efb6370e6a795c2a3c8d4bf726da6575bc1..981f4cddcaff3d8a47f1e834a5570f671498cf74 100644
 --- a/apps/desktop/scripts/package-target.ts
 +++ b/apps/desktop/scripts/package-target.ts
 @@ -1,4 +1,6 @@
@@ -1474,7 +1474,7 @@ index b6bc6efb6370e6a795c2a3c8d4bf726da6575bc1..dec0986ea348a29241d1327dc5844498
      target.builderPlatform,
      ...(artifact === undefined ? [] : [artifact.format]),
      target.builderArch,
-@@ -478,28 +482,27 @@ export async function packageTarget(
+@@ -478,28 +482,28 @@ export async function packageTarget(
          { cwd: APP_ROOT, env: electronBuilderEnv, timeoutMs: 60_000 })
      })
    }
@@ -1491,10 +1491,13 @@ index b6bc6efb6370e6a795c2a3c8d4bf726da6575bc1..dec0986ea348a29241d1327dc5844498
 +  const plan = desktopPackagePlan(REPOSITORY_ROOT, target, assembly)
    const pack = async (): Promise<void> => {
      await executePreparation([
++      'exec', process.execPath, '--import', 'tsx/esm',
        ...(invocation.unsigned
-         ? ['exec', 'tsx', 'apps/desktop/scripts/pack-local-packages.ts']
-         : ['run', 'release:pack', '--family', 'dsh']),
+-        ? ['exec', 'tsx', 'apps/desktop/scripts/pack-local-packages.ts']
+-        : ['run', 'release:pack', '--family', 'dsh']),
 -      '--out', buildPaths.packedDsh, ...packArguments,
++        ? ['apps/desktop/scripts/pack-local-packages.ts']
++        : ['scripts/release/pack.ts', '--family', 'dsh']),
 +      '--out', buildPaths.packedDsh, ...plan.dsh.flatMap(name => ['--filter', name]), ...packArguments,
      ], buildEnv, REPOSITORY_ROOT)
 -    await executePreparation([
@@ -1508,11 +1511,11 @@ index b6bc6efb6370e6a795c2a3c8d4bf726da6575bc1..dec0986ea348a29241d1327dc5844498
 +    for (const directory of plan.privateDirectories) {
 +      await executePreparation(['--dir', directory, 'pack', '--pack-destination', buildPaths.packedDsh], buildEnv, REPOSITORY_ROOT)
 +    }
-+    await executePreparation(['run', 'release:pack', '--family', 'vendor', '--out', buildPaths.packedVendor, ...plan.vendor.flatMap(name => ['--filter', name]), ...packArguments], buildEnv, REPOSITORY_ROOT)
++    await executePreparation(['exec', process.execPath, '--import', 'tsx/esm', 'scripts/release/pack.ts', '--family', 'vendor', '--out', buildPaths.packedVendor, ...plan.vendor.flatMap(name => ['--filter', name]), ...packArguments], buildEnv, REPOSITORY_ROOT)
      rmSync(buildPaths.packedLandlock, { recursive: true, force: true })
      mkdirSync(buildPaths.packedLandlock, { recursive: true })
      await executePreparation(['--dir', 'native/system', 'run', 'build:ts'], buildEnv, REPOSITORY_ROOT)
-@@ -513,25 +516,20 @@ export async function packageTarget(
+@@ -513,25 +517,20 @@ export async function packageTarget(
    }
    const prepareRuntime = () => executePreparation(
      ['run', 'prepare:runtime', ...(signPrimaryRuntime ? ['--defer-primary-runtime-smoke'] : [])], downloadEnv)
@@ -1542,7 +1545,7 @@ index b6bc6efb6370e6a795c2a3c8d4bf726da6575bc1..dec0986ea348a29241d1327dc5844498
        '--config.mac.notarize=false',
      ], electronBuilderEnv)
      await execute(['exec', 'tsx', 'scripts/smoke-packaged-runtime.ts'], targetEnv)
-@@ -543,20 +541,20 @@ export async function packageTarget(
+@@ -543,20 +542,20 @@ export async function packageTarget(
        environment: electronBuilderEnv,
      }, buildMacArtifact), undefined, undefined, proxyEvent)
    } else if (target.platform === 'darwin' && !invocation.unsigned && !invocation.skipNotarization) {
@@ -2720,10 +2723,10 @@ index 0000000000000000000000000000000000000000..2d635423b574f527d47c301e0af6c133
 +  })
 +})
 diff --git a/apps/desktop/tests/pack-local-packages.spec.ts b/apps/desktop/tests/pack-local-packages.spec.ts
-index 14d55a0a8b2be11da698ec7dc0a045401cf780d6..a155f50cc740ebbdee1733a6d731faac21a623a7 100644
+index 14d55a0a8b2be11da698ec7dc0a045401cf780d6..de2b9f3ea02448dc3021f596ea36757b4be0e0b2 100644
 --- a/apps/desktop/tests/pack-local-packages.spec.ts
 +++ b/apps/desktop/tests/pack-local-packages.spec.ts
-@@ -116,3 +116,14 @@ it('rejects an invalid local pack concurrency before replacing packages', async
+@@ -116,3 +116,17 @@ it('rejects an invalid local pack concurrency before replacing packages', async
    expect(result.output).toContain('--concurrency must be a positive integer')
    expect(existsSync(join(root, 'packed'))).toBe(false)
  }, testTimeout)
@@ -2734,15 +2737,82 @@ index 14d55a0a8b2be11da698ec7dc0a045401cf780d6..a155f50cc740ebbdee1733a6d731faac
 +    name: '@deepseek-ai/dsh-unselected', version: '1.2.3',
 +    scripts: { prepack: 'node -e "process.exit(19)"' },
 +  }))
-+  const result = await pack(root, false, ['--filter', '@deepseek-ai/dsh-probe'])
++  // Exceed cmd.exe's 8191-character limit while retaining the same exact selection.
++  const filters = Array.from({ length: 400 }, () => ['--filter', '@deepseek-ai/dsh-probe']).flat()
++  expect(filters.join(' ').length).toBeGreaterThan(8191)
++  const result = await pack(root, false, filters)
 +  expect(result.code, result.output).toBe(0)
 +  expect(readdirSync(join(root, 'packed'))).toEqual(['deepseek-ai-dsh-probe-1.2.3.tgz'])
 +}, testTimeout)
 diff --git a/apps/desktop/tests/package-target-stages.spec.ts b/apps/desktop/tests/package-target-stages.spec.ts
-index 37bd38384ffa9796f3e499d324afa20073e3127e..16142505a8edf8d933d6e6ac6f3f45f711f2de3e 100644
+index 37bd38384ffa9796f3e499d324afa20073e3127e..f2ee9c28fbe0e25620e4710fc009e3fdde3f2a6d 100644
 --- a/apps/desktop/tests/package-target-stages.spec.ts
 +++ b/apps/desktop/tests/package-target-stages.spec.ts
-@@ -151,7 +151,7 @@ it.each([undefined, '2'])('uses bounded Windows packing while retaining signing
+@@ -30,6 +30,9 @@ vi.mock('node:fs', async importOriginal => ({
+ 
+ afterEach(() => { vi.unstubAllEnvs(); vi.clearAllMocks() })
+ 
++const localPack = `exec ${process.execPath} --import tsx/esm apps/desktop/scripts/pack-local-packages.ts`
++const releasePack = `exec ${process.execPath} --import tsx/esm scripts/release/pack.ts --family`
++
+ const environment = { DSH_DESKTOP_APP_ID: 'com.example.test', DSH_DESKTOP_AUTO_UPDATE_ENV: 'test',
+   DOWNLOAD_TEST_ORIGIN: 'https://updates.example.com', DOWNLOAD_TEST_RELEASE_ID: '0123456789abcdef0123456789abcdef',
+   DSH_DESKTOP_WINDOWS_TOKEN_PIN: 'fixture-pin', DSH_DESKTOP_WINDOWS_SIGNATURE_CACHE_CONCURRENCY: '2' }
+@@ -52,7 +55,7 @@ it.each(['pack', 'runtime'] as const)('overlaps Windows preparation and waits fo
+   const finished = new Set<string>()
+   run.run.mockImplementation(async (stage) => {
+     stages.push(stage)
+-    if (stage.startsWith('run release:pack --family dsh ')) await pack.promise
++    if (stage.startsWith(`${releasePack} dsh `)) await pack.promise
+     if (stage === 'run prepare:runtime --defer-primary-runtime-smoke') {
+       await runtime.promise
+       finished.add('runtime')
+@@ -64,7 +67,7 @@ it.each(['pack', 'runtime'] as const)('overlaps Windows preparation and waits fo
+   const outcome = operation.then(() => undefined, (error: unknown) => error)
+   try {
+     await vi.waitFor(() => {
+-      expect(stages.some(stage => stage.startsWith('run release:pack --family dsh '))).toBe(true)
++      expect(stages.some(stage => stage.startsWith(`${releasePack} dsh `))).toBe(true)
+       expect(stages).toContain('run prepare:runtime --defer-primary-runtime-smoke')
+     })
+     expect(stages).not.toContain('run sign:primary-runtime')
+@@ -91,7 +94,7 @@ it.each(['pack', 'runtime'] as const)('drains the other Windows preparation afte
+   let settled = false
+   run.run.mockImplementation(async (stage) => {
+     stages.push(stage)
+-    if (stage.startsWith('run release:pack --family dsh ')) await pack.promise
++    if (stage.startsWith(`${releasePack} dsh `)) await pack.promise
+     if (stage === 'run prepare:runtime --defer-primary-runtime-smoke') await runtime.promise
+   })
+   const outcome = packageTarget(parseDesktopPackageInvocation(['win-x64'], 'win32', 'x64'), environment, run).then(
+@@ -100,7 +103,7 @@ it.each(['pack', 'runtime'] as const)('drains the other Windows preparation afte
+   )
+   try {
+     await vi.waitFor(() => {
+-      expect(stages.some(stage => stage.startsWith('run release:pack --family dsh '))).toBe(true)
++      expect(stages.some(stage => stage.startsWith(`${releasePack} dsh `))).toBe(true)
+       expect(stages).toContain('run prepare:runtime --defer-primary-runtime-smoke')
+     })
+     ;(failed === 'pack' ? pack : runtime).reject(failure)
+@@ -109,7 +112,7 @@ it.each(['pack', 'runtime'] as const)('drains the other Windows preparation afte
+     expect(writeFileSync).not.toHaveBeenCalled()
+     ;(failed === 'pack' ? runtime : pack).resolve(undefined)
+     expect(await outcome).toBe(failure)
+-    expect(stages.filter(stage => stage.startsWith('run release:pack'))).toHaveLength(1)
++    expect(stages.filter(stage => stage.startsWith(releasePack))).toHaveLength(1)
+     expect(stages.some(stage => stage.startsWith('--dir apps/desktop-host pack'))).toBe(false)
+     expect(stages.some(stage => stage.startsWith('--dir native/system'))).toBe(false)
+     expect(stages.some(stage => stage.startsWith('run sign:primary-runtime'))).toBe(false)
+@@ -140,7 +143,7 @@ it.each([undefined, '2'])('uses bounded Windows packing while retaining signing
+   const { run, stages } = supervisor()
+   const settings = workers === undefined ? environment : { ...environment, DSH_DESKTOP_WINDOWS_PACK_CONCURRENCY: workers }
+   await packageTarget(parseDesktopPackageInvocation(['win-x64'], 'win32', 'x64'), settings, run)
+-  const packs = stages.filter(stage => stage.startsWith('run release:pack'))
++  const packs = stages.filter(stage => stage.startsWith(releasePack))
+   expect(packs).toHaveLength(2)
+   for (const stage of packs) expect(stage).toContain(`--concurrency ${workers ?? '4'}`)
+   expect(stages).toContain('preflight:windows-signing')
+@@ -151,7 +154,7 @@ it.each([undefined, '2'])('uses bounded Windows packing while retaining signing
  it('requires one signing preflight before building, then records only the complete release', async () => {
    const { run, stages } = supervisor()
    await packageTarget(parseDesktopPackageInvocation(['win-x64'], 'win32', 'x64'), environment, run)
@@ -2751,7 +2821,7 @@ index 37bd38384ffa9796f3e499d324afa20073e3127e..16142505a8edf8d933d6e6ac6f3f45f7
    expect(stages.filter(stage => stage === 'preflight:windows-signing')).toHaveLength(1)
    expect(vi.mocked(withWindowsSigningStage).mock.calls.map(([options]) => options.stage))
      .toEqual(['preflight', 'artifacts'])
-@@ -183,7 +183,7 @@ it('initializes shared storage only after acquiring the preflight stage lock', a
+@@ -183,7 +186,7 @@ it('initializes shared storage only after acquiring the preflight stage lock', a
    await packageTarget(parseDesktopPackageInvocation(['win-x64'], 'win32', 'x64'), environment, run)
  })
  
@@ -2760,7 +2830,7 @@ index 37bd38384ffa9796f3e499d324afa20073e3127e..16142505a8edf8d933d6e6ac6f3f45f7
    'exec tsx scripts/smoke-packaged-runtime.ts',
    'exec electron-builder --config electron-builder.config.mjs --win --x64 --publish never'])
  ('never continues or records a release after %s fails', async (failure) => {
-@@ -197,7 +197,7 @@ it.each(['preflight:windows-signing', 'run build:official', 'run sign:primary-ru
+@@ -197,7 +200,7 @@ it.each(['preflight:windows-signing', 'run build:official', 'run sign:primary-ru
  it.each(['--unsigned', '--prepare-only'])('keeps %s hardware-free and creates no release record', async (mode) => {
    const { run, stages } = supervisor()
    await packageTarget(parseDesktopPackageInvocation(['win-x64', mode], 'win32', 'x64'), environment, run)
@@ -2769,35 +2839,41 @@ index 37bd38384ffa9796f3e499d324afa20073e3127e..16142505a8edf8d933d6e6ac6f3f45f7
    expect(stages).not.toContain('preflight:windows-signing')
    expect(stages).not.toContain('run sign:primary-runtime')
    expect(stages).not.toContain('run sign:primary-runtime --dsh')
-@@ -224,15 +224,15 @@ it.each(['mac-arm64', 'mac-x64', 'win-x64'] as const)('selects branding from the
+@@ -224,17 +227,17 @@ it.each(['mac-arm64', 'mac-x64', 'win-x64'] as const)('selects branding from the
        DSH_CLIENT_TITLE: 'Inherited title',
      }, run)
      const build = stages.find(stage => stage.startsWith('run build'))
 -    expect(build).toBe(unsigned ? 'run build --profile local' : 'run build:official')
+-    expect(stages.some(stage => stage.startsWith('exec tsx apps/desktop/scripts/pack-local-packages.ts'))).toBe(unsigned)
+-    expect(stages.some(stage => stage.startsWith('run release:pack --family dsh'))).toBe(!unsigned)
 +    expect(build).toBe(unsigned ? 'run build:artifacts --profile local' : 'run build:artifacts --profile official')
-     expect(stages.some(stage => stage.startsWith('exec tsx apps/desktop/scripts/pack-local-packages.ts'))).toBe(unsigned)
-     expect(stages.some(stage => stage.startsWith('run release:pack --family dsh'))).toBe(!unsigned)
++    expect(stages.some(stage => stage.startsWith(localPack))).toBe(unsigned)
++    expect(stages.some(stage => stage.startsWith(`${releasePack} dsh`))).toBe(!unsigned)
    }
  })
  
  it.each([
 -  ['mac-arm64', 'run build --profile local'],
 -  ['win-x64', 'run build --profile local'],
+-  ['mac-arm64', 'exec tsx apps/desktop/scripts/pack-local-packages.ts'],
+-  ['win-x64', 'exec tsx apps/desktop/scripts/pack-local-packages.ts'],
 +  ['mac-arm64', 'run build:artifacts --profile local'],
 +  ['win-x64', 'run build:artifacts --profile local'],
-   ['mac-arm64', 'exec tsx apps/desktop/scripts/pack-local-packages.ts'],
-   ['win-x64', 'exec tsx apps/desktop/scripts/pack-local-packages.ts'],
++  ['mac-arm64', localPack],
++  ['win-x64', localPack],
  ] as const)('stops unsigned %s packaging when %s fails', async (target, failure) => {
-@@ -243,7 +243,7 @@ it.each([
+   const { run, stages } = supervisor(failure)
+   const invocation = parseDesktopPackageInvocation([target, '--unsigned'],
+@@ -243,7 +246,7 @@ it.each([
    const failedAt = stages.findIndex(stage => stage.startsWith(failure))
    expect(failedAt).toBeGreaterThanOrEqual(0)
    expect(stages.slice(failedAt + 1)).toEqual(
 -    target === 'win-x64' && failure.startsWith('exec tsx') ? ['run prepare:runtime'] : [])
-+    failure.startsWith('exec tsx') ? ['run prepare:runtime'] : [])
++    failure === localPack ? ['run prepare:runtime'] : [])
    expect(stages.some(stage => stage.startsWith('--dir apps/desktop-host pack'))).toBe(false)
    expect(writeFileSync).not.toHaveBeenCalled()
  })
-@@ -267,7 +267,8 @@ it.each([
+@@ -267,7 +270,8 @@ it.each([
      ...environment, CSC_LINK: 'unused.p12', CSC_KEY_PASSWORD: 'unused-secret', APPLE_API_KEY: 'unused.p8',
      DSH_DESKTOP_MACOS_SIGNING_IDENTITY: 'Unused identity', DSH_DESKTOP_MACOS_TEAM_ID: 'TEAMID1234',
    }, run)
@@ -2807,7 +2883,16 @@ index 37bd38384ffa9796f3e499d324afa20073e3127e..16142505a8edf8d933d6e6ac6f3f45f7
    expect(stages.at(-1)).toBe('exec tsx scripts/smoke-packaged-runtime.ts --unsigned')
    for (const call of run.run.mock.calls) {
      expect(call[3].env).toMatchObject({ DSH_DESKTOP_UNSIGNED: '1', CSC_IDENTITY_AUTO_DISCOVERY: 'false' })
-@@ -422,3 +423,44 @@ it.each([undefined, '7'])('applies file-owned compression only to the final nota
+@@ -313,7 +317,7 @@ it.each([undefined, '2'])('passes macOS pack concurrency %s only to workspace pa
+     DSH_DESKTOP_MACOS_NOTARIZATION_PROXY: 'http://apple.example:8081',
+   }, run)
+   const calls = run.run.mock.calls
+-  const packs = calls.filter(call => call[0].startsWith('run release:pack'))
++  const packs = calls.filter(call => call[0].startsWith(releasePack))
+   expect(packs).toHaveLength(2)
+   for (const call of packs) expect(call[2].slice(-2)).toEqual(['--concurrency', concurrency ?? '4'])
+   for (const call of calls) {
+@@ -422,3 +426,55 @@ it.each([undefined, '7'])('applies file-owned compression only to the final nota
    expect(dmg?.[3].env.ELECTRON_BUILDER_COMPRESSION_LEVEL).toBe('9')
    expect(writeFileSync).toHaveBeenCalledOnce()
  })
@@ -2818,13 +2903,13 @@ index 37bd38384ffa9796f3e499d324afa20073e3127e..16142505a8edf8d933d6e6ac6f3f45f7
 +  const runtime = Promise.withResolvers<undefined>()
 +  run.run.mockImplementation(async (stage) => {
 +    stages.push(stage)
-+    if (stage.startsWith('exec tsx apps/desktop/scripts/pack-local-packages.ts')) await pack.promise
++    if (stage.startsWith(localPack)) await pack.promise
 +    if (stage === 'run prepare:runtime') await runtime.promise
 +  })
 +  const operation = packageTarget(parseDesktopPackageInvocation([target, '--unsigned'], 'darwin', target === 'mac-arm64' ? 'arm64' : 'x64'), environment, run)
 +  try {
 +    await vi.waitFor(() => {
-+      expect(stages.some(stage => stage.startsWith('exec tsx apps/desktop/scripts/pack-local-packages.ts'))).toBe(true)
++      expect(stages.some(stage => stage.startsWith(localPack))).toBe(true)
 +      expect(stages).toContain('run prepare:runtime')
 +    })
 +    runtime.resolve(undefined)
@@ -2851,6 +2936,17 @@ index 37bd38384ffa9796f3e499d324afa20073e3127e..16142505a8edf8d933d6e6ac6f3f45f7
 +  expect(builder[2]![0]).toContain('--mac zip')
 +  expect(builder[2]![3].env.ELECTRON_BUILDER_COMPRESSION_LEVEL).toBe('1')
 +  expect(stages.at(-1)).toBe('exec tsx scripts/smoke-packaged-runtime.ts --unsigned')
++})
++
++
++it.each([true, false])('launches long package selections through the native Node executable (unsigned=%s)', async (unsigned) => {
++  const { run } = supervisor()
++  await packageTarget(parseDesktopPackageInvocation(['win-x64', ...(unsigned ? ['--unsigned'] : [])], 'win32', 'x64'), environment, run)
++  const call = run.run.mock.calls.find(([, , args]) => args.includes('--filter'))!
++  expect(call[2].join(' ').length).toBeGreaterThan(8191)
++  expect(call[2].slice(1, 5)).toEqual(['exec', process.execPath, '--import', 'tsx/esm'])
++  expect(call[2]).not.toContain('tsx')
++  expect(call[2]).not.toContain('run')
 +})
 diff --git a/apps/desktop/tests/package-target.spec.ts b/apps/desktop/tests/package-target.spec.ts
 index ba647d76ac740f2aa7e40fab69cffbed44c7b9e0..f0a2accc282e43623ca42e0558897d178357a39a 100644

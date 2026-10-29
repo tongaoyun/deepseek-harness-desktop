@@ -30,6 +30,9 @@ vi.mock('node:fs', async importOriginal => ({
 
 afterEach(() => { vi.unstubAllEnvs(); vi.clearAllMocks() })
 
+const localPack = `exec ${process.execPath} --import tsx/esm apps/desktop/scripts/pack-local-packages.ts`
+const releasePack = `exec ${process.execPath} --import tsx/esm scripts/release/pack.ts --family`
+
 const environment = { DSH_DESKTOP_APP_ID: 'com.example.test', DSH_DESKTOP_AUTO_UPDATE_ENV: 'test',
   DOWNLOAD_TEST_ORIGIN: 'https://updates.example.com', DOWNLOAD_TEST_RELEASE_ID: '0123456789abcdef0123456789abcdef',
   DSH_DESKTOP_WINDOWS_TOKEN_PIN: 'fixture-pin', DSH_DESKTOP_WINDOWS_SIGNATURE_CACHE_CONCURRENCY: '2' }
@@ -52,7 +55,7 @@ it.each(['pack', 'runtime'] as const)('overlaps Windows preparation and waits fo
   const finished = new Set<string>()
   run.run.mockImplementation(async (stage) => {
     stages.push(stage)
-    if (stage.startsWith('run release:pack --family dsh ')) await pack.promise
+    if (stage.startsWith(`${releasePack} dsh `)) await pack.promise
     if (stage === 'run prepare:runtime --defer-primary-runtime-smoke') {
       await runtime.promise
       finished.add('runtime')
@@ -64,7 +67,7 @@ it.each(['pack', 'runtime'] as const)('overlaps Windows preparation and waits fo
   const outcome = operation.then(() => undefined, (error: unknown) => error)
   try {
     await vi.waitFor(() => {
-      expect(stages.some(stage => stage.startsWith('run release:pack --family dsh '))).toBe(true)
+      expect(stages.some(stage => stage.startsWith(`${releasePack} dsh `))).toBe(true)
       expect(stages).toContain('run prepare:runtime --defer-primary-runtime-smoke')
     })
     expect(stages).not.toContain('run sign:primary-runtime')
@@ -91,7 +94,7 @@ it.each(['pack', 'runtime'] as const)('drains the other Windows preparation afte
   let settled = false
   run.run.mockImplementation(async (stage) => {
     stages.push(stage)
-    if (stage.startsWith('run release:pack --family dsh ')) await pack.promise
+    if (stage.startsWith(`${releasePack} dsh `)) await pack.promise
     if (stage === 'run prepare:runtime --defer-primary-runtime-smoke') await runtime.promise
   })
   const outcome = packageTarget(parseDesktopPackageInvocation(['win-x64'], 'win32', 'x64'), environment, run).then(
@@ -100,7 +103,7 @@ it.each(['pack', 'runtime'] as const)('drains the other Windows preparation afte
   )
   try {
     await vi.waitFor(() => {
-      expect(stages.some(stage => stage.startsWith('run release:pack --family dsh '))).toBe(true)
+      expect(stages.some(stage => stage.startsWith(`${releasePack} dsh `))).toBe(true)
       expect(stages).toContain('run prepare:runtime --defer-primary-runtime-smoke')
     })
     ;(failed === 'pack' ? pack : runtime).reject(failure)
@@ -109,7 +112,7 @@ it.each(['pack', 'runtime'] as const)('drains the other Windows preparation afte
     expect(writeFileSync).not.toHaveBeenCalled()
     ;(failed === 'pack' ? runtime : pack).resolve(undefined)
     expect(await outcome).toBe(failure)
-    expect(stages.filter(stage => stage.startsWith('run release:pack'))).toHaveLength(1)
+    expect(stages.filter(stage => stage.startsWith(releasePack))).toHaveLength(1)
     expect(stages.some(stage => stage.startsWith('--dir apps/desktop-host pack'))).toBe(false)
     expect(stages.some(stage => stage.startsWith('--dir native/system'))).toBe(false)
     expect(stages.some(stage => stage.startsWith('run sign:primary-runtime'))).toBe(false)
@@ -140,7 +143,7 @@ it.each([undefined, '2'])('uses bounded Windows packing while retaining signing 
   const { run, stages } = supervisor()
   const settings = workers === undefined ? environment : { ...environment, DSH_DESKTOP_WINDOWS_PACK_CONCURRENCY: workers }
   await packageTarget(parseDesktopPackageInvocation(['win-x64'], 'win32', 'x64'), settings, run)
-  const packs = stages.filter(stage => stage.startsWith('run release:pack'))
+  const packs = stages.filter(stage => stage.startsWith(releasePack))
   expect(packs).toHaveLength(2)
   for (const stage of packs) expect(stage).toContain(`--concurrency ${workers ?? '4'}`)
   expect(stages).toContain('preflight:windows-signing')
@@ -225,16 +228,16 @@ it.each(['mac-arm64', 'mac-x64', 'win-x64'] as const)('selects branding from the
     }, run)
     const build = stages.find(stage => stage.startsWith('run build'))
     expect(build).toBe(unsigned ? 'run build:artifacts --profile local' : 'run build:artifacts --profile official')
-    expect(stages.some(stage => stage.startsWith('exec tsx apps/desktop/scripts/pack-local-packages.ts'))).toBe(unsigned)
-    expect(stages.some(stage => stage.startsWith('run release:pack --family dsh'))).toBe(!unsigned)
+    expect(stages.some(stage => stage.startsWith(localPack))).toBe(unsigned)
+    expect(stages.some(stage => stage.startsWith(`${releasePack} dsh`))).toBe(!unsigned)
   }
 })
 
 it.each([
   ['mac-arm64', 'run build:artifacts --profile local'],
   ['win-x64', 'run build:artifacts --profile local'],
-  ['mac-arm64', 'exec tsx apps/desktop/scripts/pack-local-packages.ts'],
-  ['win-x64', 'exec tsx apps/desktop/scripts/pack-local-packages.ts'],
+  ['mac-arm64', localPack],
+  ['win-x64', localPack],
 ] as const)('stops unsigned %s packaging when %s fails', async (target, failure) => {
   const { run, stages } = supervisor(failure)
   const invocation = parseDesktopPackageInvocation([target, '--unsigned'],
@@ -243,7 +246,7 @@ it.each([
   const failedAt = stages.findIndex(stage => stage.startsWith(failure))
   expect(failedAt).toBeGreaterThanOrEqual(0)
   expect(stages.slice(failedAt + 1)).toEqual(
-    failure.startsWith('exec tsx') ? ['run prepare:runtime'] : [])
+    failure === localPack ? ['run prepare:runtime'] : [])
   expect(stages.some(stage => stage.startsWith('--dir apps/desktop-host pack'))).toBe(false)
   expect(writeFileSync).not.toHaveBeenCalled()
 })
@@ -314,7 +317,7 @@ it.each([undefined, '2'])('passes macOS pack concurrency %s only to workspace pa
     DSH_DESKTOP_MACOS_NOTARIZATION_PROXY: 'http://apple.example:8081',
   }, run)
   const calls = run.run.mock.calls
-  const packs = calls.filter(call => call[0].startsWith('run release:pack'))
+  const packs = calls.filter(call => call[0].startsWith(releasePack))
   expect(packs).toHaveLength(2)
   for (const call of packs) expect(call[2].slice(-2)).toEqual(['--concurrency', concurrency ?? '4'])
   for (const call of calls) {
@@ -430,13 +433,13 @@ it.each(['mac-arm64', 'mac-x64'] as const)('overlaps %s packing and runtime prep
   const runtime = Promise.withResolvers<undefined>()
   run.run.mockImplementation(async (stage) => {
     stages.push(stage)
-    if (stage.startsWith('exec tsx apps/desktop/scripts/pack-local-packages.ts')) await pack.promise
+    if (stage.startsWith(localPack)) await pack.promise
     if (stage === 'run prepare:runtime') await runtime.promise
   })
   const operation = packageTarget(parseDesktopPackageInvocation([target, '--unsigned'], 'darwin', target === 'mac-arm64' ? 'arm64' : 'x64'), environment, run)
   try {
     await vi.waitFor(() => {
-      expect(stages.some(stage => stage.startsWith('exec tsx apps/desktop/scripts/pack-local-packages.ts'))).toBe(true)
+      expect(stages.some(stage => stage.startsWith(localPack))).toBe(true)
       expect(stages).toContain('run prepare:runtime')
     })
     runtime.resolve(undefined)
@@ -463,4 +466,15 @@ it.each(['mac-arm64', 'mac-x64'] as const)('applies configured ZIP compression t
   expect(builder[2]![0]).toContain('--mac zip')
   expect(builder[2]![3].env.ELECTRON_BUILDER_COMPRESSION_LEVEL).toBe('1')
   expect(stages.at(-1)).toBe('exec tsx scripts/smoke-packaged-runtime.ts --unsigned')
+})
+
+
+it.each([true, false])('launches long package selections through the native Node executable (unsigned=%s)', async (unsigned) => {
+  const { run } = supervisor()
+  await packageTarget(parseDesktopPackageInvocation(['win-x64', ...(unsigned ? ['--unsigned'] : [])], 'win32', 'x64'), environment, run)
+  const call = run.run.mock.calls.find(([, , args]) => args.includes('--filter'))!
+  expect(call[2].join(' ').length).toBeGreaterThan(8191)
+  expect(call[2].slice(1, 5)).toEqual(['exec', process.execPath, '--import', 'tsx/esm'])
+  expect(call[2]).not.toContain('tsx')
+  expect(call[2]).not.toContain('run')
 })
