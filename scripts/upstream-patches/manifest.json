@@ -177,12 +177,12 @@
         {
           "path": "apps/desktop/README.md",
           "before": "f472fde6e337b299f983b1e4a94ec391211c9ebcc1680e63daaba62b29d40bca",
-          "after": "6270fe0163101bb8ceb40bb6c7fa777294af244280f2b4fbb6be9c5fb5f99fd2"
+          "after": "8f9b518c09db1a0c15c262b84ab4b81f280d6b9ee30f0270af84b8cbe4aedbbf"
         },
         {
           "path": "apps/desktop/README.zh.md",
           "before": "b48bf2ac1760ad5f7ca66be3a71fcd631f782d8f9398c2e872d09bdd817e8d34",
-          "after": "c8e5ab21e2519243b51a97a5252097b0f1e4ffde1dc98ad94db1a6f0a24e0b5d"
+          "after": "e7de614bd435b5d1cf0ec1dd1341f90c3af2ad08c3cda2df11c60ba5e1307b75"
         },
         {
           "path": "apps/desktop/scripts/desktop-assembly.d.mts",
@@ -227,12 +227,12 @@
         {
           "path": "apps/desktop/scripts/package-target.ts",
           "before": "2d5648300b8093b39a211a52d328bbbf28a9d883c81bd7ff55bbc7aed3878eb7",
-          "after": "7ba23691e36945b627d66ac95eeb8b0b2c77872cf61a6ef7379488f0d6f6b27d"
+          "after": "8bc1f22324ddef344cc20a99067861be5c0a6237695598cca61d4cb92c76189b"
         },
         {
           "path": "apps/desktop/scripts/prepare-package-set.ts",
           "before": "8792534652d0a9cbf7bebbe7d1f185cc9d5e714429a2db4d855c22924f26c09b",
-          "after": "153578f2acdf5f112fb0a2455519136a785db54a75239e8724df0218c727e0d3"
+          "after": "2828c67a85365cd66f7b0ca112c1028afaed070a9dd287393a1f81b8b985ea99"
         },
         {
           "path": "apps/desktop/scripts/prepare-windows-runtime-cache.ps1",
@@ -1628,6 +1628,41 @@
           "path": "vitest.config.ts",
           "before": "9f83941a2ed74ad903ffef043d65e848b1aa1fb48caf2833ba612f632af7b5ab",
           "after": "214b75b9a419dddce8e3b9aa59c786193502e53b39ad67bb7bdc78adf4650032"
+        },
+        {
+          "path": "apps/desktop/scripts/desktop-package-plan.ts",
+          "before": null,
+          "after": "72eada6dab20b8bd58567392235625ff4295244ddd04a107c2a90117dd1dc316"
+        },
+        {
+          "path": "apps/desktop/scripts/pack-local-packages.ts",
+          "before": "f80f53b3790fe929e3b46b1e10d1eabc22e0c417914581ef22c617299aad0633",
+          "after": "8af3af7f1aa5c3d219a421703dda443899364c46de9568f78ad49623ce0f9677"
+        },
+        {
+          "path": "apps/desktop/tests/desktop-package-plan.spec.ts",
+          "before": null,
+          "after": "bcc834dddda477c99c6a00ec74d9e78df68c446a974f881321f70db891dbb9ca"
+        },
+        {
+          "path": "apps/desktop/tests/pack-local-packages.spec.ts",
+          "before": "6f2a6ee0aeb924b4ac505bf3e9c08ffa5c1f3056f21c0aa8549b3b89d92fdaac",
+          "after": "5c29f9bf65f4444455d175544b224d0df706bc8247a8bb3c66a9294aaf58c42a"
+        },
+        {
+          "path": "apps/desktop/tests/package-target-stages.spec.ts",
+          "before": "9571d6ec4115eb8e732e7a4ebcd3955250dba84d3225f4426d4a0f26bd20de1c",
+          "after": "3428d07c866b29082448eb3a9539db962049773814f539b4650575f383e2b994"
+        },
+        {
+          "path": "scripts/release/pack.spec.ts",
+          "before": "40801b98092d10bd2a9e9faa5a65354b88850ba1992207a7182fdb89cc1a5195",
+          "after": "b60902d321ec45e330adf3932c49e35b7afaea0f9d49167c7078b31f9c0858be"
+        },
+        {
+          "path": "scripts/release/pack.ts",
+          "before": "77e315b9ab816dc6fae1034363d71901f3b82c0129ae3b914a94994d24a3afbd",
+          "after": "ca71b63f6756029fa78789de632d4b6399126146b0d5b5501583f0e831ad6422"
         }
       ],
       "diff": "release-v0.2.2-alpha.2-integration.patch"
@@ -1698,7 +1733,7 @@
         {
           "path": "apps/desktop/README.i18n.yaml",
           "before": "30ca9c190f26e105e35d05faa08a033daff7489efce54df0d4d481b3aaaa54b4",
-          "after": "1c4a16fc9c4d0924928d03693fadbb1d347e4066a029b709a712859d40f0cb26"
+          "after": "428e655af7f787e9f24bc317419e7d484377499b898c1a0ef43eaa789720b656"
         },
         {
           "path": "apps/desktop/package.json",

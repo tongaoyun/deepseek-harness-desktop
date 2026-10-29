@@ -656,7 +656,7 @@ index fd45f0cb3292f6e47a3feab4284c78fd4e95b5db..91d766cdd5c8b6c57cdc7fe450fd3b9e
  DSH_DESKTOP_MANDATORY_UPDATE_PROD_ORIGIN=
  # Set approved login origins for test builds; omit allowedAuthOrigins for production.
 diff --git a/apps/desktop/README.md b/apps/desktop/README.md
-index f961a72a92dd28235defa1d63b93f62fb57089c6..bfa6c7b586152e3832c3f161ece2cf3131a43244 100644
+index f961a72a92dd28235defa1d63b93f62fb57089c6..2563b7684dc6c239604ffb979a670005078af882 100644
 --- a/apps/desktop/README.md
 +++ b/apps/desktop/README.md
 @@ -15,7 +15,6 @@ Desktop runs the Harness workspace in a native application. This reference cover
@@ -736,6 +736,15 @@ index f961a72a92dd28235defa1d63b93f62fb57089c6..bfa6c7b586152e3832c3f161ece2cf31
  
  <a id="package"></a>
  
+@@ -238,7 +234,7 @@ The welcome window follows system appearance with the design’s Platform light/
+ <a id="local-macos-dmg-without-release-signing"></a>
+ <a id="local-official-bundles-from-a-loopback-registry"></a>
+ 
+-Use the dedicated guides for build and release operations. Shared Windows runners have accepted credential and device isolation limits; read them before signing or executing branch code.
++Packaging builds artifacts with the selected branding profile and packs only the runtime dependency closure; run the complete build checks before release. Use the dedicated guides for build and release operations. Shared Windows runners have accepted credential and device isolation limits; read them before signing or executing branch code.
+ 
+ - [Desktop packaging](packaging/README.md): local and Actions builds, versions, deployment settings, artifacts, logs and verification.
+ - [Windows signing and runner operations](windows-signing/README.md): machine setup, accepted isolation risks, signing credentials, token failures and cache maintenance.
 @@ -288,8 +284,6 @@ Confirmed Host exit without successful task teardown displays localized recovery
  
  ### Local desktop settings
@@ -774,7 +783,7 @@ index f961a72a92dd28235defa1d63b93f62fb57089c6..bfa6c7b586152e3832c3f161ece2cf31
 -
 -Pre-launch CDN and capacity decisions are tracked in the [Desktop update proposal](../../.agents/notes/proposed/feature/2026-09-08-desktop-update-policy-and-installation.md#cdn-and-capacity-qualification).
 diff --git a/apps/desktop/README.zh.md b/apps/desktop/README.zh.md
-index a7500d5d28c52b1dd5ddfd264b62843cec06f3c9..6dc0fba52105286bbdb4a05089377a63d83b8b6e 100644
+index a7500d5d28c52b1dd5ddfd264b62843cec06f3c9..fc7fbe39c1b190d122c331d098e86ada22797c59 100644
 --- a/apps/desktop/README.zh.md
 +++ b/apps/desktop/README.zh.md
 @@ -15,7 +15,6 @@ Desktop 在原生应用中运行 Harness 工作区。本参考文档说明应用
@@ -854,6 +863,15 @@ index a7500d5d28c52b1dd5ddfd264b62843cec06f3c9..6dc0fba52105286bbdb4a05089377a63
  
  <a id="package"></a>
  
+@@ -238,7 +234,7 @@ Desktop 在 Host 启动后、打开工作区前检查模型 API Key 引用是否
+ <a id="local-macos-dmg-without-release-signing"></a>
+ <a id="local-official-bundles-from-a-loopback-registry"></a>
+ 
+-构建与发布操作请使用独立指南。共享 Windows runner 存在已接受的凭据和设备隔离限制；签名或执行分支代码前必须阅读。
++打包按选定品牌配置构建产物，仅打包运行时依赖闭包；发布前需执行完整构建检查。构建与发布操作请使用独立指南。共享 Windows runner 存在已接受的凭据和设备隔离限制；签名或执行分支代码前必须阅读。
+ 
+ - [Desktop 打包](packaging/README.zh.md)：本地与 Actions 构建、版本、部署配置、产物、日志和验收。
+ - [Windows 签名与 runner 运维](windows-signing/README.zh.md)：机器部署、已接受的隔离风险、签名凭据、Token 失败与缓存维护。
 @@ -288,8 +284,6 @@ macOS 在安装准备阶段等待产品主窗口退出全屏，再显示重启
  
  ### 本地桌面设置
@@ -1136,6 +1154,52 @@ index 835beadd6d5c4fed1162e3e751eab74935f8811c..0b7ec39ed9060549ec65e484f02a0765
    const update = resolveDesktopAutoUpdateConfig(env, platform, arch)
    const deployment = UPDATE_ENVIRONMENTS[update.environment]
    return {
+diff --git a/apps/desktop/scripts/desktop-package-plan.ts b/apps/desktop/scripts/desktop-package-plan.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..bea9448dc5975cca6d77e755d89423c90923d8d6
+--- /dev/null
++++ b/apps/desktop/scripts/desktop-package-plan.ts
+@@ -0,0 +1,40 @@
++/** Select source packages before packing with the same closure used to assemble the runtime. */
++
++import { readFileSync } from 'node:fs'
++import { resolve } from 'node:path'
++import { releaseFamily } from '../../../scripts/release/families.ts'
++import { selectDesktopPackageClosure } from './prepare-package-set.ts'
++import type { desktopTargetPlatform } from './desktop-build-paths.mjs'
++
++/**
++ * Select exact family filters and private directories required by one Desktop assembly.
++ * @param root - Repository containing source package manifests.
++ * @param target - Installer platform and architecture.
++ * @param assembly - Runtime roots and private package directories declared by the application.
++ * @returns Exact family names and private directories to pack; native entry packing remains target-owned.
++ */
++export function desktopPackagePlan(
++  root: string,
++  target: ReturnType<typeof desktopTargetPlatform>,
++  assembly: { readonly runtimePackages: readonly string[]; readonly packageDirectories: readonly string[] },
++): { dsh: string[]; vendor: string[]; privateDirectories: string[] } {
++  const dsh = releaseFamily('dsh').members(root)
++  const vendor = releaseFamily('vendor').members(root)
++  const privateDirectories = ['apps/desktop-host', ...assembly.packageDirectories]
++  const privatePackages = [...privateDirectories, 'native/system/packages/entry'].map(directory => ({
++    directory, manifest: JSON.parse(readFileSync(resolve(root, directory, 'package.json'), 'utf8')) as Record<string, unknown>,
++  }))
++  const available = new Map<string, { directory: string; manifest: Readonly<Record<string, unknown>> }>()
++  for (const member of [...dsh, ...vendor, ...privatePackages]) {
++    const name = member.manifest.name
++    if (typeof name !== 'string' || name === '') throw new Error(`desktop package plan: ${member.directory} has no package name`)
++    if (available.has(name)) throw new Error(`desktop package plan: duplicate package ${name}`)
++    available.set(name, member)
++  }
++  const selected = new Set(selectDesktopPackageClosure(available, target, assembly.runtimePackages, root).map(member => member.directory))
++  return {
++    dsh: dsh.filter(member => selected.has(member.directory)).map(member => member.name),
++    vendor: vendor.filter(member => selected.has(member.directory)).map(member => member.name),
++    privateDirectories: privateDirectories.filter(directory => selected.has(directory)),
++  }
++}
 diff --git a/apps/desktop/scripts/desktop-policy-environment.mjs b/apps/desktop/scripts/desktop-policy-environment.mjs
 index 591147578b79a6fe3f7aa410a531245574d438ba..533e50dbdd997a2f1eac7127cbdaaa1a5100e2f3 100644
 --- a/apps/desktop/scripts/desktop-policy-environment.mjs
@@ -1355,17 +1419,40 @@ index 0000000000000000000000000000000000000000..99d2ffd94792a90f4e5bf6ac79609369
 +export function desktopOfficeEngineInstallArguments(engine: DesktopOfficeEngine): readonly string[] {
 +  return ['add', '--save-prod', '--save-exact', `${engine.packageName}@${engine.versionRange}`]
 +}
+diff --git a/apps/desktop/scripts/pack-local-packages.ts b/apps/desktop/scripts/pack-local-packages.ts
+index 79136479f078e86647d799cd52788931644ba2a1..0127fe072545047442f62cec5294c5aa35c56753 100644
+--- a/apps/desktop/scripts/pack-local-packages.ts
++++ b/apps/desktop/scripts/pack-local-packages.ts
+@@ -12,7 +12,7 @@ import { packFamilyMembers, parsePackConcurrency } from '../../../scripts/releas
+ 
+ async function main(): Promise<void> {
+   const { values } = parseArgs({
+-    options: { out: { type: 'string' }, concurrency: { type: 'string' } },
++    options: { out: { type: 'string' }, concurrency: { type: 'string' }, filter: { type: 'string', multiple: true } },
+     allowPositionals: false,
+   })
+   if (values.out === undefined) throw new Error('desktop local pack: --out must name the package staging directory')
+@@ -21,7 +21,7 @@ async function main(): Promise<void> {
+   const environment = resolveClientBuildEnvironment(repositoryClientBuildEnvironment(root), 'local')
+   readClientBuildRecord(root, environment)
+   const destination = resolve(root, values.out)
+-  const packed = await packFamilyMembers(root, releaseFamily('dsh'), destination, concurrency)
++  const packed = await packFamilyMembers(root, releaseFamily('dsh'), destination, concurrency, values.filter)
+   console.log(`desktop local pack: ${String(packed.length)} tarball(s) in ${destination}`)
+ }
+ 
 diff --git a/apps/desktop/scripts/package-target.ts b/apps/desktop/scripts/package-target.ts
-index b6bc6efb6370e6a795c2a3c8d4bf726da6575bc1..fcc3361b81335de773d41c06ff30d02f674d0498 100644
+index b6bc6efb6370e6a795c2a3c8d4bf726da6575bc1..d6f87da8dea4c060d6fb2280d1332c770f53d5b3 100644
 --- a/apps/desktop/scripts/package-target.ts
 +++ b/apps/desktop/scripts/package-target.ts
-@@ -1,4 +1,5 @@
+@@ -1,4 +1,6 @@
  /** Build one release target with matching Electron and dsh architecture. */
 +import { readDesktopAssembly } from './desktop-assembly.mjs'
++import { desktopPackagePlan } from './desktop-package-plan.ts'
  
  import { spawn } from 'node:child_process'
  import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
-@@ -262,18 +263,20 @@ export function parseDesktopPackageInvocation(
+@@ -262,18 +264,20 @@ export function parseDesktopPackageInvocation(
   * @param target - Supported release target.
   * @param directory - Whether to stop at an unpacked application directory.
   * @param artifact - Optional single artifact built from an existing signed application.
@@ -1387,26 +1474,45 @@ index b6bc6efb6370e6a795c2a3c8d4bf726da6575bc1..fcc3361b81335de773d41c06ff30d02f
      target.builderPlatform,
      ...(artifact === undefined ? [] : [artifact.format]),
      target.builderArch,
-@@ -479,6 +482,8 @@ export async function packageTarget(
+@@ -478,28 +482,27 @@ export async function packageTarget(
+         { cwd: APP_ROOT, env: electronBuilderEnv, timeoutMs: 60_000 })
      })
    }
-   await execute(invocation.unsigned ? ['run', 'build', '--profile', 'local'] : ['run', 'build:official'], buildEnv, REPOSITORY_ROOT)
+-  await execute(invocation.unsigned ? ['run', 'build', '--profile', 'local'] : ['run', 'build:official'], buildEnv, REPOSITORY_ROOT)
++  await execute(['run', 'build:artifacts', '--profile', invocation.unsigned ? 'local' : 'official'], buildEnv, REPOSITORY_ROOT)
 +  const assembly = readDesktopAssembly(buildEnv, target.platform)
 +  for (const step of assembly.buildSteps) await execute(step, buildEnv, REPOSITORY_ROOT)
    let preparationFailure: { error: unknown } | undefined
    const executePreparation = async (args: readonly string[], env: NodeJS.ProcessEnv, cwd?: string): Promise<void> => {
      if (preparationFailure !== undefined) throw preparationFailure.error
-@@ -499,6 +504,9 @@ export async function packageTarget(
-       '--pack-destination',
-       buildPaths.packedDsh,
+     try { await execute(args, env, cwd) }
+     catch (error) { preparationFailure ??= { error }; throw error }
+   }
++  const plan = desktopPackagePlan(REPOSITORY_ROOT, target, assembly)
+   const pack = async (): Promise<void> => {
+     await executePreparation([
+       ...(invocation.unsigned
+         ? ['exec', 'tsx', 'apps/desktop/scripts/pack-local-packages.ts']
+         : ['run', 'release:pack', '--family', 'dsh']),
+-      '--out', buildPaths.packedDsh, ...packArguments,
++      '--out', buildPaths.packedDsh, ...plan.dsh.flatMap(name => ['--filter', name]), ...packArguments,
      ], buildEnv, REPOSITORY_ROOT)
-+    for (const directory of assembly.packageDirectories) {
+-    await executePreparation([
+-      '--dir',
+-      'apps/desktop-host',
+-      'pack',
+-      '--pack-destination',
+-      buildPaths.packedDsh,
+-    ], buildEnv, REPOSITORY_ROOT)
+-    await executePreparation(['run', 'release:pack', '--family', 'vendor', '--out', buildPaths.packedVendor, ...packArguments], buildEnv, REPOSITORY_ROOT)
++    for (const directory of plan.privateDirectories) {
 +      await executePreparation(['--dir', directory, 'pack', '--pack-destination', buildPaths.packedDsh], buildEnv, REPOSITORY_ROOT)
 +    }
-     await executePreparation(['run', 'release:pack', '--family', 'vendor', '--out', buildPaths.packedVendor, ...packArguments], buildEnv, REPOSITORY_ROOT)
++    await executePreparation(['run', 'release:pack', '--family', 'vendor', '--out', buildPaths.packedVendor, ...plan.vendor.flatMap(name => ['--filter', name]), ...packArguments], buildEnv, REPOSITORY_ROOT)
      rmSync(buildPaths.packedLandlock, { recursive: true, force: true })
      mkdirSync(buildPaths.packedLandlock, { recursive: true })
-@@ -526,12 +534,12 @@ export async function packageTarget(
+     await executePreparation(['--dir', 'native/system', 'run', 'build:ts'], buildEnv, REPOSITORY_ROOT)
+@@ -526,12 +529,12 @@ export async function packageTarget(
    if (signPrimaryRuntime) await execute(['run', 'sign:primary-runtime', '--dsh'], electronBuilderEnv)
    if (invocation.prepareOnly) return
    const buildMacArtifact = (artifact: DesktopPrepackagedArtifact) => execute(
@@ -1421,7 +1527,7 @@ index b6bc6efb6370e6a795c2a3c8d4bf726da6575bc1..fcc3361b81335de773d41c06ff30d02f
        '--config.mac.notarize=false',
      ], electronBuilderEnv)
      await execute(['exec', 'tsx', 'scripts/smoke-packaged-runtime.ts'], targetEnv)
-@@ -543,20 +551,20 @@ export async function packageTarget(
+@@ -543,20 +546,20 @@ export async function packageTarget(
        environment: electronBuilderEnv,
      }, buildMacArtifact), undefined, undefined, proxyEvent)
    } else if (target.platform === 'darwin' && !invocation.unsigned && !invocation.skipNotarization) {
@@ -1446,7 +1552,7 @@ index b6bc6efb6370e6a795c2a3c8d4bf726da6575bc1..fcc3361b81335de773d41c06ff30d02f
      await execute(['exec', 'tsx', 'scripts/smoke-packaged-runtime.ts',
        ...(invocation.unsigned ? ['--unsigned'] : []), ...(invocation.skipNotarization ? ['--skip-notarization'] : [])], targetEnv)
 diff --git a/apps/desktop/scripts/prepare-package-set.ts b/apps/desktop/scripts/prepare-package-set.ts
-index 4cffa7018b48f8fdd5a0547e9d869c6612d12ad5..fa110bd621441dff2a113ff0234bec5116816059 100644
+index 4cffa7018b48f8fdd5a0547e9d869c6612d12ad5..b6f613e48ed10493ac2d8f6355a14d550eab8da1 100644
 --- a/apps/desktop/scripts/prepare-package-set.ts
 +++ b/apps/desktop/scripts/prepare-package-set.ts
 @@ -1,4 +1,4 @@
@@ -1463,26 +1569,41 @@ index 4cffa7018b48f8fdd5a0547e9d869c6612d12ad5..fa110bd621441dff2a113ff0234bec51
  
  const DSH_PACKAGE = '@deepseek-ai/dsh'
  const ROOT_PACKAGES = [DSH_PACKAGE, DESKTOP_HOST_PACKAGE] as const
-@@ -62,15 +63,17 @@ function dependencyNames(manifest: Readonly<Record<string, unknown>>, section: s
+@@ -62,20 +63,24 @@ function dependencyNames(manifest: Readonly<Record<string, unknown>>, section: s
  }
  
  /**
 - * Select workspace dependencies rooted at dsh and its private Host; npm resolves external packages.
 + * Select workspace dependencies rooted at dsh, its private Host and application packages; npm resolves external packages.
   * Reads the repository workspace manifest and package manifests to distinguish required local packages from npm-resolved externals.
-  * @param available - Packed packages indexed by package name.
+- * @param available - Packed packages indexed by package name.
++ * @param available - Source or packed manifests indexed by package name.
   * @param target - Platform and architecture of the installer payload.
 + * @param runtimePackages - Additional application roots declared by the Desktop assembly.
++ * @param root - Repository containing the workspace manifests.
   * @returns Selected packages sorted by name.
   */
- export function selectDesktopPackageClosure(
-   available: ReadonlyMap<string, PackedDesktopPackage>,
+-export function selectDesktopPackageClosure(
+-  available: ReadonlyMap<string, PackedDesktopPackage>,
++export function selectDesktopPackageClosure<T extends { readonly manifest: Readonly<Record<string, unknown>> }>(
++  available: ReadonlyMap<string, T>,
    target: ReturnType<typeof desktopTargetPlatform>,
+-): PackedDesktopPackage[] {
+-  const workspace = yaml.load(readFileSync(join(REPOSITORY_ROOT, 'pnpm-workspace.yaml'), 'utf8')) as { packages: string[] }
+-  const workspaceNames = new Set(globSync(workspace.packages.map(pattern => `${pattern}/package.json`), { cwd: REPOSITORY_ROOT })
+-    .map(path => (JSON.parse(readFileSync(join(REPOSITORY_ROOT, path), 'utf8')) as { name: string }).name))
+-  const selected = new Map<string, PackedDesktopPackage>()
 +  runtimePackages: readonly string[] = [],
- ): PackedDesktopPackage[] {
-   const workspace = yaml.load(readFileSync(join(REPOSITORY_ROOT, 'pnpm-workspace.yaml'), 'utf8')) as { packages: string[] }
-   const workspaceNames = new Set(globSync(workspace.packages.map(pattern => `${pattern}/package.json`), { cwd: REPOSITORY_ROOT })
-@@ -95,7 +98,7 @@ export function selectDesktopPackageClosure(
++  root: string = REPOSITORY_ROOT,
++): T[] {
++  const workspace = yaml.load(readFileSync(join(root, 'pnpm-workspace.yaml'), 'utf8')) as { packages: string[] }
++  const workspaceNames = new Set(globSync(workspace.packages.map(pattern => `${pattern}/package.json`), { cwd: root })
++    .map(path => (JSON.parse(readFileSync(join(root, path), 'utf8')) as { name: string }).name))
++  const selected = new Map<string, T>()
+   const visit = (name: string): void => {
+     if (selected.has(name)) return
+     const packed = available.get(name)
+@@ -95,7 +100,7 @@ export function selectDesktopPackageClosure(
          && supportsTarget(optional.manifest, 'cpu', target.arch)) visit(dependency)
      }
    }
@@ -1491,7 +1612,7 @@ index 4cffa7018b48f8fdd5a0547e9d869c6612d12ad5..fa110bd621441dff2a113ff0234bec51
      if (!available.has(name)) throw new Error(`desktop package set: packed inputs omit ${name}`)
      visit(name)
    }
-@@ -147,11 +150,13 @@ export function assertDesktopHostPackageFiles(files: readonly string[]): void {
+@@ -147,11 +152,13 @@ export function assertDesktopHostPackageFiles(files: readonly string[]): void {
   * @param inputs - Release tarball directories.
   * @param output - Destination package-set directory.
   * @param target - Platform and architecture of the installer payload.
@@ -1506,7 +1627,7 @@ index 4cffa7018b48f8fdd5a0547e9d869c6612d12ad5..fa110bd621441dff2a113ff0234bec51
    const host = selected.find(packed => packed.manifest.name === DESKTOP_HOST_PACKAGE)
    if (host === undefined) throw new Error(`desktop package set: selected closure omits ${DESKTOP_HOST_PACKAGE}`)
    assertDesktopHostPackageFiles(tarballFiles(host.tarball))
-@@ -193,7 +198,9 @@ function main(): void {
+@@ -193,7 +200,9 @@ function main(): void {
    })
    const inputs = (values.from ?? defaultInputs).map(path => resolve(REPOSITORY_ROOT, path))
    const output = values.out === undefined ? buildPaths.packageSet : resolve(REPOSITORY_ROOT, values.out)
@@ -2224,6 +2345,87 @@ index 9fbe629c8950cc3ef4abfe5d43d7ecc12fd943ff..a1a311e2be22a8b1999603faf5dc7116
    it.each([undefined, RELEASE_ID, 'unused-test-value'])('keeps production paths independent of test release ID %s', (id) => {
      expect(resolveDesktopAutoUpdateConfig({
        DSH_DESKTOP_AUTO_UPDATE_ENV: 'production',
+diff --git a/apps/desktop/tests/desktop-package-plan.spec.ts b/apps/desktop/tests/desktop-package-plan.spec.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..9a0134d547972f29fbecbcd7945f400a473ecaf2
+--- /dev/null
++++ b/apps/desktop/tests/desktop-package-plan.spec.ts
+@@ -0,0 +1,75 @@
++/** Compare early source selection with the former pack-everything runtime selection. */
++import { execFileSync } from 'node:child_process'
++import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
++import { tmpdir } from 'node:os'
++import { basename, dirname, join, resolve } from 'node:path'
++import { expect, it, onTestFinished } from 'vitest'
++import { releaseFamily } from '../../../scripts/release/families.ts'
++import { packedManifest } from '../../../scripts/release/tarball.ts'
++import { readDesktopAssembly } from '../scripts/desktop-assembly.mjs'
++import { desktopPackagePlan } from '../scripts/desktop-package-plan.ts'
++import { prepareDesktopPackageSet } from '../scripts/prepare-package-set.ts'
++import { DESKTOP_HOST_RUNTIME_FILES, DESKTOP_PACKAGES_DIR } from '../src/core-package-set.ts'
++
++it.each([
++  ['darwin', 'arm64'], ['darwin', 'x64'], ['win32', 'x64'],
++] as const)('preserves the assembled tarballs when selecting before packing for %s/%s', (platform, arch) => {
++  const root = mkdtempSync(join(tmpdir(), 'desktop-package-plan-'))
++  onTestFinished(() => { rmSync(root, { recursive: true, force: true }) })
++  const write = (path: string, value: string): void => {
++    mkdirSync(dirname(join(root, path)), { recursive: true })
++    writeFileSync(join(root, path), value)
++  }
++  write('pnpm-workspace.yaml', 'packages:\n  - apps/*\n  - packages/*/*\n  - vendor/*\n  - native/system/packages/*\n')
++  const definitions: [string, string, Record<string, unknown>][] = [
++    ['apps/cli', '@deepseek-ai/dsh', { dependencies: { '@deepseek-ai/cordis': '1.0.0', '@deepseek-ai/node-addon-system': '1.0.0' } }],
++    ['apps/desktop-host', '@deepseek-ai/dsh-desktop-host', { private: true }],
++    ['vendor/cordis', '@deepseek-ai/cordis', {}],
++    ['vendor/unused', '@deepseek-ai/unused-vendor', {}],
++    ['packages/util/unused', '@deepseek-ai/dsh-unused', {}],
++    ['native/system/packages/entry', '@deepseek-ai/node-addon-system', {}],
++    ['packages/product/desktop', 'product-desktop', { private: true, dependencies: { 'product-extension': '1.0.0' } }],
++    ['packages/product/extension', 'product-extension', { private: true, optionalDependencies: { '@deepseek-ai/dsh-macos': '1.0.0' } }],
++    ['packages/util/macos', '@deepseek-ai/dsh-macos', { os: ['darwin'] }],
++    ['packages/product/unused', 'product-unused', { private: true }],
++  ]
++  for (const [directory, name, additions] of definitions) {
++    write(`${directory}/package/package.json`, JSON.stringify({ name, version: '1.0.0', ...additions }))
++    write(`${directory}/package.json`, readFileSync(join(root, directory, 'package/package.json'), 'utf8'))
++    if (name === '@deepseek-ai/dsh-desktop-host') {
++      for (const file of DESKTOP_HOST_RUNTIME_FILES) write(`${directory}/package/${file}`, '')
++    }
++  }
++  const assembly = { runtimePackages: ['product-desktop'], packageDirectories: ['desktop', 'extension', 'unused'].map(name => join(root, 'packages/product', name)) }
++  const plan = desktopPackagePlan(root, { platform, arch }, assembly)
++  expect(plan.privateDirectories).toEqual(['apps/desktop-host', ...assembly.packageDirectories.slice(0, 2)])
++  expect(plan.dsh).not.toContain('@deepseek-ai/dsh-unused')
++  expect(plan.dsh.includes('@deepseek-ai/dsh-macos')).toBe(platform === 'darwin')
++  expect(plan.vendor).toEqual(['@deepseek-ai/cordis'])
++  const selected = new Set([...plan.dsh, ...plan.vendor, 'product-desktop', 'product-extension', '@deepseek-ai/dsh-desktop-host', '@deepseek-ai/node-addon-system'])
++  for (const input of ['all', 'selected']) mkdirSync(join(root, input))
++  for (const [directory, name] of definitions) {
++    const file = `${name.replace('@', '').replaceAll('/', '-')}.tgz`
++    for (const input of selected.has(name) ? ['all', 'selected'] : ['all']) {
++      execFileSync('tar', ['-czf', join(root, input, file), '-C', join(root, directory), 'package'])
++    }
++  }
++  const names = (output: string): unknown[] => readdirSync(join(root, output, DESKTOP_PACKAGES_DIR)).map(file =>
++    packedManifest(join(root, output, DESKTOP_PACKAGES_DIR, file)).name).sort()
++  for (const input of ['all', 'selected']) {
++    prepareDesktopPackageSet([join(root, input)], join(root, `${input}-output`), { platform, arch }, assembly.runtimePackages)
++  }
++  expect(names('selected-output')).toEqual(names('all-output'))
++})
++
++it.each([
++  ['darwin', 'arm64'], ['darwin', 'x64'], ['win32', 'x64'],
++] as const)('keeps every product runtime package and its UI extension for %s/%s', (platform, arch) => {
++  const root = resolve(import.meta.dirname, '../../..')
++  const assembly = readDesktopAssembly({ DSH_DESKTOP_ASSEMBLY_MANIFEST: join(root, 'packages/deepseek-harness-product/desktop/assembly.json') }, platform)
++  const plan = desktopPackagePlan(root, { platform, arch }, assembly)
++  expect(plan.privateDirectories).toEqual(['apps/desktop-host', ...assembly.packageDirectories])
++  expect(plan.privateDirectories.some(directory => basename(directory) === 'ui-deepseek-harness-product')).toBe(true)
++  expect(plan.dsh.length).toBeLessThan(releaseFamily('dsh').members(root).length)
++  expect(plan.vendor.length).toBeLessThan(releaseFamily('vendor').members(root).length)
++})
 diff --git a/apps/desktop/tests/development-app.spec.ts b/apps/desktop/tests/development-app.spec.ts
 index 2f718b7bc5feaebd4e655eb9a878aae6342babbb..1eea2ed64c7d63074016448c499721aa7a1a0bfa 100644
 --- a/apps/desktop/tests/development-app.spec.ts
@@ -2476,6 +2678,75 @@ index 0000000000000000000000000000000000000000..2d635423b574f527d47c301e0af6c133
 +      .toThrow(/has no declared version/u)
 +  })
 +})
+diff --git a/apps/desktop/tests/pack-local-packages.spec.ts b/apps/desktop/tests/pack-local-packages.spec.ts
+index 14d55a0a8b2be11da698ec7dc0a045401cf780d6..a155f50cc740ebbdee1733a6d731faac21a623a7 100644
+--- a/apps/desktop/tests/pack-local-packages.spec.ts
++++ b/apps/desktop/tests/pack-local-packages.spec.ts
+@@ -116,3 +116,14 @@ it('rejects an invalid local pack concurrency before replacing packages', async
+   expect(result.output).toContain('--concurrency must be a positive integer')
+   expect(existsSync(join(root, 'packed'))).toBe(false)
+ }, testTimeout)
++
++it('packs an exact local selection without packing unrelated workspace packages', async () => {
++  const root = fixture()
++  write(root, 'packages/util/unselected/package.json', JSON.stringify({
++    name: '@deepseek-ai/dsh-unselected', version: '1.2.3',
++    scripts: { prepack: 'node -e "process.exit(19)"' },
++  }))
++  const result = await pack(root, false, ['--filter', '@deepseek-ai/dsh-probe'])
++  expect(result.code, result.output).toBe(0)
++  expect(readdirSync(join(root, 'packed'))).toEqual(['deepseek-ai-dsh-probe-1.2.3.tgz'])
++}, testTimeout)
+diff --git a/apps/desktop/tests/package-target-stages.spec.ts b/apps/desktop/tests/package-target-stages.spec.ts
+index 37bd38384ffa9796f3e499d324afa20073e3127e..9ccd875b49c1e303576a9a94b3ebbb600791c02d 100644
+--- a/apps/desktop/tests/package-target-stages.spec.ts
++++ b/apps/desktop/tests/package-target-stages.spec.ts
+@@ -151,7 +151,7 @@ it.each([undefined, '2'])('uses bounded Windows packing while retaining signing
+ it('requires one signing preflight before building, then records only the complete release', async () => {
+   const { run, stages } = supervisor()
+   await packageTarget(parseDesktopPackageInvocation(['win-x64'], 'win32', 'x64'), environment, run)
+-  expect(stages.slice(0, 2)).toEqual(['preflight:windows-signing', 'run build:official'])
++  expect(stages.slice(0, 2)).toEqual(['preflight:windows-signing', 'run build:artifacts --profile official'])
+   expect(stages.filter(stage => stage === 'preflight:windows-signing')).toHaveLength(1)
+   expect(vi.mocked(withWindowsSigningStage).mock.calls.map(([options]) => options.stage))
+     .toEqual(['preflight', 'artifacts'])
+@@ -183,7 +183,7 @@ it('initializes shared storage only after acquiring the preflight stage lock', a
+   await packageTarget(parseDesktopPackageInvocation(['win-x64'], 'win32', 'x64'), environment, run)
+ })
+ 
+-it.each(['preflight:windows-signing', 'run build:official', 'run sign:primary-runtime', 'run prepare:dsh --defer-runtime-smoke', 'run sign:primary-runtime --dsh',
++it.each(['preflight:windows-signing', 'run build:artifacts --profile official', 'run sign:primary-runtime', 'run prepare:dsh --defer-runtime-smoke', 'run sign:primary-runtime --dsh',
+   'exec tsx scripts/smoke-packaged-runtime.ts',
+   'exec electron-builder --config electron-builder.config.mjs --win --x64 --publish never'])
+ ('never continues or records a release after %s fails', async (failure) => {
+@@ -197,7 +197,7 @@ it.each(['preflight:windows-signing', 'run build:official', 'run sign:primary-ru
+ it.each(['--unsigned', '--prepare-only'])('keeps %s hardware-free and creates no release record', async (mode) => {
+   const { run, stages } = supervisor()
+   await packageTarget(parseDesktopPackageInvocation(['win-x64', mode], 'win32', 'x64'), environment, run)
+-  expect(stages[0]).toBe(mode === '--unsigned' ? 'run build --profile local' : 'run build:official')
++  expect(stages[0]).toBe(mode === '--unsigned' ? 'run build:artifacts --profile local' : 'run build:artifacts --profile official')
+   expect(stages).not.toContain('preflight:windows-signing')
+   expect(stages).not.toContain('run sign:primary-runtime')
+   expect(stages).not.toContain('run sign:primary-runtime --dsh')
+@@ -224,15 +224,15 @@ it.each(['mac-arm64', 'mac-x64', 'win-x64'] as const)('selects branding from the
+       DSH_CLIENT_TITLE: 'Inherited title',
+     }, run)
+     const build = stages.find(stage => stage.startsWith('run build'))
+-    expect(build).toBe(unsigned ? 'run build --profile local' : 'run build:official')
++    expect(build).toBe(unsigned ? 'run build:artifacts --profile local' : 'run build:artifacts --profile official')
+     expect(stages.some(stage => stage.startsWith('exec tsx apps/desktop/scripts/pack-local-packages.ts'))).toBe(unsigned)
+     expect(stages.some(stage => stage.startsWith('run release:pack --family dsh'))).toBe(!unsigned)
+   }
+ })
+ 
+ it.each([
+-  ['mac-arm64', 'run build --profile local'],
+-  ['win-x64', 'run build --profile local'],
++  ['mac-arm64', 'run build:artifacts --profile local'],
++  ['win-x64', 'run build:artifacts --profile local'],
+   ['mac-arm64', 'exec tsx apps/desktop/scripts/pack-local-packages.ts'],
+   ['win-x64', 'exec tsx apps/desktop/scripts/pack-local-packages.ts'],
+ ] as const)('stops unsigned %s packaging when %s fails', async (target, failure) => {
 diff --git a/apps/desktop/tests/package-target.spec.ts b/apps/desktop/tests/package-target.spec.ts
 index ba647d76ac740f2aa7e40fab69cffbed44c7b9e0..f0a2accc282e43623ca42e0558897d178357a39a 100644
 --- a/apps/desktop/tests/package-target.spec.ts
@@ -13761,6 +14032,86 @@ index a35da334b75f698fc56f5ea3b2a9315fa8ff96dc..4e866c3cf668ac7402bffdb0233f48ba
          return !rows.includes(`| [${page}](${target}) |`)
        })
        expect(missing, `${readme} must carry one table row per subsystem page`).toEqual([])
+diff --git a/scripts/release/pack.spec.ts b/scripts/release/pack.spec.ts
+index b7a102122f2b69f72419ceaf0e9554100ff66983..a23df05c46649c5f4a3e142a644855000f94ade0 100644
+--- a/scripts/release/pack.spec.ts
++++ b/scripts/release/pack.spec.ts
+@@ -141,6 +141,28 @@ describe('release pack CLI', () => {
+     if (concurrency !== '2') expect(hooks).toEqual(expectedHooks)
+   }, 120_000)
+ 
++  it.each(['1', '2'])('packs only exact filtered members without running omitted hooks (concurrency=%s)', async (concurrency) => {
++    const root = fixture()
++    packageFixture(root, 'vendor/alpha', '@deepseek-ai/alpha')
++    packageFixture(root, 'vendor/zebra', '@deepseek-ai/zebra')
++    const result = await runPack(root, ['--concurrency', concurrency, '--filter', '@deepseek-ai/alpha'])
++    expect(result.status, result.stderr).toBe(0)
++    expect(readPublishOrder(join(root, 'packed'))).toEqual(['deepseek-ai-alpha-1.2.3.tgz'])
++    expect(readFileSync(join(root, 'hooks.log'), 'utf8')).not.toContain('zebra')
++    expect(existsSync(join(root, 'packed/deepseek-ai-zebra-1.2.3.tgz'))).toBe(false)
++  })
++
++  it('rejects unknown package filters before replacing staged packages', async () => {
++    const root = fixture()
++    packageFixture(root, 'vendor/alpha', '@deepseek-ai/alpha')
++    write(join(root, 'packed/retained.txt'), 'previous output\n')
++    const result = await runPack(root, ['--filter', '@deepseek-ai/missing'])
++    expect(result.status).not.toBe(0)
++    expect(result.stderr).toContain('unknown vendor package filter: @deepseek-ai/missing')
++    expect(readFileSync(join(root, 'packed/retained.txt'), 'utf8')).toBe('previous output\n')
++    expect(existsSync(join(root, 'hooks.log'))).toBe(false)
++  })
++
+   it('overlaps two independent packs and keeps later packages within the concurrency limit', async () => {
+     const root = fixture()
+     const names = ['alpha', 'bravo', 'charlie'].map(name => `@deepseek-ai/${name}`)
+diff --git a/scripts/release/pack.ts b/scripts/release/pack.ts
+index 4eb7ee983999cd0c829fe8cfa6cf3b97d094246a..8c48a9e5625927fcdebaae94c801281c54c90049 100644
+--- a/scripts/release/pack.ts
++++ b/scripts/release/pack.ts
+@@ -89,32 +89,38 @@ export function parsePackConcurrency(raw: string | undefined): number {
+  * @param family - Package selection, version, and payload policy.
+  * @param destination - Absolute staging directory owned by this packing invocation.
+  * @param concurrency - Validated maximum number of concurrent package packs.
++ * @param filters - Exact member names to pack; omission selects the complete family.
+  * @returns Tarball filenames in publish order, after every package passes validation.
+  */
+ export async function packFamilyMembers(
+   root: string, family: ReleaseFamily, destination: string, concurrency: number,
++  filters?: readonly string[],
+ ): Promise<string[]> {
+   const members = family.publishOrder(family.members(root)).order
+   family.verifyVersions(members)
++  const selected = filters === undefined ? undefined : new Set(filters)
++  for (const name of selected ?? []) {
++    if (!members.some(member => member.name === name)) throw new Error(`unknown ${family.id} package filter: ${name}`)
++  }
+   rmSync(destination, { recursive: true, force: true })
+   mkdirSync(destination, { recursive: true })
+-  return packMembers(family, members, destination, concurrency)
++  return packMembers(family, members.filter(member => selected === undefined || selected.has(member.name)), destination, concurrency)
+ }
+ 
+ /** Pack the family named by `--family` into `--out`. */
+ async function main(): Promise<void> {
+   const { values } = parseArgs({
+-    options: { family: { type: 'string' }, out: { type: 'string' }, concurrency: { type: 'string' } },
++    options: { family: { type: 'string' }, out: { type: 'string' }, concurrency: { type: 'string' }, filter: { type: 'string', multiple: true } },
+     allowPositionals: false,
+   })
+-  if (values.family === undefined) throw new Error('usage: pack.ts --family <dsh|vendor> [--out dist/npm] [--concurrency 1]')
++  if (values.family === undefined) throw new Error('usage: pack.ts --family <dsh|vendor> [--out dist/npm] [--concurrency 1] [--filter <package>]')
+   const concurrency = parsePackConcurrency(values.concurrency)
+ 
+   const family = releaseFamily(values.family)
+   const root = process.cwd()
+   const destination = resolve(root, values.out ?? DEFAULT_OUTPUT)
+   family.verifyBuildArtifacts(root)
+-  const order = await packFamilyMembers(root, family, destination, concurrency)
++  const order = await packFamilyMembers(root, family, destination, concurrency, values.filter)
+   writeFileSync(join(destination, PUBLISH_ORDER_FILE), `${order.join('\n')}\n`)
+ 
+   console.log(`release pack: family ${family.id}, ${String(order.length)} tarball(s) in ${values.out ?? DEFAULT_OUTPUT}`)
 diff --git a/scripts/rescope-vendor.spec.ts b/scripts/rescope-vendor.spec.ts
 index 18755ce3975b03903a68be8faad4e00e17a27589..83aecf1be8a1f15cceeac421cfc3098d2e1c9d1b 100644
 --- a/scripts/rescope-vendor.spec.ts

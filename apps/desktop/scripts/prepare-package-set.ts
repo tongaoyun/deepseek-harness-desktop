@@ -65,20 +65,22 @@ function dependencyNames(manifest: Readonly<Record<string, unknown>>, section: s
 /**
  * Select workspace dependencies rooted at dsh, its private Host and application packages; npm resolves external packages.
  * Reads the repository workspace manifest and package manifests to distinguish required local packages from npm-resolved externals.
- * @param available - Packed packages indexed by package name.
+ * @param available - Source or packed manifests indexed by package name.
  * @param target - Platform and architecture of the installer payload.
  * @param runtimePackages - Additional application roots declared by the Desktop assembly.
+ * @param root - Repository containing the workspace manifests.
  * @returns Selected packages sorted by name.
  */
-export function selectDesktopPackageClosure(
-  available: ReadonlyMap<string, PackedDesktopPackage>,
+export function selectDesktopPackageClosure<T extends { readonly manifest: Readonly<Record<string, unknown>> }>(
+  available: ReadonlyMap<string, T>,
   target: ReturnType<typeof desktopTargetPlatform>,
   runtimePackages: readonly string[] = [],
-): PackedDesktopPackage[] {
-  const workspace = yaml.load(readFileSync(join(REPOSITORY_ROOT, 'pnpm-workspace.yaml'), 'utf8')) as { packages: string[] }
-  const workspaceNames = new Set(globSync(workspace.packages.map(pattern => `${pattern}/package.json`), { cwd: REPOSITORY_ROOT })
-    .map(path => (JSON.parse(readFileSync(join(REPOSITORY_ROOT, path), 'utf8')) as { name: string }).name))
-  const selected = new Map<string, PackedDesktopPackage>()
+  root: string = REPOSITORY_ROOT,
+): T[] {
+  const workspace = yaml.load(readFileSync(join(root, 'pnpm-workspace.yaml'), 'utf8')) as { packages: string[] }
+  const workspaceNames = new Set(globSync(workspace.packages.map(pattern => `${pattern}/package.json`), { cwd: root })
+    .map(path => (JSON.parse(readFileSync(join(root, path), 'utf8')) as { name: string }).name))
+  const selected = new Map<string, T>()
   const visit = (name: string): void => {
     if (selected.has(name)) return
     const packed = available.get(name)

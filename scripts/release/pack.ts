@@ -89,32 +89,38 @@ export function parsePackConcurrency(raw: string | undefined): number {
  * @param family - Package selection, version, and payload policy.
  * @param destination - Absolute staging directory owned by this packing invocation.
  * @param concurrency - Validated maximum number of concurrent package packs.
+ * @param filters - Exact member names to pack; omission selects the complete family.
  * @returns Tarball filenames in publish order, after every package passes validation.
  */
 export async function packFamilyMembers(
   root: string, family: ReleaseFamily, destination: string, concurrency: number,
+  filters?: readonly string[],
 ): Promise<string[]> {
   const members = family.publishOrder(family.members(root)).order
   family.verifyVersions(members)
+  const selected = filters === undefined ? undefined : new Set(filters)
+  for (const name of selected ?? []) {
+    if (!members.some(member => member.name === name)) throw new Error(`unknown ${family.id} package filter: ${name}`)
+  }
   rmSync(destination, { recursive: true, force: true })
   mkdirSync(destination, { recursive: true })
-  return packMembers(family, members, destination, concurrency)
+  return packMembers(family, members.filter(member => selected === undefined || selected.has(member.name)), destination, concurrency)
 }
 
 /** Pack the family named by `--family` into `--out`. */
 async function main(): Promise<void> {
   const { values } = parseArgs({
-    options: { family: { type: 'string' }, out: { type: 'string' }, concurrency: { type: 'string' } },
+    options: { family: { type: 'string' }, out: { type: 'string' }, concurrency: { type: 'string' }, filter: { type: 'string', multiple: true } },
     allowPositionals: false,
   })
-  if (values.family === undefined) throw new Error('usage: pack.ts --family <dsh|vendor> [--out dist/npm] [--concurrency 1]')
+  if (values.family === undefined) throw new Error('usage: pack.ts --family <dsh|vendor> [--out dist/npm] [--concurrency 1] [--filter <package>]')
   const concurrency = parsePackConcurrency(values.concurrency)
 
   const family = releaseFamily(values.family)
   const root = process.cwd()
   const destination = resolve(root, values.out ?? DEFAULT_OUTPUT)
   family.verifyBuildArtifacts(root)
-  const order = await packFamilyMembers(root, family, destination, concurrency)
+  const order = await packFamilyMembers(root, family, destination, concurrency, values.filter)
   writeFileSync(join(destination, PUBLISH_ORDER_FILE), `${order.join('\n')}\n`)
 
   console.log(`release pack: family ${family.id}, ${String(order.length)} tarball(s) in ${values.out ?? DEFAULT_OUTPUT}`)

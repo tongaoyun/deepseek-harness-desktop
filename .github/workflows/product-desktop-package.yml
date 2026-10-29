@@ -82,7 +82,7 @@ jobs:
       - name: Test Electron close lifecycle
         run: pnpm exec vitest run apps/product-desktop/tests/close-electron.spec.ts apps/product-desktop/tests/office-fixture.spec.ts apps/product-desktop/tests/native-update-dialog.spec.ts
       - name: Test upstream boundaries
-        run: pnpm exec vitest run scripts/upstream-boundaries.spec.ts scripts/build.spec.ts apps/desktop/tests/prepare-package-set.spec.ts
+        run: pnpm exec vitest run scripts/upstream-boundaries.spec.ts scripts/build.spec.ts apps/desktop/tests/desktop-package-plan.spec.ts apps/desktop/tests/package-target-stages.spec.ts apps/desktop/tests/pack-local-packages.spec.ts scripts/release/pack.spec.ts apps/desktop/tests/prepare-package-set.spec.ts
       - name: Test product sidecar
         run: cargo test --manifest-path native/deepseek-harness/Cargo.toml
   package:
@@ -108,6 +108,9 @@ jobs:
         shell: bash
     env:
       DSH_TELEMETRY_DISABLED: '1'
+      DSH_DESKTOP_PACKAGE_CACHE_DIR: ${{ runner.temp }}/harness-desktop-package-cache
+      ELECTRON_BUILDER_CACHE: ${{ runner.temp }}/harness-desktop-builder-cache
+      CARGO_TARGET_DIR: ${{ runner.temp }}/harness-desktop-rust
       NPM_CONFIG_REGISTRY: https://registry.npmjs.org/
       DSH_DESKTOP_NPM_REGISTRY: https://registry.npmjs.org/
       NPM_CONFIG_FETCH_RETRIES: '4'
@@ -138,7 +141,27 @@ jobs:
           node-version: '24'
           cache: pnpm
       - name: Set up Rust
+        id: rust
         uses: dtolnay/rust-toolchain@stable
+      - name: Cache desktop downloads and package store
+        uses: actions/cache@v6.1.0
+        with:
+          path: |
+            ${{ env.DSH_DESKTOP_PACKAGE_CACHE_DIR }}
+            ${{ env.ELECTRON_BUILDER_CACHE }}
+          key: desktop-downloads-v1-${{ runner.os }}-${{ matrix.target }}-${{ hashFiles('pnpm-lock.yaml', 'scripts/primary-runtime/lock.json') }}
+          restore-keys: |
+            desktop-downloads-v1-${{ runner.os }}-${{ matrix.target }}-
+      - name: Cache Rust compilation
+        uses: actions/cache@v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            ${{ env.CARGO_TARGET_DIR }}
+          key: desktop-rust-v1-${{ runner.os }}-${{ matrix.target }}-${{ steps.rust.outputs.cachekey }}-${{ hashFiles('native/deepseek-harness/Cargo.lock', 'native/deepseek-harness/Cargo.toml', 'native/deepseek-harness/src/**', 'native/deepseek-harness/build.rs') }}
+          restore-keys: |
+            desktop-rust-v1-${{ runner.os }}-${{ matrix.target }}-${{ steps.rust.outputs.cachekey }}-
       - name: Install locked dependencies
         run: pnpm install --frozen-lockfile
       # The product desktop bundle imports the built product entrypoints. Build
