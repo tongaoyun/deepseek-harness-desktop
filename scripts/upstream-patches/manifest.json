@@ -14,7 +14,8 @@
         "packages/client/ui-conversation/tests/draft-document.client.spec.ts",
         "apps/desktop/tests/desktop-assembly.spec.ts",
         "packages/client/ui-sidebar-documentpreview/tests/document-preview-license-bundle.client.spec.ts",
-        "scripts/build.spec.ts"
+        "scripts/build.spec.ts",
+        "apps/desktop/tests/prepare-package-set.spec.ts"
       ],
       "files": [
         {
@@ -175,12 +176,12 @@
         {
           "path": "apps/desktop/README.md",
           "before": "f472fde6e337b299f983b1e4a94ec391211c9ebcc1680e63daaba62b29d40bca",
-          "after": "dcf319a317e6fa612764e73042a19ea014f16d396a9cc93a7eda23a4062a53ce"
+          "after": "6270fe0163101bb8ceb40bb6c7fa777294af244280f2b4fbb6be9c5fb5f99fd2"
         },
         {
           "path": "apps/desktop/README.zh.md",
           "before": "b48bf2ac1760ad5f7ca66be3a71fcd631f782d8f9398c2e872d09bdd817e8d34",
-          "after": "7682259e4415fdd92219c0049a1b9fc8957cf8de1d1f014a82c04888fc33d09e"
+          "after": "c8e5ab21e2519243b51a97a5252097b0f1e4ffde1dc98ad94db1a6f0a24e0b5d"
         },
         {
           "path": "apps/desktop/scripts/desktop-assembly.d.mts",
@@ -226,6 +227,11 @@
           "path": "apps/desktop/scripts/package-target.ts",
           "before": "2d5648300b8093b39a211a52d328bbbf28a9d883c81bd7ff55bbc7aed3878eb7",
           "after": "7ba23691e36945b627d66ac95eeb8b0b2c77872cf61a6ef7379488f0d6f6b27d"
+        },
+        {
+          "path": "apps/desktop/scripts/prepare-package-set.ts",
+          "before": "8792534652d0a9cbf7bebbe7d1f185cc9d5e714429a2db4d855c22924f26c09b",
+          "after": "153578f2acdf5f112fb0a2455519136a785db54a75239e8724df0218c727e0d3"
         },
         {
           "path": "apps/desktop/scripts/prepare-windows-runtime-cache.ps1",
@@ -311,6 +317,11 @@
           "path": "apps/desktop/tests/preload-app.spec.ts",
           "before": "0590c2c5b5dbd4afe45c5fd31205b01385fb237a5f47fb2b5ac1a998975ca980",
           "after": "647e2cd4748a55af4343f719d5a88303e4b7f1f8fc2cace5655295d650759879"
+        },
+        {
+          "path": "apps/desktop/tests/prepare-package-set.spec.ts",
+          "before": "db7041f89197e347e5891bd3edc6820ff641711a69e93c0dc11b112487e8a140",
+          "after": "ea28afd89d7573a43b2e982e4d6ceff4567aeec37b82227d323195d0d755a3f1"
         },
         {
           "path": "apps/desktop/tests/runtime-download.spec.ts",
@@ -1681,7 +1692,7 @@
         {
           "path": "apps/desktop/README.i18n.yaml",
           "before": "30ca9c190f26e105e35d05faa08a033daff7489efce54df0d4d481b3aaaa54b4",
-          "after": "bd0c8c03ffe74f6d1fac717a82664010438a951d361d2e80221642742ff31780"
+          "after": "1c4a16fc9c4d0924928d03693fadbb1d347e4066a029b709a712859d40f0cb26"
         },
         {
           "path": "apps/desktop/package.json",

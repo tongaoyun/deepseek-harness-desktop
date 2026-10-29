@@ -656,7 +656,7 @@ index fd45f0cb3292f6e47a3feab4284c78fd4e95b5db..91d766cdd5c8b6c57cdc7fe450fd3b9e
  DSH_DESKTOP_MANDATORY_UPDATE_PROD_ORIGIN=
  # Set approved login origins for test builds; omit allowedAuthOrigins for production.
 diff --git a/apps/desktop/README.md b/apps/desktop/README.md
-index f961a72a92dd28235defa1d63b93f62fb57089c6..ab5f86061c82f795cac66095b4693023c5784d67 100644
+index f961a72a92dd28235defa1d63b93f62fb57089c6..bfa6c7b586152e3832c3f161ece2cf3131a43244 100644
 --- a/apps/desktop/README.md
 +++ b/apps/desktop/README.md
 @@ -15,7 +15,6 @@ Desktop runs the Harness workspace in a native application. This reference cover
@@ -758,7 +758,7 @@ index f961a72a92dd28235defa1d63b93f62fb57089c6..ab5f86061c82f795cac66095b4693023
  
  An unpackaged Electron process uses `.desktop-build/development/project` under its application directory as its development project. `DSH_DESKTOP_PNPM_ENTRY` and `DSH_DESKTOP_DSH_DIR` are optional overrides with application-path defaults. `DSH_DESKTOP_PRIMARY_RUNTIME_DIR` is required for every unpackaged launch: the development launchers (`dev:desktop`, `start:desktop`, and the workspace-update qualification runner) set it to the primary-runtime directory of the target they prepared, and a launch without it fails with the fatal startup dialog. The launcher must set it because the shell cannot derive that directory from `process.arch`: the build target fixes Windows to x64 while the host may be arm64. Packaged applications ignore these variables, resolve signed resources from `process.resourcesPath`, and use the managed Desktop profile.
  
-+A configured application extension prepares its environment and ordered profile overlays before the Host starts. The shell loads the extension from `desktop-extension.json` in packaged resources or `DSH_DESKTOP_EXTENSION`, forwards namespaced requests with cancellation, and closes the extension during quit. Only the owned application main frame receives the extension preload API. Each renderer boot reads the current Host module injections for its browser Peer; a changed or unavailable Host rejects that boot. Without an extension, Desktop uses the official profile.
++A configured application extension prepares its environment and ordered profile overlays before the Host starts. The shell loads the extension from `desktop-extension.json` in packaged resources or `DSH_DESKTOP_EXTENSION`, forwards namespaced requests with cancellation, and closes the extension during quit. Only the owned application main frame receives the extension preload API. Each renderer boot reads the current Host module injections for its browser Peer; a changed or unavailable Host rejects that boot. Without an extension, Desktop uses the official profile. The installer includes each assembly `runtimePackages` root and its workspace dependency closure in the prepared package set.
 +
  <a id="known-limitations"></a>
  
@@ -774,7 +774,7 @@ index f961a72a92dd28235defa1d63b93f62fb57089c6..ab5f86061c82f795cac66095b4693023
 -
 -Pre-launch CDN and capacity decisions are tracked in the [Desktop update proposal](../../.agents/notes/proposed/feature/2026-09-08-desktop-update-policy-and-installation.md#cdn-and-capacity-qualification).
 diff --git a/apps/desktop/README.zh.md b/apps/desktop/README.zh.md
-index a7500d5d28c52b1dd5ddfd264b62843cec06f3c9..6464f501632cb7f62b41ea13d192186de749872d 100644
+index a7500d5d28c52b1dd5ddfd264b62843cec06f3c9..6dc0fba52105286bbdb4a05089377a63d83b8b6e 100644
 --- a/apps/desktop/README.zh.md
 +++ b/apps/desktop/README.zh.md
 @@ -15,7 +15,6 @@ Desktop 在原生应用中运行 Harness 工作区。本参考文档说明应用
@@ -876,7 +876,7 @@ index a7500d5d28c52b1dd5ddfd264b62843cec06f3c9..6464f501632cb7f62b41ea13d192186d
  
  未打包的 Electron 进程使用应用目录下的 `.desktop-build/development/project` 作为开发项目。`DSH_DESKTOP_PNPM_ENTRY` 和 `DSH_DESKTOP_DSH_DIR` 是带应用路径默认值的可选覆盖项。每次未打包启动都必须设置 `DSH_DESKTOP_PRIMARY_RUNTIME_DIR`：开发启动器（`dev:desktop`、`start:desktop` 及工作区更新验证运行器）会把它设置为自己已准备目标的 primary-runtime 目录；缺少该变量的启动会以致命启动对话框失败。启动器必须设置它，因为壳无法从 `process.arch` 推导该目录：构建目标将 Windows 固定为 x64，而宿主可能是 arm64。打包应用会忽略这些变量，从 `process.resourcesPath` 解析签名资源，并使用受管 Desktop profile。
  
-+已配置的应用扩展在 Host 启动前准备环境和有序 profile overlay。壳从打包资源中的 `desktop-extension.json` 或 `DSH_DESKTOP_EXTENSION` 加载扩展，转发可取消的命名空间请求，并在退出时关闭扩展。只有所属应用主框架获得扩展 preload API。每次渲染器启动都读取当前 Host 为其浏览器 Peer 提供的模块注入；Host 改变或不可用时拒绝本次启动。未配置扩展时，Desktop 使用官方 profile。
++已配置的应用扩展在 Host 启动前准备环境和有序 profile overlay。壳从打包资源中的 `desktop-extension.json` 或 `DSH_DESKTOP_EXTENSION` 加载扩展，转发可取消的命名空间请求，并在退出时关闭扩展。只有所属应用主框架获得扩展 preload API。每次渲染器启动都读取当前 Host 为其浏览器 Peer 提供的模块注入；Host 改变或不可用时拒绝本次启动。未配置扩展时，Desktop 使用官方 profile。安装包将装配清单中每个 `runtimePackages` 根包及其 workspace 依赖闭包纳入预备包集合。
 +
  <a id="known-limitations"></a>
  
@@ -1445,6 +1445,78 @@ index b6bc6efb6370e6a795c2a3c8d4bf726da6575bc1..fcc3361b81335de773d41c06ff30d02f
      }
      await execute(['exec', 'tsx', 'scripts/smoke-packaged-runtime.ts',
        ...(invocation.unsigned ? ['--unsigned'] : []), ...(invocation.skipNotarization ? ['--skip-notarization'] : [])], targetEnv)
+diff --git a/apps/desktop/scripts/prepare-package-set.ts b/apps/desktop/scripts/prepare-package-set.ts
+index 4cffa7018b48f8fdd5a0547e9d869c6612d12ad5..fa110bd621441dff2a113ff0234bec5116816059 100644
+--- a/apps/desktop/scripts/prepare-package-set.ts
++++ b/apps/desktop/scripts/prepare-package-set.ts
+@@ -1,4 +1,4 @@
+-/** Select and copy the local npm tarball closures that supply Desktop dsh and its private Host. */
++/** Select and copy local npm tarball closures for Desktop dsh, its private Host and application roots. */
+ 
+ import { createHash } from 'node:crypto'
+ import {
+@@ -26,6 +26,7 @@ import {
+ import { capture } from '../../../scripts/release/process.ts'
+ import { tarballFiles } from '../../../scripts/release/tarball.ts'
+ import { desktopTargetPlatform, resolveDesktopBuildTarget, resolveDesktopTargetBuildPaths } from './desktop-build-paths.mjs'
++import { readDesktopAssembly } from './desktop-assembly.mjs'
+ 
+ const DSH_PACKAGE = '@deepseek-ai/dsh'
+ const ROOT_PACKAGES = [DSH_PACKAGE, DESKTOP_HOST_PACKAGE] as const
+@@ -62,15 +63,17 @@ function dependencyNames(manifest: Readonly<Record<string, unknown>>, section: s
+ }
+ 
+ /**
+- * Select workspace dependencies rooted at dsh and its private Host; npm resolves external packages.
++ * Select workspace dependencies rooted at dsh, its private Host and application packages; npm resolves external packages.
+  * Reads the repository workspace manifest and package manifests to distinguish required local packages from npm-resolved externals.
+  * @param available - Packed packages indexed by package name.
+  * @param target - Platform and architecture of the installer payload.
++ * @param runtimePackages - Additional application roots declared by the Desktop assembly.
+  * @returns Selected packages sorted by name.
+  */
+ export function selectDesktopPackageClosure(
+   available: ReadonlyMap<string, PackedDesktopPackage>,
+   target: ReturnType<typeof desktopTargetPlatform>,
++  runtimePackages: readonly string[] = [],
+ ): PackedDesktopPackage[] {
+   const workspace = yaml.load(readFileSync(join(REPOSITORY_ROOT, 'pnpm-workspace.yaml'), 'utf8')) as { packages: string[] }
+   const workspaceNames = new Set(globSync(workspace.packages.map(pattern => `${pattern}/package.json`), { cwd: REPOSITORY_ROOT })
+@@ -95,7 +98,7 @@ export function selectDesktopPackageClosure(
+         && supportsTarget(optional.manifest, 'cpu', target.arch)) visit(dependency)
+     }
+   }
+-  for (const name of ROOT_PACKAGES) {
++  for (const name of [...ROOT_PACKAGES, ...runtimePackages]) {
+     if (!available.has(name)) throw new Error(`desktop package set: packed inputs omit ${name}`)
+     visit(name)
+   }
+@@ -147,11 +150,13 @@ export function assertDesktopHostPackageFiles(files: readonly string[]): void {
+  * @param inputs - Release tarball directories.
+  * @param output - Destination package-set directory.
+  * @param target - Platform and architecture of the installer payload.
++ * @param runtimePackages - Additional application roots declared by the Desktop assembly.
+  */
+ export function prepareDesktopPackageSet(
+   inputs: readonly string[], output: string, target: ReturnType<typeof desktopTargetPlatform>,
++  runtimePackages: readonly string[] = [],
+ ): void {
+-  const selected = selectDesktopPackageClosure(packedPackages(inputs), target)
++  const selected = selectDesktopPackageClosure(packedPackages(inputs), target, runtimePackages)
+   const host = selected.find(packed => packed.manifest.name === DESKTOP_HOST_PACKAGE)
+   if (host === undefined) throw new Error(`desktop package set: selected closure omits ${DESKTOP_HOST_PACKAGE}`)
+   assertDesktopHostPackageFiles(tarballFiles(host.tarball))
+@@ -193,7 +198,9 @@ function main(): void {
+   })
+   const inputs = (values.from ?? defaultInputs).map(path => resolve(REPOSITORY_ROOT, path))
+   const output = values.out === undefined ? buildPaths.packageSet : resolve(REPOSITORY_ROOT, values.out)
+-  prepareDesktopPackageSet(inputs, output, desktopTargetPlatform(resolveDesktopBuildTarget()))
++  const target = desktopTargetPlatform(resolveDesktopBuildTarget())
++  const assembly = readDesktopAssembly(process.env, target.platform)
++  prepareDesktopPackageSet(inputs, output, target, assembly.runtimePackages)
+   console.log(`desktop package set: prepared ${output}`)
+ }
+ 
 diff --git a/apps/desktop/scripts/prepare-windows-runtime-cache.ps1 b/apps/desktop/scripts/prepare-windows-runtime-cache.ps1
 new file mode 100644
 index 0000000000000000000000000000000000000000..284eb1881ff16a5f5d49cb0155dd2b2eba8166f4
@@ -2462,6 +2534,70 @@ index af9a9f226acc6fd763557bf00118b9981f5df39e..0547c924753b7e4048eaf4be4eb96b93
  it.each(['dsh-app://shell/plugin-manager.html', 'dsh-app://other/index.html', 'https://shell/startup.html', 'http://example.com/'])('exposes only the carrier marker to %s', async (url) => {
    vi.stubGlobal('location', new URL(url))
    await import('../src/preload-app.ts')
+diff --git a/apps/desktop/tests/prepare-package-set.spec.ts b/apps/desktop/tests/prepare-package-set.spec.ts
+index c1b5edbd693edeec530eccc39e11882e0effeee6..a2325d4e7d3eafadfb67e5d70c13028cc28b5daf 100644
+--- a/apps/desktop/tests/prepare-package-set.spec.ts
++++ b/apps/desktop/tests/prepare-package-set.spec.ts
+@@ -99,6 +99,24 @@ describe('desktop package-set selection', () => {
+   })
+ })
+ 
++it.each([
++  ['win32', 'x64'], ['darwin', 'arm64'], ['darwin', 'x64'],
++] as const)('includes declared application roots and their dependencies for %s/%s', (platform, arch) => {
++  const available = new Map<string, PackedDesktopPackage>([
++    ['@deepseek-ai/dsh', packed('@deepseek-ai/dsh')],
++    ['@deepseek-ai/dsh-desktop-host', packed('@deepseek-ai/dsh-desktop-host')],
++    ['example-extension', packed('example-extension', { dependencies: { 'example-shared': '1.0.0' } })],
++    ['example-shared', packed('example-shared')],
++    ['unused-extension', packed('unused-extension')],
++  ])
++  const selected = selectDesktopPackageClosure(available, { platform, arch }, ['example-extension'])
++    .map(entry => entry.manifest.name)
++  expect(selected).toEqual(['@deepseek-ai/dsh', '@deepseek-ai/dsh-desktop-host', 'example-extension', 'example-shared'])
++  available.delete('example-extension')
++  expect(() => selectDesktopPackageClosure(available, { platform, arch }, ['example-extension']))
++    .toThrow('packed inputs omit example-extension')
++})
++
+ const macProvider = '@deepseek-ai/dsh-experimental-cua-macos'
+ const cuaBundle = '@deepseek-ai/dsh-cua-bundle'
+ const targetManifests = () => new Map<string, PackedDesktopPackage>([
+@@ -142,7 +160,9 @@ it('copies no macOS tarball into the Windows package set', () => {
+   onTestFinished(() => { rmSync(root, { recursive: true, force: true }) })
+   const inputs = join(root, 'inputs')
+   mkdirSync(inputs)
+-  for (const [name, entry] of targetManifests()) {
++  const available = targetManifests()
++  available.set('example-extension', packed('example-extension'))
++  for (const [name, entry] of available) {
+     const stem = name.replace('@deepseek-ai/', '')
+     const folder = join(root, stem, 'package')
+     mkdirSync(folder, { recursive: true })
+@@ -156,9 +176,21 @@ it('copies no macOS tarball into the Windows package set', () => {
+     execFileSync('tar', ['-czf', join(inputs, `${stem}.tgz`), '-C', join(folder, '..'), 'package'])
+   }
+   const output = join(root, 'output')
+-  prepareDesktopPackageSet([inputs], output, { platform: 'win32', arch: 'x64' })
++  prepareDesktopPackageSet([inputs], output, { platform: 'win32', arch: 'x64' }, ['example-extension'])
+   expect(readdirSync(join(output, DESKTOP_PACKAGES_DIR))).not.toContain('dsh-experimental-cua-macos.tgz')
+-  prepareDesktopPackageSet([inputs], output, { platform: 'darwin', arch: 'arm64' })
++  expect(readFileSync(join(output, DESKTOP_PACKAGES_DIR, 'example-extension.tgz')))
++    .toEqual(readFileSync(join(inputs, 'example-extension.tgz')))
++  prepareDesktopPackageSet([inputs], output, { platform: 'darwin', arch: 'arm64' }, ['example-extension'])
+   expect(readFileSync(join(output, DESKTOP_PACKAGES_DIR, 'dsh-experimental-cua-macos.tgz')))
+     .toEqual(readFileSync(join(inputs, 'dsh-experimental-cua-macos.tgz')))
++  const assembly = join(root, 'assembly.json')
++  writeFileSync(assembly, JSON.stringify({ runtimePackages: ['example-extension'], resources: [] }))
++  execFileSync(process.execPath, ['--import', 'tsx/esm', join(import.meta.dirname, '../scripts/prepare-package-set.ts'),
++    '--from', inputs, '--out', output], {
++    cwd: join(import.meta.dirname, '../../..'), timeout: 30_000,
++    env: { ...process.env, DSH_DESKTOP_ASSEMBLY_MANIFEST: assembly,
++      DSH_DESKTOP_TARGET_PLATFORM: 'win32', DSH_DESKTOP_TARGET_ARCH: 'x64' },
++  })
++  expect(readFileSync(join(output, DESKTOP_PACKAGES_DIR, 'example-extension.tgz')))
++    .toEqual(readFileSync(join(inputs, 'example-extension.tgz')))
+ })
 diff --git a/apps/desktop/tests/runtime-download.spec.ts b/apps/desktop/tests/runtime-download.spec.ts
 new file mode 100644
 index 0000000000000000000000000000000000000000..6542ea7ccbd786ffa925468f3bcdf4507140c3ca
