@@ -69,7 +69,7 @@ const organizationKnowledge = [
 ]
 const parserDiagnostic = 'anydoc malformed archive; internal source path: /private/parser/uploads/document.docx'
 
-function knowledgeDocuments(baseId: string) {
+function knowledgeDocuments(baseId: string, large = false) {
   return Array.from({ length: baseId === 'personal-notes' ? 21 : 2 }, (_, index) => ({
     id: `document-${index + 1}`, knowledgeBaseId: baseId,
     filename: index === 0 ? 'Order review.md' : index === 2 ? 'Office policy.docx' : index === 3 ? 'Order totals.xlsx'
@@ -77,7 +77,7 @@ function knowledgeDocuments(baseId: string) {
     mediaType: index === 0 || index === 20 ? 'text/markdown' : index === 2 ? 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
       : index === 3 ? 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' : 'application/pdf',
     contentVersion: createHash('sha256').update(`${baseId}:document-${index + 1}:original-v1`).digest('hex'),
-    sizeBytes: 2_048, status: index === 1 ? 'FAILED' : 'READY', chunkCount: 51, updatedAt: '2026-10-10T01:00:00Z',
+    sizeBytes: knowledgeOriginal(`document-${index + 1}`, large).data.byteLength, status: index === 1 ? 'FAILED' : 'READY', chunkCount: 51, updatedAt: '2026-10-10T01:00:00Z',
     ...(index === 1 ? { failureMessage: parserDiagnostic.repeat(20) } : {}),
     sourceType: index === 0 ? 'manual' : 'file', canManage: baseId === 'personal-notes',
     folderId: index === 1 ? 'folder-policies' : null,
@@ -1148,7 +1148,7 @@ for (const { mode, installed, surface } of desktopCarriers) {
             response.end(JSON.stringify({ success: true, data: contents.items, pageIndex: page,
               pageSize: size, totalCount: contents.total, totalPages: Math.ceil(contents.total / size) }))
           } else if (parts[7] === 'preview' && parts[8] === 'metadata') {
-            response.end(JSON.stringify({ success: true, data: knowledgeDocuments(baseId).find(row => row.id === parts[6]) }))
+            response.end(JSON.stringify({ success: true, data: knowledgeDocuments(baseId, largePreview).find(row => row.id === parts[6]) }))
           } else if (parts[7] === 'preview' || parts[7] === 'download') {
             const original = knowledgeOriginal(parts[6] ?? '', largePreview)
             response.setHeader('content-type', original.mediaType)
