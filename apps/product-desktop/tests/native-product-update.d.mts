@@ -22,10 +22,10 @@ export interface NativeProductUpdateQualification {
 }
 
 /**
- * Prepare private versions with isolated services and a test-only startup bootstrap.
+ * Verify the unmodified installation before preparing private versions with isolated services and a test-only startup bootstrap.
  * @param options - Private application and data locations, mock identity and platform signing environment.
  * @returns Native update operation and cleanup owner.
  */
 export function prepareNativeProductUpdate(options: {
-  installed: string; root: string; home: string; userData: string; modelUrl: string; token: string; environment: NodeJS.ProcessEnv
+  installed: string; root: string; home: string; userData: string; serverUrl: string; modelUrl: string; token: string; environment: NodeJS.ProcessEnv
 }): Promise<NativeProductUpdateQualification>

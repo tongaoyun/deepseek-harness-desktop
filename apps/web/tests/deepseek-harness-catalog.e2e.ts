@@ -1244,12 +1244,11 @@ for (const { mode, installed, surface } of desktopCarriers) {
         }
         const original = await readFile(configPath, 'utf8')
         onTestFinished(() => writeFile(configPath, original))
-        await writeFile(configPath, JSON.stringify({ ...JSON.parse(original), serverUrl: origin }))
         if (['darwin', 'win32'].includes(process.platform) && process.env.PACKAGE_SIGNING === 'internal') {
           nativeUpdate = await prepareNativeProductUpdate({ installed, root, home, userData,
-            modelUrl: model.baseURL + '/v1', token: secret, environment: process.env })
+            serverUrl: origin, modelUrl: model.baseURL + '/v1', token: secret, environment: process.env })
           onTestFinished(() => nativeUpdate!.dispose())
-        }
+        } else await writeFile(configPath, JSON.stringify({ ...JSON.parse(original), serverUrl: origin }))
       }
       if (installed === undefined) {
         const manifest = JSON.parse(await readFile(join(REPO_ROOT, 'apps/desktop/package.json'), 'utf8')) as { version: unknown }

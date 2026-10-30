@@ -113,12 +113,12 @@ async function rewriteApplication(appPath, version, bootstrap) {
 }
 
 /**
- * Prepare two private copies of the actual product, preserving all original files except qualification bootstrap and versions.
+ * Verify the unmodified installation, then prepare private versions with qualification bootstrap and fixture services.
  * @param {object} options Private installation, fixture services, data paths and platform signing settings.
  * @returns {Promise<object>} UI upgrade operation and owned fixture cleanup.
  */
 export async function prepareNativeProductUpdate(options) {
-  const { installed, root, home, userData, modelUrl, token, environment } = options
+  const { installed, root, home, userData, serverUrl, modelUrl, token, environment } = options
   const appPath = windows ? dirname(installed) : resolve(dirname(installed), '../..')
   if (!windows) await verifyInternalApplication(appPath, environment)
   const directory = join(root, 'native-update')
@@ -171,6 +171,9 @@ app.whenReady().then(() => writeFileSync(${JSON.stringify(directory)} + '/boot-'
     cache = await mkdtemp(join(windows ? environment.LOCALAPPDATA ?? join(homedir(), 'AppData/Local') : join(homedir(), 'Library/Caches'), 'harness-qualification-'))
     for (const [application, selected] of [[appPath, initialVersion], [nextApp, version]]) {
       await rewriteApplication(application, selected, bootstrap)
+      const configPath = join(application, windows ? 'resources' : 'Contents/Resources', 'deepseek-harness/product.json')
+      const config = JSON.parse(await readFile(configPath, 'utf8'))
+      await writeFile(configPath, JSON.stringify({ ...config, serverUrl }))
       await writeFile(join(application, windows ? 'resources/app-update.yml' : 'Contents/Resources/app-update.yml'), JSON.stringify({
         provider: 'generic', url: origin, channel: 'nightly', updaterCacheDirName: basename(cache),
       }))
