@@ -305,6 +305,7 @@ test('isolates signing and download credentials from native hosted builds', () =
   assert.ok(windowsArgumentsIndex >= 0 && windowsArgumentsIndex < steps.findIndex(step => step.name === 'Package Windows'))
   assert.equal(steps[windowsArgumentsIndex].if, "matrix.target == 'win-x64'")
   assert.match(steps[windowsArgumentsIndex].run, /node --test apps\/product-desktop\/tests\/windows-package-arguments\.test\.mjs/u)
+  assert.match(steps[windowsArgumentsIndex].run, /apps\/product-desktop\/tests\/windows-processes\.test\.mjs/u)
   assert.match(steps.find(step => step.name === 'Package macOS').run, /mode_args\+=\(--unsigned\)/u)
   assert.equal(workflow.jobs.package.needs, 'preflight')
   assert.match(workflow.jobs.package['runs-on'], /DESKTOP_SIGNING_RUNNERS/u)

@@ -82,7 +82,7 @@ jobs:
           apps/desktop/tests/update-coordinator.spec.ts
           apps/desktop/tests/update-schedule.spec.ts
       - name: Test acceptance process cleanup
-        run: node --test apps/product-desktop/tests/acceptance-process.test.mjs apps/product-desktop/tests/office-process-diagnostics.test.mjs
+        run: node --test apps/product-desktop/tests/acceptance-process.test.mjs apps/product-desktop/tests/office-process-diagnostics.test.mjs apps/product-desktop/tests/windows-processes.test.mjs
       - name: Test Electron close lifecycle
         run: pnpm exec vitest run apps/product-desktop/tests/close-electron.spec.ts apps/product-desktop/tests/office-fixture.spec.ts apps/product-desktop/tests/native-update-dialog.spec.ts
       - name: Test upstream boundaries
@@ -186,7 +186,7 @@ jobs:
       - name: Test Windows packaging arguments
         if: matrix.target == 'win-x64'
         shell: pwsh
-        run: node --test apps/product-desktop/tests/windows-package-arguments.test.mjs
+        run: node --test apps/product-desktop/tests/windows-package-arguments.test.mjs apps/product-desktop/tests/windows-processes.test.mjs
       - name: Package Windows
         if: matrix.target == 'win-x64'
         shell: pwsh

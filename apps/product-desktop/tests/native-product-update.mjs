@@ -16,6 +16,7 @@ import { createElectronBuilderConfig } from '../../desktop/scripts/electron-buil
 import { rewriteWindowsArchiveIntegrity, writeUpdateArchive } from './native-update-integrity.mjs'
 import { stopInstalledProcesses } from '../scripts/installed-processes.mjs'
 import { INTERNAL_APP_ID, resignInternalApplicationResources, verifyInternalApplication } from '../scripts/internal-package.mjs'
+import { originalWindowsProcesses, windowsProcessDescendants, windowsProcessSnapshot } from './windows-processes.mjs'
 
 const run = promisify(execFile)
 const require = createRequire(new URL('../../desktop/package.json', import.meta.url))
@@ -29,14 +30,7 @@ export const restartConfirmation = /^(Install and Restart|安装并重启|Stop t
 
 async function descendants(parent) {
   if (windows) {
-    const result = await run('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command',
-      'Get-CimInstance Win32_Process | Select-Object ProcessId,ParentProcessId,CommandLine | ConvertTo-Json -Compress'],
-    { timeout: 20_000, windowsHide: true })
-    const rows = JSON.parse(result.stdout).map(row => ({ pid: row.ProcessId, parent: row.ParentProcessId, command: row.CommandLine ?? '' }))
-    const children = []
-    const pending = [parent]
-    for (const pid of pending) for (const row of rows) if (row.parent === pid) { children.push(row); pending.push(row.pid) }
-    return children
+    return windowsProcessDescendants(await windowsProcessSnapshot(), parent)
   }
   const rows = (await run('/bin/ps', ['-axo', 'pid=,ppid=,command='])).stdout.trim().split('\n')
     .map(line => /^\s*(\d+)\s+(\d+)\s+(.+)$/u.exec(line))
@@ -155,6 +149,8 @@ app.whenReady().then(() => writeFileSync(${JSON.stringify(directory)} + '/boot-'
   let browser
   let initialPid
   let updatedPid
+  let initialWindowsProcess
+  let updatedWindowsProcess
   const requests = []
   const server = createServer((request, response) => {
     const path = new URL(request.url, 'http://localhost').pathname
@@ -242,9 +238,11 @@ app.whenReady().then(() => writeFileSync(${JSON.stringify(directory)} + '/boot-'
       const ready = await dialogWithButton(application, restartConfirmation)
       const oldPid = application.process().pid
       initialPid = oldPid
-      const previousChildren = await descendants(oldPid)
-      const host = previousChildren.find(child => child.command.replaceAll('\\', '/').includes('/dsh-desktop-host/'))
-      const sidecar = previousChildren.find(child => child.command.replaceAll('\\', '/').includes('/deepseek-harness-native'))
+      const previousSnapshot = windows ? await windowsProcessSnapshot() : undefined
+      initialWindowsProcess = previousSnapshot?.find(process => process.pid === oldPid)
+      const previousChildren = windows ? windowsProcessDescendants(previousSnapshot, oldPid) : await descendants(oldPid)
+      const host = previousChildren.find(child => (child.command ?? '').replaceAll('\\', '/').includes('/dsh-desktop-host/'))
+      const sidecar = previousChildren.find(child => (child.command ?? '').replaceAll('\\', '/').includes('/deepseek-harness-native'))
       assert.ok(host, 'Product Host must be running before update')
       assert.ok(sidecar, 'Product native sidecar must be running before update')
       const exited = new Promise(resolve => application.process().once('exit', resolve))
@@ -257,9 +255,33 @@ app.whenReady().then(() => writeFileSync(${JSON.stringify(directory)} + '/boot-'
       const bootFile = join(directory, `boot-${version}.json`)
       await expect.poll(() => readFile(bootFile, 'utf8').catch(error => { if (error.code === 'ENOENT') return ''; throw error }), { timeout: 120_000 }).not.toBe('')
       updatedPid = JSON.parse(await readFile(bootFile, 'utf8')).pid
-      assert.notEqual(updatedPid, oldPid)
-      assert.equal(alive(oldPid), false)
-      await expect.poll(() => previousChildren.filter(child => alive(child.pid)).map(child => child.pid), { timeout: 20_000 }).toEqual([])
+      if (windows) {
+        const originals = [initialWindowsProcess, ...previousChildren]
+        const current = await windowsProcessSnapshot()
+        updatedWindowsProcess = current.find(process => process.pid === updatedPid)
+        assert.ok(updatedWindowsProcess, 'Native restart must launch an observable process')
+        assert.ok(updatedPid !== oldPid || updatedWindowsProcess.started !== initialWindowsProcess.started,
+          'Native restart must launch a different process instance')
+        let observed = current
+        try {
+          await expect.poll(async () => {
+            observed = await windowsProcessSnapshot()
+            return originalWindowsProcesses(observed, originals)
+          }, { timeout: 20_000 }).toEqual([])
+        } catch (error) {
+          const describe = ({ pid, parent, started, image }) => ({ pid, parent, started, image })
+          const detail = { previous: originals.map(describe), current: observed.filter(process => originals.some(original => original.pid === process.pid)).map(describe) }
+          const evidence = resolve(import.meta.dirname, '../../../.artifacts')
+          await mkdir(evidence, { recursive: true })
+          await writeFile(join(evidence, `native-windows-update-${process.arch}-processes.json`), JSON.stringify(detail, null, 2) + '\n')
+          console.error('Native update process identities:', JSON.stringify(detail))
+          throw error
+        }
+      } else {
+        assert.notEqual(updatedPid, oldPid)
+        assert.equal(alive(oldPid), false)
+        await expect.poll(() => previousChildren.filter(child => alive(child.pid)).map(child => child.pid), { timeout: 20_000 }).toEqual([])
+      }
       await expect.poll(() => readFile(debuggingPort, 'utf8').catch(error => { if (error.code === 'ENOENT') return ''; throw error }), { timeout: 60_000 }).not.toBe('')
       const port = (await readFile(debuggingPort, 'utf8')).split('\n')[0]
       browser = await chromium.connectOverCDP(`http://127.0.0.1:${port}`)
@@ -277,7 +299,9 @@ app.whenReady().then(() => writeFileSync(${JSON.stringify(directory)} + '/boot-'
       await writeFile(join(evidence, `native-${windows ? 'windows' : 'macos'}-update-${process.arch}.json`), JSON.stringify({ passed: true, from: initialVersion, to: version,
         nativeInstaller: windows ? 'NSIS' : 'Squirrel.Mac', deferredRestartRetainedVersion: true, sessionAndDraftRetained: true,
         oldProcessExited: true, hostExited: host.pid, sidecarExited: sidecar.pid,
-        oldChildProcessesExited: previousChildren.map(child => child.pid) }) + '\n')
+        oldChildProcessesExited: previousChildren.map(child => child.pid),
+        ...(windows ? { oldProcessIdentities: [initialWindowsProcess, ...previousChildren]
+          .map(({ pid, parent, started, image }) => ({ pid, parent, started, image })) } : {}) }) + '\n')
       console.log('Native product update passed:', initialVersion, '→', version)
       return updated
     },
@@ -288,17 +312,26 @@ app.whenReady().then(() => writeFileSync(${JSON.stringify(directory)} + '/boot-'
             .catch(error => { if (error.code === 'ENOENT') return undefined; throw error })
           if (boot) updatedPid = JSON.parse(boot).pid
         }
-        const running = [initialPid, updatedPid].filter(pid => pid && alive(pid))
-        if (running.length) {
-          const owned = (await Promise.all(running.map(descendants))).flat()
-          await writeFile(stop, '')
-          try { await expect.poll(() => running.filter(alive), { timeout: 20_000 }).toEqual([]) }
-          finally {
-            if (windows) stopInstalledProcesses(appPath)
-            for (const pid of [...owned.map(child => child.pid).reverse(), ...running]) {
-              if (alive(pid)) process.kill(pid, 'SIGKILL')
+        if (windows) {
+          if (initialPid || updatedPid) {
+            const originals = [initialWindowsProcess, updatedWindowsProcess].filter(Boolean)
+            await writeFile(stop, '')
+            try {
+              await expect.poll(async () => originalWindowsProcesses(await windowsProcessSnapshot(), originals), { timeout: 20_000 }).toEqual([])
+            } finally { stopInstalledProcesses(appPath) }
+          }
+        } else {
+          const running = [initialPid, updatedPid].filter(pid => pid && alive(pid))
+          if (running.length) {
+            const owned = (await Promise.all(running.map(descendants))).flat()
+            await writeFile(stop, '')
+            try { await expect.poll(() => running.filter(alive), { timeout: 20_000 }).toEqual([]) }
+            finally {
+              for (const pid of [...owned.map(child => child.pid).reverse(), ...running]) {
+                if (alive(pid)) process.kill(pid, 'SIGKILL')
+              }
+              await expect.poll(() => [...running, ...owned.map(child => child.pid)].filter(alive), { timeout: 10_000 }).toEqual([])
             }
-            await expect.poll(() => [...running, ...owned.map(child => child.pid)].filter(alive), { timeout: 10_000 }).toEqual([])
           }
         }
         if (browser) await browser.close()
