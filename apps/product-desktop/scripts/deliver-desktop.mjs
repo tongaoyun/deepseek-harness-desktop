@@ -7,6 +7,7 @@ import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { Readable } from 'node:stream'
 import { collectDesktopRelease, desktopPackageAttempts, extractBuildArchive, mapReleaseWork, publishDesktopRelease, RELEASE_TARGETS, waitForDesktopBuild } from './desktop-release.mjs'
+import { publishPackageMirror } from './package-mirror.mjs'
 import { productSigningMode } from './update-release.mjs'
 
 const repoPattern = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/u
@@ -349,6 +350,7 @@ async function main() {
       { cwd: root, encoding: 'utf8' })).version
     const release = await downloadDesktopRelease(github, repository, run, stage, commit, productVersion, { signing, downloadRepository: downloads,
       internalCertificateSHA256: process.env.DESKTOP_INTERNAL_CERTIFICATE_SHA256 })
+    if (signing === 'internal') await publishPackageMirror(release, gitea, base)
     const links = await publishDesktopRelease(release, [
       releaseDestination('Gitea', gitea, internal, { target: commit, base }),
       releaseDestination('GitHub downloads', github, downloads, { github: true, target: publicRepo.default_branch, staged: true }),

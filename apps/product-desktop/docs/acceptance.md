@@ -37,6 +37,8 @@ pnpm --dir apps/product-desktop run test:installed --target mac-arm64 --installe
 
 结果写入 `.artifacts/native-macos-update-*.json` 或 `.artifacts/native-windows-update-*.json`。正式 `signed` 分发仍须分别完成 Windows、Mac ARM64 和 Mac Intel 的签名、公证及 A→B 升级，不能以模拟结果替代。
 
+内部包保留真实镜像 Provider，资格副本仅将软件包地址和版本清单请求映射到隔离服务；报告必须确认镜像下载。另用真实 Electron 验证不可达和超时回退、权限与完整性失败停止、取消及不含凭据的 Range 请求：`node apps/product-desktop/scripts/qualify-package-mirror.mjs`。
+
 ## 证据限制
 
 模拟服务验证组合、界面、请求及恢复；安装器和更新器保持真实。它不证明真实钉钉权限、第二员工隔离、模型推理效果或首次下载的系统放行。

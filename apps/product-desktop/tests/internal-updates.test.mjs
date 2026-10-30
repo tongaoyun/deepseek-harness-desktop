@@ -91,6 +91,11 @@ test('embeds internal native feeds without changing the official unsigned or Dev
   assert.deepEqual(mac.mac.target, ['dmg', 'zip'])
   assert.equal(mac.publish[0].url, productUpdateUrl(repository))
   assert.equal(mac.extraMetadata.dshMandatoryUpdatePolicy, undefined)
+  assert.equal(mac.extraMetadata.dshDesktopUpdateMirror.githubRepository, repository)
+  assert.equal(mac.extraMetadata.dshDesktopUpdateMirror.packageUrl,
+    'http://www.instudio.me:6206/traefik/gitea/api/packages/instudio/generic/deepseek-harness-desktop-internal/')
+  assert.equal(mac.dmg.format, 'UDZO')
+  assert.equal(official.dmg.format, 'ULMO')
   assert.equal(official.publish, null)
   assert.deepEqual(official.mac.target, ['dmg'])
   assert.throws(() => internalBuilderConfig(official, { ...environment, DSH_DESKTOP_UNSIGNED: '0' }, 'darwin'), /explicit/u)
@@ -102,6 +107,7 @@ test('embeds internal native feeds without changing the official unsigned or Dev
   const windows = internalBuilderConfig(createElectronBuilderConfig({ DSH_DESKTOP_UNSIGNED: '1', DSH_DESKTOP_APP_ID: INTERNAL_APP_ID }, 'win32', 'x64'), environment, 'win32')
   assert.equal(windows.win.forceCodeSigning, false)
   assert.equal(windows.win.signtoolOptions.publisherName, undefined)
+  assert.deepEqual(windows.extraMetadata.dshDesktopUpdateMirror, mac.extraMetadata.dshDesktopUpdateMirror)
 })
 
 test('requires certificate secrets and keeps internal and formal feeds separate before queuing jobs', () => {

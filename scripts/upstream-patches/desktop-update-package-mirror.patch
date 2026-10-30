@@ -1,0 +1,307 @@
+diff --git a/apps/desktop/src/update-coordinator.ts b/apps/desktop/src/update-coordinator.ts
+index 3b83cea08fcd1cedff3d6acf6d43be5621f24324..de8225bd2c4cbfbdd3ec548c26d5fa0c00c01579 100644
+--- a/apps/desktop/src/update-coordinator.ts
++++ b/apps/desktop/src/update-coordinator.ts
+@@ -8,6 +8,8 @@ import { gt, valid } from 'semver'
+ import type { DesktopUpdateState } from './ipc.ts'
+ import { DesktopUpdateHttpExecutor } from './update-http-executor.ts'
+ import { DesktopUpdatePreparationError } from './update-error.ts'
++import { DesktopUpdateMirrorProvider } from './update-mirror-provider.ts'
++import type { DesktopUpdateMirror } from './update-mirror.ts'
+ 
+ const { autoUpdater } = electronUpdater
+ 
+@@ -47,6 +49,7 @@ export class DesktopUpdateCoordinator {
+    * @param currentVersion - Actual installed application version.
+    * @param channel - Installed package channel; omitted test/local callers retain nightly.
+    * @param downloadResult - Once per completed download attempt, including platform preparation failures.
++   * @param mirror - Optional installer-owned public package mirror for immutable payloads.
+    */
+   constructor(
+     private readonly publish: (state: DesktopUpdateState) => DesktopUpdateState,
+@@ -56,6 +59,7 @@ export class DesktopUpdateCoordinator {
+     private readonly currentVersion: () => string = () => app.getVersion(),
+     private readonly downloadResult?: (success: boolean, reason?: string) => void,
+     private readonly channel: 'nightly' | 'latest' = 'nightly',
++    mirror?: DesktopUpdateMirror,
+   ) {
+     if (updater === autoUpdater) {
+       // electron-updater omits this internal transport property from its public declarations.
+@@ -64,8 +68,13 @@ export class DesktopUpdateCoordinator {
+       transportOwner.httpExecutor = new DesktopUpdateHttpExecutor(
+         Number(process.env.DSH_DESKTOP_UPDATE_HTTP_IDLE_TIMEOUT_MS ?? 60_000),
+         (authInfo, callback) => { updater.emit('login', authInfo, callback) },
++        mirror,
+       )
+     }
++    if (mirror !== undefined) {
++      this.updater.setFeedURL({ provider: 'custom', updateProvider: DesktopUpdateMirrorProvider,
++        url: `https://github.com/${mirror.githubRepository}/releases/latest/download/`, channel, mirror })
++    }
+     this.updater.autoDownload = false
+     this.updater.autoInstallOnAppQuit = false
+     this.updater.channel = channel
+diff --git a/apps/desktop/src/update-http-executor.ts b/apps/desktop/src/update-http-executor.ts
+index 2d3a851275d27ac43033013daf84214310888ce8..bf6ffa5d4981417ad7b10d8a93a821b62e7be22c 100644
+--- a/apps/desktop/src/update-http-executor.ts
++++ b/apps/desktop/src/update-http-executor.ts
+@@ -1,20 +1,75 @@
+ /** Electron-native inactivity deadlines for updater checks, full downloads, and blockmap requests. */
+ import { ElectronHttpExecutor } from 'electron-updater/out/electronHttpExecutor.js'
++import type { RequestOptions } from 'node:http'
+ import type { ClientRequest, IncomingMessage } from 'electron'
++import { canFallbackUpdateMirror, mirroredUpdateUrl, updateMirrorFallbackUrl, type DesktopUpdateMirror } from './update-mirror.ts'
+ 
+ /** Retains electron-updater transport and proxy handling while bounding silent connections. */
+ export class DesktopUpdateHttpExecutor extends ElectronHttpExecutor {
+   /**
+    * @param idleTimeoutMs - Maximum silence before headers or between response chunks, not a total download deadline.
+    * @param proxyLogin - Existing updater login event forwarding.
++   * @param mirror - Optional credential-free payload mirror; native hash verification remains mandatory.
+    */
+-  constructor(private readonly idleTimeoutMs: number, proxyLogin?: ConstructorParameters<typeof ElectronHttpExecutor>[0]) {
++  constructor(private readonly idleTimeoutMs: number, proxyLogin?: ConstructorParameters<typeof ElectronHttpExecutor>[0],
++    private readonly mirror?: DesktopUpdateMirror) {
+     super(proxyLogin)
+     if (!Number.isSafeInteger(idleTimeoutMs) || idleTimeoutMs < 1000 || idleTimeoutMs > 2_147_483_647) {
+       throw new Error('desktop update: HTTP idle timeout must be an integer from 1000 through 2147483647')
+     }
+   }
+ 
++  override createRequest(options: RequestOptions, callback: (response: IncomingMessage) => void): ClientRequest {
++    if (this.mirror !== undefined) {
++      const directory = new URL(this.mirror.packageUrl)
++      if (options.protocol === directory.protocol && options.hostname === directory.hostname
++        && String(options.port ?? '') === directory.port && options.path?.startsWith(directory.pathname)) {
++        // Differential requests enter here directly; retain byte ranges without forwarding credentials.
++        options = { ...options, auth: undefined,
++          headers: Object.fromEntries(Object.entries(options.headers ?? {}).filter(([name]) => name.toLowerCase() === 'range')) }
++      }
++    }
++    const request = super.createRequest(options, (response: IncomingMessage) => {
++      // The native full-download path otherwise discards HTTP status when creating its Error.
++      if (response.statusCode >= 400) {
++        request.emit('error', Object.assign(new Error(`Desktop update HTTP request failed (${response.statusCode})`),
++          { statusCode: response.statusCode, code: `HTTP_ERROR_${response.statusCode}` }))
++        request.abort()
++        return
++      }
++      callback(response)
++    })
++    // Electron HTTP errors can omit their code. HTTPS errors retain their TLS classification.
++    if (options.protocol === 'http:') {
++      request.prependOnceListener('error', (error: Error) => {
++        if (!('code' in error)) Object.assign(error, { code: 'DSH_UPDATE_HTTP_TRANSPORT' })
++      })
++    }
++    return request
++  }
++
++  override async download(url: URL, destination: string, options: Parameters<ElectronHttpExecutor['download']>[2]): Promise<string> {
++    const fallback = updateMirrorFallbackUrl(url, this.mirror) ?? url
++    const mirror = mirroredUpdateUrl(url, this.mirror) ?? (fallback === url ? undefined : url)
++    if (mirror === undefined) return super.download(url, destination, options)
++    try { return await super.download(mirror, destination, { ...options, headers: null }) }
++    catch (error) {
++      if (!canFallbackUpdateMirror(error, options)) throw error
++      return super.download(fallback, destination, options)
++    }
++  }
++
++  override async downloadToBuffer(url: URL, options: Parameters<ElectronHttpExecutor['downloadToBuffer']>[1]): Promise<Buffer> {
++    const fallback = updateMirrorFallbackUrl(url, this.mirror) ?? url
++    const mirror = mirroredUpdateUrl(url, this.mirror) ?? (fallback === url ? undefined : url)
++    if (mirror === undefined) return super.downloadToBuffer(url, options)
++    try { return await super.downloadToBuffer(mirror, { ...options, headers: null }) }
++    catch (error) {
++      if (!canFallbackUpdateMirror(error, options)) throw error
++      return super.downloadToBuffer(fallback, options)
++    }
++  }
++
+   override addErrorAndTimeoutHandlers(request: ClientRequest, reject: (error: Error) => void): void {
+     // The upstream socket timer is for Node HTTP; Electron ClientRequest has response/close events instead.
+     super.addErrorAndTimeoutHandlers(request, reject, this.idleTimeoutMs)
+diff --git a/apps/desktop/src/update-mirror-provider.ts b/apps/desktop/src/update-mirror-provider.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..02ea474b4a8dc5c9260d3afe77a0095cb3adb47d
+--- /dev/null
++++ b/apps/desktop/src/update-mirror-provider.ts
+@@ -0,0 +1,24 @@
++/** Native generic-provider resolution with immutable payloads on a public package mirror. */
++import { GenericProvider } from 'electron-updater/out/providers/GenericProvider.js'
++import type { AppUpdater, UpdateInfo } from 'electron-updater'
++import { desktopUpdateMirror, mirroredUpdateUrl, type DesktopUpdateMirror } from './update-mirror.ts'
++
++/** Retains native feed parsing, architecture selection and differential update behavior. */
++export class DesktopUpdateMirrorProvider extends GenericProvider {
++  private readonly mirror: DesktopUpdateMirror
++
++  constructor(options: Extract<Parameters<AppUpdater['setFeedURL']>[0], { provider: 'custom' }>,
++    updater: ConstructorParameters<typeof GenericProvider>[1], runtime: ConstructorParameters<typeof GenericProvider>[2]) {
++    const settings: unknown = options.mirror
++    const channel: unknown = options.channel
++    const mirror = desktopUpdateMirror({ dshDesktopUpdateMirror: settings })
++    if (mirror === undefined) throw new Error('desktop update: missing package mirror')
++    if (channel !== 'nightly' && channel !== 'latest') throw new Error('desktop update: invalid mirror channel')
++    super({ provider: 'generic', url: `https://github.com/${mirror.githubRepository}/releases/latest/download/`, channel }, updater, runtime)
++    this.mirror = mirror
++  }
++
++  override resolveFiles(info: UpdateInfo): ReturnType<GenericProvider['resolveFiles']> {
++    return super.resolveFiles(info).map(file => ({ ...file, url: mirroredUpdateUrl(file.url, this.mirror) ?? file.url }))
++  }
++}
+diff --git a/apps/desktop/src/update-mirror.ts b/apps/desktop/src/update-mirror.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..e9fb3a64fffb76998472eb2f8e6d4e8784f9040b
+--- /dev/null
++++ b/apps/desktop/src/update-mirror.ts
+@@ -0,0 +1,74 @@
++/** Credential-free, immutable package mirrors for native updater payloads. */
++import type { DesktopUpdateHttpExecutor } from './update-http-executor.ts'
++
++/** A public package directory containing the same versioned files as a GitHub release. */
++export interface DesktopUpdateMirror {
++  readonly packageUrl: string
++  readonly githubRepository: string
++}
++
++/**
++ * Read optional installer-owned mirror settings; omission retains the upstream download path.
++ * @param manifest - Packaged application metadata.
++ * @returns Validated mirror or undefined when this distribution declares none.
++ */
++export function desktopUpdateMirror(manifest: unknown): DesktopUpdateMirror | undefined {
++  if (typeof manifest !== 'object' || manifest === null || !('dshDesktopUpdateMirror' in manifest)) return undefined
++  const value = manifest.dshDesktopUpdateMirror
++  if (typeof value !== 'object' || value === null || !('packageUrl' in value) || !('githubRepository' in value)
++    || typeof value.packageUrl !== 'string' || typeof value.githubRepository !== 'string'
++    || !/^[A-Za-z0-9][A-Za-z0-9_.-]*\/[A-Za-z0-9][A-Za-z0-9_.-]*$/u.test(value.githubRepository)) {
++    throw new Error('desktop update: invalid package mirror configuration')
++  }
++  const url = new URL(value.packageUrl)
++  if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || url.search || url.hash
++    || !/^\/(?:[^/]+\/)*api\/packages\/[^/]+\/generic\/[^/]+\/$/u.test(url.pathname)) {
++    throw new Error('desktop update: mirror requires a credential-free generic package directory')
++  }
++  return { packageUrl: url.href, githubRepository: value.githubRepository }
++}
++
++/**
++ * Translate only immutable release payloads; feed checks and unrelated requests keep their original route.
++ * @param source - Native provider URL, including optional differential blockmaps.
++ * @param mirror - Installer-owned package mirror, or undefined for upstream routing.
++ * @returns The exact version and filename on the mirror, or undefined for another request.
++ */
++export function mirroredUpdateUrl(source: URL, mirror: DesktopUpdateMirror | undefined): URL | undefined {
++  if (mirror === undefined || source.origin !== 'https://github.com' || source.username || source.password || source.search || source.hash) return undefined
++  const prefix = `/${mirror.githubRepository}/releases/download/v`
++  if (!source.pathname.startsWith(prefix)) return undefined
++  const parts = source.pathname.slice(prefix.length).split('/')
++  if (parts.length !== 2 || !/^\d+\.\d+\.\d+(?:-[A-Za-z0-9.-]+)?$/u.test(parts[0] ?? '')
++    || !/^[A-Za-z0-9][A-Za-z0-9._-]*\.(?:exe|zip|dmg|blockmap)$/u.test(parts[1] ?? '')) return undefined
++  return new URL(parts.join('/'), mirror.packageUrl)
++}
++
++/**
++ * Fall back once only on unavailable external storage; integrity, authorization and cancellation failures stop.
++ * @param error - Native transport failure.
++ * @param options - Original updater cancellation token.
++ * @returns Whether a second storage origin may serve the same immutable bytes.
++ */
++export function canFallbackUpdateMirror(error: unknown, options: Parameters<DesktopUpdateHttpExecutor['download']>[2]): boolean {
++  if (options.cancellationToken.cancelled || !(error instanceof Error)) return false
++  if ('statusCode' in error && typeof error.statusCode === 'number') {
++    return [404, 408, 429, 500, 502, 503, 504].includes(error.statusCode)
++  }
++  return 'code' in error && typeof error.code === 'string'
++    && ['DSH_UPDATE_HTTP_TRANSPORT', 'ETIMEDOUT', 'ECONNRESET', 'ECONNREFUSED', 'EHOSTUNREACH', 'ENETUNREACH', 'ENOTFOUND', 'EAI_AGAIN',
++      'ERR_CONNECTION_RESET', 'ERR_CONNECTION_REFUSED', 'ERR_CONNECTION_TIMED_OUT', 'ERR_NAME_NOT_RESOLVED',
++      'ERR_INTERNET_DISCONNECTED', 'ERR_ADDRESS_UNREACHABLE'].includes(error.code)
++}
++
++/**
++ * Find the immutable GitHub fallback for a provider-selected mirror payload.
++ * @param source - Native provider URL.
++ * @param mirror - Installer-owned package mirror, or undefined for upstream routing.
++ * @returns Exact fallback URL, or undefined when this is not an owned mirror request.
++ */
++export function updateMirrorFallbackUrl(source: URL, mirror: DesktopUpdateMirror | undefined): URL | undefined {
++  if (mirror === undefined || !source.href.startsWith(mirror.packageUrl)) return undefined
++  const candidate = new URL(`https://github.com/${mirror.githubRepository}/releases/download/v${source.href.slice(mirror.packageUrl.length)}`)
++  return mirroredUpdateUrl(candidate, mirror)?.href === source.href ? candidate : undefined
++}
+diff --git a/apps/desktop/tests/update-mirror.spec.ts b/apps/desktop/tests/update-mirror.spec.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..40547b41d60f902d89d2f4f74e05a7e506c26df9
+--- /dev/null
++++ b/apps/desktop/tests/update-mirror.spec.ts
+@@ -0,0 +1,67 @@
++import { expect, it, vi } from 'vitest'
++import { CancellationToken } from 'electron-updater'
++import { ElectronHttpExecutor } from 'electron-updater/out/electronHttpExecutor.js'
++import { DesktopUpdateHttpExecutor } from '../src/update-http-executor.ts'
++import { canFallbackUpdateMirror, desktopUpdateMirror, mirroredUpdateUrl } from '../src/update-mirror.ts'
++
++const mirror = { packageUrl: 'http://gitea.test/traefik/gitea/api/packages/company/generic/desktop-internal/', githubRepository: 'company/downloads' }
++const source = new URL('https://github.com/company/downloads/releases/download/v1.2.3-alpha.1/desktop-x64.zip')
++const expected = new URL('1.2.3-alpha.1/desktop-x64.zip', mirror.packageUrl)
++const token = new CancellationToken()
++
++it('maps only the configured repository and preserves immutable version and filename', () => {
++  expect(desktopUpdateMirror({ dshDesktopUpdateMirror: mirror })).toEqual(mirror)
++  expect(desktopUpdateMirror({})).toBeUndefined()
++  expect(mirroredUpdateUrl(source, mirror)).toEqual(expected)
++  for (const value of ['https://github.com/other/downloads/releases/download/v1.2.3/a.zip',
++    'https://github.com/company/downloads/releases/latest/download/nightly.yml',
++    `${source}?secret=value`, 'https://github.com/company/downloads/releases/download/v1.2.3/sub/a.zip',
++    'https://github.com/company/downloads/releases/download/v../a.zip', 'https://elsewhere.test/a.zip']) {
++    expect(mirroredUpdateUrl(new URL(value), mirror)).toBeUndefined()
++  }
++  for (const packageUrl of ['https://user:password@gitea.test/api/packages/a/generic/b/',
++    'file:///api/packages/a/generic/b/', 'https://gitea.test/api/packages/a/generic/b/?token=x',
++    'https://gitea.test/arbitrary/']) {
++    expect(() => desktopUpdateMirror({ dshDesktopUpdateMirror: { ...mirror, packageUrl } })).toThrow()
++  }
++})
++
++it('uses the native download and digest checks on the mirror before consulting GitHub', async () => {
++  const options = { cancellationToken: token, sha512: 'native-expected-hash', headers: { Authorization: 'private', Cookie: 'private' } }
++  const native = vi.spyOn(ElectronHttpExecutor.prototype, 'download').mockResolvedValue('/downloaded')
++  try {
++    const executor = new DesktopUpdateHttpExecutor(1000, undefined, mirror)
++    expect(await executor.download(source, '/destination', options)).toBe('/downloaded')
++    expect(native).toHaveBeenCalledExactlyOnceWith(expected, '/destination', { ...options, headers: null })
++    native.mockReset().mockRejectedValueOnce(Object.assign(new Error('unavailable'), { statusCode: 503 })).mockResolvedValue('/fallback')
++    expect(await executor.download(source, '/destination', options)).toBe('/fallback')
++    expect(native.mock.calls.map(call => call[0])).toEqual([expected, source])
++    expect(native.mock.calls[1]?.[2]).toBe(options)
++  } finally { native.mockRestore() }
++})
++
++it('never falls back on cancellation, authorization, digest mismatch or unknown native failures', async () => {
++  for (const failure of [Object.assign(new Error('unauthorized'), { statusCode: 401 }),
++    Object.assign(new Error('forbidden'), { statusCode: 403 }),
++    Object.assign(new Error('digest mismatch'), { code: 'ERR_CHECKSUM_MISMATCH' }), new Error('unknown')]) {
++    const native = vi.spyOn(ElectronHttpExecutor.prototype, 'download').mockRejectedValue(failure)
++    try {
++      await expect(new DesktopUpdateHttpExecutor(1000, undefined, mirror).download(source, '/destination', { cancellationToken: token })).rejects.toBe(failure)
++      expect(native).toHaveBeenCalledOnce()
++    } finally { native.mockRestore() }
++  }
++  const cancelled = new CancellationToken()
++  cancelled.cancel()
++  expect(canFallbackUpdateMirror(Object.assign(new Error('timeout'), { code: 'ETIMEDOUT' }),
++    { cancellationToken: cancelled })).toBe(false)
++})
++
++it('uses the same routing for blockmaps, and never catches errors from the fallback', async () => {
++  const native = vi.spyOn(ElectronHttpExecutor.prototype, 'downloadToBuffer')
++    .mockRejectedValueOnce(Object.assign(new Error('not found'), { statusCode: 404 })).mockRejectedValueOnce(new Error('fallback failed'))
++  const blockmap = new URL(`${source}.blockmap`)
++  try {
++    await expect(new DesktopUpdateHttpExecutor(1000, undefined, mirror).downloadToBuffer(blockmap, { cancellationToken: token })).rejects.toThrow('fallback failed')
++    expect(native.mock.calls.map(call => call[0])).toEqual([new URL(`${expected}.blockmap`), blockmap])
++  } finally { native.mockRestore() }
++})

@@ -32,7 +32,7 @@ node apps/product-desktop/scripts/sync-github.mjs --repository OWNER/deepseek-ha
 
 main CI 执行完整类型检查；原生打包使用 `build:artifacts`，保留本地或正式品牌配置、生成声明和构建记录校验。打包前按官方 CLI、Desktop Host 和产品装配根计算生产依赖闭包，仅打包选中的工作区；包筛选参数由原生 Node 进程接收，避免 Windows 命令脚本的长度限制；安装包组装时再次从实际 tarball 核对依赖闭包和 Host 入口文件。
 
-Mac 并行准备软件包与运行时，Electron 与主运行时也独立准备；任一失败均等待已启动的任务结束，再停止后续组装。应用目录仅组装一次，DMG 与 ZIP 从同一目录生成；ZIP 使用 `DSH_DESKTOP_MACOS_ZIP_COMPRESSION_LEVEL`（默认 `3`）。产品模块随统一构建生成，Rust sidecar 在产品入口构建一次；源码启动和验收使用 `CARGO_TARGET_DIR` 指定的编译目录。依赖安装保留 frozen lock 并优先复用本地 store；pnpm 元数据与 npm 引导下载分别缓存到持久目录，供应链策略检查继续执行。
+Mac 并行准备软件包与运行时，Electron 与主运行时也独立准备；任一失败均等待已启动的任务结束，再停止后续组装。应用目录仅组装一次，DMG 与 ZIP 从同一目录生成；内部 DMG 使用 UDZO 压缩；ZIP 使用 `DSH_DESKTOP_MACOS_ZIP_COMPRESSION_LEVEL`（默认 `3`）。产品模块随统一构建生成，Rust sidecar 在产品入口构建一次；源码启动和验收使用 `CARGO_TARGET_DIR` 指定的编译目录。依赖安装保留 frozen lock 并优先复用本地 store；pnpm 元数据与 npm 引导下载分别缓存到持久目录，供应链策略检查继续执行。
 
 内部 Mac 包通过 electron-builder 原生自定义签名入口执行一次固定证书签名，按目录深度从内向外处理嵌套代码，先签 Helper 再签所属框架，保留官方 afterSign 检查。Mac A→B 验收先验证已安装应用的固定签名；资格副本仅修改版本、ASAR 和更新源，再重签根资源。嵌套执行文件不重复签名，仍执行严格深度签名验证及真实原生升级。首次生产组装继续完整签名。
 
@@ -71,7 +71,7 @@ Windows 安装更新验收通过流水线已有的 PowerShell 7 查询所需进�
 
 GitHub 源码仓库配置 Secrets `DESKTOP_INTERNAL_MAC_CERTIFICATE`（加密 P12 的 Base64）和 `DESKTOP_INTERNAL_MAC_PASSWORD`，以及公开变量 `DESKTOP_INTERNAL_MAC_CERTIFICATE_SHA256`。证书只在 Mac 打包及隔离安装验收步骤传入，导入独立临时钥匙串；打包结束或失败后恢复搜索列表并删除导入的凭据，不修改系统证书信任。P12 输入及密码不传入后续构建子进程、发布机或渲染进程。固定证书的创建与保管见签名说明。身份创建使用独立证书配置与显式 SHA-256 签名，避免系统配置合入重复扩展；导出显式指定 macOS 可导入的 PKCS#12 算法，支持 LibreSSL 与 OpenSSL。身份校验分别报告指纹、自签名、用途与有效期异常，仅包含公开证书信息。
 
-GitHub 和 Gitea 都配置 `DESKTOP_INTERNAL_DOWNLOAD_REPOSITORY` 及相同的公开证书指纹；内部下载仓库必须与正式的 `DESKTOP_GITHUB_DOWNLOAD_REPOSITORY` 分开。发布前核对固定证书指纹、源码、版本、更新清单和实际安装文件的大小及哈希。更新源使用内部下载仓库的匿名 latest 地址，不携带 GitHub 或员工令牌。
+GitHub 和 Gitea 都配置 `DESKTOP_INTERNAL_DOWNLOAD_REPOSITORY` 及相同的公开证书指纹；内部下载仓库必须与正式的 `DESKTOP_GITHUB_DOWNLOAD_REPOSITORY` 分开。发布前核对固定证书指纹、源码、版本、更新清单和实际安装文件的大小及哈希。版本清单使用 GitHub 内部下载仓库的匿名 latest 地址；安装文件、更新 ZIP 及 blockmap 优先从 Gitea Generic 软件包下载，存储不可达或 HTTP 404/408/429/5xx 时回退到同版本 GitHub 文件。原生差分更新和 SHA-512 校验保留，取消、权限或完整性失败直接停止。客户端不携带 GitHub、Gitea 或员工令牌，源码仓库继续私有。
 
 自签只提供相同身份间的原生更新校验，不提供 Apple 信任或公证。首次下载安装仍可能被 Gatekeeper 阻止，Windows 仍可能显示未知发布者提示；不能通过关闭系统安全功能解决。旧开发包首次需手动安装内部包，之后可检查新版、下载并确认重启安装。证书必须持续使用，丢失或更换后不能依赖原生更新自动衔接。
 
@@ -109,4 +109,4 @@ Actions 安装包保留一天，截图与 JSON 验收报告保留十四天。日
 
 Gitea Release 和两个 GitHub 下载仓库分别保留最新两个已发布版本，开发预发布与原生更新渠道分别计数；按发布时间排序，每个版本完整保留 Windows x64、macOS ARM64、macOS Intel 安装包及 ZIP、blockmap、更新清单和校验文件。草稿不计数、不自动删除。回收仅处理产品交付版本标签，保留源码 Git tag；有安装文件的旧版本须在两个保留版本均含三平台安装包时才可删除，权限或元数据异常会停止清理。
 
-“桌面 Release 回收”工作流每日北京时间 09:00 执行，使用与发布相同的互斥组。手动运行默认只预览，开启 `apply` 才删除；不重新打包或发布桌面。Gitea 软件包的保留规则不适用于 Release 附件。
+“桌面 Release 回收”工作流每日北京时间 09:00 执行，使用与发布相同的互斥组。手动运行默认只预览，开启 `apply` 才删除；不重新打包或发布桌面。Gitea 软件包的保留规则不适用于 Release 附件。内部更新另发布 `deepseek-harness-desktop-internal` Generic 包，每个版本包含三平台安装包及全部配套文件；沿用 Gitea 每包最新两版规则。发布前逐文件匿名回读并校验 SHA-256，通过后才发布两端 Release；已存在文件只验证，不覆盖。

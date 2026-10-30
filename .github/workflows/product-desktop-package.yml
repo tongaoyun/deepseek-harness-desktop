@@ -72,14 +72,14 @@ jobs:
       - name: Test product source synchronization
         run: node --test apps/product-desktop/tests/github-delivery.test.mjs apps/product-desktop/tests/desktop-release.test.mjs
       - name: Test native product update publication
-        run: node --test apps/product-desktop/tests/product-updates.test.mjs apps/product-desktop/tests/internal-updates.test.mjs apps/product-desktop/tests/native-update-integrity.test.mjs apps/product-desktop/tests/packaging-assembly.test.mjs
+        run: node --test apps/product-desktop/tests/product-updates.test.mjs apps/product-desktop/tests/internal-updates.test.mjs apps/product-desktop/tests/native-update-integrity.test.mjs apps/product-desktop/tests/packaging-assembly.test.mjs apps/product-desktop/tests/package-mirror.test.mjs
       - name: Test native update confirmation and configuration
         run: >-
           pnpm exec vitest run
           apps/desktop/tests/desktop-auto-update-environment.spec.ts
           apps/desktop/tests/desktop-package-environment.spec.ts
           apps/desktop/tests/desktop-policy-environment.spec.ts
-          apps/desktop/tests/update-coordinator.spec.ts
+          apps/desktop/tests/update-coordinator.spec.ts apps/desktop/tests/update-mirror.spec.ts apps/desktop/tests/update-http-executor.spec.ts
           apps/desktop/tests/update-schedule.spec.ts
       - name: Test acceptance process cleanup
         run: node --test apps/product-desktop/tests/acceptance-process.test.mjs apps/product-desktop/tests/office-process-diagnostics.test.mjs apps/product-desktop/tests/windows-processes.test.mjs
@@ -234,6 +234,8 @@ jobs:
           }
           pnpm --dir apps/desktop test:installer -- --headless
           if ($LASTEXITCODE -ne 0) { throw 'Installer lifecycle smoke failed' }
+      - name: Qualify native package mirror downloads
+        run: node apps/product-desktop/scripts/qualify-package-mirror.mjs
       - name: Test native Electron UI profiles
         env:
           DSH_DESKTOP_SMOKE: '1'

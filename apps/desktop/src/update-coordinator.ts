@@ -8,6 +8,8 @@ import { gt, valid } from 'semver'
 import type { DesktopUpdateState } from './ipc.ts'
 import { DesktopUpdateHttpExecutor } from './update-http-executor.ts'
 import { DesktopUpdatePreparationError } from './update-error.ts'
+import { DesktopUpdateMirrorProvider } from './update-mirror-provider.ts'
+import type { DesktopUpdateMirror } from './update-mirror.ts'
 
 const { autoUpdater } = electronUpdater
 
@@ -47,6 +49,7 @@ export class DesktopUpdateCoordinator {
    * @param currentVersion - Actual installed application version.
    * @param channel - Installed package channel; omitted test/local callers retain nightly.
    * @param downloadResult - Once per completed download attempt, including platform preparation failures.
+   * @param mirror - Optional installer-owned public package mirror for immutable payloads.
    */
   constructor(
     private readonly publish: (state: DesktopUpdateState) => DesktopUpdateState,
@@ -56,6 +59,7 @@ export class DesktopUpdateCoordinator {
     private readonly currentVersion: () => string = () => app.getVersion(),
     private readonly downloadResult?: (success: boolean, reason?: string) => void,
     private readonly channel: 'nightly' | 'latest' = 'nightly',
+    mirror?: DesktopUpdateMirror,
   ) {
     if (updater === autoUpdater) {
       // electron-updater omits this internal transport property from its public declarations.
@@ -64,7 +68,12 @@ export class DesktopUpdateCoordinator {
       transportOwner.httpExecutor = new DesktopUpdateHttpExecutor(
         Number(process.env.DSH_DESKTOP_UPDATE_HTTP_IDLE_TIMEOUT_MS ?? 60_000),
         (authInfo, callback) => { updater.emit('login', authInfo, callback) },
+        mirror,
       )
+    }
+    if (mirror !== undefined) {
+      this.updater.setFeedURL({ provider: 'custom', updateProvider: DesktopUpdateMirrorProvider,
+        url: `https://github.com/${mirror.githubRepository}/releases/latest/download/`, channel, mirror })
     }
     this.updater.autoDownload = false
     this.updater.autoInstallOnAppQuit = false

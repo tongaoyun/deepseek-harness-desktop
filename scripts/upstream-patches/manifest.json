@@ -267,7 +267,7 @@
         {
           "path": "apps/desktop/src/main.ts",
           "before": "d1eb736d9c29c1c335670ec45414786af6cdf046ac4195be9eab902d2c21194d",
-          "after": "7cccf7de2f87e33ad2dd98641e09e09c989375343c06e69f1bf9f0a1913e9780"
+          "after": "8fee9e99e354100b2ad8296bc617f797db49a6f778c95ac0151c941c51eee643"
         },
         {
           "path": "apps/desktop/src/web-document.ts",
@@ -1880,6 +1880,42 @@
         }
       ],
       "diff": "windows-unsigned-policy.patch"
+    },
+    {
+      "id": "desktop-update-package-mirror",
+      "purpose": "使用原生 GenericProvider 与 Electron 传输实现不可变软件包优先下载和同版本 GitHub 回退，保持差分、校验及用户确认。",
+      "tests": [
+        "apps/desktop/tests/update-mirror.spec.ts",
+        "apps/product-desktop/tests/package-mirror.test.mjs"
+      ],
+      "files": [
+        {
+          "path": "apps/desktop/src/update-coordinator.ts",
+          "before": "5cf1f239f82b8695afa607f36176cb95792d2b61be12aa3e28f0ee5341a95aa7",
+          "after": "0969faf6743b311ca7e0978755fa31d36aae840b5fed74bceab03a84acca69b3"
+        },
+        {
+          "path": "apps/desktop/src/update-http-executor.ts",
+          "before": "7230d88ece24770bb45ddac28ff6b9a0ed60f1b20a4361da44fc5265a1cc4eb8",
+          "after": "235f64c78c12439100f7a1b06a4903b35bceab9983cfee6c8d76ba024b649306"
+        },
+        {
+          "path": "apps/desktop/src/update-mirror-provider.ts",
+          "before": null,
+          "after": "004635ffa1eab89adcc8f006f510b9733e2c82c315ad839a59fc56485b90cae2"
+        },
+        {
+          "path": "apps/desktop/src/update-mirror.ts",
+          "before": null,
+          "after": "7d5402bc3fd312d375efa8f8d4bcd9589e65af70d8f67065063777116a74d7ba"
+        },
+        {
+          "path": "apps/desktop/tests/update-mirror.spec.ts",
+          "before": null,
+          "after": "1d897d5c6d6a3224a5318861459b17f9d74df71f0a1dca13fec8d83d5666ae95"
+        }
+      ],
+      "diff": "desktop-update-package-mirror.patch"
     }
   ]
 }

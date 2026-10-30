@@ -3,6 +3,17 @@ import { createHash } from 'node:crypto'
 import { createReadStream } from 'node:fs'
 import { readFile } from 'node:fs/promises'
 
+/**
+ * Select the product's binary-only package; source repository visibility is independent.
+ * @param {string} repository Public GitHub fallback owner/name.
+ * @returns {{packageUrl: string, githubRepository: string}} Credential-free installer metadata.
+ */
+export function productPackageMirror(repository) {
+  if (!/^[A-Za-z0-9][A-Za-z0-9_.-]*\/[A-Za-z0-9][A-Za-z0-9_.-]*$/u.test(repository)) throw new Error('Invalid GitHub fallback repository')
+  return { packageUrl: 'http://www.instudio.me:6206/traefik/gitea/api/packages/instudio/generic/deepseek-harness-desktop-internal/',
+    githubRepository: repository }
+}
+
 /** @param {string} repository Public download owner/name. @returns {string} Anonymous native update feed. */
 export function productUpdateUrl(repository) {
   if (!/^[A-Za-z0-9][A-Za-z0-9_.-]*\/[A-Za-z0-9][A-Za-z0-9_.-]*$/u.test(repository)) {

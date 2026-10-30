@@ -74,13 +74,14 @@ export async function dialogWithButton(application, name, timeout = 120_000) {
   return matching
 }
 
-async function rewriteApplication(appPath, version, bootstrap) {
+async function rewriteApplication(appPath, version, bootstrap, mirror) {
   const resources = join(appPath, windows ? 'resources' : 'Contents/Resources')
   const archive = join(resources, 'app.asar')
   const manifest = JSON.parse(asar.extractFile(archive, 'package.json'))
   const entry = manifest.main
   manifest.version = version
   manifest.main = 'internal-update-qualification.mjs'
+  if (mirror) manifest.dshDesktopUpdateMirror = mirror
   const replacements = new Map([
     ['package.json', Buffer.from(JSON.stringify(manifest))],
     ['internal-update-qualification.mjs', Buffer.from(bootstrap + `\nawait import(${JSON.stringify('./' + entry)})\n`)],
@@ -123,12 +124,13 @@ export async function prepareNativeProductUpdate(options) {
   if (windows) await cp(appPath, nextApp, { recursive: true })
   else await run('/bin/cp', ['-cR', appPath, nextApp])
   const current = JSON.parse(asar.extractFile(join(appPath, windows ? 'resources/app.asar' : 'Contents/Resources/app.asar'), 'package.json'))
+  assert.ok(current.dshDesktopUpdateMirror, 'Internal qualification requires the packaged mirror configuration')
   const version = current.version
   assert.equal(version, environment.PACKAGE_VERSION, 'Installed update payload must match the requested build version')
   const initialVersion = version.replace(/\.\d{8}\.\d+\.\d+$/u, '.20000101.1.1')
   assert.notEqual(initialVersion, version)
   const stop = join(directory, 'stop')
-  const bootstrap = `import { app } from 'electron'
+  const bootstrap = `import { app, session } from 'electron'
 import { watch, writeFileSync } from 'node:fs'
 process.env.DSH_HOME = ${JSON.stringify(home)}
 process.env.DSH_DESKTOP_USER_DATA_DIR = ${JSON.stringify(userData)}
@@ -153,21 +155,38 @@ app.whenReady().then(() => writeFileSync(${JSON.stringify(directory)} + '/boot-'
   let initialWindowsProcess
   let updatedWindowsProcess
   const requests = []
+  let payloadPath
   const server = createServer((request, response) => {
     const path = new URL(request.url, 'http://localhost').pathname
     requests.push(path)
     if (path === (windows ? '/nightly.yml' : '/nightly-mac.yml') && metadata) { response.end(JSON.stringify(metadata)); return }
-    if (path === '/' + zipName) { createReadStream(zip).pipe(response); return }
+    if (path === payloadPath) {
+      assert.equal(request.headers.authorization, undefined)
+      assert.equal(request.headers.cookie, undefined)
+      createReadStream(zip).pipe(response); return
+    }
     response.writeHead(404).end()
   })
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve))
   const origin = `http://127.0.0.1:${server.address().port}/`
+  const mirror = { ...current.dshDesktopUpdateMirror,
+    packageUrl: new URL('api/packages/fixture/generic/desktop/', origin).href }
+  payloadPath = new URL(`${version}/${zipName}`, mirror.packageUrl).pathname
+  const qualifiedBootstrap = bootstrap + `
+await app.whenReady()
+const updateSession = session.fromPartition('electron-updater', { cache: false })
+updateSession.webRequest.onBeforeRequest({ urls: ${JSON.stringify(['nightly.yml', 'nightly-mac.yml'].map(name =>
+    `https://github.com/${mirror.githubRepository}/releases/latest/download/${name}*`))} }, (details, callback) => {
+  callback({ redirectURL: ${JSON.stringify(origin)} + new URL(details.url).pathname.split('/').at(-1) })
+})
+app.on('will-quit', () => updateSession.webRequest.onBeforeRequest(null))
+`
   let cache
   try {
     console.log('Native product update: preparing private versions and integrity records')
     cache = await mkdtemp(join(windows ? environment.LOCALAPPDATA ?? join(homedir(), 'AppData/Local') : join(homedir(), 'Library/Caches'), 'harness-qualification-'))
     for (const [application, selected] of [[appPath, initialVersion], [nextApp, version]]) {
-      await rewriteApplication(application, selected, bootstrap)
+      await rewriteApplication(application, selected, qualifiedBootstrap, mirror)
       const configPath = join(application, windows ? 'resources' : 'Contents/Resources', 'deepseek-harness/product.json')
       const config = JSON.parse(await readFile(configPath, 'utf8'))
       await writeFile(configPath, JSON.stringify({ ...config, serverUrl }))
@@ -198,7 +217,8 @@ app.whenReady().then(() => writeFileSync(${JSON.stringify(directory)} + '/boot-'
     let size = 0
     for await (const chunk of createReadStream(zip)) { hash.update(chunk); size += chunk.length }
     const sha512 = hash.digest('base64')
-    metadata = { version, path: zipName, sha512, files: [{ url: zipName, sha512, size }] }
+    const payloadUrl = `https://github.com/${mirror.githubRepository}/releases/download/v${version}/${zipName}`
+    metadata = { version, path: payloadUrl, sha512, files: [{ url: payloadUrl, sha512, size }] }
     console.log('Native product update: private update feed is ready')
   } catch (error) {
     server.closeAllConnections()
@@ -228,7 +248,7 @@ app.whenReady().then(() => writeFileSync(${JSON.stringify(directory)} + '/boot-'
       await page.getByRole('button', { name: /^(More menu|更多菜单)$/, exact: true }).click()
       await page.getByRole('menuitem', { name: /^(Check for updates|检查更新)$/, exact: true }).click()
       const install = await dialogWithButton(application, restartConfirmation)
-      assert.ok(requests.includes('/' + zipName), 'Product update action must download the next version before restart confirmation')
+      assert.ok(requests.includes(payloadPath), 'Product update action must download the next version through its configured provider before restart confirmation')
       await install.locator('#close').click()
       assert.equal(await application.evaluate(({ app }) => app.getVersion()), initialVersion)
       await expect.poll(() => composer.textContent()).toBe(draft)
@@ -299,6 +319,7 @@ app.whenReady().then(() => writeFileSync(${JSON.stringify(directory)} + '/boot-'
       await mkdir(evidence, { recursive: true })
       await writeFile(join(evidence, `native-${windows ? 'windows' : 'macos'}-update-${process.arch}.json`), JSON.stringify({ passed: true, from: initialVersion, to: version,
         nativeInstaller: windows ? 'NSIS' : 'Squirrel.Mac', deferredRestartRetainedVersion: true, sessionAndDraftRetained: true,
+        packageMirrorDownloaded: true,
         oldProcessExited: true, hostExited: host.pid, sidecarExited: sidecar.pid,
         oldChildProcessesExited: previousChildren.map(child => child.pid),
         ...(windows ? { oldProcessIdentities: [initialWindowsProcess, ...previousChildren]

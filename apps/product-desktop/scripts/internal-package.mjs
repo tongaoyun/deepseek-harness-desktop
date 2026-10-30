@@ -4,7 +4,7 @@ import { open, readdir, writeFile } from 'node:fs/promises'
 import { join, sep } from 'node:path'
 import { promisify } from 'node:util'
 import { fileURLToPath } from 'node:url'
-import { productUpdateUrl } from './update-release.mjs'
+import { productPackageMirror, productUpdateUrl } from './update-release.mjs'
 
 export const INTERNAL_APP_ID = 'com.instudio.deepseek-harness.desktop'
 
@@ -87,7 +87,9 @@ export function internalBuilderConfig(config, environment, platform) {
   const afterSign = config.afterSign
   return { ...config, appId: INTERNAL_APP_ID,
     artifactName: 'deepseek-harness-${version}-${os}-${arch}-internal.${ext}',
-    extraMetadata: { ...config.extraMetadata, dshDesktopAppId: INTERNAL_APP_ID, dshDesktopUpdateChannel: 'nightly', dshProductDistribution: 'internal' },
+    extraMetadata: { ...config.extraMetadata, dshDesktopAppId: INTERNAL_APP_ID, dshDesktopUpdateChannel: 'nightly', dshProductDistribution: 'internal',
+      dshDesktopUpdateMirror: productPackageMirror(environment.PACKAGE_DOWNLOAD_REPOSITORY) },
+    dmg: { ...config.dmg, format: 'UDZO' },
     publish: [{ provider: 'generic', url, channel: 'nightly' }],
     mac: { ...config.mac, notarize: false, target: ['dmg', 'zip'],
       ...(platform === 'darwin' ? { sign: async options => signInternalApplication(options.app, environment) } : {}),
