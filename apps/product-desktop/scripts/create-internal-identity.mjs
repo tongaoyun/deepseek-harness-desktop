@@ -24,7 +24,7 @@ try {
     '-subj', '/CN=DeepSeek Harness Internal Distribution/O=Instudio',
     '-addext', 'basicConstraints=critical,CA:TRUE', '-addext', 'keyUsage=critical,digitalSignature,keyCertSign',
     '-addext', 'extendedKeyUsage=critical,codeSigning', '-keyout', key, '-out', certificate])
-  await execute(['pkcs12', '-export', '-legacy', '-inkey', key, '-in', certificate,
+  await execute(['pkcs12', '-export', '-keypbe', 'PBE-SHA1-3DES', '-certpbe', 'PBE-SHA1-3DES', '-macalg', 'sha1', '-inkey', key, '-in', certificate,
     '-out', join(directory, 'identity.p12'), '-passout', 'env:HARNESS_INTERNAL_EXPORT_PASSWORD'])
   await chmod(join(directory, 'identity.p12'), 0o600)
   await writeFile(join(directory, 'password'), password, { mode: 0o600, flag: 'wx' })

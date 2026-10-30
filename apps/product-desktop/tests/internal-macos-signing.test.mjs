@@ -9,14 +9,15 @@ import { promisify } from 'node:util'
 import { withInternalMacIdentity } from '../scripts/internal-signing.mjs'
 import { internalBuilderConfig, INTERNAL_APP_ID, resignInternalApplicationResources } from '../scripts/internal-package.mjs'
 
-test('native custom signing seals nested code once and resource resealing rejects a damaged nested signature',
+for (const [tool, path] of [['system LibreSSL', '/usr/bin:/bin'], ['configured OpenSSL', process.env.PATH]]) {
+  test(`native custom signing with ${tool} preserves nested code and rejects damaged signatures`,
   { skip: process.platform !== 'darwin', timeout: 120_000 }, async t => {
     const directory = await mkdtemp(join(tmpdir(), 'harness-signing-test-'))
     t.after(() => rm(directory, { recursive: true, force: true }))
     const execute = promisify(execFile)
     const identity = join(directory, 'identity')
     await execute(process.execPath, [new URL('../scripts/create-internal-identity.mjs', import.meta.url).pathname,
-      '--directory', identity], { timeout: 60_000 })
+      '--directory', identity], { env: { ...process.env, PATH: path }, timeout: 60_000 })
     const metadata = JSON.parse(await readFile(join(identity, 'identity.json'), 'utf8'))
     const application = join(directory, 'Harness.app')
     const helper = join(application, 'Contents/Frameworks/Helper.app')
@@ -51,3 +52,4 @@ test('native custom signing seals nested code once and resource resealing reject
       await assert.rejects(resignInternalApplicationResources(application, environment))
     })
   })
+}
