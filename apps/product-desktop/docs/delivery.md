@@ -34,7 +34,7 @@ main CI 执行完整类型检查；原生打包使用 `build:artifacts`，保留
 
 Mac 并行准备软件包与运行时，Electron 与主运行时也独立准备；任一失败均等待已启动的任务结束，再停止后续组装。应用目录仅组装一次，DMG 与 ZIP 从同一目录生成；ZIP 使用 `DSH_DESKTOP_MACOS_ZIP_COMPRESSION_LEVEL`（默认 `3`）。产品模块随统一构建生成，Rust sidecar 在产品入口构建一次；源码启动和验收使用 `CARGO_TARGET_DIR` 指定的编译目录。依赖安装保留 frozen lock 并优先复用本地 store；pnpm 元数据与 npm 引导下载分别缓存到持久目录，供应链策略检查继续执行。
 
-内部 Mac 包通过 electron-builder 原生自定义签名入口执行一次固定证书签名，保留官方 afterSign 检查，避免先临时签名再完整重签。Mac A→B 验收先验证已安装应用的固定签名；资格副本仅修改版本、ASAR 和更新源，再重签根资源。嵌套执行文件不重复签名，仍执行严格深度签名验证及真实原生升级。首次生产组装继续完整签名。
+内部 Mac 包通过 electron-builder 原生自定义签名入口执行一次固定证书签名，按目录深度从内向外处理嵌套代码，先签 Helper 再签所属框架，保留官方 afterSign 检查。Mac A→B 验收先验证已安装应用的固定签名；资格副本仅修改版本、ASAR 和更新源，再重签根资源。嵌套执行文件不重复签名，仍执行严格深度签名验证及真实原生升级。首次生产组装继续完整签名。
 
 GitHub 按系统及架构缓存 Electron、锁定的 Node/Python 与 Office 下载、桌面运行时 pnpm store、electron-builder 工具以及 Rust registry、Git 依赖和编译中间产物。下载缓存随依赖锁更新，Rust 缓存同时区分工具链与源码；无精确命中时复用同目标的旧缓存，由下载校验和 Cargo 增量构建确认有效性。首次运行仍需填充缓存。构建产物、安装状态和签名凭据不进入这些缓存，真实安装、启动和自动更新验收每次执行。
 

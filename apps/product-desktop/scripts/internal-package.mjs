@@ -1,7 +1,7 @@
 /** Product-owned self-signing and native update configuration for internal packages. */
 import { execFile } from 'node:child_process'
 import { open, readdir, writeFile } from 'node:fs/promises'
-import { join } from 'node:path'
+import { join, sep } from 'node:path'
 import { promisify } from 'node:util'
 import { fileURLToPath } from 'node:url'
 import { productUpdateUrl } from './update-release.mjs'
@@ -45,13 +45,15 @@ async function machoFiles(directory, preserved) {
   return result
 }
 
-/** @param {string} appPath Completed product application. @param {NodeJS.ProcessEnv} environment Public identity and private keychain path. @returns {Promise<void>} Signs product code and nested bundles, retaining the official prepared-runtime inventory and signatures. */
+/** @param {string} appPath Completed product application. @param {NodeJS.ProcessEnv} environment Public identity and private keychain path. @returns {Promise<void>} Signs code from deepest helpers to enclosing bundles, retaining the official prepared-runtime inventory and signatures. */
 export async function signInternalApplication(appPath, environment) {
   const run = promisify(execFile)
   const args = signingArguments(environment)
   const preserved = new Set(['app.asar.unpacked/dsh', 'runtime/primary-runtime']
     .map(path => join(appPath, 'Contents/Resources', path)))
-  for (const path of await machoFiles(appPath, preserved)) await run('/usr/bin/codesign', [...args, path], { timeout: 120_000 })
+  // Signing a framework executable also seals its bundle, so its helpers must already be signed.
+  const files = (await machoFiles(appPath, preserved)).sort((left, right) => right.split(sep).length - left.split(sep).length)
+  for (const path of files) await run('/usr/bin/codesign', [...args, path], { timeout: 120_000 })
   await run('/usr/bin/codesign', ['--deep', ...args, appPath], { timeout: 120_000 })
   await verifyInternalApplication(appPath, environment)
 }

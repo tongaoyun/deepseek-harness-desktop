@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { execFile } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { cp, mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
+import { cp, mkdtemp, mkdir, readFile, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
@@ -10,7 +10,7 @@ import { internalCertificateIdentity, withInternalMacIdentity } from '../scripts
 import { internalBuilderConfig, INTERNAL_APP_ID, resignInternalApplicationResources } from '../scripts/internal-package.mjs'
 
 for (const [tool, path] of [['system LibreSSL', '/usr/bin:/bin'], ['configured OpenSSL', process.env.PATH]]) {
-  test(`native custom signing with ${tool} preserves nested code and rejects damaged signatures`,
+  test(`native custom signing with ${tool} signs unsigned framework helpers and preserves nested code`,
   { skip: process.platform !== 'darwin', timeout: 120_000 }, async t => {
     const directory = await mkdtemp(join(tmpdir(), 'harness-signing-test-'))
     t.after(() => rm(directory, { recursive: true, force: true }))
@@ -33,6 +33,23 @@ for (const [tool, path] of [['system LibreSSL', '/usr/bin:/bin'], ['configured O
         CFBundlePackageType: 'APPL', CFBundleVersion: '1', CFBundleShortVersionString: '1.0.0' }))
       await execute('/usr/bin/plutil', ['-convert', 'xml1', plist])
     }
+    const framework = join(application, 'Contents/Frameworks/Electron Framework.framework')
+    const version = join(framework, 'Versions/A')
+    await mkdir(join(version, 'Helpers'), { recursive: true })
+    await mkdir(join(version, 'Resources'))
+    for (const name of ['Electron Framework', 'Helpers/chrome_crashpad_handler']) {
+      const executable = join(version, name)
+      await cp('/usr/bin/true', executable)
+      await execute('/usr/bin/codesign', ['--remove-signature', executable])
+    }
+    const frameworkInfo = join(version, 'Resources/Info.plist')
+    await writeFile(frameworkInfo, JSON.stringify({ CFBundleIdentifier: `${INTERNAL_APP_ID}.framework`,
+      CFBundleExecutable: 'Electron Framework', CFBundlePackageType: 'FMWK', CFBundleVersion: '1.0.0' }))
+    await execute('/usr/bin/plutil', ['-convert', 'xml1', frameworkInfo])
+    await symlink('A', join(framework, 'Versions/Current'))
+    for (const name of ['Electron Framework', 'Helpers', 'Resources']) {
+      await symlink(`Versions/Current/${name}`, join(framework, name))
+    }
     await mkdir(join(application, 'Contents/Resources'))
     const resource = join(application, 'Contents/Resources/qualification.txt')
     await writeFile(resource, 'version A')
@@ -47,11 +64,13 @@ for (const [tool, path] of [['system LibreSSL', '/usr/bin:/bin'], ['configured O
       await config.mac.sign({ app: application })
       await config.afterSign({ appOutDir: directory, packager: { appInfo: { productFilename: 'Harness' } } })
       assert.equal(officialChecked, true)
-      const executable = join(helper, 'Contents/MacOS/Helper')
-      const nestedBytes = createHash('sha256').update(await readFile(executable)).digest('hex')
+      const executables = [join(helper, 'Contents/MacOS/Helper'), join(version, 'Electron Framework'),
+        join(version, 'Helpers/chrome_crashpad_handler')]
+      const hashes = () => Promise.all(executables.map(async path => createHash('sha256').update(await readFile(path)).digest('hex')))
+      const nestedBytes = await hashes()
       await writeFile(resource, 'version B')
       await resignInternalApplicationResources(application, environment)
-      assert.equal(createHash('sha256').update(await readFile(executable)).digest('hex'), nestedBytes)
+      assert.deepEqual(await hashes(), nestedBytes)
       await execute('/usr/bin/plutil', ['-replace', 'CFBundleVersion', '-string', '2', join(helper, 'Contents/Info.plist')])
       await assert.rejects(resignInternalApplicationResources(application, environment))
     })
