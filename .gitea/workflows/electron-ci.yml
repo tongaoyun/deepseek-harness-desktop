@@ -18,6 +18,8 @@ jobs:
       # Match upstream CI's shared-host budget for cases, hooks and polling.
       DSH_COVERAGE_TEST_TIMEOUT_MS: '90000'
       PNPM_CONFIG_CACHE_DIR: /pnpm-store/metadata-cache
+      NPM_CONFIG_CACHE: /pnpm-store/npm-cache
+      NPM_CONFIG_FETCH_TIMEOUT: '120000'
     container:
       image: ci-node:1.0.0
       volumes:

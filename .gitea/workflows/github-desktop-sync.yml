@@ -32,6 +32,8 @@ jobs:
         - /data/ci-cache/pnpm/deepseek-harness-desktop-electron:/pnpm-store
     env:
       PNPM_CONFIG_CACHE_DIR: /pnpm-store/metadata-cache
+      NPM_CONFIG_CACHE: /pnpm-store/npm-cache
+      NPM_CONFIG_FETCH_TIMEOUT: '120000'
     steps:
       - name: Checkout delivery code
         uses: http://192.168.2.67:30330/instudio/checkout@v4
