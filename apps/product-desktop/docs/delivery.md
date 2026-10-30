@@ -67,7 +67,7 @@ GitHub 托管任务下载三平台产物，在下载仓库创建草稿，逐文�
 
 `signing=internal` 使用标准 GitHub 托管 runner。Mac 使用同一张固定自签证书签署应用、Electron 组件和产品 sidecar，不进行 Apple 公证；已准备的 Harness 与 Python 运行时保留原有字节和签名，并由官方清单与应用资源封装验证；Windows 保持未签名 NSIS 安装器。Mac 同时产出 DMG 和更新 ZIP，Windows 产出 EXE；文件名带 `-internal`，清单如实记录签名方式和 `notarized: false`，不能冒充正式签名包。发布仍要求三个平台构建与安装验收全部通过。
 
-GitHub 源码仓库配置 Secrets `DESKTOP_INTERNAL_MAC_CERTIFICATE`（加密 P12 的 Base64）和 `DESKTOP_INTERNAL_MAC_PASSWORD`，以及公开变量 `DESKTOP_INTERNAL_MAC_CERTIFICATE_SHA256`。证书只在 Mac 打包及隔离安装验收步骤传入，导入独立临时钥匙串；打包结束或失败后恢复搜索列表并删除导入的凭据，不修改系统证书信任。P12 输入及密码不传入后续构建子进程、发布机或渲染进程。固定证书的创建与保管见签名说明。身份导出显式使用 macOS 可导入的 PKCS#12 加密算法，支持系统 LibreSSL 与 OpenSSL。
+GitHub 源码仓库配置 Secrets `DESKTOP_INTERNAL_MAC_CERTIFICATE`（加密 P12 的 Base64）和 `DESKTOP_INTERNAL_MAC_PASSWORD`，以及公开变量 `DESKTOP_INTERNAL_MAC_CERTIFICATE_SHA256`。证书只在 Mac 打包及隔离安装验收步骤传入，导入独立临时钥匙串；打包结束或失败后恢复搜索列表并删除导入的凭据，不修改系统证书信任。P12 输入及密码不传入后续构建子进程、发布机或渲染进程。固定证书的创建与保管见签名说明。身份导出显式使用 macOS 可导入的 PKCS#12 加密算法，支持系统 LibreSSL 与 OpenSSL。身份校验分别报告指纹、自签名、用途与有效期异常，仅包含公开证书信息。
 
 GitHub 和 Gitea 都配置 `DESKTOP_INTERNAL_DOWNLOAD_REPOSITORY` 及相同的公开证书指纹；内部下载仓库必须与正式的 `DESKTOP_GITHUB_DOWNLOAD_REPOSITORY` 分开。发布前核对固定证书指纹、源码、版本、更新清单和实际安装文件的大小及哈希。更新源使用内部下载仓库的匿名 latest 地址，不携带 GitHub 或员工令牌。
 
