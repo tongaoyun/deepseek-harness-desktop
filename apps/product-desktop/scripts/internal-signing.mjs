@@ -18,9 +18,8 @@ export function internalCertificateIdentity(pem, expectedSHA256, now = Date.now(
   const certificate = new X509Certificate(pem)
   const sha256 = certificate.fingerprint256.replaceAll(':', '')
   if (sha256 !== expectedSHA256) throw new Error(`Internal signing certificate differs from the pinned identity: expected ${expectedSHA256}, received ${sha256}`)
-  if (!certificate.checkIssued(certificate) || !certificate.verify(certificate.publicKey)) {
-    throw new Error('Internal signing certificate is not a valid self-signed identity')
-  }
+  if (!certificate.checkIssued(certificate)) throw new Error('Internal signing certificate has an invalid self-issued identity')
+  if (!certificate.verify(certificate.publicKey)) throw new Error('Internal signing certificate has an invalid self-signature')
   if (!certificate.keyUsage?.includes('1.3.6.1.5.5.7.3.3')) throw new Error('Internal signing certificate lacks the code-signing purpose')
   if (Date.parse(certificate.validFrom) > now || Date.parse(certificate.validTo) <= now) {
     throw new Error(`Internal signing certificate is outside its valid period: ${certificate.validFrom} to ${certificate.validTo}; checked at ${new Date(now).toISOString()}`)
