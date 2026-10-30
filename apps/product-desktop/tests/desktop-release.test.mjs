@@ -50,24 +50,58 @@ test('bounds transfers and waits for active work to settle after failure without
 })
 
 const packageJob = (target, attempt = 1, patch = {}) => ({ name: target === 'preflight' ? target : `${target} unsigned`,
-  run_attempt: attempt, run_id: run.id, head_sha: commit, status: 'completed', conclusion: 'success', ...patch })
+  run_attempt: attempt, run_id: run.id, head_sha: commit, status: 'completed', conclusion: 'success',
+  started_at: new Date(Date.parse(run.created_at) + (attempt - 1) * 60_000 + 1000).toISOString(),
+  completed_at: new Date(Date.parse(run.created_at) + (attempt - 1) * 60_000 + 2000).toISOString(), ...patch })
+
+const attemptRequest = jobs => async (_method, path) => {
+  const match = /\/attempts\/(\d+)(\/jobs)?/u.exec(path)
+  assert.ok(match, 'Expected an exact workflow attempt read')
+  const attempt = Number(match[1])
+  return match[2] ? { jobs: jobs(attempt) } : { ...run, run_attempt: attempt,
+    run_started_at: new Date(Date.parse(run.created_at) + (attempt - 1) * 60_000).toISOString() }
+}
 
 test('reuses earlier successful platforms while selecting the latest execution and checking preflight', async () => {
   const latest = { ...run, run_attempt: 2 }
-  const request = async (_method, path) => ({ jobs: path.includes('/attempts/2/')
-    ? [packageJob('mac-x64', 2)] : ['preflight', ...RELEASE_TARGETS].map(target => packageJob(target)) })
+  const request = attemptRequest(attempt => attempt === 2
+    ? [packageJob('mac-x64', 2)] : ['preflight', ...RELEASE_TARGETS].map(target => packageJob(target)))
   assert.deepEqual(await desktopPackageAttempts(request, 'owner/build', latest, 'unsigned'), {
     'win-x64': 1, 'mac-arm64': 1, 'mac-x64': 2,
   })
   for (const patch of [{ conclusion: 'failure' }, { conclusion: 'cancelled' }, { conclusion: 'skipped' },
     { status: 'in_progress' }, { head_sha: 'b'.repeat(40) }, { run_id: 100 }, { run_attempt: 1 }]) {
-    await assert.rejects(desktopPackageAttempts(async (_method, path) => ({ jobs: path.includes('/attempts/2/')
-      ? [packageJob('mac-x64', 2, patch)] : ['preflight', ...RELEASE_TARGETS].map(target => packageJob(target)) }),
+    await assert.rejects(desktopPackageAttempts(attemptRequest(attempt => attempt === 2
+      ? [packageJob('mac-x64', 2, patch)] : ['preflight', ...RELEASE_TARGETS].map(target => packageJob(target))),
     'owner/build', latest, 'unsigned'), /not successful/u)
   }
-  await assert.rejects(desktopPackageAttempts(async () => ({ jobs: RELEASE_TARGETS.map(target => packageJob(target)) }),
+  await assert.rejects(desktopPackageAttempts(attemptRequest(() => RELEASE_TARGETS.map(target => packageJob(target))),
     'owner/build', run, 'unsigned'), /Missing/u)
   await assert.rejects(desktopPackageAttempts(request, 'owner/build', { ...latest, path: 'other.yml' }, 'unsigned'), /identity/u)
+})
+
+test('distinguishes inherited GitHub jobs from real reruns before selecting immutable artifacts', async () => {
+  const rows = {
+    1: ['preflight', ...RELEASE_TARGETS].map(target => packageJob(target)),
+    2: ['preflight', ...RELEASE_TARGETS].map(target => packageJob(target, target === 'mac-x64' ? 2 : 1,
+      { id: `copied-2-${target}`, run_attempt: 2 })),
+    3: ['preflight', ...RELEASE_TARGETS].map(target => packageJob(target,
+      target === 'win-x64' ? 3 : target === 'mac-x64' ? 2 : 1, { id: `copied-3-${target}`, run_attempt: 3 })),
+  }
+  const latest = { ...run, run_attempt: 3 }
+  assert.deepEqual(await desktopPackageAttempts(attemptRequest(attempt => rows[attempt]), 'owner/build', latest, 'unsigned'), {
+    'win-x64': 3, 'mac-arm64': 1, 'mac-x64': 2,
+  })
+  const inherited = rows[3].find(job => job.name === 'mac-arm64 unsigned')
+  for (const patch of [{ conclusion: 'failure' }, { started_at: null }, { completed_at: 'invalid' }]) {
+    const request = attemptRequest(attempt => rows[attempt].map(job => job === inherited ? { ...job, ...patch } : job))
+    await assert.rejects(desktopPackageAttempts(request, 'owner/build', latest, 'unsigned'), /not successful|Invalid desktop job/u)
+  }
+  const request = attemptRequest(attempt => rows[attempt])
+  await assert.rejects(desktopPackageAttempts(async (method, path) => {
+    const response = await request(method, path)
+    return path.endsWith('/attempts/3') ? { ...response, run_started_at: 'invalid' } : response
+  }, 'owner/build', latest, 'unsigned'), /attempt identity/u)
 })
 
 test('verifies hosted packages before accepting an in-progress staging run and rejects expired or duplicate archives', async t => {
@@ -77,8 +111,9 @@ test('verifies hosted packages before accepting an in-progress staging run and r
   const artifacts = RELEASE_TARGETS.map((target, index) => ({ id: index + 1, expired: false,
     name: `harness-${target}-unsigned-9-1`, workflow_run: { id: run.id, head_sha: commit } }))
   const client = {
-    request: async (_method, path) => path.includes('/jobs?')
-      ? { jobs: ['preflight', ...RELEASE_TARGETS].map(target => packageJob(target)) } : { artifacts },
+    request: async (method, path) => path.includes('/attempts/')
+      ? attemptRequest(attempt => ['preflight', ...RELEASE_TARGETS].map(target => packageJob(target, 1,
+        { run_attempt: attempt })))(method, path) : { artifacts },
     download: async path => {
       const index = Number(/artifacts\/(\d+)/u.exec(path)[1]) - 1
       const target = RELEASE_TARGETS[index]
@@ -90,6 +125,13 @@ test('verifies hosted packages before accepting an in-progress staging run and r
   const release = await downloadDesktopRelease(client, 'owner/build', { ...run, status: 'in_progress', conclusion: null },
     directory, commit, productVersion, { signing: 'unsigned' })
   assert.equal(release.version, version)
+  const rerunDirectory = await mkdtemp(join(tmpdir(), 'harness-hosted-rerun-'))
+  t.after(() => rm(rerunDirectory, { recursive: true, force: true }))
+  const rerun = await downloadDesktopRelease(client, 'owner/build',
+    { ...run, run_attempt: 2, status: 'in_progress', conclusion: null }, rerunDirectory, commit, productVersion, { signing: 'unsigned' })
+  assert.equal(rerun.version, release.version)
+  assert.equal(rerun.body, release.body)
+  assert.deepEqual(rerun.files.map(({ name, sha256 }) => [name, sha256]), release.files.map(({ name, sha256 }) => [name, sha256]))
   for (const kind of ['expired', 'duplicate', 'wrong-source']) {
     const copy = structuredClone(artifacts)
     if (kind === 'expired') copy[0].expired = true

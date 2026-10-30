@@ -53,6 +53,12 @@ export async function desktopPackageAttempts(request, repository, run, signing) 
   const names = new Map([['preflight', 'preflight'], ...RELEASE_TARGETS.map(target => [`${target} ${signing}`, target])])
   const selected = new Map()
   for (let attempt = run.run_attempt; attempt >= 1 && selected.size < names.size; attempt--) {
+    const execution = await request('GET', `/repos/${repository}/actions/runs/${run.id}/attempts/${attempt}`)
+    const started = Date.parse(execution.run_started_at)
+    if (execution.id !== run.id || execution.run_attempt !== attempt || execution.head_sha !== run.head_sha
+      || execution.event !== run.event || execution.path !== run.path || !Number.isFinite(started)) {
+      throw new Error('Invalid desktop attempt identity')
+    }
     const seen = new Set()
     for (let page = 1; ; page++) {
       const result = await request('GET', `/repos/${repository}/actions/runs/${run.id}/attempts/${attempt}/jobs?per_page=100&page=${page}`)
@@ -63,6 +69,13 @@ export async function desktopPackageAttempts(request, repository, run, signing) 
         if (selected.has(job.name)) continue
         if (job.run_attempt !== attempt || job.head_sha !== run.head_sha || job.run_id !== run.id
           || job.status !== 'completed' || job.conclusion !== 'success') throw new Error(`Desktop job is not successful: ${job.name}`)
+        const jobStarted = Date.parse(job.started_at)
+        const jobCompleted = Date.parse(job.completed_at)
+        if (!Number.isFinite(jobStarted) || !Number.isFinite(jobCompleted) || jobCompleted < jobStarted) {
+          throw new Error(`Invalid desktop job execution: ${job.name}`)
+        }
+        // GitHub copies successful jobs into new attempts with new IDs and attempt numbers, retaining their execution times.
+        if (jobStarted < started) continue
         selected.set(job.name, attempt)
       }
       if (result.jobs.length < 100) break
