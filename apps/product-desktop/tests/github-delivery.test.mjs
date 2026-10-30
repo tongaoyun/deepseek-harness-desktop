@@ -362,6 +362,10 @@ test('isolates signing and download credentials from native hosted builds', () =
   assert.equal(stage.steps.filter(step => JSON.stringify(step).includes('secrets.')).length, 1)
   assert.match(stage.steps.at(-1).run, /stage-github-release\.mjs/u)
   assert.doesNotMatch(JSON.stringify(workflow.jobs.package.env), /secrets\./u)
+  const signingTest = steps.findIndex(step => step.name === 'Test macOS signing identity')
+  assert.ok(signingTest >= 0 && signingTest < steps.findIndex(step => step.name === 'Package macOS'))
+  assert.equal(steps[signingTest].if, "matrix.target != 'win-x64'")
+  assert.match(steps[signingTest].run, /internal-macos-signing\.test\.mjs/u)
   for (const step of steps.filter(step => !['Package macOS', 'Test installed product desktop'].includes(step.name))) {
     assert.doesNotMatch(JSON.stringify(step), /secrets\./u)
   }

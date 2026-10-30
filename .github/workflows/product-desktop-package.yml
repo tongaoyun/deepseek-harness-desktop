@@ -194,6 +194,9 @@ jobs:
           [string[]]$ModeArgs = if ($env:PACKAGE_SIGNING -eq 'signed') { @() } else { @('--unsigned') }
           pnpm --dir apps/product-desktop run package win-x64 @ModeArgs --build-version $env:PACKAGE_VERSION
           if ($LASTEXITCODE -ne 0) { throw 'Windows packaging failed' }
+      - name: Test macOS signing identity
+        if: matrix.target != 'win-x64'
+        run: node --test apps/product-desktop/tests/internal-macos-signing.test.mjs
       - name: Package macOS
         if: matrix.target != 'win-x64'
         env:
@@ -201,7 +204,6 @@ jobs:
           PACKAGE_INTERNAL_CERTIFICATE_BASE64: ${{ inputs.signing == 'internal' && secrets.DESKTOP_INTERNAL_MAC_CERTIFICATE || '' }}
           PACKAGE_INTERNAL_CERTIFICATE_PASSWORD: ${{ inputs.signing == 'internal' && secrets.DESKTOP_INTERNAL_MAC_PASSWORD || '' }}
         run: |
-          node --test apps/product-desktop/tests/internal-macos-signing.test.mjs
           mode_args=()
           if [ "$PACKAGE_SIGNING" != signed ]; then mode_args+=(--unsigned); fi
           pnpm --dir apps/product-desktop run package "$PACKAGE_TARGET" "${mode_args[@]}" --build-version "$PACKAGE_VERSION"
