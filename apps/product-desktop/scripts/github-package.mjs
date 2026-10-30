@@ -12,7 +12,7 @@ import { productSigningMode, productUpdateUrl, validateInternalSignature } from 
  * @param {NodeJS.ProcessEnv} environment GitHub run identity and requested architecture.
  * @param {string} productVersion Current desktop version.
  * @param {Date} now Build date.
- * @returns {string} Unique version for this run and attempt.
+ * @returns {string} Version shared by every attempt of this run.
  */
 export function githubBuildVersion(environment, productVersion, now = new Date()) {
   if (!/^[a-f0-9]{40}$/u.test(environment.PACKAGE_SOURCE_SHA ?? '')) throw new Error('An exact source commit is required')
@@ -22,7 +22,7 @@ export function githubBuildVersion(environment, productVersion, now = new Date()
   const started = environment.PACKAGE_BUILD_DATE === undefined ? now : new Date(environment.PACKAGE_BUILD_DATE)
   if (!Number.isFinite(started.getTime())) throw new Error('A valid build start date is required')
   const date = started.toISOString().slice(0, 10).replaceAll('-', '')
-  return `${desktopBuildVersionPrefix(productVersion)}${date}.${environment.GITHUB_RUN_NUMBER}.${environment.GITHUB_RUN_ATTEMPT}`
+  return `${desktopBuildVersionPrefix(productVersion)}${date}.${environment.GITHUB_RUN_NUMBER}.1`
 }
 
 /**

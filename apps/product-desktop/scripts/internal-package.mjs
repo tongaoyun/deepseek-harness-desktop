@@ -16,6 +16,12 @@ function identity(environment) {
   return { sha1: environment.PRODUCT_INTERNAL_CERTIFICATE_SHA1, keychain: environment.PRODUCT_INTERNAL_KEYCHAIN }
 }
 
+function signingArguments(environment) {
+  const signing = identity(environment)
+  return ['--force', '--sign', signing.sha1, '--keychain', signing.keychain, '--timestamp=none', '--options', 'runtime',
+    '--entitlements', fileURLToPath(new URL('../../desktop/scripts/macos-entitlements.plist', import.meta.url))]
+}
+
 async function machoFiles(directory, preserved) {
   const result = []
   for (const entry of await readdir(directory, { withFileTypes: true })) {
@@ -41,14 +47,23 @@ async function machoFiles(directory, preserved) {
 
 /** @param {string} appPath Completed product application. @param {NodeJS.ProcessEnv} environment Public identity and private keychain path. @returns {Promise<void>} Signs product code and nested bundles, retaining the official prepared-runtime inventory and signatures. */
 export async function signInternalApplication(appPath, environment) {
-  const signing = identity(environment)
   const run = promisify(execFile)
-  const args = ['--force', '--sign', signing.sha1, '--keychain', signing.keychain, '--timestamp=none', '--options', 'runtime',
-    '--entitlements', fileURLToPath(new URL('../../desktop/scripts/macos-entitlements.plist', import.meta.url))]
+  const args = signingArguments(environment)
   const preserved = new Set(['app.asar.unpacked/dsh', 'runtime/primary-runtime']
     .map(path => join(appPath, 'Contents/Resources', path)))
   for (const path of await machoFiles(appPath, preserved)) await run('/usr/bin/codesign', [...args, path], { timeout: 120_000 })
   await run('/usr/bin/codesign', ['--deep', ...args, appPath], { timeout: 120_000 })
+  await verifyInternalApplication(appPath, environment)
+}
+
+/**
+ * Reseal a signed application's root resources after qualification-only ASAR/plist edits, leaving nested code unchanged.
+ * @param {string} appPath Previously verified application with unchanged nested executables and bundles.
+ * @param {NodeJS.ProcessEnv} environment Fixed signing identity and private keychain.
+ * @returns {Promise<void>} Rejects if the resulting application or any nested signature is invalid.
+ */
+export async function resignInternalApplicationResources(appPath, environment) {
+  await promisify(execFile)('/usr/bin/codesign', [...signingArguments(environment), appPath], { timeout: 120_000 })
   await verifyInternalApplication(appPath, environment)
 }
 
@@ -72,7 +87,9 @@ export function internalBuilderConfig(config, environment, platform) {
     artifactName: 'deepseek-harness-${version}-${os}-${arch}-internal.${ext}',
     extraMetadata: { ...config.extraMetadata, dshDesktopAppId: INTERNAL_APP_ID, dshDesktopUpdateChannel: 'nightly', dshProductDistribution: 'internal' },
     publish: [{ provider: 'generic', url, channel: 'nightly' }],
-    mac: { ...config.mac, notarize: false, target: ['dmg', 'zip'] },
+    mac: { ...config.mac, notarize: false, target: ['dmg', 'zip'],
+      ...(platform === 'darwin' ? { sign: async options => signInternalApplication(options.app, environment) } : {}),
+    },
     afterPack: async context => {
       await afterPack(context)
       await writeFile(join(context.packager.getResourcesDir(context.appOutDir), 'app-update.yml'), JSON.stringify({
@@ -81,7 +98,7 @@ export function internalBuilderConfig(config, environment, platform) {
     },
     afterSign: async context => {
       await afterSign(context)
-      if (platform === 'darwin') await signInternalApplication(join(context.appOutDir, `${context.packager.appInfo.productFilename}.app`), environment)
+      if (platform === 'darwin') await verifyInternalApplication(join(context.appOutDir, `${context.packager.appInfo.productFilename}.app`), environment)
     },
   }
 }

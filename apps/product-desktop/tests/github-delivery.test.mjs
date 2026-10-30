@@ -127,11 +127,11 @@ test('reconciles an uncertain atomic push only when both remote commits match wi
   }
 })
 
-test('numbers each platform with the same source, UTC date, run and attempt', () => {
-  assert.equal(githubBuildVersion(identity, '0.2.1-alpha.2', new Date('2026-10-12T03:00:00Z')), '0.2.1-alpha.2.20261012.23.2')
-  assert.equal(githubBuildVersion(identity, '0.2.1', new Date('2026-10-12T03:00:00Z')), '0.2.1-test.20261012.23.2')
+test('keeps platform versions stable across attempts of the same UTC-dated run', () => {
+  assert.equal(githubBuildVersion(identity, '0.2.1-alpha.2', new Date('2026-10-12T03:00:00Z')), '0.2.1-alpha.2.20261012.23.1')
+  assert.equal(githubBuildVersion(identity, '0.2.1', new Date('2026-10-12T03:00:00Z')), '0.2.1-test.20261012.23.1')
   assert.equal(githubBuildVersion({ ...identity, PACKAGE_BUILD_DATE: '2026-10-12T23:59:00Z' }, '0.2.1',
-    new Date('2026-10-13T01:00:00Z')), '0.2.1-test.20261012.23.2')
+    new Date('2026-10-13T01:00:00Z')), '0.2.1-test.20261012.23.1')
   assert.throws(() => githubBuildVersion({ ...identity, PACKAGE_BUILD_DATE: 'bad' }, '0.2.1'))
   for (const invalid of [{ PACKAGE_SOURCE_SHA: 'main' }, { GITHUB_RUN_NUMBER: '0' }, { GITHUB_RUN_ATTEMPT: '2\nTOKEN=secret' }]) {
     assert.throws(() => githubBuildVersion({ ...identity, ...invalid }, '0.2.1'))
@@ -264,7 +264,7 @@ test('hosted verification references existing tests after product migrations', (
   for (const path of paths) assert.ok(existsSync(new URL(`../../../${path}`, import.meta.url)), `Missing hosted test: ${path}`)
 })
 
-test('uses native hosted development runners or explicitly configured signing machines without publishing credentials', () => {
+test('isolates signing and download credentials from native hosted builds', () => {
   const source = readFileSync(new URL('../../../.github/workflows/product-desktop-package.yml', import.meta.url), 'utf8')
   const workflow = yaml.load(source)
   assert.deepEqual(Object.keys(workflow.on), ['workflow_dispatch'])
@@ -341,7 +341,12 @@ test('uses native hosted development runners or explicitly configured signing ma
   assert.doesNotMatch(steps.find(step => step.name === 'Upload installers').with.path, /desktop-ui|electron-\*/u)
   assert.doesNotMatch(source, /192\.168\.|release:publish|upload:latest|CSC_LINK|APPLE_API_KEY/u)
   const secretNames = [...source.matchAll(/secrets\.([A-Z_]+)/gu)].map(match => match[1])
-  assert.deepEqual([...new Set(secretNames)].sort(), ['DESKTOP_INTERNAL_MAC_CERTIFICATE', 'DESKTOP_INTERNAL_MAC_PASSWORD'])
+  assert.deepEqual([...new Set(secretNames)].sort(), ['DESKTOP_DOWNLOADS_TOKEN', 'DESKTOP_INTERNAL_MAC_CERTIFICATE', 'DESKTOP_INTERNAL_MAC_PASSWORD'])
+  const stage = workflow.jobs.stage
+  assert.deepEqual(stage.needs, ['preflight', 'package'])
+  assert.equal(stage.steps.find(step => step.env?.DESKTOP_DOWNLOADS_TOKEN).name, 'Upload and fully verify download draft')
+  assert.equal(stage.steps.filter(step => JSON.stringify(step).includes('secrets.')).length, 1)
+  assert.match(stage.steps.at(-1).run, /stage-github-release\.mjs/u)
   assert.doesNotMatch(JSON.stringify(workflow.jobs.package.env), /secrets\./u)
   for (const step of steps.filter(step => !['Package macOS', 'Test installed product desktop'].includes(step.name))) {
     assert.doesNotMatch(JSON.stringify(step), /secrets\./u)

@@ -6,7 +6,7 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { Readable } from 'node:stream'
-import { collectDesktopRelease, extractBuildArchive, publishDesktopRelease, RELEASE_TARGETS, waitForDesktopBuild } from './desktop-release.mjs'
+import { collectDesktopRelease, desktopPackageAttempts, extractBuildArchive, mapReleaseWork, publishDesktopRelease, RELEASE_TARGETS, waitForDesktopBuild } from './desktop-release.mjs'
 import { productSigningMode } from './update-release.mjs'
 
 const repoPattern = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/u
@@ -129,7 +129,8 @@ export function apiClient(base, authorization, transport = {}) {
 }
 
 /** @param {string} name Destination label. @param {object} client HTTP adapter. @param {string} repository Owner/repo. @param {object} options API and tag target. @returns {object} Release adapter. */
-export function releaseDestination(name, client, repository, { github = false, target, base }) {
+export function releaseDestination(name, client, repository, { github = false, target, base, staged = false }) {
+  if (staged && !github) throw new Error('Only hosted GitHub drafts support digest verification')
   const prefix = `/repos/${repository}/releases`
   const find = async tag => {
     try { return await client.request('GET', `${prefix}/tags/${encodeURIComponent(tag)}`) }
@@ -146,6 +147,7 @@ export function releaseDestination(name, client, repository, { github = false, t
   }
   return {
     name,
+    requireStaged: staged,
     find,
     latest: async () => {
       try { return await client.request('GET', `${prefix}/latest`) }
@@ -172,6 +174,7 @@ export function releaseDestination(name, client, repository, { github = false, t
       }
     },
     recoverAsset: async (remote, asset) => {
+      if (staged && asset.state !== 'uploaded') throw new Error(`Hosted draft asset is incomplete at ${name}`)
       if (!github || asset.state === 'uploaded') return asset
       if (remote.draft !== true || asset.state !== 'starter' || !Number.isSafeInteger(asset.id) || asset.id <= 0) {
         throw new Error(`Incomplete release asset at ${name}: ${asset.name}`)
@@ -186,6 +189,10 @@ export function releaseDestination(name, client, repository, { github = false, t
     },
     hash: asset => retryReleaseRead(async () => {
       console.log(`Verifying ${name} release asset: ${asset.name}`)
+      if (github && !/^sha256:[a-f0-9]{64}$/u.test(asset.digest ?? '')) throw new Error(`Missing hosted asset SHA-256 at ${name}`)
+      if (staged) {
+        return asset.digest.slice(7)
+      }
       const chunks = github ? await client.download(`${prefix}/assets/${asset.id}`)
         : (await client.response(asset.browser_download_url, { download: true, timeoutMs: 15 * 60_000 })).body
       const hash = createHash('sha256')
@@ -196,7 +203,9 @@ export function releaseDestination(name, client, repository, { github = false, t
         hash.update(chunk)
       }
       if (size !== asset.size) throw new Error('Remote release asset is truncated')
-      return hash.digest('hex')
+      const computed = hash.digest('hex')
+      if (github && asset.digest !== `sha256:${computed}`) throw new Error('Hosted asset digest differs from downloaded bytes')
+      return computed
     }, { label: `${name} asset verification` }),
     upload: async (id, file) => {
       console.log(`Uploading ${name} release asset: ${file.name}`)
@@ -229,6 +238,45 @@ export async function stageBuildArchive(client, path, directory, options = {}) {
     await rm(directory, { recursive: true, force: true })
     await extractBuildArchive(await client.download(path, { accept: 'application/vnd.github+json' }), directory)
   }, { ...options, label: 'Hosted artifact download' })
+}
+
+/**
+ * Download only the latest successful execution of each platform, then verify all installer bytes and metadata.
+ * May run inside the final hosted job after preflight and every package job have succeeded.
+ * @param {object} client Hosted API adapter.
+ * @param {string} repository Build repository.
+ * @param {object} run Exact hosted workflow identity.
+ * @param {string} directory Private staging directory.
+ * @param {string} commit Requested source.
+ * @param {string} productVersion Source desktop version.
+ * @param {object} options Signing mode, download repository and certificate pin.
+ * @returns {Promise<object>} Verified immutable release.
+ */
+export async function downloadDesktopRelease(client, repository, run, directory, commit, productVersion, options) {
+  if (run.head_sha !== commit || !['in_progress', 'completed'].includes(run.status)
+    || run.status === 'completed' && run.conclusion !== 'success') throw new Error('Exact successful desktop packages are required')
+  const packageAttempts = await desktopPackageAttempts(client.request, repository, run, options.signing)
+  const artifacts = []
+  for (let page = 1; ; page++) {
+    const result = await client.request('GET', `/repos/${repository}/actions/runs/${run.id}/artifacts?per_page=100&page=${page}`)
+    artifacts.push(...result.artifacts)
+    if (result.artifacts.length < 100) break
+  }
+  const selected = RELEASE_TARGETS.map(target => {
+    const name = `harness-${target}-${options.signing}-${run.run_number}-${packageAttempts[target]}`
+    const matches = artifacts.filter(artifact => artifact.name === name)
+    if (matches.length !== 1 || matches[0].expired !== false || !Number.isSafeInteger(matches[0].id)
+      || matches[0].id <= 0 || matches[0].workflow_run?.id !== run.id || matches[0].workflow_run?.head_sha !== commit) {
+      throw new Error(`Missing or ambiguous hosted artifact: ${target}`)
+    }
+    return { target, artifact: matches[0] }
+  })
+  await mapReleaseWork(selected, async ({ target, artifact }) => {
+    console.log(`Downloading verified build target: ${target} (attempt ${packageAttempts[target]})`)
+    await stageBuildArchive(client, `/repos/${repository}/actions/artifacts/${artifact.id}/zip`, join(directory, target))
+  })
+  return collectDesktopRelease(directory, { ...run, status: 'completed', conclusion: 'success' }, commit, productVersion,
+    { ...options, packageAttempts })
 }
 
 async function main() {
@@ -295,28 +343,15 @@ async function main() {
   const run = await waitForDesktopBuild({ request: github.request, repository, commit, deliveryId,
     runId: resumed ? Number(resumed) : undefined })
   console.log(`Verified successful build: https://github.com/${repository}/actions/runs/${run.id}`)
-  const allArtifacts = []
-  for (let page = 1; ; page++) {
-    const result = await github.request('GET', `/repos/${repository}/actions/runs/${run.id}/artifacts?per_page=100&page=${page}`)
-    allArtifacts.push(...result.artifacts)
-    if (result.artifacts.length < 100) break
-  }
   const stage = await mkdtemp(join(tmpdir(), 'harness-desktop-release-'))
   try {
-    for (const target of RELEASE_TARGETS) {
-      const name = `harness-${target}-${signing}-${run.run_number}-${run.run_attempt}`
-      const matches = allArtifacts.filter(artifact => artifact.name === name && artifact.expired === false)
-      if (matches.length !== 1) throw new Error(`Missing or ambiguous hosted artifact: ${target}`)
-      console.log(`Downloading verified build target: ${target}`)
-      await stageBuildArchive(github, `/repos/${repository}/actions/artifacts/${matches[0].id}/zip`, join(stage, target))
-    }
     const productVersion = JSON.parse(execFileSync('git', ['show', `${commit}:apps/desktop/package.json`],
       { cwd: root, encoding: 'utf8' })).version
-    const release = await collectDesktopRelease(stage, run, commit, productVersion, { signing, downloadRepository: downloads,
+    const release = await downloadDesktopRelease(github, repository, run, stage, commit, productVersion, { signing, downloadRepository: downloads,
       internalCertificateSHA256: process.env.DESKTOP_INTERNAL_CERTIFICATE_SHA256 })
     const links = await publishDesktopRelease(release, [
       releaseDestination('Gitea', gitea, internal, { target: commit, base }),
-      releaseDestination('GitHub downloads', github, downloads, { github: true, target: publicRepo.default_branch }),
+      releaseDestination('GitHub downloads', github, downloads, { github: true, target: publicRepo.default_branch, staged: true }),
     ])
     console.log(`Published verified ${signing} version ${release.version}\n${links.join('\n')}`)
     if (process.env.GITHUB_STEP_SUMMARY) {

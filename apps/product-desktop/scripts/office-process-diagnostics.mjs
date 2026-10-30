@@ -75,7 +75,11 @@ export async function observeOfficeProcesses(rootPid, directory, options) {
             if (signal.aborted) throw error
             // A helper can exit between ps and sample; preserve that diagnostic outcome without retrying it.
             const code = error !== null && typeof error === 'object' && 'code' in error ? String(error.code) : 'unknown'
-            await appendFile(join(directory, 'office-processes.log'), `${JSON.stringify({ event: 'sample-failed', pid: helper.pid, code })}\n`, { mode: 0o600 })
+            const termination = error !== null && typeof error === 'object' ? {
+              signal: typeof error.signal === 'string' ? error.signal : null, killed: error.killed === true,
+            } : {}
+            await appendFile(join(directory, 'office-processes.log'), `${JSON.stringify({ event: 'sample-failed', pid: helper.pid, code,
+              elapsedMs: now() - firstSeen, ...termination })}\n`, { mode: 0o600 })
           }
         }
       }

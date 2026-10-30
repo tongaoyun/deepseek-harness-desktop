@@ -17,6 +17,61 @@ const MAX_ARCHIVE = 3 * 1024 ** 3
 const safeName = name => /^[A-Za-z0-9][A-Za-z0-9._-]*$/u.test(name)
 const digest = bytes => createHash('sha256').update(bytes).digest('hex')
 
+/**
+ * Bound transfer concurrency; stop scheduling after failure and join every started operation before rejecting.
+ * @param {Array} items Independent work items.
+ * @param {Function} operation Awaitable item operation.
+ * @param {number} concurrency Maximum simultaneous operations.
+ * @returns {Promise<Array>} Results in input order.
+ */
+export async function mapReleaseWork(items, operation, concurrency = 3) {
+  const results = []
+  let next = 0
+  let failure
+  await Promise.all(Array.from({ length: Math.min(concurrency, items.length) }, async () => {
+    while (!failure && next < items.length) {
+      const index = next++
+      try { results[index] = await operation(items[index], index) }
+      catch (error) { failure ??= { error } }
+    }
+  }))
+  if (failure) throw failure.error
+  return results
+}
+
+/**
+ * Select each platform's latest execution in this run; a newer failure cannot fall back to an older success.
+ * @param {Function} request Authenticated hosted API read.
+ * @param {string} repository Build repository.
+ * @param {object} run Exact workflow run, including its current attempt.
+ * @param {string} signing Requested distribution mode.
+ * @returns {Promise<object>} Successful package attempt for each target.
+ */
+export async function desktopPackageAttempts(request, repository, run, signing) {
+  if (!Number.isSafeInteger(run.run_attempt) || run.run_attempt < 1 || run.event !== 'workflow_dispatch'
+    || run.path !== '.github/workflows/product-desktop-package.yml') throw new Error('Invalid desktop workflow identity')
+  const names = new Map([['preflight', 'preflight'], ...RELEASE_TARGETS.map(target => [`${target} ${signing}`, target])])
+  const selected = new Map()
+  for (let attempt = run.run_attempt; attempt >= 1 && selected.size < names.size; attempt--) {
+    const seen = new Set()
+    for (let page = 1; ; page++) {
+      const result = await request('GET', `/repos/${repository}/actions/runs/${run.id}/attempts/${attempt}/jobs?per_page=100&page=${page}`)
+      for (const job of result.jobs) {
+        if (!names.has(job.name)) continue
+        if (seen.has(job.name)) throw new Error('Ambiguous desktop package job')
+        seen.add(job.name)
+        if (selected.has(job.name)) continue
+        if (job.run_attempt !== attempt || job.head_sha !== run.head_sha || job.run_id !== run.id
+          || job.status !== 'completed' || job.conclusion !== 'success') throw new Error(`Desktop job is not successful: ${job.name}`)
+        selected.set(job.name, attempt)
+      }
+      if (result.jobs.length < 100) break
+    }
+  }
+  if (selected.size !== names.size) throw new Error('Missing successful desktop package jobs')
+  return Object.fromEntries(RELEASE_TARGETS.map(target => [target, selected.get(`${target} ${signing}`)]))
+}
+
 /** @param {string} path File path. @returns {Promise<string>} Streaming SHA-256. */
 export async function fileHash(path) {
   const hash = createHash('sha256')
@@ -140,7 +195,8 @@ export async function collectDesktopRelease(directory, run, commit, productVersi
       files.push({ path, name: feed.name, size: Buffer.byteLength(feed.bytes), sha256: digest(feed.bytes) })
     }
   }
-  const aggregate = { version, commit, signing, githubRunId: run.id, githubRunAttempt: run.run_attempt,
+  const aggregate = { version, commit, signing, githubRunId: run.id,
+    githubBuildAttempts: options.packageAttempts ?? Object.fromEntries(RELEASE_TARGETS.map(target => [target, run.run_attempt])),
     targets: manifests }
   const manifestBytes = JSON.stringify(aggregate, null, 2) + '\n'
   const sums = files.map(file => `${file.sha256}  ${file.name}`).sort().join('\n') + '\n'
@@ -200,13 +256,13 @@ export async function waitForDesktopBuild({ request, repository, commit, deliver
 }
 
 /**
- * Stage both destinations before making complete releases visible; recoverAsset may discard only an incomplete draft upload,
+ * Stage and verify destinations without publishing; recoverAsset may discard only an incomplete draft upload,
  * never a complete asset with different contents.
  * @param {object} release Verified release identity and files.
  * @param {object[]} destinations Platform-specific release adapters.
- * @returns {Promise<string[]>} Published download links.
+ * @returns {Promise<object[]>} Verified adapters and remote releases ready for finalization.
  */
-export async function publishDesktopRelease(release, destinations) {
+export async function stageDesktopRelease(release, destinations) {
   if (release.prerelease === false) {
     for (const destination of destinations) {
       const latest = await destination.latest()
@@ -218,6 +274,7 @@ export async function publishDesktopRelease(release, destinations) {
   const staged = []
   for (const destination of destinations) {
     let remote = await destination.find(release.tag)
+    if (!remote && destination.requireStaged) throw new Error(`Missing verified hosted draft at ${destination.name}`)
     if (!remote) remote = await destination.create(release)
     if (remote.tag_name !== release.tag || remote.body !== release.body || remote.prerelease !== (release.prerelease ?? true)) {
       throw new Error(`Release identity conflict at ${destination.name}`)
@@ -228,15 +285,16 @@ export async function publishDesktopRelease(release, destinations) {
       throw new Error(`Unexpected release assets at ${destination.name}`)
     }
     if (!remote.draft && assets.length !== expected.size) throw new Error(`Published release is incomplete at ${destination.name}`)
-    for (const file of release.files) {
+    await mapReleaseWork(release.files, async file => {
       let asset = assets.find(item => item.name === file.name)
+      if (!asset && destination.requireStaged) throw new Error(`Missing staged asset at ${destination.name}: ${file.name}`)
       if (asset) asset = await destination.recoverAsset(remote, asset)
       for (let attempt = 0; !asset && attempt < 3; attempt++) {
         try { asset = await destination.upload(remote.id, file) }
         catch (error) {
           if (error.status && error.status < 500 && ![408, 429].includes(error.status)) throw error
-          assets = await destination.assets(remote.id)
-          asset = assets.find(item => item.name === file.name)
+          const current = await destination.assets(remote.id)
+          asset = current.find(item => item.name === file.name)
           if (!asset && attempt === 2) throw error
         }
         if (asset) asset = await destination.recoverAsset(remote, asset)
@@ -245,13 +303,25 @@ export async function publishDesktopRelease(release, destinations) {
       if (asset.size !== file.size || await destination.hash(asset) !== file.sha256) {
         throw new Error(`Remote asset checksum mismatch at ${destination.name}: ${file.name}`)
       }
-    }
+    })
     assets = await destination.assets(remote.id)
-    if (assets.length !== expected.size || assets.some(asset => !expected.has(asset.name))) {
+    if (assets.length !== expected.size || assets.some(asset => !expected.has(asset.name))
+      || new Set(assets.map(asset => asset.name)).size !== assets.length) {
       throw new Error(`Remote release is incomplete at ${destination.name}`)
     }
     staged.push({ destination, remote })
   }
+  return staged
+}
+
+/**
+ * Verify every destination before finalizing either release; retry reconciles partial finalization without replacing assets.
+ * @param {object} release Verified release identity and files.
+ * @param {object[]} destinations Release adapters.
+ * @returns {Promise<string[]>} Published download links.
+ */
+export async function publishDesktopRelease(release, destinations) {
+  const staged = await stageDesktopRelease(release, destinations)
   const links = []
   for (const { destination, remote } of staged) {
     if (remote.draft) await destination.finalize(remote.id, release)

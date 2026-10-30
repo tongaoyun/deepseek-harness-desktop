@@ -16,7 +16,7 @@ node apps/product-desktop/scripts/sync-github.mjs --repository OWNER/deepseek-ha
 
 ## Gitea 发布入口
 
-内部手动工作流 **同步桌面构建到 GitHub** 读取仓库变量 `DESKTOP_GITHUB_REPOSITORY`（源码）和 `DESKTOP_GITHUB_DOWNLOAD_REPOSITORY`（公开下载）。Gitea 保留以 `GITHUB_` 开头的名称。`DESKTOP_GITHUB_TOKEN` 需要源码同步权限和下载仓库的 Contents 写权限，优先使用仅限这两个仓库的凭据。`RELEASE_USERNAME` 和 `RELEASE_CREDENTIAL` 用于内网 Gitea Release。GitHub runner 不接收这些发布凭据，也不访问内部 Gitea 或生产服务。桌面 Git 历史只上传到构建仓库；服务端和控制中心仓库留在内网。
+内部手动工作流 **同步桌面构建到 GitHub** 读取仓库变量 `DESKTOP_GITHUB_REPOSITORY`（源码）和 `DESKTOP_GITHUB_DOWNLOAD_REPOSITORY`（公开下载）。Gitea 保留以 `GITHUB_` 开头的名称。`DESKTOP_GITHUB_TOKEN` 需要源码同步权限和下载仓库的 Contents 写权限，优先使用仅限这两个仓库的凭据。`RELEASE_USERNAME` 和 `RELEASE_CREDENTIAL` 用于内网 Gitea Release。GitHub 源码仓库另配置 `DESKTOP_DOWNLOADS_TOKEN`，仅在三平台验收后的草稿上传步骤注入，需要目标下载仓库的 Contents 写权限；打包和测试步骤不接收下载凭据。GitHub runner 不访问内部 Gitea 或生产服务。桌面 Git 历史只上传到构建仓库；服务端和控制中心仓库留在内网。
 
 | 工作流输入 | 用途 |
 | --- | --- |
@@ -24,7 +24,7 @@ node apps/product-desktop/scripts/sync-github.mjs --repository OWNER/deepseek-ha
 | `signing` | `unsigned`、`internal` 或 `signed` |
 | `github_run_id` | 恢复一次已成功构建的发布，须与原源码及签名模式一致 |
 
-新构建要求精确源码的 main CI 成功，校验上游补丁后同步。恢复使用当前 `main` 的发布脚本和原 `source_sha` 的产物校验，两者都须通过 main CI。三个平台共用由 GitHub 运行日期、编号和重试次数生成的版本；任一失败、取消或身份不符均停止发布。
+新构建要求精确源码的 main CI 成功，校验上游补丁后同步。恢复使用当前 `main` 的发布脚本和原 `source_sha` 的产物校验，两者都须通过 main CI。三个平台共用 `${源码版本前缀}${UTC日期}.${GitHub运行编号}.1`，重试不改变版本；产物名仍记录各平台的实际尝试次数。每个平台选择最新一次执行，必须成功且属于同一源码、工作流和分发模式，任一失败、取消或身份不符均停止发布。
 
 内网 runner 下载有界 ZIP，按中央目录仅解压普通文件并校验清单，完成后清理临时压缩包。公开下载仓库只接收安装文件和元数据，不推送源码。
 
@@ -34,17 +34,19 @@ main CI 执行完整类型检查；原生打包使用 `build:artifacts`，保留
 
 Mac 并行准备软件包与运行时，Electron 与主运行时也独立准备；任一失败均等待已启动的任务结束，再停止后续组装。应用目录仅组装一次，DMG 与 ZIP 从同一目录生成；ZIP 使用 `DSH_DESKTOP_MACOS_ZIP_COMPRESSION_LEVEL`（默认 `3`）。产品模块随统一构建生成，Rust sidecar 在产品入口构建一次；源码启动和验收使用 `CARGO_TARGET_DIR` 指定的编译目录。依赖安装保留 frozen lock 并优先复用本地 store；pnpm 元数据缓存单独保留，供应链策略检查继续执行。
 
+内部 Mac 包通过 electron-builder 原生自定义签名入口执行一次固定证书签名，保留官方 afterSign 检查，避免先临时签名再完整重签。Mac A→B 验收先验证已安装应用的固定签名；资格副本仅修改版本、ASAR 和更新源，再重签根资源。嵌套执行文件不重复签名，仍执行严格深度签名验证及真实原生升级。首次生产组装继续完整签名。
+
 GitHub 按系统及架构缓存 Electron、锁定的 Node/Python 与 Office 下载、桌面运行时 pnpm store、electron-builder 工具以及 Rust registry、Git 依赖和编译中间产物。下载缓存随依赖锁更新，Rust 缓存同时区分工具链与源码；无精确命中时复用同目标的旧缓存，由下载校验和 Cargo 增量构建确认有效性。首次运行仍需填充缓存。构建产物、安装状态和签名凭据不进入这些缓存，真实安装、启动和自动更新验收每次执行。
 
 ## 下载与恢复
 
 下载仓库须先初始化默认分支，至少有一条提交。空仓库可以接收 Release 草稿附件，但无法完成发布；先确认仓库初始化，再启动大文件构建及上传。
 
-GitHub 和 Gitea 先创建草稿，每个文件上传后重新下载，核对大小与 SHA-256，全部通过才发布。不替换身份或内容不同的文件及 tag。两个服务依次发布，第二个失败时第一个可能已可见。旧版本遵循下方[保留规则](#产物与保留)。
+GitHub 托管任务下载三平台产物，在下载仓库创建草稿，逐文件上传并完整回读，核对大小、SHA-256 和 GitHub 返回的摘要。该任务成功后，内网 runner 并行下载三平台产物并校验本地清单，上传、回读 Gitea 附件，同时核对 GitHub 草稿的身份、文件集合、大小及服务端 SHA-256；不经内网重新上传或回读 GitHub 安装包。传输最多三个并发任务，失败后停止调度并等待已启动任务结束。不替换身份或内容不同的文件及 tag。两端全部通过才依次发布；第二端发布失败时第一端可能已可见。旧版本遵循下方[保留规则](#产物与保留)。
 
 上传中断保留已校验草稿。只有重新核对为未完成的草稿 `starter` 附件才可删除后重传；完整附件直接校验，状态不明或权限失败则停止。tag 查询 404 时分页查找草稿，重复 tag 拒绝。
 
-恢复填写原 `github_run_id`、`source_sha` 和 `signing`，继续同一次成功构建；产物过期或重试次数改变则重跑全部平台。工作流总期限 180 分钟，main CI 最多 20 分钟，GitHub 构建最多 150 分钟。
+平台失败时使用 GitHub **Re-run failed jobs**，复用本次交付中仍未过期的成功平台产物；草稿上传失败同样只重跑失败任务。GitHub 全部成功后，内网恢复填写原 `github_run_id`、`source_sha` 和 `signing`。产物过期或需要完整重建时启动新运行，生成新版本；不覆盖已有版本。工作流总期限 180 分钟，main CI 最多 20 分钟，GitHub 构建最多 150 分钟。
 
 临时网络错误及 HTTP 408/429/500/502/503/504 最多尝试四次，间隔 1/2/4 秒；包含响应正文中断。产物中断后重新下载到空的私有目录。权限、非法内容及校验冲突不重试。等待继续跟踪同一个 GitHub run，总期限不重置；超时保留 run ID，不能重新派发来恢复上传。
 
@@ -59,7 +61,7 @@ GitHub 和 Gitea 先创建草稿，每个文件上传后重新下载，核对大
 
 ### 未签名开发包
 
-默认 `signing=unsigned` 输出 EXE 或 DMG，发布为开发预发布，无更新清单，不覆盖已有更新 latest。Mac 沿用官方未签名应用标识，Windows 使用产品应用标识；首次安装可能需要系统确认。单独 GitHub 打包只上传 Actions 产物，交付须继续内网同步流程。
+默认 `signing=unsigned` 输出 EXE 或 DMG，发布为开发预发布，无更新清单，不覆盖已有更新 latest。Mac 沿用官方未签名应用标识，Windows 使用产品应用标识；首次安装可能需要系统确认。单独 GitHub 打包只准备已验证草稿，交付须继续内网同步流程。
 
 ### 免费内部更新
 

@@ -61,12 +61,16 @@ jobs:
           SIGNING_RUNNERS: ${{ vars.DESKTOP_SIGNING_RUNNERS }}
           SIGNING_CONFIG_DIRS: ${{ vars.DESKTOP_SIGNING_CONFIG_DIRS }}
         run: node apps/product-desktop/scripts/signing-runners.mjs
+      - name: Require download staging credential
+        env:
+          DOWNLOAD_STAGING_CONFIGURED: ${{ secrets.DESKTOP_DOWNLOADS_TOKEN != '' }}
+        run: test "$DOWNLOAD_STAGING_CONFIGURED" = true
       # These checks are source-wide and identical for every target. Keeping
       # them here avoids running the same suite three times on release hosts.
       - name: Verify upstream and product delivery contracts
         run: pnpm run verify:upstream
       - name: Test product source synchronization
-        run: node --test apps/product-desktop/tests/github-delivery.test.mjs
+        run: node --test apps/product-desktop/tests/github-delivery.test.mjs apps/product-desktop/tests/desktop-release.test.mjs
       - name: Test native product update publication
         run: node --test apps/product-desktop/tests/product-updates.test.mjs apps/product-desktop/tests/internal-updates.test.mjs apps/product-desktop/tests/native-update-integrity.test.mjs apps/product-desktop/tests/packaging-assembly.test.mjs
       - name: Test native update confirmation and configuration
@@ -197,6 +201,7 @@ jobs:
           PACKAGE_INTERNAL_CERTIFICATE_BASE64: ${{ inputs.signing == 'internal' && secrets.DESKTOP_INTERNAL_MAC_CERTIFICATE || '' }}
           PACKAGE_INTERNAL_CERTIFICATE_PASSWORD: ${{ inputs.signing == 'internal' && secrets.DESKTOP_INTERNAL_MAC_PASSWORD || '' }}
         run: |
+          node --test apps/product-desktop/tests/internal-macos-signing.test.mjs
           mode_args=()
           if [ "$PACKAGE_SIGNING" != signed ]; then mode_args+=(--unsigned); fi
           pnpm --dir apps/product-desktop run package "$PACKAGE_TARGET" "${mode_args[@]}" --build-version "$PACKAGE_VERSION"
@@ -294,3 +299,29 @@ jobs:
             apps/desktop/.desktop-build/targets/${{ matrix.target }}/${{ env.PACKAGE_ARTIFACT_DIRECTORY }}/build-manifest.json
           if-no-files-found: error
           retention-days: 1
+  stage:
+    name: Verify download draft
+    needs: [preflight, package]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          ref: ${{ inputs.source_sha }}
+          persist-credentials: false
+      - uses: pnpm/action-setup@v5.0.0
+      - uses: actions/setup-node@v7.0.0
+        with:
+          node-version: '24'
+          cache: pnpm
+      - name: Install locked dependencies
+        run: pnpm install --frozen-lockfile --prefer-offline
+      - name: Upload and fully verify download draft
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DESKTOP_DOWNLOADS_TOKEN: ${{ secrets.DESKTOP_DOWNLOADS_TOKEN }}
+          PACKAGE_SOURCE_SHA: ${{ inputs.source_sha }}
+          PACKAGE_SIGNING: ${{ inputs.signing }}
+          PACKAGE_DOWNLOAD_REPOSITORY: ${{ inputs.signing == 'internal' && vars.DESKTOP_INTERNAL_DOWNLOAD_REPOSITORY || vars.DESKTOP_GITHUB_DOWNLOAD_REPOSITORY }}
+          PACKAGE_INTERNAL_CERTIFICATE_SHA256: ${{ vars.DESKTOP_INTERNAL_MAC_CERTIFICATE_SHA256 }}
+        run: node apps/product-desktop/scripts/stage-github-release.mjs

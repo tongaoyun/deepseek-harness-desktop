@@ -30,6 +30,8 @@ jobs:
       image: ci-node:1.0.0
       volumes:
         - /data/ci-cache/pnpm/deepseek-harness-desktop-electron:/pnpm-store
+    env:
+      PNPM_CONFIG_CACHE_DIR: /pnpm-store/metadata-cache
     steps:
       - name: Checkout delivery code
         uses: http://192.168.2.67:30330/instudio/checkout@v4

@@ -15,7 +15,7 @@ import { verifyRuntimeArchive } from '../../desktop/scripts/verify-runtime-archi
 import { createElectronBuilderConfig } from '../../desktop/scripts/electron-builder-config.mjs'
 import { rewriteWindowsArchiveIntegrity, writeUpdateArchive } from './native-update-integrity.mjs'
 import { stopInstalledProcesses } from '../scripts/installed-processes.mjs'
-import { INTERNAL_APP_ID, signInternalApplication, verifyInternalApplication } from '../scripts/internal-package.mjs'
+import { INTERNAL_APP_ID, resignInternalApplicationResources, verifyInternalApplication } from '../scripts/internal-package.mjs'
 
 const run = promisify(execFile)
 const require = createRequire(new URL('../../desktop/package.json', import.meta.url))
@@ -120,6 +120,7 @@ async function rewriteApplication(appPath, version, bootstrap) {
 export async function prepareNativeProductUpdate(options) {
   const { installed, root, home, userData, modelUrl, token, environment } = options
   const appPath = windows ? dirname(installed) : resolve(dirname(installed), '../..')
+  if (!windows) await verifyInternalApplication(appPath, environment)
   const directory = join(root, 'native-update')
   await mkdir(directory)
   const nextApp = join(directory, 'next', windows ? 'DeepSeek Harness' : 'DeepSeek Harness.app')
@@ -173,7 +174,7 @@ app.whenReady().then(() => writeFileSync(${JSON.stringify(directory)} + '/boot-'
       await writeFile(join(application, windows ? 'resources/app-update.yml' : 'Contents/Resources/app-update.yml'), JSON.stringify({
         provider: 'generic', url: origin, channel: 'nightly', updaterCacheDirName: basename(cache),
       }))
-      if (!windows) await signInternalApplication(application, environment)
+      if (!windows) await resignInternalApplicationResources(application, environment)
     }
     if (windows) {
       console.log('Native product update: packaging the next version with the production NSIS installer')

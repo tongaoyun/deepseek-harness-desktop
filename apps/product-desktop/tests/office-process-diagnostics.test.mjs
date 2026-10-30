@@ -91,6 +91,23 @@ test('a sampler failure records only its code and does not retry or conceal conv
   assert.equal(log.match(/helper-sample/gu).length, 1)
 })
 
+test('records sampler termination separately when execFile supplies no exit code', async t => {
+  const { directory, cancellation } = await fixture(t)
+  let scan = 0
+  await observeOfficeProcesses(11, directory, {
+    signal: cancellation.signal, pollMs: 1, sampleAfterMs: 1, now: () => scan,
+    async readProcesses() { if (++scan > 3) cancellation.abort(); return '21 11 /engine/libreoffice-kit' },
+    async sample() { throw Object.assign(new Error('private arguments'), { code: null, signal: 'SIGKILL', killed: true }) },
+  })
+  const log = await readFile(join(directory, 'office-processes.log'), 'utf8')
+  const failure = log.trim().split('\n').map(JSON.parse).find(({ event }) => event === 'sample-failed')
+  assert.equal(failure.code, 'null')
+  assert.equal(failure.signal, 'SIGKILL')
+  assert.equal(failure.killed, true)
+  assert.ok(failure.elapsedMs >= 1)
+  assert.doesNotMatch(log, /private arguments/u)
+})
+
 test('macOS sampler captures a real private subprocess and leaves it running',
   { skip: process.platform !== 'darwin', timeout: 15_000 }, async t => {
     const { directory, cancellation, operations } = await fixture(t)

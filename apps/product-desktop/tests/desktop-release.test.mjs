@@ -7,8 +7,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
 import { Zip, ZipPassThrough, zipSync } from 'fflate'
-import { collectDesktopRelease, extractBuildArchive, publishDesktopRelease, RELEASE_TARGETS, waitForDesktopBuild } from '../scripts/desktop-release.mjs'
-import { apiClient, releaseDestination, stageBuildArchive } from '../scripts/deliver-desktop.mjs'
+import { collectDesktopRelease, desktopPackageAttempts, extractBuildArchive, mapReleaseWork, publishDesktopRelease, RELEASE_TARGETS, stageDesktopRelease, waitForDesktopBuild } from '../scripts/desktop-release.mjs'
+import { apiClient, downloadDesktopRelease, releaseDestination, stageBuildArchive } from '../scripts/deliver-desktop.mjs'
 
 const commit = 'a'.repeat(40)
 const version = '0.2.1-alpha.2.20261012.9.1'
@@ -19,6 +19,138 @@ const run = { id: 99, head_sha: commit, status: 'completed', conclusion: 'succes
 
 const socketFailure = () => new TypeError('fetch failed', {
   cause: Object.assign(new Error('synthetic credential and signed URL must remain private'), { code: 'ECONNRESET' }),
+})
+
+test('bounds transfers and waits for active work to settle after failure without scheduling more', async () => {
+  const first = Promise.withResolvers()
+  const sibling = Promise.withResolvers()
+  const active = Promise.withResolvers()
+  const calls = []
+  let ended = false
+  const operation = mapReleaseWork([0, 1, 2, 3], async item => {
+    calls.push(item)
+    if (calls.length === 2) active.resolve()
+    if (item === 0) { await first.promise; throw new Error('transfer failed') }
+    await sibling.promise
+    return item
+  }, 2)
+  const checked = assert.rejects(operation, /transfer failed/u).then(() => { ended = true })
+  try {
+    await active.promise
+    first.resolve()
+    await new Promise(resolve => setImmediate(resolve))
+    assert.equal(ended, false)
+    assert.deepEqual(calls, [0, 1])
+  } finally {
+    first.resolve()
+    sibling.resolve()
+    await checked
+  }
+  assert.deepEqual(await mapReleaseWork([1, 2, 3, 4], async value => value * 2, 2), [2, 4, 6, 8])
+})
+
+const packageJob = (target, attempt = 1, patch = {}) => ({ name: target === 'preflight' ? target : `${target} unsigned`,
+  run_attempt: attempt, run_id: run.id, head_sha: commit, status: 'completed', conclusion: 'success', ...patch })
+
+test('reuses earlier successful platforms while selecting the latest execution and checking preflight', async () => {
+  const latest = { ...run, run_attempt: 2 }
+  const request = async (_method, path) => ({ jobs: path.includes('/attempts/2/')
+    ? [packageJob('mac-x64', 2)] : ['preflight', ...RELEASE_TARGETS].map(target => packageJob(target)) })
+  assert.deepEqual(await desktopPackageAttempts(request, 'owner/build', latest, 'unsigned'), {
+    'win-x64': 1, 'mac-arm64': 1, 'mac-x64': 2,
+  })
+  for (const patch of [{ conclusion: 'failure' }, { conclusion: 'cancelled' }, { conclusion: 'skipped' },
+    { status: 'in_progress' }, { head_sha: 'b'.repeat(40) }, { run_id: 100 }, { run_attempt: 1 }]) {
+    await assert.rejects(desktopPackageAttempts(async (_method, path) => ({ jobs: path.includes('/attempts/2/')
+      ? [packageJob('mac-x64', 2, patch)] : ['preflight', ...RELEASE_TARGETS].map(target => packageJob(target)) }),
+    'owner/build', latest, 'unsigned'), /not successful/u)
+  }
+  await assert.rejects(desktopPackageAttempts(async () => ({ jobs: RELEASE_TARGETS.map(target => packageJob(target)) }),
+    'owner/build', run, 'unsigned'), /Missing/u)
+  await assert.rejects(desktopPackageAttempts(request, 'owner/build', { ...latest, path: 'other.yml' }, 'unsigned'), /identity/u)
+})
+
+test('verifies hosted packages before accepting an in-progress staging run and rejects expired or duplicate archives', async t => {
+  const original = await staged(t)
+  const directory = await mkdtemp(join(tmpdir(), 'harness-hosted-download-'))
+  t.after(() => rm(directory, { recursive: true, force: true }))
+  const artifacts = RELEASE_TARGETS.map((target, index) => ({ id: index + 1, expired: false,
+    name: `harness-${target}-unsigned-9-1`, workflow_run: { id: run.id, head_sha: commit } }))
+  const client = {
+    request: async (_method, path) => path.includes('/jobs?')
+      ? { jobs: ['preflight', ...RELEASE_TARGETS].map(target => packageJob(target)) } : { artifacts },
+    download: async path => {
+      const index = Number(/artifacts\/(\d+)/u.exec(path)[1]) - 1
+      const target = RELEASE_TARGETS[index]
+      const entries = {}
+      for (const name of await readdir(join(original, target))) entries[name] = await readFile(join(original, target, name))
+      return (async function* () { yield zipSync(entries) })()
+    },
+  }
+  const release = await downloadDesktopRelease(client, 'owner/build', { ...run, status: 'in_progress', conclusion: null },
+    directory, commit, productVersion, { signing: 'unsigned' })
+  assert.equal(release.version, version)
+  for (const kind of ['expired', 'duplicate', 'wrong-source']) {
+    const copy = structuredClone(artifacts)
+    if (kind === 'expired') copy[0].expired = true
+    if (kind === 'duplicate') copy.push(copy[0])
+    if (kind === 'wrong-source') copy[0].workflow_run.head_sha = 'b'.repeat(40)
+    await assert.rejects(downloadDesktopRelease({ ...client,
+      request: async (method, path) => path.includes('/artifacts?') ? { artifacts: copy } : client.request(method, path),
+      download: async () => assert.fail('Invalid identities must fail before downloads'),
+    }, 'owner/build', run, '/unused', commit, productVersion, { signing: 'unsigned' }), /artifact/u)
+  }
+})
+
+test('staging leaves drafts private and published retries do not change aggregate identity', async t => {
+  const first = await staged(t)
+  const second = await staged(t)
+  const packageAttempts = Object.fromEntries(RELEASE_TARGETS.map(target => [target, 1]))
+  const one = await collectDesktopRelease(first, run, commit, productVersion, { packageAttempts })
+  const two = await collectDesktopRelease(second, { ...run, run_attempt: 3 }, commit, productVersion, { packageAttempts })
+  assert.equal(one.body, two.body)
+  assert.deepEqual(one.files.map(({ name, sha256 }) => [name, sha256]), two.files.map(({ name, sha256 }) => [name, sha256]))
+  const adapter = destination('hosted', one)
+  await stageDesktopRelease(one, [adapter])
+  assert.equal((await adapter.find()).draft, true)
+  assert.equal(adapter.calls.includes('finalize'), false)
+})
+
+test('the internal publisher requires existing hosted assets with matching provider SHA-256 without reuploading', async () => {
+  for (const kind of ['matching', 'missing-release', 'missing-asset', 'digest-missing', 'digest-wrong', 'starter', 'size']) {
+    let draft = true
+    let finalized = false
+    const file = release.files[0]
+    const asset = { id: 7, name: file.name, size: kind === 'size' ? 1 : file.size,
+      state: kind === 'starter' ? 'starter' : 'uploaded',
+      digest: kind === 'digest-missing' ? null : `sha256:${kind === 'digest-wrong' ? 'c'.repeat(64) : file.sha256}` }
+    const client = { request: async (method, path) => {
+      if (method === 'PATCH') { finalized = true; draft = false; return {} }
+      assert.equal(method, 'GET', 'Internal verification must never create, upload or delete hosted assets')
+      if (path.includes('/assets?')) return kind === 'missing-asset' ? [] : [asset]
+      return kind === 'missing-release' ? undefined : { id: 1, tag_name: release.tag, body: release.body, draft,
+        prerelease: true, html_url: 'https://hosted/release' }
+    }, download: async () => assert.fail('Do not download verified hosted bytes through the internal publisher') }
+    const adapter = releaseDestination('hosted', client, 'owner/downloads', { github: true, staged: true, target: 'main' })
+    const operation = publishDesktopRelease({ ...release, files: [file] }, [adapter])
+    if (kind === 'matching') assert.deepEqual(await operation, ['https://hosted/release'])
+    else await assert.rejects(operation)
+    assert.equal(finalized, kind === 'matching')
+  }
+})
+
+test('hosted staging compares the provider digest with fully downloaded bytes', async () => {
+  for (const digest of [undefined, `sha256:${'a'.repeat(64)}`, `sha256:${hash('installer')}`]) {
+    let reads = 0
+    const adapter = releaseDestination('hosted', { download: async () => {
+      reads++
+      return (async function* () { yield Buffer.from('installer') })()
+    } }, 'owner/downloads', { github: true, target: 'main' })
+    const operation = adapter.hash({ id: 7, name: 'test.exe', size: 9, digest })
+    if (digest === `sha256:${hash('installer')}`) assert.equal(await operation, hash('installer'))
+    else await assert.rejects(operation)
+    assert.equal(reads, digest === undefined ? 0 : 1)
+  }
 })
 
 test('uses the Actions API media type for artifact ZIP redirects and binary media type for release assets', async t => {
@@ -420,7 +552,7 @@ for (const interruption of ['existing', 'lost', 'exhausted']) test(`recovers ${i
       asset = pending
       throw socketFailure()
     }
-    asset = { id: 8, name: file.name, size: file.size, state: 'uploaded' }
+    asset = { id: 8, name: file.name, size: file.size, state: 'uploaded', digest: `sha256:${file.sha256}` }
     return asset
   }
   const operation = publishDesktopRelease({ ...release, files: [file] }, [target])

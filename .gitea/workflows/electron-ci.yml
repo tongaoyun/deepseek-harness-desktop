@@ -17,6 +17,7 @@ jobs:
     env:
       # Match upstream CI's shared-host budget for cases, hooks and polling.
       DSH_COVERAGE_TEST_TIMEOUT_MS: '90000'
+      PNPM_CONFIG_CACHE_DIR: /pnpm-store/metadata-cache
     container:
       image: ci-node:1.0.0
       volumes:
@@ -48,7 +49,6 @@ jobs:
           npm install -g pnpm@11.28.5 --prefer-offline --no-audit --fund=false \
             --registry=https://registry.npmjs.org/
           pnpm config set store-dir /pnpm-store
-          pnpm config set cache-dir /pnpm-store/metadata-cache
           pnpm install --frozen-lockfile --prefer-offline --registry=https://registry.npmjs.org/
       - name: Verify upstream and product contracts
         run: |

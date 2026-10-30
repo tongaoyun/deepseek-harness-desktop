@@ -86,6 +86,8 @@ test('embeds internal native feeds without changing the official unsigned or Dev
   const mac = internalBuilderConfig(official, environment, 'darwin')
   assert.equal(mac.appId, INTERNAL_APP_ID)
   assert.equal(mac.mac.notarize, false)
+  assert.equal(typeof mac.mac.sign, 'function')
+  assert.equal(official.mac.sign, undefined)
   assert.deepEqual(mac.mac.target, ['dmg', 'zip'])
   assert.equal(mac.publish[0].url, productUpdateUrl(repository))
   assert.equal(mac.extraMetadata.dshMandatoryUpdatePolicy, undefined)
