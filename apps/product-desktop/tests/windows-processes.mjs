@@ -2,16 +2,22 @@
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 
-/** @returns {Promise<Array>} Current processes, with exact UTC creation ticks and executable paths. */
+/** @returns {Promise<Array>} Current processes read through the workflow's PowerShell 7, with exact UTC creation ticks and executable paths. */
 export async function windowsProcessSnapshot() {
-  const { stdout } = await promisify(execFile)('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', `
+  const execution = promisify(execFile)('pwsh.exe', ['-NoProfile', '-NonInteractive', '-Command', `
 $ErrorActionPreference = 'Stop'
-$rows = @(Get-CimInstance Win32_Process | ForEach-Object {
+[Console]::Error.WriteLine('Process snapshot: PowerShell ready')
+$processes = @(Get-CimInstance Win32_Process -Property ProcessId,ParentProcessId,CommandLine,ExecutablePath,CreationDate)
+[Console]::Error.WriteLine('Process snapshot: CIM ready count=' + $processes.Count)
+$rows = @($processes | ForEach-Object {
   @{ pid = $_.ProcessId; parent = $_.ParentProcessId; command = $_.CommandLine; image = $_.ExecutablePath;
      started = $(if ($_.CreationDate) { $_.CreationDate.ToUniversalTime().Ticks.ToString() } else { '' }) }
 })
 ConvertTo-Json -Compress -InputObject $rows
+[Console]::Error.WriteLine('Process snapshot: serialization complete')
 `], { timeout: 20_000, windowsHide: true })
+  execution.child.stdin.end()
+  const { stdout } = await execution
   return JSON.parse(stdout)
 }
 

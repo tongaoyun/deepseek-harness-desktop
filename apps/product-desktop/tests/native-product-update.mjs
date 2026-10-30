@@ -24,6 +24,7 @@ const builder = createRequire(require.resolve('electron-builder'))
 const packager = createRequire(builder.resolve('app-builder-lib'))
 const asar = packager('@electron/asar')
 const windows = process.platform === 'win32'
+const describeWindowsProcess = ({ pid, parent, started, image }) => ({ pid, parent, started, image })
 
 /** Explicit restart authorization, with or without active tasks. */
 export const restartConfirmation = /^(Install and Restart|安装并重启|Stop tasks and update|停止任务并更新)$/
@@ -266,11 +267,11 @@ app.whenReady().then(() => writeFileSync(${JSON.stringify(directory)} + '/boot-'
         try {
           await expect.poll(async () => {
             observed = await windowsProcessSnapshot()
-            return originalWindowsProcesses(observed, originals)
+            return originalWindowsProcesses(observed, originals).map(describeWindowsProcess)
           }, { timeout: 20_000 }).toEqual([])
         } catch (error) {
-          const describe = ({ pid, parent, started, image }) => ({ pid, parent, started, image })
-          const detail = { previous: originals.map(describe), current: observed.filter(process => originals.some(original => original.pid === process.pid)).map(describe) }
+          const detail = { previous: originals.map(describeWindowsProcess),
+            current: observed.filter(process => originals.some(original => original.pid === process.pid)).map(describeWindowsProcess) }
           const evidence = resolve(import.meta.dirname, '../../../.artifacts')
           await mkdir(evidence, { recursive: true })
           await writeFile(join(evidence, `native-windows-update-${process.arch}-processes.json`), JSON.stringify(detail, null, 2) + '\n')
@@ -301,7 +302,7 @@ app.whenReady().then(() => writeFileSync(${JSON.stringify(directory)} + '/boot-'
         oldProcessExited: true, hostExited: host.pid, sidecarExited: sidecar.pid,
         oldChildProcessesExited: previousChildren.map(child => child.pid),
         ...(windows ? { oldProcessIdentities: [initialWindowsProcess, ...previousChildren]
-          .map(({ pid, parent, started, image }) => ({ pid, parent, started, image })) } : {}) }) + '\n')
+          .map(describeWindowsProcess) } : {}) }) + '\n')
       console.log('Native product update passed:', initialVersion, '→', version)
       return updated
     },
@@ -317,7 +318,7 @@ app.whenReady().then(() => writeFileSync(${JSON.stringify(directory)} + '/boot-'
             const originals = [initialWindowsProcess, updatedWindowsProcess].filter(Boolean)
             await writeFile(stop, '')
             try {
-              await expect.poll(async () => originalWindowsProcesses(await windowsProcessSnapshot(), originals), { timeout: 20_000 }).toEqual([])
+              await expect.poll(async () => originalWindowsProcesses(await windowsProcessSnapshot(), originals).map(describeWindowsProcess), { timeout: 20_000 }).toEqual([])
             } finally { stopInstalledProcesses(appPath) }
           }
         } else {
