@@ -101,7 +101,9 @@ export async function synchronizeDesktop({ repository, commit, tag, baseline, cr
     if (head.object?.type !== 'commit' || head.object.sha !== commit
       || target?.type !== 'commit' || target.sha !== baseline) throw error
   }
-  await request('PATCH', `/repos/${repository}`, { default_branch: 'main', has_issues: false, has_wiki: false })
+  if (metadata.default_branch !== 'main' || metadata.has_issues !== false || metadata.has_wiki !== false) {
+    await request('PATCH', `/repos/${repository}`, { default_branch: 'main', has_issues: false, has_wiki: false })
+  }
   await selectPackagingWorkflow(request, repository)
   await request('PUT', `/repos/${repository}/actions/permissions`, { enabled: true, allowed_actions: 'selected' })
   await request('PUT', `/repos/${repository}/actions/permissions/selected-actions`, {

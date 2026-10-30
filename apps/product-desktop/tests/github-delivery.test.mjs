@@ -158,6 +158,20 @@ test('synchronizes public and private source without changing visibility', async
   }
 })
 
+test('keeps configured mirror settings without a redundant mutation and still configures missing or enabled features', async () => {
+  for (const patch of [{}, { has_issues: true }, { has_wiki: true }, { has_issues: undefined }, { size: 0, default_branch: 'master' }]) {
+    const { options, calls } = fixture({ default_branch: 'main', has_issues: false, has_wiki: false, ...patch })
+    const request = options.request
+    options.request = async (method, path, body) => {
+      if (method === 'PATCH' && Object.keys(patch).length === 0) assert.fail('Configured settings must not require another network write')
+      return request(method, path, body)
+    }
+    await synchronizeDesktop(options)
+    assert.equal(calls.filter(call => call.method === 'PATCH').length, Object.keys(patch).length === 0 ? 0 : 1)
+    assert.ok(calls.some(call => call.path?.endsWith('/dispatches')))
+  }
+})
+
 test('rejects malformed destinations and unpinned source before accessing GitHub', async () => {
   for (const invalid of [{ repository: 'https://github.com/example/repo' }, { repository: 'example/repo?token=secret' },
     { commit: 'main' }, { tag: 'latest' }]) {
