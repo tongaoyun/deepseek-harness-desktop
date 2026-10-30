@@ -515,8 +515,9 @@ export async function packageTarget(
       buildPaths.packedLandlock,
     ], buildEnv, REPOSITORY_ROOT)
   }
+  // prepare:dsh validates this payload after assembly and any required signing.
   const prepareRuntime = () => executePreparation(
-    ['run', 'prepare:runtime', ...(signPrimaryRuntime ? ['--defer-primary-runtime-smoke'] : [])], downloadEnv)
+    ['run', 'prepare:runtime', '--defer-primary-runtime-smoke'], downloadEnv)
   const preparation = await Promise.allSettled([pack(), prepareRuntime()])
   for (const result of preparation) if (result.status === 'rejected') throw result.reason
   if (signPrimaryRuntime) await execute(['run', 'sign:primary-runtime'], electronBuilderEnv)

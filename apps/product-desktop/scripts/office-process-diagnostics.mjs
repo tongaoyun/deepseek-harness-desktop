@@ -52,7 +52,8 @@ export async function observeOfficeProcesses(rootPid, directory, options) {
     return stdout
   })
   const sample = options.sample ?? (async (pid, path, signal) => {
-    await execute('/usr/bin/sample', [String(pid), '1', '1', '-file', path], { env, signal, timeout: 5000 })
+    await execute('/usr/bin/sample', [String(pid), '1', '10', '-mayDie', '-nodsyms', '-file', path],
+      { env, signal, timeout: 30_000 })
   })
   const observed = new Map()
   const sampled = new Set()

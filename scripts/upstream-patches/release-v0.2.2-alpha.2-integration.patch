@@ -1442,7 +1442,7 @@ index 79136479f078e86647d799cd52788931644ba2a1..0127fe072545047442f62cec5294c5aa
  }
  
 diff --git a/apps/desktop/scripts/package-target.ts b/apps/desktop/scripts/package-target.ts
-index b6bc6efb6370e6a795c2a3c8d4bf726da6575bc1..981f4cddcaff3d8a47f1e834a5570f671498cf74 100644
+index b6bc6efb6370e6a795c2a3c8d4bf726da6575bc1..5d85217dc514720a0e76ec1e79180bb84c03e40c 100644
 --- a/apps/desktop/scripts/package-target.ts
 +++ b/apps/desktop/scripts/package-target.ts
 @@ -1,4 +1,6 @@
@@ -1515,10 +1515,13 @@ index b6bc6efb6370e6a795c2a3c8d4bf726da6575bc1..981f4cddcaff3d8a47f1e834a5570f67
      rmSync(buildPaths.packedLandlock, { recursive: true, force: true })
      mkdirSync(buildPaths.packedLandlock, { recursive: true })
      await executePreparation(['--dir', 'native/system', 'run', 'build:ts'], buildEnv, REPOSITORY_ROOT)
-@@ -513,25 +517,20 @@ export async function packageTarget(
+@@ -511,27 +515,23 @@ export async function packageTarget(
+       buildPaths.packedLandlock,
+     ], buildEnv, REPOSITORY_ROOT)
    }
++  // prepare:dsh validates this payload after assembly and any required signing.
    const prepareRuntime = () => executePreparation(
-     ['run', 'prepare:runtime', ...(signPrimaryRuntime ? ['--defer-primary-runtime-smoke'] : [])], downloadEnv)
+-    ['run', 'prepare:runtime', ...(signPrimaryRuntime ? ['--defer-primary-runtime-smoke'] : [])], downloadEnv)
 -  if (target.platform === 'win32') {
 -    const results = await Promise.allSettled([pack(), prepareRuntime()])
 -    for (const result of results) if (result.status === 'rejected') throw result.reason
@@ -1526,6 +1529,7 @@ index b6bc6efb6370e6a795c2a3c8d4bf726da6575bc1..981f4cddcaff3d8a47f1e834a5570f67
 -    await pack()
 -    await prepareRuntime()
 -  }
++    ['run', 'prepare:runtime', '--defer-primary-runtime-smoke'], downloadEnv)
 +  const preparation = await Promise.allSettled([pack(), prepareRuntime()])
 +  for (const result of preparation) if (result.status === 'rejected') throw result.reason
    if (signPrimaryRuntime) await execute(['run', 'sign:primary-runtime'], electronBuilderEnv)
@@ -1545,7 +1549,7 @@ index b6bc6efb6370e6a795c2a3c8d4bf726da6575bc1..981f4cddcaff3d8a47f1e834a5570f67
        '--config.mac.notarize=false',
      ], electronBuilderEnv)
      await execute(['exec', 'tsx', 'scripts/smoke-packaged-runtime.ts'], targetEnv)
-@@ -543,20 +542,20 @@ export async function packageTarget(
+@@ -543,20 +543,20 @@ export async function packageTarget(
        environment: electronBuilderEnv,
      }, buildMacArtifact), undefined, undefined, proxyEvent)
    } else if (target.platform === 'darwin' && !invocation.unsigned && !invocation.skipNotarization) {
@@ -2745,7 +2749,7 @@ index 14d55a0a8b2be11da698ec7dc0a045401cf780d6..de2b9f3ea02448dc3021f596ea36757b
 +  expect(readdirSync(join(root, 'packed'))).toEqual(['deepseek-ai-dsh-probe-1.2.3.tgz'])
 +}, testTimeout)
 diff --git a/apps/desktop/tests/package-target-stages.spec.ts b/apps/desktop/tests/package-target-stages.spec.ts
-index 37bd38384ffa9796f3e499d324afa20073e3127e..f2ee9c28fbe0e25620e4710fc009e3fdde3f2a6d 100644
+index 37bd38384ffa9796f3e499d324afa20073e3127e..47d4b8df85338273d2d57849c8a34fe914a116f2 100644
 --- a/apps/desktop/tests/package-target-stages.spec.ts
 +++ b/apps/desktop/tests/package-target-stages.spec.ts
 @@ -30,6 +30,9 @@ vi.mock('node:fs', async importOriginal => ({
@@ -2839,7 +2843,7 @@ index 37bd38384ffa9796f3e499d324afa20073e3127e..f2ee9c28fbe0e25620e4710fc009e3fd
    expect(stages).not.toContain('preflight:windows-signing')
    expect(stages).not.toContain('run sign:primary-runtime')
    expect(stages).not.toContain('run sign:primary-runtime --dsh')
-@@ -224,17 +227,17 @@ it.each(['mac-arm64', 'mac-x64', 'win-x64'] as const)('selects branding from the
+@@ -224,17 +227,19 @@ it.each(['mac-arm64', 'mac-x64', 'win-x64'] as const)('selects branding from the
        DSH_CLIENT_TITLE: 'Inherited title',
      }, run)
      const build = stages.find(stage => stage.startsWith('run build'))
@@ -2861,19 +2865,23 @@ index 37bd38384ffa9796f3e499d324afa20073e3127e..f2ee9c28fbe0e25620e4710fc009e3fd
 +  ['win-x64', 'run build:artifacts --profile local'],
 +  ['mac-arm64', localPack],
 +  ['win-x64', localPack],
++  ['mac-arm64', 'run prepare:dsh'],
++  ['win-x64', 'run prepare:dsh'],
  ] as const)('stops unsigned %s packaging when %s fails', async (target, failure) => {
    const { run, stages } = supervisor(failure)
    const invocation = parseDesktopPackageInvocation([target, '--unsigned'],
-@@ -243,7 +246,7 @@ it.each([
+@@ -243,8 +248,8 @@ it.each([
    const failedAt = stages.findIndex(stage => stage.startsWith(failure))
    expect(failedAt).toBeGreaterThanOrEqual(0)
    expect(stages.slice(failedAt + 1)).toEqual(
 -    target === 'win-x64' && failure.startsWith('exec tsx') ? ['run prepare:runtime'] : [])
-+    failure === localPack ? ['run prepare:runtime'] : [])
-   expect(stages.some(stage => stage.startsWith('--dir apps/desktop-host pack'))).toBe(false)
+-  expect(stages.some(stage => stage.startsWith('--dir apps/desktop-host pack'))).toBe(false)
++    failure === localPack ? ['run prepare:runtime --defer-primary-runtime-smoke'] : [])
++  expect(stages.some(stage => stage.startsWith('--dir apps/desktop-host pack'))).toBe(failure === 'run prepare:dsh')
    expect(writeFileSync).not.toHaveBeenCalled()
  })
-@@ -267,7 +270,8 @@ it.each([
+ 
+@@ -267,7 +272,8 @@ it.each([
      ...environment, CSC_LINK: 'unused.p12', CSC_KEY_PASSWORD: 'unused-secret', APPLE_API_KEY: 'unused.p8',
      DSH_DESKTOP_MACOS_SIGNING_IDENTITY: 'Unused identity', DSH_DESKTOP_MACOS_TEAM_ID: 'TEAMID1234',
    }, run)
@@ -2883,7 +2891,7 @@ index 37bd38384ffa9796f3e499d324afa20073e3127e..f2ee9c28fbe0e25620e4710fc009e3fd
    expect(stages.at(-1)).toBe('exec tsx scripts/smoke-packaged-runtime.ts --unsigned')
    for (const call of run.run.mock.calls) {
      expect(call[3].env).toMatchObject({ DSH_DESKTOP_UNSIGNED: '1', CSC_IDENTITY_AUTO_DISCOVERY: 'false' })
-@@ -313,7 +317,7 @@ it.each([undefined, '2'])('passes macOS pack concurrency %s only to workspace pa
+@@ -313,11 +319,11 @@ it.each([undefined, '2'])('passes macOS pack concurrency %s only to workspace pa
      DSH_DESKTOP_MACOS_NOTARIZATION_PROXY: 'http://apple.example:8081',
    }, run)
    const calls = run.run.mock.calls
@@ -2892,7 +2900,12 @@ index 37bd38384ffa9796f3e499d324afa20073e3127e..f2ee9c28fbe0e25620e4710fc009e3fd
    expect(packs).toHaveLength(2)
    for (const call of packs) expect(call[2].slice(-2)).toEqual(['--concurrency', concurrency ?? '4'])
    for (const call of calls) {
-@@ -422,3 +426,55 @@ it.each([undefined, '7'])('applies file-owned compression only to the final nota
+-    expect(call[3].env.HTTP_PROXY).toBe(/^run prepare:(?:runtime|dsh)$/u.test(call[0]) ? 'http://downloads.example:8080' : undefined)
++    expect(call[3].env.HTTP_PROXY).toBe(/^run prepare:(?:runtime --defer-primary-runtime-smoke|dsh)$/u.test(call[0]) ? 'http://downloads.example:8080' : undefined)
+   }
+   expect(withMacOSNotarizationProxy).not.toHaveBeenCalled()
+ })
+@@ -422,3 +428,55 @@ it.each([undefined, '7'])('applies file-owned compression only to the final nota
    expect(dmg?.[3].env.ELECTRON_BUILDER_COMPRESSION_LEVEL).toBe('9')
    expect(writeFileSync).toHaveBeenCalledOnce()
  })
@@ -2904,13 +2917,13 @@ index 37bd38384ffa9796f3e499d324afa20073e3127e..f2ee9c28fbe0e25620e4710fc009e3fd
 +  run.run.mockImplementation(async (stage) => {
 +    stages.push(stage)
 +    if (stage.startsWith(localPack)) await pack.promise
-+    if (stage === 'run prepare:runtime') await runtime.promise
++    if (stage === 'run prepare:runtime --defer-primary-runtime-smoke') await runtime.promise
 +  })
 +  const operation = packageTarget(parseDesktopPackageInvocation([target, '--unsigned'], 'darwin', target === 'mac-arm64' ? 'arm64' : 'x64'), environment, run)
 +  try {
 +    await vi.waitFor(() => {
 +      expect(stages.some(stage => stage.startsWith(localPack))).toBe(true)
-+      expect(stages).toContain('run prepare:runtime')
++      expect(stages).toContain('run prepare:runtime --defer-primary-runtime-smoke')
 +    })
 +    runtime.resolve(undefined)
 +    await setImmediate()

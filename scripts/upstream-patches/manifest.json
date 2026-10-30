@@ -227,7 +227,7 @@
         {
           "path": "apps/desktop/scripts/package-target.ts",
           "before": "2d5648300b8093b39a211a52d328bbbf28a9d883c81bd7ff55bbc7aed3878eb7",
-          "after": "b4c5cdbcc3c6b467dac2808496579ff008204d29314e7bd3caee8b78451d09be"
+          "after": "676e52f103d377b55749cba09d25d5a75cdd9f9474c9479eadc0cab7e9451f30"
         },
         {
           "path": "apps/desktop/scripts/prepare-package-set.ts",
@@ -1652,7 +1652,7 @@
         {
           "path": "apps/desktop/tests/package-target-stages.spec.ts",
           "before": "9571d6ec4115eb8e732e7a4ebcd3955250dba84d3225f4426d4a0f26bd20de1c",
-          "after": "7ca896c7a5b583a5dc22cf0ddeea271d9b0805220a5f77db2eccfeea3ed3d6c8"
+          "after": "129012614ba09f373158b4c1258bdec1c8b5a28e3dffc952f202164dc47f6fa9"
         },
         {
           "path": "scripts/release/pack.spec.ts",

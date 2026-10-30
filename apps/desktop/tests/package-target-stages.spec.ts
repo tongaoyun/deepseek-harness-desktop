@@ -238,6 +238,8 @@ it.each([
   ['win-x64', 'run build:artifacts --profile local'],
   ['mac-arm64', localPack],
   ['win-x64', localPack],
+  ['mac-arm64', 'run prepare:dsh'],
+  ['win-x64', 'run prepare:dsh'],
 ] as const)('stops unsigned %s packaging when %s fails', async (target, failure) => {
   const { run, stages } = supervisor(failure)
   const invocation = parseDesktopPackageInvocation([target, '--unsigned'],
@@ -246,8 +248,8 @@ it.each([
   const failedAt = stages.findIndex(stage => stage.startsWith(failure))
   expect(failedAt).toBeGreaterThanOrEqual(0)
   expect(stages.slice(failedAt + 1)).toEqual(
-    failure === localPack ? ['run prepare:runtime'] : [])
-  expect(stages.some(stage => stage.startsWith('--dir apps/desktop-host pack'))).toBe(false)
+    failure === localPack ? ['run prepare:runtime --defer-primary-runtime-smoke'] : [])
+  expect(stages.some(stage => stage.startsWith('--dir apps/desktop-host pack'))).toBe(failure === 'run prepare:dsh')
   expect(writeFileSync).not.toHaveBeenCalled()
 })
 
@@ -321,7 +323,7 @@ it.each([undefined, '2'])('passes macOS pack concurrency %s only to workspace pa
   expect(packs).toHaveLength(2)
   for (const call of packs) expect(call[2].slice(-2)).toEqual(['--concurrency', concurrency ?? '4'])
   for (const call of calls) {
-    expect(call[3].env.HTTP_PROXY).toBe(/^run prepare:(?:runtime|dsh)$/u.test(call[0]) ? 'http://downloads.example:8080' : undefined)
+    expect(call[3].env.HTTP_PROXY).toBe(/^run prepare:(?:runtime --defer-primary-runtime-smoke|dsh)$/u.test(call[0]) ? 'http://downloads.example:8080' : undefined)
   }
   expect(withMacOSNotarizationProxy).not.toHaveBeenCalled()
 })
@@ -434,13 +436,13 @@ it.each(['mac-arm64', 'mac-x64'] as const)('overlaps %s packing and runtime prep
   run.run.mockImplementation(async (stage) => {
     stages.push(stage)
     if (stage.startsWith(localPack)) await pack.promise
-    if (stage === 'run prepare:runtime') await runtime.promise
+    if (stage === 'run prepare:runtime --defer-primary-runtime-smoke') await runtime.promise
   })
   const operation = packageTarget(parseDesktopPackageInvocation([target, '--unsigned'], 'darwin', target === 'mac-arm64' ? 'arm64' : 'x64'), environment, run)
   try {
     await vi.waitFor(() => {
       expect(stages.some(stage => stage.startsWith(localPack))).toBe(true)
-      expect(stages).toContain('run prepare:runtime')
+      expect(stages).toContain('run prepare:runtime --defer-primary-runtime-smoke')
     })
     runtime.resolve(undefined)
     await setImmediate()
