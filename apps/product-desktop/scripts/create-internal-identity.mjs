@@ -15,15 +15,15 @@ const password = randomBytes(32).toString('base64')
 const environment = { ...process.env, HARNESS_INTERNAL_EXPORT_PASSWORD: password }
 const key = join(directory, 'private.pem')
 const certificate = join(directory, 'certificate.pem')
+const configuration = join(directory, 'openssl.cnf')
 try {
   const execute = async args => {
     try { await promisify(execFile)('openssl', args, { env: environment, timeout: 60_000 }) }
     catch { throw new Error('Internal identity creation failed; no existing certificate was replaced') }
   }
-  await execute(['req', '-x509', '-newkey', 'rsa:4096', '-nodes', '-days', '3650',
-    '-subj', '/CN=DeepSeek Harness Internal Distribution/O=Instudio',
-    '-addext', 'basicConstraints=critical,CA:TRUE', '-addext', 'keyUsage=critical,digitalSignature,keyCertSign',
-    '-addext', 'extendedKeyUsage=critical,codeSigning', '-keyout', key, '-out', certificate])
+  await writeFile(configuration, '[req]\ndistinguished_name = subject\nx509_extensions = code_signing\n[subject]\n[code_signing]\nbasicConstraints = critical,CA:TRUE\nkeyUsage = critical,digitalSignature,keyCertSign\nextendedKeyUsage = critical,codeSigning\nsubjectKeyIdentifier = hash\nauthorityKeyIdentifier = keyid:always\n', { mode: 0o600, flag: 'wx' })
+  await execute(['req', '-config', configuration, '-x509', '-newkey', 'rsa:4096', '-nodes', '-sha256', '-days', '3650',
+    '-subj', '/CN=DeepSeek Harness Internal Distribution/O=Instudio', '-keyout', key, '-out', certificate])
   await execute(['pkcs12', '-export', '-keypbe', 'PBE-SHA1-3DES', '-certpbe', 'PBE-SHA1-3DES', '-macalg', 'sha1', '-inkey', key, '-in', certificate,
     '-out', join(directory, 'identity.p12'), '-passout', 'env:HARNESS_INTERNAL_EXPORT_PASSWORD'])
   await chmod(join(directory, 'identity.p12'), 0o600)
@@ -32,4 +32,6 @@ try {
   const metadata = { certificateSHA256: parsed.fingerprint256.replaceAll(':', ''), validTo: parsed.validTo, notarized: false }
   await writeFile(join(directory, 'identity.json'), JSON.stringify(metadata, null, 2) + '\n', { mode: 0o600, flag: 'wx' })
   console.log(`Created fixed internal signing identity. SHA-256: ${metadata.certificateSHA256}`)
-} finally { await rm(key, { force: true }) }
+} finally {
+  await Promise.all([key, configuration].map(path => rm(path, { force: true })))
+}

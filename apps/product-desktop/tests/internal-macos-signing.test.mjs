@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
 import { promisify } from 'node:util'
-import { withInternalMacIdentity } from '../scripts/internal-signing.mjs'
+import { internalCertificateIdentity, withInternalMacIdentity } from '../scripts/internal-signing.mjs'
 import { internalBuilderConfig, INTERNAL_APP_ID, resignInternalApplicationResources } from '../scripts/internal-package.mjs'
 
 for (const [tool, path] of [['system LibreSSL', '/usr/bin:/bin'], ['configured OpenSSL', process.env.PATH]]) {
@@ -16,9 +16,13 @@ for (const [tool, path] of [['system LibreSSL', '/usr/bin:/bin'], ['configured O
     t.after(() => rm(directory, { recursive: true, force: true }))
     const execute = promisify(execFile)
     const identity = join(directory, 'identity')
+    const ambient = join(directory, 'ambient.cnf')
+    await writeFile(ambient, '[req]\nx509_extensions = invalid\n[invalid]\nnotAnExtension = unsupported\n')
+    t.diagnostic((await execute('openssl', ['version'], { env: { ...process.env, PATH: path } })).stdout.trim())
     await execute(process.execPath, [new URL('../scripts/create-internal-identity.mjs', import.meta.url).pathname,
-      '--directory', identity], { env: { ...process.env, PATH: path }, timeout: 60_000 })
+      '--directory', identity], { env: { ...process.env, PATH: path, OPENSSL_CONF: ambient }, timeout: 60_000 })
     const metadata = JSON.parse(await readFile(join(identity, 'identity.json'), 'utf8'))
+    internalCertificateIdentity(await readFile(join(identity, 'certificate.pem'), 'utf8'), metadata.certificateSHA256)
     const application = join(directory, 'Harness.app')
     const helper = join(application, 'Contents/Frameworks/Helper.app')
     for (const [path, identifier, name] of [[application, INTERNAL_APP_ID, 'Harness'], [helper, `${INTERNAL_APP_ID}.helper`, 'Helper']]) {
