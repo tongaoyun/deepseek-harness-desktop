@@ -43,7 +43,7 @@ jobs:
           gh auth setup-git
           tag="$(cat UPSTREAM_TAG)"
           git fetch --depth=1 origin "refs/tags/${tag}:refs/tags/${tag}"
-      - uses: pnpm/action-setup@v5.0.0
+      - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v7.0.0
         with:
           node-version: '24'
@@ -135,7 +135,7 @@ jobs:
           build_date="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" --jq '.created_at')"
           printf 'PACKAGE_BUILD_DATE=%s\n' "$build_date" >> "$GITHUB_ENV"
       - name: Set up pnpm
-        uses: pnpm/action-setup@v5.0.0
+        uses: pnpm/action-setup@v6
       - name: Set up Node
         uses: actions/setup-node@v7.0.0
         with:
@@ -309,7 +309,7 @@ jobs:
         with:
           ref: ${{ inputs.source_sha }}
           persist-credentials: false
-      - uses: pnpm/action-setup@v5.0.0
+      - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v7.0.0
         with:
           node-version: '24'
