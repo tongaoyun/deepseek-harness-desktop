@@ -14,6 +14,7 @@ import { expect } from 'vitest'
 import { verifyRuntimeArchive } from '../../desktop/scripts/verify-runtime-archive.ts'
 import { createElectronBuilderConfig } from '../../desktop/scripts/electron-builder-config.mjs'
 import { rewriteWindowsArchiveIntegrity, writeUpdateArchive } from './native-update-integrity.mjs'
+import { nativeUpdateFeedBootstrap } from './native-update-feed-bootstrap.mjs'
 import { stopInstalledProcesses } from '../scripts/installed-processes.mjs'
 import { INTERNAL_APP_ID, resignInternalApplicationResources, verifyInternalApplication } from '../scripts/internal-package.mjs'
 import { originalWindowsProcesses, windowsProcessDescendants, windowsProcessSnapshot } from './windows-processes.mjs'
@@ -172,15 +173,7 @@ app.whenReady().then(() => writeFileSync(${JSON.stringify(directory)} + '/boot-'
   const mirror = { ...current.dshDesktopUpdateMirror,
     packageUrl: new URL('api/packages/fixture/generic/desktop/', origin).href }
   payloadPath = new URL(`${version}/${zipName}`, mirror.packageUrl).pathname
-  const qualifiedBootstrap = bootstrap + `
-await app.whenReady()
-const updateSession = session.fromPartition('electron-updater', { cache: false })
-updateSession.webRequest.onBeforeRequest({ urls: ${JSON.stringify(['nightly.yml', 'nightly-mac.yml'].map(name =>
-    `https://github.com/${mirror.githubRepository}/releases/latest/download/${name}*`))} }, (details, callback) => {
-  callback({ redirectURL: ${JSON.stringify(origin)} + new URL(details.url).pathname.split('/').at(-1) })
-})
-app.on('will-quit', () => updateSession.webRequest.onBeforeRequest(null))
-`
+  const qualifiedBootstrap = bootstrap + nativeUpdateFeedBootstrap({ githubRepository: mirror.githubRepository, origin })
   let cache
   try {
     console.log('Native product update: preparing private versions and integrity records')

@@ -18,6 +18,8 @@ async function main() {
   assert.ok(root, 'The launcher must own the private user-data directory')
   app.setPath('userData', join(root, 'electron'))
   await app.whenReady()
+  const feed = await getNetSession().fetch('https://github.com/example/downloads/releases/latest/download/nightly.yml')
+  assert.equal(await feed.text(), 'fixture update feed')
   const payload = Buffer.from('inert updater transport fixture\n')
   const hash = createHash('sha512').update(payload).digest('base64')
   const source = new URL('https://github.com/example/downloads/releases/download/v1.2.3-alpha.1/desktop-x64.zip')
@@ -48,7 +50,7 @@ async function main() {
   const transport = new DesktopUpdateHttpExecutor(1000, undefined, mirror)
   const session = getNetSession()
   session.webRequest.onBeforeRequest({ urls: [source.href] }, (_details, callback) => callback({ redirectURL: `${origin}/fallback` }))
-  const cases = []
+  const cases = ['esm-entry-ready-and-feed-redirect']
   try {
     const provider = new DesktopUpdateMirrorProvider({ provider: 'custom', mirror, channel: 'nightly' },
       { channel: 'nightly' }, { executor: transport, platform: 'darwin' })
