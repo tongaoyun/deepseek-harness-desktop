@@ -330,7 +330,7 @@ export async function stageDesktopRelease(release, destinations) {
 }
 
 /**
- * Verify every destination before finalizing either release; retry reconciles partial finalization without replacing assets.
+ * Verify every destination before finalization; confirm uncertain writes by reading the same release without repeating them.
  * @param {object} release Verified release identity and files.
  * @param {object[]} destinations Release adapters.
  * @returns {Promise<string[]>} Published download links.
@@ -339,9 +339,15 @@ export async function publishDesktopRelease(release, destinations) {
   const staged = await stageDesktopRelease(release, destinations)
   const links = []
   for (const { destination, remote } of staged) {
-    if (remote.draft) await destination.finalize(remote.id, release)
+    if (remote.draft) {
+      try { await destination.finalize(remote.id, release) }
+      catch (error) { if (error.uncertainReleaseMutation !== true) throw error }
+    }
     const complete = await destination.find(release.tag)
-    if (!complete || complete.draft) throw new Error(`Release finalization failed at ${destination.name}`)
+    if (!complete || complete.draft !== false || complete.id !== remote.id || complete.tag_name !== release.tag
+      || complete.body !== release.body || complete.prerelease !== (release.prerelease ?? true)) {
+      throw new Error(`Release finalization failed at ${destination.name}`)
+    }
     links.push(complete.html_url)
   }
   return links

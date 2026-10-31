@@ -78,6 +78,11 @@ jobs:
             packages/client/ui-settings-general/tests/settings-root.client.spec.tsx \
             packages/client/ui-settings-general/tests/shell.client.spec.ts \
             packages/client/ui-settings-general/tests/apply.client.spec.ts \
+            packages/client/ui-chat/tests/reasoning-text.client.spec.ts \
+            packages/client/ui-chat/tests/reasoning-row.client.spec.tsx \
+            packages/client/ui-chat/tests/reasoning-content.client.spec.tsx \
+            packages/client/ui-chat/tests/process-groups.client.spec.ts \
+            packages/experimental/client-ui-cot-translation/tests/translation-body.client.spec.tsx \
             scripts/upstream-boundaries.spec.ts \
             scripts/build.spec.ts \
             scripts/rescope-vendor.spec.ts \
