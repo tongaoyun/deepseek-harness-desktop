@@ -3723,6 +3723,83 @@ index 9d4614b6e0c5ec2dbd98bdbab4bf202e7c3cca74..53357b6487cb445c77b8ed3a20383cde
 +    mtime: new Date(2000, 0, 1),
 +  })
  }
+diff --git a/apps/web/tests/reasoning-preview.e2e.ts b/apps/web/tests/reasoning-preview.e2e.ts
+index 7f7a34c8e783efc7987e0fdffcd00fbd63ea34f9..eaad729824e87bb6d162cf67c082c0f27085a1a4 100644
+--- a/apps/web/tests/reasoning-preview.e2e.ts
++++ b/apps/web/tests/reasoning-preview.e2e.ts
+@@ -10,7 +10,7 @@ import {
+ import { connectFreshWorkspace, expandOwningTurnProcess, newEnglishPage, writeComposerDraft } from './support.ts'
+ 
+ const SUMMARY = `Next paragraph: ${'inspect the loaded context and pending tools '.repeat(8).trim()}`
+-const DELTAS = ['First paragraph', `\nDetails\n\n\n${SUMMARY}`, '\nMore detail']
++const DELTAS = ['First paragraph', `\nDetails\n\n\n${SUMMARY}`, '\nMore detail', '\n\nExpanded update']
+ const UI_EXPECTED = fileURLToPath(new URL('./expected/reasoning-preview/running.expected.md', import.meta.url))
+ /** Computed mask of the animated whale: the ui-chat package asset URL, whose `@` is percent-encoded. */
+ const WHALE_MASK = /^url\("([^"]*\/plugins\/@deepseek-ai\/dsh-client-ui-chat\/assets\/running-whale%402x-[0-9a-f]{12}\.png)"\)$/
+@@ -23,19 +23,22 @@ class PausedReasoningAdapter extends LlmAdapter {
+     proceed: Promise.withResolvers<undefined>(),
+   }))
+ 
++  constructor(readonly prefix: string) { super() }
++
+   release(): void {
+     for (const stage of this.stages) stage.proceed.resolve(undefined)
+   }
+ 
+   override async *stream(options: GenerateOptions): AsyncIterable<StreamChunk> {
+     yield { type: 'block-start', index: 0, blockType: 'reasoning' }
++    if (this.prefix) yield { type: 'reasoning-delta', index: 0, text: this.prefix }
+     for (const stage of this.stages) {
+       yield { type: 'reasoning-delta', index: 0, text: stage.text }
+       stage.arrived.resolve(undefined)
+       await stage.proceed.promise
+       options.signal?.throwIfAborted()
+     }
+-    yield { type: 'block-end', index: 0, block: { type: 'reasoning', text: DELTAS.join('') } }
++    yield { type: 'block-end', index: 0, block: { type: 'reasoning', text: this.prefix + DELTAS.join('') } }
+     yield { type: 'block-start', index: 1, blockType: 'text' }
+     yield { type: 'text-delta', index: 1, text: 'Done' }
+     yield { type: 'block-end', index: 1, block: { type: 'text', text: 'Done' } }
+@@ -43,9 +46,9 @@ class PausedReasoningAdapter extends LlmAdapter {
+   }
+ }
+ 
+-it('shows completed paragraph first lines across blank lines with a right-edge fade', async () => {
++it.each(['', '<signature>private-metadata</signature>\n'])('shows completed paragraph first lines and live expanded content with prefix %j', async (prefix) => {
+   const scaffold = await launchWebScaffold()
+-  const adapter = new PausedReasoningAdapter()
++  const adapter = new PausedReasoningAdapter(prefix)
+   try {
+     scaffold.ctx.effect(() => scaffold.ctx.llm.registerAdapter(['reasoning-preview-test'], adapter))
+     await scaffold.ctx.agentDefaultModel.saveSelection({ provider: 'reasoning-preview-test', model: 'paused' })
+@@ -61,8 +64,8 @@ it('shows completed paragraph first lines across blank lines with a right-edge f
+       await writeComposerDraft(page, input, 'Show a streamed reasoning preview.')
+       await input.press('Enter')
+ 
+-      const [first, second, third] = adapter.stages
+-      if (first === undefined || second === undefined || third === undefined) throw new Error('preview stages are incomplete')
++      const [first, second, third, fourth] = adapter.stages
++      if (first === undefined || second === undefined || third === undefined || fourth === undefined) throw new Error('preview stages are incomplete')
+       await first.arrived.promise
+       const reasoning = page.locator('[data-variant="think"][data-state="running"]')
+       await expandOwningTurnProcess(page, reasoning)
+@@ -138,7 +141,16 @@ it('shows completed paragraph first lines across blank lines with a right-edge f
+       await compareOrRefreshGolden(UI_EXPECTED,
+         await captureStableAria(page, '[data-variant="think"]', scaffold.workspaceCwd), webSnapshotMode())
+ 
++      expect(await reasoning.textContent()).not.toContain('private-metadata')
++      await reasoning.getByRole('button').click()
++      await reasoning.getByText('More detail', { exact: false }).waitFor()
++      expect(await reasoning.textContent()).not.toContain('private-metadata')
+       third.proceed.resolve(undefined)
++      await fourth.arrived.promise
++      await reasoning.getByText('Expanded update', { exact: true }).waitFor()
++      expect(await reasoning.getByRole('button').getAttribute('aria-expanded')).toBe('true')
++      expect(await reasoning.textContent()).not.toContain('private-metadata')
++      fourth.proceed.resolve(undefined)
+       await settled
+       await page.getByText('Done', { exact: true }).waitFor()
+       await whale.waitFor({ state: 'detached' })
 diff --git a/apps/web/tsconfig.json b/apps/web/tsconfig.json
 index 44dcc4fbdd84e90403a3531089630849708f0f3e..b2eb12d43c66a47355089f80a3bee511d827df20 100644
 --- a/apps/web/tsconfig.json
@@ -4925,6 +5002,80 @@ index f2f84ab22d7cf9f4ecbf90f841fd428e44baf675..2b2f6f0e3a271788817c804b7d1d2265
 -Source: [`packages/skill/skill/src/index.ts`](../../packages/skill/skill/src/index.ts)
 +Source: [`packages/skill/skill/src/types.ts`](../../packages/skill/skill/src/types.ts)
  <!-- END GENERATED cordis-surface -->
+diff --git a/docs/upgrade-guide/v0.2.2-alpha.2/reasoning-body-props/guide.i18n.yaml b/docs/upgrade-guide/v0.2.2-alpha.2/reasoning-body-props/guide.i18n.yaml
+new file mode 100644
+index 0000000000000000000000000000000000000000..16ec06e2f7365c0aa0eaebbc8de774bdd86f8ef1
+--- /dev/null
++++ b/docs/upgrade-guide/v0.2.2-alpha.2/reasoning-body-props/guide.i18n.yaml
+@@ -0,0 +1,16 @@
++# Bilingual-pair consistency record for guide.md (docs/i18n/README.md): per heading
++# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
++# After editing either side, bring the other along and re-record with:
++#   pnpm run verify-translation-pairing --write docs/upgrade-guide/v0.2.2-alpha.2/reasoning-body-props/guide.md
++/:
++  en: ec5a417eaedb6661
++  zh: b5adde6bf6c32fd0
++/reasoning-body-slot-text-fields:
++  en: fa1d18044c27df35
++  zh: b6e77ab0f411e4e6
++/reasoning-body-slot-text-fields/change:
++  en: ff40c45f886d47f5
++  zh: 18d7bb5456b048e6
++/reasoning-body-slot-text-fields/migration:
++  en: 49cd6281b4aef73a
++  zh: 6bdf66c3f82bfa8b
+diff --git a/docs/upgrade-guide/v0.2.2-alpha.2/reasoning-body-props/guide.md b/docs/upgrade-guide/v0.2.2-alpha.2/reasoning-body-props/guide.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..1aac0161729544417218b3aafb40cd3e3b14bdc3
+--- /dev/null
++++ b/docs/upgrade-guide/v0.2.2-alpha.2/reasoning-body-props/guide.md
+@@ -0,0 +1,20 @@
++---
++kind: upgrade-guide
++description: "Reasoning Body Slot text carries display-ready content, with original output in rawText."
++---
++
++# Reasoning Body Slot text fields
++
++English | [中文](guide.zh.md)
++
++## Change
++
++Contributions to `conversation.chat.reasoning.body` receive the model output in the new `rawText` field. The existing `text` field supplies Chat's prepared display text instead of the original output. `running` is unchanged. This affects custom reasoning renderers and translation wrappers.
++
++The `conversation.chat.reasoning.content` Factory still accepts `text`, `running`, and optional `labels`. It renders the caller-selected Markdown. The [Chat README](../../../../packages/client/ui-chat/README.md#grouped-rendering) documents the Slot.
++
++## Migration
++
++1. Keep reading `text` for ordinary rendering, translation requests, and untranslated views. Update extensions that need the full model output to read `rawText`.
++2. Pass the selected `text`, or its translation, to the Content Factory without repeating Chat's display processing.
++3. Rebuild the extension and verify streamed and settled rendering, translation, and the untranslated view with each supported model format.
+diff --git a/docs/upgrade-guide/v0.2.2-alpha.2/reasoning-body-props/guide.zh.md b/docs/upgrade-guide/v0.2.2-alpha.2/reasoning-body-props/guide.zh.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..9ebc9146c956d184429a3fd6a8ee3d76a3670878
+--- /dev/null
++++ b/docs/upgrade-guide/v0.2.2-alpha.2/reasoning-body-props/guide.zh.md
+@@ -0,0 +1,20 @@
++---
++kind: upgrade-guide
++description: "推理 Body Slot 的 text 提供显示文本，rawText 保留原始输出。"
++---
++
++# 推理 Body Slot 的文本字段
++
++[English](guide.md) | 中文
++
++## 变更
++
++`conversation.chat.reasoning.body` 扩展通过新增的 `rawText` 字段接收模型输出。现有的 `text` 字段提供 Chat 处理后的显示文本，替代原始输出。`running` 保持不变。这会影响自定义推理渲染器和翻译包装组件。
++
++`conversation.chat.reasoning.content` Factory 仍接收 `text`、`running` 和可选的 `labels`。它渲染调用方选定的 Markdown。[Chat README](../../../../packages/client/ui-chat/README.zh.md#grouped-rendering) 介绍了该 Slot。
++
++## 迁移
++
++1. 在普通渲染、翻译请求和未翻译视图中继续读取 `text`。需要完整模型输出的扩展改为读取 `rawText`。
++2. 向 Content Factory 传入选定的 `text` 或其译文，不要重复执行 Chat 的显示处理。
++3. 重新构建扩展，使用每种支持的模型格式验证流式与完成后的渲染、翻译和未翻译视图。
 diff --git a/package.json b/package.json
 index 9dccd6008bc8baa11863c2cab544eac2c786808e..80220277e80e57e9988a0806ee9f9fb5d72fe29f 100644
 --- a/package.json
@@ -6924,6 +7075,112 @@ index 73f412f564c649395fb29df21847543f71939938..a0a5eb7dc8015913ff0d63bcac327ed9
        ],
      },
    }
+diff --git a/packages/client/ui-chat/README.i18n.yaml b/packages/client/ui-chat/README.i18n.yaml
+index f0c7f90fe87a404b6f38479fa9ccae94d69a92be..b781716b46072bfc7bf15980634e855109f2a3d4 100644
+--- a/packages/client/ui-chat/README.i18n.yaml
++++ b/packages/client/ui-chat/README.i18n.yaml
+@@ -33,8 +33,8 @@
+   en: b0d806604bc17006
+   zh: 18dabe5dc2d0d419
+ /deepseek-ai-dsh-client-ui-chat/grouped-rendering:
+-  en: 3afad0b4c6bf9ce0
+-  zh: d8179ba4ee9fcd61
++  en: b1630d93a52f483e
++  zh: 59cb81ca50ecffc4
+ /deepseek-ai-dsh-client-ui-chat/scroll-ownership:
+   en: 91e1f5f12ca51211
+   zh: b92090966d58b82c
+diff --git a/packages/client/ui-chat/README.md b/packages/client/ui-chat/README.md
+index 97af0ab22b868909c1f51da84863629284d87611..b848f892898e7eb192626dd52a23e8b800a323b0 100644
+--- a/packages/client/ui-chat/README.md
++++ b/packages/client/ui-chat/README.md
+@@ -123,7 +123,7 @@ Scroll-edge fades initialize when `ResizeObserver` reports the open group's layo
+ 
+ Each group owns local `useDisclosure` state that survives mode changes while its component stays mounted.
+ 
+-The session-scoped `conversation.chat.reasoning.body` single Slot offers the original reasoning text and streaming state only when its body is expanded. Its official entry registers at priority 100 and calls the `conversation.chat.reasoning.content` Factory. A replacement uses a lower priority number and may call that same Factory with original or derived text. The root-scoped Factory requires no Session and fixes compact typography. Its optional `labels` accepts complete `MarkdownLabels` unchanged; omission uses Chat's localized defaults. The host supplies no inline fallback or plugin action state. Display extensions must preserve access to the original text and own their controls inside their Body wrapper. Extensions do not replace the reasoning preview or its disclosure policy. The [reasoning display rules](src/client/conversation-nodes/README.md#display-modes) define which blocks produce rows.
++The session-scoped `conversation.chat.reasoning.body` single Slot offers the original `rawText`, display-ready `text`, and streaming state only when its body is expanded. Its official entry registers at priority 100 and calls the `conversation.chat.reasoning.content` Factory. A replacement uses a lower priority number and may call that same Factory with original or derived text. The root-scoped Factory requires no Session and fixes compact typography. Its optional `labels` accepts complete `MarkdownLabels` unchanged; omission uses Chat's localized defaults. The host supplies no inline fallback or plugin action state. Display extensions must preserve access to the untranslated text and own their controls inside their Body wrapper. Extensions do not replace the reasoning preview or its disclosure policy. The [reasoning display rules](src/client/conversation-nodes/README.md#display-modes) define which blocks produce rows.
+ 
+ The Chat-node slot injects a reset-bound `useDisclosure` Hook for reasoning and tools. Intermediate renderers forward it without subscribing; each invocation owns independent open state. Source callbacks retain their receiver and stable identity. When an enclosing Turn actually hides a process member, its seat resets those disclosures without replacing component keys or changing the Hook reference. Display-mode changes preserve their open state.
+ 
+diff --git a/packages/client/ui-chat/README.zh.md b/packages/client/ui-chat/README.zh.md
+index 9dcd30137d86f69b0074141f01d6262656bc95a8..b2178427616624a8af3f6002b2d0438b9dc5f1ff 100644
+--- a/packages/client/ui-chat/README.zh.md
++++ b/packages/client/ui-chat/README.zh.md
+@@ -123,7 +123,7 @@ Chat Builder 按节点发布 `bottomSource`：节点可见且属于已加载的
+ 
+ 每个组拥有本地 `useDisclosure` 状态，组件保持挂载时，模式切换保留该状态。
+ 
+-Session 作用域的 `conversation.chat.reasoning.body` single Slot 仅在思考正文展开时提供原始思考文本和流式状态。官方条目以优先级 100 注册，并调用 `conversation.chat.reasoning.content` Factory。替换项使用更小的优先级数值，可向同一个 Factory 传入原文或派生显示文本。root 作用域的 Factory 不要求 Session，并固定使用紧凑排版。其可选 `labels` 原样接受完整的 `MarkdownLabels`，省略时使用 Chat 的默认本地化文案。宿主不提供内联 fallback 或插件操作状态。显示扩展必须保留查看原文的能力，并在自己的 Body 包装内维护控件。扩展不替换思考预览或展开策略。哪些块生成思考行由[思考展示规则](src/client/conversation-nodes/README.zh.md#display-modes)定义。
++Session 作用域的 `conversation.chat.reasoning.body` single Slot 仅在思考正文展开时提供原始文本 `rawText`、显示文本 `text` 和流式状态。官方条目以优先级 100 注册，并调用 `conversation.chat.reasoning.content` Factory。替换项使用更小的优先级数值，可向同一个 Factory 传入原文或派生显示文本。root 作用域的 Factory 不要求 Session，并固定使用紧凑排版。其可选 `labels` 原样接受完整的 `MarkdownLabels`，省略时使用 Chat 的默认本地化文案。宿主不提供内联 fallback 或插件操作状态。显示扩展必须保留查看未翻译文本的能力，并在自己的 Body 包装内维护控件。扩展不替换思考预览或展开策略。哪些块生成思考行由[思考展示规则](src/client/conversation-nodes/README.zh.md#display-modes)定义。
+ 
+ Chat 节点 slot 为推理与工具注入绑定重置来源的 `useDisclosure` 钩子。中间 renderer 只透传、不订阅，每次调用拥有独立展开状态。来源回调保留接收对象及稳定引用。外层轮次实际隐藏过程成员时，所在节点重置这些开合状态，不替换组件 key，也不改变钩子引用。展示模式切换保留展开状态。
+ 
+diff --git a/packages/client/ui-chat/src/client/chat/ReasoningContent.tsx b/packages/client/ui-chat/src/client/chat/ReasoningContent.tsx
+index 2289bf3404103847a4674dbde04866e58ac00622..da220164ea5a1505591682a84f0d6f32943422c7 100644
+--- a/packages/client/ui-chat/src/client/chat/ReasoningContent.tsx
++++ b/packages/client/ui-chat/src/client/chat/ReasoningContent.tsx
+@@ -18,7 +18,7 @@ export const ReasoningContent = memo(function ReasoningContent({ text, running,
+ 
+ /**
+  * Render the default Body through the same Factory available to third-party wrappers.
+- * @param props - original reasoning and the framework's Factory renderer.
++ * @param props - display-ready reasoning and the framework's Factory renderer.
+  * @returns an occurrence of the official reasoning Content Factory.
+  */
+ export function DefaultReasoningBody({ text, running, renderFactorySlot }: ReasoningBodyProps) {
+diff --git a/packages/client/ui-chat/src/client/chat/ReasoningRow.tsx b/packages/client/ui-chat/src/client/chat/ReasoningRow.tsx
+index 347ce6bee41a6a49304fc3596ed84a34c4716579..ae5a1bf0d316c2b17559f0acc7b499ca3a1ae857 100644
+--- a/packages/client/ui-chat/src/client/chat/ReasoningRow.tsx
++++ b/packages/client/ui-chat/src/client/chat/ReasoningRow.tsx
+@@ -3,6 +3,7 @@ import { memo, useMemo } from 'react'
+ import { DisclosureRow, IconThinkOutlineRegular, TextShimmer } from '@deepseek-ai/dsh-client-ui-primitives'
+ import type { PropsRenderSlots } from '@deepseek-ai/dsh-client-ui-slots'
+ import type { ChatViewSlotProps, UseDisclosure, UsePresentation } from '../contract/slots.ts'
++import { reasoningText } from '../reasoning-text.ts'
+ import a11yCss from './accessibility.module.css'
+ import css from './ReasoningRow.module.css'
+ 
+@@ -36,7 +37,7 @@ function latestCompletedParagraphFirstLine(text: string): string {
+  * collapsed summary omits double-asterisk markers; expanded content renders
+  * the complete Markdown with secondary typography. A streaming preview advances
+  * when a paragraph's first line completes. Mode changes toggle CSS display without unmounting
+- * collapsed summaries.
++ * collapsed summaries. The Body Slot receives original and display-ready text.
+  * @param props.text - complete or streaming reasoning text.
+  * @param props.running - whether this block is the streaming tail.
+  * @param props.usePresentation - live display-policy selector for this reasoning row.
+@@ -46,7 +47,7 @@ function latestCompletedParagraphFirstLine(text: string): string {
+  * @returns the reasoning disclosure.
+  */
+ export const ReasoningRow = memo(function ReasoningRow({
+-  text, running, textInteractionSource = false, usePresentation, useDisclosure, renderSlot, t,
++  text: rawText, running, textInteractionSource = false, usePresentation, useDisclosure, renderSlot, t,
+ }: {
+   text: string
+   running: boolean
+@@ -56,6 +57,7 @@ export const ReasoningRow = memo(function ReasoningRow({
+   t: ChatViewSlotProps['t']
+ } & Pick<PropsRenderSlots<'conversation.chat.reasoning.body'>, 'renderSlot'>) {
+   const { expanded, toggle } = useDisclosure()
++  const text = useMemo(() => reasoningText(rawText), [rawText])
+   const summaryText = running ? latestCompletedParagraphFirstLine(text) : firstLine(text)
+   const summary = useMemo(() => summaryText.replaceAll('**', ''), [summaryText])
+   const preview = usePresentation(policy => !expanded && summary !== ''
+@@ -72,9 +74,11 @@ export const ReasoningRow = memo(function ReasoningRow({
+   ), [running, summary])
+   const content = useMemo(() => expanded ? (
+     <div className={css.thinkBody} data-text-interaction-source={textInteractionSource && !running ? '' : undefined}>
+-      {renderSlot('conversation.chat.reasoning.body', { text, running })}
++      {renderSlot('conversation.chat.reasoning.body', { rawText, text, running })}
+     </div>
+-  ) : undefined, [expanded, renderSlot, running, text, textInteractionSource])
++  ) : undefined, [expanded, renderSlot, running, rawText, text, textInteractionSource])
++
++  if (text !== rawText && text.trim() === '') return null
+ 
+   return (
+     <div
 diff --git a/packages/client/ui-chat/src/client/chat/running-whale@2x.png b/packages/client/ui-chat/src/client/chat/running-whale@2x.png
 new file mode 100644
 index 0000000000000000000000000000000000000000..daa680536c0a2b9044adc5b310a396deb0308a80
@@ -7314,6 +7571,254 @@ VIf49`8l<8V<>&41Rp$w&{ueIB7OemP
 literal 0
 HcmV?d00001
 
+diff --git a/packages/client/ui-chat/src/client/contract/slots.ts b/packages/client/ui-chat/src/client/contract/slots.ts
+index 96028b0ffdf4a024d7cb6cc7231ff4263296a4c5..b8adab1e0f0e4e543d3137238a2a8892a7f979fe 100644
+--- a/packages/client/ui-chat/src/client/contract/slots.ts
++++ b/packages/client/ui-chat/src/client/contract/slots.ts
+@@ -77,16 +77,22 @@ export interface QuotaNoticeState {
+   seq: number
+ }
+ 
+-/** Original model-provided reasoning offered to the expanded Body Slot. */
++/** Original and display-ready reasoning offered to the expanded Body Slot. */
+ export interface ReasoningBodyOwnerProps {
+-  /** Complete or streaming reasoning text. */
++  /** Complete or streaming model output. */
++  readonly rawText: string
++  /** Reasoning text prepared for display. */
+   readonly text: string
+   /** Whether the reasoning tail is still streaming. */
+   readonly running: boolean
+ }
+ 
+ /** Session-independent original or derived display input to the Content Factory. */
+-export interface ReasoningContentInput extends ReasoningBodyOwnerProps {
++export interface ReasoningContentInput {
++  /** Caller-selected Markdown. */
++  readonly text: string
++  /** Whether the supplied text is still streaming. */
++  readonly running: boolean
+   /** Localized Markdown controls, used unchanged when supplied; omission uses Chat's defaults. */
+   readonly labels?: MarkdownLabels
+ }
+@@ -463,9 +469,9 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
+      */
+     'conversation.chat.commandview': { kind: 'keyed'; scope: 'session'; owner: CommandRowOwnerProps }
+     /**
+-     * Expanded reasoning body with the unchanged model text. The official entry
++     * Expanded reasoning body with raw and display-ready text. The official entry
+      * has priority 100 and calls the reasoning Content Factory; smaller priority
+-     * values replace it. Contributions must preserve access to the original text.
++     * values replace it. Contributions must preserve access to untranslated display text.
+      */
+     'conversation.chat.reasoning.body': { kind: 'single'; scope: 'session'; owner: ReasoningBodyOwnerProps }
+     /**
+diff --git a/packages/client/ui-chat/src/client/conversation-nodes/process-activity.ts b/packages/client/ui-chat/src/client/conversation-nodes/process-activity.ts
+index 3b82dc2ecb031c906696de3f2e14f3fa96317354..785ea85f54103f87aca8da9e50842c6d204f06e0 100644
+--- a/packages/client/ui-chat/src/client/conversation-nodes/process-activity.ts
++++ b/packages/client/ui-chat/src/client/conversation-nodes/process-activity.ts
+@@ -1,4 +1,5 @@
+ /** Tool-category and live-detail interpretation owned by Chat grouping. */
++import { reasoningText } from '../reasoning-text.ts'
+ import type { ToolArgs } from '@deepseek-ai/dsh-client-ui-conversation/client'
+ import type { ProcessActivity, ProcessActivitySummary } from '../contract/process-groups.ts'
+ import type { ChatNode } from '../contract/chat-nodes.ts'
+@@ -99,7 +100,7 @@ function liveReasoningDetail(nodes: readonly ChatNode[]): string {
+     for (let blockIndex = node.data.blocks.length - 1; blockIndex >= 0; blockIndex--) {
+       const block = node.data.blocks[blockIndex]
+       if (block?.kind !== 'reasoning') continue
+-      const paragraphs = block.text.split(/\r?\n[\t ]*\r?\n/)
++      const paragraphs = reasoningText(block.text).split(/\r?\n[\t ]*\r?\n/)
+       for (let paragraphIndex = paragraphs.length - 1; paragraphIndex >= 0; paragraphIndex--) {
+         const detail = normalizeLiveToolDetail(paragraphs[paragraphIndex]?.replaceAll('**', ''))
+         if (detail !== '') return detail
+diff --git a/packages/client/ui-chat/src/client/reasoning-text.ts b/packages/client/ui-chat/src/client/reasoning-text.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..677629f9f765a97f485a4ac080fdc9c114fe5557
+--- /dev/null
++++ b/packages/client/ui-chat/src/client/reasoning-text.ts
+@@ -0,0 +1,23 @@
++/** Display text preparation for model reasoning. */
++
++/**
++ * Prepare complete or streaming reasoning for display.
++ * @param text - original complete or streaming reasoning.
++ * @returns display text, or empty text when no displayable content is available.
++ */
++export function reasoningText(text: string): string {
++  if (text[0] !== '<') return text
++  const opening = '<signature>'
++  if (opening.startsWith(text)) return ''
++  if (!text.startsWith(opening)) return text
++  const closing = '</signature>'
++  const end = text.indexOf(closing, opening.length)
++  if (end === -1) return ''
++  let start = end + closing.length
++  while (start < text.length) {
++    if (text[start] === '\n') start++
++    else if (text[start] === '\r' && text[start + 1] === '\n') start += 2
++    else break
++  }
++  return text.slice(start)
++}
+diff --git a/packages/client/ui-chat/tests/process-groups.client.spec.ts b/packages/client/ui-chat/tests/process-groups.client.spec.ts
+index f3d2ba643d9df98580548d2a8a21e107a540ad74..16981cf9cb23b2c32414ecd6af54de8ca7a578ae 100644
+--- a/packages/client/ui-chat/tests/process-groups.client.spec.ts
++++ b/packages/client/ui-chat/tests/process-groups.client.spec.ts
+@@ -88,6 +88,14 @@ describe('Definition-owned Chat process groups', () => {
+     expect(processActivity([{ ...node, data: { root } }]).runningDetail).toBe(expected)
+   })
+ 
++  it.each([
++    ['<signature>private', ''],
++    ['<signature>private</signature>\n', ''],
++    ['<signature>private</signature>\nVisible detail', 'Visible detail'],
++  ])('omits signature metadata from running process detail %j', (text, expected) => {
++    expect(processActivity([assistant(text)]).runningDetail).toBe(expected)
++  })
++
+   it('keeps 160 graphemes when the bounded prefix splits a surrogate pair', () => {
+     const command = '👩‍💻'.repeat(87) + '☀️' + 'a'.repeat(71) + '👩‍💻'
+     expect(command).toHaveLength(513)
+diff --git a/packages/client/ui-chat/tests/reasoning-component-fixture.tsx b/packages/client/ui-chat/tests/reasoning-component-fixture.tsx
+index c2e0543f3cfac330330f113d93e0ab325ee1e46d..1bd1e90c75455d52ab1aa3150e270e1031130b72 100644
+--- a/packages/client/ui-chat/tests/reasoning-component-fixture.tsx
++++ b/packages/client/ui-chat/tests/reasoning-component-fixture.tsx
+@@ -5,7 +5,7 @@ import { zh as commonZh } from '@deepseek-ai/dsh-client-locale/src/locales/zh.ts
+ import type { PropsRenderFactories } from '@deepseek-ai/dsh-client-ui-slots'
+ import type { ReasoningContentInput } from '../src/client/contract/slots.ts'
+ import type { AssistantMarkdownProps } from '../src/client/chat/AssistantMarkdown.tsx'
+-import { ReasoningContent } from '../src/client/chat/ReasoningContent.tsx'
++import { DefaultReasoningBody, ReasoningContent } from '../src/client/chat/ReasoningContent.tsx'
+ import { zh } from '../src/client/locale.ts'
+ 
+ const t = makeTranslate(zh, commonZh)
+@@ -23,7 +23,9 @@ function content(input: ReasoningContentInput) {
+ /** Render the production child component without emulating a registry or its dispatch. */
+ export const renderReasoningSlot: AssistantMarkdownProps['renderSlot'] = (key: string, input: object) => {
+   if (key !== 'conversation.chat.reasoning.body') throw new Error(`Unexpected reasoning Slot: ${key}`)
+-  return content(input as ReasoningContentInput)
++  return createElement(DefaultReasoningBody, {
++    ...input, renderFactorySlot: renderReasoningFactory,
++  } as ComponentProps<typeof DefaultReasoningBody>)
+ }
+ 
+ /** Supply the official component at the Factory call seam of a standalone component unit. */
+diff --git a/packages/client/ui-chat/tests/reasoning-content.client.spec.tsx b/packages/client/ui-chat/tests/reasoning-content.client.spec.tsx
+index f56a1c37d85e196497e8dea200f666433ad2cbca..f1b2f159c6d0b6dd72915e7a5c3f7fe73cfc91e9 100644
+--- a/packages/client/ui-chat/tests/reasoning-content.client.spec.tsx
++++ b/packages/client/ui-chat/tests/reasoning-content.client.spec.tsx
+@@ -67,7 +67,9 @@ describe('reasoning Content Factory', () => {
+ 
+   it('restores the registered default after a wrapping plugin unloads and removes the Factory with its owner', async () => {
+     const b = await createReasoningRenderFixture('en')
+-    const view = b.render(b.renderSlot('conversation.chat.reasoning.body', { text: 'Original thought', running: false }))
++    const view = b.render(b.renderSlot('conversation.chat.reasoning.body', {
++      rawText: 'Original model thought', text: 'Original thought', running: false,
++    }))
+     expect(view.getByText('Original thought')).toBeTruthy()
+     expect(b.runtime.slots.entries('conversation.chat.reasoning.body')[0]?.options.priority).toBe(100)
+     const plugin = await b.runtime.mount({ inject: ['slots'], apply: (ctx) => {
+diff --git a/packages/client/ui-chat/tests/reasoning-row.client.spec.tsx b/packages/client/ui-chat/tests/reasoning-row.client.spec.tsx
+index 42bf510e9837d829487edf86a82e2bfce3e1feca..bcff30c695b4d6ab94b107a7102576d16f269c31 100644
+--- a/packages/client/ui-chat/tests/reasoning-row.client.spec.tsx
++++ b/packages/client/ui-chat/tests/reasoning-row.client.spec.tsx
+@@ -39,7 +39,7 @@ describe('AssistantMarkdown reasoning blocks', () => {
+     expect(view.getAllByRole('button')).toHaveLength(1)
+     expect(view.container.querySelectorAll('[data-variant="think"]')).toHaveLength(1)
+     fireEvent.click(view.getByRole('button'))
+-    expect(calls).toHaveBeenCalledWith('conversation.chat.reasoning.body', { text, running: false })
++    expect(calls).toHaveBeenCalledWith('conversation.chat.reasoning.body', { rawText: text, text, running: false })
+     expect(view.getByText('Visible reasoning').tagName).toBe('STRONG')
+     expect(blocks.map(block => block.text)).toEqual(texts)
+   })
+@@ -134,7 +134,7 @@ describe('AssistantMarkdown reasoning blocks', () => {
+ })
+ 
+ describe('ReasoningRow', () => {
+-  it('offers only text and streaming state to the standard Body Slot after expansion', () => {
++  it('offers original and display text after expansion', () => {
+     const calls = vi.fn()
+     const extension: AssistantMarkdownProps['renderSlot'] = (key, owner, options) => {
+       calls(key, owner)
+@@ -144,11 +144,40 @@ describe('ReasoningRow', () => {
+       usePresentation={useDetailedPresentation} renderSlot={extension} t={t} />)
+     expect(calls).not.toHaveBeenCalled()
+     fireEvent.click(view.getByRole('button'))
+-    expect(calls).toHaveBeenCalledWith('conversation.chat.reasoning.body', { text: 'Original thought', running: false })
++    expect(calls).toHaveBeenCalledWith('conversation.chat.reasoning.body', { rawText: 'Original thought', text: 'Original thought', running: false })
+     expect(view.getAllByText('Original thought')).toHaveLength(1)
+     expect(view.getAllByRole('button')).toHaveLength(1)
+   })
+ 
++  it('hides signature metadata and retains expansion while the body streams', () => {
++    const calls = vi.fn()
++    const extension: AssistantMarkdownProps['renderSlot'] = (key, owner, options) => {
++      calls(key, owner)
++      return renderSlot(key, owner, options)
++    }
++    const props = { useDisclosure, usePresentation: useDetailedPresentation, renderSlot: extension, t }
++    const view = render(<ReasoningRow {...props} text="<sig" running />)
++    for (const text of ['<signature>private', '<signature>private</signature>\n']) {
++      view.rerender(<ReasoningRow {...props} text={text} running />)
++      expect(view.queryByRole('button')).toBeNull()
++      expect(view.container.textContent).not.toContain('private')
++    }
++    const prefix = '<signature>private</signature>\n'
++    view.rerender(<ReasoningRow {...props} text={prefix + 'Visible summary\nBody'} running />)
++    const toggle = view.getByRole('button')
++    expect(view.getByText('Visible summary')).toBeTruthy()
++    fireEvent.click(toggle)
++    view.rerender(<ReasoningRow {...props} text={prefix + 'Visible summary\nBody\n\nUpdate'} running={false} textInteractionSource />)
++    expect(view.getByRole('button')).toBe(toggle)
++    expect(toggle.getAttribute('aria-expanded')).toBe('true')
++    expect(view.getByText('Update')).toBeTruthy()
++    expect(view.container.querySelector('[data-text-interaction-source]')).not.toBeNull()
++    expect(view.container.textContent).not.toContain('private')
++    expect(calls).toHaveBeenLastCalledWith('conversation.chat.reasoning.body', {
++      rawText: prefix + 'Visible summary\nBody\n\nUpdate', text: 'Visible summary\nBody\n\nUpdate', running: false,
++    })
++  })
++
+   it.each([
+     ['', ''],
+     ['An unfinished line', ''],
+diff --git a/packages/client/ui-chat/tests/reasoning-text.client.spec.ts b/packages/client/ui-chat/tests/reasoning-text.client.spec.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..fc7eb49c64e09338144591b54c8b86f4c99fdcb8
+--- /dev/null
++++ b/packages/client/ui-chat/tests/reasoning-text.client.spec.ts
+@@ -0,0 +1,30 @@
++import { describe, expect, it } from 'vitest'
++import { reasoningText } from '../src/client/reasoning-text.ts'
++
++describe('reasoning display text', () => {
++  it.each([
++    '',
++    'Ordinary reasoning',
++    '普通思考正文',
++    '\n  Original text  \n',
++    '<note>Original text</note>',
++    'Body <signature>literal</signature>',
++    ' <signature>literal</signature>',
++  ])('preserves ordinary reasoning %j', (text) => {
++    expect(reasoningText(text)).toBe(text)
++  })
++
++  it.each(['<', '<sig', '<signature>', '<signature>opaque', '<signature>opaque</sig',
++    '<signature>opaque</signature>', '<signature>opaque</signature>\r\n\n'])('hides metadata-only streaming text %j', (text) => {
++    expect(reasoningText(text)).toBe('')
++  })
++
++  it.each([
++    ['<signature>opaque</signature>Body', 'Body'],
++    ['<signature>opaque</signature>\n\r\n\n  Body  \n', '  Body  \n'],
++    ['<signature>opaque</signature>\rBody', '\rBody'],
++    ['<signature>opaque</signature>\nBody <signature>literal</signature>', 'Body <signature>literal</signature>'],
++  ])('removes only leading signature metadata from %j', (text, expected) => {
++    expect(reasoningText(text)).toBe(expected)
++  })
++})
 diff --git a/packages/client/ui-conversation/README.i18n.yaml b/packages/client/ui-conversation/README.i18n.yaml
 index 8f74c9dfc60a9c15abaccd75b83986d18203ca2e..b8554c2f843c22037b20f6ff127814ff9b0f6edd 100644
 --- a/packages/client/ui-conversation/README.i18n.yaml
@@ -10835,6 +11340,19 @@ index fbeb5635bd124f555aa6df7eb586514c18192c02..126a808f5db87affbb9ac5661cf2e619
 +    expect(entries.listeners.size).toBe(0)
 +  })
  })
+diff --git a/packages/experimental/client-ui-cot-translation/src/client/TranslationBody.tsx b/packages/experimental/client-ui-cot-translation/src/client/TranslationBody.tsx
+index 4edc6ed7867d2c7ee722d4c1287044cde9a28957..b6e9b8f31f5c5f202f677eed0c5ef94807b40d6f 100644
+--- a/packages/experimental/client-ui-cot-translation/src/client/TranslationBody.tsx
++++ b/packages/experimental/client-ui-cot-translation/src/client/TranslationBody.tsx
+@@ -24,7 +24,7 @@ export type TranslationBodyProps = PropsRuntime<'conversation.chat.reasoning.bod
+ 
+ /**
+  * Render translated reasoning, retaining the complete original until a failed request is retried.
+- * @param props - original reasoning, translation preferences, and cancellation-aware callback.
++ * @param props - display-ready reasoning, translation preferences, and cancellation-aware callback.
+  * @returns compact Markdown and translation status with a retry action on failure.
+  */
+ export function TranslationBody(props: TranslationBodyProps) {
 diff --git a/packages/experimental/client-ui-cot-translation/src/index.ts b/packages/experimental/client-ui-cot-translation/src/index.ts
 index 583df001b054486657076de77d2acb140ee19268..c5c84a6524f62978ad2f789755f696a869e45b16 100644
 --- a/packages/experimental/client-ui-cot-translation/src/index.ts
@@ -10847,6 +11365,91 @@ index 583df001b054486657076de77d2acb140ee19268..c5c84a6524f62978ad2f789755f696a8
          cancelled.reject(signal.reason)
        })
        await Promise.race([activation, cancelled.promise])
+diff --git a/packages/experimental/client-ui-cot-translation/tests/translation-body.client.spec.tsx b/packages/experimental/client-ui-cot-translation/tests/translation-body.client.spec.tsx
+index 5b16b48ae4d51c94bbc23c0be8935dd054e65fe0..5bbbbab1465adf5f008c5b6384f91142a164e070 100644
+--- a/packages/experimental/client-ui-cot-translation/tests/translation-body.client.spec.tsx
++++ b/packages/experimental/client-ui-cot-translation/tests/translation-body.client.spec.tsx
+@@ -13,18 +13,18 @@ import type { TranslateText } from '../src/client/translation.ts'
+ 
+ afterEach(cleanup)
+ 
+-function fixture() {
++function fixture(text = 'Original paragraph') {
+   const preferences = createSnapshotStore<CotTranslationPreferences>({ provider: 'google', targetLanguage: 'auto' })
+   const locale = createSnapshotStore<LocaleSnapshot>({ active: 'zh', locales: [], revision: 0 })
+   const translationLimit = createSnapshotStore(4000)
+   const translate = vi.fn<TranslateText>(async request => `${request.provider}:${request.targetLanguage}:${request.text}`)
+-  const props = { text: 'Original paragraph', running: false, translate, renderFactorySlot, t: makeTranslate(en),
++  const props = { rawText: 'Raw model reasoning', text, running: false, translate, renderFactorySlot, t: makeTranslate(en),
+     usePreferences: bindSnapshotSelector(preferences), useTranslationLocale: bindSnapshotSelector(locale),
+     useTranslationLimit: bindSnapshotSelector(translationLimit) } as TranslationBodyProps
+   return { props, preferences, locale, translationLimit, translate }
+ }
+ 
+-it('honors an explicit Google selection and the UI language, and switches to the original without another request', async () => {
++it('translates display text and switches to its original without another request', async () => {
+   const b = fixture(), view = render(<TranslationBody {...b.props} />)
+   await view.findByText('google:zh:Original paragraph')
+   expect(b.translate).toHaveBeenCalledWith({ text: 'Original paragraph', provider: 'google', targetLanguage: 'zh' }, expect.any(AbortSignal))
+@@ -32,6 +32,7 @@ it('honors an explicit Google selection and the UI language, and switches to the
+   fireEvent.click(view.getByRole('button', { name: 'View original' }))
+   expect(view.container.querySelector('[data-markdown-variant]')).toBe(markdown)
+   expect(view.getByText('Original paragraph')).toBeTruthy()
++  expect(view.container.textContent).not.toContain(b.props.rawText)
+   fireEvent.click(view.getByRole('button', { name: 'View translation' }))
+   expect(view.getByText('google:zh:Original paragraph')).toBeTruthy()
+   expect(b.translate).toHaveBeenCalledTimes(1)
+@@ -62,6 +63,7 @@ it('shows a generic failure with original text and retries only on the reader ac
+   const view = render(<TranslationBody {...b.props} />)
+   await view.findByText(en.failed)
+   expect(view.getByText('Original paragraph')).toBeTruthy()
++  expect(view.container.textContent).not.toContain(b.props.rawText)
+   expect(view.queryByRole('button', { name: 'View original' })).toBeNull()
+   expect(view.getByRole('button', { name: 'View translation' }).hasAttribute('disabled')).toBe(true)
+   expect(view.queryByText('secret request text')).toBeNull()
+@@ -72,9 +74,9 @@ it('shows a generic failure with original text and retries only on the reader ac
+ })
+ 
+ it('keeps the full original visible after a later paragraph fails and reuses completed translations on retry', async () => {
+-  const b = fixture()
++  const b = fixture('First\n\nSecond')
+   b.translate.mockResolvedValueOnce('第一段').mockRejectedValueOnce(new Error('provider unavailable'))
+-  const view = render(<TranslationBody {...b.props} text={'First\n\nSecond'} />)
++  const view = render(<TranslationBody {...b.props} />)
+   await view.findByText(en.failed)
+   expect(view.getByText('First')).toBeTruthy()
+   expect(view.getByText('Second')).toBeTruthy()
+@@ -93,12 +95,15 @@ it('keeps the full original visible after a later paragraph fails and reuses com
+ })
+ 
+ it('keeps an unfinished streaming tail original and cancels the disclosure on unmount', async () => {
+-  const b = fixture(), pending = Promise.withResolvers<string>()
++  const b = fixture('Unfinished'), pending = Promise.withResolvers<string>()
+   b.translate.mockImplementationOnce(() => pending.promise)
+-  const view = render(<TranslationBody {...b.props} text="Unfinished" running />)
++  const view = render(<TranslationBody {...b.props} running />)
+   expect(b.translate).not.toHaveBeenCalled()
+-  view.rerender(<TranslationBody {...b.props} text={'First\n\nTail'} running />)
++  view.rerender(<TranslationBody {...b.props} rawText="Raw model reasoning" text={'First\n\nTail'} running />)
+   expect(view.getByRole('status', { name: en.translating })).toBeTruthy()
++  expect(b.translate.mock.calls[0]?.[0].text).toBe('First')
++  expect(view.getByText('Tail', { exact: false })).toBeTruthy()
++  expect(view.container.textContent).not.toContain(b.props.rawText)
+   const signal = b.translate.mock.calls[0]![1]
+   view.unmount()
+   expect(signal.aborted).toBe(true)
+@@ -107,9 +112,9 @@ it('keeps an unfinished streaming tail original and cancels the disclosure on un
+ })
+ 
+ it('cancels the previous request and rechunks when the request limit changes', async () => {
+-  const b = fixture(), first = Promise.withResolvers<string>()
++  const b = fixture('abcdefghij'), first = Promise.withResolvers<string>()
+   b.translate.mockImplementationOnce(() => first.promise)
+-  const view = render(<TranslationBody {...b.props} text="abcdefghij" />)
++  const view = render(<TranslationBody {...b.props} />)
+   const firstSignal = b.translate.mock.calls[0]![1]
+   act(() => { b.translationLimit.set(4) })
+   expect(firstSignal.aborted).toBe(true)
 diff --git a/packages/extensions/cordis-client-runner/src/client/api-catalog.ts b/packages/extensions/cordis-client-runner/src/client/api-catalog.ts
 index 8777befdb01422740acd5e878f38d3fec888d50a..2c72c8203fca2d385a2e6e99f3f592df3f96bb98 100644
 --- a/packages/extensions/cordis-client-runner/src/client/api-catalog.ts
@@ -10905,9 +11508,112 @@ index 8777befdb01422740acd5e878f38d3fec888d50a..2c72c8203fca2d385a2e6e99f3f592df
      name: 'RegisterFactory',
      declaration: 'export interface RegisterFactory {\n    <F extends keyof SlotFactoryMap & string>(options: RegisterFactoryOptions<F>, component: SlotComponent<FactoryComponentPropsOf<F>>): () => void;\n}',
 diff --git a/packages/extensions/cordis-client-runner/src/client/slot-catalog.ts b/packages/extensions/cordis-client-runner/src/client/slot-catalog.ts
-index 7341c2c743f92d059243f7aa47db63f58a4da2da..57fad58c3ae398e45b6cef1037c098d69fe2dc73 100644
+index 7341c2c743f92d059243f7aa47db63f58a4da2da..05900e3df04d821341b2307a158a139d0faf1ca7 100644
 --- a/packages/extensions/cordis-client-runner/src/client/slot-catalog.ts
 +++ b/packages/extensions/cordis-client-runner/src/client/slot-catalog.ts
+@@ -182,7 +182,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
+     ],
+     replaceRisk: 'none',
+     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'conversation.chat.assistant-actions\', () => ctx.slots.register(\n      { name: \'conversation.chat.assistant-actions\', id: \'my-entry\', order: 100, label: \'My entry\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
+-    source: 'packages/client/ui-chat/src/client/contract/slots.ts:482',
++    source: 'packages/client/ui-chat/src/client/contract/slots.ts:488',
+   },
+   {
+     key: 'conversation.chat.commandview',
+@@ -233,7 +233,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
+     occupants: [],
+     replaceRisk: 'none',
+     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'conversation.chat.commandview\', () => ctx.slots.register(\n      { name: \'conversation.chat.commandview\', key: \'<one key the owner dispatches>\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
+-    source: 'packages/client/ui-chat/src/client/contract/slots.ts:464',
++    source: 'packages/client/ui-chat/src/client/contract/slots.ts:470',
+   },
+   {
+     key: 'conversation.chat.flow',
+@@ -279,7 +279,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
+     ],
+     replaceRisk: 'shadows-shipped-ui',
+     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'conversation.chat.flow\', () => ctx.slots.register(\n      { name: \'conversation.chat.flow\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
+-    source: 'packages/client/ui-chat/src/client/contract/slots.ts:420',
++    source: 'packages/client/ui-chat/src/client/contract/slots.ts:426',
+   },
+   {
+     key: 'conversation.chat.message.images',
+@@ -325,7 +325,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
+     ],
+     replaceRisk: 'shadows-shipped-ui',
+     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'conversation.chat.message.images\', () => ctx.slots.register(\n      { name: \'conversation.chat.message.images\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
+-    source: 'packages/client/ui-chat/src/client/contract/slots.ts:456',
++    source: 'packages/client/ui-chat/src/client/contract/slots.ts:462',
+   },
+   {
+     key: 'conversation.chat.node',
+@@ -398,17 +398,17 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
+     ],
+     replaceRisk: 'shadows-shipped-ui',
+     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'conversation.chat.node\', () => ctx.slots.register(\n      { name: \'conversation.chat.node\', key: \'<one key the owner dispatches>\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
+-    source: 'packages/client/ui-chat/src/client/contract/slots.ts:432',
++    source: 'packages/client/ui-chat/src/client/contract/slots.ts:438',
+   },
+   {
+     key: 'conversation.chat.reasoning.body',
+     kind: 'single',
+     scope: 'session',
+-    summary: 'Expanded reasoning body with the unchanged model text.',
+-    doc: 'Expanded reasoning body with the unchanged model text. The official entry\nhas priority 100 and calls the reasoning Content Factory; smaller priority\nvalues replace it. Contributions must preserve access to the original text.',
++    summary: 'Expanded reasoning body with raw and display-ready text.',
++    doc: 'Expanded reasoning body with raw and display-ready text. The official entry\nhas priority 100 and calls the reasoning Content Factory; smaller priority\nvalues replace it. Contributions must preserve access to untranslated display text.',
+     registerOptions: [],
+     ownerProps: [
+-      '/** Original model-provided reasoning offered to the expanded Body Slot. */\nexport interface ReasoningBodyOwnerProps {\n  /** Complete or streaming reasoning text. */\n  readonly text: string\n  /** Whether the reasoning tail is still streaming. */\n  readonly running: boolean\n}',
++      '/** Original and display-ready reasoning offered to the expanded Body Slot. */\nexport interface ReasoningBodyOwnerProps {\n  /** Complete or streaming model output. */\n  readonly rawText: string\n  /** Reasoning text prepared for display. */\n  readonly text: string\n  /** Whether the reasoning tail is still streaming. */\n  readonly running: boolean\n}',
+     ],
+     ownerPropsReferences: [],
+     standardProps: [
+@@ -441,7 +441,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
+     ],
+     replaceRisk: 'shadows-shipped-ui',
+     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'conversation.chat.reasoning.body\', () => ctx.slots.register(\n      { name: \'conversation.chat.reasoning.body\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
+-    source: 'packages/client/ui-chat/src/client/contract/slots.ts:470',
++    source: 'packages/client/ui-chat/src/client/contract/slots.ts:476',
+   },
+   {
+     key: 'conversation.chat.text-interaction',
+@@ -492,7 +492,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
+     ],
+     replaceRisk: 'shadows-shipped-ui',
+     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'conversation.chat.text-interaction\', () => ctx.slots.register(\n      { name: \'conversation.chat.text-interaction\', key: \'<one key the owner dispatches>\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
+-    source: 'packages/client/ui-chat/src/client/contract/slots.ts:417',
++    source: 'packages/client/ui-chat/src/client/contract/slots.ts:423',
+   },
+   {
+     key: 'conversation.chat.turnTail',
+@@ -558,7 +558,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
+     ],
+     replaceRisk: 'none',
+     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'conversation.chat.turnTail\', () => ctx.slots.register(\n      { name: \'conversation.chat.turnTail\', id: \'my-entry\', order: 100, label: \'My entry\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
+-    source: 'packages/client/ui-chat/src/client/contract/slots.ts:476',
++    source: 'packages/client/ui-chat/src/client/contract/slots.ts:482',
+   },
+   {
+     key: 'conversation.chat.user.before',
+@@ -607,7 +607,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
+     ],
+     replaceRisk: 'none',
+     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'conversation.chat.user.before\', () => ctx.slots.register(\n      { name: \'conversation.chat.user.before\', select: owner => null },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
+-    source: 'packages/client/ui-chat/src/client/contract/slots.ts:446',
++    source: 'packages/client/ui-chat/src/client/contract/slots.ts:452',
+   },
+   {
+     key: 'conversation.chat.user.images',
+@@ -653,7 +653,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
+     ],
+     replaceRisk: 'shadows-shipped-ui',
+     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'conversation.chat.user.images\', () => ctx.slots.register(\n      { name: \'conversation.chat.user.images\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
+-    source: 'packages/client/ui-chat/src/client/contract/slots.ts:458',
++    source: 'packages/client/ui-chat/src/client/contract/slots.ts:464',
+   },
+   {
+     key: 'conversation.composer',
 @@ -751,7 +751,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
      ],
      replaceRisk: 'shadows-shipped-ui',
@@ -11342,6 +12048,15 @@ index 7341c2c743f92d059243f7aa47db63f58a4da2da..57fad58c3ae398e45b6cef1037c098d6
    },
    {
      key: 'shell.bottom',
+@@ -3616,7 +3780,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
+     ],
+     replaceRisk: 'none',
+     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'shell.quota-notice\', () => ctx.slots.register(\n      { name: \'shell.quota-notice\', select: owner => null },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
+-    source: 'packages/client/ui-chat/src/client/contract/slots.ts:490',
++    source: 'packages/client/ui-chat/src/client/contract/slots.ts:496',
+   },
+   {
+     key: 'sidebar',
 @@ -3809,7 +3973,59 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
      ],
      replaceRisk: 'none',

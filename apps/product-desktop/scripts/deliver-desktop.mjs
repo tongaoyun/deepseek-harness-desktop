@@ -105,7 +105,11 @@ export function apiClient(base, authorization, transport = {}) {
           ...(body === undefined ? {} : { body: JSON.stringify(body), headers: { 'Content-Type': 'application/json' } }) })
         try { return result.status === 204 ? {} : await result.json() }
         catch (error) {
-          if (error instanceof SyntaxError) throw new Error('Invalid release API JSON response', { cause: error })
+          if (error instanceof SyntaxError) {
+            const invalid = new Error('Invalid release API JSON response', { cause: error })
+            invalid.invalidReleaseResponse = true
+            throw invalid
+          }
           throw error
         }
       }
@@ -113,8 +117,10 @@ export function apiClient(base, authorization, transport = {}) {
       if (method === 'GET') return retryReleaseRead(operation, { ...transport, label })
       try { return await operation() }
       catch (error) {
-        if (!networkFailure(error).retryable) throw error
-        const uncertain = new Error(`${label} failed (${networkFailure(error).detail}); reconcile before retrying`, { cause: error })
+        const failure = networkFailure(error)
+        if (!failure.retryable && error.invalidReleaseResponse !== true) throw error
+        const detail = error.invalidReleaseResponse === true ? 'INVALID_JSON' : failure.detail
+        const uncertain = new Error(`${label} failed (${detail}); reconcile before retrying`, { cause: error })
         uncertain.uncertainReleaseMutation = true
         throw uncertain
       }

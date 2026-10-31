@@ -88,6 +88,14 @@ describe('Definition-owned Chat process groups', () => {
     expect(processActivity([{ ...node, data: { root } }]).runningDetail).toBe(expected)
   })
 
+  it.each([
+    ['<signature>private', ''],
+    ['<signature>private</signature>\n', ''],
+    ['<signature>private</signature>\nVisible detail', 'Visible detail'],
+  ])('omits signature metadata from running process detail %j', (text, expected) => {
+    expect(processActivity([assistant(text)]).runningDetail).toBe(expected)
+  })
+
   it('keeps 160 graphemes when the bounded prefix splits a surrogate pair', () => {
     const command = '👩‍💻'.repeat(87) + '☀️' + 'a'.repeat(71) + '👩‍💻'
     expect(command).toHaveLength(513)

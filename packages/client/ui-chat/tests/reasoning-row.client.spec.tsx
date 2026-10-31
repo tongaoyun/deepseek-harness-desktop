@@ -39,7 +39,7 @@ describe('AssistantMarkdown reasoning blocks', () => {
     expect(view.getAllByRole('button')).toHaveLength(1)
     expect(view.container.querySelectorAll('[data-variant="think"]')).toHaveLength(1)
     fireEvent.click(view.getByRole('button'))
-    expect(calls).toHaveBeenCalledWith('conversation.chat.reasoning.body', { text, running: false })
+    expect(calls).toHaveBeenCalledWith('conversation.chat.reasoning.body', { rawText: text, text, running: false })
     expect(view.getByText('Visible reasoning').tagName).toBe('STRONG')
     expect(blocks.map(block => block.text)).toEqual(texts)
   })
@@ -134,7 +134,7 @@ describe('AssistantMarkdown reasoning blocks', () => {
 })
 
 describe('ReasoningRow', () => {
-  it('offers only text and streaming state to the standard Body Slot after expansion', () => {
+  it('offers original and display text after expansion', () => {
     const calls = vi.fn()
     const extension: AssistantMarkdownProps['renderSlot'] = (key, owner, options) => {
       calls(key, owner)
@@ -144,9 +144,38 @@ describe('ReasoningRow', () => {
       usePresentation={useDetailedPresentation} renderSlot={extension} t={t} />)
     expect(calls).not.toHaveBeenCalled()
     fireEvent.click(view.getByRole('button'))
-    expect(calls).toHaveBeenCalledWith('conversation.chat.reasoning.body', { text: 'Original thought', running: false })
+    expect(calls).toHaveBeenCalledWith('conversation.chat.reasoning.body', { rawText: 'Original thought', text: 'Original thought', running: false })
     expect(view.getAllByText('Original thought')).toHaveLength(1)
     expect(view.getAllByRole('button')).toHaveLength(1)
+  })
+
+  it('hides signature metadata and retains expansion while the body streams', () => {
+    const calls = vi.fn()
+    const extension: AssistantMarkdownProps['renderSlot'] = (key, owner, options) => {
+      calls(key, owner)
+      return renderSlot(key, owner, options)
+    }
+    const props = { useDisclosure, usePresentation: useDetailedPresentation, renderSlot: extension, t }
+    const view = render(<ReasoningRow {...props} text="<sig" running />)
+    for (const text of ['<signature>private', '<signature>private</signature>\n']) {
+      view.rerender(<ReasoningRow {...props} text={text} running />)
+      expect(view.queryByRole('button')).toBeNull()
+      expect(view.container.textContent).not.toContain('private')
+    }
+    const prefix = '<signature>private</signature>\n'
+    view.rerender(<ReasoningRow {...props} text={prefix + 'Visible summary\nBody'} running />)
+    const toggle = view.getByRole('button')
+    expect(view.getByText('Visible summary')).toBeTruthy()
+    fireEvent.click(toggle)
+    view.rerender(<ReasoningRow {...props} text={prefix + 'Visible summary\nBody\n\nUpdate'} running={false} textInteractionSource />)
+    expect(view.getByRole('button')).toBe(toggle)
+    expect(toggle.getAttribute('aria-expanded')).toBe('true')
+    expect(view.getByText('Update')).toBeTruthy()
+    expect(view.container.querySelector('[data-text-interaction-source]')).not.toBeNull()
+    expect(view.container.textContent).not.toContain('private')
+    expect(calls).toHaveBeenLastCalledWith('conversation.chat.reasoning.body', {
+      rawText: prefix + 'Visible summary\nBody\n\nUpdate', text: 'Visible summary\nBody\n\nUpdate', running: false,
+    })
   })
 
   it.each([

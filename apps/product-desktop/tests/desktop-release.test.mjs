@@ -243,20 +243,23 @@ test('retries complete GET reads after proxy resets, HTTP failures and interrupt
 })
 
 test('bounds network retries and never blindly retries mutations, denied requests or malformed JSON', async () => {
-  for (const kind of ['exhausted', 'mutation', 'denied', 'json']) {
+  for (const kind of ['exhausted', 'mutation', 'denied', 'json', 'mutation-json']) {
     let calls = 0
     const client = apiClient('https://api.github.com', 'Bearer synthetic-credential', {
       sleep: async () => {}, progress: () => {}, fetchImpl: async () => {
         calls++
         if (kind === 'denied') return new Response('', { status: 403 })
-        if (kind === 'json') return new Response('synthetic-private-response')
+        if (kind === 'json' || kind === 'mutation-json') return new Response('synthetic-private-response')
         throw socketFailure()
       },
     })
-    await assert.rejects(client.request(kind === 'mutation' ? 'POST' : 'GET', '/resource'), error => {
+    await assert.rejects(client.request(kind.startsWith('mutation') ? 'POST' : 'GET', '/resource'), error => {
       assert.doesNotMatch(error.message, /synthetic|credential/u)
       if (kind === 'exhausted') assert.match(error.message, /after 4 attempts.*ECONNRESET/u)
-      if (kind === 'mutation') assert.match(error.message, /reconcile before retrying/u)
+      if (kind.startsWith('mutation')) {
+        assert.match(error.message, /reconcile before retrying/u)
+        assert.equal(error.uncertainReleaseMutation, true)
+      } else assert.notEqual(error.uncertainReleaseMutation, true)
       if (kind === 'denied') assert.equal(error.status, 403)
       return true
     })
@@ -678,4 +681,55 @@ test('resumes partial finalization without reuploading or replacing either desti
   const count = internal.calls.length + publicRepo.calls.length
   await publishDesktopRelease(release, [internal, publicRepo])
   assert.equal(internal.calls.length + publicRepo.calls.length, count)
+})
+
+
+test('confirms uncertain finalization once and rejects unpublished or replaced releases', async () => {
+  for (const scenario of ['applied', 'unapplied', 'missing', 'id', 'tag_name', 'body', 'prerelease', 'denied']) {
+    const target = destination('gitea', release)
+    await target.create()
+    const find = target.find
+    let writes = 0
+    let reads = 0
+    target.finalize = async () => {
+      writes++
+      const remote = await find()
+      remote.draft = scenario === 'unapplied'
+      if (scenario === 'id') remote.id = 2
+      if (scenario === 'tag_name') remote.tag_name = 'another-tag'
+      if (scenario === 'body') remote.body = 'another-source'
+      if (scenario === 'prerelease') remote.prerelease = false
+      if (scenario === 'denied') throw Object.assign(new Error('Denied'), { status: 403 })
+      throw Object.assign(new Error('Response lost'), { uncertainReleaseMutation: true })
+    }
+    target.find = async () => {
+      if (writes) reads++
+      if (writes && scenario === 'missing') return undefined
+      return structuredClone(await find())
+    }
+    const operation = publishDesktopRelease(release, [target])
+    if (scenario === 'applied') assert.deepEqual(await operation, ['https://gitea/release'])
+    else await assert.rejects(operation, scenario === 'denied' ? /Denied/u : /finalization failed/u)
+    assert.equal(writes, 1, scenario)
+    assert.equal(reads, scenario === 'denied' ? 0 : 1, scenario)
+  }
+})
+
+test('reconciles a successful release creation with malformed acknowledgment without replaying POST', async () => {
+  let remote
+  let writes = 0
+  const client = apiClient('https://api.github.com', 'Bearer fixture-token', { fetchImpl: async (_url, options) => {
+    if (options.method === 'POST') {
+      writes++
+      const body = JSON.parse(options.body)
+      remote = { id: 7, ...body }
+      return new Response('private malformed acknowledgment')
+    }
+    return remote ? Response.json(remote) : new Response('', { status: 404 })
+  } })
+  const target = releaseDestination('gitea', client, 'owner/repo', { target: commit })
+  const result = await target.create(release)
+  assert.equal(result.id, 7)
+  assert.equal(result.tag_name, release.tag)
+  assert.equal(writes, 1)
 })
