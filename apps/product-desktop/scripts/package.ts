@@ -9,6 +9,10 @@ import { observeOfficeProcesses } from './office-process-diagnostics.mjs'
 import { withInternalMacIdentity } from './internal-signing.mjs'
 import { writeInternalBuildRecord } from './internal-record.mjs'
 import { verifyInternalApplication } from './internal-package.mjs'
+import { parseDesktopPackageInvocation } from '../../desktop/scripts/package-target.ts'
+import { PRODUCT_DESKTOP_TARGETS } from './package-targets.mjs'
+const target = parseDesktopPackageInvocation(process.argv.slice(2)).target.name
+if (!PRODUCT_DESKTOP_TARGETS.includes(target)) throw new Error('Product desktop supports Windows x64 and macOS ARM64')
 const packageManager = process.env.npm_execpath
 if (packageManager === undefined) throw new Error('Invoke product packaging through pnpm')
 const root = fileURLToPath(new URL('../../..', import.meta.url))
@@ -34,10 +38,9 @@ try {
   const officeEvidence = process.platform === 'darwin' ? mkdtempSync(join(evidenceRoot, 'office-')) : undefined
   const packageAction = async (environment: NodeJS.ProcessEnv) => {
     const args = process.argv.slice(2)
+    if (!args.includes(target)) args.unshift(target)
     if (environment.PACKAGE_SIGNING === 'internal' && !args.includes('--unsigned')) args.push('--unsigned')
     if (environment.PACKAGE_SIGNING === 'internal' && !args.includes('--check')) {
-      const target = args.find(arg => ['mac-arm64', 'mac-x64', 'win-x64'].includes(arg))
-      if (target === undefined) throw new Error('Internal packaging requires an explicit target')
       rmSync(join(root, 'apps/desktop/.desktop-build/targets', target, 'unsigned-artifacts'), { recursive: true, force: true })
     }
     const child = spawn(process.execPath, [packageManager, '--dir', 'apps/desktop', 'run', 'package', ...args], {
@@ -69,10 +72,8 @@ try {
     }
     if (process.exitCode === undefined || process.exitCode === 0) {
       if (environment.PACKAGE_SIGNING === 'internal' && process.platform === 'darwin' && !args.includes('--check')) {
-        const target = args.find(arg => ['mac-arm64', 'mac-x64'].includes(arg))
-        if (target === undefined) throw new Error('Internal macOS verification requires a target')
         await verifyInternalApplication(join(root, 'apps/desktop/.desktop-build/targets', target, 'unsigned-artifacts',
-          target === 'mac-arm64' ? 'mac-arm64' : 'mac', 'DeepSeek Harness.app'), environment)
+          'mac-arm64', 'DeepSeek Harness.app'), environment)
       }
       if (environment.PACKAGE_SIGNING === 'internal' && !args.some(arg => ['--check', '--dir', '--prepare-only'].includes(arg))) {
         await writeInternalBuildRecord(root, args, environment)

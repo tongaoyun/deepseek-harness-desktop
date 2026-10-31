@@ -74,7 +74,7 @@ async function stageSigned(t, change = () => {}) {
   return stage
 }
 
-test('publishes native feeds for one verified version and uses the actual updater to select each Mac architecture', async t => {
+test('publishes native feeds for one verified version and offers only Apple Silicon Mac updates', async t => {
   const directory = await stageSigned(t)
   const release = await collectDesktopRelease(directory, run, commit, productVersion, { signing: 'signed', downloadRepository: repository })
   assert.equal(release.prerelease, false)
@@ -83,8 +83,8 @@ test('publishes native feeds for one verified version and uses the actual update
   const mac = load(await readFile(join(directory, 'nightly-mac.yml'), 'utf8'))
   assert.equal(windows.version, version)
   assert.equal(windows.files.length, 1)
-  assert.equal(mac.files.length, 4)
-  assert.ok(mac.path.endsWith('-mac-x64.zip'))
+  assert.equal(mac.files.length, 2)
+  assert.ok(mac.path.endsWith('-mac-arm64.zip'))
   for (const feed of [windows, mac]) {
     for (const entry of feed.files) {
       assert.ok(entry.url.startsWith(`https://github.com/${repository}/releases/download/v${version}/`))
@@ -94,17 +94,16 @@ test('publishes native feeds for one verified version and uses the actual update
   const require = createRequire(new URL('../../desktop/package.json', import.meta.url))
   const { MacUpdater } = require('electron-updater')
   const files = mac.files.map(info => ({ info, url: new URL(info.url) }))
-  for (const arm of [true, false]) {
-    const selected = MacUpdater.filterFilesForArch(files, arm).filter(file => file.url.pathname.endsWith('.zip'))
-    assert.equal(selected.length, 1)
-    assert.equal(selected[0].url.pathname.includes('arm64'), arm)
-  }
+  const selected = MacUpdater.filterFilesForArch(files, true).filter(file => file.url.pathname.endsWith('.zip'))
+  assert.equal(selected.length, 1)
+  assert.ok(selected[0].url.pathname.includes('arm64'))
+  assert.equal(MacUpdater.filterFilesForArch(files, false).length, 0)
 })
 
 test('rejects feed tampering, another version, remote URLs, another architecture and missing update packages', async t => {
   for (const kind of ['hash', 'version', 'url', 'arch', 'size', 'missing', 'duplicates']) {
     const directory = await stageSigned(t, ({ metadata, target }) => {
-      if (target !== 'mac-x64') return
+      if (target !== 'mac-arm64') return
       if (kind === 'hash') metadata.files[0].sha512 = 'A'.repeat(86) + '=='
       if (kind === 'version') metadata.version = '9.9.9'
       if (kind === 'url') metadata.files[0].url = 'https://untrusted.invalid/application.zip'
@@ -133,9 +132,8 @@ test('requires the native signed completion record and matching signing mode rat
 test('validates native signing machines before queuing jobs and never falls back to unsigned on invalid settings', () => {
   const environment = { PACKAGE_SIGNING: 'signed', PACKAGE_DOWNLOAD_REPOSITORY: repository,
     SIGNING_RUNNERS: JSON.stringify({ 'win-x64': ['self-hosted', 'Windows', 'X64', 'product-signing-win'],
-      'mac-arm64': ['self-hosted', 'macOS', 'ARM64', 'product-signing-arm'],
-      'mac-x64': ['self-hosted', 'macOS', 'X64', 'product-signing-intel'] }),
-    SIGNING_CONFIG_DIRS: JSON.stringify({ 'win-x64': 'C:\\ProductSigning', 'mac-arm64': '/private/product-signing', 'mac-x64': '/private/product-signing' }) }
+      'mac-arm64': ['self-hosted', 'macOS', 'ARM64', 'product-signing-arm'] }),
+    SIGNING_CONFIG_DIRS: JSON.stringify({ 'win-x64': 'C:\\ProductSigning', 'mac-arm64': '/private/product-signing' }) }
   validateSigningRunners(environment)
   validateSigningRunners({})
   assert.throws(() => validateSigningRunners({ ...environment, SIGNING_RUNNERS: '{}' }), /win-x64/u)

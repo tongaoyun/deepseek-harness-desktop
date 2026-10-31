@@ -1,6 +1,6 @@
 # 产品桌面验收
 
-本页面向产品桌面的开发和交付维护者。按改动选择检查；精确源码的 Gitea main CI 成功后才能进入三平台打包。发布与恢复见[交付说明](delivery.md)。以下命令均在仓库根目录执行。
+本页面向产品桌面的开发和交付维护者。按改动选择检查；精确源码的 Gitea main CI 成功后才能进入两平台打包。发布与恢复见[交付说明](delivery.md)。以下命令均在仓库根目录执行。
 
 ## 本地回归
 
@@ -21,7 +21,7 @@ pnpm run verify:upstream
 pnpm --dir apps/product-desktop run test:installed --target mac-arm64 --installer /absolute/path/to/installer.dmg
 ```
 
-不传 `--installer` 时使用本次打包产物。Windows 使用 `win-x64` 和 EXE；Mac Intel 使用 `mac-x64`。不要在 Windows 上与同产品的其他安装操作并行。
+不传 `--installer` 时使用本次打包产物。Windows 使用 `win-x64` 和 EXE；Mac Apple 芯片使用 `mac-arm64`。不要在 Windows 上与同产品的其他安装操作并行。
 
 验收将 EXE 安装或 DMG 应用复制到私有目录，运行打包 ASAR、内置 Host、产品扩展和 sidecar，结束后卸载或删除副本。仅临时副本的服务地址指向本地 fixture，身份与模型使用无密钥模拟，不覆盖员工数据。built 界面验收覆盖目录、技能与套件安装、连接器、知识原件、任务选择及重启恢复。安装后验收聚焦包内模块、扩展导航、真实对话、设备与反馈版本，以及原生 A→B 更新中的进程退出和状态保留；不重复完整任务能力场景。
 
@@ -35,7 +35,7 @@ pnpm --dir apps/product-desktop run test:installed --target mac-arm64 --installe
 
 两端均通过产品内的“检查更新”验证：安装 A，点击后直接下载 B，确认实际收到安装包请求，再取消重启并继续使用 A，重新打开确认后重启安装 B。有活动任务时，显式确认按钮为“停止任务并更新”；空闲时为“安装并重启”。验收只接受这两类 shell 确认，记录实际按钮，关闭弹层始终取消。检查版本、Session 与草稿保留，以及旧 Host 和 sidecar 退出。Mac 更新测试有八分钟执行、一分钟清理及十分钟父进程期限。
 
-结果写入 `.artifacts/native-macos-update-*.json` 或 `.artifacts/native-windows-update-*.json`。正式 `signed` 分发仍须分别完成 Windows、Mac ARM64 和 Mac Intel 的签名、公证及 A→B 升级，不能以模拟结果替代。
+结果写入 `.artifacts/native-macos-update-*.json` 或 `.artifacts/native-windows-update-*.json`。正式 `signed` 分发仍须分别完成 Windows 和 Mac ARM64 的签名、公证及 A→B 升级，不能以模拟结果替代。
 
 内部包保留真实镜像 Provider，资格副本仅将软件包、GitHub HTTPS API 和清单请求映射到隔离服务；报告必须确认平台 API 清单请求及镜像下载。映射在 `ready` 事件中注册，ESM 入口不能等待该事件再导入主模块。另用同一启动配置的真实 Electron 验证主模块启动、API 清单解析、不可达和超时回退、权限与完整性失败停止、取消及不含凭据的 Range 请求：`node apps/product-desktop/scripts/qualify-package-mirror.mjs`。
 

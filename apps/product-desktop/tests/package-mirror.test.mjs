@@ -9,7 +9,7 @@ import { publishPackageMirror } from '../scripts/package-mirror.mjs'
 async function fixture(t) {
   const root = await mkdtemp(join(tmpdir(), 'harness-package-mirror-'))
   t.after(() => rm(root, { recursive: true, force: true }))
-  const files = await Promise.all(['desktop.exe', 'desktop-arm64.zip', 'desktop-x64.zip', 'nightly.yml', 'nightly-mac.yml'].map(async name => {
+  const files = await Promise.all(['desktop.exe', 'desktop-arm64.zip', 'nightly.yml', 'nightly-mac.yml'].map(async name => {
     const bytes = Buffer.from(name)
     const path = join(root, name)
     await writeFile(path, bytes)
@@ -41,7 +41,7 @@ async function fixture(t) {
   return { files, stored, uploaded, client, options, release: { version: '1.2.3', files } }
 }
 
-test('publishes complete three-platform packages before feeds, verifies anonymous bytes and resumes without writes', async t => {
+test('publishes both supported platforms before feeds, verifies anonymous bytes and resumes without writes', async t => {
   const f = await fixture(t)
   await publishPackageMirror(f.release, f.client, 'http://internal.test/api/v1', f.options)
   assert.equal(f.uploaded.length, f.files.length)

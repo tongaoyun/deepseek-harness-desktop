@@ -16,7 +16,7 @@ node apps/product-desktop/scripts/sync-github.mjs --repository OWNER/deepseek-ha
 
 ## Gitea 发布入口
 
-内部手动工作流 **同步桌面构建到 GitHub** 读取仓库变量 `DESKTOP_GITHUB_REPOSITORY`（源码）和 `DESKTOP_GITHUB_DOWNLOAD_REPOSITORY`（公开下载）。Gitea 保留以 `GITHUB_` 开头的名称。`DESKTOP_GITHUB_TOKEN` 需要源码同步权限和下载仓库的 Contents 写权限，优先使用仅限这两个仓库的凭据。`RELEASE_USERNAME` 和 `RELEASE_CREDENTIAL` 用于内网 Gitea Release。GitHub 源码仓库另配置 `DESKTOP_DOWNLOADS_TOKEN`，仅在三平台验收后的草稿上传步骤注入，需要目标下载仓库的 Contents 写权限；打包和测试步骤不接收下载凭据。GitHub runner 不访问内部 Gitea 或生产服务。桌面 Git 历史只上传到构建仓库；服务端和控制中心仓库留在内网。
+内部手动工作流 **同步桌面构建到 GitHub** 读取仓库变量 `DESKTOP_GITHUB_REPOSITORY`（源码）和 `DESKTOP_GITHUB_DOWNLOAD_REPOSITORY`（公开下载）。Gitea 保留以 `GITHUB_` 开头的名称。`DESKTOP_GITHUB_TOKEN` 需要源码同步权限和下载仓库的 Contents 写权限，优先使用仅限这两个仓库的凭据。`RELEASE_USERNAME` 和 `RELEASE_CREDENTIAL` 用于内网 Gitea Release。GitHub 源码仓库另配置 `DESKTOP_DOWNLOADS_TOKEN`，仅在两平台验收后的草稿上传步骤注入，需要目标下载仓库的 Contents 写权限；打包和测试步骤不接收下载凭据。GitHub runner 不访问内部 Gitea 或生产服务。桌面 Git 历史只上传到构建仓库；服务端和控制中心仓库留在内网。
 
 | 工作流输入 | 用途 |
 | --- | --- |
@@ -24,7 +24,7 @@ node apps/product-desktop/scripts/sync-github.mjs --repository OWNER/deepseek-ha
 | `signing` | `unsigned`、`internal` 或 `signed` |
 | `github_run_id` | 恢复一次已成功构建的发布，须与原源码及签名模式一致 |
 
-新构建要求精确源码的 main CI 成功，校验上游补丁后同步。恢复使用当前 `main` 的发布脚本和原 `source_sha` 的产物校验，两者都须通过 main CI。三个平台共用 `${源码版本前缀}${UTC日期}.${GitHub运行编号}.1`，重试不改变版本；产物名仍记录各平台的实际尝试次数。按各次运行的开始时间区分实际执行与 GitHub 继承的旧 job；继承记录的新 ID 和尝试编号不改变产物归属。每个平台选择最新一次实际执行，必须成功且属于同一源码、工作流和分发模式，任一失败、取消或身份不符均停止发布。
+新构建要求精确源码的 main CI 成功，校验上游补丁后同步。恢复使用当前 `main` 的发布脚本和原 `source_sha` 的产物校验，两者都须通过 main CI。两个平台共用 `${源码版本前缀}${UTC日期}.${GitHub运行编号}.1`，重试不改变版本；产物名仍记录各平台的实际尝试次数。按各次运行的开始时间区分实际执行与 GitHub 继承的旧 job；继承记录的新 ID 和尝试编号不改变产物归属。每个平台选择最新一次实际执行，必须成功且属于同一源码、工作流和分发模式，任一失败、取消或身份不符均停止发布。
 
 内网 runner 下载有界 ZIP，按中央目录仅解压普通文件并校验清单，完成后清理临时压缩包。公开下载仓库只接收安装文件和元数据，不推送源码。
 
@@ -42,7 +42,7 @@ GitHub 按系统及架构缓存 Electron、锁定的 Node/Python 与 Office 下�
 
 下载仓库须先初始化默认分支，至少有一条提交。空仓库可以接收 Release 草稿附件，但无法完成发布；先确认仓库初始化，再启动大文件构建及上传。
 
-GitHub 托管任务下载三平台产物，在下载仓库创建草稿，逐文件上传并完整回读，核对大小、SHA-256 和 GitHub 返回的摘要。该任务成功后，内网 runner 并行下载三平台产物并校验本地清单，上传、回读 Gitea 附件，同时核对 GitHub 草稿的身份、文件集合、大小及服务端 SHA-256；不经内网重新上传或回读 GitHub 安装包。传输最多三个并发任务，失败后停止调度并等待已启动任务结束。不替换身份或内容不同的文件及 tag。两端全部通过才依次发布；第二端发布失败时第一端可能已可见。旧版本遵循下方[保留规则](#产物与保留)。
+GitHub 托管任务下载两平台产物，在下载仓库创建草稿，逐文件上传并完整回读，核对大小、SHA-256 和 GitHub 返回的摘要。该任务成功后，内网 runner 并行下载两平台产物并校验本地清单，上传、回读 Gitea 附件，同时核对 GitHub 草稿的身份、文件集合、大小及服务端 SHA-256；不经内网重新上传或回读 GitHub 安装包。传输最多三个并发任务，失败后停止调度并等待已启动任务结束。不替换身份或内容不同的文件及 tag。两端全部通过才依次发布；第二端发布失败时第一端可能已可见。旧版本遵循下方[保留规则](#产物与保留)。
 
 上传中断保留已校验草稿。只有重新核对为未完成的草稿 `starter` 附件才可删除后重传；完整附件直接校验，状态不明或权限失败则停止。tag 查询 404 时分页查找草稿，重复 tag 拒绝。
 
@@ -67,7 +67,7 @@ Windows 安装更新验收通过流水线已有的 PowerShell 7 查询所需进�
 
 ### 免费内部更新
 
-`signing=internal` 使用标准 GitHub 托管 runner。Mac 使用同一张固定自签证书签署应用、Electron 组件和产品 sidecar，不进行 Apple 公证；已准备的 Harness 与 Python 运行时保留原有字节和签名，并由官方清单与应用资源封装验证；Windows 保持未签名 NSIS 安装器。Mac 同时产出 DMG 和更新 ZIP，Windows 产出 EXE；文件名带 `-internal`，清单如实记录签名方式和 `notarized: false`，不能冒充正式签名包。发布仍要求三个平台构建与安装验收全部通过。
+`signing=internal` 使用标准 GitHub 托管 runner。Mac 使用同一张固定自签证书签署应用、Electron 组件和产品 sidecar，不进行 Apple 公证；已准备的 Harness 与 Python 运行时保留原有字节和签名，并由官方清单与应用资源封装验证；Windows 保持未签名 NSIS 安装器。Mac 同时产出 DMG 和更新 ZIP，Windows 产出 EXE；文件名带 `-internal`，清单如实记录签名方式和 `notarized: false`，不能冒充正式签名包。发布仍要求两个平台构建与安装验收全部通过。
 
 GitHub 源码仓库配置 Secrets `DESKTOP_INTERNAL_MAC_CERTIFICATE`（加密 P12 的 Base64）和 `DESKTOP_INTERNAL_MAC_PASSWORD`，以及公开变量 `DESKTOP_INTERNAL_MAC_CERTIFICATE_SHA256`。证书只在 Mac 打包及隔离安装验收步骤传入，导入独立临时钥匙串；打包结束或失败后恢复搜索列表并删除导入的凭据，不修改系统证书信任。P12 输入及密码不传入后续构建子进程、发布机或渲染进程。固定证书的创建与保管见签名说明。身份创建使用独立证书配置与显式 SHA-256 签名，避免系统配置合入重复扩展；导出显式指定 macOS 可导入的 PKCS#12 算法，支持 LibreSSL 与 OpenSSL。身份校验分别报告指纹、自签名、用途与有效期异常，仅包含公开证书信息。
 
@@ -77,7 +77,7 @@ GitHub 和 Gitea 都配置 `DESKTOP_INTERNAL_DOWNLOAD_REPOSITORY` 及相同的�
 
 ### 正式签名更新
 
-`signing=signed` 需要公开下载仓库 `DESKTOP_GITHUB_DOWNLOAD_REPOSITORY`，以及按 `win-x64`、`mac-arm64`、`mac-x64` 索引的 JSON 变量：
+`signing=signed` 需要公开下载仓库 `DESKTOP_GITHUB_DOWNLOAD_REPOSITORY`，以及按 `win-x64`、`mac-arm64` 索引的 JSON 变量：
 
 | 变量 | 每个目标的值 |
 | --- | --- |
@@ -103,10 +103,10 @@ DSH_DESKTOP_MANDATORY_UPDATE_ENABLED=0
 
 ## 产物与保留
 
-三平台先运行已构建的官方及产品 profile，再验证安装后的完整应用；失败阻止发布。成功构建生成安装包、blockmap 和平台 `build-manifest.json`，发布端汇总源码、版本、平台、大小及 SHA-256，并生成 `SHA256SUMS.txt`。
+两平台先运行已构建的官方及产品 profile，再验证安装后的完整应用；失败阻止发布。成功构建生成安装包、blockmap 和平台 `build-manifest.json`，发布端汇总源码、版本、平台、大小及 SHA-256，并生成 `SHA256SUMS.txt`。
 
 Actions 安装包保留一天，截图、JSON 验收报告及打包诊断保留十四天。成功和失败构建均上传阶段日志及 Office 调用栈采样；组装、afterPack 校验、afterSign 检查分别记录耗时，组装记录 CPU 与内存用量，不记录配置或命令参数。日志及 Actions 产物遵循源码仓库可见性。归档 Host 启动回归必须在产品 bootstrap 编译后、安装包上传前运行，不能依赖 runner 缓存。
 
-Gitea Release 和两个 GitHub 下载仓库分别保留最新两个已发布版本，开发预发布与原生更新渠道分别计数；按发布时间排序，每个版本完整保留 Windows x64、macOS ARM64、macOS Intel 安装包及 ZIP、blockmap、更新清单和校验文件。草稿不计数、不自动删除。回收仅处理产品交付版本标签，保留源码 Git tag；有安装文件的旧版本须在两个保留版本均含三平台安装包时才可删除，权限或元数据异常会停止清理。
+Gitea Release 和两个 GitHub 下载仓库分别保留最新两个已发布版本，开发预发布与原生更新渠道分别计数；按发布时间排序，每个版本完整保留 Windows x64、macOS ARM64 安装包及 ZIP、blockmap、更新清单和校验文件。草稿不计数、不自动删除。回收仅处理产品交付版本标签，保留源码 Git tag；有安装文件的旧版本须在两个保留版本均含两平台安装包时才可删除，权限或元数据异常会停止清理。
 
-“桌面 Release 回收”工作流每日北京时间 09:00 执行，使用与发布相同的互斥组。手动运行默认只预览，开启 `apply` 才删除；不重新打包或发布桌面。Gitea 软件包的保留规则不适用于 Release 附件。内部更新另发布 `deepseek-harness-desktop-internal` Generic 包，每个版本包含三平台安装包及全部配套文件；沿用 Gitea 每包最新两版规则。发布前逐文件匿名回读并校验 SHA-256，通过后才发布两端 Release；已存在文件只验证，不覆盖。
+“桌面 Release 回收”工作流每日北京时间 09:00 执行，使用与发布相同的互斥组。手动运行默认只预览，开启 `apply` 才删除；不重新打包或发布桌面。Gitea 软件包的保留规则不适用于 Release 附件。内部更新另发布 `deepseek-harness-desktop-internal` Generic 包，每个版本包含两平台安装包及全部配套文件；沿用 Gitea 每包最新两版规则。发布前逐文件匿名回读并校验 SHA-256，通过后才发布两端 Release；已存在文件只验证，不覆盖。

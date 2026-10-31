@@ -104,9 +104,6 @@ jobs:
           - target: mac-arm64
             runner: macos-15
             arch: arm64
-          - target: mac-x64
-            runner: macos-15-intel
-            arch: x64
     defaults:
       run:
         shell: bash

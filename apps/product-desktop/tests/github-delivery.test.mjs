@@ -262,7 +262,7 @@ test('writes credential-free identities only after all required installers exist
     assert.ok(manifest.artifacts.every(value => /^[a-f0-9]{64}$/u.test(value.sha256)))
     assert.equal(JSON.stringify(manifest).includes('private'), false)
     rmSync(join(directory, 'Harness.zip'))
-    assert.deepEqual(artifactManifest(directory, 'mac-x64', commit, '0.2.1').artifacts.map(value => value.name), ['Harness.dmg'])
+    assert.throws(() => artifactManifest(directory, 'mac-x64', commit, '0.2.1'), /Unsupported package target/u)
     writeFileSync(join(directory, 'Harness.exe'), '')
     assert.throws(() => artifactManifest(directory, 'win-x64', commit, '0.2.1'), /Empty/u)
     writeFileSync(join(directory, 'Other.dmg'), 'duplicate')
@@ -286,7 +286,6 @@ test('isolates signing and download credentials from native hosted builds', () =
   assert.deepEqual(workflow.jobs.package.strategy.matrix.include, [
     { target: 'win-x64', runner: 'windows-2025', arch: 'x64' },
     { target: 'mac-arm64', runner: 'macos-15', arch: 'arm64' },
-    { target: 'mac-x64', runner: 'macos-15-intel', arch: 'x64' },
   ])
   const preflightSteps = workflow.jobs.preflight.steps
   const steps = workflow.jobs.package.steps

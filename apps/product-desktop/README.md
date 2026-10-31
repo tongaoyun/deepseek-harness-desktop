@@ -13,7 +13,7 @@ Host 沿用官方 CLI 包作为安装清单入口，插件管理页据此发现�
 
 ## 构建与发布
 
-Gitea 负责开发评审和 CI；手动工作流“同步桌面构建到 GitHub”同步精确源码提交，由原生 runner 构建 Windows x64、macOS ARM64 和 macOS Intel。校验及安装验收通过后，安装包同步到公开 GitHub 下载仓库和内网 Gitea Release。
+Gitea 负责开发评审和 CI；手动工作流“同步桌面构建到 GitHub”同步精确源码提交，由原生 runner 构建 Windows x64 和 macOS ARM64。校验及安装验收通过后，安装包同步到公开 GitHub 下载仓库和内网 Gitea Release。
 
 | 模式 | 用途 | 软件内更新 |
 | --- | --- | --- |

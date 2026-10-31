@@ -7,7 +7,7 @@ import { mapReleaseWork } from './desktop-release.mjs'
 /**
  * Add immutable files and verify every byte anonymously before exposing the release's latest feed.
  * Existing or uncertain writes are reconciled by listing files; matching files are read back, never replaced.
- * @param {object} release Complete, locally verified three-platform release.
+ * @param {object} release Complete, locally verified two-platform release.
  * @param {object} client Existing member-authenticated Gitea API client.
  * @param {string} apiBase Gitea API base for authenticated writes, including /api/v1.
  * @param {object} options Optional isolated anonymous read transport.

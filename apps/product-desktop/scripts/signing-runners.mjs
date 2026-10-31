@@ -1,6 +1,7 @@
 /** Validate signing-machine routing before queuing product release jobs. */
 import { posix, win32 } from 'node:path'
 import { productSigningMode, productUpdateUrl } from './update-release.mjs'
+import { PRODUCT_DESKTOP_TARGETS } from './package-targets.mjs'
 
 /**
  * Require explicit native signing machines and their external configuration directories.
@@ -26,7 +27,7 @@ export function validateSigningRunners(environment) {
     runners = JSON.parse(environment.SIGNING_RUNNERS)
     directories = JSON.parse(environment.SIGNING_CONFIG_DIRS)
   } catch { throw new Error('Signed updates require DESKTOP_SIGNING_RUNNERS and DESKTOP_SIGNING_CONFIG_DIRS JSON objects') }
-  for (const target of ['win-x64', 'mac-arm64', 'mac-x64']) {
+  for (const target of PRODUCT_DESKTOP_TARGETS) {
     const labels = runners?.[target]
     const directory = directories?.[target]
     if (!Array.isArray(labels) || labels.length < 4 || labels.some(label => typeof label !== 'string' || !label.trim())

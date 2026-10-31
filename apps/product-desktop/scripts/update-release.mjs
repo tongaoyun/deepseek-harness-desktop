@@ -2,6 +2,7 @@
 import { createHash } from 'node:crypto'
 import { createReadStream } from 'node:fs'
 import { readFile } from 'node:fs/promises'
+import { PRODUCT_DESKTOP_TARGETS } from './package-targets.mjs'
 
 /**
  * Select the product's binary-only package; source repository visibility is independent.
@@ -45,7 +46,7 @@ export function validateInternalSignature(target, signature, expectedSHA256) {
  * @param {string} repository Anonymous download repository.
  * @param {string} version Common package version.
  * @param {string} releaseDate Exact build start time.
- * @returns {Promise<{ name: string, bytes: string }[]>} Windows and combined Intel/ARM Mac feeds with immutable URLs.
+ * @returns {Promise<{ name: string, bytes: string }[]>} Windows x64 and Mac ARM64 feeds with immutable URLs.
  */
 export async function productUpdateFeeds(manifests, files, repository, version, releaseDate) {
   const { dump, load } = await import('js-yaml')
@@ -53,7 +54,8 @@ export async function productUpdateFeeds(manifests, files, repository, version, 
   const byName = new Map(files.map(file => [file.name, file]))
   const feeds = new Map()
   for (const manifest of manifests) {
-    if (!['signed', 'internal'].includes(manifest.signing) || manifest.updateUrl !== url || manifest.channel !== 'nightly') {
+    if (!PRODUCT_DESKTOP_TARGETS.includes(manifest.target) || !['signed', 'internal'].includes(manifest.signing)
+      || manifest.updateUrl !== url || manifest.channel !== 'nightly') {
       throw new Error(`Invalid ${manifest.target} signed update configuration`)
     }
     const source = byName.get(`${manifest.target}-nightly.yml`)
@@ -90,8 +92,7 @@ export async function productUpdateFeeds(manifests, files, repository, version, 
     feeds.set(name, [...(feeds.get(name) ?? []), ...entries])
   }
   return [...feeds].map(([name, entries]) => {
-    // Legacy fields are still read by the native provider; select Intel for the combined Mac fallback.
-    const primary = entries.find(entry => entry.url.endsWith(name === 'nightly.yml' ? '.exe' : '.zip') && !entry.url.includes('arm64'))
+    const primary = entries.find(entry => entry.url.endsWith(name === 'nightly.yml' ? '.exe' : '.zip'))
     return { name, bytes: dump({ version, files: entries, path: primary.url, sha512: primary.sha512, releaseDate }, { lineWidth: -1, noRefs: true }) }
   })
 }

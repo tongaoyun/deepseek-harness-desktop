@@ -163,7 +163,7 @@ test('publishes self-signed Mac and unsigned Windows as explicit internal native
     { signing: 'internal', downloadRepository: repository, internalCertificateSHA256: pin })
   assert.equal(release.prerelease, false)
   assert.match(release.body, /未经过 Apple 公证/u)
-  assert.equal(load(await readFile(join(directory, 'nightly-mac.yml'), 'utf8')).files.length, 4)
+  assert.equal(load(await readFile(join(directory, 'nightly-mac.yml'), 'utf8')).files.length, 2)
   assert.equal(load(await readFile(join(directory, 'nightly.yml'), 'utf8')).files.length, 1)
 })
 

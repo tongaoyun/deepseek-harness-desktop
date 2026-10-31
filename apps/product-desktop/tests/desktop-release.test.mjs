@@ -65,14 +65,14 @@ const attemptRequest = jobs => async (_method, path) => {
 test('reuses earlier successful platforms while selecting the latest execution and checking preflight', async () => {
   const latest = { ...run, run_attempt: 2 }
   const request = attemptRequest(attempt => attempt === 2
-    ? [packageJob('mac-x64', 2)] : ['preflight', ...RELEASE_TARGETS].map(target => packageJob(target)))
+    ? [packageJob('mac-arm64', 2)] : ['preflight', ...RELEASE_TARGETS].map(target => packageJob(target)))
   assert.deepEqual(await desktopPackageAttempts(request, 'owner/build', latest, 'unsigned'), {
-    'win-x64': 1, 'mac-arm64': 1, 'mac-x64': 2,
+    'win-x64': 1, 'mac-arm64': 2,
   })
   for (const patch of [{ conclusion: 'failure' }, { conclusion: 'cancelled' }, { conclusion: 'skipped' },
     { status: 'in_progress' }, { head_sha: 'b'.repeat(40) }, { run_id: 100 }, { run_attempt: 1 }]) {
     await assert.rejects(desktopPackageAttempts(attemptRequest(attempt => attempt === 2
-      ? [packageJob('mac-x64', 2, patch)] : ['preflight', ...RELEASE_TARGETS].map(target => packageJob(target))),
+      ? [packageJob('mac-arm64', 2, patch)] : ['preflight', ...RELEASE_TARGETS].map(target => packageJob(target))),
     'owner/build', latest, 'unsigned'), /not successful/u)
   }
   await assert.rejects(desktopPackageAttempts(attemptRequest(() => RELEASE_TARGETS.map(target => packageJob(target))),
@@ -83,14 +83,14 @@ test('reuses earlier successful platforms while selecting the latest execution a
 test('distinguishes inherited GitHub jobs from real reruns before selecting immutable artifacts', async () => {
   const rows = {
     1: ['preflight', ...RELEASE_TARGETS].map(target => packageJob(target)),
-    2: ['preflight', ...RELEASE_TARGETS].map(target => packageJob(target, target === 'mac-x64' ? 2 : 1,
+    2: ['preflight', ...RELEASE_TARGETS].map(target => packageJob(target, target === 'mac-arm64' ? 2 : 1,
       { id: `copied-2-${target}`, run_attempt: 2 })),
     3: ['preflight', ...RELEASE_TARGETS].map(target => packageJob(target,
-      target === 'win-x64' ? 3 : target === 'mac-x64' ? 2 : 1, { id: `copied-3-${target}`, run_attempt: 3 })),
+      target === 'win-x64' ? 3 : target === 'mac-arm64' ? 2 : 1, { id: `copied-3-${target}`, run_attempt: 3 })),
   }
   const latest = { ...run, run_attempt: 3 }
   assert.deepEqual(await desktopPackageAttempts(attemptRequest(attempt => rows[attempt]), 'owner/build', latest, 'unsigned'), {
-    'win-x64': 3, 'mac-arm64': 1, 'mac-x64': 2,
+    'win-x64': 3, 'mac-arm64': 2,
   })
   const inherited = rows[3].find(job => job.name === 'mac-arm64 unsigned')
   for (const patch of [{ conclusion: 'failure' }, { started_at: null }, { completed_at: 'invalid' }]) {
@@ -374,11 +374,11 @@ test('aggregates all platforms and writes matching source, version and checksums
   const directory = await staged(t)
   const release = await collectDesktopRelease(directory, run, commit, productVersion)
   assert.equal(release.tag, `v${version}`)
-  assert.equal(release.files.length, 5)
+  assert.equal(release.files.length, 4)
   const manifest = JSON.parse(await readFile(join(directory, 'build-manifest.json'), 'utf8'))
   assert.equal(manifest.commit, commit)
   assert.deepEqual(manifest.targets.map(row => row.target), RELEASE_TARGETS)
-  assert.equal((await readFile(join(directory, 'SHA256SUMS.txt'), 'utf8')).trim().split('\n').length, 3)
+  assert.equal((await readFile(join(directory, 'SHA256SUMS.txt'), 'utf8')).trim().split('\n').length, 2)
 })
 
 test('refuses failed or cancelled builds and another source before opening files', async () => {
@@ -390,10 +390,10 @@ test('refuses failed or cancelled builds and another source before opening files
 test('rejects missing platforms, source/attempt/version mismatches and unexpected files', async t => {
   for (const kind of ['missing', 'source', 'attempt', 'version', 'extra', 'duplicate', 'path']) {
     const directory = await staged(t)
-    const path = join(directory, 'mac-x64', 'build-manifest.json')
+    const path = join(directory, 'mac-arm64', 'build-manifest.json')
     const manifest = JSON.parse(await readFile(path, 'utf8'))
-    if (kind === 'missing') await rm(join(directory, 'mac-x64'), { recursive: true })
-    else if (kind === 'extra') await writeFile(join(directory, 'mac-x64', '.env'), 'private')
+    if (kind === 'missing') await rm(join(directory, 'mac-arm64'), { recursive: true })
+    else if (kind === 'extra') await writeFile(join(directory, 'mac-arm64', '.env'), 'private')
     else {
       if (kind === 'source') manifest.commit = 'b'.repeat(40)
       if (kind === 'attempt') manifest.version = version.replace(/\.1$/u, '.2')

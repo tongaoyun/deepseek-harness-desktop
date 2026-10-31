@@ -7,7 +7,7 @@ function release(id, overrides = {}) {
   const version = `0.2.1-rc.2.20261021.${id}.1`
   return { id, tag_name: `v${version}`, draft: false, prerelease: true,
     published_at: `2026-10-${String(id + 10).padStart(2, '0')}T00:00:00Z`,
-    assets: ['win-x64-unsigned.exe', 'mac-arm64-unsigned.dmg', 'mac-x64-unsigned.dmg',
+    assets: ['win-x64-unsigned.exe', 'mac-arm64-unsigned.dmg',
       'mac-arm64-unsigned.zip', 'win-x64-unsigned.exe.blockmap', 'SHA256SUMS.txt', 'build-manifest.json']
       .map((suffix, index) => ({ id: id * 10 + index, size: 1024,
         name: suffix.includes('.') && !['SHA256SUMS.txt', 'build-manifest.json'].includes(suffix)
@@ -48,8 +48,8 @@ test('development packages cannot displace the native updater releases or unfini
   assert.deepEqual(plan.excluded.map(row => row.id), [7, 100])
 })
 
-test('rejects deletion when either replacement version lacks any of the three platforms', () => {
-  for (const target of ['win-x64', 'mac-arm64', 'mac-x64']) {
+test('rejects deletion when either replacement version lacks a supported platform', () => {
+  for (const target of ['win-x64', 'mac-arm64']) {
     for (const id of [2, 3]) {
       const rows = [release(1), release(2), release(3)]
       rows.find(row => row.id === id).assets = rows.find(row => row.id === id).assets.filter(asset => !asset.name.includes(target))

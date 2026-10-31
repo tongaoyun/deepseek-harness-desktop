@@ -1,8 +1,8 @@
-/** Retain two published desktop versions per update channel, with all three installers together. */
+/** Retain two published desktop versions per update channel, with both supported installers together. */
 import { resolve } from 'node:path'
+import { PRODUCT_DESKTOP_TARGETS } from './package-targets.mjs'
 
 const releaseTag = /^v\d+\.\d+\.\d+-(?:alpha\.\d+|beta\.\d+|rc\.\d+|test)\.\d{8}\.\d+\.\d+$/u
-const targets = ['win-x64', 'mac-arm64', 'mac-x64']
 const identity = release => JSON.stringify([release.id, release.tag_name, release.draft, release.prerelease,
   release.published_at, release.updated_at, release.body,
   release.assets.map(asset => [asset.id, asset.name, asset.size, asset.updated_at]).sort()])
@@ -42,7 +42,7 @@ export function planReleaseRetention(releases) {
     if (expired.some(release => release.assets.some(asset => asset.size > 0))) {
       for (const release of retained) {
         const version = release.tag_name.slice(1)
-        for (const target of targets) {
+        for (const target of PRODUCT_DESKTOP_TARGETS) {
           const extension = target === 'win-x64' ? 'exe' : 'dmg'
           if (!release.assets.some(asset => asset.size > 0 && ['unsigned', 'internal', 'signed']
             .some(mode => asset.name === `deepseek-harness-${version}-${target}-${mode}.${extension}`))) {

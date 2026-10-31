@@ -8,6 +8,7 @@ import { runAcceptanceProcess } from './acceptance-process.mjs'
 import { stopInstalledProcesses } from './installed-processes.mjs'
 import { productSigningMode } from './update-release.mjs'
 import { withInternalMacIdentity } from './internal-signing.mjs'
+import { PRODUCT_DESKTOP_TARGETS } from './package-targets.mjs'
 
 const root = resolve(import.meta.dirname, '../../..')
 
@@ -43,7 +44,6 @@ async function runAcceptance(executable, target, installationRoot) {
   try {
     await runAcceptanceProcess(process.execPath, [manager, 'exec', 'vitest', 'run', '--config', 'vitest.web.config.ts',
       'apps/web/tests/deepseek-harness-catalog.e2e.ts', '-t', 'boots the installed product Electron assembly',
-      // Intel macOS measured nearly five minutes for signed fixture preparation alone.
       // Budget preparation, full UI coverage and native restart; allow two minutes for cleanup.
       '--testTimeout=900000', '--hookTimeout=120000',
       '--reporter=default', '--reporter=json', `--outputFile=.artifacts/desktop-installed-${target}.json`], {
@@ -62,7 +62,7 @@ async function main() {
   const { values } = parseArgs({ options: { target: { type: 'string' }, installer: { type: 'string' } } })
   const target = values.target
   const nativeTarget = process.platform === 'darwin' ? `mac-${process.arch}` : `win-${process.arch}`
-  if (!['mac-arm64', 'mac-x64', 'win-x64'].includes(target) || target !== nativeTarget) throw new Error('Use the native package target')
+  if (!PRODUCT_DESKTOP_TARGETS.includes(target) || target !== nativeTarget) throw new Error('Use the native package target')
   const installer = values.installer === undefined
     ? await selectInstaller(join(root, 'apps/desktop/.desktop-build/targets', target,
       productSigningMode(process.env.PACKAGE_SIGNING) === 'signed' ? 'artifacts' : 'unsigned-artifacts'), process.platform)

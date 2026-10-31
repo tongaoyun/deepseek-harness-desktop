@@ -6,6 +6,7 @@ import { resolve } from 'node:path'
 import { desktopBuildVersionPrefix } from '../../desktop/scripts/desktop-build-version.mjs'
 import { loadDesktopPackageEnvironment, validateDesktopPackageEnvironment } from '../../desktop/scripts/desktop-package-environment.mjs'
 import { productSigningMode, productUpdateUrl, validateInternalSignature } from './update-release.mjs'
+import { PRODUCT_DESKTOP_TARGETS } from './package-targets.mjs'
 
 /**
  * Number an unpublished build without querying release storage.
@@ -35,7 +36,7 @@ export function githubBuildVersion(environment, productVersion, now = new Date()
  * @returns {object} Credential-free download manifest.
  */
 export function artifactManifest(directory, target, commit, version, options = {}) {
-  if (!['win-x64', 'mac-arm64', 'mac-x64'].includes(target)) throw new Error('Unsupported package target')
+  if (!PRODUCT_DESKTOP_TARGETS.includes(target)) throw new Error('Unsupported package target')
   if (!/^[a-f0-9]{40}$/u.test(commit)) throw new Error('An exact source commit is required')
   const signing = productSigningMode(options.signing)
   let update
@@ -106,7 +107,7 @@ if (process.argv[1] !== undefined && resolve(process.argv[1]) === import.meta.fi
     appendFileSync(environment.GITHUB_STEP_SUMMARY, `${signing} desktop acceptance build\n\nVersion: ${version}\n\nSource: ${commit}\n\n`)
   } else if (process.argv[2] === 'artifacts') {
     const target = process.env.PACKAGE_TARGET
-    if (!['win-x64', 'mac-arm64', 'mac-x64'].includes(target)) throw new Error('Unsupported package target')
+    if (!PRODUCT_DESKTOP_TARGETS.includes(target)) throw new Error('Unsupported package target')
     const signing = productSigningMode(process.env.PACKAGE_SIGNING)
     const directory = resolve(root, `apps/desktop/.desktop-build/targets/${target}/${signing === 'signed' ? 'artifacts' : 'unsigned-artifacts'}`)
     const manifest = artifactManifest(directory, target, commit, process.env.PACKAGE_VERSION,

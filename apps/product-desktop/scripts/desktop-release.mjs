@@ -10,8 +10,9 @@ import { openPromise } from 'yauzl'
 import { githubBuildVersion } from './github-package.mjs'
 import { gt, valid } from 'semver'
 import { productSigningMode, productUpdateFeeds, validateInternalSignature } from './update-release.mjs'
+import { PRODUCT_DESKTOP_TARGETS } from './package-targets.mjs'
 
-export const RELEASE_TARGETS = ['win-x64', 'mac-arm64', 'mac-x64']
+export const RELEASE_TARGETS = PRODUCT_DESKTOP_TARGETS
 const MAX_FILE = 2 * 1024 ** 3
 const MAX_ARCHIVE = 3 * 1024 ** 3
 const safeName = name => /^[A-Za-z0-9][A-Za-z0-9._-]*$/u.test(name)
@@ -116,7 +117,7 @@ export async function extractBuildArchive(chunks, directory) {
     for await (const entry of zip.eachEntry()) {
       const name = entry.fileName
       const type = (entry.externalFileAttributes >>> 16) & 0xf000
-      if (!safeName(name) || !(name === 'build-manifest.json' || /\.(?:exe|dmg|zip|blockmap)$/u.test(name) || /^(?:win-x64|mac-arm64|mac-x64)-nightly\.yml$/u.test(name))
+      if (!safeName(name) || !(name === 'build-manifest.json' || /\.(?:exe|dmg|zip|blockmap)$/u.test(name) || /^(?:win-x64|mac-arm64)-nightly\.yml$/u.test(name))
         || names.has(name) || names.size >= 16 || ![0, 0x8000].includes(type)
         || entry.isEncrypted() || entry.uncompressedSize > MAX_FILE) throw new Error('Invalid hosted artifact entry')
       names.add(name)
@@ -219,7 +220,7 @@ export async function collectDesktopRelease(directory, run, commit, productVersi
     files.push({ path, name, size: Buffer.byteLength(bytes), sha256: digest(bytes) })
   }
   return { version, tag: `v${version}`, commit, files, prerelease: signing === 'unsigned',
-    body: `${signing === 'internal' ? '内部免费更新版本：macOS 使用固定自签证书，未经过 Apple 公证；Windows 未签名。首次安装可能出现系统安全提示。' : signing === 'signed' ? 'Signed product desktop update.' : 'Unsigned development desktop build.'}\n\nSource: ${commit}\nManifest SHA-256: ${digest(manifestBytes)}\n\nWindows x64, macOS ARM64 and macOS Intel. ${signing !== 'unsigned' ? 'Native updates require download and restart confirmation.' : 'No automatic update feed.'}\n` }
+    body: `${signing === 'internal' ? '内部免费更新版本：macOS 使用固定自签证书，未经过 Apple 公证；Windows 未签名。首次安装可能出现系统安全提示。' : signing === 'signed' ? 'Signed product desktop update.' : 'Unsigned development desktop build.'}\n\nSource: ${commit}\nManifest SHA-256: ${digest(manifestBytes)}\n\nWindows x64 and macOS ARM64. ${signing !== 'unsigned' ? 'Native updates require download and restart confirmation.' : 'No automatic update feed.'}\n` }
 }
 
 /**

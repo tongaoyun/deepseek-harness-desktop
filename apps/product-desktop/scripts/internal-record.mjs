@@ -3,10 +3,11 @@ import { readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { readDesktopBuildCommit } from '../../desktop/scripts/desktop-build-commit.mjs'
 import { productUpdateUrl } from './update-release.mjs'
+import { PRODUCT_DESKTOP_TARGETS } from './package-targets.mjs'
 
 /** @param {string} root Repository root. @param {string[]} args Official package arguments. @param {NodeJS.ProcessEnv} environment Explicit distribution settings. @returns {Promise<void>} Writes a source-bound completion record only after native packaging succeeds. */
 export async function writeInternalBuildRecord(root, args, environment) {
-  const target = args.find(arg => ['mac-arm64', 'mac-x64', 'win-x64'].includes(arg))
+  const target = args.find(arg => PRODUCT_DESKTOP_TARGETS.includes(arg))
   const index = args.indexOf('--build-version')
   const version = index < 0 ? JSON.parse(await readFile(join(root, 'apps/desktop/package.json'), 'utf8')).version : args[index + 1]
   if (!target || !version) throw new Error('Internal packaging requires an explicit target and package version')
