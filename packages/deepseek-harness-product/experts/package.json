@@ -81,7 +81,6 @@
   },
   "dependencies": {
     "zod": "^4.4.3",
-    "@tabler/icons-react": "3.47.0",
     "yaml": "^2.8.3",
     "@deepseek-harness/product": "workspace:*",
     "@deepseek-ai/dsh-skill-filesystem": "workspace:*"
@@ -137,7 +136,8 @@
     "@deepseek-ai/dsh-experimental-agent-team": "workspace:*",
     "@deepseek-ai/dsh-config-editor": "workspace:*",
     "@deepseek-ai/dsh-app-boot": "workspace:*",
-    "@deepseek-ai/dsh-tool-executor-native": "workspace:*"
+    "@deepseek-ai/dsh-tool-executor-native": "workspace:*",
+    "@tabler/icons-react": "3.47.0"
   },
   "private": true
 }

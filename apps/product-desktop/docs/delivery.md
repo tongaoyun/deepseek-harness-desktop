@@ -32,9 +32,9 @@ node apps/product-desktop/scripts/sync-github.mjs --repository OWNER/deepseek-ha
 
 main CI 执行完整类型检查；原生打包使用 `build:artifacts`，保留本地或正式品牌配置、生成声明和构建记录校验。打包前按官方 CLI、Desktop Host 和产品装配根计算生产依赖闭包，仅打包选中的工作区；包筛选参数由原生 Node 进程接收，避免 Windows 命令脚本的长度限制；安装包组装时再次从实际 tarball 核对依赖闭包和 Host 入口文件。
 
-Mac 并行准备软件包与运行时，Electron 与主运行时也独立准备；任一失败均等待已启动的任务结束，再停止后续组装。应用目录仅组装一次，DMG 与 ZIP 从同一目录生成；内部 DMG 使用 ULFO（LZFSE）压缩；ZIP 使用 `DSH_DESKTOP_MACOS_ZIP_COMPRESSION_LEVEL`（默认 `3`）。安装包上传 Actions Artifact 时关闭二次 ZIP 压缩，日志与截图沿用默认压缩。产品模块随统一构建生成，Rust sidecar 在产品入口构建一次；源码启动和验收使用 `CARGO_TARGET_DIR` 指定的编译目录。依赖安装保留 frozen lock 并优先复用本地 store；pnpm 元数据与 npm 引导下载分别缓存到持久目录，供应链策略检查继续执行。
+Mac 并行准备软件包与运行时，Electron 与主运行时也独立准备；任一失败均等待已启动的任务结束，再停止后续组装。应用目录仅组装一次，DMG 与 ZIP 从同一目录生成；内部 DMG 使用 ULFO（LZFSE）压缩；ZIP 使用 `DSH_DESKTOP_MACOS_ZIP_COMPRESSION_LEVEL`（默认 `3`）。安装包上传 Actions Artifact 时关闭二次 ZIP 压缩，日志与截图沿用默认压缩。产品模块随统一构建生成，前端图标编入客户端产物，不作为运行时依赖分发整套图标库。Rust sidecar 在产品入口构建一次；源码启动和验收使用 `CARGO_TARGET_DIR` 指定的编译目录。依赖安装保留 frozen lock 并优先复用本地 store；pnpm 元数据与 npm 引导下载分别缓存到持久目录，供应链策略检查继续执行。
 
-内部 Mac 包通过 electron-builder 原生自定义签名入口执行一次固定证书签名，按目录深度从内向外处理嵌套代码，先签 Helper 再签所属框架，保留官方 afterSign 检查。Mac A→B 验收先验证已安装应用的固定签名；资格副本仅修改版本、ASAR 和更新源，再重签根资源。嵌套执行文件不重复签名，仍执行严格深度签名验证及真实原生升级。首次生产组装继续完整签名。
+内部 Mac 包通过 electron-builder 原生自定义签名入口执行一次固定证书签名，按目录深度从内向外处理嵌套代码，先签 Helper 再签所属框架，保留官方 afterSign 检查。Mac A→B 验收先验证已安装应用的固定签名；资格副本仅修改版本、ASAR 和更新源，再重签根资源。未改动的外置原生文件以流传给 ASAR 写入器，避免完整读取大型二进制。嵌套执行文件不重复签名，仍执行严格深度签名验证及真实原生升级。首次生产组装继续完整签名。
 
 GitHub 按系统及架构缓存 Electron、锁定的 Node/Python 与 Office 下载、桌面运行时 pnpm store、electron-builder 工具以及 Rust registry、Git 依赖和编译中间产物。下载缓存随依赖锁更新，Rust 缓存同时区分工具链与源码；无精确命中时复用同目标的旧缓存，由下载校验和 Cargo 增量构建确认有效性。首次运行仍需填充缓存。基础运行时在 `prepare:dsh` 完成组装和必要签名后验证，下载准备阶段不重复执行同一检查；封装后的 ASAR、安装及更新验收继续独立执行。构建产物、安装状态和签名凭据不进入这些缓存，真实安装、启动和自动更新验收每次执行。
 
@@ -105,7 +105,7 @@ DSH_DESKTOP_MANDATORY_UPDATE_ENABLED=0
 
 三平台先运行已构建的官方及产品 profile，再验证安装后的完整应用；失败阻止发布。成功构建生成安装包、blockmap 和平台 `build-manifest.json`，发布端汇总源码、版本、平台、大小及 SHA-256，并生成 `SHA256SUMS.txt`。
 
-Actions 安装包保留一天，截图与 JSON 验收报告保留十四天。日志及 Actions 产物遵循源码仓库可见性。归档 Host 启动回归必须在产品 bootstrap 编译后、安装包上传前运行，不能依赖 runner 缓存。
+Actions 安装包保留一天，截图、JSON 验收报告及打包诊断保留十四天。成功和失败构建均上传阶段日志及 Office 调用栈采样；组装、afterPack 校验、afterSign 检查分别记录耗时，组装记录 CPU 与内存用量，不记录配置或命令参数。日志及 Actions 产物遵循源码仓库可见性。归档 Host 启动回归必须在产品 bootstrap 编译后、安装包上传前运行，不能依赖 runner 缓存。
 
 Gitea Release 和两个 GitHub 下载仓库分别保留最新两个已发布版本，开发预发布与原生更新渠道分别计数；按发布时间排序，每个版本完整保留 Windows x64、macOS ARM64、macOS Intel 安装包及 ZIP、blockmap、更新清单和校验文件。草稿不计数、不自动删除。回收仅处理产品交付版本标签，保留源码 Git tag；有安装文件的旧版本须在两个保留版本均含三平台安装包时才可删除，权限或元数据异常会停止清理。
 

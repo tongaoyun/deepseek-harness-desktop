@@ -82,7 +82,7 @@ jobs:
           apps/desktop/tests/update-coordinator.spec.ts apps/desktop/tests/update-mirror.spec.ts apps/desktop/tests/update-http-executor.spec.ts
           apps/desktop/tests/update-schedule.spec.ts
       - name: Test acceptance process cleanup
-        run: node --test apps/product-desktop/tests/acceptance-process.test.mjs apps/product-desktop/tests/office-process-diagnostics.test.mjs apps/product-desktop/tests/windows-processes.test.mjs
+        run: node --test apps/product-desktop/tests/acceptance-process.test.mjs apps/product-desktop/tests/office-process-diagnostics.test.mjs apps/product-desktop/tests/builder-diagnostics.test.mjs apps/product-desktop/tests/windows-processes.test.mjs
       - name: Test Electron close lifecycle
         run: pnpm exec vitest run apps/product-desktop/tests/close-electron.spec.ts apps/product-desktop/tests/office-fixture.spec.ts apps/product-desktop/tests/native-update-dialog.spec.ts
       - name: Test upstream boundaries
@@ -274,11 +274,11 @@ jobs:
             .artifacts/deepseek-harness-catalog/electron-*-startup.txt
           if-no-files-found: error
           retention-days: 14
-      - name: Upload failed packaging diagnostics
-        if: failure()
+      - name: Upload packaging diagnostics
+        if: always()
         uses: actions/upload-artifact@v7.0.1
         with:
-          name: harness-packaging-failure-${{ matrix.target }}-${{ github.run_number }}-${{ github.run_attempt }}
+          name: harness-packaging-diagnostics-${{ matrix.target }}-${{ github.run_number }}-${{ github.run_attempt }}
           include-hidden-files: true
           path: |
             apps/desktop/.desktop-build/packaging-runs/**/events.jsonl

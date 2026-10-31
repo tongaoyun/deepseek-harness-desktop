@@ -12885,7 +12885,7 @@ index 3feb65d17109c713f4d8fde9b000fbee919dab7d..700b0f2e422077f63e8b7e86a7ff6c97
    if (!ctx.get('agents')) await ctx.plugin(AgentRegistry)
    if (!ctx.get('fs')) await ctx.plugin(FileSystem)
 diff --git a/pnpm-lock.yaml b/pnpm-lock.yaml
-index 3bb5b2fd3e73be2afa0611f2012206d2071c61dc..ffb2ffc8f9742ae5bc6891beb6c69985759acc18 100644
+index 3bb5b2fd3e73be2afa0611f2012206d2071c61dc..94514425bd0eea98702debef6ebf4de1ab02f224 100644
 --- a/pnpm-lock.yaml
 +++ b/pnpm-lock.yaml
 @@ -770,6 +770,9 @@ importers:
@@ -13207,9 +13207,6 @@ index 3bb5b2fd3e73be2afa0611f2012206d2071c61dc..ffb2ffc8f9742ae5bc6891beb6c69985
 +      '@deepseek-harness/product':
 +        specifier: workspace:*
 +        version: link:../product
-+      '@tabler/icons-react':
-+        specifier: 3.47.0
-+        version: 3.47.0(react@18.3.1)
 +      yaml:
 +        specifier: ^2.8.3
 +        version: 2.9.0
@@ -13349,6 +13346,9 @@ index 3bb5b2fd3e73be2afa0611f2012206d2071c61dc..ffb2ffc8f9742ae5bc6891beb6c69985
 +      '@deepseek-ai/dsh-util-values':
 +        specifier: workspace:*
 +        version: link:../../util/values
++      '@tabler/icons-react':
++        specifier: 3.47.0
++        version: 3.47.0(react@18.3.1)
 +      '@types/node':
 +        specifier: ^22.20.1
 +        version: 22.20.1

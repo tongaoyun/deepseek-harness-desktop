@@ -345,8 +345,8 @@ test('isolates signing and download credentials from native hosted builds', () =
   assert.match(evidence.with.path, /desktop-ui-.*\.json/u)
   assert.match(evidence.with.path, /electron-\*\.png/u)
   assert.equal(evidence.with['retention-days'], 14)
-  const packagingEvidence = steps.find(step => step.name === 'Upload failed packaging diagnostics')
-  assert.equal(packagingEvidence.if, 'failure()')
+  const packagingEvidence = steps.find(step => step.name === 'Upload packaging diagnostics')
+  assert.equal(packagingEvidence.if, 'always()')
   assert.equal(packagingEvidence.with['include-hidden-files'], true)
   assert.deepEqual(packagingEvidence.with.path.trim().split('\n'), [
     'apps/desktop/.desktop-build/packaging-runs/**/events.jsonl',

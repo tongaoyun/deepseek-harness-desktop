@@ -8130,9 +8130,6 @@ importers:
       '@deepseek-harness/product':
         specifier: workspace:*
         version: link:../product
-      '@tabler/icons-react':
-        specifier: 3.47.0
-        version: 3.47.0(react@18.3.1)
       yaml:
         specifier: ^2.8.3
         version: 2.9.0
@@ -8272,6 +8269,9 @@ importers:
       '@deepseek-ai/dsh-util-values':
         specifier: workspace:*
         version: link:../../util/values
+      '@tabler/icons-react':
+        specifier: 3.47.0
+        version: 3.47.0(react@18.3.1)
       '@types/node':
         specifier: ^22.20.1
         version: 22.20.1

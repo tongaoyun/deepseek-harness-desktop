@@ -59,7 +59,7 @@ jobs:
           node --test apps/product-desktop/tests/desktop-release.test.mjs
           node --test apps/product-desktop/tests/product-updates.test.mjs apps/product-desktop/tests/internal-updates.test.mjs apps/product-desktop/tests/native-update-integrity.test.mjs apps/product-desktop/tests/packaging-assembly.test.mjs apps/product-desktop/tests/package-mirror.test.mjs
           pnpm exec vitest run apps/desktop/tests/desktop-assembly.spec.ts apps/desktop/tests/desktop-package-plan.spec.ts apps/desktop/tests/package-target-stages.spec.ts apps/desktop/tests/pack-local-packages.spec.ts scripts/release/pack.spec.ts apps/desktop/tests/prepare-package-set.spec.ts apps/desktop/tests/package-target.spec.ts apps/desktop/tests/desktop-auto-update-environment.spec.ts apps/desktop/tests/desktop-package-environment.spec.ts apps/desktop/tests/desktop-policy-environment.spec.ts apps/desktop/tests/update-coordinator.spec.ts apps/desktop/tests/update-mirror.spec.ts apps/desktop/tests/update-http-executor.spec.ts apps/desktop/tests/update-schedule.spec.ts
-          node --test apps/product-desktop/tests/acceptance-process.test.mjs apps/product-desktop/tests/office-process-diagnostics.test.mjs apps/product-desktop/tests/windows-processes.test.mjs
+          node --test apps/product-desktop/tests/acceptance-process.test.mjs apps/product-desktop/tests/office-process-diagnostics.test.mjs apps/product-desktop/tests/builder-diagnostics.test.mjs apps/product-desktop/tests/windows-processes.test.mjs
           pnpm exec vitest run apps/product-desktop/tests/close-electron.spec.ts apps/product-desktop/tests/office-fixture.spec.ts
           pnpm run build:artifacts
           node --test apps/product-desktop/tests/company-content.test.mjs

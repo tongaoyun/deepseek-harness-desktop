@@ -22,7 +22,7 @@ description: "产品桌面的内建专家套件模块。"
 <a id="assembly"></a>
 ## 装配与维护
 
-Host 模块通过产品 profile 固定装配，普通 ESM 客户端模块合入产品 UI 的浏览器产物；不声明独立安装包。根目录 `pnpm run build:artifacts` 完成构建，本目录 `tsconfig.json` 检查源码。官方 profile 不加载产品模块。
+Host 模块通过产品 profile 固定装配，普通 ESM 客户端模块合入产品 UI 的浏览器产物；不声明独立安装包。Tabler 图标作为开发依赖编入客户端产物，Host 不需要安装图标库。根目录 `pnpm run build:artifacts` 完成构建，本目录 `tsconfig.json` 检查源码。官方 profile 不加载产品模块。
 
 代码按当前产品版本维护，许可证见 [LICENSE](LICENSE)。团队内容的格式和发布入口见[公司内容说明](../../../apps/product-desktop/docs/company-content.md)。
 

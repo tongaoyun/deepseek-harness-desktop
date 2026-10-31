@@ -1,6 +1,6 @@
 /** Preserve application bytes and Electron integrity checks in private update qualification copies. */
 import assert from 'node:assert/strict'
-import { statSync } from 'node:fs'
+import { createReadStream, statSync } from 'node:fs'
 import { readFile, writeFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'
 import { dirname, join, relative } from 'node:path'
@@ -18,6 +18,7 @@ const asar = packager('@electron/asar')
  * @param {string} source Original private application archive.
  * @param {string} destination Separate output archive beside its unpacked directory.
  * @param {Map<string, Buffer>} replacements Native relative paths and replacement bytes; missing paths are added.
+ * Unchanged unpacked resources stream from disk without retaining entire native binaries in memory.
  * @returns {Promise<void>} Resolves after all archived and unpacked output streams finish.
  */
 export async function writeUpdateArchive(source, destination, replacements) {
@@ -35,7 +36,9 @@ export async function writeUpdateArchive(source, destination, replacements) {
       pending.delete(path)
       const mode = unpacked ? statSync(join(source + '.unpacked', path)).mode : node.executable ? 0o755 : 0o644
       streams.push({ path, type: 'file', unpacked, stat: { mode, size: bytes?.length ?? node.size },
-        streamGenerator: () => Readable.from([bytes ?? asar.extractFile(source, path)]) })
+        streamGenerator: () => bytes !== undefined ? Readable.from([bytes])
+          : unpacked ? createReadStream(join(source + '.unpacked', path))
+            : Readable.from([asar.extractFile(source, path)]) })
     }
   }
   add('', asar.getRawHeader(source).header)
