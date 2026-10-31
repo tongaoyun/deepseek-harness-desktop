@@ -75,6 +75,7 @@ test('uncertain source mutations execute once and require reconciliation', async
     } })
     await assert.rejects(request(method, path, { ref: 'main' }), error => {
       assert.match(error.message, /ETIMEDOUT.*reconcile before retrying/u)
+      assert.equal(error.uncertainReleaseMutation, true)
       assert.doesNotMatch(error.message, /fixture-secret|fixture-token/u)
       return true
     })
