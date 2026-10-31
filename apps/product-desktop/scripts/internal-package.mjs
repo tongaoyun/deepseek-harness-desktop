@@ -89,7 +89,7 @@ export function internalBuilderConfig(config, environment, platform) {
     artifactName: 'deepseek-harness-${version}-${os}-${arch}-internal.${ext}',
     extraMetadata: { ...config.extraMetadata, dshDesktopAppId: INTERNAL_APP_ID, dshDesktopUpdateChannel: 'nightly', dshProductDistribution: 'internal',
       dshDesktopUpdateMirror: productPackageMirror(environment.PACKAGE_DOWNLOAD_REPOSITORY) },
-    dmg: { ...config.dmg, format: 'UDZO' },
+    dmg: { ...config.dmg, format: 'ULFO' },
     publish: [{ provider: 'generic', url, channel: 'nightly' }],
     mac: { ...config.mac, notarize: false, target: ['dmg', 'zip'],
       ...(platform === 'darwin' ? { sign: async options => signInternalApplication(options.app, environment) } : {}),

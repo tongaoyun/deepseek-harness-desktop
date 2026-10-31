@@ -94,7 +94,7 @@ test('embeds internal native feeds without changing the official unsigned or Dev
   assert.equal(mac.extraMetadata.dshDesktopUpdateMirror.githubRepository, repository)
   assert.equal(mac.extraMetadata.dshDesktopUpdateMirror.packageUrl,
     'http://www.instudio.me:6206/traefik/gitea/api/packages/instudio/generic/deepseek-harness-desktop-internal/')
-  assert.equal(mac.dmg.format, 'UDZO')
+  assert.equal(mac.dmg.format, 'ULFO')
   assert.equal(official.dmg.format, 'ULMO')
   assert.equal(official.publish, null)
   assert.deepEqual(official.mac.target, ['dmg'])
