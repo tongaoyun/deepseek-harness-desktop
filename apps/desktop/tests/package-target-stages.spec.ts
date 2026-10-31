@@ -56,7 +56,7 @@ it.each(['pack', 'runtime'] as const)('overlaps Windows preparation and waits fo
   run.run.mockImplementation(async (stage) => {
     stages.push(stage)
     if (stage.startsWith(`${releasePack} dsh `)) await pack.promise
-    if (stage === 'run prepare:runtime --defer-primary-runtime-smoke') {
+    if (stage === 'run prepare:runtime --defer-primary-runtime-smoke --payload-only') {
       await runtime.promise
       finished.add('runtime')
     }
@@ -68,7 +68,7 @@ it.each(['pack', 'runtime'] as const)('overlaps Windows preparation and waits fo
   try {
     await vi.waitFor(() => {
       expect(stages.some(stage => stage.startsWith(`${releasePack} dsh `))).toBe(true)
-      expect(stages).toContain('run prepare:runtime --defer-primary-runtime-smoke')
+      expect(stages).toContain('run prepare:runtime --defer-primary-runtime-smoke --payload-only')
     })
     expect(stages).not.toContain('run sign:primary-runtime')
     ;(first === 'pack' ? pack : runtime).resolve(undefined)
@@ -95,7 +95,7 @@ it.each(['pack', 'runtime'] as const)('drains the other Windows preparation afte
   run.run.mockImplementation(async (stage) => {
     stages.push(stage)
     if (stage.startsWith(`${releasePack} dsh `)) await pack.promise
-    if (stage === 'run prepare:runtime --defer-primary-runtime-smoke') await runtime.promise
+    if (stage === 'run prepare:runtime --defer-primary-runtime-smoke --payload-only') await runtime.promise
   })
   const outcome = packageTarget(parseDesktopPackageInvocation(['win-x64'], 'win32', 'x64'), environment, run).then(
     () => { settled = true; return undefined },
@@ -104,7 +104,7 @@ it.each(['pack', 'runtime'] as const)('drains the other Windows preparation afte
   try {
     await vi.waitFor(() => {
       expect(stages.some(stage => stage.startsWith(`${releasePack} dsh `))).toBe(true)
-      expect(stages).toContain('run prepare:runtime --defer-primary-runtime-smoke')
+      expect(stages).toContain('run prepare:runtime --defer-primary-runtime-smoke --payload-only')
     })
     ;(failed === 'pack' ? pack : runtime).reject(failure)
     await setImmediate()
@@ -192,7 +192,7 @@ it.each(['preflight:windows-signing', 'run build:artifacts --profile official', 
 ('never continues or records a release after %s fails', async (failure) => {
   const { run, stages } = supervisor(failure)
   await expect(packageTarget(parseDesktopPackageInvocation(['win-x64'], 'win32', 'x64'), environment, run)).rejects.toThrow('stage refused')
-  expect(stages.at(-1)).toBe(failure)
+  expect(stages.filter(stage => stage !== 'run prepare:runtime --defer-primary-runtime-smoke --payload-only').at(-1)).toBe(failure)
   expect(stages.filter(stage => stage === failure)).toHaveLength(1)
   expect(writeFileSync).not.toHaveBeenCalled()
 })
@@ -248,7 +248,7 @@ it.each([
   const failedAt = stages.findIndex(stage => stage.startsWith(failure))
   expect(failedAt).toBeGreaterThanOrEqual(0)
   expect(stages.slice(failedAt + 1)).toEqual(
-    failure === localPack ? ['run prepare:runtime --defer-primary-runtime-smoke'] : [])
+    failure === 'run build:artifacts --profile local' ? ['run prepare:runtime --defer-primary-runtime-smoke --payload-only'] : [])
   expect(stages.some(stage => stage.startsWith('--dir apps/desktop-host pack'))).toBe(failure === 'run prepare:dsh')
   expect(writeFileSync).not.toHaveBeenCalled()
 })
@@ -323,7 +323,7 @@ it.each([undefined, '2'])('passes macOS pack concurrency %s only to workspace pa
   expect(packs).toHaveLength(2)
   for (const call of packs) expect(call[2].slice(-2)).toEqual(['--concurrency', concurrency ?? '4'])
   for (const call of calls) {
-    expect(call[3].env.HTTP_PROXY).toBe(/^run prepare:(?:runtime --defer-primary-runtime-smoke|dsh)$/u.test(call[0]) ? 'http://downloads.example:8080' : undefined)
+    expect(call[3].env.HTTP_PROXY).toBe(/^run prepare:(?:runtime --(?:defer-primary-runtime-smoke --payload-only|cli-only)|dsh)$/u.test(call[0]) ? 'http://downloads.example:8080' : undefined)
   }
   expect(withMacOSNotarizationProxy).not.toHaveBeenCalled()
 })
@@ -436,13 +436,13 @@ it.each(['mac-arm64', 'mac-x64'] as const)('overlaps %s packing and runtime prep
   run.run.mockImplementation(async (stage) => {
     stages.push(stage)
     if (stage.startsWith(localPack)) await pack.promise
-    if (stage === 'run prepare:runtime --defer-primary-runtime-smoke') await runtime.promise
+    if (stage === 'run prepare:runtime --defer-primary-runtime-smoke --payload-only') await runtime.promise
   })
   const operation = packageTarget(parseDesktopPackageInvocation([target, '--unsigned'], 'darwin', target === 'mac-arm64' ? 'arm64' : 'x64'), environment, run)
   try {
     await vi.waitFor(() => {
       expect(stages.some(stage => stage.startsWith(localPack))).toBe(true)
-      expect(stages).toContain('run prepare:runtime --defer-primary-runtime-smoke')
+      expect(stages).toContain('run prepare:runtime --defer-primary-runtime-smoke --payload-only')
     })
     runtime.resolve(undefined)
     await setImmediate()
@@ -479,4 +479,37 @@ it.each([true, false])('launches long package selections through the native Node
   expect(call[2].slice(1, 5)).toEqual(['exec', process.execPath, '--import', 'tsx/esm'])
   expect(call[2]).not.toContain('tsx')
   expect(call[2]).not.toContain('run')
+})
+
+
+it('starts source build and runtime downloads together, then copies CLI only after both complete', async () => {
+  const { run, stages } = supervisor()
+  const source = Promise.withResolvers<undefined>()
+  const payload = Promise.withResolvers<undefined>()
+  run.run.mockImplementation(async (stage) => {
+    stages.push(stage)
+    if (stage === 'run build:artifacts --profile local') await source.promise
+    if (stage === 'run prepare:runtime --defer-primary-runtime-smoke --payload-only') await payload.promise
+  })
+  const operation = packageTarget(parseDesktopPackageInvocation(['win-x64', '--unsigned'], 'win32', 'x64'), environment, run)
+  const outcome = operation.then(() => undefined, (error: unknown) => error)
+  try {
+    await vi.waitFor(() => {
+      expect(stages).toContain('run build:artifacts --profile local')
+      expect(stages).toContain('run prepare:runtime --defer-primary-runtime-smoke --payload-only')
+    })
+    const runtime = run.run.mock.calls.find(([stage]) => stage.endsWith('--payload-only'))!
+    expect(runtime[3].env.TSX_TSCONFIG_PATH).toBe(resolve(import.meta.dirname, '../../../tsconfig.json'))
+    expect(stages).not.toContain('run prepare:runtime --cli-only')
+    source.resolve(undefined)
+    await vi.waitFor(() => { expect(stages.some(stage => stage.startsWith(localPack))).toBe(true) })
+    expect(stages).not.toContain('run prepare:runtime --cli-only')
+    payload.resolve(undefined)
+    expect(await outcome).toBeUndefined()
+    expect(stages.indexOf('run prepare:runtime --cli-only')).toBeLessThan(stages.indexOf('run prepare:packages'))
+  } finally {
+    source.resolve(undefined)
+    payload.resolve(undefined)
+    await outcome
+  }
 })

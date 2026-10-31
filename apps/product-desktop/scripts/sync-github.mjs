@@ -5,6 +5,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { parseArgs } from 'node:util'
+import { waitForDesktopBuild } from './desktop-release.mjs'
 import { apiClient } from './deliver-desktop.mjs'
 import { productSigningMode } from './update-release.mjs'
 
@@ -30,6 +31,24 @@ export function githubSyncRequest(token, transport = {}) {
   }).request
 }
 
+// Settings writes are idempotent, but a lost response still requires confirmation before dependent work.
+async function reconcileSetting(request, method, path, body, readPath, matches) {
+  try { await request(method, path, body) }
+  catch (error) {
+    if (error.uncertainReleaseMutation !== true) throw error
+    const current = await request('GET', readPath).catch(() => { throw error })
+    if (!matches(current)) throw error
+  }
+}
+
+const selectedActions = {
+  github_owned_allowed: true, verified_allowed: false,
+  patterns_allowed: ['pnpm/action-setup@*', 'dtolnay/rust-toolchain@*'],
+}
+const settingsMatch = desired => current => Object.entries(desired).every(([key, value]) =>
+  Array.isArray(value) ? Array.isArray(current[key]) && [...value].sort().join('\n') === [...current[key]].sort().join('\n')
+    : current[key] === value)
+
 /**
  * Keep only product packaging enabled among repository workflow files; GitHub-managed workflows are not configurable here.
  * @param {Function} request Authenticated GitHub API operation.
@@ -48,15 +67,17 @@ export async function selectPackagingWorkflow(request, repository) {
   for (const workflow of workflows) {
     if (!workflow.path.startsWith('.github/workflows/')) continue
     if (workflow.id === selected.id) {
-      if (workflow.state !== 'active') await request('PUT', `/repos/${repository}/actions/workflows/${workflow.id}/enable`)
+      if (workflow.state !== 'active') await reconcileSetting(request, 'PUT', `/repos/${repository}/actions/workflows/${workflow.id}/enable`,
+        undefined, `/repos/${repository}/actions/workflows/${workflow.id}`, state => state.state === 'active')
     } else if (workflow.state === 'active') {
-      await request('PUT', `/repos/${repository}/actions/workflows/${workflow.id}/disable`)
+      await reconcileSetting(request, 'PUT', `/repos/${repository}/actions/workflows/${workflow.id}/disable`,
+        undefined, `/repos/${repository}/actions/workflows/${workflow.id}`, state => state.state === 'disabled_manually')
     }
   }
 }
 
 /**
- * Disable Actions before uploading source; enable only the selected workflow after upload.
+ * Upload changed source with Actions disabled; reconcile settings and dispatch exactly once.
  * @param {object} options Validated source and repository settings.
  * @param {string} options.repository GitHub owner/name.
  * @param {string} options.commit Exact desktop source commit.
@@ -87,33 +108,57 @@ export async function synchronizeDesktop({ repository, commit, tag, baseline, cr
     throw new Error('Use an active non-fork build repository with known visibility')
   }
   if (metadata.size > 0 && metadata.default_branch !== 'main') throw new Error('Build repository must use main as its default branch')
-  await request('PUT', `/repos/${repository}/actions/permissions`, { enabled: false })
-  try { await push(repository, commit, tag) }
-  catch (error) {
-    // A disconnected client can miss the server's successful atomic update. Read both refs before continuing.
+  const refsMatch = async () => {
     const [head, stored] = await Promise.all([
       request('GET', `/repos/${repository}/git/ref/heads/main`),
       request('GET', `/repos/${repository}/git/ref/tags/${tag}`),
-    ]).catch(() => { throw error })
+    ])
     const target = stored.object?.type === 'tag'
-      ? (await request('GET', `/repos/${repository}/git/tags/${stored.object.sha}`).catch(() => { throw error })).object
-      : stored.object
-    if (head.object?.type !== 'commit' || head.object.sha !== commit
-      || target?.type !== 'commit' || target.sha !== baseline) throw error
+      ? (await request('GET', `/repos/${repository}/git/tags/${stored.object.sha}`)).object : stored.object
+    return head.object?.type === 'commit' && head.object.sha === commit
+      && target?.type === 'commit' && target.sha === baseline
+  }
+  const permissionsPath = `/repos/${repository}/actions/permissions`
+  let permissions = await request('GET', permissionsPath)
+  let uploaded = false
+  if (metadata.size > 0) {
+    try { uploaded = await refsMatch() }
+    catch (error) { if (error.status !== 404) throw error }
+  }
+  if (!uploaded) {
+    if (permissions.enabled !== false) {
+      await reconcileSetting(request, 'PUT', permissionsPath, { enabled: false }, permissionsPath, state => state.enabled === false)
+      permissions = { ...permissions, enabled: false }
+    }
+    try { await push(repository, commit, tag) }
+    catch (error) {
+      // Atomic upload may have succeeded even when Git lost the response.
+      if (!await refsMatch().catch(() => { throw error })) throw error
+    }
   }
   if (metadata.default_branch !== 'main' || metadata.has_issues !== false || metadata.has_wiki !== false) {
-    await request('PATCH', `/repos/${repository}`, { default_branch: 'main', has_issues: false, has_wiki: false })
+    const desired = { default_branch: 'main', has_issues: false, has_wiki: false }
+    await reconcileSetting(request, 'PATCH', `/repos/${repository}`, desired, `/repos/${repository}`, settingsMatch(desired))
   }
   await selectPackagingWorkflow(request, repository)
-  await request('PUT', `/repos/${repository}/actions/permissions`, { enabled: true, allowed_actions: 'selected' })
-  await request('PUT', `/repos/${repository}/actions/permissions/selected-actions`, {
-    github_owned_allowed: true, verified_allowed: false,
-    patterns_allowed: ['pnpm/action-setup@*', 'dtolnay/rust-toolchain@*'],
-  })
-  await request('POST', `/repos/${repository}/actions/workflows/product-desktop-package.yml/dispatches`, {
-    ref: 'main', inputs: { source_sha: commit, ...(deliveryId === undefined ? {} : { delivery_id: deliveryId }),
-      ...(signing === undefined ? {} : { signing }) },
-  })
+  const desired = { enabled: true, allowed_actions: 'selected' }
+  if (!settingsMatch(desired)(permissions)) {
+    await reconcileSetting(request, 'PUT', permissionsPath, desired, permissionsPath, settingsMatch(desired))
+  }
+  const policyPath = `${permissionsPath}/selected-actions`
+  if (!settingsMatch(selectedActions)(await request('GET', policyPath))) {
+    await reconcileSetting(request, 'PUT', policyPath, selectedActions, policyPath, settingsMatch(selectedActions))
+  }
+  try {
+    await request('POST', `/repos/${repository}/actions/workflows/product-desktop-package.yml/dispatches`, {
+      ref: 'main', inputs: { source_sha: commit, ...(deliveryId === undefined ? {} : { delivery_id: deliveryId }),
+        ...(signing === undefined ? {} : { signing }) },
+    })
+  } catch (error) {
+    if (error.uncertainReleaseMutation !== true || deliveryId === undefined) throw error
+    // Confirm the same UUID; never issue a second dispatch after an uncertain response.
+    await waitForDesktopBuild({ request, repository, commit, deliveryId, waitForCompletion: false, timeoutMs: 60_000 })
+  }
 }
 
 if (process.argv[1] !== undefined && resolve(process.argv[1]) === import.meta.filename) {

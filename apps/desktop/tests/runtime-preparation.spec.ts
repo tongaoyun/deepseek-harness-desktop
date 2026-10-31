@@ -191,3 +191,42 @@ it.each([['win-x64', 'electron'], ['win-x64', 'primary'], ['mac-arm64', 'electro
     await outcome
   }
 })
+
+
+it.each(['mac-arm64', 'win-x64'] as const)('prepares %s payload before compilation and adds CLI without replacing the payload', async (target) => {
+  state.target = target
+  process.argv.push('--payload-only', '--defer-primary-runtime-smoke')
+  const runtime = join(state.root, 'runtime')
+  await import('../scripts/prepare-runtime.ts')
+  expect(existsSync(join(runtime, 'cli'))).toBe(false)
+  expect(existsSync(join(runtime, 'versions.json'))).toBe(false)
+  const versions = readFileSync(join(runtime, '.payload-versions.json'), 'utf8')
+  writeFileSync(join(runtime, 'primary-runtime', 'retained'), 'payload')
+  vi.resetModules()
+  process.argv = [process.execPath, 'prepare-runtime.ts', '--cli-only']
+  await import('../scripts/prepare-runtime.ts')
+  expect(existsSync(join(runtime, '.payload-versions.json'))).toBe(false)
+  expect(state.preparePrimary).toHaveBeenCalledOnce()
+  expect(state.extractElectron).toHaveBeenCalledOnce()
+  expect(readFileSync(join(runtime, 'versions.json'), 'utf8')).toBe(versions)
+  expect(readFileSync(join(runtime, 'primary-runtime', 'retained'), 'utf8')).toBe('payload')
+  expect(readFileSync(join(runtime, 'cli', 'command-manager.js'), 'utf8')).toBe('command manager fixture')
+})
+
+it('rejects CLI completion before payload preparation', async () => {
+  process.argv.push('--cli-only')
+  await expect(import('../scripts/prepare-runtime.ts')).rejects.toThrow()
+  expect(state.preparePrimary).not.toHaveBeenCalled()
+  expect(existsSync(join(state.root, 'runtime', 'cli'))).toBe(false)
+})
+
+
+it('does not publish prepared versions when the post-build CLI copy fails', async () => {
+  process.argv.push('--payload-only')
+  await import('../scripts/prepare-runtime.ts')
+  vi.resetModules()
+  process.argv = [process.execPath, 'prepare-runtime.ts', '--cli-only']
+  state.failure = 'cli'
+  await expect(import('../scripts/prepare-runtime.ts')).rejects.toThrow('command manager copy failed')
+  expect(existsSync(join(state.root, 'runtime', 'versions.json'))).toBe(false)
+})

@@ -482,17 +482,15 @@ export async function packageTarget(
         { cwd: APP_ROOT, env: electronBuilderEnv, timeoutMs: 60_000 })
     })
   }
-  await execute(['run', 'build:artifacts', '--profile', invocation.unsigned ? 'local' : 'official'], buildEnv, REPOSITORY_ROOT)
-  const assembly = readDesktopAssembly(buildEnv, target.platform)
-  for (const step of assembly.buildSteps) await execute(step, buildEnv, REPOSITORY_ROOT)
   let preparationFailure: { error: unknown } | undefined
   const executePreparation = async (args: readonly string[], env: NodeJS.ProcessEnv, cwd?: string): Promise<void> => {
     if (preparationFailure !== undefined) throw preparationFailure.error
     try { await execute(args, env, cwd) }
     catch (error) { preparationFailure ??= { error }; throw error }
   }
-  const plan = desktopPackagePlan(REPOSITORY_ROOT, target, assembly)
+  const assembly = readDesktopAssembly(buildEnv, target.platform)
   const pack = async (): Promise<void> => {
+    const plan = desktopPackagePlan(REPOSITORY_ROOT, target, assembly)
     await executePreparation([
       'exec', process.execPath, '--import', 'tsx/esm',
       ...(invocation.unsigned
@@ -515,11 +513,18 @@ export async function packageTarget(
       buildPaths.packedLandlock,
     ], buildEnv, REPOSITORY_ROOT)
   }
-  // prepare:dsh validates this payload after assembly and any required signing.
+  const buildAndPack = async (): Promise<void> => {
+    await executePreparation(['run', 'build:artifacts', '--profile', invocation.unsigned ? 'local' : 'official'], buildEnv, REPOSITORY_ROOT)
+    for (const step of assembly.buildSteps) await executePreparation(step, buildEnv, REPOSITORY_ROOT)
+    await pack()
+  }
+  // Downloads and extraction use source files only; the CLI copies fresh compiler output after both lanes settle.
   const prepareRuntime = () => executePreparation(
-    ['run', 'prepare:runtime', '--defer-primary-runtime-smoke'], downloadEnv)
-  const preparation = await Promise.allSettled([pack(), prepareRuntime()])
+    ['run', 'prepare:runtime', '--defer-primary-runtime-smoke', '--payload-only'],
+    { ...downloadEnv, TSX_TSCONFIG_PATH: join(REPOSITORY_ROOT, 'tsconfig.json') })
+  const preparation = await Promise.allSettled([buildAndPack(), prepareRuntime()])
   for (const result of preparation) if (result.status === 'rejected') throw result.reason
+  await execute(['run', 'prepare:runtime', '--cli-only'], downloadEnv)
   if (signPrimaryRuntime) await execute(['run', 'sign:primary-runtime'], electronBuilderEnv)
   await execute(['run', 'prepare:packages'], targetEnv)
   await execute(['run', 'prepare:dsh', ...(signPrimaryRuntime ? ['--defer-runtime-smoke'] : [])], downloadEnv)

@@ -226,11 +226,11 @@ export async function collectDesktopRelease(directory, run, commit, productVersi
 /**
  * Wait for the correlated hosted run; transient read failures retain the run and original deadline.
  * Rejected, failed or cancelled builds never publish.
- * @param {object} options Hosted API, source and polling policy.
+ * @param {object} options Hosted API, source and polling policy; waitForCompletion=false confirms dispatch identity only.
  * @returns {Promise<object>} Exact successful run.
  */
 export async function waitForDesktopBuild({ request, repository, commit, deliveryId, runId,
-  timeoutMs = 150 * 60_000, pollMs = 15_000, sleep = ms => new Promise(resolve => setTimeout(resolve, ms)),
+  waitForCompletion = true, timeoutMs = 150 * 60_000, pollMs = 15_000, sleep = ms => new Promise(resolve => setTimeout(resolve, ms)),
   now = Date.now, progress = console.log }) {
   const deadline = now() + timeoutMs
   let selected = runId
@@ -258,6 +258,7 @@ export async function waitForDesktopBuild({ request, repository, commit, deliver
       }
       const state = `${run.id}: ${run.status}${run.conclusion ? ` / ${run.conclusion}` : ''}`
       if (state !== previous) { progress(`GitHub build ${state}`); previous = state }
+      if (!waitForCompletion) return run
       if (run.status === 'completed') {
         if (run.conclusion !== 'success') throw new Error(`GitHub build ${run.id} ended with ${run.conclusion}`)
         return run
