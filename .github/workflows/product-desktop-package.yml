@@ -30,7 +30,7 @@ jobs:
   preflight:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@v7
         with:
           ref: ${{ inputs.source_sha }}
           persist-credentials: false
@@ -119,7 +119,7 @@ jobs:
       DSH_DESKTOP_UPDATE_CHANNEL: nightly
     steps:
       - name: Checkout exact source
-        uses: actions/checkout@v7.0.1
+        uses: actions/checkout@v7
         with:
           ref: ${{ inputs.source_sha }}
           fetch-depth: 1
@@ -307,7 +307,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@v7
         with:
           ref: ${{ inputs.source_sha }}
           persist-credentials: false
