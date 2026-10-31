@@ -157,7 +157,7 @@ jobs:
           ]) appendFileSync(process.env.GITHUB_ENV, `${key}=${join(process.env.RUNNER_TEMP, directory)}\n`)
           NODE
       - name: Cache desktop downloads and package store
-        uses: actions/cache@v6.1.0
+        uses: actions/cache@v6
         with:
           path: |
             ${{ env.DSH_DESKTOP_PACKAGE_CACHE_DIR }}
@@ -167,7 +167,7 @@ jobs:
           restore-keys: |
             desktop-downloads-v1-${{ runner.os }}-${{ matrix.target }}-
       - name: Cache Rust compilation
-        uses: actions/cache@v6.1.0
+        uses: actions/cache@v6
         with:
           path: |
             ~/.cargo/registry
@@ -229,7 +229,7 @@ jobs:
       - name: Find verified Windows installer inputs
         if: matrix.target == 'win-x64'
         id: installer-regression
-        uses: actions/cache/restore@v6.1.0
+        uses: actions/cache/restore@v6
         with:
           path: .artifacts/verified-installer-inputs
           lookup-only: true
@@ -260,7 +260,7 @@ jobs:
           Set-Content .artifacts/verified-installer-inputs/passed $env:GITHUB_SHA
       - name: Save verified Windows installer inputs
         if: matrix.target == 'win-x64' && steps.installer-regression.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v6.1.0
+        uses: actions/cache/save@v6
         with:
           path: .artifacts/verified-installer-inputs
           key: ${{ steps.installer-regression.outputs.cache-primary-key }}
