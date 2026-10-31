@@ -489,8 +489,8 @@ export async function packageTarget(
     catch (error) { preparationFailure ??= { error }; throw error }
   }
   const assembly = readDesktopAssembly(buildEnv, target.platform)
-  const plan = desktopPackagePlan(REPOSITORY_ROOT, target, assembly)
   const pack = async (): Promise<void> => {
+    const plan = desktopPackagePlan(REPOSITORY_ROOT, target, assembly)
     await executePreparation([
       'exec', process.execPath, '--import', 'tsx/esm',
       ...(invocation.unsigned

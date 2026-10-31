@@ -1442,7 +1442,7 @@ index 79136479f078e86647d799cd52788931644ba2a1..0127fe072545047442f62cec5294c5aa
  }
  
 diff --git a/apps/desktop/scripts/package-target.ts b/apps/desktop/scripts/package-target.ts
-index b6bc6efb6370e6a795c2a3c8d4bf726da6575bc1..398d8a8b3b20e117f31266667ed874f8cd8a4ae3 100644
+index b6bc6efb6370e6a795c2a3c8d4bf726da6575bc1..9a10ffdaab8cb977fc79eba12b9e268e3298fa28 100644
 --- a/apps/desktop/scripts/package-target.ts
 +++ b/apps/desktop/scripts/package-target.ts
 @@ -1,4 +1,6 @@
@@ -1486,8 +1486,8 @@ index b6bc6efb6370e6a795c2a3c8d4bf726da6575bc1..398d8a8b3b20e117f31266667ed874f8
      catch (error) { preparationFailure ??= { error }; throw error }
    }
 +  const assembly = readDesktopAssembly(buildEnv, target.platform)
-+  const plan = desktopPackagePlan(REPOSITORY_ROOT, target, assembly)
    const pack = async (): Promise<void> => {
++    const plan = desktopPackagePlan(REPOSITORY_ROOT, target, assembly)
      await executePreparation([
 +      'exec', process.execPath, '--import', 'tsx/esm',
        ...(invocation.unsigned

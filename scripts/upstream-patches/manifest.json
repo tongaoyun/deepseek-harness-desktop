@@ -229,7 +229,7 @@
         {
           "path": "apps/desktop/scripts/package-target.ts",
           "before": "2d5648300b8093b39a211a52d328bbbf28a9d883c81bd7ff55bbc7aed3878eb7",
-          "after": "e73ed2663e52cb9572b50a90764a7942a6970c9a1d8e1c0fc83cb6f3acb88441"
+          "after": "c96914bc224b35dd7f872a23c273d7e0e86c3edc65ea1377480083c1128e5178"
         },
         {
           "path": "apps/desktop/scripts/prepare-package-set.ts",
