@@ -32,11 +32,13 @@ node apps/product-desktop/scripts/sync-github.mjs --repository OWNER/deepseek-ha
 
 main CI 执行完整类型检查；原生打包使用 `build:artifacts`，保留本地或正式品牌配置、生成声明和构建记录校验。打包前按官方 CLI、Desktop Host 和产品装配根计算生产依赖闭包，仅打包选中的工作区；包筛选参数由原生 Node 进程接收，避免 Windows 命令脚本的长度限制；安装包组装时再次从实际 tarball 核对依赖闭包和 Host 入口文件。
 
-Mac 并行准备软件包与运行时，Electron 与主运行时也独立准备；任一失败均等待已启动的任务结束，再停止后续组装。应用目录仅组装一次，DMG 与 ZIP 从同一目录生成；内部 DMG 使用 ULFO（LZFSE）压缩；ZIP 使用 `DSH_DESKTOP_MACOS_ZIP_COMPRESSION_LEVEL`（默认 `3`）。安装包上传 Actions Artifact 时关闭二次 ZIP 压缩，日志与截图沿用默认压缩。产品模块随统一构建生成，前端图标编入客户端产物，不作为运行时依赖分发整套图标库。Rust sidecar 在产品入口构建一次；源码启动和验收使用 `CARGO_TARGET_DIR` 指定的编译目录。依赖安装保留 frozen lock 并优先复用本地 store；pnpm 元数据与 npm 引导下载分别缓存到持久目录，供应链策略检查继续执行。
+源码构建与运行时下载、解压并行，工作区打包接在编译之后；Electron 与主运行时也独立准备。全部完成后再复制依赖编译输出的 CLI；任一失败均等待已启动的任务结束，再停止后续组装。应用目录仅组装一次，DMG 与 ZIP 从同一目录生成；内部 DMG 使用 ULFO（LZFSE）压缩；ZIP 使用 `DSH_DESKTOP_MACOS_ZIP_COMPRESSION_LEVEL`（默认 `3`）。安装包上传 Actions Artifact 时关闭二次 ZIP 压缩，日志与截图沿用默认压缩。产品模块随统一构建生成，前端图标编入客户端产物，不作为运行时依赖分发整套图标库。Rust sidecar 在产品入口构建一次；源码启动和验收使用 `CARGO_TARGET_DIR` 指定的编译目录。依赖安装保留 frozen lock 并优先复用本地 store；pnpm 元数据与 npm 引导下载分别缓存到持久目录，供应链策略检查继续执行。
 
 内部 Mac 包通过 electron-builder 原生自定义签名入口执行一次固定证书签名，按目录深度从内向外处理嵌套代码，先签 Helper 再签所属框架，保留官方 afterSign 检查。Mac A→B 验收先验证已安装应用的固定签名；资格副本仅修改版本、ASAR 和更新源，再重签根资源。未改动的外置原生文件以流传给 ASAR 写入器，避免完整读取大型二进制。嵌套执行文件不重复签名，仍执行严格深度签名验证及真实原生升级。首次生产组装继续完整签名。
 
 GitHub 按系统及架构缓存 Electron、锁定的 Node/Python 与 Office 下载、桌面运行时 pnpm store、electron-builder 工具以及 Rust registry、Git 依赖和编译中间产物。下载缓存随依赖锁更新，Rust 缓存同时区分工具链与源码；无精确命中时复用同目标的旧缓存，由下载校验和 Cargo 增量构建确认有效性。首次运行仍需填充缓存。基础运行时在 `prepare:dsh` 完成组装和必要签名后验证，下载准备阶段不重复执行同一检查；封装后的 ASAR、安装及更新验收继续独立执行。构建产物、安装状态和签名凭据不进入这些缓存，真实安装、启动和自动更新验收每次执行。
+
+Windows 全语言安装器回归按工作流、安装器脚本、资源、依赖锁及测试输入记录成功结果，同一 runner 镜像和 Node 版本在同一周内复用；未命中或 GitHub 输入 `full_installer_regression=true` 时完整执行。缓存只记录成功标记，不保存安装状态。签名校验、真实产品安装和原生 A→B 更新验收每次执行。
 
 ## 下载与恢复
 
@@ -52,7 +54,7 @@ Windows 安装更新验收通过流水线已有的 PowerShell 7 查询所需进�
 
 临时网络错误及 HTTP 408/429/500/502/503/504 最多尝试四次，间隔 1/2/4 秒；包含响应正文中断。产物中断后重新下载到空的私有目录。权限、非法内容及校验冲突不重试。等待继续跟踪同一个 GitHub run，总期限不重置；超时保留 run ID，不能重新派发来恢复上传。
 
-源码写入及启动构建只执行一次。仓库默认分支及 Issues/Wiki 设置已符合要求时不重复写入。原子推送失败后回读远端 `main` 和固定基线，只有均与请求一致时才继续；否则保持 Actions 关闭。诊断不返回凭据、签名 URL 参数、响应正文或 Git stderr。工作流 API 只管理 `.github/workflows/` 文件；Dependabot 等动态工作流使用独立仓库设置。
+源码写入及启动构建只执行一次。远端源码和基线已匹配时跳过上传及 Actions 开关；仓库、工作流和所选 Actions 策略已符合要求时不重复写入。设置写入出现不确定网络结果时读回确认，状态不符则停止；构建派发响应丢失时按源码及交付 UUID 查找原运行，最多等待一分钟，不重复派发。原子推送失败后回读远端 `main` 和固定基线，只有均与请求一致时才继续；否则保持 Actions 关闭。诊断不返回凭据、签名 URL 参数、响应正文或 Git stderr。工作流 API 只管理 `.github/workflows/` 文件；Dependabot 等动态工作流使用独立仓库设置。
 
 内网 CI 与同步工作流的依赖安装步骤，以及源码同步与发布步骤，从 Gitea Secrets 读取 `DESKTOP_GITHUB_PROXY_URL`，仅在这些步骤内使用认证代理；GitHub Git 请求使用 HTTP/1.1。代理 URL 不写入仓库变量或源码，不设置服务器全局代理；内网源码获取和 GitHub 托管打包使用各自的网络配置。
 

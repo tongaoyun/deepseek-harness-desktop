@@ -12,6 +12,10 @@ on:
         description: Internal delivery correlation ID
         type: string
         required: false
+      full_installer_regression:
+        description: Force all Windows installer languages even when identical inputs already passed
+        type: boolean
+        default: false
       signing:
         description: unsigned 开发包、internal 免费内部更新、signed 正式签名更新
         type: choice
@@ -65,8 +69,7 @@ jobs:
         env:
           DOWNLOAD_STAGING_CONFIGURED: ${{ secrets.DESKTOP_DOWNLOADS_TOKEN != '' }}
         run: test "$DOWNLOAD_STAGING_CONFIGURED" = true
-      # These checks are source-wide and identical for every target. Keeping
-      # them here avoids running the same suite three times on release hosts.
+      # Source-wide checks run once before the platform matrix.
       - name: Verify upstream and product delivery contracts
         run: pnpm run verify:upstream
       - name: Test product source synchronization
@@ -213,7 +216,25 @@ jobs:
         run: >-
           pnpm exec vitest run --config vitest.e2e.config.ts
           apps/desktop/tests/host-process-archive.built.e2e.ts --retry=0
-      - name: Validate Windows signatures and installer lifecycle
+      - name: Identify Windows installer test environment
+        if: matrix.target == 'win-x64'
+        id: installer-environment
+        run: |
+          node --input-type=module <<'NODE'
+          import { appendFileSync } from 'node:fs'
+          import { release } from 'node:os'
+          const week = Math.floor(Date.now() / (7 * 24 * 60 * 60 * 1000))
+          appendFileSync(process.env.GITHUB_OUTPUT, `key=${process.version}-${process.env.ImageVersion || release()}-${week}\n`)
+          NODE
+      - name: Find verified Windows installer inputs
+        if: matrix.target == 'win-x64'
+        id: installer-regression
+        uses: actions/cache/restore@v6.1.0
+        with:
+          path: .artifacts/verified-installer-inputs
+          lookup-only: true
+          key: installer-regression-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.installer-environment.outputs.key }}-${{ hashFiles('.github/workflows/product-desktop-package.yml', 'package.json', 'pnpm-lock.yaml', 'apps/desktop/package.json', 'apps/desktop/installer/**', 'apps/desktop/scripts/**', 'apps/desktop/tests/windows-*', 'apps/desktop/electron-builder.config.mjs') }}
+      - name: Validate Windows signatures
         if: matrix.target == 'win-x64'
         shell: pwsh
         run: |
@@ -229,8 +250,20 @@ jobs:
               throw "Unexpected artifact signature: $File"
             }
           }
+      - name: Test all Windows installer languages
+        if: matrix.target == 'win-x64' && (inputs.full_installer_regression || steps.installer-regression.outputs.cache-hit != 'true')
+        shell: pwsh
+        run: |
           pnpm --dir apps/desktop test:installer -- --headless
           if ($LASTEXITCODE -ne 0) { throw 'Installer lifecycle smoke failed' }
+          New-Item -ItemType Directory -Force .artifacts/verified-installer-inputs | Out-Null
+          Set-Content .artifacts/verified-installer-inputs/passed $env:GITHUB_SHA
+      - name: Save verified Windows installer inputs
+        if: matrix.target == 'win-x64' && steps.installer-regression.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6.1.0
+        with:
+          path: .artifacts/verified-installer-inputs
+          key: ${{ steps.installer-regression.outputs.cache-primary-key }}
       - name: Qualify native package mirror downloads
         run: node apps/product-desktop/scripts/qualify-package-mirror.mjs
       - name: Test native Electron UI profiles

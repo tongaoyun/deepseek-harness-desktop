@@ -1,7 +1,7 @@
 /** Prepare Desktop resources and publish their versions after every preparation stage succeeds. */
 
 import { execFileSync } from 'node:child_process'
-import { chmodSync, cpSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, cpSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { join } from 'node:path'
 import { parseArgs } from 'node:util'
@@ -49,8 +49,20 @@ function prepareCli({ platform, arch }: DesktopTarget): void {
 }
 
 async function main(): Promise<void> {
-  const { values } = parseArgs({ options: { 'defer-primary-runtime-smoke': { type: 'boolean', default: false } } })
+  const { values } = parseArgs({ options: {
+    'defer-primary-runtime-smoke': { type: 'boolean', default: false },
+    'payload-only': { type: 'boolean', default: false },
+    'cli-only': { type: 'boolean', default: false },
+  } })
+  if (values['payload-only'] && values['cli-only']) throw new Error('desktop runtime: select one preparation phase')
   const target = desktopTargetPlatform(resolveDesktopBuildTarget())
+  if (values['cli-only']) {
+    const versions = JSON.parse(readFileSync(join(RUNTIME_ROOT, '.payload-versions.json'), 'utf8')) as { schemaVersion?: number; node?: string; pnpm?: string }
+    if (versions.schemaVersion !== 1 || !versions.node || !versions.pnpm) throw new Error('desktop runtime: prepare payload before CLI')
+    await packagingStep(process.env.DSH_DESKTOP_PACKAGING_RUN_DIR, 'prepare:cli', async () => { prepareCli(target) })
+    renameSync(join(RUNTIME_ROOT, '.payload-versions.json'), join(RUNTIME_ROOT, 'versions.json'))
+    return
+  }
   rmSync(RUNTIME_ROOT, { recursive: true, force: true })
   mkdirSync(RUNTIME_ROOT, { recursive: true })
   const preparePrimary = () => packagingStep(process.env.DSH_DESKTOP_PACKAGING_RUN_DIR, 'prepare:primary-runtime',
@@ -61,8 +73,10 @@ async function main(): Promise<void> {
   const nodeVersion = electron.value
   const { pnpm } = await readPrimaryRuntime(join(RUNTIME_ROOT, 'primary-runtime'))
   if (pnpm === undefined) throw new Error('desktop runtime: primary-runtime manifest has no pnpm version')
-  await packagingStep(process.env.DSH_DESKTOP_PACKAGING_RUN_DIR, 'prepare:cli', async () => { prepareCli(target) })
-  writeFileSync(join(RUNTIME_ROOT, 'versions.json'), `${JSON.stringify({
+  if (!values['payload-only']) {
+    await packagingStep(process.env.DSH_DESKTOP_PACKAGING_RUN_DIR, 'prepare:cli', async () => { prepareCli(target) })
+  }
+  writeFileSync(join(RUNTIME_ROOT, values['payload-only'] ? '.payload-versions.json' : 'versions.json'), `${JSON.stringify({
     schemaVersion: 1,
     node: nodeVersion,
     pnpm,

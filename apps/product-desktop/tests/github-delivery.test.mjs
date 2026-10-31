@@ -89,6 +89,9 @@ function fixture(overrides = {}) {
       calls.push({ method, path, body })
       if (path === '/user') return { login: 'example' }
       if (/^\/repos\/[^/]+\/[^/]+$/u.test(path) && method === 'GET') return { private: true, size: 1, default_branch: 'main', ...overrides }
+      if (method === 'GET' && path.endsWith('/actions/permissions')) return { enabled: true, allowed_actions: 'selected' }
+      if (method === 'GET' && path.endsWith('/selected-actions')) return { github_owned_allowed: true, verified_allowed: false,
+        patterns_allowed: ['dtolnay/rust-toolchain@*', 'pnpm/action-setup@*'] }
       if (path.includes('/actions/workflows?')) return { workflows: [
         { id: 1, path: PACKAGE_WORKFLOW, state: 'disabled_manually' }, { id: 2, path: '.github/workflows/release.yml', state: 'active' },
       ] }
@@ -115,8 +118,8 @@ test('reconciles an uncertain atomic push only when both remote commits match wi
     let pushes = 0
     options.push = async () => { pushes++; throw new Error('TLS_HANDSHAKE_FAILED') }
     options.request = async (method, path, body) => {
-      if (path.endsWith('/git/ref/heads/main')) return { object: { type: 'commit', sha: commit } }
-      if (path.endsWith('/git/ref/tags/' + tag)) return { object: { type: scenario === 'annotated' ? 'tag' : 'commit', sha: (mismatch ? 'c' : 'b').repeat(40) } }
+      if (pushes && path.endsWith('/git/ref/heads/main')) return { object: { type: 'commit', sha: commit } }
+      if (pushes && path.endsWith('/git/ref/tags/' + tag)) return { object: { type: scenario === 'annotated' ? 'tag' : 'commit', sha: (mismatch ? 'c' : 'b').repeat(40) } }
       if (path.endsWith('/git/tags/' + 'b'.repeat(40))) return { object: { type: 'commit', sha: 'b'.repeat(40) } }
       return request(method, path, body)
     }
@@ -293,7 +296,7 @@ test('isolates signing and download credentials from native hosted builds', () =
     /node --test apps\/product-desktop\/tests\/acceptance-process\.test\.mjs/u)
   assert.match(preflightSteps.find(step => step.name === 'Test Electron close lifecycle').run,
     /pnpm exec vitest run apps\/product-desktop\/tests\/close-electron\.spec\.ts/u)
-  for (const name of ['Package Windows', 'Validate Windows signatures and installer lifecycle']) {
+  for (const name of ['Package Windows', 'Validate Windows signatures', 'Test all Windows installer languages']) {
     assert.equal(steps.find(step => step.name === name).shell, 'pwsh')
   }
   assert.ok(preflightSteps.findIndex(step => step.name === 'Fetch stored Harness baseline') < preflightSteps.findIndex(step => step.run?.includes('verify:upstream')))
@@ -424,4 +427,72 @@ test('internal synchronization fetches main and its own baseline without disclos
   assert.equal(sync.env.GIT_CONFIG_VALUE_0, 'HTTP/1.1')
   assert.deepEqual(workflow.jobs.sync.steps.filter(step => step.env?.HTTPS_PROXY !== undefined).map(step => step.name),
     ['Install locked dependencies', 'Verify source and synchronize'])
+})
+
+
+test('reuses identical remote source and converged settings without another push or settings write', async () => {
+  const { options, calls } = fixture({ has_issues: false, has_wiki: false })
+  const request = options.request
+  options.request = async (method, path, body) => {
+    if (path.endsWith('/git/ref/heads/main')) return { object: { type: 'commit', sha: commit } }
+    if (path.endsWith('/git/ref/tags/' + tag)) return { object: { type: 'commit', sha: options.baseline } }
+    if (path.includes('/actions/workflows?')) return { workflows: [{ id: 1, path: PACKAGE_WORKFLOW, state: 'active' }] }
+    return request(method, path, body)
+  }
+  await synchronizeDesktop(options)
+  assert.equal(calls.some(call => call.push || ['PUT', 'PATCH'].includes(call.method)), false)
+  assert.equal(calls.filter(call => call.path?.endsWith('/dispatches')).length, 1)
+})
+
+test('continues an uncertain settings write only after reading the desired state', async () => {
+  for (const confirmed of [true, false]) {
+    const { options, calls } = fixture()
+    const request = options.request
+    let wrote = false
+    options.request = async (method, path, body) => {
+      if (path.endsWith('/actions/permissions') && method === 'PUT' && body.enabled === false) {
+        wrote = true
+        throw Object.assign(new Error('uncertain setting'), { uncertainReleaseMutation: true })
+      }
+      if (path.endsWith('/actions/permissions') && method === 'GET' && wrote) return { enabled: !confirmed }
+      return request(method, path, body)
+    }
+    if (confirmed) await synchronizeDesktop(options)
+    else await assert.rejects(synchronizeDesktop(options), /uncertain setting/)
+    assert.equal(calls.some(call => call.push), confirmed)
+  }
+})
+
+test('confirms an uncertain dispatch by the exact delivery identity without posting twice', async () => {
+  const { options } = fixture()
+  const request = options.request
+  const deliveryId = '12345678-1234-1234-1234-123456789abc'
+  let posts = 0
+  options.request = async (method, path, body) => {
+    if (path.endsWith('/dispatches')) {
+      posts++
+      throw Object.assign(new Error('lost dispatch response'), { uncertainReleaseMutation: true })
+    }
+    if (path.includes('/runs?')) return { workflow_runs: [{ id: 72, display_title: `Desktop ${commit} / ${deliveryId}`,
+      head_sha: commit, event: 'workflow_dispatch', path: PACKAGE_WORKFLOW, status: 'in_progress' }] }
+    return request(method, path, body)
+  }
+  await synchronizeDesktop({ ...options, deliveryId })
+  assert.equal(posts, 1)
+})
+
+test('caches only successful full installer regression and always accepts the actual Windows product', () => {
+  const workflow = yaml.load(readFileSync('.github/workflows/product-desktop-package.yml', 'utf8'))
+  const steps = workflow.jobs.package.steps
+  const lookup = steps.find(step => step.id === 'installer-regression')
+  assert.equal(lookup.with['lookup-only'], true)
+  for (const path of ['pnpm-lock.yaml', 'apps/desktop/installer/**', 'apps/desktop/scripts/**', 'apps/desktop/tests/windows-*']) {
+    assert.ok(lookup.with.key.includes(path))
+  }
+  const regression = steps.findIndex(step => step.name === 'Test all Windows installer languages')
+  assert.match(steps[regression].if, /full_installer_regression.*cache-hit/u)
+  const save = steps.findIndex(step => step.name === 'Save verified Windows installer inputs')
+  assert.ok(save > regression)
+  assert.doesNotMatch(steps[save].if, /always|failure/u)
+  assert.equal(steps.find(step => step.name === 'Test installed Windows product desktop').if, "matrix.target == 'win-x64'")
 })

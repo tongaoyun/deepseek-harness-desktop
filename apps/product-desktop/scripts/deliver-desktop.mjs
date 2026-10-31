@@ -114,7 +114,9 @@ export function apiClient(base, authorization, transport = {}) {
       try { return await operation() }
       catch (error) {
         if (!networkFailure(error).retryable) throw error
-        throw new Error(`${label} failed (${networkFailure(error).detail}); reconcile before retrying`, { cause: error })
+        const uncertain = new Error(`${label} failed (${networkFailure(error).detail}); reconcile before retrying`, { cause: error })
+        uncertain.uncertainReleaseMutation = true
+        throw uncertain
       }
     },
     download: async (path, { accept = 'application/octet-stream' } = {}) => (await response(base + path, { ...headers, Accept: accept },

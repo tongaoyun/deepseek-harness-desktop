@@ -16,7 +16,9 @@
         "packages/client/ui-sidebar-documentpreview/tests/document-preview-license-bundle.client.spec.ts",
         "scripts/build.spec.ts",
         "apps/desktop/tests/prepare-package-set.spec.ts",
-        "packages/client/ui-settings-account/tests/apply.client.spec.ts"
+        "packages/client/ui-settings-account/tests/apply.client.spec.ts",
+        "apps/desktop/tests/package-target-stages.spec.ts",
+        "apps/desktop/tests/runtime-preparation.spec.ts"
       ],
       "files": [
         {
@@ -227,7 +229,7 @@
         {
           "path": "apps/desktop/scripts/package-target.ts",
           "before": "2d5648300b8093b39a211a52d328bbbf28a9d883c81bd7ff55bbc7aed3878eb7",
-          "after": "676e52f103d377b55749cba09d25d5a75cdd9f9474c9479eadc0cab7e9451f30"
+          "after": "e73ed2663e52cb9572b50a90764a7942a6970c9a1d8e1c0fc83cb6f3acb88441"
         },
         {
           "path": "apps/desktop/scripts/prepare-package-set.ts",
@@ -1652,7 +1654,7 @@
         {
           "path": "apps/desktop/tests/package-target-stages.spec.ts",
           "before": "9571d6ec4115eb8e732e7a4ebcd3955250dba84d3225f4426d4a0f26bd20de1c",
-          "after": "129012614ba09f373158b4c1258bdec1c8b5a28e3dffc952f202164dc47f6fa9"
+          "after": "73d51fdc524b12eb17bd9c67f5705080b67380bb3f07d08be8c24cd16fca95d5"
         },
         {
           "path": "scripts/release/pack.spec.ts",
@@ -1667,12 +1669,12 @@
         {
           "path": "apps/desktop/scripts/prepare-runtime.ts",
           "before": "ee9f6976361cbe8eceb698e7155ca76b3639a5b9f3d636af85f7337b07a956d2",
-          "after": "595eba884af6590659cf6523ca3db7f8f9f8e869ac7fecc3956143f470e9b8d1"
+          "after": "00dfa49422dc625f5fbbdb4d8803e148592ca49228b90153482384b4dcfdbe2e"
         },
         {
           "path": "apps/desktop/tests/runtime-preparation.spec.ts",
           "before": "ce91740806c14c3f70d1f0ed0baba0d4a9ef947aab91775e22e72dfc0c1dcced",
-          "after": "18c0f0322bb1dd70c23d812b8cf645029ae8dfbc612111e76ecca7ced233c90f"
+          "after": "bd84f853cc9c03c76779a266c7adb71fe66826d348b6fa367e469714ae20dbc7"
         }
       ],
       "diff": "release-v0.2.2-alpha.2-integration.patch"
