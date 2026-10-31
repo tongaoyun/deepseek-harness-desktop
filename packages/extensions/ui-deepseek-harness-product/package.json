@@ -79,7 +79,7 @@
     "@deepseek-ai/dsh-session": "workspace:*",
     "@deepseek-ai/dsh-util-crypto": "workspace:*",
     "@deepseek-harness/product": "workspace:~",
-    "react": "^18.2.0",
+    "react": "^19.3.0",
     "shell-quote": "^1.12.0",
     "@deepseek-harness/product-experts": "workspace:~",
     "@deepseek-harness/product-skills": "workspace:~"
