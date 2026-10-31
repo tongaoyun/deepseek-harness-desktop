@@ -2,6 +2,7 @@
 import { createRequire } from 'node:module'
 import assert from 'node:assert/strict'
 import { createServer } from 'node:http'
+import { createHash } from 'node:crypto'
 import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -12,8 +13,21 @@ const require = createRequire(new URL('../../desktop/package.json', import.meta.
 const directory = await mkdtemp(join(tmpdir(), 'harness-electron-mirror-'))
 let feedRequested = false
 const feed = createServer((request, response) => {
-  assert.equal(request.url, '/nightly.yml')
   assert.equal(request.headers.authorization, undefined)
+  assert.equal(request.headers.cookie, undefined)
+  if (request.url === '/github/releases/latest') {
+    response.end(JSON.stringify({ tag_name: 'v1.2.3-alpha.1', draft: false,
+      assets: ['nightly.yml', 'nightly-mac.yml'].map((name, index) => ({ name,
+        url: `https://api.github.com/repos/example/downloads/releases/assets/${index + 1}` })) })); return
+  }
+  if (/^\/github\/releases\/assets\/[12]$/u.test(request.url)) {
+    const payload = Buffer.from('inert updater transport fixture\n')
+    response.end(JSON.stringify({ version: '1.2.3-alpha.1', releaseDate: '2026-10-31T00:00:00.000Z', files: [{
+      url: 'https://github.com/example/downloads/releases/download/v1.2.3-alpha.1/desktop-x64.zip',
+      sha512: createHash('sha512').update(payload).digest('base64'), size: payload.length,
+    }] })); return
+  }
+  assert.equal(request.url, '/nightly.yml')
   feedRequested = true
   response.end('fixture update feed')
 })

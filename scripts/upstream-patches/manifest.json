@@ -1883,7 +1883,7 @@
     },
     {
       "id": "desktop-update-package-mirror",
-      "purpose": "使用原生 GenericProvider 与 Electron 传输实现不可变软件包优先下载和同版本 GitHub 回退，保持差分、校验及用户确认。",
+      "purpose": "使用原生清单解析与 Electron 传输，通过匿名 HTTPS API 发现版本、不可变软件包优先下载和同版本 GitHub 回退，保持差分、校验及用户确认。",
       "tests": [
         "apps/desktop/tests/update-mirror.spec.ts",
         "apps/product-desktop/tests/package-mirror.test.mjs"
@@ -1902,7 +1902,7 @@
         {
           "path": "apps/desktop/src/update-mirror-provider.ts",
           "before": null,
-          "after": "004635ffa1eab89adcc8f006f510b9733e2c82c315ad839a59fc56485b90cae2"
+          "after": "e86265b4c6a81410b149768241a04e42cbbf67392d543ffe0db94cba23c01118"
         },
         {
           "path": "apps/desktop/src/update-mirror.ts",
@@ -1912,7 +1912,7 @@
         {
           "path": "apps/desktop/tests/update-mirror.spec.ts",
           "before": null,
-          "after": "1d897d5c6d6a3224a5318861459b17f9d74df71f0a1dca13fec8d83d5666ae95"
+          "after": "e9b633b14341a33e8cbb16096bb9fd7fadf572405b4391efe81b3d10bbb0565c"
         }
       ],
       "diff": "desktop-update-package-mirror.patch"

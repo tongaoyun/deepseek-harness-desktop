@@ -49,16 +49,17 @@ async function main() {
   const mirror = { packageUrl: `${origin}/api/packages/company/generic/desktop/`, githubRepository: 'example/downloads' }
   const transport = new DesktopUpdateHttpExecutor(1000, undefined, mirror)
   const session = getNetSession()
-  session.webRequest.onBeforeRequest({ urls: [source.href] }, (_details, callback) => callback({ redirectURL: `${origin}/fallback` }))
   const cases = ['esm-entry-ready-and-feed-redirect']
   try {
     const provider = new DesktopUpdateMirrorProvider({ provider: 'custom', mirror, channel: 'nightly' },
       { channel: 'nightly' }, { executor: transport, platform: 'darwin' })
-    const [file] = provider.resolveFiles({ version: '1.2.3-alpha.1', releaseDate: new Date().toISOString(),
-      files: [{ url: source.href, sha512: hash, size: payload.length }] })
+    const metadata = await provider.getLatestVersion()
+    assert.equal(metadata.version, '1.2.3-alpha.1')
+    const [file] = provider.resolveFiles(metadata)
     assert.equal(file.url.href, `${mirror.packageUrl}1.2.3-alpha.1/desktop-x64.zip`)
     assert.equal(file.info.sha512, hash)
-    cases.push('native-provider-keeps-version-and-digest')
+    cases.push('https-api-feed-keeps-native-version-and-digest')
+    session.webRequest.onBeforeRequest({ urls: [source.href] }, (_details, callback) => callback({ redirectURL: `${origin}/fallback` }))
     for (const scenario of ['healthy', 'unavailable', 'timeout', 'corrupt', 'unauthorized', 'cancelled']) {
       mode = scenario
       primaryRequests = 0; fallbackRequests = 0

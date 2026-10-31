@@ -71,7 +71,7 @@ Windows 安装更新验收通过流水线已有的 PowerShell 7 查询所需进�
 
 GitHub 源码仓库配置 Secrets `DESKTOP_INTERNAL_MAC_CERTIFICATE`（加密 P12 的 Base64）和 `DESKTOP_INTERNAL_MAC_PASSWORD`，以及公开变量 `DESKTOP_INTERNAL_MAC_CERTIFICATE_SHA256`。证书只在 Mac 打包及隔离安装验收步骤传入，导入独立临时钥匙串；打包结束或失败后恢复搜索列表并删除导入的凭据，不修改系统证书信任。P12 输入及密码不传入后续构建子进程、发布机或渲染进程。固定证书的创建与保管见签名说明。身份创建使用独立证书配置与显式 SHA-256 签名，避免系统配置合入重复扩展；导出显式指定 macOS 可导入的 PKCS#12 算法，支持 LibreSSL 与 OpenSSL。身份校验分别报告指纹、自签名、用途与有效期异常，仅包含公开证书信息。
 
-GitHub 和 Gitea 都配置 `DESKTOP_INTERNAL_DOWNLOAD_REPOSITORY` 及相同的公开证书指纹；内部下载仓库必须与正式的 `DESKTOP_GITHUB_DOWNLOAD_REPOSITORY` 分开。发布前核对固定证书指纹、源码、版本、更新清单和实际安装文件的大小及哈希。版本清单使用 GitHub 内部下载仓库的匿名 latest 地址；安装文件、更新 ZIP 及 blockmap 优先从 Gitea Generic 软件包下载，存储不可达或 HTTP 404/408/429/5xx 时回退到同版本 GitHub 文件。原生差分更新和 SHA-512 校验保留，取消、权限或完整性失败直接停止。客户端不携带 GitHub、Gitea 或员工令牌，源码仓库继续私有。
+GitHub 和 Gitea 都配置 `DESKTOP_INTERNAL_DOWNLOAD_REPOSITORY` 及相同的公开证书指纹；内部下载仓库必须与正式的 `DESKTOP_GITHUB_DOWNLOAD_REPOSITORY` 分开。发布前核对固定证书指纹、源码、版本、更新清单和实际安装文件的大小及哈希。内部版通过 GitHub 匿名 HTTPS API 获取 latest 发布及平台清单；API 限流或不可用时使用原有 HTTPS 清单地址，TLS、非法内容或版本不一致直接停止。安装文件、更新 ZIP 及 blockmap 优先从 Gitea Generic 下载，存储不可达或 HTTP 404/408/429/5xx 时回退到同版本 GitHub 文件。原生解析、差分更新、SHA-512 和安装确认保留；取消、权限或完整性失败停止。客户端不携带令牌。Gitea 源码私有，GitHub 构建仓库源码公开。
 
 自签只提供相同身份间的原生更新校验，不提供 Apple 信任或公证。首次下载安装仍可能被 Gatekeeper 阻止，Windows 仍可能显示未知发布者提示；不能通过关闭系统安全功能解决。旧开发包首次需手动安装内部包，之后可检查新版、下载并确认重启安装。证书必须持续使用，丢失或更换后不能依赖原生更新自动衔接。
 

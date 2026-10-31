@@ -160,6 +160,12 @@ app.whenReady().then(() => writeFileSync(${JSON.stringify(directory)} + '/boot-'
   const server = createServer((request, response) => {
     const path = new URL(request.url, 'http://localhost').pathname
     requests.push(path)
+    if (path === '/github/releases/latest' && metadata) {
+      response.end(JSON.stringify({ tag_name: `v${metadata.version}`, draft: false,
+        assets: ['nightly.yml', 'nightly-mac.yml'].map((name, index) => ({ name,
+          url: `https://api.github.com/repos/${current.dshDesktopUpdateMirror.githubRepository}/releases/assets/${index + 1}` })) })); return
+    }
+    if (/^\/github\/releases\/assets\/[12]$/u.test(path) && metadata) { response.end(JSON.stringify(metadata)); return }
     if (path === (windows ? '/nightly.yml' : '/nightly-mac.yml') && metadata) { response.end(JSON.stringify(metadata)); return }
     if (path === payloadPath) {
       assert.equal(request.headers.authorization, undefined)
@@ -242,6 +248,8 @@ app.whenReady().then(() => writeFileSync(${JSON.stringify(directory)} + '/boot-'
       await page.getByRole('menuitem', { name: /^(Check for updates|检查更新)$/, exact: true }).click()
       const install = await dialogWithButton(application, restartConfirmation)
       assert.ok(requests.includes(payloadPath), 'Product update action must download the next version through its configured provider before restart confirmation')
+      assert.ok(requests.includes('/github/releases/latest'), 'Product update must discover the release through its HTTPS API provider')
+      assert.ok(requests.includes(`/github/releases/assets/${windows ? 1 : 2}`), 'Product update must parse its platform feed from the published API asset')
       await install.locator('#close').click()
       assert.equal(await application.evaluate(({ app }) => app.getVersion()), initialVersion)
       await expect.poll(() => composer.textContent()).toBe(draft)
