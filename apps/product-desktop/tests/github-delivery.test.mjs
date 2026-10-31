@@ -486,7 +486,7 @@ test('caches only successful full installer regression and always accepts the ac
   const steps = workflow.jobs.package.steps
   const lookup = steps.find(step => step.id === 'installer-regression')
   assert.equal(lookup.with['lookup-only'], true)
-  for (const path of ['pnpm-lock.yaml', 'apps/desktop/installer/**', 'apps/desktop/scripts/**', 'apps/desktop/tests/windows-*']) {
+  for (const path of ['pnpm-lock.yaml', 'apps/desktop/installer/**', 'apps/desktop/resources/**', 'apps/desktop/assembly.json', 'apps/desktop/scripts/**', 'apps/desktop/tests/windows-*']) {
     assert.ok(lookup.with.key.includes(path))
   }
   const regression = steps.findIndex(step => step.name === 'Test all Windows installer languages')

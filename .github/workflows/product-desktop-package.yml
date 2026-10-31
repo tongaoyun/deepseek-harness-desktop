@@ -233,7 +233,7 @@ jobs:
         with:
           path: .artifacts/verified-installer-inputs
           lookup-only: true
-          key: installer-regression-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.installer-environment.outputs.key }}-${{ hashFiles('.github/workflows/product-desktop-package.yml', 'package.json', 'pnpm-lock.yaml', 'apps/desktop/package.json', 'apps/desktop/installer/**', 'apps/desktop/scripts/**', 'apps/desktop/tests/windows-*', 'apps/desktop/electron-builder.config.mjs') }}
+          key: installer-regression-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.installer-environment.outputs.key }}-${{ hashFiles('.github/workflows/product-desktop-package.yml', 'package.json', 'pnpm-lock.yaml', 'apps/desktop/package.json', 'apps/desktop/installer/**', 'apps/desktop/resources/**', 'apps/desktop/assembly.json', 'scripts/libreoffice-packages.mjs', 'apps/desktop/scripts/**', 'apps/desktop/tests/windows-*', 'apps/desktop/electron-builder.config.mjs') }}
       - name: Validate Windows signatures
         if: matrix.target == 'win-x64'
         shell: pwsh
