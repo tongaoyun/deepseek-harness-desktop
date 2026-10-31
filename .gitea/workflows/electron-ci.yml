@@ -63,7 +63,7 @@ jobs:
           pnpm exec vitest run apps/product-desktop/tests/close-electron.spec.ts apps/product-desktop/tests/office-fixture.spec.ts
           pnpm run build:artifacts
           node --test apps/product-desktop/tests/company-content.test.mjs
-          pnpm run typecheck
+          pnpm run build:check
           pnpm run rescope-vendor:check
           pnpm run verify-package-dependencies
           pnpm run verify-no-unknown-casts

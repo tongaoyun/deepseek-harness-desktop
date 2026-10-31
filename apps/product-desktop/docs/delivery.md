@@ -30,7 +30,7 @@ node apps/product-desktop/scripts/sync-github.mjs --repository OWNER/deepseek-ha
 
 ## 构建性能
 
-main CI 执行完整类型检查；原生打包使用 `build:artifacts`，保留本地或正式品牌配置、生成声明和构建记录校验。打包前按官方 CLI、Desktop Host 和产品装配根计算生产依赖闭包，仅打包选中的工作区；包筛选参数由原生 Node 进程接收，避免 Windows 命令脚本的长度限制；安装包组装时再次从实际 tarball 核对依赖闭包和 Host 入口文件。
+main CI 先通过 `build:artifacts` 构建并检查包代码，再通过 `build:check` 检查 Host 与 Client 的测试和脚本，不重复生成声明或编译包。原生打包使用 `build:artifacts`，保留本地或正式品牌配置、生成声明和构建记录校验。打包前按官方 CLI、Desktop Host 和产品装配根计算生产依赖闭包，仅打包选中的工作区；包筛选参数由原生 Node 进程接收，避免 Windows 命令脚本的长度限制；安装包组装时再次从实际 tarball 核对依赖闭包和 Host 入口文件。
 
 源码构建与运行时下载、解压并行，工作区打包接在编译之后；Electron 与主运行时也独立准备。全部完成后再复制依赖编译输出的 CLI；任一失败均等待已启动的任务结束，再停止后续组装。应用目录仅组装一次，DMG 与 ZIP 从同一目录生成；内部 DMG 使用 ULFO（LZFSE）压缩；ZIP 使用 `DSH_DESKTOP_MACOS_ZIP_COMPRESSION_LEVEL`（默认 `3`）。安装包上传 Actions Artifact 时关闭二次 ZIP 压缩，日志与截图沿用默认压缩。产品模块随统一构建生成，前端图标编入客户端产物，不作为运行时依赖分发整套图标库。Rust sidecar 在产品入口构建一次；源码启动和验收使用 `CARGO_TARGET_DIR` 指定的编译目录。依赖安装保留 frozen lock 并优先复用本地 store；pnpm 元数据与 npm 引导下载分别缓存到持久目录，供应链策略检查继续执行。
 
@@ -97,11 +97,11 @@ DSH_DESKTOP_UPDATE_URL=https://github.com/OWNER/REPO/releases/latest/download/
 DSH_DESKTOP_MANDATORY_UPDATE_ENABLED=0
 ```
 
-发布核对签名管线记录中的版本、源码、干净状态、目标和更新地址。Mac 必须有签名公证的 DMG 与 ZIP，Windows 必须通过签名验证。原生清单核对大小和 SHA-512，Mac 两种架构合并为一份清单；安装文件使用固定版本绝对地址。
+发布核对签名管线记录中的版本、源码、干净状态、目标和更新地址。Mac ARM64 必须有签名公证的 DMG 与 ZIP，Windows 必须通过签名验证。原生清单核对大小和 SHA-512，Mac 清单只包含 ARM64 更新 ZIP；安装文件使用固定版本绝对地址。
 
 两端所有产物校验后才更新 latest；恢复旧构建不得回退更新源。Release 标记不改变源码预发布版本或原生 nightly 比较规则。
 
-原来的未签名安装版没有更新配置，不能自行发现首个签名版本；首次需要手动安装签名包，之后才进入原生更新流程。Mac 的产品签名包与原未签名包应用标识不同，首次安装应明确检查数据目录及钥匙串授权，不自动复制员工令牌。配置和模拟回归通过不等同于签名成功；启用分发前必须在签名机分别完成 Windows 和两种 Mac 架构的真实 A→B 安装升级验收。
+没有更新配置的未签名安装版需首次手动安装签名包，之后进入原生更新流程。Mac 的产品签名包与未签名包应用标识不同，首次安装需检查数据目录及钥匙串授权，不自动复制员工令牌。配置和模拟回归通过不等同于签名成功；启用分发前必须在签名机分别完成 Windows x64 和 Mac ARM64 的真实 A→B 安装升级验收。
 
 ## 产物与保留
 

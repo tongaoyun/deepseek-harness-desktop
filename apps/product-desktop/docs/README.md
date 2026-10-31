@@ -62,7 +62,7 @@
 
 企业开发使用产品启动入口，其 home 和 Electron profile 与官方桌面分开。[本地启动说明](../README.md#local-development)定义入口和 profile 覆盖方式。凭据留在 Electron 主进程或服务端受控配置，不放进渲染进程变量或提交文件。
 
-Gitea 负责评审和 CI，GitHub 原生 runner 构建 Windows x64 与两种 Mac 架构，安装包发布到公开下载仓库及内网 Gitea。支持 `unsigned` 开发包、`internal` 免费内部更新和 `signed` 正式签名更新；具体区别见[构建入口](../README.md#native-updates)。[交付说明](delivery.md)维护流水线参数和恢复，[签名接入](signing.md)维护证书要求。公开构建仓库的源码及 Git 历史可公开读取。
+Gitea 负责评审和 CI，GitHub 原生 runner 构建 Windows x64 与 Mac ARM64，安装包发布到公开下载仓库及内网 Gitea。支持 `unsigned` 开发包、`internal` 免费内部更新和 `signed` 正式签名更新；具体区别见[构建入口](../README.md#native-updates)。[交付说明](delivery.md)维护流水线参数和恢复，[签名接入](signing.md)维护证书要求。公开构建仓库的源码及 Git 历史可公开读取。
 
 Gitea 的共享 Runner 使用与上游 CI 一致的 `DSH_COVERAGE_TEST_TIMEOUT_MS=90000`，同时约束测试、清理钩子和轮询；不重试失败测试，也不改变应用运行超时。
 
