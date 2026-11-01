@@ -20,8 +20,6 @@ import { expertSettingsNamespace } from './settings.ts'
 import { AGENCY_LIBRARY_SERVICE, type AgencyExpertLibrary } from './expert-library.ts'
 import type { CatalogSnapshot, CustomExpertInput } from './expert-contract.ts'
 
-export { readExpertPrompt, readLocalizedExpertPrompt } from './index.ts'
-
 const AGENCY_SETTINGS_NAMESPACE = expertSettingsNamespace('agency-agents')
 
 function personaSource(ctx: Context): AgencyPersonaSource {

@@ -3,7 +3,7 @@
   "patches": [
     {
       "id": "release-v0.2.2-alpha.2-integration",
-      "purpose": "\u5c06\u5b98\u65b9\u4ee3\u7801\u6811\u66f4\u65b0\u5230 DeepSeek Harness v0.2.2-alpha.2\uff0c\u5e76\u4fdd\u7559\u672c\u5730\u4ea7\u54c1\u6269\u5c55\u8fb9\u754c\uff1b\u5b98\u65b9\u53d8\u66f4\u6309\u65b0\u53d1\u5e03\u57fa\u7ebf\u7edf\u4e00\u6821\u9a8c\uff0c\u4ea7\u54c1\u6e90\u7801\u7ee7\u7eed\u7531\u72ec\u7acb\u4ea7\u54c1\u5305\u7ef4\u62a4\u3002",
+      "purpose": "将官方代码树更新到 DeepSeek Harness v0.2.2-alpha.2，并保留本地产品扩展边界；官方变更按新发布基线统一校验，产品源码继续由独立产品包维护。",
       "tests": [
         "scripts/upstream-boundaries.spec.ts",
         "scripts/verify-upstream.mjs",
@@ -396,12 +396,12 @@
         {
           "path": "docs/config-catalog.md",
           "before": "f5eac6c9a779c683dccc26a0845c3556ffa449b4ceb4722248ce3bbea876d982",
-          "after": "c5cfa817ed5859ea920e0b65accf24cd67bf374133e4549a84b96c983669c946"
+          "after": "bb7f2c8c995c126064ef720b376e30e0e3044281f80974e7d2b8ae14d1a6f4eb"
         },
         {
           "path": "docs/config-catalog.zh.md",
           "before": "c8ceb3109d1643100f44a72c7ee5f57d5a865d39e769ce4356db350e04a7e914",
-          "after": "686f1f265c1ca572d3b8351fd24732dba5fb9aa3da42596aeaf47ecf661e5cae"
+          "after": "bc2b7a180f233462ff0e42e660920d9e42a465f4bb1d228fa1319e42ddc72710"
         },
         {
           "path": "docs/development.i18n.yaml",
@@ -1783,7 +1783,7 @@
     },
     {
       "id": "explicit-builtin-compiler-faces",
-      "purpose": "Typert \u6309\u663e\u5f0f Host/Client \u7f16\u8bd1\u5165\u53e3\u5212\u5206\u5bfc\u51fa\uff0c\u65e0\u9700\u8ba9\u56fa\u5b9a\u88c5\u914d\u7684\u4ea7\u54c1\u6a21\u5757\u58f0\u660e\u81ea\u52a8\u52a0\u8f7d\u63d2\u4ef6\uff1b\u9632\u6b62 Host \u5206\u6790\u8bef\u8bfb Client \u5bfc\u51fa\u3002",
+      "purpose": "Typert 按显式 Host/Client 编译入口划分导出，无需让固定装配的产品模块声明自动加载插件；防止 Host 分析误读 Client 导出。",
       "tests": [
         "packages/typert/generator/tests/type-model.spec.ts",
         "scripts/project-reference-faces.spec.ts"
@@ -1824,7 +1824,7 @@
     },
     {
       "id": "desktop-extension-recovery",
-      "purpose": "\u5728\u5f53\u524d\u539f\u751f\u684c\u9762\u751f\u547d\u5468\u671f\u4e2d\u63a5\u56de\u53ef\u4fe1\u5e94\u7528\u6269\u5c55\u3001\u53d6\u6d88\u548c\u53cc\u5411 Host \u63a7\u5236\uff0c\u4f7f\u7528\u6d4f\u89c8\u5668 Peer \u8bfb\u53d6\u5b9e\u65f6\u6ce8\u5165\uff0c\u5e76\u9a8c\u8bc1\u5b9e\u9645\u6253\u5305\u5165\u53e3\u52a0\u8f7d\u4ea7\u54c1 overlay\u3002\u4fdd\u7559\u5b98\u65b9\u8bca\u65ad\u3001\u6587\u4ef6\u62d6\u62fd\u4e0e\u9274\u6743\u3002",
+      "purpose": "在当前原生桌面生命周期中接回可信应用扩展、取消和双向 Host 控制，使用浏览器 Peer 读取实时注入，并验证实际打包入口加载产品 overlay。保留官方诊断、文件拖拽与鉴权。",
       "tests": [
         "apps/desktop/tests/main-startup.spec.ts",
         "apps/desktop/tests/host-process.spec.ts",
@@ -1909,7 +1909,7 @@
     },
     {
       "id": "desktop-asar-placeholders",
-      "purpose": "\u5728\u5c01\u88c5\u8fd0\u884c\u65f6\u6e05\u5355\u524d\u5254\u9664 ASAR \u56fa\u5b9a\u5ffd\u7565\u7684 .gitkeep \u7a7a\u76ee\u5f55\u5360\u4f4d\u6587\u4ef6\uff0c\u6821\u9a8c\u8fd0\u884c\u65f6\u5143\u6570\u636e\u4e0e\u5b9e\u9645\u5e73\u53f0\u3001\u67b6\u6784\u548c\u53d1\u5e03\u6587\u4ef6\uff0c\u4fdd\u7559\u5b9e\u9645\u56fe\u6807\u8d44\u6e90\u548c\u5168\u90e8\u5185\u5bb9\u5b8c\u6574\u6027\u6821\u9a8c\u3002",
+      "purpose": "在封装运行时清单前剔除 ASAR 固定忽略的 .gitkeep 空目录占位文件，校验运行时元数据与实际平台、架构和发布文件，保留实际图标资源和全部内容完整性校验。",
       "tests": [
         "apps/desktop/tests/runtime-file-policy.spec.ts",
         "apps/desktop/tests/windows-asar-unpack.spec.ts"
@@ -1935,7 +1935,7 @@
     },
     {
       "id": "typert-generator-runtime-build",
-      "purpose": "\u8ba9\u5e72\u51c0\u5de5\u4f5c\u533a\u5148\u6784\u5efa Typert \u751f\u6210\u5668\u8fd0\u884c\u65f6\uff0c\u518d\u6267\u884c Host bundle\uff0c\u907f\u514d\u4f9d\u8d56\u88ab\u5ffd\u7565\u7684\u672c\u5730\u4ea7\u7269\u3002",
+      "purpose": "让干净工作区先构建 Typert 生成器运行时，再执行 Host bundle，避免依赖被忽略的本地产物。",
       "tests": [
         "scripts/build.spec.ts",
         "scripts/upstream-boundaries.spec.ts"
@@ -1961,7 +1961,7 @@
     },
     {
       "id": "windows-unsigned-policy",
-      "purpose": "\u5141\u8bb8 Windows \u672a\u7b7e\u540d\u4e0e\u5185\u90e8\u5f00\u53d1\u5305\u8df3\u8fc7\u5f3a\u5236\u66f4\u65b0\u7b56\u7565\u6e90\u7ad9\u6821\u9a8c\uff0c\u907f\u514d\u6784\u5efa\u73af\u5883\u628a file URL \u5f53\u4f5c\u7b56\u7565\u670d\u52a1\u3002",
+      "purpose": "允许 Windows 未签名与内部开发包跳过强制更新策略源站校验，避免构建环境把 file URL 当作策略服务。",
       "tests": [
         "apps/desktop/tests/desktop-package-environment.spec.ts",
         "apps/desktop/tests/desktop-policy-environment.spec.ts"
@@ -1987,7 +1987,7 @@
     },
     {
       "id": "desktop-update-package-mirror",
-      "purpose": "\u4f7f\u7528\u539f\u751f\u6e05\u5355\u89e3\u6790\u4e0e Electron \u4f20\u8f93\uff0c\u901a\u8fc7\u533f\u540d HTTPS API \u53d1\u73b0\u7248\u672c\u3001\u4e0d\u53ef\u53d8\u8f6f\u4ef6\u5305\u4f18\u5148\u4e0b\u8f7d\u548c\u540c\u7248\u672c GitHub \u56de\u9000\uff0c\u4fdd\u6301\u5dee\u5206\u3001\u6821\u9a8c\u53ca\u7528\u6237\u786e\u8ba4\u3002",
+      "purpose": "使用原生清单解析与 Electron 传输，通过匿名 HTTPS API 发现版本、不可变软件包优先下载和同版本 GitHub 回退，保持差分、校验及用户确认。",
       "tests": [
         "apps/desktop/tests/update-mirror.spec.ts",
         "apps/product-desktop/tests/package-mirror.test.mjs"

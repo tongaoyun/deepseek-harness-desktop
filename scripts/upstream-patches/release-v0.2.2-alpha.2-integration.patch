@@ -3814,7 +3814,7 @@ index 44dcc4fbdd84e90403a3531089630849708f0f3e..b2eb12d43c66a47355089f80a3bee511
      "tests/plugin-recommendations.e2e.ts",
      "tests/japanese-plugin-metadata.e2e.ts",
 diff --git a/docs/config-catalog.md b/docs/config-catalog.md
-index 9b409c6b553500e550b2d0555ed0c1da7e6cce1c..af50045aa6a7b7614c1afda5a5e259edcb66c00d 100644
+index 9b409c6b553500e550b2d0555ed0c1da7e6cce1c..d46c01bff920273a461817e71c2f06b2741b9144 100644
 --- a/docs/config-catalog.md
 +++ b/docs/config-catalog.md
 @@ -158,7 +158,7 @@ export type Config = PresetDefinition
@@ -3873,7 +3873,7 @@ index 9b409c6b553500e550b2d0555ed0c1da7e6cce1c..af50045aa6a7b7614c1afda5a5e259ed
 +
 +- `inject`: `tools` · `subagents` · `systemPrompt` · `settings` · `webServer`
 +- `refs`: `Volatile` (`@deepseek-ai/cordis`)
-+- `source`: [`packages/deepseek-harness-product/experts/src/index.ts:188`](../packages/deepseek-harness-product/experts/src/index.ts)
++- `source`: [`packages/deepseek-harness-product/experts/src/index.ts:186`](../packages/deepseek-harness-product/experts/src/index.ts)
 +
 +```ts config-catalog
 +/** Plugin config: the persona root, the subagent provider, and the divisions to scan. */
@@ -3945,7 +3945,7 @@ index 9b409c6b553500e550b2d0555ed0c1da7e6cce1c..af50045aa6a7b7614c1afda5a5e259ed
 +| `@deepseek-harness/product-desktop` | — | [`packages/deepseek-harness-product/desktop/src/index.ts`](../packages/deepseek-harness-product/desktop/src/index.ts) |
  <!-- END GENERATED config-catalog:library -->
 diff --git a/docs/config-catalog.zh.md b/docs/config-catalog.zh.md
-index 25094e00e36f1686dea4984db5716ea2fae8221d..79aa3dbbfd1a71396b4fb477be8f25942fe68d2e 100644
+index 25094e00e36f1686dea4984db5716ea2fae8221d..b0c34364423ece8395fac42296c4f1a3352cb022 100644
 --- a/docs/config-catalog.zh.md
 +++ b/docs/config-catalog.zh.md
 @@ -160,7 +160,7 @@ export type Config = PresetDefinition
@@ -4004,7 +4004,7 @@ index 25094e00e36f1686dea4984db5716ea2fae8221d..79aa3dbbfd1a71396b4fb477be8f2594
 +
 +- `inject`: `tools` · `subagents` · `systemPrompt` · `settings` · `webServer`
 +- `refs`: `Volatile` (`@deepseek-ai/cordis`)
-+- `source`: [`packages/deepseek-harness-product/experts/src/index.ts:188`](../packages/deepseek-harness-product/experts/src/index.ts)
++- `source`: [`packages/deepseek-harness-product/experts/src/index.ts:186`](../packages/deepseek-harness-product/experts/src/index.ts)
 +
 +```ts config-catalog
 +/** Plugin config: the persona root, the subagent provider, and the divisions to scan. */

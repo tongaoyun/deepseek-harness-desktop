@@ -11,8 +11,8 @@ import type { SettingsDescriptor } from '@deepseek-ai/dsh-settings'
 import type { ISessions } from '@deepseek-ai/dsh-api-session-controller/client'
 import type { SessionId } from '@deepseek-ai/dsh-client-connection/client'
 import z from '@deepseek-ai/schemastery'
-import { Config, SUMMON_EXPERTS_CONCURRENCY, SUMMON_EXPERTS_MAX, SUMMON_TASK_MAX_CHARS, apply, inject, loadCatalog, createAgencyPersonaSource, mapPool, parseFrontmatter, resolveCatalogRoot, resolveExpert, sanitize, stripBom, toSummonItemResult, truncate, validateSummonSpecs } from './index.ts'
-import AgencyAgentsRemote, { readExpertPrompt, readLocalizedExpertPrompt } from './remote.ts'
+import { Config, SUMMON_EXPERTS_CONCURRENCY, SUMMON_EXPERTS_MAX, SUMMON_TASK_MAX_CHARS, apply, inject, loadCatalog, createAgencyPersonaSource, mapPool, parseFrontmatter, resolveCatalogRoot, resolveExpert, readExpertPrompt, stripBom, toSummonItemResult, truncate, validateSummonSpecs } from './index.ts'
+import AgencyAgentsRemote from './remote.ts'
 import { AGENCY_AGENTS_DESCRIPTORS } from './remote-contract.ts'
 import { expertConflict } from './expert-contract.ts'
 import { buildExpertMentionLexicon, buildExpertReference, CARD_SETTINGS_CSS, compareExpertName, COMPOSER_CSS, EXPERT_AVATAR_POOL_INDEXES, expertAvatarIndex, expertAvatarIndexForDivision, expertDivisionFilterValues, expertMentionFromReference, filterExperts, formatExpertMention, formatExpertMentionInsertion, inject as clientInject, inputTriggerCandidateName, inputTriggerSourceId, inputTriggerSourceName, insertExpertReference, insertSelectedExpert, keepComposerFocus, matchExpertQuery, normalizeExpertQuery, resolveExpertMenuPosition, resolveReferenceInsertionTarget, resolveTargetSessionId, SETTINGS_CSS, sortExpertsByEnabled, sortExpertsByOrder, writeErrorKey, writeErrorMessage } from './client/index.ts'
@@ -163,20 +163,6 @@ describe('官方实时设置读取', () => {
   })
 
 
-})
-
-describe('sanitize', () => {
-  it('转义双花括号，避免模板插值', () => {
-    expect(sanitize('{{x}}')).toBe('{\u200B{x}}')
-  })
-
-  it('三连花括号不残留 {{', () => {
-    expect(sanitize('{{{x}}}')).toBe('{\u200B{\u200B{x}}}')
-  })
-
-  it('无花括号的文本原样返回', () => {
-    expect(sanitize('no braces')).toBe('no braces')
-  })
 })
 
 describe('stripBom', () => {
@@ -605,7 +591,7 @@ describe('summon_expert', () => {
     expect(startOptions).not.toHaveProperty('maxDepth')
   })
 
-  it('中文界面展示正文经安全处理后与实际召唤 persona 一致', async () => {
+  it('中文界面展示正文与实际召唤 persona 一致', async () => {
     const tools: unknown[] = []
     const probe = createActivationProbe()
     let startOptions: Record<string, unknown> | undefined
@@ -645,7 +631,8 @@ describe('summon_expert', () => {
 
     const displayed = await promptSource!.getPrompt('chief-executive-officer', 'company', 'zh')
     expect(displayed.prompt).toContain('首席执行官')
-    expect(probe.sections[0]?.text).toBe(sanitize(displayed.prompt))
+    expect(probe.sections[0]?.text).toBe(displayed.prompt)
+    expect(probe.sections[0]?.interpolate).toBe(false)
     expect(startOptions).not.toHaveProperty("persona")
   })
 
@@ -839,30 +826,11 @@ describe('AgencyAgentsRemote（Host↔Client 读写链路）', () => {
       await mkdir(join(root, 'engineering'), { recursive: true })
       await writeFile(join(root, 'engineering', 'reviewer.md'), '---\nname: Reviewer\ndescription: desc\n---\nPersona body', 'utf8')
       await expect(readExpertPrompt(root, 'reviewer', 'engineering')).resolves.toEqual({ prompt: 'Persona body' })
+      await expect(readExpertPrompt(root, 'missing', 'engineering', undefined, 'en')).rejects.toMatchObject({ code: 'PERSONA_NOT_FOUND', message: 'Expert prompt not found.' })
+      await mkdir(join(root, 'engineering', 'invalid.md'))
+      await expect(readExpertPrompt(root, 'invalid', 'engineering')).rejects.toMatchObject({ code: 'PERSONA_READ_FAILED' })
       await expect(readExpertPrompt(root, '../package', 'engineering')).rejects.toThrow('无效的专家提示词请求。')
       await expect(readExpertPrompt(root, 'reviewer', '../engineering')).rejects.toThrow('无效的专家提示词请求。')
-    } finally {
-      await rm(root, { recursive: true, force: true })
-    }
-  })
-
-  it('提示词正文按界面语言读取，中文缺失时回退英文', async () => {
-    const root = await mkdtemp(join(tmpdir(), 'aag-localized-prompt-'))
-    const englishRoot = join(root, 'en')
-    const chineseRoot = join(root, 'zh')
-    try {
-      await mkdir(join(englishRoot, 'engineering'), { recursive: true })
-      await mkdir(join(chineseRoot, 'engineering'), { recursive: true })
-      await writeFile(join(englishRoot, 'engineering', 'reviewer.md'), '---\nname: Reviewer\ndescription: desc\n---\nEnglish persona', 'utf8')
-      await writeFile(join(chineseRoot, 'engineering', 'reviewer.md'), '---\nname: 审查员\ndescription: 简介\n---\n中文角色设定', 'utf8')
-      await writeFile(join(englishRoot, 'engineering', 'fallback.md'), '---\nname: Fallback\ndescription: desc\n---\nFallback persona', 'utf8')
-
-      await expect(readLocalizedExpertPrompt(englishRoot, chineseRoot, 'reviewer', 'engineering', 'zh')).resolves.toEqual({ prompt: '中文角色设定' })
-      await expect(readLocalizedExpertPrompt(englishRoot, chineseRoot, 'reviewer', 'engineering', 'en')).resolves.toEqual({ prompt: 'English persona' })
-      await expect(readLocalizedExpertPrompt(englishRoot, chineseRoot, 'fallback', 'engineering', 'zh')).resolves.toEqual({ prompt: 'Fallback persona' })
-      await expect(readExpertPrompt(englishRoot, 'missing', 'engineering', undefined, 'en')).rejects.toMatchObject({ code: 'PERSONA_NOT_FOUND', message: 'Expert prompt not found.' })
-      await mkdir(join(chineseRoot, 'engineering', 'fallback.md'))
-      await expect(readLocalizedExpertPrompt(englishRoot, chineseRoot, 'fallback', 'engineering', 'zh')).rejects.toMatchObject({ code: 'PERSONA_READ_FAILED' })
     } finally {
       await rm(root, { recursive: true, force: true })
     }

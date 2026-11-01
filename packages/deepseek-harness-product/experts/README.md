@@ -46,7 +46,7 @@ Host 模块通过产品 profile 固定装配，普通 ESM 客户端模块合入�
 
 #### What the model sees
 
-模型通过 `list_experts` 浏览专家名册并通过 `summon_expert` 使用选定说明；个人内容和团队内容按当前版本读取。公司内容按 Session 固定版本，输入记录沿用原生日志。
+模型通过 `list_experts` 浏览专家名册并通过 `summon_expert` 使用选定说明；个人内容和团队内容按当前版本读取。公司内容按 Session 固定版本，输入记录沿用原生日志。专家及普通专家团成员的说明使用原生字面量提示词段，保留 `{{…}}` 示例原文，不解析为宿主变量。
 
 #### Token effect
 
