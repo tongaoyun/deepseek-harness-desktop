@@ -1,5 +1,7 @@
-import { existsSync, readFileSync, readdirSync } from 'node:fs'
-import { resolve } from 'node:path'
+import { spawnSync } from 'node:child_process'
+import { existsSync, globSync, mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join, relative, resolve } from 'node:path'
 import * as yaml from 'js-yaml'
 import { describe, expect, it } from 'vitest'
 import { readDesktopAssembly } from '../apps/desktop/scripts/desktop-assembly.mjs'
@@ -56,6 +58,42 @@ describe('DeepSeekHarness Electron workflows', () => {
       expect(tests.some(path => path.startsWith(`${scope}/`))).toBe(false)
     }
     for (const path of tests) expect(existsSync(resolve(import.meta.dirname, '..', path)), path).toBe(true)
+  })
+
+  it('collects every expert and skill regression exactly once in the root CI configuration', { timeout: 90_000 }, () => {
+    const root = resolve(import.meta.dirname, '..')
+    const expected = ['experts', 'skills'].flatMap(group => globSync(
+      `packages/deepseek-harness-product/${group}/{src,tests}/**/*.{test,spec}.{ts,tsx}`, { cwd: root },
+    )).map(path => path.replaceAll('\\', '/')).sort()
+    expect(expected.some(path => path.endsWith('.test.tsx'))).toBe(true)
+    expect(expected.some(path => path.endsWith('.test.ts'))).toBe(true)
+    const temporary = mkdtempSync(join(tmpdir(), 'dsh-product-test-inventory-'))
+    try {
+      const output = join(temporary, 'files.json')
+      const env = { ...process.env }
+      for (const name of Object.keys(env)) {
+        if (name.startsWith('VITEST') || name.startsWith('DSH_COVERAGE_') || name === 'GITHUB_ACTIONS') Reflect.deleteProperty(env, name)
+      }
+      const child = spawnSync(process.execPath, [resolve(root, 'node_modules/vitest/vitest.mjs'),
+        'list', '--filesOnly', `--json=${output}`,
+        'packages/deepseek-harness-product/experts', 'packages/deepseek-harness-product/skills'], {
+        cwd: root, env, encoding: 'utf8', timeout: 60_000, killSignal: 'SIGKILL',
+      })
+      if (child.error) throw child.error
+      expect(child.signal, 'test collection must finish without a signal').toBeNull()
+      expect(child.status, `${child.stdout}\n${child.stderr}`).toBe(0)
+      const listed: unknown = JSON.parse(readFileSync(output, 'utf8'))
+      if (!Array.isArray(listed)) throw new Error('Vitest did not return a test file list')
+      const files = listed.map((item: unknown) => {
+        if (typeof item !== 'object' || item === null || !('file' in item) || typeof item.file !== 'string') {
+          throw new Error('Vitest returned an invalid test file entry')
+        }
+        return relative(root, item.file).replaceAll('\\', '/')
+      })
+      expect(files.sort()).toEqual(expected)
+    } finally {
+      rmSync(temporary, { recursive: true, force: true })
+    }
   })
 
   it('does not couple desktop CI to a server community expert list', () => {

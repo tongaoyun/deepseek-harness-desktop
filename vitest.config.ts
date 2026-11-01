@@ -136,6 +136,8 @@ const pwshCoverageExclusions = spawnSync(resolvePwshPath(), ['-NoLogo', '-NoProf
 
 const testIncludes = [
   'packages/*/*/tests/**/*.spec.{ts,tsx}',
+  'packages/deepseek-harness-product/{experts,skills}/src/**/*.test.{ts,tsx}',
+  'packages/deepseek-harness-product/{experts,skills}/tests/**/*.test.{ts,tsx}',
   'apps/*/tests/**/*.spec.{ts,tsx}',
   'scripts/**/*.spec.ts',
   'website/tests/**/*.spec.ts',

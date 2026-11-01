@@ -16403,10 +16403,19 @@ index ee4dd53fb853af9197b59f4820dfe6348698f026..44ac482a308a4a6fd441b5ddb8a81d8c
    group?: boolean | null
    disabled?: boolean | null
 diff --git a/vitest.config.ts b/vitest.config.ts
-index 34086431c7e79ddcac668709023fb50656de163c..a9d31343521a7190bead55fef9e37b4f36e23925 100644
+index 34086431c7e79ddcac668709023fb50656de163c..92242040e467224afd96eeb9edd92d500fef9b77 100644
 --- a/vitest.config.ts
 +++ b/vitest.config.ts
-@@ -193,7 +193,17 @@ const liveshareRemoteBuild = fileURLToPath(new URL('./packages/experimental/live
+@@ -136,6 +136,8 @@ const pwshCoverageExclusions = spawnSync(resolvePwshPath(), ['-NoLogo', '-NoProf
+ 
+ const testIncludes = [
+   'packages/*/*/tests/**/*.spec.{ts,tsx}',
++  'packages/deepseek-harness-product/{experts,skills}/src/**/*.test.{ts,tsx}',
++  'packages/deepseek-harness-product/{experts,skills}/tests/**/*.test.{ts,tsx}',
+   'apps/*/tests/**/*.spec.{ts,tsx}',
+   'scripts/**/*.spec.ts',
+   'website/tests/**/*.spec.ts',
+@@ -193,7 +195,17 @@ const liveshareRemoteBuild = fileURLToPath(new URL('./packages/experimental/live
  const generatedRemoteAliases = existsSync(liveshareRemoteBuild) ? {} : {
    '@deepseek-ai/dsh-experimental-liveshare/remote': fileURLToPath(new URL('./packages/experimental/liveshare/tests/generated-remote-stub.ts', import.meta.url)),
  }
