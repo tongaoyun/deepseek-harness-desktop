@@ -204,7 +204,21 @@ export function useKnowledgeRequests(): (method: string, payload: unknown, signa
     const combined = signal === undefined ? controller.signal : AbortSignal.any([signal, controller.signal])
     const timeoutMs = ['knowledge.documents.preview.open', 'knowledge.documents.download', 'knowledge.documents.openExternal',
       'knowledge.documents.upload', 'knowledge.documents.upload.select'].includes(method) ? 300_000 : undefined
-    try { return await invokeProduct(api, method, payload, combined, timeoutMs) }
-    finally { requests.current.delete(controller) }
+    let opening: Promise<unknown> | undefined
+    const transport = method === 'knowledge.documents.preview.open' ? {
+      ...api,
+      invoke(...args: Parameters<typeof api.invoke>) {
+        opening = api.invoke(...args)
+        return opening
+      },
+    } : api
+    try { return await invokeProduct(transport, method, payload, combined, timeoutMs) }
+    finally {
+      requests.current.delete(controller)
+      // A late open reply still owns a transfer even though the caller has stopped waiting.
+      if (combined.aborted) void opening?.then(value =>
+        api.invoke('knowledge.documents.preview.close', { transferId: string(record(value).transferId) }), () => undefined)
+        .catch((error: unknown) => { console.warn('Knowledge preview cleanup failed', error) })
+    }
   }, [])
 }

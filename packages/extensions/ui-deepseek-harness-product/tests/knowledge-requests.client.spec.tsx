@@ -107,3 +107,28 @@ it('closes an opened preview after unmount without waiting for its pending chunk
     await reading
   }
 })
+
+it('releases a preview opened after its caller has already cancelled', async () => {
+  const opening = Promise.withResolvers<unknown>()
+  const invoke = vi.fn(async (_namespace: string, method: string) => method.endsWith('.open')
+    ? opening.promise : { ok: true, result: { closed: true } })
+  vi.stubGlobal('dshDesktop', { extensions: { invoke, cancel: vi.fn() } })
+  const hook = renderHook(useKnowledgeRequests)
+  const controller = new AbortController()
+  let failure: unknown
+  const reading = readKnowledgeFile(hook.result.current, { knowledgeBaseId: 'base', documentId: 'doc' }, controller.signal)
+    .catch((error: unknown) => { failure = error })
+  try {
+    await act(async () => { controller.abort(new Error('Reader closed')) })
+    expect(failure).toBeInstanceOf(Error)
+  } finally {
+    opening.resolve({ ok: true, result: {
+      transferId: 'late-preview', mediaType: 'text/plain', byteLength: 1, maxBytes: 10, chunkSize: 1,
+    } })
+    await reading
+  }
+  await waitFor(() => {
+    expect(invoke).toHaveBeenCalledWith('product', 'knowledge.documents.preview.close', { transferId: 'late-preview' }, undefined)
+  })
+  expect(invoke).toHaveBeenCalledTimes(2)
+})
