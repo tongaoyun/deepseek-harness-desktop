@@ -24,7 +24,8 @@
         "packages/client/ui-chat/tests/reasoning-content.client.spec.tsx",
         "packages/client/ui-chat/tests/process-groups.client.spec.ts",
         "packages/experimental/client-ui-cot-translation/tests/translation-body.client.spec.tsx",
-        "apps/web/tests/reasoning-preview.e2e.ts"
+        "apps/web/tests/reasoning-preview.e2e.ts",
+        "scripts/deepseek-harness-electron-workflows.spec.ts"
       ],
       "files": [
         {
@@ -1635,7 +1636,7 @@
         {
           "path": "vitest.config.ts",
           "before": "9f83941a2ed74ad903ffef043d65e848b1aa1fb48caf2833ba612f632af7b5ab",
-          "after": "214b75b9a419dddce8e3b9aa59c786193502e53b39ad67bb7bdc78adf4650032"
+          "after": "52dd545d929b11bf44c8b0408b4bf29cb99026ea2212b8a77af22ae87d73b466"
         },
         {
           "path": "apps/desktop/scripts/desktop-package-plan.ts",
