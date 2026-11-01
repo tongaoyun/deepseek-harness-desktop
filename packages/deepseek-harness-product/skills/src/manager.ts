@@ -8,7 +8,7 @@ import { Remote, RemoteError, TypertRemoteService, remoteErrorOf, principalOf } 
 import { isJsonValue, type JsonValue } from '@deepseek-ai/dsh-util-values'
 import { realpath } from 'node:fs/promises'
 import type { Log, ManagerScope, ManagerTarget, ManagerImport, RootView, Diagnostic, OperationError, SkillRequest, RepositoryInput, CatalogIdentity, ManagerMarketOptions } from './types.ts'
-import { state, setSkillEnabled, setSourceEnabled, createCategory, renameCategory, deleteCategory, assignSkillCategory, moveSkillInCategory, setCategoryEnabled, importSkill, importUploadedSkill, browseDirectories, createSkill, skillDetail, exportSkill, userRoots, projectRoots, resolveWorkspaceTarget, listWorkspaces, workspaceSkills } from './core.ts'
+import { state, setSkillEnabled, setSourceEnabled, createCategory, renameCategory, deleteCategory, assignSkillCategory, moveSkillInCategory, setCategoryEnabled, importSkill, importUploadedSkill, createSkill, skillDetail, exportSkill, userRoots, projectRoots, resolveWorkspaceTarget, listWorkspaces, workspaceSkills } from './core.ts'
 import { createRepositoryManager } from './repositories.ts'
 import { installationSourceKey } from './repository-updates.ts'
 import { listClawHub, searchClawHub } from './clawhub-catalog.ts'
@@ -201,14 +201,6 @@ export class SkillsManager extends TypertRemoteService {
       return 'roots' in snapshot ? this.attachSources(snapshot) : snapshot
     }, signal)
   }
-
-  /** Browse readable import directories.
-   * @param path Explicit operation input.
-   * @param signal Native invocation lifetime.
-   * @returns The committed result or a typed operation failure.
-   */
-  @Remote
-  browse(path: string, signal: AbortSignal): Promise<SkillManagerResults['browse']> { return this.perform(() => browseDirectories(path), signal) }
 
   /** Read one skill within its explicit source.
    * @param target Explicit operation input.

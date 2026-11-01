@@ -96,7 +96,6 @@ const WINDOWS_DEVICE_NAME_RE =
   /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\..*)?$/i;
 const MAX_SOURCE_DEPTH = 64;
 const MAX_ENTRY_NAME_LENGTH = 128;
-const MAX_BROWSE_ENTRIES = 500;
 const MAX_UPLOAD_ARCHIVE_BYTES = 32 << 20;
 const MAX_UPLOAD_ENTRY_BYTES = 32 << 20;
 const MAX_UPLOAD_TOTAL_BYTES = 64 << 20;
@@ -564,103 +563,6 @@ export function trashRootPath() {
 
 export function logPath() {
   return join(resolveDshHome(), "dsh-skills-manager.log");
-}
-
-/**
- * 为前端内嵌目录选择器列出一个本机目录层级。
- * 不跟随目录符号链接；选择后的导入仍由 importSkill 做完整安全校验。
- */
-export async function browseDirectories(inputPath: string) {
-  const requested = String(inputPath == null ? "" : inputPath).trim();
-  const target = requested === "" ? homedir() : requested;
-  if (!isAbsolute(target)) {
-    return {
-      ok: false,
-      error: `目录路径必须是绝对路径: ${target}`,
-      code: "error.browse.absolute",
-      params: { path: target },
-    };
-  }
-
-  let canonical;
-  let directory;
-  try {
-    canonical = await fs.realpath(target);
-    directory = await fs.stat(canonical);
-  } catch (caught) { const error = caught as CodedError;
-    return {
-      ok: false,
-      error: `无法读取目录: ${target}`,
-      code: "error.browse.unreadable",
-      params: {
-        path: target,
-        error: String(error && error.message ? error.message : error),
-      },
-    };
-  }
-  if (!directory.isDirectory()) {
-    return {
-      ok: false,
-      error: `不是目录: ${target}`,
-      code: "error.browse.notDirectory",
-      params: { path: target },
-    };
-  }
-
-  const entries = [];
-  let truncated = false;
-  try {
-    const items = await fs.readdir(canonical, { withFileTypes: true });
-    for (const item of items) {
-      // 目录链接不在浏览器中展开，避免选择器在不知情时跨越到另一棵目录树。
-      if (!item.isDirectory() || item.isSymbolicLink()) continue;
-      // Dirent 来自一次目录快照；再用 lstat 校验当前条目，既收紧 TOCTOU 窗口，
-      // 也明确排除 Windows junction 等重解析目录。
-      const childPath = join(canonical, item.name);
-      const childStat = await lstatOrNull(childPath);
-      if (!childStat || !childStat.isDirectory() || childStat.isSymbolicLink())
-        continue;
-      if (entries.length >= MAX_BROWSE_ENTRIES) {
-        truncated = true;
-        break;
-      }
-      entries.push({
-        name: item.name,
-        path: childPath,
-        hidden: item.name.startsWith("."),
-      });
-    }
-  } catch (caught) { const error = caught as CodedError;
-    return {
-      ok: false,
-      error: `无法读取目录: ${canonical}`,
-      code: "error.browse.unreadable",
-      params: {
-        path: canonical,
-        error: String(error && error.message ? error.message : error),
-      },
-    };
-  }
-  entries.sort((a, b) =>
-    a.name.localeCompare(b.name, undefined, {
-      sensitivity: "base",
-      numeric: true,
-    }),
-  );
-
-  const crumbs = [];
-  let cursor = canonical;
-  for (;;) {
-    const parent = dirname(cursor);
-    crumbs.unshift({
-      name: parent === cursor ? cursor : basename(cursor),
-      path: cursor,
-      hidden: false,
-    });
-    if (parent === cursor) break;
-    cursor = parent;
-  }
-  return { path: canonical, home: homedir(), crumbs, entries, truncated };
 }
 
 function dshRootPath() {

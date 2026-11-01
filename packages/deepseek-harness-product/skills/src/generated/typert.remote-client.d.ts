@@ -10,7 +10,6 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
   interface TypertRemoteNamespace$736b696c6c734d616e61676572 {
     addRepository: (request: RepositoryInput, signal?: AbortSignal) => Promise<RemoteResult<SkillManagerResults['addRepository']>>
     assignCategory: (target: ManagerTarget, signal?: AbortSignal) => Promise<RemoteResult<SkillManagerResults['assignCategory']>>
-    browse: (path: string, signal?: AbortSignal) => Promise<RemoteResult<SkillManagerResults['browse']>>
     createCategory: (target: ManagerTarget, signal?: AbortSignal) => Promise<RemoteResult<SkillManagerResults['createCategory']>>
     createSkill: (request: ManagerImport, signal?: AbortSignal) => Promise<RemoteResult<SkillManagerResults['createSkill']>>
     deleteCategory: (target: ManagerTarget, signal?: AbortSignal) => Promise<RemoteResult<SkillManagerResults['deleteCategory']>>
@@ -47,7 +46,6 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
   interface TypertRemoteMap {
     'skillsManager/addRepository': (request: RepositoryInput, signal?: AbortSignal) => Promise<RemoteResult<SkillManagerResults['addRepository']>>
     'skillsManager/assignCategory': (target: ManagerTarget, signal?: AbortSignal) => Promise<RemoteResult<SkillManagerResults['assignCategory']>>
-    'skillsManager/browse': (path: string, signal?: AbortSignal) => Promise<RemoteResult<SkillManagerResults['browse']>>
     'skillsManager/createCategory': (target: ManagerTarget, signal?: AbortSignal) => Promise<RemoteResult<SkillManagerResults['createCategory']>>
     'skillsManager/createSkill': (request: ManagerImport, signal?: AbortSignal) => Promise<RemoteResult<SkillManagerResults['createSkill']>>
     'skillsManager/deleteCategory': (target: ManagerTarget, signal?: AbortSignal) => Promise<RemoteResult<SkillManagerResults['deleteCategory']>>
@@ -89,7 +87,6 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
 export declare const TYPERT_REMOTE: TypertRemoteInfo<{
   readonly 'skillsManager/addRepository': TypertRemoteMethod<{ readonly 'request': RepositoryInput }, SkillManagerResults['addRepository']>
   readonly 'skillsManager/assignCategory': TypertRemoteMethod<{ readonly 'target': ManagerTarget }, SkillManagerResults['assignCategory']>
-  readonly 'skillsManager/browse': TypertRemoteMethod<{ readonly 'path': string }, SkillManagerResults['browse']>
   readonly 'skillsManager/createCategory': TypertRemoteMethod<{ readonly 'target': ManagerTarget }, SkillManagerResults['createCategory']>
   readonly 'skillsManager/createSkill': TypertRemoteMethod<{ readonly 'request': ManagerImport }, SkillManagerResults['createSkill']>
   readonly 'skillsManager/deleteCategory': TypertRemoteMethod<{ readonly 'target': ManagerTarget }, SkillManagerResults['deleteCategory']>
