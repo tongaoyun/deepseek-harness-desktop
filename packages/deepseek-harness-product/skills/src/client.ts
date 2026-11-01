@@ -14,8 +14,8 @@ import { createDestinationKit, defaultDestination, destinationPayload, destinati
 import { createSourceSelect } from "./source-select.ts";
 import { createSkillApi, TYPERT_REMOTE } from "./remote-client.ts";
 import type {} from "@deepseek-ai/dsh-api-gateway/client";
-import { Button as PrimitiveButton, Modal as PrimitiveModal, SegmentedTabs, StateDot, fileSizeText, type SegmentedTab } from "@deepseek-ai/dsh-client-ui-primitives";
-import { Input, TextArea, foldChevron } from "./plugin-ui.ts";
+import { Input, Button as PrimitiveButton, Modal as PrimitiveModal, SegmentedTabs, StateDot, fileSizeText, type SegmentedTab } from "@deepseek-ai/dsh-client-ui-primitives";
+import { TextArea, foldChevron } from "./plugin-ui.ts";
 import { SkillBody } from "./skill-body.ts";
 
 // dsh-skills-manager client half：按全局与项目作用域切换的多 Agent Skills 管理面板。
@@ -53,7 +53,7 @@ import { SkillBody } from "./skill-body.ts";
         "error.trash.notFound": "回收站条目不存在: {id}", "error.trash.conflict": "无法恢复，同名技能已存在: {name}", "error.trash.invalid": "回收站条目路径非法: {id}", "error.trash.projectUnavailable": "原项目当前不在活动工作区中，无法恢复：{path}", "error.trash.rollbackFailed": "移入回收站回滚失败，未恢复内容保留在: {path}（{error}）",
         "error.state.invalid": "技能管理器状态文件不可读，已拒绝覆盖：{path}",
         "error.create.descriptionRequired": "技能简介不能为空", "error.create.bodyRequired": "技能正文不能为空", "error.create.tooLarge": "技能内容过长", "error.create.conflict": "同名技能已存在: {name}",
-        "error.proto.forbidden": "禁止的修改请求（缺少客户端标记）", "error.proto.forbiddenHost": "禁止的请求来源（非法 Host）", "error.proto.contentType": "请求体必须是 application/json", "error.proto.method": "不支持的请求方法", "error.proto.unknownAction": "未知操作", "error.proto.bodyTooLarge": "请求体过大", "error.proto.invalidJson": "请求体不是合法 JSON", "error.proto.nonJson": "服务端返回非 JSON 响应（HTTP {status}）",
+        "error.proto.forbidden": "仅本机所有者可管理技能", "error.proto.bodyTooLarge": "请求体过大",
         "error.catalog.query": "搜索关键词无效。", "error.catalog.upstream": "目录服务暂时不可用。", "error.catalog.response": "目录返回的数据无效或过大。", "error.catalog.identity": "目录技能标识无效。",
         "diagnostic.frontmatter.missing": "缺少完整 YAML frontmatter", "diagnostic.name.missing": "frontmatter 缺少 name", "diagnostic.name.invalid": "此技能名称无法调用：{name}。请将 SKILL.md 中的 name 改为英文小写字母、数字和连字符；目录名可保留中文。", "diagnostic.description.missing": "frontmatter 缺少 description", "diagnostic.invocation.invalid": "调用策略字段值无效", "diagnostic.shadowed": "被更高优先级来源 {root} 覆盖",
         "action.enable": "启用", "action.disable": "停用", "action.create": "创建", "action.delete": "删除", "action.restore": "恢复", "action.toggle": "启用或停用",
@@ -85,7 +85,7 @@ import { SkillBody } from "./skill-body.ts";
         "error.trash.notFound": "Trash item not found: {id}", "error.trash.conflict": "Cannot restore because a skill with the same name exists: {name}", "error.trash.invalid": "Invalid trash item path: {id}", "error.trash.projectUnavailable": "The original project is not an active workspace, so this skill cannot be restored: {path}", "error.trash.rollbackFailed": "Move-to-trash rollback failed; unrecovered content was kept at: {path} ({error})",
         "error.state.invalid": "The manager state file could not be read, so overwriting it was refused: {path}",
         "error.create.descriptionRequired": "Skill description is required", "error.create.bodyRequired": "Skill body is required", "error.create.tooLarge": "Skill content is too large", "error.create.conflict": "A skill with the same name already exists: {name}",
-        "error.proto.forbidden": "Forbidden mutation request (missing client marker)", "error.proto.forbiddenHost": "Forbidden request origin (invalid host)", "error.proto.contentType": "Content type must be application/json", "error.proto.method": "Method not allowed", "error.proto.unknownAction": "Unknown action", "error.proto.bodyTooLarge": "Request body too large", "error.proto.invalidJson": "Invalid JSON request body", "error.proto.nonJson": "Server returned a non-JSON response (HTTP {status})",
+        "error.proto.forbidden": "Only the Host owner can manage skills", "error.proto.bodyTooLarge": "Request body too large",
         "error.catalog.query": "The search query is invalid.", "error.catalog.upstream": "The catalog service is temporarily unavailable.", "error.catalog.response": "The catalog response is invalid or too large.", "error.catalog.identity": "The catalog skill identifier is invalid.",
         "diagnostic.frontmatter.missing": "Missing complete YAML frontmatter", "diagnostic.name.missing": "Frontmatter is missing name", "diagnostic.name.invalid": "This skill name cannot be loaded: {name}. Use lowercase English letters, digits and hyphens for name in SKILL.md; the directory name may remain unchanged.", "diagnostic.description.missing": "Frontmatter is missing description", "diagnostic.invocation.invalid": "Invocation policy value is invalid", "diagnostic.shadowed": "Shadowed by higher-priority source {root}",
         "action.enable": "enable", "action.disable": "disable", "action.create": "create", "action.delete": "delete", "action.restore": "restore", "action.toggle": "enabling or disabling",
@@ -368,7 +368,7 @@ function createSkillsPage(localeService: ClientContext["locale"]) {
       var t = props.t;
       const sessionApi = react.useMemo(() => props.apiForSession(props.sessionId), [props.apiForSession, props.sessionId]);
       const callApi = props.api;
-      const useRepositoryUI = react.useMemo(() => createRepositoryUI({ react, Modal, Input, Button: PrimitiveButton, SourceSelect, destination: destinationKit, api: callApi, translateError, getLocale: hostLocale }), [callApi]);
+      const useRepositoryUI = react.useMemo(() => createRepositoryUI({ react, Modal, SourceSelect, destination: destinationKit, api: callApi, translateError, getLocale: hostLocale }), [callApi]);
       var ss = react.useState<{loading: boolean; error: string | null; data: ManagerSnapshot | null}>({ loading: true, error: null, data: null }), snapshot = ss[0], setSnapshot = ss[1];
       var bs = react.useState(false), busy = bs[0], setBusy = bs[1];
       var scope = props.scope;
