@@ -72,11 +72,11 @@ export function apply(ctx: Context, config: Config): void {
         knowledgeBaseIds: ids, restrictToKnowledgeBaseRefs: true, limit,
       }, exec.signal)
       const hits = knowledgeHits(result)
-      if (ids.length > 0 && hits.some(hit => !ids.includes(hit.knowledgeBaseId))) throw new Error('Knowledge result is outside the selected task scope')
+      if (hits.some(hit => !ids.includes(hit.knowledgeBaseId))) throw new Error('Knowledge result is outside the selected task scope')
       return { hits }
     },
   })), 'product-knowledge.search')
-  if (ids.length > 0) ctx.effect(() => ctx.tools.register(defineTool({
+  ctx.effect(() => ctx.tools.register(defineTool({
     name: 'knowledge_read',
     description: 'Read a cited knowledge fragment from the current task selection. Permission and indexing state are checked again.',
     parameters: { sourceId: { type: 'string', required: true, description: 'Exact source ID returned by knowledge_search.' } },

@@ -1,0 +1,13 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`retains blocked Agents while a replacement records literal capability identities 1`] = `
+[
+  {
+    "text": "You are an AI agent powered by DeepSeek Harness.
+
+Task capability snapshot:
+{"basePresetId":"{{project}}","knowledgeBaseIds":["pinned","{{project}}","{{unknown}}","{{{value}}}","{{","中文 🧩"]}",
+    "type": "text",
+  },
+]
+`;
