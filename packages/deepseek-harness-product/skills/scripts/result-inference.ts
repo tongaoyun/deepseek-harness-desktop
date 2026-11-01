@@ -5,7 +5,6 @@ type RepositoryManager = ReturnType<typeof import('../src/repositories.ts').crea
 type RepositoryResult<K extends keyof RepositoryManager> = Completed<Awaited<ReturnType<RepositoryManager[K]>>>
 export interface SkillManagerResults {
   readState: CoreResult<'state'>
-  browse: CoreResult<'browseDirectories'>
   readDetail: CoreResult<'skillDetail'>
   exportSkill: CoreResult<'exportSkill'>
   readWorkspace: CoreResult<'workspaceSkills'>

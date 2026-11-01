@@ -1,7 +1,6 @@
 /** Generated from owning operation results by scripts/generate-remote.ts. Do not edit. */
 export interface SkillManagerResults {
   readState: { roots: import("../types.ts").RootView[]; writeDestinations: import("../types.ts").RepositoryDestination[]; projects: { root?: string | undefined; name?: string | undefined; workspaceCwds?: string[] | undefined; }[]; summary: { total: number; enabled: number; disabled: number; issues: number; }; trash: import("../types.ts").TrashMetadata[]; warnings: import("../types.ts").Diagnostic[]; };
-  browse: { path: string; home: string; crumbs: { name: string; path: string; hidden: boolean; }[]; entries: { name: string; path: string; hidden: boolean; }[]; truncated: boolean; ok?: undefined; error?: undefined; code?: undefined; params?: undefined; };
   readDetail: { root: string; name: string; declaredName: string; description: string; path: string; kind: string; body: string; document: string; frontmatter: { [k: string]: string; } | null; diagnostics: ({ level: string; code: string; params?: undefined; } | { level: string; code: string; params: { name: string; }; })[]; loadable: boolean; sourceReadOnly: boolean; ok?: undefined; error?: undefined; code?: undefined; params?: undefined; };
   exportSkill: { resourceKey: string; files: Record<string, string>; };
   readWorkspace: { project: { root: string; name: string; workspaceCwds: string[]; }; roots: import("../types.ts").RootView[]; warnings: import("../types.ts").Diagnostic[]; };
