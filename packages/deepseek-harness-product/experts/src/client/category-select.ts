@@ -1,5 +1,5 @@
 import React from 'react'
-import { Menu, Button, type MenuEntry } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Menu, Button, IconChevronDownOutlineRegular, type MenuEntry } from '@deepseek-ai/dsh-client-ui-primitives'
 
 /** 设置筛选和专家编辑共用的分类选择选项。 */
 export interface CategoryOption {
@@ -7,12 +7,7 @@ export interface CategoryOption {
   readonly label: string
 }
 
-/**
- * 宿主官方原语 Menu 规范封装的分类选择器。
- * 1. 触发器：采用官方 Button variant="outline" size="sm"，右侧带向下小箭头；
- * 2. 浮层菜单：直接调用宿主原生 <Menu> 组件（portal 浮层、半透明毛玻璃、发丝线、对勾多选/单选）；
- * 3. 彻底告别 Ant Design Select 及其虚拟列表和多余自绘逻辑。
- */
+/** 分类选择使用原生按钮、菜单和图标，保留当前选择与禁用状态。 */
 export function CategorySelect(props: {
   readonly id: string
   readonly value: string
@@ -59,18 +54,10 @@ export function CategorySelect(props: {
         },
       },
       React.createElement('span', { className: 'aag-select-label' }, currentText),
-      React.createElement('svg', {
+      React.createElement(IconChevronDownOutlineRegular, {
         className: 'aag-native-select-arrow',
-        viewBox: '0 0 16 16',
-        width: 12,
-        height: 12,
-        fill: 'none',
-        stroke: 'currentColor',
-        strokeWidth: 1.8,
-        strokeLinecap: 'round',
-        strokeLinejoin: 'round',
-        style: { flex: 'none', marginLeft: 4, transition: 'transform 150ms ease', transform: open ? 'rotate(180deg)' : 'none' },
-      }, React.createElement('path', { d: 'm4 6 4 4 4-4' }))),
+        size: 12,
+      })),
       items,
     })
   )
