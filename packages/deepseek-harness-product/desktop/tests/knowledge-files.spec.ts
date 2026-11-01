@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, readdir, rm, stat, symlink, writeFile } from 'node:fs/promises'
+import { mkdtemp, open, readFile, readdir, rm, stat, symlink, truncate, writeFile, type FileHandle } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
 import { expect, it, onTestFinished, vi } from 'vitest'
@@ -90,6 +90,52 @@ it('streams original bytes into private storage and returns bounded structured-c
   expect(await readdir(join(h.directory, 'private'))).toEqual([])
 })
 
+it.each(['knowledge.documents.preview.read', 'runtime.knowledge.preview.readChunk'] as const)(
+  'assembles partial disk reads into a complete chunk through %s', async (method) => {
+    const data = Buffer.from('Original content')
+    const h = await fixture(data)
+    const opened = await h.invoke('knowledge.documents.preview.open', identity) as KnowledgeFileTransfer
+    const read = await partialReads(h.directory)
+    const chunk = await h.invoke(method, { transferId: opened.transferId, offset: 3 })
+    expect(chunk).toEqual(method === 'knowledge.documents.preview.read'
+      ? { offset: 3, eof: true, data: new Uint8Array(data.subarray(3)) }
+      : { offset: 3, eof: true, dataBase64: data.subarray(3).toString('base64') })
+    expect(read.mock.calls.length).toBeGreaterThan(1)
+    const reads = read.mock.calls.length
+    await expect(h.invoke(method, { transferId: opened.transferId, offset: data.length })).resolves.toMatchObject({ eof: true })
+    expect(read).toHaveBeenCalledTimes(reads)
+  },
+)
+
+it('stops reading and removes private bytes when cancellation arrives between partial reads', async () => {
+  const h = await fixture(Buffer.from('Original content'))
+  const opened = await h.invoke('knowledge.documents.preview.open', identity) as KnowledgeFileTransfer
+  const controller = new AbortController()
+  const reason = new Error('Preview cancelled')
+  const read = await partialReads(h.directory, () => { controller.abort(reason) })
+  await expect(h.invoke('knowledge.documents.preview.read', { transferId: opened.transferId, offset: 0 }, controller.signal))
+    .rejects.toBe(reason)
+  expect(read).toHaveBeenCalledOnce()
+  expect(await readdir(join(h.directory, 'private'))).toEqual([])
+})
+
+it.each(['original', 'rendered'] as const)('rejects a truncated %s file and releases its private transfer', async (kind) => {
+  const h = await fixture(Buffer.from('Original content'))
+  if (kind === 'rendered') h.filename('original.docx')
+  const opened = await h.invoke(kind === 'original' ? 'knowledge.documents.preview.open' : 'runtime.knowledge.preview.write.open', identity) as KnowledgeFileTransfer
+  if (kind === 'rendered') {
+    await h.invoke('runtime.knowledge.preview.write.append', { transferId: opened.transferId, offset: 0, dataBase64: Buffer.from('%PDF-1.7').toString('base64') })
+  }
+  const privateDirectory = join(h.directory, 'private')
+  const [directory] = await readdir(privateDirectory)
+  await truncate(join(privateDirectory, directory!, opened.fileName), 2)
+  const read = await partialReads(h.directory)
+  await expect(h.invoke(kind === 'original' ? 'knowledge.documents.preview.read' : 'runtime.knowledge.preview.write.commit', { transferId: opened.transferId, ...kind === 'original' ? { offset: 0 } : {} }))
+    .rejects.toMatchObject({ code: 'KNOWLEDGE_PREVIEW_FAILED', retryable: true })
+  expect(read).toHaveBeenCalledTimes(2)
+  expect(await readdir(privateDirectory)).toEqual([])
+})
+
 it.each(['permission', 'version', 'employee'] as const)('destroys prior bytes when %s changes', async (change) => {
   const h = await fixture()
   const opened = await h.invoke('knowledge.documents.preview.open', identity) as KnowledgeFileTransfer
@@ -176,6 +222,26 @@ it('accepts only sequential bounded conversion chunks and verifies the PDF befor
   expect(completed).toMatchObject({ byteLength: pdf.length, mediaType: 'application/pdf', missingFonts: ['Example'] })
   const chunk = await h.invoke('runtime.knowledge.preview.readChunk', { transferId: transfer.transferId, offset: 0 })
   expect(chunk).toEqual({ offset: 0, eof: true, dataBase64: pdf.toString('base64') })
+})
+
+it('checks the complete PDF signature when disk reads return only part of it', async () => {
+  const h = await fixture(new Uint8Array(4)); h.filename('original.docx')
+  const transfer = await h.invoke('runtime.knowledge.preview.write.open', identity) as KnowledgeFileTransfer
+  const pdf = Buffer.from('%PDF-1.7\noriginal\n%%EOF\n')
+  await h.invoke('runtime.knowledge.preview.write.append', { transferId: transfer.transferId, offset: 0, dataBase64: pdf.toString('base64') })
+  const read = await partialReads(h.directory)
+  await expect(h.invoke('runtime.knowledge.preview.write.commit', { transferId: transfer.transferId }))
+    .resolves.toMatchObject({ byteLength: pdf.length, mediaType: 'application/pdf' })
+  expect(read).toHaveBeenCalledTimes(3)
+})
+
+it('rejects a converted file shorter than the PDF signature', async () => {
+  const h = await fixture(new Uint8Array(4)); h.filename('original.docx')
+  const transfer = await h.invoke('runtime.knowledge.preview.write.open', identity) as KnowledgeFileTransfer
+  await h.invoke('runtime.knowledge.preview.write.append', { transferId: transfer.transferId, offset: 0, dataBase64: Buffer.from('%PDF').toString('base64') })
+  await expect(h.invoke('runtime.knowledge.preview.write.commit', { transferId: transfer.transferId }))
+    .rejects.toMatchObject({ code: 'KNOWLEDGE_PREVIEW_INVALID' })
+  expect(await readdir(join(h.directory, 'private'))).toEqual([])
 })
 
 it('opens only the completed rendered transfer belonging to the requested original', async () => {
@@ -339,3 +405,23 @@ it('rejects path and owner claims before fetching any file', async () => {
     .rejects.toMatchObject({ code: 'KNOWLEDGE_REQUEST_INVALID' })
   expect(h.calls).toEqual([])
 })
+
+async function partialReads(directory: string, afterRead?: () => void) {
+  const probe = await open(join(directory, 'read-probe'), 'wx+', 0o600)
+  onTestFinished(() => probe.close())
+  const prototype = Object.getPrototypeOf(probe) as FileHandle
+  const originalRead = Object.getOwnPropertyDescriptor(prototype, 'read')!.value as FileHandle['read']
+  await probe.close()
+  const read = vi.spyOn(prototype, 'read').mockImplementation(async function (this: FileHandle, ...args: Parameters<FileHandle['read']>) {
+    const parameters: readonly unknown[] = args
+    const [buffer, offset, length, position] = parameters
+    if (!Buffer.isBuffer(buffer) || typeof offset !== 'number' || typeof length !== 'number' || typeof position !== 'number') {
+      throw new Error('Expected a positioned buffer read')
+    }
+    const result = await originalRead.call(this, { buffer, offset, length: Math.min(length, 2), position })
+    afterRead?.()
+    return result
+  })
+  onTestFinished(() => { read.mockRestore() })
+  return read
+}
