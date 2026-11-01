@@ -90,4 +90,6 @@ export const PLUGIN_UI_CSS = `
 .aag-host-modal.aag-editor-modal,.aag-host-modal.agt-editor-modal,.aag-host-modal.agt-picker,.aag-host-modal.agt-detail{width:min(760px,100%)!important;max-height:100%!important}
 .aag-menu-select-trigger{display:inline-flex!important;align-items:center;justify-content:space-between;gap:6px;width:auto!important;max-width:100%;min-width:0!important;height:32px!important;padding:0 10px;border:0.5px solid var(--dsw-alias-border-l2);border-radius:var(--dsw-radius-sm,8px);background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-primary);box-sizing:border-box;font:inherit;font-size:13px;cursor:pointer}
 .aag-select-label{flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px;font-weight:normal;text-align:left}
+.aag-native-select-arrow{flex:none;margin-left:4px;transition:transform 150ms ease}
+.aag-menu-select-trigger[aria-expanded=true] .aag-native-select-arrow{transform:rotate(180deg)}
 `

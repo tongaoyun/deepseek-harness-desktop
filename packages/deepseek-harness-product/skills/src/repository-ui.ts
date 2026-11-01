@@ -1,4 +1,4 @@
-import { Input, Button as PrimitiveButton, StateDot } from '@deepseek-ai/dsh-client-ui-primitives';
+import { Input, Button as PrimitiveButton, StateDot, IconChevronDownOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives';
 import type * as React from 'react';
 import { TextArea } from './plugin-ui.ts';
 import type { SkillApi, SkillMethod, SkillInput, SkillOutput, Translate, ModalProps, SourceSelectProps } from './client-types.ts';
@@ -125,9 +125,6 @@ function pathIdentity(path: string) {
 export function createRepositoryUI({ react, Modal, SourceSelect, destination, api, translateError, getLocale }: Dependencies) {
   const h = react.createElement;
   const readLoading = (label: string) => h("div", { role: "status", "aria-label": label, className: "dssm-read-loading" }, h(StateDot, { state: "ongoing", size: 14 }));
-  function foldChevron(open: boolean) {
-    return h("svg", { className: "dssm-fold-chevron" + (open ? " is-open" : ""), viewBox: "0 0 16 16", width: 12, height: 12, fill: "none", stroke: "currentColor", strokeWidth: 1.5, "aria-hidden": true }, h("path", { d: "M4 6l4 4 4-4", strokeLinecap: "round", strokeLinejoin: "round" }));
-  }
   const { DestinationPicker, defaultDestination, destinationPayload, destinationReady } = destination;
   return function useRepositoryUI({ active, t, onInstalled }: {active: boolean; t: Translate; onInstalled?: () => unknown}) {
     const [repos, setRepos] = react.useState<RepoView[]>([]);
@@ -752,7 +749,7 @@ export function createRepositoryUI({ react, Modal, SourceSelect, destination, ap
       return h("div", { key: repo.id },
         h("section", { className: "dssm-source" },
           h("div", { className: "dssm-source-head" },
-            h("button", { type: "button", className: "dssm-source-toggle", "aria-expanded": open, onClick: () => setExpanded(previous => ({ ...previous, [repo.id]: !open })) }, foldChevron(open), h("div", { className: "dssm-source-label" },
+            h("button", { type: "button", className: "dssm-source-toggle", "aria-expanded": open, onClick: () => setExpanded(previous => ({ ...previous, [repo.id]: !open })) }, h(IconChevronDownOutlineRegular, { size: 12, className: "dssm-fold-chevron" + (open ? " is-open" : "") }), h("div", { className: "dssm-source-label" },
               h("span", { className: "dssm-source-brand", title: "GitHub Repository" },
                 h("svg", { viewBox: "0 0 16 16", width: 16, height: 16, fill: "currentColor" },
                   h("path", { d: "M8 0a8 8 0 0 0-2.53 15.59c.4.074.547-.173.547-.385 0-.19-.007-.693-.01-1.36-2.226.484-2.695-1.073-2.695-1.073-.364-.924-.89-1.17-.89-1.17-.726-.496.055-.486.055-.486.803.056 1.225.824 1.225.824.714 1.223 1.872.87 2.328.665.072-.517.28-.87.508-1.07-1.777-.202-3.645-.888-3.645-3.956 0-.874.31-1.588.823-2.148-.083-.202-.357-1.017.078-2.12 0 0 .672-.215 2.2.82A7.65 7.65 0 0 1 8 4.8c.68.003 1.365.092 2.004.27 1.527-1.035 2.197-.82 2.197-.82.437 1.103.162 1.918.08 2.12.513.56.822 1.274.822 2.148 0 3.076-1.872 3.752-3.654 3.95.288.248.544.735.544 1.482 0 1.07-.01 1.932-.01 2.195 0 .214.144.463.55.384A8.001 8.001 0 0 0 8 0Z" })

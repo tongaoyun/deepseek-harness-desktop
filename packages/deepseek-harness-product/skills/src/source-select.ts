@@ -1,13 +1,8 @@
 import type * as React from "react";
 import type { SourceSelectProps } from "./client-types.ts";
-import { Menu, Button, type MenuEntry } from "@deepseek-ai/dsh-client-ui-primitives";
+import { Menu, Button, IconChevronDownOutlineRegular, type MenuEntry } from "@deepseek-ai/dsh-client-ui-primitives";
 
-/**
- * 宿主官方原语 Menu 规范封装的筛选与操作菜单。
- * 1. 筛选下拉：触发器采用宿主 Button (variant="outline", size="sm")，右侧配旋转小箭头，弹出层为宿主原生 <Menu>；
- * 2. 更多操作：触发器为小号图标按钮，弹出层同样对齐宿主原生 <Menu>；
- * 3. 彻底摆脱 Ant Design Select 及其内部虚拟列表的白底与白边限制。
- */
+/** 筛选与操作菜单使用原生按钮、菜单和图标，保留当前选择与禁用状态。 */
 export function createSourceSelect(react: typeof React) {
   const h = react.createElement;
   return function SourceSelect(props: SourceSelectProps) {
@@ -81,18 +76,10 @@ export function createSourceSelect(react: typeof React) {
           onClick: function () { if (!props.disabled) setOpen(prev => !prev); },
         },
           h("span", { className: "dssm-menu-select-label" }, currentText),
-          h("svg", {
+          h(IconChevronDownOutlineRegular, {
             className: "dssm-menu-select-arrow",
-            viewBox: "0 0 16 16",
-            width: 12,
-            height: 12,
-            fill: "none",
-            stroke: "currentColor",
-            strokeWidth: 1.8,
-            strokeLinecap: "round",
-            strokeLinejoin: "round",
-            style: { marginLeft: 4, transition: "transform 150ms ease", transform: open ? "rotate(180deg)" : "none" },
-          }, h("path", { d: "m4 6 4 4 4-4" }))
+            size: 12,
+          })
         ),
         items: items,
       })
