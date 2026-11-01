@@ -3,11 +3,11 @@ export function createActivationProbe() {
   type Event = { agent: {
     id: string
     ctx: {
-      systemPrompt: { section(value: { text: string }): void; getSectionOrder(name: string): number }
+      systemPrompt: { section(value: { text: string; interpolate?: boolean }): void; getSectionOrder(name: string): number }
       tools: { restrict(value: { deny: string[] }): void }
     } } }
   const listeners = new Set<(event: Event) => void>()
-  const sections: { text: string }[] = []
+  const sections: { text: string; interpolate?: boolean }[] = []
   const restrictions: { deny: string[] }[] = []
   return {
     sections, restrictions,
@@ -17,7 +17,7 @@ export function createActivationProbe() {
     },
     create(spec: { childId: string }) {
       const event = { agent: { id: spec.childId, ctx: { systemPrompt: {
-        section(value: { text: string }) { sections.push(value) }, getSectionOrder() { return 0 },
+        section(value: { text: string; interpolate?: boolean }) { sections.push(value) }, getSectionOrder() { return 0 },
       }, tools: { restrict(value: { deny: string[] }) { restrictions.push(value) } } } } }
       for (const listener of listeners) listener(event)
     },

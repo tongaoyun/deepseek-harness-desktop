@@ -1,0 +1,20 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`preserves literal persona bytes for a summoned expert 1`] = `
+[
+  "Keep {{project}} and {{unknown}} literally.
+Template: {{{value}}}; incomplete: {{.
+中文与 emoji 🧩。",
+]
+`;
+
+exports[`preserves literal persona bytes for a summoned team 1`] = `
+[
+  "Keep {{project}} and {{unknown}} literally.
+Template: {{{value}}}; incomplete: {{.
+中文与 emoji 🧩。",
+  "Keep {{project}} and {{unknown}} literally.
+Template: {{{value}}}; incomplete: {{.
+中文与 emoji 🧩。",
+]
+`;

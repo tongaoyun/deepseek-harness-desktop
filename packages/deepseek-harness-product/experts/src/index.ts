@@ -22,10 +22,8 @@ import { executeTeam, TEAM_TASK_MAX_CHARS, type TeamMemberRun } from './team-run
  * A summoned expert does NOT replace the parent's persona: the child gets a scoped `deployment:persona-prefix` (and a tool denylist) on
  * `agent/created` after `startActivation`.
  *
- * Strict `{{...}}` interpolation runs over every system-prompt section, so any
- * complete brace group inside expert prose would throw at assembly. A
- * zero-width space is inserted between the opening braces so the text stays
- * visually identical while the interpolator no longer sees a `{{`.
+ * Expert personas use native literal prompt sections, preserving template examples
+ * without interpreting them as Harness variables.
  *
  * @module @deepseek-harness/product-experts
  */
@@ -254,15 +252,6 @@ const FRONTMATTER_READ_CHUNK_BYTES = 1_024
 // Company publishing accepts entry documents up to 128 KiB, including metadata.
 const FRONTMATTER_MAX_BYTES = 128 * 1_024
 
-/** Neutralize strict `{{...}}` template interpolation inside expert prose.
- * @param text - 原始文本。
- * @returns 可安全进入原生模板插值的文本。
- */
-export function sanitize(text: string): string {
-  // 逐个匹配「后面紧跟 {」的 {，避免三连花括号 '{{{' 残留 '{{'
-  return text.replace(/\{(?=\{)/g, '{\u200B')
-}
-
 /** 去除 UTF-8 BOM，避免 `^---` 因文件头部的零宽字符失配。
  * @param text - 原始文本。
  * @returns 移除文件头 BOM 的文本。
@@ -363,32 +352,6 @@ async function readPersonaFile(filePath: string, locale: LocaleId = 'zh'): Promi
     throw new Error(teamText(locale, '专家提示词格式无效。'))
   }
   return { prompt: parsed.body }
-}
-
-/** 按界面语言读取 persona；没有中文目录或中文译文时回退主目录正文。
- * @param root - 受控专家目录。
- * @param chineseRoot - 可选中文说明目录。
- * @param slug - 稳定专家标识。
- * @param division - 专家所属分类。
- * @param locale - 当前界面语言。
- * @param divisions - 允许读取的分类。
- * @returns 当前语言对应的专家正文。
- */
-export async function readLocalizedExpertPrompt(
-  root: string,
-  chineseRoot: string | undefined,
-  slug: string,
-  division: string,
-  locale: LocaleId,
-  divisions: readonly string[] = DEFAULT_DIVISIONS,
-): Promise<{ prompt: string }> {
-  if (locale === 'en' || chineseRoot === undefined) return readExpertPrompt(root, slug, division, divisions, locale)
-  try {
-    return await readExpertPrompt(chineseRoot, slug, division, divisions)
-  } catch (error: unknown) {
-    if (!(error instanceof PersonaError) || error.code !== 'PERSONA_NOT_FOUND') throw error
-    return readExpertPrompt(root, slug, division, divisions)
-  }
 }
 
 /** 会话固定版本的专家说明读取接口。 */
@@ -786,6 +749,7 @@ export function apply(ctx: Context, config: Config): void {
         name: PERSONA_PREFIX_SECTION,
         order: childCtx.systemPrompt.getSectionOrder('DEPLOYMENT_PERSONA_PREFIX'),
         text: persona,
+        interpolate: false,
       })
       childCtx.tools.restrict(toolFilter)
       return undefined
@@ -823,7 +787,7 @@ export function apply(ctx: Context, config: Config): void {
       label: localizedExpertName(expert, locale),
       prompt: [{ type: 'text', text: taskText }],
       parent: exec.agent,
-      persona: sanitize(persona),
+      persona,
       toolFilter: { deny: ['summon_expert', 'summon_experts', 'list_experts', 'list_expert_teams', 'get_expert_team', 'summon_expert_team'] },
       ...(maxDepth === undefined ? {} : { maxDepth }),
       signal: exec.signal,
@@ -948,7 +912,7 @@ ctx.tools.register(localizeTeamTool(defineTool({ name: 'summon_expert_team', des
             run: async (member: TeamMemberRun) => {
                 exec.signal?.throwIfAborted();
                 const run = await startSubagentRun(config.provider, { label: member.name, parent: exec.agent!,
-                    prompt: [{ type: 'text', text: member.prompt }], persona: sanitize(member.persona),
+                    prompt: [{ type: 'text', text: member.prompt }], persona: member.persona,
                     toolFilter: { deny: ['summon_expert', 'summon_experts', 'list_experts', 'list_expert_teams', 'get_expert_team', 'summon_expert_team'] },
                     ...(maxDepth === undefined ? {} : { maxDepth }), signal: exec.signal });
                 const value = await awaitSubagentRun(run, exec.signal);
