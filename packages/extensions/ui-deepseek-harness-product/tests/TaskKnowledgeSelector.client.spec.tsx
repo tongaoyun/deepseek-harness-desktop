@@ -29,15 +29,26 @@ function fixture() {
   return { ...props, open: () => { act(() => { open?.() }) } }
 }
 
-it('retries a temporary task failure without removing its knowledge', async () => {
+it('waits for the catalog before retrying a temporary task failure without removing its knowledge', async () => {
   const f = fixture()
+  const catalog = Promise.withResolvers<Awaited<ReturnType<typeof f.readKnowledgeCatalog>>>()
+  const value = items([{ id: 'policy', name: '业务规范', referenceKey: 'company:policy' }])
+  f.readKnowledgeCatalog.mockReturnValue(catalog.promise)
   render(<TaskKnowledgeSelector {...f} capabilities={{ ...f.capabilities,
     unavailable: { code: 'CONNECTOR_DISCOVERY_FAILED', message: 'offline', retryable: true, resources: [] } }} />)
-  f.open()
-  fireEvent.click(await screen.findByRole('button', { name: zh.retry }))
-  await waitFor(() => { expect(f.retryCapabilities).toHaveBeenCalledExactlyOnceWith(undefined) })
-  expect(f.recoverCapabilities).not.toHaveBeenCalled()
-  expect(f.setKnowledgeSelection).not.toHaveBeenCalled()
+  try {
+    f.open()
+    const retry = await screen.findByRole('button', { name: zh.retry })
+    expect(retry.hasAttribute('disabled')).toBe(true)
+    fireEvent.click(retry)
+    expect(f.retryCapabilities).not.toHaveBeenCalled()
+    await act(async () => { catalog.resolve(value) })
+    await waitFor(() => { expect(retry.hasAttribute('disabled')).toBe(false) })
+    fireEvent.click(retry)
+    await waitFor(() => { expect(f.retryCapabilities).toHaveBeenCalledExactlyOnceWith(undefined) })
+    expect(f.recoverCapabilities).not.toHaveBeenCalled()
+    expect(f.setKnowledgeSelection).not.toHaveBeenCalled()
+  } finally { await act(async () => { catalog.resolve(value) }) }
 })
 
 it('retains an Add-menu request while task capabilities load', async () => {

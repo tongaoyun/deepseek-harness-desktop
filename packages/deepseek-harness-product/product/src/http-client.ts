@@ -1,4 +1,5 @@
 /** Minimal COLA API client. Business rules stay on deepseek-harness-server. */
+import { addAbortListener } from 'node:events'
 import { ProductError, isProductFailure, type ProductFailure } from './errors.ts'
 
 /** Minimal COLA envelope returned by DeepSeekHarness server APIs. */
@@ -195,6 +196,7 @@ export class DeepSeekHarnessApiClient {
       throw new ProductError('PRODUCT_NETWORK_UNAVAILABLE',
         'Unable to reach the product service. The request outcome is unknown.', true, [], { cause })
     }
+    if (response.body === null) throw new DeepSeekHarnessApiError(502, 'INVALID_SERVER_RESPONSE', 'Original file body is missing')
     if (!response.ok) {
       const data = await readBoundedBody(response, 64 * 1024, lifetime)
       let body: unknown
@@ -203,7 +205,7 @@ export class DeepSeekHarnessApiClient {
       if (!isEnvelope(body)) throw invalidResponse()
       throw serverError(response.status, body)
     }
-    const byteLength = await streamBody(response, maxBytes, lifetime, write,
+    const byteLength = await streamResponseBody(response, maxBytes, lifetime, write,
       new ProductError('KNOWLEDGE_PREVIEW_TOO_LARGE', 'Original file exceeds the file size limit', false))
     return { mediaType: response.headers.get('content-type') ?? 'application/octet-stream', byteLength }
   }
@@ -314,7 +316,7 @@ function serverError(status: number, body: ColaResponse<unknown>): DeepSeekHarne
 
 async function readBoundedBody(response: Response, maxBytes: number, signal: AbortSignal): Promise<Uint8Array> {
   const chunks: Uint8Array[] = []
-  const length = await streamBody(response, maxBytes, signal, async (chunk) => { chunks.push(chunk) },
+  const length = await streamResponseBody(response, maxBytes, signal, async (chunk) => { chunks.push(chunk) },
     new ProductError('KNOWLEDGE_PREVIEW_TOO_LARGE', 'Original file exceeds the preview size limit', false))
   const data = new Uint8Array(length)
   let offset = 0
@@ -322,23 +324,30 @@ async function readBoundedBody(response: Response, maxBytes: number, signal: Abo
   return data
 }
 
-/** Bound successful files and error bodies through one reader; transport cleanup cannot replace the outcome. */
-async function streamBody(response: Response, maxBytes: number, signal: AbortSignal,
+/** Stream a complete bounded HTTP body; cancellation cannot be blocked by other signal listeners.
+ * @param response - Response whose unlocked body belongs to this operation; a missing body is empty.
+ * @param maxBytes - Maximum complete body size, including multibyte content.
+ * @param signal - Request lifetime; cancellation stops outstanding reads.
+ * @param write - Sequential sink; each write settles before the reader is released.
+ * @param sizeError - Owning operation's failure for declared or observed overflow.
+ * @returns Complete byte count; failure releases the reader without waiting for transport cleanup.
+ */
+export async function streamResponseBody(response: Response, maxBytes: number, signal: AbortSignal,
   write: (chunk: Uint8Array) => Promise<void>, sizeError: Error): Promise<number> {
-  const reader = response.body?.getReader()
-  if (reader === undefined) throw new DeepSeekHarnessApiError(502, 'INVALID_SERVER_RESPONSE', 'Original file body is missing')
+  let reader: ReadableStreamDefaultReader<Uint8Array> | undefined
+  let complete = false
   const cancel = (): void => {
-    void reader.cancel(signal.reason).catch(() => {
-      // A stalled or failed transport cleanup must not hold the caller's failure or its reader lock.
+    void reader?.cancel(signal.reason).catch(() => {
+      // Transport cleanup must not replace the read or sink failure or delay releasing the lock.
     })
   }
-  signal.addEventListener('abort', cancel, { once: true })
-  let complete = false
-  let length = 0
   try {
     signal.throwIfAborted()
-    const declared = response.headers.get('content-length')
-    if (declared !== null && /^\d+$/u.test(declared) && Number(declared) > maxBytes) throw sizeError
+    if (Number(response.headers.get('content-length')) > maxBytes) throw sizeError
+    reader = response.body?.getReader()
+    if (!reader) return 0
+    using _listener = addAbortListener(signal, cancel)
+    let length = 0
     for (;;) {
       const { done, value } = await reader.read()
       signal.throwIfAborted()
@@ -351,8 +360,13 @@ async function streamBody(response: Response, maxBytes: number, signal: AbortSig
     complete = true
     return length
   } finally {
-    signal.removeEventListener('abort', cancel)
-    if (!complete) cancel()
-    reader.releaseLock()
+    if (reader) {
+      if (!complete) cancel()
+      reader.releaseLock()
+    } else {
+      void response.body?.cancel().catch(() => {
+        // No reader was acquired; preserve cancellation or the declared-size failure.
+      })
+    }
   }
 }

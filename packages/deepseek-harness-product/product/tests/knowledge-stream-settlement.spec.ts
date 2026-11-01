@@ -1,13 +1,19 @@
 import { expect, it, vi } from 'vitest'
 import { DeepSeekHarnessApiClient } from '../src/http-client.ts'
 
-it.each([200, 403])('settles cancellation of a %s body before transport cleanup completes', async (status) => {
+it.each([200, 403].flatMap(status => [false, true].flatMap(blocked => ['caller', 'client'].map(owner => ({ status, blocked, owner })))))('settles a $status body cancelled by $owner (blocked: $blocked) before transport cleanup completes', async ({ status, blocked, owner }) => {
   const cleanup = Promise.withResolvers<undefined>()
   const reading = Promise.withResolvers<undefined>()
+  const body = Promise.withResolvers<ReadableStreamDefaultController<Uint8Array>>()
   const cancel = vi.fn(() => cleanup.promise)
-  const response = new Response(new ReadableStream<Uint8Array>({ pull() { reading.resolve(undefined) }, cancel }), { status })
+  const response = new Response(new ReadableStream<Uint8Array>({
+    start(stream) { body.resolve(stream) }, pull() { reading.resolve(undefined) }, cancel,
+  }), { status })
   const api = new DeepSeekHarnessApiClient({ baseUrl: 'https://product.test', getSessionToken: () => undefined,
-    fetch: async () => response })
+    fetch: async (_url, options) => {
+      if (blocked) options?.signal?.addEventListener('abort', event => event.stopImmediatePropagation(), { once: true })
+      return response
+    } })
   const controller = new AbortController()
   const reason = new Error('Preview closed')
   let settled = false
@@ -16,12 +22,19 @@ it.each([200, 403])('settles cancellation of a %s body before transport cleanup 
   try {
     await reading.promise
     await vi.waitFor(() => { expect(response.body?.locked).toBe(true) })
-    controller.abort(reason)
+    if (owner === 'caller') controller.abort(reason)
+    else api.close()
     await vi.waitFor(() => { expect(settled).toBe(true) })
-    expect(await outcome).toBe(reason)
+    if (owner === 'caller') expect(await outcome).toBe(reason)
+    else expect(await outcome).toEqual(new Error('Product client is closed'))
     expect(cancel).toHaveBeenCalledOnce()
     expect(response.body?.locked).toBe(false)
-  } finally { cleanup.resolve(undefined); api.close(); await outcome }
+  } finally {
+    (await body.promise).error(reason)
+    cleanup.resolve(undefined)
+    api.close()
+    await outcome
+  }
 })
 
 it.each([

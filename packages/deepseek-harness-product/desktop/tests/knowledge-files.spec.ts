@@ -366,29 +366,46 @@ it('aligns file policies with official defaults and validates deployment overrid
   expect(() => resolveKnowledgeFilePolicy({ unknown: 1 })).toThrow('unknown')
 })
 
-it.each(['cancel', 'unload'] as const)('cancels a still-arriving original and removes staging on %s', async (action) => {
+it.each(['cancel', 'unload'].flatMap(action => [false, true].map(blocked => ({ action, blocked }))))('cancels a still-arriving original and removes staging on $action (blocked: $blocked)', async ({ action, blocked }) => {
   const directory = await mkdtemp(join(tmpdir(), 'knowledge-files-cancel-'))
   const cancel = vi.fn()
   const started = Promise.withResolvers<undefined>()
+  const body = Promise.withResolvers<ReadableStreamDefaultController<Uint8Array>>()
   const api = new DeepSeekHarnessApiClient({ baseUrl: 'https://product.test', getSessionToken: () => 'token',
-    fetch: async url => (typeof url === 'string' ? url : url instanceof URL ? url.href : url.url).endsWith('/metadata')
-      ? Response.json({ success: true, data: { ...identity, id: identity.documentId,
-        filename: 'original.pdf', contentVersion: 'v1', sizeBytes: 8, previewMaxBytes: 1024, downloadMaxBytes: 1024 } })
-      : new Response(new ReadableStream({
-        start(controller) { controller.enqueue(new Uint8Array([1, 2])); started.resolve(undefined) }, cancel,
-      })) })
+    fetch: async (url, options) => {
+      if ((typeof url === 'string' ? url : url instanceof URL ? url.href : url.url).endsWith('/metadata')) {
+        return Response.json({ success: true, data: { ...identity, id: identity.documentId,
+          filename: 'original.pdf', contentVersion: 'v1', sizeBytes: 8, previewMaxBytes: 1024, downloadMaxBytes: 1024 } })
+      }
+      if (blocked) options?.signal?.addEventListener('abort', event => event.stopImmediatePropagation(), { once: true })
+      return new Response(new ReadableStream<Uint8Array>({
+        start(controller) { body.resolve(controller); controller.enqueue(new Uint8Array([1, 2])) },
+        pull() { started.resolve(undefined) }, cancel,
+      }))
+    } })
   const files = new KnowledgeFiles({ directory, policy: resolveKnowledgeFilePolicy(), getEmployeeId: () => employee.employeeId,
     renderOffice: async () => ({}), saveDialog: async () => undefined, openPath: async () => '' })
   onTestFinished(async () => { await files.close(); api.close(); await rm(directory, { recursive: true, force: true }) })
   const controller = new AbortController()
+  let settled = false
   const pending = files.invoke('knowledge.documents.preview.open', identity, api, employee, controller.signal)
-  const failure = expect(pending).rejects.toThrow()
-  await started.promise
-  if (action === 'cancel') controller.abort(new Error('Reader closed'))
-  else await files.close()
-  await failure
-  expect(cancel).toHaveBeenCalled()
-  expect(await readdir(directory)).toEqual([])
+    .catch((error: unknown) => error).finally(() => { settled = true })
+  let closing: Promise<void> | undefined
+  const reason = new Error('Reader closed')
+  try {
+    await started.promise
+    if (action === 'cancel') controller.abort(reason)
+    else closing = files.close()
+    await vi.waitFor(() => { expect(settled).toBe(true) })
+    expect(await pending).toBeInstanceOf(Error)
+    await closing
+    expect(cancel).toHaveBeenCalledOnce()
+    expect(await readdir(directory)).toEqual([])
+  } finally {
+    (await body.promise).error(reason)
+    await pending
+    await closing
+  }
 })
 
 it('checks the spreadsheet-specific cap before reading any original bytes', async () => {
