@@ -7,8 +7,8 @@ import { Context, Service } from '@deepseek-ai/cordis'
 import { Remote, RemoteError, TypertRemoteService, remoteErrorOf, principalOf } from '@deepseek-ai/dsh-typert-protocol'
 import { isJsonValue, type JsonValue } from '@deepseek-ai/dsh-util-values'
 import { realpath } from 'node:fs/promises'
-import type { Log, ManagerScope, ManagerTarget, ManagerImport, RootView, Diagnostic, OperationError, SkillRequest, RepositoryInput, CatalogIdentity, ManagerMarketOptions } from './types.ts'
-import { state, setSkillEnabled, setSourceEnabled, createCategory, renameCategory, deleteCategory, assignSkillCategory, moveSkillInCategory, setCategoryEnabled, importSkill, importUploadedSkill, createSkill, skillDetail, exportSkill, userRoots, projectRoots, resolveWorkspaceTarget, listWorkspaces, workspaceSkills } from './core.ts'
+import type { Log, ManagerScope, ManagerTarget, ManagerDestination, ManagerCreate, ManagerUpload, RootView, Diagnostic, OperationError, SkillRequest, RepositoryInput, CatalogIdentity, ManagerMarketOptions } from './types.ts'
+import { state, setSkillEnabled, setSourceEnabled, createCategory, renameCategory, deleteCategory, assignSkillCategory, moveSkillInCategory, setCategoryEnabled, importUploadedSkill, createSkill, skillDetail, exportSkill, userRoots, projectRoots, resolveWorkspaceTarget, listWorkspaces, workspaceSkills } from './core.ts'
 import { createRepositoryManager } from './repositories.ts'
 import { installationSourceKey } from './repository-updates.ts'
 import { listClawHub, searchClawHub } from './clawhub-catalog.ts'
@@ -145,7 +145,7 @@ export class SkillsManager extends TypertRemoteService {
     return { signal, projectCwds: activeSessionCwds(this.ctx, scope.sessionId), companySkillsRoot }
   }
 
-  private async root(scope: ManagerScope & { root?: string }, signal: AbortSignal) {
+  private async root(scope: ManagerDestination, signal: AbortSignal) {
     const options = await this.options(scope, signal)
     if (options.workspaceTarget && (scope.root === undefined || scope.root === 'dsh')) return options.workspaceTarget
     const user = options.workspaceTarget ? undefined : userRoots(options.companySkillsRoot).find(root => root.key === (scope.root ?? 'dsh'))
@@ -316,15 +316,7 @@ export class SkillsManager extends TypertRemoteService {
    * @returns The committed result or a typed operation failure.
    */
   @Remote
-  createSkill(request: ManagerImport, signal: AbortSignal): Promise<SkillManagerResults['createSkill']> { return this.perform(async active => createSkill({ name: request.name, description: request.description, body: request.body }, this.log, { root: await this.root(request, active) }), signal, { mutation: true, notify: true }) }
-
-  /** Preview or import local skill files without changing source files.
-   * @param request Explicit operation input.
-   * @param signal Native invocation lifetime.
-   * @returns The committed result or a typed operation failure.
-   */
-  @Remote
-  importSkill(request: ManagerImport, signal: AbortSignal): Promise<SkillManagerResults['importSkill']> { return this.perform(async active => importSkill(request.source ?? '', this.log, { conflict: request.conflict ?? 'skip', dryRun: request.dryRun === true, ...request.workspace !== undefined || request.root === 'agents' ? { root: await this.root(request, active) } : {} }), signal, { mutation: true, notify: request.dryRun !== true }) }
+  createSkill(request: ManagerCreate, signal: AbortSignal): Promise<SkillManagerResults['createSkill']> { return this.perform(async active => createSkill({ name: request.name, description: request.description, body: request.body }, this.log, { root: await this.root(request, active) }), signal, { mutation: true, notify: true }) }
 
   /** Import a bounded file or ZIP upload.
    * @param request Explicit operation input.
@@ -332,7 +324,7 @@ export class SkillsManager extends TypertRemoteService {
    * @returns The committed result or a typed operation failure.
    */
   @Remote
-  uploadSkill(request: ManagerImport, signal: AbortSignal): Promise<SkillManagerResults['uploadSkill']> { return this.perform(async (active) => {
+  uploadSkill(request: ManagerUpload, signal: AbortSignal): Promise<SkillManagerResults['uploadSkill']> { return this.perform(async (active) => {
     if (Buffer.byteLength(JSON.stringify(request)) > (88 << 20)) throw new RemoteError('skills/operation', 'body too large', { error: 'body too large', code: 'error.proto.bodyTooLarge' })
     return importUploadedSkill({ name: request.name, entries: request.entries, zip: request.zip }, this.log, { conflict: request.conflict ?? 'skip', ...request.workspace !== undefined || request.root === 'agents' ? { root: await this.root(request, active) } : {} }) }, signal, { mutation: true, notify: true }) }
 
@@ -455,7 +447,7 @@ export class SkillsManager extends TypertRemoteService {
    * @returns Installed skill identity and source.
    */
   @Remote
-  installCatalog(target: CatalogIdentity, destination: ManagerImport, signal: AbortSignal): Promise<SkillManagerResults['installCatalog']> {
+  installCatalog(target: CatalogIdentity, destination: ManagerDestination, signal: AbortSignal): Promise<SkillManagerResults['installCatalog']> {
     return this.perform(async (active) => {
       if (destination.root !== undefined && destination.root !== 'dsh' && destination.root !== 'agents') throw new RemoteError('skills/operation', '技能安装位置无效', { code: 'error.repo.invalid', error: '技能安装位置无效' })
       if (destination.workspace !== undefined && destination.root !== undefined && destination.root !== 'dsh') throw new RemoteError('skills/operation', '工作区只能安装到项目 DSH skills', { code: 'error.repo.invalid', error: '工作区只能安装到项目 DSH skills' })

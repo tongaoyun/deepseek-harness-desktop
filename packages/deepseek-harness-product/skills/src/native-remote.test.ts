@@ -140,6 +140,38 @@ it('preserves creation, policy, upload, export and trash through native dispatch
   await expect(ctx.typertGateway.invoke({ namespace: 'skillsManager', method: 'createSkill', args: { request: { name: 'guest-orders', description: 'No', body: 'No' } }, peer: guest })).rejects.toMatchObject({ code: 'skills/operation', details: { code: 'error.proto.forbidden' } })
 }, 30000)
 
+it.each([
+  ['createSkill', { zip: 'unused archive' }],
+  ['uploadSkill', { source: '/unused-host-path' }],
+  ['uploadSkill', { dryRun: true }],
+  ['uploadSkill', { description: 'Unused creation field' }],
+  ['installCatalog', { name: 'Unused upload field' }],
+] as const)('strips fields from another operation in %s: %j through the native Gateway', async (method, extra) => {
+  const { ctx, root, invoke } = await boot()
+  const called = vi.spyOn(ctx.skillsManager, method)
+  const fetching = vi.fn<typeof fetch>().mockRejectedValue(new Error('Catalog unavailable'))
+  vi.stubGlobal('fetch', fetching)
+  onTestFinished(() => { vi.unstubAllGlobals() })
+  const document = Buffer.from('---\nname: imported-orders\ndescription: Orders\n---\nImported body').toString('base64')
+  const create = { name: 'imported-orders', description: 'Orders', body: 'Created body' }
+  const upload = { entries: [{ path: 'SKILL.md', data: document }] }
+  const target = { catalog: 'clawhub', owner: 'orders', slug: 'imported-orders' }
+  const args = method === 'createSkill' ? { request: { ...create, ...extra } }
+    : method === 'uploadSkill' ? { request: { ...upload, ...extra } }
+      : { target, destination: { ...extra } }
+  if (method === 'installCatalog') {
+    await expect(invoke(method, args)).rejects.toMatchObject({ code: 'skills/operation' })
+    expect(called.mock.calls[0]).toEqual([target, {}, expect.any(AbortSignal)])
+    expect(fetching).toHaveBeenCalledOnce()
+    await expect(readFile(join(root, '.dsh/skills/imported-orders/SKILL.md'))).rejects.toMatchObject({ code: 'ENOENT' })
+  } else {
+    await invoke(method, args)
+    expect(called.mock.calls[0]).toEqual([method === 'createSkill' ? create : upload, expect.any(AbortSignal)])
+    expect(fetching).not.toHaveBeenCalled()
+    expect(await readFile(join(root, '.dsh/skills/imported-orders/SKILL.md'), 'utf8')).toContain(method === 'createSkill' ? 'Created body' : 'Imported body')
+  }
+}, 30000)
+
 it.each(['request', 'disposal'] as const)('does not write a skill after %s while waiting for company roots', async (kind) => {
   const { ctx, root } = await boot()
   let release!: (roots: { skillsRoot: string }) => void
