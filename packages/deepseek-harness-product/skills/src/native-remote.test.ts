@@ -329,31 +329,44 @@ it('cancels market fetches on request abort and plugin disposal', async () => {
   expect(starts[1]?.aborted).toBe(true)
 }, 30000)
 
-it.each(['request', 'disposal'] as const)('releases stalled market response reads on %s through the native Host lifetime', async (kind) => {
-  const { ctx, invoke } = await boot()
-  let entered!: (response: Response) => void
-  const started = new Promise<Response>((resolve) => { entered = resolve })
-  const cancel = vi.fn(() => new Promise<void>(() => {}))
-  vi.stubGlobal('fetch', vi.fn<typeof fetch>(() => {
-    const response = new Response(new ReadableStream<Uint8Array>({ cancel }))
-    entered(response)
-    return Promise.resolve(response)
-  }))
-  onTestFinished(() => { vi.unstubAllGlobals() })
-  const controller = new AbortController()
-  const pending = invoke('searchSkillsSh', { query: 'audit' }, controller.signal)
-  const rejected = expect(pending).rejects.toMatchObject({ code: 'gateway/cancelled' })
-  const response = await started
-  await vi.waitFor(() => { expect(response.body?.locked).toBe(true) })
-  if (kind === 'request') controller.abort()
-  else {
-    const manager = [...ctx.loader.entries()].find(entry => entry.options.name === 'cordis:manager')
-    await manager?.fiber?.dispose()
-  }
-  await rejected
-  expect(cancel).toHaveBeenCalledOnce()
-  expect(response.body?.locked).toBe(false)
-}, 30000)
+it.each(['request', 'disposal'].flatMap(kind => [false, true].map(blocked => ({ kind, blocked }))))(
+  'releases stalled market reads on $kind, blocked abort propagation=$blocked', async ({ kind, blocked }) => {
+    const { ctx, invoke } = await boot()
+    const started = Promise.withResolvers<Response>()
+    const body = Promise.withResolvers<ReadableStreamDefaultController<Uint8Array>>()
+    const cleanup = Promise.withResolvers<undefined>()
+    const cancel = vi.fn(() => cleanup.promise)
+    vi.stubGlobal('fetch', vi.fn<typeof fetch>((_input, init) => {
+      if (blocked) init?.signal?.addEventListener('abort', event => event.stopImmediatePropagation(), { once: true })
+      const response = new Response(new ReadableStream<Uint8Array>({ start: value => body.resolve(value), cancel }))
+      started.resolve(response)
+      return Promise.resolve(response)
+    }))
+    onTestFinished(() => { vi.unstubAllGlobals() })
+    const controller = new AbortController()
+    const pending = invoke('searchSkillsSh', { query: 'audit' }, controller.signal)
+    const outcome = pending.catch((error: unknown) => error)
+    let disposal: Promise<void> | undefined
+    try {
+      const response = await started.promise
+      await vi.waitFor(() => { expect(response.body?.locked).toBe(true) })
+      if (kind === 'request') controller.abort()
+      else {
+        const manager = [...ctx.loader.entries()].find(entry => entry.options.name === 'cordis:manager')
+        disposal = manager?.fiber?.dispose()
+      }
+      await vi.waitFor(() => { expect(cancel).toHaveBeenCalledOnce() })
+      await disposal
+      expect(await outcome).toMatchObject({ code: 'gateway/cancelled' })
+      expect(response.body?.locked).toBe(false)
+    } finally {
+      controller.abort()
+      ;(await body.promise).error(new Error('Test response released'))
+      cleanup.resolve(undefined)
+      await outcome
+      await disposal
+    }
+  }, 30000)
 
 it('retains repository install, confirmed update, rollback and uninstall through native codecs', async () => {
   let body = 'Original'

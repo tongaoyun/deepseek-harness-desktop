@@ -29,12 +29,16 @@ it.each(catalogs)('$name releases rejected HTTP bodies without replacing the ups
   expect(response.body?.locked).toBe(false)
 })
 
-it.each(catalogs)('$name ends a stalled body read at its deadline even when transport cleanup stalls', async ({ read, timeoutMs }) => {
+it.each(catalogs)('$name ends a stalled body read despite blocked abort propagation and stalled cleanup', async ({ read, timeoutMs }) => {
   vi.useFakeTimers()
   const cancel = vi.fn(() => new Promise<void>(() => {}))
   const response = new Response(new ReadableStream<Uint8Array>({ cancel }))
   let signal: AbortSignal | null | undefined
-  const fetchImpl: typeof fetch = vi.fn(async (_url: RequestInfo | URL, init?: RequestInit) => { signal = init?.signal; return response })
+  const fetchImpl: typeof fetch = vi.fn(async (_url: RequestInfo | URL, init?: RequestInit) => {
+    signal = init?.signal
+    signal?.addEventListener('abort', event => event.stopImmediatePropagation(), { once: true })
+    return response
+  })
   const outcome = read(fetchImpl).catch((error: unknown) => error)
   await vi.advanceTimersByTimeAsync(timeoutMs)
   expect(await outcome).toMatchObject({ code: 'error.catalog.response', statusCode: 502 })
@@ -82,16 +86,25 @@ it('releases declared oversize responses before reading any bytes', async () => 
   expect(response.body?.locked).toBe(false)
 })
 
-it('preserves caller cancellation and releases a pending read without waiting for cleanup', async () => {
+it.each([false, true])('preserves caller cancellation with an earlier blocking listener=%s', async (blocked) => {
   const controller = new AbortController()
-  const cancel = vi.fn(() => new Promise<void>(() => {}))
-  const response = new Response(new ReadableStream<Uint8Array>({ cancel }))
+  if (blocked) controller.signal.addEventListener('abort', event => event.stopImmediatePropagation(), { once: true })
+  const cleanup = Promise.withResolvers<undefined>()
+  const body = Promise.withResolvers<ReadableStreamDefaultController<Uint8Array>>()
+  const cancel = vi.fn(() => cleanup.promise)
+  const response = new Response(new ReadableStream<Uint8Array>({ start: value => body.resolve(value), cancel }))
   const outcome = readSkillResponse(response, 6, controller.signal, new Error('Too large')).catch((error: unknown) => error)
   const reason = new Error('Owner unloaded')
-  controller.abort(reason)
-  expect(await outcome).toBe(reason)
-  expect(cancel).toHaveBeenCalledOnce()
-  expect(response.body?.locked).toBe(false)
+  try {
+    controller.abort(reason)
+    expect(cancel).toHaveBeenCalledOnce()
+    expect(await outcome).toBe(reason)
+    expect(response.body?.locked).toBe(false)
+  } finally {
+    (await body.promise).error(reason)
+    cleanup.resolve(undefined)
+    await outcome
+  }
 })
 
 it('preserves a transport read failure and unlocks the failed stream', async () => {

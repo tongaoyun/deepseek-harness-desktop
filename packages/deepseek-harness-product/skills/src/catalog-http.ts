@@ -16,24 +16,22 @@ export async function readCatalogResponse(url: string | URL, fetchImpl: typeof f
   upstreamError: Error
   responseError: Error
 }): Promise<Buffer> {
-  const request = deadline(options.signal, options.timeoutMs, 'skills/catalog-timeout')
+  using request = deadline(options.signal, options.timeoutMs, 'skills/catalog-timeout')
   const { signal } = request
-  try {
-    signal.throwIfAborted()
-    let response: Response
-    try { response = await fetchImpl(url, { headers: { accept: options.accept }, redirect: 'error', signal }) }
-    catch (error) {
-      if (options.signal?.aborted) throw options.signal.reason
-      throw options.upstreamError
-    }
-    if (!response.ok) {
-      discardSkillResponse(response)
-      throw options.upstreamError
-    }
-    try { return await readSkillResponse(response, options.limit, signal, options.responseError) }
-    catch (error) {
-      if (options.signal?.aborted) throw options.signal.reason
-      throw options.responseError
-    }
-  } finally { request[Symbol.dispose]() }
+  signal.throwIfAborted()
+  let response: Response
+  try { response = await fetchImpl(url, { headers: { accept: options.accept }, redirect: 'error', signal }) }
+  catch (error) {
+    if (options.signal?.aborted) throw options.signal.reason
+    throw options.upstreamError
+  }
+  if (!response.ok) {
+    discardSkillResponse(response)
+    throw options.upstreamError
+  }
+  try { return await readSkillResponse(response, options.limit, signal, options.responseError) }
+  catch (error) {
+    if (options.signal?.aborted) throw options.signal.reason
+    throw options.responseError
+  }
 }
