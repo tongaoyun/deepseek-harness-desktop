@@ -36,6 +36,31 @@ it('displays the local catalog first and requests company refresh explicitly', a
   expect(getCatalog).toHaveBeenCalledTimes(3)
 })
 
+it('retains the published catalog when receipt fields reorder and notifies when content changes', () => {
+  const { catalog } = fixture()
+  const expert: CatalogSnapshot['experts'][number] = { slug: 'reviewer', name: '审查员', nameEn: 'Reviewer',
+    description: '代码审查', descriptionEn: 'Code review', emoji: '🔎', division: 'engineering',
+    divisionZh: '研发', custom: false }
+  const planner = { ...expert, slug: 'planner', name: '规划师', nameEn: 'Planner' }
+  const snapshot = { experts: [expert, planner], enabled: ['reviewer'], revision: 1 }
+  const published = catalog.accept(snapshot)
+  const observe = vi.fn()
+  const unsubscribe = catalog.subscribe(observe)
+  try {
+    const { slug, ...fields } = expert
+    expect(catalog.accept({ ...snapshot, experts: [{ ...fields, slug }, planner] })).toBe(published)
+    expect(observe).not.toHaveBeenCalled()
+    const changed = catalog.accept({ ...snapshot, experts: [{ ...expert, name: '代码审查员' }, planner] })
+    expect(changed.experts[0]?.name).toBe('代码审查员')
+    expect(observe).toHaveBeenCalledTimes(1)
+    expect(catalog.accept({ ...snapshot, experts: [planner, expert] }).experts.map(value => value.slug))
+      .toEqual(['planner', 'reviewer'])
+    expect(observe).toHaveBeenCalledTimes(2)
+    catalog.accept({ ...snapshot, revision: 2 })
+    expect(observe).toHaveBeenCalledTimes(3)
+  } finally { unsubscribe(); catalog.dispose() }
+})
+
 it('keeps a newer saved selection when an earlier company refresh finishes late', async () => {
   const { catalog, getCatalog } = fixture()
   const response = Promise.withResolvers<RemoteResult<CatalogSnapshot>>()

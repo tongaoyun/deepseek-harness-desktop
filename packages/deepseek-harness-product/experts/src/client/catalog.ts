@@ -1,4 +1,5 @@
 /** One plugin instance's expert catalog, ordered against committed writes and connection resets. */
+import { deepEqualJson } from '@deepseek-ai/dsh-util-values'
 import { EN_DIVISION } from '../names.ts'
 import type { CatalogSnapshot, ExpertSummary } from '../expert-contract.ts'
 import type { AgencyCatalogRemote } from './remote.ts'
@@ -108,7 +109,7 @@ export class ExpertCatalog {
     const current = this.getSnapshot()
     this.lifecycle.advance()
     const experts = value.experts.map(expert => ({ ...expert, divisionEn: EN_DIVISION[expert.division] ?? expert.division }))
-    if (value.revision === current.revision && JSON.stringify(experts) === JSON.stringify(current.experts)
+    if (value.revision === current.revision && deepEqualJson(experts, current.experts)
       && value.enabled.length === current.enabled.size && value.enabled.every(slug => current.enabled.has(slug))) return current
     this.lifecycle.store.set({ experts, enabled: new Set(value.enabled), revision: value.revision })
     return this.getSnapshot()

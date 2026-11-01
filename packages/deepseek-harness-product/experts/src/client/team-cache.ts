@@ -1,15 +1,16 @@
 /** Team snapshots owned by one plugin instance, with committed-write ordering. */
+import { deepEqualJson } from '@deepseek-ai/dsh-util-values'
 import type { TeamSnapshot } from '../team-contract.ts'
 import type { AgencyTeamsRemote } from './remote.ts'
 import { SnapshotLifecycle } from './snapshot-lifecycle.ts'
 
 function sameSnapshot(current: TeamSnapshot, next: TeamSnapshot): boolean {
   return current.revision === next.revision
-    && JSON.stringify(current.teams) === JSON.stringify(next.teams)
-    && JSON.stringify(current.enabledTeams) === JSON.stringify(next.enabledTeams)
-    && JSON.stringify(current.enabledExperts) === JSON.stringify(next.enabledExperts)
-    && JSON.stringify(current.engine ?? null) === JSON.stringify(next.engine ?? null)
-    && JSON.stringify(current.nativeMembers ?? null) === JSON.stringify(next.nativeMembers ?? null)
+    && deepEqualJson(current.teams, next.teams)
+    && deepEqualJson(current.enabledTeams, next.enabledTeams)
+    && deepEqualJson(current.enabledExperts, next.enabledExperts)
+    && deepEqualJson(current.engine ?? null, next.engine ?? null)
+    && deepEqualJson(current.nativeMembers ?? null, next.nativeMembers ?? null)
 }
 
 /** Share team queries and notifications without retaining state across plugin instances. */

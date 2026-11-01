@@ -164,3 +164,21 @@ it('replaces execution metadata from each complete Host receipt', async () => {
   await state.teams.refresh()
   expect(state.teams.getSnapshot()?.engine).toBeUndefined()
 })
+
+it('retains the published team snapshot when member mappings reorder and notifies when mappings change', () => {
+  const state = fixture()
+  const snapshot: TeamSnapshot = { ...teams, nativeMembers: { reviewer: '审查员', planner: '规划师' } }
+  const published = state.teams.accept(snapshot)
+  const observe = vi.fn()
+  const unsubscribe = state.teams.subscribe(observe)
+  try {
+    expect(state.teams.accept({ ...snapshot, nativeMembers: { planner: '规划师', reviewer: '审查员' } })).toBe(published)
+    expect(observe).not.toHaveBeenCalled()
+    const changed = state.teams.accept({ ...snapshot, nativeMembers: { planner: '规划师', reviewer: '代码审查员' } })
+    expect(changed.nativeMembers?.reviewer).toBe('代码审查员')
+    expect(observe).toHaveBeenCalledTimes(1)
+    state.teams.accept({ ...teams, revision: 3 })
+    expect(state.teams.getSnapshot()?.nativeMembers).toBeUndefined()
+    expect(observe).toHaveBeenCalledTimes(2)
+  } finally { unsubscribe(); state.teams.dispose(); state.catalog.dispose() }
+})
