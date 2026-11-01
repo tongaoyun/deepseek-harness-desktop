@@ -334,7 +334,6 @@ export class PersonalConnectors {
     if (!config) throw new Error('Private connector configuration is missing')
     const client = await this.client(entry, employee, config, signal)
     // The relay forwards validated protocol requests without registering duplicate tool handlers.
-    // oxlint-disable-next-line typescript/no-deprecated
     const server = new Server({ name: 'product-personal-mcp-relay', version: '1.0.0' }, { capabilities: { tools: {} } })
     const declaredNames = new Set(entry.tools.map(tool => tool.name))
     server.setRequestHandler('tools/list', async () => ({ tools: (await this.discover(client, signal, config.timeoutSeconds)).filter(tool => declaredNames.has(tool.name)) }))
@@ -484,16 +483,8 @@ export class PersonalConnectors {
   }
   private async discover(client: Client, signal: AbortSignal, timeoutSeconds: number): Promise<Tool[]> {
     const deadline = AbortSignal.any([signal, this.lifetime.signal, AbortSignal.timeout(timeoutSeconds * 1000)])
-    const tools: Tool[] = []
-    let cursor: string | undefined
-    const cursors = new Set<string>()
-    do {
-      const result = await client.listTools(cursor ? { cursor } : {}, { signal: deadline, timeout: timeoutSeconds * 1000 })
-      tools.push(...result.tools)
-      if (tools.length > 512 || (result.nextCursor && cursors.has(result.nextCursor))) throw new Error('Invalid MCP tool pagination')
-      cursor = result.nextCursor
-      if (cursor) cursors.add(cursor)
-    } while (cursor)
+    const { tools } = await client.listTools(undefined, { cacheMode: 'refresh', signal: deadline, timeout: timeoutSeconds * 1000 })
+    if (tools.length > 512) throw new Error('MCP tool limit exceeded')
     return tools
   }
 }
