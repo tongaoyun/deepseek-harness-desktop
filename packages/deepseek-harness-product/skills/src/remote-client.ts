@@ -15,7 +15,7 @@ const scopeFields: Partial<Record<SkillMethod, 'target' | 'request' | 'scope' | 
   readState: 'scope', readDetail: 'target', exportSkill: 'target', setSkillEnabled: 'target', setSourceEnabled: 'target',
   createCategory: 'target', renameCategory: 'target', deleteCategory: 'target', assignCategory: 'target',
   moveInCategory: 'target', setCategoryEnabled: 'target', trashSkill: 'target', restoreTrash: 'scope',
-  createSkill: 'request', importSkill: 'request', uploadSkill: 'request', installCatalog: 'destination',
+  createSkill: 'request', uploadSkill: 'request', installCatalog: 'destination',
 }
 
 /** Resolve the selected Session explicitly before invoking the native method.

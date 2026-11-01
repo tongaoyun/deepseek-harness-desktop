@@ -310,7 +310,6 @@ export interface MutationOptions extends ScopeOptions {
     root?: RootInput;
     renameOptions?: RenameOptions;
     conflict?: string;
-    dryRun?: boolean;
     /** 内部安装事务在文件复制前持久化意图，不接受请求体回调。 */
     beforeImport?: (pending: ImportPending[], conflicts: ImportConflict[], failed: ImportFailure[]) => Promise<void>;
 }
@@ -355,7 +354,7 @@ export interface ImportFailure extends Diagnostic {
     source: string;
     error: string;
 }
-/** Import outcome with committed, skipped, failed or previewed items. */
+/** Import outcome with committed, skipped and failed items. */
 export interface ImportResult extends Diagnostic {
     ok?: boolean;
     kind?: string;
@@ -369,8 +368,6 @@ export interface ImportResult extends Diagnostic {
         source: string;
     }[];
     failed?: ImportFailure[];
-    pending?: ImportPending[];
-    conflicts?: ImportConflict[];
 }
 
 /** Explicit UI scope; a workspace is always checked against the Host registry. */
@@ -387,12 +384,15 @@ export interface ManagerTarget extends ManagerScope {
     targetName?: string;
     position?: 'before' | 'after';
 }
-/** Creation and import payload; only the operation's own fields are consumed. */
-export interface ManagerImport extends ManagerScope, CreateInput, UploadInput {
+/** Writable user or registered workspace destination. */
+export interface ManagerDestination extends ManagerScope {
     root?: string;
-    source?: string;
+}
+/** Document fields accepted by skill creation. */
+export interface ManagerCreate extends ManagerDestination, CreateInput {}
+/** File content and conflict policy accepted by skill upload. */
+export interface ManagerUpload extends ManagerDestination, UploadInput {
     conflict?: 'overwrite' | 'skip';
-    dryRun?: boolean;
 }
 /** Validated catalog source identity used for installation and updates. */
 export type CatalogIdentity =

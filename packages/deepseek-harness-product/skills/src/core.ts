@@ -2304,30 +2304,6 @@ function temporaryPath(target: string, kind: string) {
   );
 }
 
-/** dry-run 预检执行与正式导入相同的符号链接/深度检查，预检失败即结论，不再进入覆盖确认。
- *  预检与实导之间来源被替换的竞态仍由实导阶段的复制后校验兜底。 */
-async function preflightCandidates(pending: ImportPending[], conflicts: ImportConflict[], failed: ImportFailure[]) {
-  for (const group of [pending, conflicts]) {
-    for (let i = group.length - 1; i >= 0; i--) {
-      const candidate = group[i];
-      try {
-        await assertNoSymbolicLinks(candidate.source);
-      } catch (caught) { const error = caught as CodedError;
-        failed.push(
-          attachCode(
-            {
-              source: candidate.source,
-              error: String(error && error.message ? error.message : error),
-            },
-            error,
-          ),
-        );
-        group.splice(i, 1);
-      }
-    }
-  }
-}
-
 /** 先复制到同目录临时路径，复制失败时不触碰现有技能。 */
 async function copyToTemporary(source: string, target: string, isDir: boolean) {
   const temp = temporaryPath(target, "stage");
@@ -2399,17 +2375,16 @@ async function replaceWithCopy(source: string, dest: string, isDir: boolean, exi
 
 /**
  * 导入技能到目标根。
- * options: { conflict: 'skip'|'overwrite', dryRun: boolean }
+ * options.conflict 控制同名条目的跳过或覆盖。
  * 成功返回 { kind, imported, skipped, failed }；失败返回 { ok:false, error }。
  */
-export async function importSkill(source: string, log?: Log, options: MutationOptions = {}): Promise<ImportResult> {
+async function importSkill(source: string, log?: Log, options: MutationOptions = {}): Promise<ImportResult> {
   const requestedRoot = Object.prototype.hasOwnProperty.call(options, "root") ? options.root : rootByKey("dsh");
   const definition = await checkedWritableRootDefinition(requestedRoot);
   if (definition && definition.ok === false) return definition;
   if (!definition) return readonlyError("create");
   const targetRoot = definition.path;
   const conflict = options.conflict === "overwrite" ? "overwrite" : "skip";
-  const dryRun = options.dryRun === true;
 
   const analysis = await analyzeSource(source);
   if (analysis.kind === "none")
@@ -2547,14 +2522,7 @@ export async function importSkill(source: string, log?: Log, options: MutationOp
 
   if (pending.length === 0 && conflicts.length === 0) return failureResult();
 
-  if (dryRun) {
-    // 预检即结论：与正式导入同口径执行符号链接/深度检查，避免预检通过、确认覆盖后实导才失败。
-    await preflightCandidates(pending, conflicts, failed);
-    if (pending.length === 0 && conflicts.length === 0) return failureResult();
-    return { kind: analysis.kind, pending, conflicts, failed };
-  }
-
-  if (!dryRun && options.beforeImport) await options.beforeImport(pending, conflicts, failed);
+  if (options.beforeImport) await options.beforeImport(pending, conflicts, failed);
 
   if (
     pending.length > 0 ||

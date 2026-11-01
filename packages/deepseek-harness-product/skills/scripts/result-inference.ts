@@ -17,7 +17,6 @@ export interface SkillManagerResults {
   moveInCategory: CoreResult<'moveSkillInCategory'>
   setCategoryEnabled: CoreResult<'setCategoryEnabled'>
   createSkill: CoreResult<'createSkill'>
-  importSkill: CoreResult<'importSkill'>
   uploadSkill: CoreResult<'importUploadedSkill'>
   listRepositories: RepositoryResult<'list'>
   addRepository: RepositoryResult<'add'>

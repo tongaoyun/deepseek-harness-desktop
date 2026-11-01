@@ -76,19 +76,11 @@ const _deepseek_harness_product_skills_skillsManager_createCategory_result$schem
 let _deepseek_harness_product_skills_skillsManager_createSkill_parameter_0$schema$value
 const _deepseek_harness_product_skills_skillsManager_createSkill_parameter_0$schema = () => (_deepseek_harness_product_skills_skillsManager_createSkill_parameter_0$schema$value ??= z.object({
   'root': z.string().optional(),
-  'source': z.string().optional(),
-  'conflict': z.union([z.literal("overwrite"), z.literal("skip")]).optional(),
-  'dryRun': z.boolean().optional(),
   'sessionId': z.string().optional(),
   'workspace': z.string().optional(),
   'name': z.string().optional(),
   'description': z.string().optional(),
   'body': z.string().optional(),
-  'zip': z.string().optional(),
-  'entries': z.array(z.object({
-  'path': z.string(),
-  'data': z.string(),
-})).optional(),
 }))
 let _deepseek_harness_product_skills_skillsManager_createSkill_result$schema$value
 const _deepseek_harness_product_skills_skillsManager_createSkill_result$schema = () => (_deepseek_harness_product_skills_skillsManager_createSkill_result$schema$value ??= z.object({
@@ -143,65 +135,6 @@ const _deepseek_harness_product_skills_skillsManager_exportSkill_result$schema =
   'resourceKey': z.string(),
   'files': z.record(z.string(), z.string()),
 }))
-let _deepseek_harness_product_skills_skillsManager_importSkill_parameter_0$schema$value
-const _deepseek_harness_product_skills_skillsManager_importSkill_parameter_0$schema = () => (_deepseek_harness_product_skills_skillsManager_importSkill_parameter_0$schema$value ??= z.object({
-  'root': z.string().optional(),
-  'source': z.string().optional(),
-  'conflict': z.union([z.literal("overwrite"), z.literal("skip")]).optional(),
-  'dryRun': z.boolean().optional(),
-  'sessionId': z.string().optional(),
-  'workspace': z.string().optional(),
-  'name': z.string().optional(),
-  'description': z.string().optional(),
-  'body': z.string().optional(),
-  'zip': z.string().optional(),
-  'entries': z.array(z.object({
-  'path': z.string(),
-  'data': z.string(),
-})).optional(),
-}))
-let _deepseek_harness_product_skills_skillsManager_importSkill_result$schema$value
-const _deepseek_harness_product_skills_skillsManager_importSkill_result$schema = () => (_deepseek_harness_product_skills_skillsManager_importSkill_result$schema$value ??= z.object({
-  'ok': z.boolean().optional(),
-  'kind': z.string().optional(),
-  'imported': z.array(z.object({
-  'name': z.string(),
-  'overwritten': z.boolean(),
-  'warnings': z.array(z.object({
-  'code': z.string().optional(),
-  'params': z.record(z.string(), z.json()).optional(),
-  'error': z.string().optional(),
-  'level': z.string().optional(),
-})),
-})).optional(),
-  'skipped': z.array(z.object({
-  'name': z.string(),
-  'source': z.string(),
-})).optional(),
-  'failed': z.array(z.object({
-  'source': z.string(),
-  'error': z.string(),
-  'code': z.string().optional(),
-  'params': z.record(z.string(), z.json()).optional(),
-  'level': z.string().optional(),
-})).optional(),
-  'pending': z.array(z.object({
-  'name': z.string(),
-  'source': z.string(),
-  'isDir': z.boolean(),
-  'dest': z.string(),
-})).optional(),
-  'conflicts': z.array(z.object({
-  'name': z.string(),
-  'source': z.string(),
-  'isDir': z.boolean(),
-  'paths': z.array(z.string()),
-})).optional(),
-  'code': z.string().optional(),
-  'params': z.record(z.string(), z.json()).optional(),
-  'error': z.string().optional(),
-  'level': z.string().optional(),
-}))
 let _deepseek_harness_product_skills_skillsManager_installCatalog_parameter_0$schema$value
 const _deepseek_harness_product_skills_skillsManager_installCatalog_parameter_0$schema = () => (_deepseek_harness_product_skills_skillsManager_installCatalog_parameter_0$schema$value ??= z.union([z.object({
   'catalog': z.literal("clawhub"),
@@ -215,19 +148,8 @@ const _deepseek_harness_product_skills_skillsManager_installCatalog_parameter_0$
 let _deepseek_harness_product_skills_skillsManager_installCatalog_parameter_1$schema$value
 const _deepseek_harness_product_skills_skillsManager_installCatalog_parameter_1$schema = () => (_deepseek_harness_product_skills_skillsManager_installCatalog_parameter_1$schema$value ??= z.object({
   'root': z.string().optional(),
-  'source': z.string().optional(),
-  'conflict': z.union([z.literal("overwrite"), z.literal("skip")]).optional(),
-  'dryRun': z.boolean().optional(),
   'sessionId': z.string().optional(),
   'workspace': z.string().optional(),
-  'name': z.string().optional(),
-  'description': z.string().optional(),
-  'body': z.string().optional(),
-  'zip': z.string().optional(),
-  'entries': z.array(z.object({
-  'path': z.string(),
-  'data': z.string(),
-})).optional(),
 }))
 let _deepseek_harness_product_skills_skillsManager_installCatalog_result$schema$value
 const _deepseek_harness_product_skills_skillsManager_installCatalog_result$schema = () => (_deepseek_harness_product_skills_skillsManager_installCatalog_result$schema$value ??= z.object({
@@ -979,15 +901,11 @@ const _deepseek_harness_product_skills_skillsManager_updateRepository_result$sch
 }))
 let _deepseek_harness_product_skills_skillsManager_uploadSkill_parameter_0$schema$value
 const _deepseek_harness_product_skills_skillsManager_uploadSkill_parameter_0$schema = () => (_deepseek_harness_product_skills_skillsManager_uploadSkill_parameter_0$schema$value ??= z.object({
-  'root': z.string().optional(),
-  'source': z.string().optional(),
   'conflict': z.union([z.literal("overwrite"), z.literal("skip")]).optional(),
-  'dryRun': z.boolean().optional(),
+  'root': z.string().optional(),
   'sessionId': z.string().optional(),
   'workspace': z.string().optional(),
   'name': z.string().optional(),
-  'description': z.string().optional(),
-  'body': z.string().optional(),
   'zip': z.string().optional(),
   'entries': z.array(z.object({
   'path': z.string(),
@@ -1018,18 +936,6 @@ const _deepseek_harness_product_skills_skillsManager_uploadSkill_result$schema =
   'code': z.string().optional(),
   'params': z.record(z.string(), z.json()).optional(),
   'level': z.string().optional(),
-})).optional(),
-  'pending': z.array(z.object({
-  'name': z.string(),
-  'source': z.string(),
-  'isDir': z.boolean(),
-  'dest': z.string(),
-})).optional(),
-  'conflicts': z.array(z.object({
-  'name': z.string(),
-  'source': z.string(),
-  'isDir': z.boolean(),
-  'paths': z.array(z.string()),
 })).optional(),
   'code': z.string().optional(),
   'params': z.record(z.string(), z.json()).optional(),
@@ -1067,19 +973,11 @@ const _deepseek_harness_product_skills_skillsManager_createCategory_parameter_0_
 let _deepseek_harness_product_skills_skillsManager_createSkill_parameter_0_strict$schema$value
 const _deepseek_harness_product_skills_skillsManager_createSkill_parameter_0_strict$schema = () => (_deepseek_harness_product_skills_skillsManager_createSkill_parameter_0_strict$schema$value ??= z.strictObject({
   'root': z.string().optional(),
-  'source': z.string().optional(),
-  'conflict': z.union([z.literal("overwrite"), z.literal("skip")]).optional(),
-  'dryRun': z.boolean().optional(),
   'sessionId': z.string().optional(),
   'workspace': z.string().optional(),
   'name': z.string().optional(),
   'description': z.string().optional(),
   'body': z.string().optional(),
-  'zip': z.string().optional(),
-  'entries': z.array(z.strictObject({
-  'path': z.string(),
-  'data': z.string(),
-})).optional(),
 }))
 let _deepseek_harness_product_skills_skillsManager_deleteCategory_parameter_0_strict$schema$value
 const _deepseek_harness_product_skills_skillsManager_deleteCategory_parameter_0_strict$schema = () => (_deepseek_harness_product_skills_skillsManager_deleteCategory_parameter_0_strict$schema$value ??= z.strictObject({
@@ -1105,23 +1003,6 @@ const _deepseek_harness_product_skills_skillsManager_exportSkill_parameter_0_str
   'sessionId': z.string().optional(),
   'workspace': z.string().optional(),
 }))
-let _deepseek_harness_product_skills_skillsManager_importSkill_parameter_0_strict$schema$value
-const _deepseek_harness_product_skills_skillsManager_importSkill_parameter_0_strict$schema = () => (_deepseek_harness_product_skills_skillsManager_importSkill_parameter_0_strict$schema$value ??= z.strictObject({
-  'root': z.string().optional(),
-  'source': z.string().optional(),
-  'conflict': z.union([z.literal("overwrite"), z.literal("skip")]).optional(),
-  'dryRun': z.boolean().optional(),
-  'sessionId': z.string().optional(),
-  'workspace': z.string().optional(),
-  'name': z.string().optional(),
-  'description': z.string().optional(),
-  'body': z.string().optional(),
-  'zip': z.string().optional(),
-  'entries': z.array(z.strictObject({
-  'path': z.string(),
-  'data': z.string(),
-})).optional(),
-}))
 let _deepseek_harness_product_skills_skillsManager_installCatalog_parameter_0_strict$schema$value
 const _deepseek_harness_product_skills_skillsManager_installCatalog_parameter_0_strict$schema = () => (_deepseek_harness_product_skills_skillsManager_installCatalog_parameter_0_strict$schema$value ??= z.union([z.strictObject({
   'catalog': z.literal("clawhub"),
@@ -1135,19 +1016,8 @@ const _deepseek_harness_product_skills_skillsManager_installCatalog_parameter_0_
 let _deepseek_harness_product_skills_skillsManager_installCatalog_parameter_1_strict$schema$value
 const _deepseek_harness_product_skills_skillsManager_installCatalog_parameter_1_strict$schema = () => (_deepseek_harness_product_skills_skillsManager_installCatalog_parameter_1_strict$schema$value ??= z.strictObject({
   'root': z.string().optional(),
-  'source': z.string().optional(),
-  'conflict': z.union([z.literal("overwrite"), z.literal("skip")]).optional(),
-  'dryRun': z.boolean().optional(),
   'sessionId': z.string().optional(),
   'workspace': z.string().optional(),
-  'name': z.string().optional(),
-  'description': z.string().optional(),
-  'body': z.string().optional(),
-  'zip': z.string().optional(),
-  'entries': z.array(z.strictObject({
-  'path': z.string(),
-  'data': z.string(),
-})).optional(),
 }))
 let _deepseek_harness_product_skills_skillsManager_installRepository_parameter_0_strict$schema$value
 const _deepseek_harness_product_skills_skillsManager_installRepository_parameter_0_strict$schema = () => (_deepseek_harness_product_skills_skillsManager_installRepository_parameter_0_strict$schema$value ??= z.strictObject({
@@ -1342,15 +1212,11 @@ const _deepseek_harness_product_skills_skillsManager_updateRepository_parameter_
 }))
 let _deepseek_harness_product_skills_skillsManager_uploadSkill_parameter_0_strict$schema$value
 const _deepseek_harness_product_skills_skillsManager_uploadSkill_parameter_0_strict$schema = () => (_deepseek_harness_product_skills_skillsManager_uploadSkill_parameter_0_strict$schema$value ??= z.strictObject({
-  'root': z.string().optional(),
-  'source': z.string().optional(),
   'conflict': z.union([z.literal("overwrite"), z.literal("skip")]).optional(),
-  'dryRun': z.boolean().optional(),
+  'root': z.string().optional(),
   'sessionId': z.string().optional(),
   'workspace': z.string().optional(),
   'name': z.string().optional(),
-  'description': z.string().optional(),
-  'body': z.string().optional(),
   'zip': z.string().optional(),
   'entries': z.array(z.strictObject({
   'path': z.string(),
@@ -1392,7 +1258,7 @@ export const TYPERT_REMOTE = createTypertRemoteInfo({
         description: 'The committed result or a typed operation failure.',
         jsonSchema: {"type":"object","properties":{"id":{"type":"string"},"skills":{"type":"array","items":{"type":"object","properties":{"path":{"type":"string"},"name":{"type":"string"},"description":{"type":"string"},"body":{"type":"string"},"valid":{"type":"boolean"},"documentHash":{"type":"string"},"files":{"type":"array","items":{"type":"object","properties":{"path":{"type":"string"},"hash":{"type":"string"}},"required":["path","hash"],"additionalProperties":true}}},"required":["path","name","description","body","valid","documentHash"],"additionalProperties":true}},"commit":{"oneOf":[{"type":"null","const":null},{"type":"string"}]},"refreshedAt":{"oneOf":[{"type":"null","const":null},{"type":"string"}]},"error":{"oneOf":[{"type":"null","const":null},{"type":"object","properties":{"code":{"type":"string"},"params":{"type":"object","properties":{},"required":[],"additionalProperties":true},"error":{"type":"string"},"level":{"type":"string"}},"required":[],"additionalProperties":true}]},"owner":{"type":"string"},"name":{"type":"string"},"ref":{"type":"string"},"subdirectory":{"type":"string"}},"required":["id","skills","commit","refreshedAt","error","owner","name","ref","subdirectory"],"additionalProperties":true},
       },
-      sourceLocation: {"file":"packages/deepseek-harness-product/skills/src/manager.ts","line":352,"column":3},
+      sourceLocation: {"file":"packages/deepseek-harness-product/skills/src/manager.ts","line":344,"column":3},
     },
     'skillsManager/assignCategory': {
       service: 'skillsManager',
@@ -1471,15 +1337,15 @@ export const TYPERT_REMOTE = createTypertRemoteInfo({
           source: 'json',
           codec: {
             mode: 'strict',
-            typeSymbol: '@deepseek-harness/product-skills/types#ManagerImport',
+            typeSymbol: '@deepseek-harness/product-skills/types#ManagerCreate',
             create: _deepseek_harness_product_skills_skillsManager_createSkill_parameter_0$schema,
-            jsonSchema: {"type":"object","properties":{"root":{"type":"string"},"source":{"type":"string"},"conflict":{"type":"string","enum":["overwrite","skip"]},"dryRun":{"type":"boolean"},"sessionId":{"type":"string"},"workspace":{"type":"string"},"name":{"type":"string"},"description":{"type":"string"},"body":{"type":"string"},"zip":{"type":"string"},"entries":{"type":"array","items":{"type":"object","properties":{"path":{"type":"string"},"data":{"type":"string"}},"required":["path","data"],"additionalProperties":true}}},"required":[],"additionalProperties":true},
+            jsonSchema: {"type":"object","properties":{"root":{"type":"string"},"sessionId":{"type":"string"},"workspace":{"type":"string"},"name":{"type":"string"},"description":{"type":"string"},"body":{"type":"string"}},"required":[],"additionalProperties":true},
           },
           strictCodec: {
             mode: 'strict',
-            typeSymbol: '@deepseek-harness/product-skills/types#ManagerImport',
+            typeSymbol: '@deepseek-harness/product-skills/types#ManagerCreate',
             create: _deepseek_harness_product_skills_skillsManager_createSkill_parameter_0_strict$schema,
-            jsonSchema: {"type":"object","properties":{"root":{"type":"string"},"source":{"type":"string"},"conflict":{"type":"string","enum":["overwrite","skip"]},"dryRun":{"type":"boolean"},"sessionId":{"type":"string"},"workspace":{"type":"string"},"name":{"type":"string"},"description":{"type":"string"},"body":{"type":"string"},"zip":{"type":"string"},"entries":{"type":"array","items":{"type":"object","properties":{"path":{"type":"string"},"data":{"type":"string"}},"required":["path","data"],"additionalProperties":false}}},"required":[],"additionalProperties":false},
+            jsonSchema: {"type":"object","properties":{"root":{"type":"string"},"sessionId":{"type":"string"},"workspace":{"type":"string"},"name":{"type":"string"},"description":{"type":"string"},"body":{"type":"string"}},"required":[],"additionalProperties":false},
           },
         },
       ],
@@ -1592,39 +1458,6 @@ export const TYPERT_REMOTE = createTypertRemoteInfo({
       },
       sourceLocation: {"file":"packages/deepseek-harness-product/skills/src/manager.ts","line":219,"column":3},
     },
-    'skillsManager/importSkill': {
-      service: 'skillsManager',
-      description: 'Preview or import local skill files without changing source files.',
-      invocation: { kind: 'direct' },
-      parameters: [
-        {
-          name: 'request',
-          description: 'Explicit operation input.',
-          source: 'json',
-          codec: {
-            mode: 'strict',
-            typeSymbol: '@deepseek-harness/product-skills/types#ManagerImport',
-            create: _deepseek_harness_product_skills_skillsManager_importSkill_parameter_0$schema,
-            jsonSchema: {"type":"object","properties":{"root":{"type":"string"},"source":{"type":"string"},"conflict":{"type":"string","enum":["overwrite","skip"]},"dryRun":{"type":"boolean"},"sessionId":{"type":"string"},"workspace":{"type":"string"},"name":{"type":"string"},"description":{"type":"string"},"body":{"type":"string"},"zip":{"type":"string"},"entries":{"type":"array","items":{"type":"object","properties":{"path":{"type":"string"},"data":{"type":"string"}},"required":["path","data"],"additionalProperties":true}}},"required":[],"additionalProperties":true},
-          },
-          strictCodec: {
-            mode: 'strict',
-            typeSymbol: '@deepseek-harness/product-skills/types#ManagerImport',
-            create: _deepseek_harness_product_skills_skillsManager_importSkill_parameter_0_strict$schema,
-            jsonSchema: {"type":"object","properties":{"root":{"type":"string"},"source":{"type":"string"},"conflict":{"type":"string","enum":["overwrite","skip"]},"dryRun":{"type":"boolean"},"sessionId":{"type":"string"},"workspace":{"type":"string"},"name":{"type":"string"},"description":{"type":"string"},"body":{"type":"string"},"zip":{"type":"string"},"entries":{"type":"array","items":{"type":"object","properties":{"path":{"type":"string"},"data":{"type":"string"}},"required":["path","data"],"additionalProperties":false}}},"required":[],"additionalProperties":false},
-          },
-        },
-      ],
-      cancellation: { parameter: 'signal' },
-      result: {
-        mode: 'strict',
-        typeSymbol: '@deepseek-harness/product-skills#skillsManager/importSkill:result',
-        create: _deepseek_harness_product_skills_skillsManager_importSkill_result$schema,
-        description: 'The committed result or a typed operation failure.',
-        jsonSchema: {"type":"object","properties":{"ok":{"type":"boolean"},"kind":{"type":"string"},"imported":{"type":"array","items":{"type":"object","properties":{"name":{"type":"string"},"overwritten":{"type":"boolean"},"warnings":{"type":"array","items":{"type":"object","properties":{"code":{"type":"string"},"params":{"type":"object","properties":{},"required":[],"additionalProperties":true},"error":{"type":"string"},"level":{"type":"string"}},"required":[],"additionalProperties":true}}},"required":["name","overwritten","warnings"],"additionalProperties":true}},"skipped":{"type":"array","items":{"type":"object","properties":{"name":{"type":"string"},"source":{"type":"string"}},"required":["name","source"],"additionalProperties":true}},"failed":{"type":"array","items":{"type":"object","properties":{"source":{"type":"string"},"error":{"type":"string"},"code":{"type":"string"},"params":{"type":"object","properties":{},"required":[],"additionalProperties":true},"level":{"type":"string"}},"required":["source","error"],"additionalProperties":true}},"pending":{"type":"array","items":{"type":"object","properties":{"name":{"type":"string"},"source":{"type":"string"},"isDir":{"type":"boolean"},"dest":{"type":"string"}},"required":["name","source","isDir","dest"],"additionalProperties":true}},"conflicts":{"type":"array","items":{"type":"object","properties":{"name":{"type":"string"},"source":{"type":"string"},"isDir":{"type":"boolean"},"paths":{"type":"array","items":{"type":"string"}}},"required":["name","source","isDir","paths"],"additionalProperties":true}},"code":{"type":"string"},"params":{"type":"object","properties":{},"required":[],"additionalProperties":true},"error":{"type":"string"},"level":{"type":"string"}},"required":[],"additionalProperties":true},
-      },
-      sourceLocation: {"file":"packages/deepseek-harness-product/skills/src/manager.ts","line":327,"column":3},
-    },
     'skillsManager/installCatalog': {
       service: 'skillsManager',
       description: 'Download a market skill before serializing its local installation.',
@@ -1653,15 +1486,15 @@ export const TYPERT_REMOTE = createTypertRemoteInfo({
           source: 'json',
           codec: {
             mode: 'strict',
-            typeSymbol: '@deepseek-harness/product-skills/types#ManagerImport',
+            typeSymbol: '@deepseek-harness/product-skills/types#ManagerDestination',
             create: _deepseek_harness_product_skills_skillsManager_installCatalog_parameter_1$schema,
-            jsonSchema: {"type":"object","properties":{"root":{"type":"string"},"source":{"type":"string"},"conflict":{"type":"string","enum":["overwrite","skip"]},"dryRun":{"type":"boolean"},"sessionId":{"type":"string"},"workspace":{"type":"string"},"name":{"type":"string"},"description":{"type":"string"},"body":{"type":"string"},"zip":{"type":"string"},"entries":{"type":"array","items":{"type":"object","properties":{"path":{"type":"string"},"data":{"type":"string"}},"required":["path","data"],"additionalProperties":true}}},"required":[],"additionalProperties":true},
+            jsonSchema: {"type":"object","properties":{"root":{"type":"string"},"sessionId":{"type":"string"},"workspace":{"type":"string"}},"required":[],"additionalProperties":true},
           },
           strictCodec: {
             mode: 'strict',
-            typeSymbol: '@deepseek-harness/product-skills/types#ManagerImport',
+            typeSymbol: '@deepseek-harness/product-skills/types#ManagerDestination',
             create: _deepseek_harness_product_skills_skillsManager_installCatalog_parameter_1_strict$schema,
-            jsonSchema: {"type":"object","properties":{"root":{"type":"string"},"source":{"type":"string"},"conflict":{"type":"string","enum":["overwrite","skip"]},"dryRun":{"type":"boolean"},"sessionId":{"type":"string"},"workspace":{"type":"string"},"name":{"type":"string"},"description":{"type":"string"},"body":{"type":"string"},"zip":{"type":"string"},"entries":{"type":"array","items":{"type":"object","properties":{"path":{"type":"string"},"data":{"type":"string"}},"required":["path","data"],"additionalProperties":false}}},"required":[],"additionalProperties":false},
+            jsonSchema: {"type":"object","properties":{"root":{"type":"string"},"sessionId":{"type":"string"},"workspace":{"type":"string"}},"required":[],"additionalProperties":false},
           },
         },
       ],
@@ -1673,7 +1506,7 @@ export const TYPERT_REMOTE = createTypertRemoteInfo({
         description: 'Installed skill identity and source.',
         jsonSchema: {"type":"object","properties":{"name":{"type":"string"},"root":{"type":"string"}},"required":["name","root"],"additionalProperties":true},
       },
-      sourceLocation: {"file":"packages/deepseek-harness-product/skills/src/manager.ts","line":458,"column":3},
+      sourceLocation: {"file":"packages/deepseek-harness-product/skills/src/manager.ts","line":450,"column":3},
     },
     'skillsManager/installRepository': {
       service: 'skillsManager',
@@ -1706,7 +1539,7 @@ export const TYPERT_REMOTE = createTypertRemoteInfo({
         description: 'The committed result or a typed operation failure.',
         jsonSchema: {"type":"object","properties":{"name":{"type":"string"},"commit":{"oneOf":[{"type":"null","const":null},{"type":"string"}]},"root":{"type":"string"}},"required":["name","commit","root"],"additionalProperties":true},
       },
-      sourceLocation: {"file":"packages/deepseek-harness-product/skills/src/manager.ts","line":384,"column":3},
+      sourceLocation: {"file":"packages/deepseek-harness-product/skills/src/manager.ts","line":376,"column":3},
     },
     'skillsManager/listClawHub': {
       service: 'skillsManager',
@@ -1739,7 +1572,7 @@ export const TYPERT_REMOTE = createTypertRemoteInfo({
         description: 'The committed result or a typed operation failure.',
         jsonSchema: {"type":"object","properties":{"items":{"type":"array","items":{"type":"object","properties":{"ownerHandle":{"type":"string"},"slug":{"type":"string"},"displayName":{"type":"string"},"summary":{"type":"string"},"stats":{"type":"object","properties":{"downloads":{"type":"number"},"installs":{"type":"number"},"stars":{"type":"number"}},"required":[],"additionalProperties":true}},"required":["ownerHandle","slug","displayName","summary"],"additionalProperties":true}},"nextCursor":{"oneOf":[{"type":"null","const":null},{"type":"string"}]}},"required":["items","nextCursor"],"additionalProperties":true},
       },
-      sourceLocation: {"file":"packages/deepseek-harness-product/skills/src/manager.ts","line":424,"column":3},
+      sourceLocation: {"file":"packages/deepseek-harness-product/skills/src/manager.ts","line":416,"column":3},
     },
     'skillsManager/listRepositories': {
       service: 'skillsManager',
@@ -1755,7 +1588,7 @@ export const TYPERT_REMOTE = createTypertRemoteInfo({
         description: 'The committed result or a typed operation failure.',
         jsonSchema: {"type":"object","properties":{"installRoots":{"type":"array","items":{"type":"object","properties":{"key":{"type":"string","enum":["dsh","agents"]},"path":{"type":"string"},"label":{"type":"string"},"localeKey":{"type":"string"},"available":{"type":"boolean"},"error":{"type":"object","properties":{"code":{"type":"string"},"params":{"type":"object","properties":{},"required":[],"additionalProperties":true},"error":{"type":"string"},"level":{"type":"string"}},"required":[],"additionalProperties":true}},"required":["key","path","label","available"],"additionalProperties":true}},"catalogInstalls":{"type":"array","items":{"type":"string"}},"catalogCopies":{"type":"array","items":{"type":"object","properties":{"id":{"type":"string"},"name":{"type":"string"},"installedRoot":{"type":"string","enum":["dsh","agents"]},"installedWorkspace":{"type":"string"},"canUninstall":{"type":"boolean"}},"required":["id","name","installedRoot","canUninstall"],"additionalProperties":true}},"catalogWarnings":{"type":"array","items":{"type":"object","properties":{"id":{"type":"string"},"code":{"type":"string"},"error":{"type":"string"}},"required":["id","code","error"],"additionalProperties":true}},"repositories":{"type":"array","items":{"type":"object","properties":{"skills":{"type":"array","items":{"type":"object","properties":{"installations":{"type":"array","items":{"type":"object","properties":{"tracked":{"type":"boolean","const":true},"updateAvailable":{"type":"boolean"},"canRollback":{"type":"boolean"},"canUninstall":{"type":"boolean"},"status":{"type":"string"},"installedWorkspace":{"type":"string"},"installedRoot":{"type":"string","enum":["dsh","agents"]}},"required":["tracked","updateAvailable","canRollback","canUninstall","status","installedRoot"],"additionalProperties":true}},"status":{"type":"string"},"path":{"type":"string"},"name":{"type":"string"},"description":{"type":"string"},"valid":{"type":"boolean"},"documentHash":{"type":"string"},"files":{"type":"array","items":{"type":"object","properties":{"path":{"type":"string"},"hash":{"type":"string"}},"required":["path","hash"],"additionalProperties":true}}},"required":["installations","status","path","name","description","valid","documentHash"],"additionalProperties":true}},"id":{"type":"string"},"commit":{"oneOf":[{"type":"null","const":null},{"type":"string"}]},"refreshedAt":{"oneOf":[{"type":"null","const":null},{"type":"string"}]},"error":{"oneOf":[{"type":"null","const":null},{"type":"object","properties":{"code":{"type":"string"},"params":{"type":"object","properties":{},"required":[],"additionalProperties":true},"error":{"type":"string"},"level":{"type":"string"}},"required":[],"additionalProperties":true}]},"owner":{"type":"string"},"name":{"type":"string"},"ref":{"type":"string"},"subdirectory":{"type":"string"}},"required":["skills","id","commit","refreshedAt","error","owner","name","ref","subdirectory"],"additionalProperties":true}}},"required":["installRoots","catalogInstalls","catalogCopies","catalogWarnings","repositories"],"additionalProperties":true},
       },
-      sourceLocation: {"file":"packages/deepseek-harness-product/skills/src/manager.ts","line":344,"column":3},
+      sourceLocation: {"file":"packages/deepseek-harness-product/skills/src/manager.ts","line":336,"column":3},
     },
     'skillsManager/listWorkspaces': {
       service: 'skillsManager',
@@ -1837,7 +1670,7 @@ export const TYPERT_REMOTE = createTypertRemoteInfo({
         description: 'The committed result or a typed operation failure.',
         jsonSchema: {"type":"object","properties":{"token":{"type":"string"},"commit":{"oneOf":[{"type":"null","const":null},{"type":"string"}]},"localModified":{"type":"boolean"},"changes":{"type":"array","items":{"type":"object","properties":{"path":{"type":"string"},"kind":{"type":"string"}},"required":["path","kind"],"additionalProperties":true}},"rollback":{"type":"boolean"}},"required":["token","commit","localModified","changes","rollback"],"additionalProperties":true},
       },
-      sourceLocation: {"file":"packages/deepseek-harness-product/skills/src/manager.ts","line":400,"column":3},
+      sourceLocation: {"file":"packages/deepseek-harness-product/skills/src/manager.ts","line":392,"column":3},
     },
     'skillsManager/readCatalog': {
       service: 'skillsManager',
@@ -1870,7 +1703,7 @@ export const TYPERT_REMOTE = createTypertRemoteInfo({
         description: 'The committed result or a typed operation failure.',
         jsonSchema: {"type":"object","properties":{"name":{"type":"string"},"description":{"type":"string"},"body":{"type":"string"},"origin":{"type":"string"}},"required":["name","description","body","origin"],"additionalProperties":true},
       },
-      sourceLocation: {"file":"packages/deepseek-harness-product/skills/src/manager.ts","line":449,"column":3},
+      sourceLocation: {"file":"packages/deepseek-harness-product/skills/src/manager.ts","line":441,"column":3},
     },
     'skillsManager/readDetail': {
       service: 'skillsManager',
@@ -1936,7 +1769,7 @@ export const TYPERT_REMOTE = createTypertRemoteInfo({
         description: 'The committed result or a typed operation failure.',
         jsonSchema: {"type":"object","properties":{"commit":{"oneOf":[{"type":"null","const":null},{"type":"string"}]},"path":{"type":"string"},"name":{"type":"string"},"description":{"type":"string"},"body":{"type":"string"},"valid":{"type":"boolean"},"documentHash":{"type":"string"},"files":{"type":"array","items":{"type":"object","properties":{"path":{"type":"string"},"hash":{"type":"string"}},"required":["path","hash"],"additionalProperties":true}}},"required":["commit","path","name","description","body","valid","documentHash"],"additionalProperties":true},
       },
-      sourceLocation: {"file":"packages/deepseek-harness-product/skills/src/manager.ts","line":376,"column":3},
+      sourceLocation: {"file":"packages/deepseek-harness-product/skills/src/manager.ts","line":368,"column":3},
     },
     'skillsManager/readState': {
       service: 'skillsManager',
@@ -2052,7 +1885,7 @@ export const TYPERT_REMOTE = createTypertRemoteInfo({
         description: 'The committed result or a typed operation failure.',
         jsonSchema: {"type":"object","properties":{"id":{"type":"string"},"skills":{"type":"array","items":{"type":"object","properties":{"path":{"type":"string"},"name":{"type":"string"},"description":{"type":"string"},"body":{"type":"string"},"valid":{"type":"boolean"},"documentHash":{"type":"string"},"files":{"type":"array","items":{"type":"object","properties":{"path":{"type":"string"},"hash":{"type":"string"}},"required":["path","hash"],"additionalProperties":true}}},"required":["path","name","description","body","valid","documentHash"],"additionalProperties":true}},"commit":{"oneOf":[{"type":"null","const":null},{"type":"string"}]},"refreshedAt":{"oneOf":[{"type":"null","const":null},{"type":"string"}]},"error":{"oneOf":[{"type":"null","const":null},{"type":"object","properties":{"code":{"type":"string"},"params":{"type":"object","properties":{},"required":[],"additionalProperties":true},"error":{"type":"string"},"level":{"type":"string"}},"required":[],"additionalProperties":true}]},"owner":{"type":"string"},"name":{"type":"string"},"ref":{"type":"string"},"subdirectory":{"type":"string"}},"required":["id","skills","commit","refreshedAt","error","owner","name","ref","subdirectory"],"additionalProperties":true},
       },
-      sourceLocation: {"file":"packages/deepseek-harness-product/skills/src/manager.ts","line":368,"column":3},
+      sourceLocation: {"file":"packages/deepseek-harness-product/skills/src/manager.ts","line":360,"column":3},
     },
     'skillsManager/removeRepository': {
       service: 'skillsManager',
@@ -2085,7 +1918,7 @@ export const TYPERT_REMOTE = createTypertRemoteInfo({
         description: 'The committed result or a typed operation failure.',
         jsonSchema: {"type":"object","properties":{"id":{"type":"string"}},"required":["id"],"additionalProperties":true},
       },
-      sourceLocation: {"file":"packages/deepseek-harness-product/skills/src/manager.ts","line":360,"column":3},
+      sourceLocation: {"file":"packages/deepseek-harness-product/skills/src/manager.ts","line":352,"column":3},
     },
     'skillsManager/renameCategory': {
       service: 'skillsManager',
@@ -2201,7 +2034,7 @@ export const TYPERT_REMOTE = createTypertRemoteInfo({
         description: 'The committed result or a typed operation failure.',
         jsonSchema: {"type":"object","properties":{"name":{"type":"string"},"commit":{"oneOf":[{"type":"null","const":null},{"type":"string"}]}},"required":["name","commit"],"additionalProperties":true},
       },
-      sourceLocation: {"file":"packages/deepseek-harness-product/skills/src/manager.ts","line":416,"column":3},
+      sourceLocation: {"file":"packages/deepseek-harness-product/skills/src/manager.ts","line":408,"column":3},
     },
     'skillsManager/searchClawHub': {
       service: 'skillsManager',
@@ -2251,7 +2084,7 @@ export const TYPERT_REMOTE = createTypertRemoteInfo({
         description: 'The committed result or a typed operation failure.',
         jsonSchema: {"type":"object","properties":{"results":{"type":"array","items":{"type":"object","properties":{"ownerHandle":{"type":"string"},"slug":{"type":"string"},"displayName":{"type":"string"},"summary":{"type":"string"},"stats":{"type":"object","properties":{"downloads":{"type":"number"},"installs":{"type":"number"},"stars":{"type":"number"}},"required":[],"additionalProperties":true},"source":{"type":"string","const":"clawhub"},"id":{"type":"string"},"downloads":{"type":"number"}},"required":["ownerHandle","slug","displayName","summary","source"],"additionalProperties":true}}},"required":["results"],"additionalProperties":true},
       },
-      sourceLocation: {"file":"packages/deepseek-harness-product/skills/src/manager.ts","line":433,"column":3},
+      sourceLocation: {"file":"packages/deepseek-harness-product/skills/src/manager.ts","line":425,"column":3},
     },
     'skillsManager/searchSkillsSh': {
       service: 'skillsManager',
@@ -2284,7 +2117,7 @@ export const TYPERT_REMOTE = createTypertRemoteInfo({
         description: 'The committed result or a typed operation failure.',
         jsonSchema: {"type":"object","properties":{"skills":{"type":"array","items":{"type":"object","properties":{"id":{"type":"string"},"source":{"type":"string"},"skillId":{"type":"string"},"name":{"type":"string"},"installs":{"type":"number"}},"required":["id","source","skillId","name"],"additionalProperties":true}}},"required":["skills"],"additionalProperties":true},
       },
-      sourceLocation: {"file":"packages/deepseek-harness-product/skills/src/manager.ts","line":441,"column":3},
+      sourceLocation: {"file":"packages/deepseek-harness-product/skills/src/manager.ts","line":433,"column":3},
     },
     'skillsManager/setCategoryEnabled': {
       service: 'skillsManager',
@@ -2500,7 +2333,7 @@ export const TYPERT_REMOTE = createTypertRemoteInfo({
         description: 'The committed result or a typed operation failure.',
         jsonSchemaError: 'typert tool schema: selected union branches overlap or have no required discriminator',
       },
-      sourceLocation: {"file":"packages/deepseek-harness-product/skills/src/manager.ts","line":392,"column":3},
+      sourceLocation: {"file":"packages/deepseek-harness-product/skills/src/manager.ts","line":384,"column":3},
     },
     'skillsManager/updateRepository': {
       service: 'skillsManager',
@@ -2533,7 +2366,7 @@ export const TYPERT_REMOTE = createTypertRemoteInfo({
         description: 'The committed result or a typed operation failure.',
         jsonSchema: {"type":"object","properties":{"name":{"type":"string"},"commit":{"oneOf":[{"type":"null","const":null},{"type":"string"}]}},"required":["name","commit"],"additionalProperties":true},
       },
-      sourceLocation: {"file":"packages/deepseek-harness-product/skills/src/manager.ts","line":408,"column":3},
+      sourceLocation: {"file":"packages/deepseek-harness-product/skills/src/manager.ts","line":400,"column":3},
     },
     'skillsManager/uploadSkill': {
       service: 'skillsManager',
@@ -2546,15 +2379,15 @@ export const TYPERT_REMOTE = createTypertRemoteInfo({
           source: 'json',
           codec: {
             mode: 'strict',
-            typeSymbol: '@deepseek-harness/product-skills/types#ManagerImport',
+            typeSymbol: '@deepseek-harness/product-skills/types#ManagerUpload',
             create: _deepseek_harness_product_skills_skillsManager_uploadSkill_parameter_0$schema,
-            jsonSchema: {"type":"object","properties":{"root":{"type":"string"},"source":{"type":"string"},"conflict":{"type":"string","enum":["overwrite","skip"]},"dryRun":{"type":"boolean"},"sessionId":{"type":"string"},"workspace":{"type":"string"},"name":{"type":"string"},"description":{"type":"string"},"body":{"type":"string"},"zip":{"type":"string"},"entries":{"type":"array","items":{"type":"object","properties":{"path":{"type":"string"},"data":{"type":"string"}},"required":["path","data"],"additionalProperties":true}}},"required":[],"additionalProperties":true},
+            jsonSchema: {"type":"object","properties":{"conflict":{"type":"string","enum":["overwrite","skip"]},"root":{"type":"string"},"sessionId":{"type":"string"},"workspace":{"type":"string"},"name":{"type":"string"},"zip":{"type":"string"},"entries":{"type":"array","items":{"type":"object","properties":{"path":{"type":"string"},"data":{"type":"string"}},"required":["path","data"],"additionalProperties":true}}},"required":[],"additionalProperties":true},
           },
           strictCodec: {
             mode: 'strict',
-            typeSymbol: '@deepseek-harness/product-skills/types#ManagerImport',
+            typeSymbol: '@deepseek-harness/product-skills/types#ManagerUpload',
             create: _deepseek_harness_product_skills_skillsManager_uploadSkill_parameter_0_strict$schema,
-            jsonSchema: {"type":"object","properties":{"root":{"type":"string"},"source":{"type":"string"},"conflict":{"type":"string","enum":["overwrite","skip"]},"dryRun":{"type":"boolean"},"sessionId":{"type":"string"},"workspace":{"type":"string"},"name":{"type":"string"},"description":{"type":"string"},"body":{"type":"string"},"zip":{"type":"string"},"entries":{"type":"array","items":{"type":"object","properties":{"path":{"type":"string"},"data":{"type":"string"}},"required":["path","data"],"additionalProperties":false}}},"required":[],"additionalProperties":false},
+            jsonSchema: {"type":"object","properties":{"conflict":{"type":"string","enum":["overwrite","skip"]},"root":{"type":"string"},"sessionId":{"type":"string"},"workspace":{"type":"string"},"name":{"type":"string"},"zip":{"type":"string"},"entries":{"type":"array","items":{"type":"object","properties":{"path":{"type":"string"},"data":{"type":"string"}},"required":["path","data"],"additionalProperties":false}}},"required":[],"additionalProperties":false},
           },
         },
       ],
@@ -2564,9 +2397,9 @@ export const TYPERT_REMOTE = createTypertRemoteInfo({
         typeSymbol: '@deepseek-harness/product-skills#skillsManager/uploadSkill:result',
         create: _deepseek_harness_product_skills_skillsManager_uploadSkill_result$schema,
         description: 'The committed result or a typed operation failure.',
-        jsonSchema: {"type":"object","properties":{"ok":{"type":"boolean"},"kind":{"type":"string"},"imported":{"type":"array","items":{"type":"object","properties":{"name":{"type":"string"},"overwritten":{"type":"boolean"},"warnings":{"type":"array","items":{"type":"object","properties":{"code":{"type":"string"},"params":{"type":"object","properties":{},"required":[],"additionalProperties":true},"error":{"type":"string"},"level":{"type":"string"}},"required":[],"additionalProperties":true}}},"required":["name","overwritten","warnings"],"additionalProperties":true}},"skipped":{"type":"array","items":{"type":"object","properties":{"name":{"type":"string"},"source":{"type":"string"}},"required":["name","source"],"additionalProperties":true}},"failed":{"type":"array","items":{"type":"object","properties":{"source":{"type":"string"},"error":{"type":"string"},"code":{"type":"string"},"params":{"type":"object","properties":{},"required":[],"additionalProperties":true},"level":{"type":"string"}},"required":["source","error"],"additionalProperties":true}},"pending":{"type":"array","items":{"type":"object","properties":{"name":{"type":"string"},"source":{"type":"string"},"isDir":{"type":"boolean"},"dest":{"type":"string"}},"required":["name","source","isDir","dest"],"additionalProperties":true}},"conflicts":{"type":"array","items":{"type":"object","properties":{"name":{"type":"string"},"source":{"type":"string"},"isDir":{"type":"boolean"},"paths":{"type":"array","items":{"type":"string"}}},"required":["name","source","isDir","paths"],"additionalProperties":true}},"code":{"type":"string"},"params":{"type":"object","properties":{},"required":[],"additionalProperties":true},"error":{"type":"string"},"level":{"type":"string"}},"required":[],"additionalProperties":true},
+        jsonSchema: {"type":"object","properties":{"ok":{"type":"boolean"},"kind":{"type":"string"},"imported":{"type":"array","items":{"type":"object","properties":{"name":{"type":"string"},"overwritten":{"type":"boolean"},"warnings":{"type":"array","items":{"type":"object","properties":{"code":{"type":"string"},"params":{"type":"object","properties":{},"required":[],"additionalProperties":true},"error":{"type":"string"},"level":{"type":"string"}},"required":[],"additionalProperties":true}}},"required":["name","overwritten","warnings"],"additionalProperties":true}},"skipped":{"type":"array","items":{"type":"object","properties":{"name":{"type":"string"},"source":{"type":"string"}},"required":["name","source"],"additionalProperties":true}},"failed":{"type":"array","items":{"type":"object","properties":{"source":{"type":"string"},"error":{"type":"string"},"code":{"type":"string"},"params":{"type":"object","properties":{},"required":[],"additionalProperties":true},"level":{"type":"string"}},"required":["source","error"],"additionalProperties":true}},"code":{"type":"string"},"params":{"type":"object","properties":{},"required":[],"additionalProperties":true},"error":{"type":"string"},"level":{"type":"string"}},"required":[],"additionalProperties":true},
       },
-      sourceLocation: {"file":"packages/deepseek-harness-product/skills/src/manager.ts","line":335,"column":3},
+      sourceLocation: {"file":"packages/deepseek-harness-product/skills/src/manager.ts","line":327,"column":3},
     },
   },
 }, z)
