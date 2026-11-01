@@ -11,8 +11,9 @@ import Tools from '@deepseek-ai/dsh-tools'
 import * as NativeToolExecutor from '@deepseek-ai/dsh-tool-executor-native'
 import { expect, it, onTestFinished } from 'vitest'
 import * as CapabilityPrompt from '../src/capability-prompt.ts'
+import { ProductTaskCapabilitiesSchema } from '@deepseek-harness/product/protocol'
 
-it('retains a blocked generation for its existing Agent after the same task identity is prepared successfully', async () => {
+it('retains blocked Agents while a replacement records literal capability identities', async () => {
   const ctx = new Context()
   ctx.baseUrl = import.meta.url
   onTestFinished(() => ctx.fiber.dispose())
@@ -49,10 +50,11 @@ it('retains a blocked generation for its existing Agent after the same task iden
   }
   const old = await create('blocked-history')
   await unregister!()
+  const capabilities = ProductTaskCapabilitiesSchema.parse({ basePresetId: '{{project}}',
+    knowledgeBaseIds: ['pinned', '{{project}}', '{{unknown}}', '{{{value}}}', '{{', '中文 🧩'] })
   unregister = await ctx.agentPresets.register({ id: 'task', selectable: false, defaultable: false,
-    plugins: [{ id: 'restored', name: 'cordis:capabilities', config: { capabilities: {
-      knowledgeBaseIds: ['pinned'],
-    } } }] })
+    plugins: [{ id: 'restored', name: 'cordis:capabilities', config: { capabilities } }] })
+  ctx.systemPrompt.variable('project', () => 'Resolved host variable')
   const fresh = await create('replacement')
   class Adapter extends LlmAdapter {
     readonly requests: GenerateOptions[] = []
@@ -73,6 +75,14 @@ it('retains a blocked generation for its existing Agent after the same task iden
   fresh.followup(createUserMessage({ content: [{ type: 'text', text: 'Continue.' }], source: { kind: 'user' } }))
   await expect.poll(() => adapter.requests.length).toBe(1)
   await expect.poll(() => fresh.status).toBe('idle')
+  const system = adapter.requests[0]!.messages.filter(message => message.role === 'system')
+  const expected = `Task capability snapshot:\n${JSON.stringify(capabilities)}`
+  expect(system).toHaveLength(1)
+  expect(system[0]!.content).toEqual([{ type: 'text', text: expect.stringContaining(expected) }])
+  expect(system[0]!.content).toMatchSnapshot()
+  const recorded = fresh.session.snapshotEvents().filter(event => event.type === 'system/message')
+  expect(recorded).toHaveLength(1)
+  expect(recorded[0]!.data.message.content).toEqual(system[0]!.content)
   expect(JSON.stringify(fresh.session.snapshotEvents())).toContain('Task capability snapshot:')
   expect(JSON.stringify(fresh.session.snapshotEvents())).toContain('pinned')
   expect(old.session.snapshotEvents().some(event => event.type === 'request/header')).toBe(false)

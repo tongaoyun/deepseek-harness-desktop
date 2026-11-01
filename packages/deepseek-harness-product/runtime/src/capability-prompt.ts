@@ -24,7 +24,7 @@ export function apply(ctx: Context, config: Config): void {
     return
   }
   ctx.effect(() => ctx.systemPrompt.section({
-    name: 'product-task-capabilities', order: 450,
+    name: 'product-task-capabilities', order: 450, interpolate: false,
     text: `Task capability snapshot:\n${JSON.stringify(config.capabilities)}`,
   }), 'product-task-capabilities.prompt')
 }
