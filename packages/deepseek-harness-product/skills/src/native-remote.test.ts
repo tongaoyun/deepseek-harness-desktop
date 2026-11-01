@@ -16,7 +16,7 @@ import Typert from '@deepseek-ai/dsh-typert-registry'
 import Gateway from '@deepseek-ai/dsh-api-gateway'
 import Access from '@deepseek-ai/dsh-api-remote-access'
 import { Peer } from '@deepseek-ai/dsh-client-connection'
-import { lstat, mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from 'node:fs/promises'
+import { lstat, mkdir, mkdtemp, readFile, readdir, realpath, rm, symlink, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { pathToFileURL } from 'node:url'
@@ -193,6 +193,33 @@ it('preserves creation, policy, upload, export and trash through native dispatch
   const guest = new Peer(ctx, { principal: { kind: 'skills-test-guest' } })
   ctx.remoteAccess.registerPolicy('skills-test-guest', { bindings: () => [{ resource: { kind: 'global' }, role: { name: 'test-wide', resource: 'global', actions: ['skillsManager/createSkill'] } }] })
   await expect(ctx.typertGateway.invoke({ namespace: 'skillsManager', method: 'createSkill', args: { request: { name: 'guest-orders', description: 'No', body: 'No' } }, peer: guest })).rejects.toMatchObject({ code: 'skills/operation', details: { code: 'error.proto.forbidden' } })
+}, 30000)
+
+it.each(['entries', 'zip'] as const)('rejects nonportable %s resource paths without installing a skill, then accepts portable resources', async (format) => {
+  const { ctx, root, invoke } = await boot()
+  const document = '---\nname: portable-orders\ndescription: Portable resources\n---\nRead the resources.'
+  const request = (resources: Record<string, string>) => {
+    const files = { 'SKILL.md': document, ...resources }
+    return format === 'zip'
+      ? { zip: Buffer.from(zipSync(Object.fromEntries(Object.entries(files).map(([path, text]) => [path, strToU8(text)])))).toString('base64') }
+      : { entries: Object.entries(files).map(([path, text]) => ({ path, data: Buffer.from(text).toString('base64') })) }
+  }
+  const changes = vi.fn()
+  ctx.on('skills/change', changes)
+  for (const path of ['assets/note.md:stream', 'assets/ref.', 'assets/ref /note.md', 'assets/a?b.md', 'assets/a\u0001b.md']) {
+    await expect(invoke('uploadSkill', { request: request({ [path]: 'Invalid resource.' }) }))
+      .rejects.toMatchObject({ code: 'skills/operation', details: { code: 'error.upload.path', params: { path } } })
+    await expect(lstat(join(root, '.dsh/skills/portable-orders'))).rejects.toMatchObject({ code: 'ENOENT' })
+    expect(await readdir(join(root, '.dsh/skills-manager/uploads'))).toEqual([])
+  }
+  expect(changes).not.toHaveBeenCalled()
+  const resources = { 'assets/参考.md': 'Read this.', '.config/settings.json': '{}', 'assets\\nested\\note.md': 'Nested resource.' }
+  await invoke('uploadSkill', { request: request(resources) })
+  for (const [path, text] of Object.entries(resources)) {
+    expect(await readFile(join(root, '.dsh/skills/portable-orders', path.replaceAll('\\', '/')), 'utf8')).toBe(text)
+  }
+  expect((await ctx.skills.get('portable-orders'))?.content).toBe('Read the resources.')
+  expect(changes).toHaveBeenCalled()
 }, 30000)
 
 it.each([

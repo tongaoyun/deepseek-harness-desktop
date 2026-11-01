@@ -748,19 +748,19 @@ async function lstatOrNull(path: string) {
   }
 }
 
-/** 名称只允许一个普通路径段；不把既有技能名称限制为 kebab-case。 */
+function portablePathSegment(name: string) {
+  return name !== "" && name !== "." && name !== ".." &&
+    name.length <= MAX_ENTRY_NAME_LENGTH &&
+    !/[\\/:*?"<>|\x00-\x1f]/.test(name) &&
+    !/[. ]$/.test(name) && !WINDOWS_DEVICE_NAME_RE.test(name);
+}
+
+/** 名称只允许一个跨平台普通路径段；不把既有技能名称限制为 kebab-case。 */
 export function entryPath(root: string, name: string) {
   if (
     typeof name !== "string" ||
-    name === "" ||
-    name === "." ||
-    name === ".." ||
     name.startsWith(".") ||
-    name.length > MAX_ENTRY_NAME_LENGTH ||
-    /[\\/:*?"<>|\0]/.test(name) ||
-    /[. ]$/.test(name) ||
-    WINDOWS_DEVICE_NAME_RE.test(name) ||
-    basename(name) !== name
+    !portablePathSegment(name)
   )
     return null;
   const rootPath = resolve(root);
@@ -2574,7 +2574,7 @@ async function importSkill(source: string, log?: Log, options: MutationOptions =
 // ── 浏览器上传导入 ──────────────────────────────────────────────────────────
 
 /**
- * 校验浏览器或 ZIP 提供的相对路径。上传内容始终写成普通文件，不解释 ZIP 的链接元数据。
+ * 校验浏览器或 ZIP 提供的跨平台相对路径，保留隐藏资源文件。上传内容始终写成普通文件，不解释 ZIP 的链接元数据。
  * 这样既不依赖浏览器泄露本机绝对路径，也不会让归档跨出管理器暂存目录。
  */
 function normalizeUploadPath(input: string) {
@@ -2600,14 +2600,7 @@ function normalizeUploadPath(input: string) {
   if (
     !parts.length ||
     parts.length > MAX_SOURCE_DEPTH ||
-    parts.some(
-      (part) =>
-        !part ||
-        part === "." ||
-        part === ".." ||
-        part.length > MAX_ENTRY_NAME_LENGTH ||
-        WINDOWS_DEVICE_NAME_RE.test(part),
-    )
+    parts.some((part) => !portablePathSegment(part))
   ) {
     throw codedError(`上传条目路径非法: ${raw}`, "error.upload.path", {
       path: raw,
