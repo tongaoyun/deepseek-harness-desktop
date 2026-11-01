@@ -203,32 +203,9 @@ export class DeepSeekHarnessApiClient {
       if (!isEnvelope(body)) throw invalidResponse()
       throw serverError(response.status, body)
     }
-    const reader = response.body?.getReader()
-    if (reader === undefined) throw new DeepSeekHarnessApiError(502, 'INVALID_SERVER_RESPONSE', 'Original file body is missing')
-    const abort = (): void => { void reader.cancel(lifetime.reason).catch(() => undefined) }
-    lifetime.addEventListener('abort', abort, { once: true })
-    let byteLength = 0
-    try {
-      lifetime.throwIfAborted()
-      const declared = response.headers.get('content-length')
-      if (declared !== null && /^\d+$/u.test(declared) && Number(declared) > maxBytes) {
-        throw new ProductError('KNOWLEDGE_PREVIEW_TOO_LARGE', 'Original file exceeds the file size limit', false)
-      }
-      for (;;) {
-        const { done, value } = await reader.read()
-        lifetime.throwIfAborted()
-        if (done) break
-        byteLength += value.byteLength
-        if (byteLength > maxBytes) throw new ProductError('KNOWLEDGE_PREVIEW_TOO_LARGE', 'Original file exceeds the file size limit', false)
-        await write(value)
-      }
-      lifetime.throwIfAborted()
-      return { mediaType: response.headers.get('content-type') ?? 'application/octet-stream', byteLength }
-    } finally {
-      lifetime.removeEventListener('abort', abort)
-      await reader.cancel().catch(() => undefined)
-      reader.releaseLock()
-    }
+    const byteLength = await streamBody(response, maxBytes, lifetime, write,
+      new ProductError('KNOWLEDGE_PREVIEW_TOO_LARGE', 'Original file exceeds the file size limit', false))
+    return { mediaType: response.headers.get('content-type') ?? 'application/octet-stream', byteLength }
   }
 
   private async requestPage<T>(path: string, signal?: AbortSignal): Promise<PageResponse<T>> {
@@ -336,33 +313,46 @@ function serverError(status: number, body: ColaResponse<unknown>): DeepSeekHarne
 }
 
 async function readBoundedBody(response: Response, maxBytes: number, signal: AbortSignal): Promise<Uint8Array> {
+  const chunks: Uint8Array[] = []
+  const length = await streamBody(response, maxBytes, signal, async (chunk) => { chunks.push(chunk) },
+    new ProductError('KNOWLEDGE_PREVIEW_TOO_LARGE', 'Original file exceeds the preview size limit', false))
+  const data = new Uint8Array(length)
+  let offset = 0
+  for (const chunk of chunks) { data.set(chunk, offset); offset += chunk.byteLength }
+  return data
+}
+
+/** Bound successful files and error bodies through one reader; transport cleanup cannot replace the outcome. */
+async function streamBody(response: Response, maxBytes: number, signal: AbortSignal,
+  write: (chunk: Uint8Array) => Promise<void>, sizeError: Error): Promise<number> {
   const reader = response.body?.getReader()
   if (reader === undefined) throw new DeepSeekHarnessApiError(502, 'INVALID_SERVER_RESPONSE', 'Original file body is missing')
-  const abort = (): void => { void reader.cancel(signal.reason).catch(() => undefined) }
-  signal.addEventListener('abort', abort, { once: true })
+  const cancel = (): void => {
+    void reader.cancel(signal.reason).catch(() => {
+      // A stalled or failed transport cleanup must not hold the caller's failure or its reader lock.
+    })
+  }
+  signal.addEventListener('abort', cancel, { once: true })
+  let complete = false
+  let length = 0
   try {
     signal.throwIfAborted()
     const declared = response.headers.get('content-length')
-    if (declared !== null && /^\d+$/u.test(declared) && Number(declared) > maxBytes) {
-      throw new ProductError('KNOWLEDGE_PREVIEW_TOO_LARGE', 'Original file exceeds the preview size limit', false)
-    }
-    const chunks: Uint8Array[] = []
-    let length = 0
+    if (declared !== null && /^\d+$/u.test(declared) && Number(declared) > maxBytes) throw sizeError
     for (;;) {
       const { done, value } = await reader.read()
       signal.throwIfAborted()
       if (done) break
       length += value.byteLength
-      if (length > maxBytes) throw new ProductError('KNOWLEDGE_PREVIEW_TOO_LARGE', 'Original file exceeds the preview size limit', false)
-      chunks.push(value)
+      if (length > maxBytes) throw sizeError
+      await write(value)
     }
-    const data = new Uint8Array(length)
-    let offset = 0
-    for (const chunk of chunks) { data.set(chunk, offset); offset += chunk.byteLength }
-    return data
+    signal.throwIfAborted()
+    complete = true
+    return length
   } finally {
-    signal.removeEventListener('abort', abort)
-    await reader.cancel().catch(() => undefined)
+    signal.removeEventListener('abort', cancel)
+    if (!complete) cancel()
     reader.releaseLock()
   }
 }
