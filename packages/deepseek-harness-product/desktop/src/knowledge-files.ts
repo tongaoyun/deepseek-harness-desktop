@@ -46,7 +46,7 @@ export interface KnowledgeFilesOptions {
   readonly openPath: (path: string) => Promise<string>
 }
 
-/** Own streaming, conversion chunks, downloads and cleanup; file originals must match their declared byte size. */
+/** Own file transfers; originals match metadata and disk reads assemble complete ranges or fail on early EOF. */
 export class KnowledgeFiles {
   private readonly entries = new Map<string, Transfer>()
   private readonly operations = new Set<Promise<unknown>>()
@@ -199,8 +199,8 @@ export class KnowledgeFiles {
         if (input.missingFonts !== undefined && (!Array.isArray(input.missingFonts) || input.missingFonts.length > 256
           || input.missingFonts.some(font => typeof font !== 'string' || font.length > 256))) invalid()
         if (Array.isArray(input.missingFonts)) entry.missingFonts = input.missingFonts as string[]
-        const signature = Buffer.alloc(5)
-        await entry.handle.read(signature, 0, 5, 0)
+        if (entry.byteLength < 5) throw new ProductError('KNOWLEDGE_PREVIEW_INVALID', 'Invalid rendered PDF', false)
+        const signature = await readBytes(entry.handle, 0, 5, lifetime)
         if (signature.toString('ascii') !== '%PDF-') throw new ProductError('KNOWLEDGE_PREVIEW_INVALID', 'Invalid rendered PDF', false)
         entry.ready = true
         lifetime.throwIfAborted()
@@ -209,9 +209,7 @@ export class KnowledgeFiles {
       if (!entry.ready) invalid()
       const offset = position(input.offset)
       if (offset > entry.byteLength) invalid()
-      const bytes = Buffer.alloc(Math.min(KNOWLEDGE_FILE_CHUNK_BYTES, entry.byteLength - offset))
-      const result = await entry.handle.read(bytes, 0, bytes.length, offset)
-      if (result.bytesRead !== bytes.length) throw new ProductError('KNOWLEDGE_PREVIEW_FAILED', 'Temporary file became unavailable', true)
+      const bytes = await readBytes(entry.handle, offset, Math.min(KNOWLEDGE_FILE_CHUNK_BYTES, entry.byteLength - offset), lifetime)
       lifetime.throwIfAborted()
       const data = new Uint8Array(bytes.buffer, bytes.byteOffset, bytes.byteLength)
       const chunk: KnowledgeFileChunk = { data, offset, eof: offset + data.length === entry.byteLength }
@@ -340,6 +338,19 @@ export class KnowledgeFiles {
     void pending.finally(() => this.removals.delete(entry.id)).catch(() => undefined)
     return pending
   }
+}
+
+async function readBytes(handle: FileHandle, offset: number, length: number, signal: AbortSignal): Promise<Buffer> {
+  const bytes = Buffer.alloc(length)
+  let read = 0
+  while (read < length) {
+    signal.throwIfAborted()
+    const result = await handle.read(bytes, read, length - read, offset + read)
+    signal.throwIfAborted()
+    if (result.bytesRead === 0) throw new ProductError('KNOWLEDGE_PREVIEW_FAILED', 'Temporary file became unavailable', true)
+    read += result.bytesRead
+  }
+  return bytes
 }
 
 function descriptor(entry: Transfer): KnowledgeFileTransfer {
