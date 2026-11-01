@@ -18,7 +18,7 @@ import * as Experts from '../src/index.ts'
 import { TEST_TEAMS } from '../src/fixtures/teams.ts'
 import { createTeamAgent } from './native-team.ts'
 
-it.each(['expert', 'team'] as const)('preserves literal persona bytes for a summoned %s', async (mode) => {
+async function runPersonaScenario(mode: 'expert' | 'team', cancel = false): Promise<void> {
   const root = await mkdtemp(join(tmpdir(), 'expert-persona-loader-'))
   const ctx = new Context()
   onTestFinished(async () => { await ctx.fiber.dispose(); await rm(root, { recursive: true, force: true }) })
@@ -28,6 +28,10 @@ it.each(['expert', 'team'] as const)('preserves literal persona bytes for a summ
   await writeFile(join(root, 'engineering', 'tester.md'), `---\nname: Tester\ndescription: Review tests\n---\n${persona}\n`)
   const team = { ...TEST_TEAMS[0], members: ['reviewer', 'tester'].map(expertSlug => ({ expertSlug, duty: 'Review', instructions: 'Report evidence' })) }
   const received: string[] = []
+  const waiting = Promise.withResolvers<undefined>()
+  const lateResult = Promise.withResolvers<{ output: { type: 'text'; text: string }[]; stopReason: 'completed' }>()
+  const cleanup = Promise.withResolvers<undefined>()
+  let disposeCalls = 0
   let activationContext = ctx
   ctx.inject(['systemPrompt', 'tools'], (scope) => { activationContext = scope })
   // Replace only child model execution; expert dispatch and prompt registrations stay real.
@@ -45,6 +49,11 @@ it.each(['expert', 'team'] as const)('preserves literal persona bytes for a summ
       expect(renderPrompt(assembly)).toContain(persona)
       received.push(section!.text)
       expect(child.ctx.tools.get('summon_expert', child)).toBeUndefined()
+      if (cancel) return {
+        childId: id,
+        get result() { waiting.resolve(undefined); return lateResult.promise },
+        async dispose() { disposeCalls += 1; await cleanup.promise; await scope.dispose() },
+      }
       return { childId: id, result: Promise.resolve({ output: [{ type: 'text' as const, text: 'Reviewed' }], stopReason: 'completed' as const }),
         dispose: () => scope.dispose() }
     },
@@ -66,8 +75,29 @@ it.each(['expert', 'team'] as const)('preserves literal persona bytes for a summ
   const parent = createTeamAgent(ctx)
   const name = mode === 'expert' ? 'summon_expert' : 'summon_expert_team'
   const args = mode === 'expert' ? { expert: 'Reviewer', task: 'Review' } : { team: team.id, task: 'Review' }
-  const batch = await ctx.tools.execute({ agent: parent, signal: new AbortController().signal,
+  const controller = new AbortController()
+  if (cancel) controller.signal.addEventListener('abort', event => event.stopImmediatePropagation(), { once: true })
+  const execution = ctx.tools.execute({ agent: parent, signal: controller.signal,
     calls: [{ id: ToolCallId('persona-review'), type: 'tool-call', name, arguments: JSON.stringify(args) }] })
+  if (cancel) {
+    try {
+      await waiting.promise
+      controller.abort(new Error('Parent cancelled'))
+      expect(disposeCalls).toBe(1)
+      lateResult.resolve({ output: [{ type: 'text', text: 'Late expert answer' }], stopReason: 'completed' })
+      cleanup.resolve(undefined)
+      const batch = await execution
+      expect(batch.results[0].result.isError).toBe(true)
+      expect(JSON.stringify(batch.results[0].result)).not.toContain('Late expert answer')
+      expect(disposeCalls).toBe(1)
+    } finally {
+      lateResult.resolve({ output: [], stopReason: 'completed' })
+      cleanup.resolve(undefined)
+      await execution
+    }
+    return
+  }
+  const batch = await execution
   if (batch.results[0].result.isError) throw new Error(JSON.stringify(batch.results[0].result))
   expect(received).toEqual(mode === 'expert' ? [persona] : [persona, persona])
   expect(received).toMatchSnapshot()
@@ -80,4 +110,12 @@ it.each(['expert', 'team'] as const)('preserves literal persona bytes for a summ
   if (!entry?.fiber) throw new Error('Experts did not load')
   await entry.fiber.dispose()
   expect(ctx.tools.get('summon_expert')).toBeUndefined()
+}
+
+it.each(['expert', 'team'] as const)('preserves literal persona bytes for a summoned %s', async (mode) => {
+  await runPersonaScenario(mode)
+}, 30000)
+
+it('cancels a loaded expert despite an earlier listener stopping propagation', async () => {
+  await runPersonaScenario('expert', true)
 }, 30000)
