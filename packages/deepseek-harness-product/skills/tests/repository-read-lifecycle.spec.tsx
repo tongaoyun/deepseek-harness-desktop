@@ -1,14 +1,13 @@
 // @vitest-environment jsdom
 import * as React from 'react'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
-import { Button, Modal as NativeModal } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Modal as NativeModal } from '@deepseek-ai/dsh-client-ui-primitives'
 import { RemoteMock, ok } from '@deepseek-ai/dsh-remote-mock'
 import { afterEach, expect, it } from 'vitest'
 import type { ModalProps, SkillOutput } from '../src/client-types.ts'
 import { createDestinationKit } from '../src/destination-picker.ts'
 import { createRepositoryUI } from '../src/repository-ui.ts'
 import { createSkillApi } from '../src/remote-client.ts'
-import { Input } from '../src/plugin-ui.ts'
 import { createSourceSelect } from '../src/source-select.ts'
 
 afterEach(cleanup)
@@ -36,7 +35,7 @@ async function setup(installed = false) {
   mock.unary('skillsManager/listClawHub', () => ok({ items: [{ ownerHandle: 'company', slug: 'orders', displayName: 'Catalog orders' }], nextCursor: null }))
   const native = createSkillApi(Object.assign(mock.remote, { $mount: async () => async () => {}, $on: () => () => {} }))
   const api = native
-  const useRepositoryUI = createRepositoryUI({ react: React, Modal, Input, Button, SourceSelect, destination, api, translateError })
+  const useRepositoryUI = createRepositoryUI({ react: React, Modal, SourceSelect, destination, api, translateError })
   function Harness({ active = true }: { active?: boolean }) {
     const { content } = useRepositoryUI({ active, t })
     return content
