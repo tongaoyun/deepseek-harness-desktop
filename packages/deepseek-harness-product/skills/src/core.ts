@@ -16,7 +16,7 @@ import type { SkillRoot, RepositoryDestination, RootInput, Diagnostic, Operation
 
 import { homedir } from "node:os";
 import { writeFileAtomic } from "@deepseek-ai/dsh-atomic-write";
-import { resolveDshHome, resolveAgentsHome } from '@deepseek-ai/dsh-home-paths';
+import { canonicalizeWatchPath, resolveDshHome, resolveAgentsHome } from '@deepseek-ai/dsh-home-paths';
 import { isSkillName } from '@deepseek-ai/dsh-skill';
 import { parseSkillInvocationPolicy } from '@deepseek-ai/dsh-skill-filesystem/document';
 import { parseSkillDoc } from './skill-document.ts';
@@ -449,7 +449,12 @@ export async function projectRoots(projectCwds: string[] = [], diagnostics?: Dia
     for (const candidate of candidates) {
       if (candidate.kind !== "project-dsh" && !(await lstatOrNull(candidate.path)))
         continue;
-      if (await projectSourceSafe(candidate)) roots.push(candidate);
+      try {
+        if (await projectSourceSafe(candidate)) roots.push(candidate);
+      } catch (error) {
+        diagnostics?.push({ code: "warning.project.unavailable", params: { path: candidate.path },
+          error: `无法核验项目技能目录，请检查目录配置: ${candidate.path}` });
+      }
     }
   }
   return roots;
@@ -543,7 +548,12 @@ export async function resolveWorkspaceTarget(
     projectName: basename(found.root) || found.root,
     workspaceCwds: [found.cwd],
   };
-  const checked = await checkedWritableRootDefinition(root);
+  let checked;
+  try { checked = await checkedWritableRootDefinition(root); }
+  catch (error) {
+    return { ok: false, error: `无法核验项目技能目录，请检查目录配置: ${root.path}`,
+      code: "error.root.unsafe", params: { path: root.path } };
+  }
   if (!checked) return unregistered;
   if (checked.ok === false) return checked;
   return { root: checked as SkillRoot };
@@ -700,26 +710,10 @@ async function resolvedPath(path: string) {
   }
 }
 
-/** 即使末级路径尚不存在，也解析最近既存祖先中的链接，供权限域重叠判断。 */
-async function comparisonPath(path: string) {
-  let current = resolve(path);
-  const missing = [];
-  for (;;) {
-    try {
-      return resolve(await fs.realpath(current), ...missing);
-    } catch {
-      const parent = dirname(current);
-      if (parent === current) return resolve(path);
-      missing.unshift(basename(current));
-      current = parent;
-    }
-  }
-}
-
 async function overlapsUserSkillRoot(path: string) {
-  const candidate = await comparisonPath(path);
+  const candidate = await canonicalizeWatchPath(path);
   for (const root of userRoots()) {
-    const userPath = await comparisonPath(root.path);
+    const userPath = await canonicalizeWatchPath(root.path);
     if (
       isSameOrDescendant(candidate, userPath) ||
       isSameOrDescendant(userPath, candidate)

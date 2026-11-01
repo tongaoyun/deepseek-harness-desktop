@@ -16,7 +16,7 @@ import Typert from '@deepseek-ai/dsh-typert-registry'
 import Gateway from '@deepseek-ai/dsh-api-gateway'
 import Access from '@deepseek-ai/dsh-api-remote-access'
 import { Peer } from '@deepseek-ai/dsh-client-connection'
-import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises'
+import { lstat, mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { pathToFileURL } from 'node:url'
@@ -103,6 +103,61 @@ it.each(['listWorkspaces', 'readWorkspace'] as const)('reports a failed native w
   })
   expect(await invoke('createSkill', { request: { name: 'independent-orders', description: 'Local', body: 'Local body' } })).toMatchObject({ name: 'independent-orders' })
   expect(await readFile(join(root, '.dsh/skills/independent-orders/SKILL.md'), 'utf8')).toContain('Local body')
+}, 30000)
+
+it('detects a user-root alias before a missing project skill directory is created', async () => {
+  const { ctx, root, invoke } = await boot()
+  const project = join(root, 'project'), alias = join(root, 'project-alias')
+  await mkdir(join(project, '.git'), { recursive: true })
+  await symlink(project, alias, process.platform === 'win32' ? 'junction' : 'dir')
+  vi.stubEnv('DSH_CODEX_HOME', join(alias, '.dsh'))
+  ctx.provide('workspaceRegistry', { list: () => [{ path: project }] })
+  const request = { name: 'project-orders', description: 'Orders', body: 'Review orders.', workspace: project }
+  await expect(invoke('createSkill', { request })).rejects.toMatchObject({
+    code: 'skills/operation', details: { code: 'error.root.unsafe' },
+  })
+  await expect(lstat(join(project, '.dsh'))).rejects.toMatchObject({ code: 'ENOENT' })
+  vi.stubEnv('DSH_CODEX_HOME', join(root, '.codex'))
+  await invoke('createSkill', { request })
+  expect(await readFile(join(project, '.dsh/skills/project-orders/SKILL.md'), 'utf8')).toContain('Review orders.')
+}, 30000)
+
+it('hides unverifiable project skills and blocks writes until the configured source directory is repaired', async () => {
+  const { ctx, root, invoke } = await boot()
+  const project = join(root, 'project'), configured = join(root, 'codex-home')
+  await mkdir(join(project, '.git'), { recursive: true })
+  await mkdir(join(project, '.dsh/skills/project-orders'), { recursive: true })
+  await writeFile(join(project, '.dsh/skills/project-orders/SKILL.md'), '---\nname: project-orders\ndescription: Orders\n---\nReview orders.')
+  await writeFile(configured, 'not a directory')
+  vi.stubEnv('DSH_CODEX_HOME', configured)
+  ctx.provide('workspaceRegistry', { list: () => [{ path: project }] })
+  const session = ctx.sessions.create(SessionId('unverifiable-project'), { meta: { cwd: project } })
+  const snapshot = z.object({
+    roots: z.array(z.object({ scope: z.string(), skills: z.array(z.object({ name: z.string() })) })),
+    warnings: z.array(z.object({ code: z.string().optional() })),
+  })
+  const read = async () => snapshot.parse(await invoke('readState', { scope: { sessionId: session.id }, refreshCompany: false }))
+  const unavailable = await read()
+  expect({ projectRoots: unavailable.roots.filter(item => item.scope === 'project'),
+    warnings: unavailable.warnings.map(item => item.code) }).toMatchInlineSnapshot(`
+    {
+      "projectRoots": [],
+      "warnings": [
+        "warning.project.unavailable",
+      ],
+    }
+  `)
+  const request = { name: 'new-orders', description: 'Orders', body: 'New orders.', workspace: project }
+  await expect(invoke('createSkill', { request })).rejects.toMatchObject({
+    code: 'skills/operation', details: { code: 'error.root.unsafe' },
+  })
+  const created = join(project, '.dsh/skills/new-orders/SKILL.md')
+  await expect(readFile(created)).rejects.toMatchObject({ code: 'ENOENT' })
+  await rm(configured)
+  await mkdir(configured)
+  expect((await read()).roots.filter(item => item.scope === 'project').flatMap(item => item.skills.map(skill => skill.name))).toEqual(['project-orders'])
+  await invoke('createSkill', { request })
+  expect(await readFile(created, 'utf8')).toContain('New orders.')
 }, 30000)
 
 it('preserves creation, policy, upload, export and trash through native dispatch; rejects invalid inputs', async () => {
