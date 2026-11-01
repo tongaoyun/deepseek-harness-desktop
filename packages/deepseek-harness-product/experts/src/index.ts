@@ -39,6 +39,7 @@ import type { SubagentRun, SubagentStartRequest } from '@deepseek-ai/dsh-subagen
 import { SessionId } from '@deepseek-ai/dsh-session'
 import { PERSONA_PREFIX_SECTION } from '@deepseek-ai/dsh-system-prompt'
 import { randomUUID } from 'node:crypto'
+import { addAbortListener } from 'node:events'
 import { open, readdir, readFile, stat } from 'node:fs/promises'
 import { parseSkillFrontmatter } from '@deepseek-ai/dsh-skill-filesystem/document'
 import { join } from 'node:path'
@@ -708,22 +709,15 @@ export function apply(ctx: Context, config: Config): void {
         await dispose()
       }
     }
-    let rejectAborted!: (reason: unknown) => void
-    const aborted = new Promise<never>((_resolve, reject) => { rejectAborted = reject })
-    const onAbort = (): void => {
-      void dispose().catch(() => undefined)
-      rejectAborted(signal.reason ?? new Error())
-    }
-    signal.addEventListener('abort', onAbort, { once: true })
     try {
-      if (signal.aborted) {
-        onAbort()
-        await dispose()
-        throw signal.reason ?? new Error()
-      }
-      return await Promise.race([run.result, aborted])
+      signal.throwIfAborted()
+      const aborted = Promise.withResolvers<never>()
+      using _listener = addAbortListener(signal, () => {
+        void dispose().catch(() => undefined)
+        aborted.reject(signal.reason)
+      })
+      return await Promise.race([run.result, aborted.promise])
     } finally {
-      signal.removeEventListener('abort', onAbort)
       await dispose()
     }
   }

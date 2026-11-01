@@ -494,29 +494,30 @@ describe('summon_expert', () => {
     expect(disposed).toBe(true)
   })
 
-  it('子代理发布后收到父取消时立即 dispose 子代理', async () => {
+  it.each(['ordinary', 'blocked', 'before-result', 'cleanup-failed'])('父取消立即清理子代理：%s', async (mode) => {
     const tools: unknown[] = []
     const controller = new AbortController()
     const stopReason = new Error('parent stopped')
-    let markPublished!: () => void
-    let markWaiting!: () => void
-    let finishResult!: (result: { output: unknown[]; stopReason: string }) => void
+    const cleanupError = new Error('cleanup failed')
+    if (mode === 'blocked') controller.signal.addEventListener('abort', event => event.stopImmediatePropagation(), { once: true })
+    const waiting = Promise.withResolvers<undefined>()
+    const result = Promise.withResolvers<{ output: unknown[]; stopReason: string }>()
+    const cleanup = Promise.withResolvers<undefined>()
+    const disposing = Promise.withResolvers<undefined>()
     let disposeCalls = 0
-    const published = new Promise<void>(resolve => { markPublished = resolve })
-    const waiting = new Promise<void>(resolve => { markWaiting = resolve })
     const ctx = createTestContext({
       tools: { register: (tool: unknown) => tools.push(tool) },
       subagents: {
         getProvider: () => ({ capabilities: { agentOptions: true, agentPreset: true, outputSchema: true, depthLimit: true } }),
         startActivation: async () => {
-          markPublished()
+          if (mode === 'before-result') controller.abort(stopReason)
           return {
             childId: 'child-1',
             get result() {
-              markWaiting()
-              return new Promise<{ output: unknown[]; stopReason: string }>(resolve => { finishResult = resolve })
+              waiting.resolve(undefined)
+              return result.promise
             },
-            dispose: async () => { disposeCalls += 1 },
+            dispose: async () => { disposeCalls += 1; disposing.resolve(undefined); await cleanup.promise },
           }
         },
       },
@@ -538,19 +539,20 @@ describe('summon_expert', () => {
       { agent: {}, signal: controller.signal },
     ).then(value => ({ value }), error => ({ error }))
 
-    await published
-    await waiting
-    controller.abort(stopReason)
-    const disposeCallsAtAbort = disposeCalls
-    const outcome = await Promise.race([
-      execution,
-      new Promise<undefined>(resolve => setTimeout(() => resolve(undefined), 50)),
-    ])
-    finishResult({ output: [], stopReason: 'aborted' })
-
-    expect(disposeCallsAtAbort).toBe(1)
-    expect(disposeCalls).toBe(1)
-    expect(outcome).toEqual({ error: stopReason })
+    try {
+      if (mode === 'before-result') await disposing.promise
+      else { await waiting.promise; controller.abort(stopReason) }
+      expect(disposeCalls).toBe(1)
+      result.resolve({ output: [{ type: 'text', text: 'late answer' }], stopReason: 'completed' })
+      if (mode === 'cleanup-failed') cleanup.reject(cleanupError)
+      else cleanup.resolve(undefined)
+      expect(await execution).toEqual({ error: mode === 'cleanup-failed' ? cleanupError : stopReason })
+      expect(disposeCalls).toBe(1)
+    } finally {
+      result.resolve({ output: [], stopReason: 'aborted' })
+      cleanup.resolve(undefined)
+      await execution
+    }
   })
 
   it('空 maxDepth 不透传给 provider，且子代理不能浏览或递归召唤花名册', async () => {
