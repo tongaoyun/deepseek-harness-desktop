@@ -1,9 +1,8 @@
 /** Validate credential-free knowledge responses received through product IPC. */
-import { randomUUID } from '@deepseek-ai/dsh-util-crypto'
 import { useCallback, useEffect, useRef } from 'react'
 import { productFailure } from '@deepseek-harness/product/errors'
 import { text } from './catalog-shared.tsx'
-import { productApi } from './product-api.ts'
+import { invokeProduct, productApi } from './product-api.ts'
 
 /** Document metadata and optional manager-only editable text. */
 export interface KnowledgeDocument {
@@ -189,26 +188,23 @@ export function knowledgeSearchResults(value: unknown): readonly KnowledgeSearch
 }
 
 /** Own request cancellation for one mounted knowledge view.
- * @returns An IPC request function that cancels pending work when the view unloads.
+ * @returns Requests that reject on caller cancellation or view unload; transfer cleanup can still run afterward.
  */
 export function useKnowledgeRequests(): (method: string, payload: unknown, signal?: AbortSignal) => Promise<unknown> {
-  const requests = useRef(new Map<string, () => void>())
+  const requests = useRef(new Set<AbortController>())
   useEffect(() => () => {
-    for (const cancel of requests.current.values()) cancel()
+    for (const controller of requests.current) controller.abort()
     requests.current.clear()
   }, [])
   return useCallback(async (method: string, payload: unknown, signal?: AbortSignal) => {
     const api = productApi()
     if (api === undefined) throw new Error('Product transport unavailable')
-    if (signal?.aborted) throw new Error('Knowledge request cancelled')
-    const id = randomUUID()
-    let cancelled = false
-    const cancel = () => { if (!cancelled) { cancelled = true; api.cancel(id) } }
-    requests.current.set(id, cancel)
-    signal?.addEventListener('abort', cancel, { once: true })
+    const controller = new AbortController()
+    requests.current.add(controller)
+    const combined = signal === undefined ? controller.signal : AbortSignal.any([signal, controller.signal])
     const timeoutMs = ['knowledge.documents.preview.open', 'knowledge.documents.download', 'knowledge.documents.openExternal',
       'knowledge.documents.upload', 'knowledge.documents.upload.select'].includes(method) ? 300_000 : undefined
-    try { return await api.invoke(method, payload, id, timeoutMs) }
-    finally { signal?.removeEventListener('abort', cancel); requests.current.delete(id) }
+    try { return await invokeProduct(api, method, payload, combined, timeoutMs) }
+    finally { requests.current.delete(controller) }
   }, [])
 }
