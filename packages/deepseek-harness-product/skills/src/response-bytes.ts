@@ -1,4 +1,5 @@
 /** Exact byte reads for catalog documents and installable archives. */
+import { addAbortListener } from 'node:events'
 
 /** Release an unread response without making transport cleanup its caller's outcome.
  * @param response - Unlocked response whose body will not be consumed.
@@ -29,7 +30,7 @@ export async function readSkillResponse(response: Response, limit: number, signa
     if (Number(response.headers.get('content-length')) > limit) throw sizeError
     reader = response.body?.getReader()
     if (!reader) return Buffer.alloc(0)
-    signal.addEventListener('abort', cancel, { once: true })
+    using _listener = addAbortListener(signal, cancel)
     const chunks: Uint8Array[] = []
     let size = 0
     for (;;) {
@@ -43,7 +44,6 @@ export async function readSkillResponse(response: Response, limit: number, signa
     complete = true
     return Buffer.concat(chunks, size)
   } finally {
-    signal.removeEventListener('abort', cancel)
     if (reader) {
       if (!complete) cancel()
       reader.releaseLock()

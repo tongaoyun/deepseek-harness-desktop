@@ -396,12 +396,12 @@
         {
           "path": "docs/config-catalog.md",
           "before": "f5eac6c9a779c683dccc26a0845c3556ffa449b4ceb4722248ce3bbea876d982",
-          "after": "bb7f2c8c995c126064ef720b376e30e0e3044281f80974e7d2b8ae14d1a6f4eb"
+          "after": "efabf0773883f85695dd98af52e186cf852669de6d6ac58c5e81fd9b594552a1"
         },
         {
           "path": "docs/config-catalog.zh.md",
           "before": "c8ceb3109d1643100f44a72c7ee5f57d5a865d39e769ce4356db350e04a7e914",
-          "after": "bc2b7a180f233462ff0e42e660920d9e42a465f4bb1d228fa1319e42ddc72710"
+          "after": "9c3fca4bd0da11b2a501b5d41a75e723736f79b504d7c75161308ffa771c977b"
         },
         {
           "path": "docs/development.i18n.yaml",
