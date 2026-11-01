@@ -1,5 +1,5 @@
 /** Exact byte reads for catalog documents and installable archives. */
-import { addAbortListener } from 'node:events'
+import { streamResponseBody } from '@deepseek-harness/product'
 
 /** Release an unread response without making transport cleanup its caller's outcome.
  * @param response - Unlocked response whose body will not be consumed.
@@ -18,35 +18,7 @@ export function discardSkillResponse(response: Response): void {
  * @returns Complete bytes; all exits release the reader and preserve the original read failure.
  */
 export async function readSkillResponse(response: Response, limit: number, signal: AbortSignal, sizeError: Error): Promise<Buffer> {
-  let reader: ReadableStreamDefaultReader<Uint8Array> | undefined
-  let complete = false
-  const cancel = () => {
-    void reader?.cancel(signal.reason).catch(() => {
-      // A rejected cleanup cannot replace cancellation, overflow or a read failure.
-    })
-  }
-  try {
-    signal.throwIfAborted()
-    if (Number(response.headers.get('content-length')) > limit) throw sizeError
-    reader = response.body?.getReader()
-    if (!reader) return Buffer.alloc(0)
-    using _listener = addAbortListener(signal, cancel)
-    const chunks: Uint8Array[] = []
-    let size = 0
-    for (;;) {
-      const { done, value } = await reader.read()
-      signal.throwIfAborted()
-      if (done) break
-      size += value.byteLength
-      if (size > limit) throw sizeError
-      chunks.push(value)
-    }
-    complete = true
-    return Buffer.concat(chunks, size)
-  } finally {
-    if (reader) {
-      if (!complete) cancel()
-      reader.releaseLock()
-    } else { discardSkillResponse(response) }
-  }
+  const chunks: Uint8Array[] = []
+  const length = await streamResponseBody(response, limit, signal, async (chunk) => { chunks.push(chunk) }, sizeError)
+  return Buffer.concat(chunks, length)
 }

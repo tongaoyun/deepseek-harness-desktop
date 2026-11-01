@@ -42,6 +42,12 @@ it.each([true, false])('rejects oversized original bytes and cancels their strea
   } finally { api.close() }
 })
 
+it.each([200, 403])('rejects a missing original body at HTTP %s', async (status) => {
+  const api = client(async () => new Response(null, { status }))
+  try { await expect(api.requestBytes('/api/preview', 16)).rejects.toMatchObject({ code: 'INVALID_SERVER_RESPONSE' }) }
+  finally { api.close() }
+})
+
 it('accepts the exact byte limit across multiple chunks', async () => {
   const api = client(async () => new Response(new ReadableStream({ start(controller) {
     controller.enqueue(new Uint8Array([1, 2])); controller.enqueue(new Uint8Array([3, 4])); controller.close()

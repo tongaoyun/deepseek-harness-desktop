@@ -77,6 +77,13 @@ it('returns exact complete UTF-8 bytes and rejects an extra byte without keeping
   expect(tooLarge.body?.locked).toBe(false)
 })
 
+it('reads an absent skill body as empty while enforcing its declared size', async () => {
+  const signal = new AbortController().signal
+  const sizeError = new Error('Too large')
+  expect(await readSkillResponse(new Response(null), 6, signal, sizeError)).toEqual(Buffer.alloc(0))
+  await expect(readSkillResponse(new Response(null, { headers: { 'content-length': '7' } }), 6, signal, sizeError)).rejects.toBe(sizeError)
+})
+
 it('releases declared oversize responses before reading any bytes', async () => {
   const cancel = vi.fn()
   const response = new Response(new ReadableStream<Uint8Array>({ cancel }), { headers: { 'content-length': '7' } })
