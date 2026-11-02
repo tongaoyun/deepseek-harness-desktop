@@ -2,15 +2,17 @@ import type * as React from "react";
 import type { SourceSelectProps } from "./client-types.ts";
 import { Menu, Button, IconChevronDownOutlineRegular, type MenuEntry } from "@deepseek-ai/dsh-client-ui-primitives";
 
-/** 筛选与操作菜单使用原生按钮、菜单和图标，保留当前选择与禁用状态。 */
+/** 筛选与操作沿用原生菜单；禁用关闭菜单，恢复启用后等待重新打开。 */
 export function createSourceSelect(react: typeof React) {
   const h = react.createElement;
   return function SourceSelect(props: SourceSelectProps) {
-    const openState = react.useState(false);
-    const open = openState[0];
-    const setOpen = openState[1];
-
-
+    const [requestedOpen, setOpen] = react.useState(false);
+    const open = requestedOpen && !props.disabled;
+    react.useLayoutEffect(() => {
+      if (props.disabled) setOpen(false);
+    }, [props.disabled]);
+    function close() { setOpen(false); }
+    function select(id: string) { props.onChange(id); close(); }
     const items = react.useMemo<readonly MenuEntry[]>(function () {
       return props.options.map(function (opt) {
         return {
@@ -26,11 +28,8 @@ export function createSourceSelect(react: typeof React) {
       return h("div", { className: "dssm-action-menu-wrap", style: { display: "inline-block" } },
         h(Menu, {
           open: open,
-          onClose: function () { setOpen(false); },
-          onSelect: function (id: string) {
-            props.onChange(id);
-            setOpen(false);
-          },
+          onClose: close,
+          onSelect: select,
           align: "end",
           portal: true,
           anchor: h(Button, {
@@ -40,8 +39,10 @@ export function createSourceSelect(react: typeof React) {
             className: props.icon ? "dssm-icon-action" : undefined,
             style: props.icon ? { width: 22, minWidth: 22, height: 22, padding: 0, display: "inline-flex", alignItems: "center", justifyContent: "center", borderRadius: "var(--dsw-radius-sm, 8px)" } : undefined,
             "aria-label": props.label,
+            "aria-haspopup": "menu",
+            "aria-expanded": open,
             title: props.label,
-            onClick: function () { if (!props.disabled) setOpen(prev => !prev); },
+            onClick: function () { setOpen(prev => !prev); },
             icon: props.icon,
           }, props.icon ? null : props.label),
           items: items,
@@ -55,11 +56,8 @@ export function createSourceSelect(react: typeof React) {
     return h("div", { className: "dssm-menu-select-wrap" },
       h(Menu, {
         open: open,
-        onClose: function () { setOpen(false); },
-        onSelect: function (id: string) {
-          props.onChange(id);
-          setOpen(false);
-        },
+        onClose: close,
+        onSelect: select,
         selectedId: props.value,
         align: "start",
         portal: true,
@@ -68,12 +66,12 @@ export function createSourceSelect(react: typeof React) {
         anchor: h(Button, {
           variant: "outline",
           size: "sm",
-          role: "combobox",
           "aria-label": props.label,
+          "aria-haspopup": "menu",
           "aria-expanded": open,
           disabled: props.disabled,
           className: "dssm-menu-select-trigger" + (open ? " is-open" : ""),
-          onClick: function () { if (!props.disabled) setOpen(prev => !prev); },
+          onClick: function () { setOpen(prev => !prev); },
         },
           h("span", { className: "dssm-menu-select-label" }, currentText),
           h(IconChevronDownOutlineRegular, {

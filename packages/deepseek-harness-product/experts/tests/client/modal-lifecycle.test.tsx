@@ -37,6 +37,27 @@ function focusOpener(): HTMLButtonElement {
   return opener
 }
 
+it('closes a disabled category menu and requires a new action after enabling', () => {
+  const onChange = vi.fn()
+  const props = { id: 'division', value: 'engineering', label: 'Category',
+    options: [{ value: 'engineering', label: 'Engineering' }], onChange }
+  const view = render(<CategorySelect {...props} />)
+  const trigger = screen.getByRole('button', { name: 'Category' })
+  fireEvent.click(trigger)
+  expect(screen.getByRole('menu')).toBeTruthy()
+  view.rerender(<CategorySelect {...props} disabled />)
+  expect(screen.queryByRole('menu')).toBeNull()
+  expect(trigger).toHaveProperty('disabled', true)
+  expect(trigger.getAttribute('aria-expanded')).toBe('false')
+  fireEvent.click(trigger)
+  expect(onChange).not.toHaveBeenCalled()
+  view.rerender(<CategorySelect {...props} />)
+  expect(screen.queryByRole('menu')).toBeNull()
+  fireEvent.click(trigger)
+  fireEvent.click(screen.getByRole('menuitem', { name: 'Engineering' }))
+  expect(onChange).toHaveBeenCalledExactlyOnceWith('engineering')
+})
+
 for (const dialog of dialogs) {
   it.each(protectedKeys)(`${dialog.name} ignores $name Escape and accepts a plain Escape`, (key) => {
     const close = vi.fn()

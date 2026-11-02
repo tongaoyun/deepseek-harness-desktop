@@ -158,12 +158,12 @@ it.each([
   fireEvent.click(screen.getByRole('tab', { name: '我的' }))
   expect(screen.getByRole('tabpanel', { name: '我的' }).textContent).toContain(`${enabled ? 1 : 0} 个已启用`)
   expect(screen.getByRole('tabpanel', { name: '我的' }).textContent).toContain(`${enabled ? 0 : 1} 个已停用`)
-  fireEvent.click(screen.getByRole('combobox', { name: '启用状态' }))
+  fireEvent.click(screen.getByRole('button', { name: '启用状态' }))
   expect(screen.getAllByRole('menuitem').map(item => item.textContent)).toEqual(['全部状态', '已启用', '已停用'])
   fireEvent.click(screen.getByRole('menuitem', { name: enabled ? '已启用' : '已停用' }))
   expect(screen.getByText('audit-orders')).toBeTruthy()
   expect(screen.getByText(condition === 'shadowed' ? '同名技能优先使用 codex 中的版本' : '技能内容无法加载，请查看详情中的具体原因。')).toBeTruthy()
-  fireEvent.click(screen.getByRole('combobox', { name: '启用状态' }))
+  fireEvent.click(screen.getByRole('button', { name: '启用状态' }))
   fireEvent.click(screen.getByRole('menuitem', { name: enabled ? '已停用' : '已启用' }))
   expect(screen.queryByText('audit-orders')).toBeNull()
 })
@@ -189,6 +189,7 @@ it.each([false, true])('preserves loaded project skills and empty results while 
   let refreshing = false
   let finish!: () => void
   const gate = new Promise<void>((resolve) => { finish = resolve })
+  onTestFinished(async () => { finish(); await gate })
   mock.unary('skillsManager/listWorkspaces', async () => {
     if (refreshing) await gate
     return ok({ items: entries })
@@ -205,8 +206,14 @@ it.each([false, true])('preserves loaded project skills and empty results while 
   await waitFor(() => { expect(panel.getAttribute('aria-busy')).toBe('false') })
   const content = panel.textContent
   expect(content).toContain(text)
+  const workspace = screen.getByRole<HTMLButtonElement>('button', { name: '工作区' })
+  fireEvent.click(workspace)
+  expect(screen.getByRole('menu')).toBeTruthy()
   refreshing = true
   fireEvent.click(screen.getByRole('button', { name: '刷新' }))
+  expect(screen.queryByRole('menu')).toBeNull()
+  expect(workspace).toHaveProperty('disabled', true)
+  expect(workspace.getAttribute('aria-expanded')).toBe('false')
   expect(screen.getByRole('tabpanel', { name: /项目技能/ })).toBe(panel)
   expect(panel.textContent).toBe(content)
   expect(panel.getAttribute('aria-busy')).toBe('true')
@@ -214,6 +221,16 @@ it.each([false, true])('preserves loaded project skills and empty results while 
   await act(async () => { finish(); await gate })
   await waitFor(() => { expect(panel.getAttribute('aria-busy')).toBe('false') })
   expect(panel.textContent).toBe(content)
+  expect(workspace).toHaveProperty('disabled', false)
+  expect(screen.queryByRole('menu')).toBeNull()
+  expect({ selectedWorkspace: workspace.textContent, expanded: workspace.getAttribute('aria-expanded'),
+    enabled: !workspace.disabled }).toMatchInlineSnapshot(`
+      {
+        "enabled": true,
+        "expanded": "false",
+        "selectedWorkspace": "项目",
+      }
+    `)
 })
 
 it.each(['zh', 'en'] as const)('copies the exact skill body from company and local details (%s)', async (locale) => {
