@@ -1,6 +1,7 @@
 import { expect, it, vi } from 'vitest'
 import { loadCatalogPackage, readCatalogSkill } from '../src/catalog-skill.ts'
 import { searchSkillsSh } from '../src/skills-sh-catalog.ts'
+import { listClawHub, searchClawHub } from '../src/clawhub-catalog.ts'
 
 const target = { catalog: 'skillsh', source: 'instudio/skills', skillId: 'audit-orders' }
 const markdown = '---\nname: audit-orders\ndescription: 审核订单\n---\n  保留正文和空白。\n'
@@ -44,4 +45,26 @@ it('filters untrusted search entries and returns validated, deduplicated fields'
 
 it.each([null, [], { skills: {} }])('rejects search responses without a skills array: %j', async (payload) => {
   await expect(searchSkillsSh('audit', vi.fn(async () => Response.json(payload)))).rejects.toMatchObject({ code: 'error.catalog.response', statusCode: 502 })
+})
+
+it('normalizes ClawHub page identities and metadata before returning typed results', async () => {
+  const fetchImpl = vi.fn(async () => Response.json({ items: [null, {}, { ownerHandle: '../company', slug: 'orders' }, {
+    owner: { handle: 'company' }, slug: 'orders', displayName: ' ', summary: ' Order instructions ',
+    stats: { downloads: 12, installs: -1, stars: 1.5 },
+  }], nextCursor: 'next-page' }))
+  expect(await listClawHub({}, fetchImpl)).toEqual({
+    items: [{ ownerHandle: 'company', slug: 'orders', displayName: 'orders', summary: 'Order instructions', stats: { downloads: 12 } }],
+    nextCursor: 'next-page',
+  })
+})
+
+it('filters foreign ClawHub search entries and returns normalized display fields and counters', async () => {
+  const fetchImpl = vi.fn(async () => Response.json({ results: [null, {}, { source: 'other', ownerHandle: 'company', slug: 'orders' }, {
+    id: 'result-id', ownerHandle: 'company', slug: 'orders', displayName: ' Orders ', downloads: 42,
+    stats: { downloads: 99, installs: 3, stars: null },
+  }] }))
+  expect(await searchClawHub('orders', {}, fetchImpl)).toEqual({
+    results: [{ source: 'clawhub', id: 'result-id', ownerHandle: 'company', slug: 'orders', displayName: 'Orders', summary: '',
+      downloads: 42, stats: { downloads: 99, installs: 3 } }],
+  })
 })
