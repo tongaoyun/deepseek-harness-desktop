@@ -54,6 +54,33 @@ it('shows local content before the first request settles and coalesces page chec
   expect(load).toHaveBeenCalledOnce()
 })
 
+it('joins startup cache I/O before closing and never starts a late refresh', async () => {
+  const { root, load, create } = await fixture()
+  const fs = await vi.importActual<typeof import('node:fs/promises')>('node:fs/promises')
+  const entered = Promise.withResolvers<undefined>(), resume = Promise.withResolvers<undefined>()
+  vi.mocked(lstat).mockImplementation(async (...args) => {
+    if (args[0] === root) { entered.resolve(undefined); await resume.promise }
+    return fs.lstat(...args)
+  })
+  const sync = create()
+  const preparing = sync.prepare().then(() => 'prepared', () => 'cancelled')
+  await entered.promise
+  let closed = false
+  const closing = sync.close().then(() => { closed = true })
+  try {
+    await new Promise<void>(resolve => setImmediate(resolve))
+    expect(closed).toBe(false)
+  } finally {
+    resume.resolve(undefined)
+    await closing
+    await preparing
+  }
+  expect(await preparing).toBe('cancelled')
+  expect(load).not.toHaveBeenCalled()
+  const employee = join(root, createHash('sha256').update('a').digest('hex'))
+  expect((await readdir(employee)).filter(name => name.startsWith('.staging-'))).toEqual([])
+})
+
 it.each(['backward', 'forward'] as const)('keeps the refresh interval independent of a %s wall-clock jump', async (direction) => {
   const { create, load, now: elapsed, wall } = await fixture()
   const sync = create()

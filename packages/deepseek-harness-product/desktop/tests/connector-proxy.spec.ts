@@ -2,6 +2,25 @@ import { createServer } from 'node:http'
 import { expect, it, onTestFinished, vi } from 'vitest'
 import { ConnectorProxy, resolveConnectorProxyPolicy } from '../src/connector-proxy.ts'
 
+it('joins an in-flight bind before closing the relay', async () => {
+  const proxy = new ConnectorProxy(async () => [])
+  onTestFinished(() => proxy.close())
+  const starting = proxy.start().then(() => undefined, (error: unknown) => error)
+  await proxy.close()
+  const outcome = await starting
+  expect(proxy['server'].listening).toBe(false)
+  expect(proxy['server'].address()).toBeNull()
+  expect(outcome).toBeInstanceOf(Error)
+})
+
+it('shares one bind between concurrent relay starts', async () => {
+  const proxy = new ConnectorProxy(async () => [])
+  onTestFinished(() => proxy.close())
+  const bind = vi.spyOn(proxy['server'], 'listen')
+  await expect(Promise.all([proxy.start(), proxy.start()])).resolves.toEqual([undefined, undefined])
+  expect(bind).toHaveBeenCalledOnce()
+})
+
 it('relays MCP with main-owned credentials, refuses revoked authorization, and closes connections', async () => {
   const requests: string[] = []
   const upstream = createServer((request, response) => {

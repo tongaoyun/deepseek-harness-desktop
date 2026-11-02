@@ -3,9 +3,63 @@ import { act, cleanup, fireEvent, render, screen, within } from '@testing-librar
 import { afterEach, expect, it, vi } from 'vitest'
 import { ProductError, productFailure } from '@deepseek-harness/product/errors'
 import { KnowledgeEditor } from '../src/client/KnowledgeEditor.tsx'
-import { zh } from '../src/locales.ts'
+import { en, zh } from '../src/locales.ts'
 
 afterEach(() => { cleanup(); vi.unstubAllGlobals() })
+
+it('preserves unsaved document edits when the interface language changes', async () => {
+  const original = { id: 'document', knowledgeBaseId: 'personal', filename: 'Notes.md', mediaType: 'text/markdown',
+    sizeBytes: 10, status: 'READY', chunkCount: 1, updatedAt: '2026-10-20T00:00:00Z',
+    sourceType: 'manual', canManage: true, manualContent: 'Original contents' }
+  let reads = 0
+  const writes: Record<string, unknown>[] = []
+  vi.stubGlobal('dshDesktop', { extensions: { cancel: vi.fn(),
+    invoke: async (_namespace: string, method: string, payload: Record<string, unknown>) => {
+      if (method === 'knowledge.documents.get') { reads++; return { ok: true, result: original } }
+      writes.push(payload)
+      return { ok: true, result: original }
+    } } })
+  const props = { knowledgeBaseId: 'personal', target: { kind: 'markdown' as const, document: original },
+    onClose: vi.fn(), onSaved: vi.fn() }
+  const view = render(<KnowledgeEditor {...props} t={key => zh[key]} />)
+  const content = await screen.findByDisplayValue('Original contents')
+  fireEvent.change(screen.getByRole('textbox', { name: zh.knowledgeDocumentTitle }), { target: { value: 'My draft title' } })
+  fireEvent.change(content, { target: { value: 'My unsaved contents' } })
+  await act(async () => { view.rerender(<KnowledgeEditor {...props} t={key => en[key]} />) })
+  expect(screen.getByRole('textbox', { name: en.knowledgeDocumentTitle })).toHaveProperty('value', 'My draft title')
+  expect(screen.getByRole('textbox', { name: en.knowledgeMarkdownContent })).toHaveProperty('value', 'My unsaved contents')
+  expect(reads).toBe(1)
+  fireEvent.click(screen.getByRole('button', { name: en.knowledgeSave }))
+  await vi.waitFor(() => { expect(props.onSaved).toHaveBeenCalledOnce() })
+  expect(writes).toEqual([expect.objectContaining({ title: 'My draft title', content: 'My unsaved contents',
+    knowledgeBaseId: 'personal', documentId: original.id, expectedUpdatedAt: original.updatedAt })])
+})
+
+it('keeps a pending document read alive across language changes and reports failure in the current language', async () => {
+  const original = { id: 'document', knowledgeBaseId: 'personal', filename: 'Notes.md', mediaType: 'text/markdown',
+    sizeBytes: 10, status: 'READY', chunkCount: 1, updatedAt: '2026-10-20T00:00:00Z', sourceType: 'manual', canManage: true }
+  const reading = Promise.withResolvers<{ ok: false; failure: ReturnType<typeof productFailure> }>()
+  const invoke = vi.fn(async () => reading.promise)
+  const cancel = vi.fn()
+  vi.stubGlobal('dshDesktop', { extensions: { invoke, cancel } })
+  const props = { knowledgeBaseId: 'personal', target: { kind: 'markdown' as const, document: original },
+    onClose: vi.fn(), onSaved: vi.fn() }
+  const view = render(<KnowledgeEditor {...props} t={key => zh[key]} />)
+  await vi.waitFor(() => { expect(invoke).toHaveBeenCalledTimes(1) })
+  try {
+    await act(async () => { view.rerender(<KnowledgeEditor {...props} t={key => en[key]} />) })
+    expect(cancel).not.toHaveBeenCalled()
+    expect(invoke).toHaveBeenCalledTimes(1)
+    await act(async () => {
+      reading.resolve({ ok: false, failure: productFailure(new ProductError('KNOWLEDGE_SERVICE_UNAVAILABLE', 'Private diagnostic')) })
+    })
+    expect(await screen.findByRole('alert')).toHaveProperty('textContent', `${en.knowledgeServiceUnavailable} (KNOWLEDGE_SERVICE_UNAVAILABLE)`)
+    expect(screen.getByRole('button', { name: en.retry })).toBeTruthy()
+  } finally {
+    reading.resolve({ ok: false, failure: productFailure(new ProductError('KNOWLEDGE_SERVICE_UNAVAILABLE', 'Private diagnostic')) })
+    await reading.promise
+  }
+})
 
 it.each(['id', 'knowledgeBaseId'] as const)('does not load another document when its %s differs from the edit target', async (field) => {
   const original = { id: 'document', knowledgeBaseId: 'personal', filename: 'Notes.md', mediaType: 'text/markdown',

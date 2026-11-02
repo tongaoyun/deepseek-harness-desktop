@@ -38,7 +38,7 @@ export class ConnectorProxy {
   private readonly lifetime = new AbortController()
   private readonly operations = new Set<Promise<void>>()
   private readonly key = randomUUID()
-  private origin: string | undefined
+  private starting: Promise<void> | undefined
   private readonly catalogSource: (signal: AbortSignal, ids: readonly string[]) => Promise<unknown>
 
   constructor(catalogSource: (signal: AbortSignal, ids: readonly string[]) => Promise<unknown>,
@@ -143,17 +143,16 @@ export class ConnectorProxy {
     })
   }
 
-  /** Start a private loopback endpoint before preparing the Host environment. */
+  /** Share a private loopback bind; closing waits for it before releasing the listener. */
   async start(): Promise<void> {
     if (this.lifetime.signal.aborted) throw new Error('Connector relay is closed')
     if (this.server.listening) return
-    await new Promise<void>((resolve, reject) => {
+    this.starting ??= new Promise<void>((resolve, reject) => {
       this.server.once('error', reject)
       this.server.listen(0, '127.0.0.1', () => { this.server.off('error', reject); resolve() })
-    })
-    const address = this.server.address()
-    if (address === null || typeof address === 'string') throw new Error('Connector relay did not bind')
-    this.origin = `http://127.0.0.1:${address.port}`
+    }).finally(() => { this.starting = undefined })
+    await this.starting
+    this.lifetime.signal.throwIfAborted()
   }
 
   /** Replace upstream addresses and credentials with private relay capabilities.
@@ -161,9 +160,13 @@ export class ConnectorProxy {
    * @returns Host-safe MCP configuration.
    */
   catalog(value: unknown): unknown {
-    if (this.origin === undefined || !Array.isArray(value)) throw new Error('Connector relay is unavailable')
+    const address = this.server.address()
+    if (this.lifetime.signal.aborted || address === null || typeof address === 'string' || !Array.isArray(value)) {
+      throw new Error('Connector relay is unavailable')
+    }
+    const origin = `http://127.0.0.1:${address.port}`
     return value.map((entry: Connector) => entry.transport === 'streamable-http' || entry.transport === 'stdio' ? {
-      ...entry, url: `${this.origin}/${encodeURIComponent(entry.id)}/${encodeURIComponent(entry.version)}`,
+      ...entry, url: `${origin}/${encodeURIComponent(entry.id)}/${encodeURIComponent(entry.version)}`,
       transport: 'streamable-http', command: undefined, arguments: [],
       headers: { Authorization: `Bearer ${this.key}` }, environment: {},
     } : entry)
@@ -172,6 +175,9 @@ export class ConnectorProxy {
   /** Abort in-flight MCP calls, close loopback connections and await catalog and stdio cleanup. */
   async close(): Promise<void> {
     this.lifetime.abort()
+    await this.starting?.catch(() => {
+      // Startup reports bind failures; shutdown still releases any acquired listener.
+    })
     this.server.closeAllConnections()
     try {
       if (this.server.listening) {
