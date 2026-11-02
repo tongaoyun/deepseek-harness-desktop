@@ -6,3 +6,4 @@
   - button "Knowledge bases"
   - button "Plugins"
   - button "Automation tasks"
+  - button "More"

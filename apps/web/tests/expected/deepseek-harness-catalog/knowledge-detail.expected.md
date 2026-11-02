@@ -73,12 +73,12 @@
             - cell
             - cell
             - cell
-          - row "Order review.md Searchable Online document 2.0KB Oct 10, 2026 Actions for “Order review.md”":
+          - row "Order review.md Searchable Online document 118B Oct 10, 2026 Actions for “Order review.md”":
             - cell "Order review.md":
               - button "Order review.md"
             - cell "Searchable"
             - cell "Online document"
-            - cell "2.0KB"
+            - cell "118B"
             - cell "Oct 10, 2026"
             - cell "Actions for “Order review.md”":
               - button "Actions for “Order review.md”"

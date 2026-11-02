@@ -1,10 +1,10 @@
-- tabpanel "All":
+- tabpanel "Marketplace":
   - region "Business systems":
     - heading "Business systems 2" [level=2]
     - list:
       - listitem:
-        - button "Order management Orders, inventory, and fulfillment Connected"
+        - button "Order management Orders, inventory, and fulfillment"
         - text: 1 read-only ·1 write
       - listitem:
-        - button "Customer workspace Customer profiles and sales activity Authorization required"
+        - button "Customer workspace Customer profiles and sales activity"
         - text: 0 read-only ·0 write
