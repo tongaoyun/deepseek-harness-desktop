@@ -5,7 +5,7 @@ import { LibraryConfirm } from './library-ui.tsx'
 import { CreationCard } from './creation-card.tsx'
 import type {} from '@deepseek-ai/dsh-client-ui-tool/client'
 import { Button, Input } from './plugin-ui.ts'
-import { SegmentedControl, SegmentedTabs, StateDot } from '@deepseek-ai/dsh-client-ui-primitives'
+import { SegmentedControl, SegmentedTabs, StateDot, useModalLayer } from '@deepseek-ai/dsh-client-ui-primitives'
 import { LibraryCard } from './library-ui.tsx'
 import { IconPlus } from './team-shared.tsx'
 import type { AgencyTeamsRemote } from './remote.ts'
@@ -685,20 +685,23 @@ export function AgentsButton(props: ButtonProps): React.ReactElement {
   const [busy, setBusy] = React.useState(false)
   const working = React.useRef(false)
   const epoch = React.useRef(0)
-  const triggerRef = React.useRef<HTMLSpanElement | null>(null)
   const menuId = React.useId()
   const [menuPosition, setMenuPosition] = React.useState<ExpertMenuPosition | undefined>()
   const [menuLeft, setMenuLeft] = React.useState(0)
   const rootRef = React.useRef<HTMLDivElement | null>(null)
+  const menuRef = React.useRef<HTMLDivElement | null>(null)
   const catalog = React.useSyncExternalStore(
     listener => props.cache.catalog.subscribe(listener),
     () => props.cache.catalog.getSnapshot(),
   )
-  const close = (restoreFocus = false): void => {
+  const close = (): void => {
     epoch.current++
     setOpen(false)
-    if (restoreFocus) triggerRef.current?.querySelector('button')?.focus()
   }
+  useModalLayer(menuRef, open, close)
+  React.useLayoutEffect(() => {
+    if (open) menuRef.current?.querySelector<HTMLElement>('[data-modal-autofocus]')?.focus()
+  }, [open, mode])
   React.useEffect(() => () => { epoch.current++ }, [])
 
   React.useLayoutEffect(() => {
@@ -808,12 +811,9 @@ export function AgentsButton(props: ButtonProps): React.ReactElement {
   const results = searching ? matches.slice(0, 8) : groupByDivision(matches, props.getActive()).flatMap(group => group.experts)
   const menu = open
     ? React.createElement('div', {
-      className: 'aag-menu aag-discovery', id: menuId, role: 'dialog', 'aria-modal': 'true', 'aria-label': props.t('settings.nav'),
+      className: 'aag-menu aag-discovery', ref: menuRef, id: menuId, role: 'dialog', 'aria-modal': 'true', 'aria-label': props.t('settings.nav'),
       'data-placement': menuPosition?.placement,
       style: { maxHeight: `${Math.min(360, menuPosition?.maxHeight ?? 360)}px`, left: `${menuLeft}px` },
-      onKeyDown: (event: React.KeyboardEvent) => {
-        if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); close(true) }
-      },
     },
       insertError === null ? null : React.createElement('div', { className: 'aag-error', role: 'alert' }, insertError,
         React.createElement('button', { type: 'button', disabled: busy, onClick: () => load() }, props.t('btn.refresh'))),
@@ -831,12 +831,8 @@ export function AgentsButton(props: ButtonProps): React.ReactElement {
         query, onQuery: setQuery, busy, hasMore: searching && matches.length > results.length, onPick: slug => { void pick(slug) } }))
     : null
 
-  return React.createElement('div', { className: 'aag-btn-wrap', ref: rootRef, onBlur: (event: React.FocusEvent) => {
-    const next = event.relatedTarget
-    if (next instanceof Element && (event.currentTarget.contains(next) || next.closest('[role="dialog"], .dsh-primitives-menu, [role="menu"]'))) return
-    if (next instanceof Node && !event.currentTarget.contains(next)) close()
-  } },
-    React.createElement('span', { ref: triggerRef }, React.createElement('button', { type: 'button', className: 'aag-btn', title: props.t('button.title'), 'aria-expanded': open, 'aria-haspopup': 'dialog', 'aria-controls': open ? menuId : undefined, onMouseDown: keepComposerFocus, onClick }, expertIcon(), props.t('settings.nav'))),
+  return React.createElement('div', { className: 'aag-btn-wrap', ref: rootRef },
+    React.createElement('button', { type: 'button', className: 'aag-btn', title: props.t('button.title'), 'aria-expanded': open, 'aria-haspopup': 'dialog', 'aria-controls': open ? menuId : undefined, onMouseDown: keepComposerFocus, onClick }, expertIcon(), props.t('settings.nav')),
     menu)
 }
 

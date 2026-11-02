@@ -77,7 +77,7 @@ export function TeamMenu(props: {
             .toLowerCase()
             .includes(query.toLowerCase())) ?? [];
     return (<div className="agt-compact">
-      <Input autoFocus aria-label={tx("搜索专家团")} placeholder={tx("搜索团队或工作目标")} value={query} onChange={(e) => setQuery(e.target.value)}/>
+      <Input data-modal-autofocus aria-label={tx("搜索专家团")} placeholder={tx("搜索团队或工作目标")} value={query} onChange={(e) => setQuery(e.target.value)}/>
       {error && (<div role="alert">
           {error}
           <button type="button" className="agt-plain-btn" onClick={() => void load()}>{tx("刷新")}</button>
