@@ -3,7 +3,7 @@ import * as React from 'react'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { Modal as NativeModal } from '@deepseek-ai/dsh-client-ui-primitives'
 import { RemoteMock, ok } from '@deepseek-ai/dsh-remote-mock'
-import { afterEach, expect, it } from 'vitest'
+import { afterEach, expect, it, onTestFinished } from 'vitest'
 import type { ModalProps, SkillOutput } from '../src/client-types.ts'
 import { createDestinationKit } from '../src/destination-picker.ts'
 import { createRepositoryUI } from '../src/repository-ui.ts'
@@ -32,7 +32,7 @@ async function setup(installed = false) {
   const mock = RemoteMock.create()
   mock.unary('skillsManager/listRepositories', () => ok({ repositories: [{ ...repo, skills: installed ? [{ ...skill, installations: [{ installedRoot: 'dsh', tracked: true, status: 'installed', updateAvailable: true, canRollback: true, canUninstall: true }] }] : repo.skills }], installRoots: [{ key: 'dsh', path: '/skills', label: 'DSH', available: true }], catalogInstalls: [], catalogCopies: [], catalogWarnings: [] } satisfies SkillOutput<'listRepositories'>))
   mock.unary('skillsManager/listWorkspaces', () => ok({ items: [] }))
-  mock.unary('skillsManager/listClawHub', () => ok({ items: [{ ownerHandle: 'company', slug: 'orders', displayName: 'Catalog orders' }], nextCursor: null }))
+  mock.unary('skillsManager/listClawHub', () => ok({ items: [{ ownerHandle: 'company', slug: 'orders', displayName: 'Catalog orders', summary: '' }], nextCursor: null } satisfies SkillOutput<'listClawHub'>))
   const native = createSkillApi(Object.assign(mock.remote, { $mount: async () => async () => {}, $on: () => () => {} }))
   const api = native
   const useRepositoryUI = createRepositoryUI({ react: React, Modal, SourceSelect, destination, api, translateError })
@@ -47,6 +47,102 @@ async function setup(installed = false) {
 }
 function open() { fireEvent.click(screen.getByRole('button', { name: 'repo.detail' })) }
 function close() { fireEvent.click(screen.getByRole('button', { name: 'repo.close' })) }
+
+const searchCatalogs = [
+  { source: 'clawhub', method: 'searchClawHub', label: 'repo.catalog.searchClawhub', loading: 'repo.catalog.searchLoading', error: 'repo.catalog.searchError' },
+  { source: 'skillsh', method: 'searchSkillsSh', label: 'repo.catalog.searchSkillsh', loading: 'repo.catalog.skillshLoading', error: 'repo.catalog.skillshError' },
+] as const
+function searchResult(source: 'clawhub' | 'skillsh', name: string): SkillOutput<'searchClawHub'> | SkillOutput<'searchSkillsSh'> {
+  return source === 'clawhub'
+    ? { results: [{ source: 'clawhub', ownerHandle: 'company', slug: name, displayName: name, summary: 'Catalog instructions' }] }
+    : { skills: [{ id: name, source: 'company/skills', skillId: name, name }] }
+}
+function searchSignal(mock: RemoteMock, source: 'clawhub' | 'skillsh', index: number): AbortSignal | undefined {
+  return source === 'clawhub'
+    ? mock.remote.skillsManager.searchClawHub.mock.calls[index]?.[2]
+    : mock.remote.skillsManager.searchSkillsSh.mock.calls[index]?.[1]
+}
+
+it.each(searchCatalogs.flatMap(catalog => (['success', 'failure'] as const).map(outcome => ({ ...catalog, outcome }))))('keeps the current $source search owned after a superseded $outcome', async (catalog) => {
+  const { mock, view } = await setup()
+  const old = deferred<ReturnType<typeof searchResult>>()
+  const current = deferred<ReturnType<typeof searchResult>>()
+  const latest = deferred<ReturnType<typeof searchResult>>()
+  const requests = new Map([['old', old], ['current', current], ['latest', latest]])
+  onTestFinished(async () => {
+    view.unmount()
+    for (const request of requests.values()) request.resolve(searchResult(catalog.source, 'disposed'))
+    await Promise.allSettled([...requests.values()].map(request => request.promise))
+  })
+  mock.unary(`skillsManager/${catalog.method}`, async (query: string) => {
+    const request = requests.get(query)
+    if (!request) throw new Error('Unexpected search query')
+    return ok(await request.promise)
+  })
+  fireEvent.click(screen.getByRole('button', { name: `repo.subsource.${catalog.source}` }))
+  const input = screen.getByRole('textbox', { name: catalog.label })
+  fireEvent.change(input, { target: { value: 'discarded' } })
+  fireEvent.change(input, { target: { value: 'old' } })
+  await waitFor(() => { expect(mock.remote.skillsManager[catalog.method]).toHaveBeenCalledTimes(1) }, { timeout: 3000 })
+  expect(mock.remote.skillsManager[catalog.method].mock.calls[0]?.[0]).toBe('old')
+  fireEvent.change(input, { target: { value: 'current' } })
+  expect(searchSignal(mock, catalog.source, 0)?.aborted).toBe(true)
+  await waitFor(() => { expect(mock.remote.skillsManager[catalog.method]).toHaveBeenCalledTimes(2) }, { timeout: 3000 })
+  await act(async () => {
+    if (catalog.outcome === 'failure') old.reject(new Error('Superseded search failed'))
+    else old.resolve(searchResult(catalog.source, 'stale-result'))
+    await old.promise.catch(() => undefined)
+  })
+  expect(screen.queryByText('stale-result')).toBeNull()
+  expect(screen.queryByRole('alert')).toBeNull()
+  expect(screen.getByRole('status', { name: catalog.loading })).toBeTruthy()
+  fireEvent.change(input, { target: { value: 'latest' } })
+  expect(searchSignal(mock, catalog.source, 1)?.aborted).toBe(true)
+  await waitFor(() => { expect(mock.remote.skillsManager[catalog.method]).toHaveBeenCalledTimes(3) }, { timeout: 3000 })
+  await act(async () => {
+    current.resolve(searchResult(catalog.source, 'obsolete-result'))
+    await current.promise
+  })
+  expect(screen.getByRole('status', { name: catalog.loading })).toBeTruthy()
+  await act(async () => { latest.resolve(searchResult(catalog.source, 'current-result')); await latest.promise })
+  expect(await screen.findByText('current-result')).toBeTruthy()
+  expect(screen.queryByText('obsolete-result')).toBeNull()
+  expect(screen.queryByRole('status', { name: catalog.loading })).toBeNull()
+})
+
+it.each(searchCatalogs.flatMap(catalog => (['source', 'inactive', 'unmount'] as const).map(exit => ({ ...catalog, exit }))))('cancels a $source search when its view exits by $exit', async (catalog) => {
+  const { mock, view, Harness } = await setup()
+  const pending = deferred<ReturnType<typeof searchResult>>()
+  onTestFinished(async () => {
+    view.unmount()
+    pending.resolve(searchResult(catalog.source, 'disposed'))
+    await pending.promise
+  })
+  mock.unary(`skillsManager/${catalog.method}`, async () => ok(await pending.promise))
+  fireEvent.click(screen.getByRole('button', { name: `repo.subsource.${catalog.source}` }))
+  fireEvent.change(screen.getByRole('textbox', { name: catalog.label }), { target: { value: 'orders' } })
+  await waitFor(() => { expect(mock.remote.skillsManager[catalog.method]).toHaveBeenCalledOnce() }, { timeout: 3000 })
+  if (catalog.exit === 'unmount') view.unmount()
+  else if (catalog.exit === 'inactive') view.rerender(h(React.StrictMode, null, h(Harness, { active: false })))
+  else fireEvent.click(screen.getByRole('button', { name: /repo.subsource.github/ }))
+  expect(searchSignal(mock, catalog.source, 0)?.aborted).toBe(true)
+  await act(async () => { pending.resolve(searchResult(catalog.source, 'dismissed-result')); await pending.promise })
+  expect(screen.queryByText('dismissed-result')).toBeNull()
+  expect(screen.queryByRole('alert')).toBeNull()
+})
+
+it.each(searchCatalogs)('reports a current $source search failure and retries its query', async (catalog) => {
+  const { mock } = await setup()
+  mock.unary(`skillsManager/${catalog.method}`, () => { throw new Error('Catalog unavailable') })
+  fireEvent.click(screen.getByRole('button', { name: `repo.subsource.${catalog.source}` }))
+  fireEvent.change(screen.getByRole('textbox', { name: catalog.label }), { target: { value: 'orders' } })
+  expect((await screen.findByRole('alert')).textContent).toContain(catalog.error)
+  mock.unary(`skillsManager/${catalog.method}`, () => ok(searchResult(catalog.source, 'retried-result')))
+  fireEvent.click(screen.getByRole('button', { name: 'repo.catalog.retry' }))
+  expect(await screen.findByText('retried-result')).toBeTruthy()
+  expect(mock.remote.skillsManager[catalog.method].mock.calls.map(call => call[0])).toEqual(['orders', 'orders'])
+  expect(screen.queryByRole('alert')).toBeNull()
+})
 
 it('closes a pending repository read through the native modal and aborts its Remote request', async () => {
   const { mock } = await setup()

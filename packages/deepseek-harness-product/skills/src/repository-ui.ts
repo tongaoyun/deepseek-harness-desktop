@@ -90,31 +90,7 @@ interface CatalogSkillItem {
 type CatalogTarget = { catalog: "clawhub"; owner: string; slug: string; name: string } | { catalog: "skillsh"; source: string; skillId: string; name: string };
 
 
-type SkillsShCatalogItem = { id: string; source: string; skillId: string; name: string; installs?: number };
-
-type ClawHubApiPage = {
-  items?: Array<{
-    ownerHandle?: unknown;
-    slug?: unknown;
-    displayName?: unknown;
-    summary?: unknown;
-    stats?: { downloads?: unknown; installs?: unknown; stars?: unknown };
-  }>;
-  nextCursor?: unknown;
-};
-
-type ClawHubApiSearchResult = {
-  source?: unknown;
-  id?: unknown;
-  slug?: unknown;
-  displayName?: unknown;
-  ownerHandle?: unknown;
-  owner?: { handle?: unknown };
-  summary?: unknown;
-  downloads?: unknown;
-  stats?: { downloads?: unknown; installs?: unknown; stars?: unknown };
-};
-type ClawHubApiSearchResponse = { results?: ClawHubApiSearchResult[] };
+type SkillsShCatalogItem = SkillOutput<'searchSkillsSh'>['skills'][number];
 
 /** Compare local workspace paths across Windows drive and UNC casing rules. */
 function pathIdentity(path: string) {
@@ -156,7 +132,6 @@ export function createRepositoryUI({ react, Modal, SourceSelect, destination, ap
     const [clawhubSearchItems, setClawhubSearchItems] = react.useState<CatalogSkillItem[]>([]);
     const [clawhubSearchLoading, setClawhubSearchLoading] = react.useState(false);
     const [clawhubSearchError, setClawhubSearchError] = react.useState(false);
-    const clawhubSearchRequest = react.useRef(0);
     const clawhubSearchAbort = react.useRef<AbortController | null>(null);
     const clawhubSearchTimer = react.useRef<ReturnType<typeof setTimeout> | null>(null);
     const [skillshQuery, setSkillshQuery] = react.useState("");
@@ -164,7 +139,6 @@ export function createRepositoryUI({ react, Modal, SourceSelect, destination, ap
     const [skillshItems, setSkillshItems] = react.useState<SkillsShCatalogItem[]>([]);
     const [skillshLoading, setSkillshLoading] = react.useState(false);
     const [skillshError, setSkillshError] = react.useState(false);
-    const skillshRequest = react.useRef(0);
     const skillshAbort = react.useRef<AbortController | null>(null);
     const skillshTimer = react.useRef<ReturnType<typeof setTimeout> | null>(null);
     const catalogPager = react.useRef<{cursor: string | null; count: number; hasMore: boolean}>({ cursor: null, count: 0, hasMore: true });
@@ -272,25 +246,22 @@ export function createRepositoryUI({ react, Modal, SourceSelect, destination, ap
       }
       try {
         const options = { sort: "downloads", limit: Math.min(10, 100 - offset), cursor: reset ? undefined : current.cursor ?? undefined };
-        const page = await api("listClawHub", { options }, controller.signal) as ClawHubApiPage;
+        const page = await api("listClawHub", { options }, controller.signal);
         if (catalogRequest.current !== controller || controller.signal.aborted || !mounted.current) return;
-        if (!Array.isArray(page.items)) throw new Error("ClawHub response has no items array");
-        const items = page.items.flatMap((item): CatalogSkillItem[] => {
-          if (typeof item.ownerHandle !== "string" || !item.ownerHandle || typeof item.slug !== "string" || !item.slug) return [];
-          const count = (value: unknown) => typeof value === "number" && Number.isFinite(value) ? value : undefined;
-          return [{
+        const items = page.items.map((item): CatalogSkillItem => {
+          return {
             id: item.ownerHandle + "/" + item.slug,
             owner: item.ownerHandle,
             slug: item.slug,
-            name: typeof item.displayName === "string" && item.displayName ? item.displayName : item.slug,
+            name: item.displayName,
             source: item.ownerHandle + "/" + item.slug,
-            description: typeof item.summary === "string" ? item.summary : "",
-            downloads: count(item.stats?.downloads),
-            installs: count(item.stats?.installs),
-            stars: count(item.stats?.stars),
-          }];
+            description: item.summary,
+            downloads: item.stats?.downloads,
+            installs: item.stats?.installs,
+            stars: item.stats?.stars,
+          };
         }).slice(0, Math.max(0, 100 - offset));
-        const nextCursor = typeof page.nextCursor === "string" && page.nextCursor ? page.nextCursor : null;
+        const nextCursor = page.nextCursor;
         const count = offset + items.length;
         catalogPager.current = { cursor: nextCursor, count, hasMore: !!nextCursor && count < 100 };
         if (!mounted.current) return;
@@ -309,13 +280,11 @@ export function createRepositoryUI({ react, Modal, SourceSelect, destination, ap
     function cancelClawHubSearch() {
       if (clawhubSearchTimer.current) clearTimeout(clawhubSearchTimer.current);
       clawhubSearchTimer.current = null;
-      clawhubSearchRequest.current++;
       clawhubSearchAbort.current?.abort();
       clawhubSearchAbort.current = null;
       if (mounted.current) setClawhubSearchLoading(false);
     }
     async function fetchClawHubSearch(query: string) {
-      const request = ++clawhubSearchRequest.current;
       const controller = new AbortController();
       clawhubSearchAbort.current?.abort();
       clawhubSearchAbort.current = controller;
@@ -324,31 +293,26 @@ export function createRepositoryUI({ react, Modal, SourceSelect, destination, ap
       setClawhubSearchError(false);
       try {
 
-        const result = await api("searchClawHub", { query, options: { limit: 100 } }, controller.signal) as ClawHubApiSearchResponse;
-        if (!Array.isArray(result.results)) throw new Error("ClawHub search response has no results array");
-        const count = (value: unknown) => typeof value === "number" && Number.isFinite(value) ? value : undefined;
-        const items = result.results.flatMap((item): CatalogSkillItem[] => {
-          if (typeof item.source === "string" && item.source !== "clawhub") return [];
-          const owner = typeof item.ownerHandle === "string" ? item.ownerHandle : item.owner?.handle;
-          if (typeof owner !== "string" || !owner || typeof item.slug !== "string" || !item.slug) return [];
-          return [{
-            id: typeof item.id === "string" ? item.id : owner + "/" + item.slug,
-            owner,
+        const result = await api("searchClawHub", { query, options: { limit: 100 } }, controller.signal);
+        const items = result.results.map((item): CatalogSkillItem => {
+          return {
+            id: item.id ?? item.ownerHandle + "/" + item.slug,
+            owner: item.ownerHandle,
             slug: item.slug,
-            name: typeof item.displayName === "string" && item.displayName ? item.displayName : item.slug,
-            source: owner + "/" + item.slug,
-            description: typeof item.summary === "string" ? item.summary : "",
-            downloads: count(item.downloads) ?? count(item.stats?.downloads),
-            installs: count(item.stats?.installs),
-            stars: count(item.stats?.stars),
-          }];
+            name: item.displayName,
+            source: item.ownerHandle + "/" + item.slug,
+            description: item.summary,
+            downloads: item.downloads ?? item.stats?.downloads,
+            installs: item.stats?.installs,
+            stars: item.stats?.stars,
+          };
         });
-        if (request === clawhubSearchRequest.current && mounted.current) setClawhubSearchItems(items);
+        if (clawhubSearchAbort.current === controller && mounted.current) setClawhubSearchItems(items);
       } catch (error) {
         const aborted = (error as { name?: string })?.name === "AbortError";
-        if (request === clawhubSearchRequest.current && mounted.current && !aborted) setClawhubSearchError(true);
+        if (clawhubSearchAbort.current === controller && mounted.current && !aborted) setClawhubSearchError(true);
       } finally {
-        if (request === clawhubSearchRequest.current) {
+        if (clawhubSearchAbort.current === controller) {
           clawhubSearchAbort.current = null;
           if (mounted.current) setClawhubSearchLoading(false);
         }
@@ -374,13 +338,11 @@ export function createRepositoryUI({ react, Modal, SourceSelect, destination, ap
     function cancelSkillshSearch() {
       if (skillshTimer.current) clearTimeout(skillshTimer.current);
       skillshTimer.current = null;
-      skillshRequest.current++;
       skillshAbort.current?.abort();
       skillshAbort.current = null;
       if (mounted.current) setSkillshLoading(false);
     }
     async function fetchSkillshResults(query: string) {
-      const request = ++skillshRequest.current;
       const controller = new AbortController();
       skillshAbort.current?.abort();
       skillshAbort.current = controller;
@@ -389,12 +351,12 @@ export function createRepositoryUI({ react, Modal, SourceSelect, destination, ap
       setSkillshError(false);
       try {
         const result = await api("searchSkillsSh", { query }, controller.signal);
-        if (request === skillshRequest.current && mounted.current) setSkillshItems(result.skills);
+        if (skillshAbort.current === controller && mounted.current) setSkillshItems(result.skills);
       } catch (error) {
         const aborted = (error as { name?: string })?.name === "AbortError";
-        if (request === skillshRequest.current && mounted.current && !aborted) setSkillshError(true);
+        if (skillshAbort.current === controller && mounted.current && !aborted) setSkillshError(true);
       } finally {
-        if (request === skillshRequest.current) {
+        if (skillshAbort.current === controller) {
           skillshAbort.current = null;
           if (mounted.current) setSkillshLoading(false);
         }
@@ -402,13 +364,8 @@ export function createRepositoryUI({ react, Modal, SourceSelect, destination, ap
     }
     function updateSkillshQuery(value: string) {
       setSkillshQuery(value);
-      if (skillshTimer.current) clearTimeout(skillshTimer.current);
-      skillshTimer.current = null;
-      skillshRequest.current++;
-      skillshAbort.current?.abort();
-      skillshAbort.current = null;
+      cancelSkillshSearch();
       setSkillshItems([]);
-      setSkillshLoading(false);
       setSkillshError(false);
       const normalized = value.trim();
       if (!normalized) return;
