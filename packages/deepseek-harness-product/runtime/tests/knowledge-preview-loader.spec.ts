@@ -40,6 +40,7 @@ async function fixture() {
   const before = process.listenerCount('message')
   const calls: Array<{ method: string; requestId: string }> = []
   const cancelled: string[] = []
+  const failures = new Map<string, string>()
   const results = new Map<number, DispatchResult>()
   const awaiting = new Map<number, (result: DispatchResult) => void>()
   let employeeId = 'employee-a'
@@ -62,7 +63,11 @@ async function fixture() {
       calls.push({ method, requestId })
       if (method === 'knowledge.documents.previewMetadata' && holdMetadata) { pendingMetadata = requestId; return true }
       queueMicrotask(() => {
-        if (method !== 'auth.getSession' && revoked) {
+        const failure = failures.get(method)
+        if (failure !== undefined) {
+          emit({ type: 'extension-result', requestId, error: 'Preview transfer failed',
+            failure: { code: failure, message: 'Preview transfer failed', retryable: false, resources: [] } })
+        } else if (method !== 'auth.getSession' && revoked) {
           emit({ type: 'extension-result', requestId, error: 'Knowledge access revoked',
             failure: { code: 'KNOWLEDGE_ACCESS_REVOKED', message: 'Knowledge access revoked', retryable: false, resources: [] } })
         } else {
@@ -126,6 +131,7 @@ async function fixture() {
     return { requestId, settled: completion.promise }
   }
   return { ctx, root, before, calls, results, cancelled, dispatch,
+    fail: (method: string, code: string) => { failures.set(method, code) },
     revoke: () => { revoked = true }, changeEmployee: () => { employeeId = 'employee-b' },
     holdMetadata: () => { holdMetadata = true }, pendingMetadata: () => pendingMetadata,
     settleMetadata: () => { if (pendingMetadata !== undefined) emit({ type: 'extension-result', requestId: pendingMetadata,
@@ -145,6 +151,19 @@ describe('original Office preview public Loader entry', () => {
     expect(h.calls.map(call => call.method)).not.toContain('knowledge.documents.read')
     expect(JSON.stringify(result)).not.toContain('employee-a')
     expect(engine.render).toHaveBeenCalledOnce()
+  })
+
+  it.each(['original', 'converted'] as const)('reports failed %s transfer cleanup instead of returning a preview or hiding it behind a write error', async (phase) => {
+    const h = await fixture()
+    const close = phase === 'original' ? 'knowledge.documents.preview.close' : 'runtime.knowledge.preview.write.close'
+    h.fail(close, 'PRIVATE_FILE_REMOVAL_FAILED')
+    if (phase === 'converted') h.fail('runtime.knowledge.preview.write.append', 'KNOWLEDGE_PREVIEW_WRITE_FAILED')
+    const result = await h.dispatch().settled
+    expect(result.failure?.code).toBe('KNOWLEDGE_PREVIEW_CLEANUP_FAILED')
+    expect(result.result).toBeUndefined()
+    expect(h.calls.some(call => call.method === close)).toBe(true)
+    expect(h.calls.some(call => call.method === 'runtime.knowledge.preview.write.commit')).toBe(false)
+    expect(engine.render).toHaveBeenCalledTimes(phase === 'original' ? 0 : 1)
   })
 
   it('defers original reads until the official converter admits the request', async () => {

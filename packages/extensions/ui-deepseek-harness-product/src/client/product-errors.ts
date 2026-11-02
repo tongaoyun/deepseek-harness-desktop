@@ -51,6 +51,7 @@ const messageKeys: Readonly<Record<string, DeepSeekHarnessProductKey>> = {
   KNOWLEDGE_PREVIEW_BUSY: 'knowledgePreviewBusy',
   KNOWLEDGE_TRANSFER_BUSY: 'knowledgePreviewBusy',
   KNOWLEDGE_PREVIEW_FAILED: 'knowledgePreviewFailed',
+  KNOWLEDGE_PREVIEW_CLEANUP_FAILED: 'knowledgePreviewCleanupFailed',
   KNOWLEDGE_PARSE_MODE_INVALID: 'knowledgeParseModeInvalid',
   KNOWLEDGE_FOLDER_CONFLICT: 'knowledgeFolderConflict',
   KNOWLEDGE_FOLDER_CHANGED: 'knowledgeFolderChanged',
