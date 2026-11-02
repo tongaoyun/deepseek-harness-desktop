@@ -4,17 +4,18 @@ import { Context } from '@deepseek-ai/cordis'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
 import * as Include from '@deepseek-ai/cordis-plugin-include'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
+import { closeTopModal } from '@deepseek-ai/dsh-client-ui-primitives'
 import { SlotRegistry } from '@deepseek-ai/dsh-client-ui-renderer/client'
 import { createSlotRenderer } from '@deepseek-ai/dsh-client-test-runtime'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
-import { act, cleanup, render } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, within } from '@testing-library/react'
 import { InputTriggerService, type InputTriggerSource } from '@deepseek-ai/dsh-client-ui-input-trigger/client'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import type { PropsRenderSlots, StandardSourceBinding } from '@deepseek-ai/dsh-client-ui-slots'
+import type { PropsRenderSlots, ScopedStandardSourceBinding, StandardSourceBinding } from '@deepseek-ai/dsh-client-ui-slots'
 import { afterEach, expect, it, onTestFinished, vi } from 'vitest'
 import * as Experts from '../../src/client/index.ts'
 import type { ExpertClientState } from '../../src/client/client-state.ts'
@@ -23,7 +24,7 @@ import { TEST_TEAMS } from '../../src/fixtures/teams.ts'
 
 afterEach(cleanup)
 
-async function fixture(renderMain = false) {
+async function fixture(renderMain: boolean | 'picker' = false) {
   const ctx = new Context()
   onTestFinished(() => ctx.fiber.dispose())
   await ctx.plugin(SlotRegistry).await()
@@ -49,11 +50,14 @@ async function fixture(renderMain = false) {
     main: { kind: 'keyed', scope: 'root' },
     'conversation.input.left': { kind: 'list', scope: 'session' },
     'tool.call.toolview': { kind: 'keyed', scope: 'session' },
-  } }, (props: PropsRenderSlots<'main' | 'conversation.input.left' | 'tool.call.toolview'>) => renderMain
-    ? props.renderSlot('main', {}, { entryKey: 'deepseek-harness-experts' }) : null)
+  } }, (props: PropsRenderSlots<'main' | 'conversation.input.left' | 'tool.call.toolview'>) => renderMain === 'picker'
+    ? props.renderSlot('conversation.input.left', {})
+    : renderMain ? props.renderSlot('main', {}, { entryKey: 'deepseek-harness-experts' }) : null)
   if (renderMain) {
     slots.install(createSlotRenderer()); slots.installLocale(ctx.locale)
-    const current = createSnapshotStore<StandardSourceBinding>({ key: undefined, hooks: {}, keyedHooks: {}, props: {} })
+    const current = createSnapshotStore<StandardSourceBinding>(renderMain === 'picker'
+      ? { key: SessionId('picker-session'), ctx, hooks: {}, keyedHooks: {}, props: {} } satisfies ScopedStandardSourceBinding
+      : { key: undefined, hooks: {}, keyedHooks: {}, props: {} })
     slots.installScope('session', { current, bindingSource: () => current, renderArea: () => null })
   }
   await ctx.plugin(Loader)
@@ -107,6 +111,25 @@ const session = { sessionId: SessionId('expert-input') }
 const request = { query: '', position: 'inline', drilled: false, signal: new AbortController().signal } as const
 const compliance = { slug: 'compliance-review', name: '合规审查', nameEn: 'Compliance review', description: '合规检查',
   descriptionEn: 'Review compliance', emoji: '🔎', division: 'company-compliance', divisionZh: '公司合规', custom: false, company: true }
+
+it('mounts the picker through the Loader and releases native modal ownership on close and unload', async () => {
+  const { slots, cache, owner } = await fixture('picker')
+  const view = render(slots.renderSlot('root', {}))
+  const trigger = view.container.querySelector<HTMLButtonElement>('button[aria-haspopup="dialog"]')
+  if (!trigger) throw new Error('Expected expert picker trigger')
+  trigger.focus()
+  await act(async () => { fireEvent.click(trigger); await cache.catalog.refresh() })
+  const search = within(view.container).getByRole('searchbox')
+  expect(document.activeElement).toBe(search)
+  act(() => { closeTopModal(document) })
+  expect(within(view.container).queryByRole('dialog')).toBeNull()
+  expect(document.activeElement).toBe(trigger)
+  await act(async () => { fireEvent.click(trigger); await cache.catalog.refresh() })
+  expect(within(view.container).queryByRole('dialog')).not.toBeNull()
+  await act(async () => { await owner.dispose() })
+  expect(view.container.querySelector('[role="dialog"]')).toBeNull()
+  expect(fireEvent.keyDown(document, { key: 'Escape' })).toBe(true)
+})
 
 it('renders confirmed library counters through Loader-mounted native Slot hooks and releases them on unload', async () => {
   const { cache, getCatalog, getTeams, slots, owner } = await fixture(true)
