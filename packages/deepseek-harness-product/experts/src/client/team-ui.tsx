@@ -114,19 +114,9 @@ export function TeamsPanel(props: {
     onSelect?(team: ExpertTeam, example?: string): boolean | Promise<boolean>;
     headerLinks?: React.ReactNode;
     sharedHeader?: boolean;
-    onSummary?: (value: {
-        source: 'company' | 'custom';
-        total: number;
-        enabled: number;
-    } | null) => void;
     title?: string;
 }) {
     const { locale, tx, error, setError, directory, snapshot, experts } = useTeamDirectoryView({ cache: props.cache, remote: props.remote, fallback: "加载失败。" });
-    React.useEffect(() => {
-        if (snapshot === null) { props.onSummary?.(null); return; }
-        const teams = snapshot.teams.filter(team => Boolean('company' in team && team.company) === (props.source === 'company')) ?? [];
-        props.onSummary?.({ source: props.source === 'company' ? 'company' : 'custom', total: teams.length, enabled: teams.filter(team => snapshot?.enabledTeams.includes(team.id)).length });
-    }, [snapshot, props.source, props.onSummary]);
     const [query, setQuery] = React.useState('');
     const [status, setStatus] = React.useState('');
     const [notice, setNotice] = React.useState('');

@@ -19,6 +19,6 @@ export function discardSkillResponse(response: Response): void {
  */
 export async function readSkillResponse(response: Response, limit: number, signal: AbortSignal, sizeError: Error): Promise<Buffer> {
   const chunks: Uint8Array[] = []
-  const length = await streamResponseBody(response, limit, signal, async (chunk) => { chunks.push(chunk) }, sizeError)
+  const length = await streamResponseBody(response, limit, signal, (chunk) => { chunks.push(chunk) }, sizeError)
   return Buffer.concat(chunks, length)
 }

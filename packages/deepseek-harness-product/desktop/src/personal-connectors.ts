@@ -333,7 +333,7 @@ export class PersonalConnectors {
     const config = await this.configuration(entry, employee)
     if (!config) throw new Error('Private connector configuration is missing')
     const client = await this.client(entry, employee, config, signal)
-    // The relay forwards validated protocol requests without registering duplicate tool handlers.
+    // oxlint-disable-next-line typescript/no-deprecated -- MCP relay needs raw forwarding, not tool registration.
     const server = new Server({ name: 'product-personal-mcp-relay', version: '1.0.0' }, { capabilities: { tools: {} } })
     const declaredNames = new Set(entry.tools.map(tool => tool.name))
     server.setRequestHandler('tools/list', async () => ({ tools: (await this.discover(client, signal, config.timeoutSeconds)).filter(tool => declaredNames.has(tool.name)) }))

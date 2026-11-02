@@ -15,7 +15,8 @@ import { TeamMenu } from './team-composer.tsx'
 import { TEAM_REFERENCE_SOURCE, insertTeamReference, teamReference } from './team-reference.ts'
 import { TeamLocaleContext } from './team-locale.ts'
 import { teamText } from '../team-i18n.ts'
-import type { ExpertTeam } from '../team-contract.ts'
+import type { ExpertTeam, TeamSnapshot } from '../team-contract.ts'
+import type { CatalogState } from './catalog.ts'
 import { PromptDialog } from "./prompt-dialog.ts";
 import React from 'react'
 import { CategorySelect } from './category-select.ts'
@@ -26,7 +27,7 @@ import type { SessionId } from '@deepseek-ai/dsh-client-connection/client'
 import type { InputTriggerSource, ReferenceInsert, TokenSpan } from '@deepseek-ai/dsh-client-ui-input-trigger/client'
 // Type-only: 拉入 api-remotes 的 ctx.remote 合并（client 侧 TypertClientRemote）。
 import type {} from '@deepseek-ai/dsh-api-remotes/client'
-import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
+import type { PropsLocale, SnapshotSelectorHook } from '@deepseek-ai/dsh-client-ui-slots'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type { RemoteResult, TypertRemoteNamespaceMap } from '@deepseek-ai/dsh-typert-protocol'
 // Type-only: 拉入 ctx.locale 的 Context merge（跨插件协作只走服务，不做值导入）。
@@ -943,7 +944,6 @@ function ExpertCardsSettings(props: PropsLocale<'agency'> & {
   startCreation?: (kind: 'expert' | 'team') => void
   source: 'custom' | 'company'
   onSourceChange: (source: 'custom' | 'company') => void
-  onSummary?: (value: { source: 'custom' | 'company'; total: number; enabled: number } | null) => void
   remote: AgencyAgentsRemoteApi
   cache: ExpertClientState
   getActive: () => 'zh' | 'en'
@@ -952,11 +952,6 @@ function ExpertCardsSettings(props: PropsLocale<'agency'> & {
   const reloadEpoch = React.useRef(0)
   React.useEffect(() => () => { reloadEpoch.current++ }, [props.remote, props.cache])
   const [state, setState] = React.useState<EnabledState | null>(cached.revision < 0 ? null : cached)
-  React.useEffect(() => {
-    if (state === null) { props.onSummary?.(null); return }
-    const mine = state.experts.filter(expert => !expert.teamMember && (props.source === 'company' ? expert.company : expert.custom)) ?? []
-    props.onSummary?.({ source: props.source, total: mine.length, enabled: mine.filter(expert => state?.enabled.has(expert.slug)).length })
-  }, [state?.experts, state?.enabled, props.source, props.onSummary])
   const [initialOrder, setInitialOrder] = React.useState<ReadonlyArray<string> | null>(cached.revision < 0 ? null : sortExpertsByEnabled(cached.experts, cached.enabled).map(expert => expert.slug))
   const [error, setError] = React.useState<string | null>(null)
   const [query, setQuery] = React.useState('')
@@ -1274,7 +1269,15 @@ function ExpertCardsSettings(props: PropsLocale<'agency'> & {
     }))
 }
 
-export function AgencySettingsPanel(props: Omit<React.ComponentProps<typeof ExpertCardsSettings>, 'source' | 'onSourceChange' | 'active'> & { prepareTeamSelection(): (team: ExpertTeam, example?: string) => boolean | Promise<boolean> }) {
+/** Expert library whose counters read confirmed directories through native Slot hooks.
+ * @param props Mounted directory hooks, editor actions and localized text.
+ * @returns Expert and team library for the selected source.
+ */
+export function AgencySettingsPanel(props: Omit<React.ComponentProps<typeof ExpertCardsSettings>, 'source' | 'onSourceChange' | 'active'> & {
+  useExpertCatalog: SnapshotSelectorHook<CatalogState>
+  useExpertTeams: SnapshotSelectorHook<TeamSnapshot | null>
+  prepareTeamSelection(): (team: ExpertTeam, example?: string) => boolean | Promise<boolean>
+}) {
   const [creationError, setCreationError] = React.useState<string | null>(null)
   const beginCreation = props.startCreation === undefined ? undefined : (kind: 'expert' | 'team'): void => {
     setCreationError(null)
@@ -1283,8 +1286,10 @@ export function AgencySettingsPanel(props: Omit<React.ComponentProps<typeof Expe
   const tx = (key: string) => teamText(props.getActive(), key)
   const [source, setSource] = React.useState<'custom' | 'company'>('company')
   const [view, setView] = React.useState<'experts' | 'teams'>('experts')
-  const [expertSummary, setExpertSummary] = React.useState<{ source: 'custom' | 'company'; total: number; enabled: number } | null>(null)
-  const [teamSummary, setTeamSummary] = React.useState<{ source: 'custom' | 'company'; total: number; enabled: number } | null>(null)
+  const catalog = props.useExpertCatalog(value => value)
+  const snapshot = props.useExpertTeams(value => value)
+  const experts = catalog.revision < 0 ? undefined : catalog.experts.filter(expert => !expert.teamMember && (source === 'company' ? expert.company : expert.custom))
+  const teams = snapshot?.teams.filter(team => Boolean(team.company) === (source === 'company'))
   const tabLabel = (icon: React.ReactElement, name: string, total: number | undefined, enabled: number | undefined) => React.createElement(React.Fragment, null,
     icon,
     name,
@@ -1295,8 +1300,8 @@ export function AgencySettingsPanel(props: Omit<React.ComponentProps<typeof Expe
     className: 'aag-library-tabs', label: tx('专家库类型'), value: view,
     onChange: (value) => { if (value === 'experts' || value === 'teams') setView(value) },
     items: [
-      { value: 'experts' as const, id: 'aag-library-tab-experts', panelId: 'aag-library-panel-experts', label: tabLabel(expertIcon(), tx('专家'), expertSummary?.source === source ? expertSummary.total : undefined, expertSummary?.source === source ? expertSummary.enabled : undefined) },
-      { value: 'teams' as const, id: 'aag-library-tab-teams', panelId: 'aag-library-panel-teams', label: tabLabel(teamTabIcon(), tx('专家团'), teamSummary?.source === source ? teamSummary.total : undefined, teamSummary?.source === source ? teamSummary.enabled : undefined) },
+      { value: 'experts' as const, id: 'aag-library-tab-experts', panelId: 'aag-library-panel-experts', label: tabLabel(expertIcon(), tx('专家'), experts?.length, experts?.filter(expert => catalog.enabled.has(expert.slug)).length) },
+      { value: 'teams' as const, id: 'aag-library-tab-teams', panelId: 'aag-library-panel-teams', label: tabLabel(teamTabIcon(), tx('专家团'), teams?.length, teams?.filter(team => snapshot?.enabledTeams.includes(team.id)).length) },
     ],
   })
   // 两个名册都保持挂载，切换时不丢失筛选，也不重新等待第一次加载。
@@ -1311,10 +1316,15 @@ export function AgencySettingsPanel(props: Omit<React.ComponentProps<typeof Expe
     ] }),
     React.createElement('div', { id: 'aag-catalog-panel', role: 'tabpanel', 'aria-labelledby': source === 'company' ? 'aag-tab-market' : 'aag-tab-mine' },
       React.createElement('div', { className: 'aag-library-navigation' }, navigation),
-      React.createElement('div', { id: 'aag-library-panel-experts', role: 'tabpanel', 'aria-labelledby': 'aag-library-tab-experts', hidden: view !== 'experts' }, React.createElement(ExpertCardsSettings, { ...props, startCreation: beginCreation, source, active: view === 'experts', onSourceChange: (next) => { setSource(next); setView('experts') }, sharedHeader: true, onSummary: setExpertSummary })),
+      React.createElement('div', { id: 'aag-library-panel-experts', role: 'tabpanel', 'aria-labelledby': 'aag-library-tab-experts', hidden: view !== 'experts' }, React.createElement(ExpertCardsSettings, { ...props, startCreation: beginCreation, source, active: view === 'experts', onSourceChange: (next) => { setSource(next); setView('experts') }, sharedHeader: true })),
       React.createElement('div', { id: 'aag-library-panel-teams', role: 'tabpanel', 'aria-labelledby': 'aag-library-tab-teams', hidden: view !== 'teams' }, React.createElement(TeamLocaleContext.Provider, { value: props.getActive() }, React.createElement(TeamsPanel, {
-        remote: props.remote as TeamRemote, cache: props.cache, startCreation: beginCreation ? () => beginCreation('team') : undefined, source, active: view === 'teams', onSaved: () => setSource('custom'), sharedHeader: true, onSummary: setTeamSummary, prepareSelect: props.prepareTeamSelection,
+        remote: props.remote as TeamRemote, cache: props.cache, startCreation: beginCreation ? () => beginCreation('team') : undefined, source, active: view === 'teams', onSaved: () => setSource('custom'), sharedHeader: true, prepareSelect: props.prepareTeamSelection,
       })))))
+}
+
+function AgencySettingsPage(props: React.ComponentProps<typeof AgencySettingsPanel>): React.ReactElement {
+  return React.createElement('div', { className: 'product-capability-page' },
+    React.createElement('div', { className: 'product-capability-content' }, React.createElement(AgencySettingsPanel, props)))
 }
 export const inject = ['slots', 'inputTriggers', 'locale', 'remote', 'sessions', 'conversation', 'layout']
 
@@ -1450,10 +1460,11 @@ export async function apply(ctx: ClientContext): Promise<() => Promise<void>> {
   })
 
   ctx.slots.inject('main', () => ctx.slots.register(
-    { name: 'main', key: 'deepseek-harness-experts', locale: NS },
-    (props) => React.createElement('div', { className: 'product-capability-page' },
-      React.createElement('div', { className: 'product-capability-content' },
-        React.createElement(AgencySettingsPanel, { ...props, remote, cache, getActive, startCreation, prepareTeamSelection: bindExpertInsertion().prepareTeamSelection }))),
+    { name: 'main', key: 'deepseek-harness-experts', locale: NS,
+      inject: () => ({ remote, cache, getActive, startCreation, prepareTeamSelection: bindExpertInsertion().prepareTeamSelection,
+        hooks: { expertCatalog: cache.catalog, expertTeams: cache.teams } }),
+    },
+    AgencySettingsPage,
   ))
 
   ctx.slots.inject('conversation.input.left', () => ctx.slots.register(

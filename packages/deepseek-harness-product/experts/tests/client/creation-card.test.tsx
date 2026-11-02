@@ -2,6 +2,7 @@
 import { fireEvent } from '@testing-library/react'
 import { TEAM_EN } from '../../src/team-i18n.ts'
 import { createExpertClientState } from '../../src/client/client-state.ts'
+import { bindSnapshotSelector } from '@deepseek-ai/dsh-client-test-runtime'
 import React, { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
@@ -104,7 +105,8 @@ it('confirms the visible bulk count, cancels without writing, and preserves anot
     setEnabled, getPrompt: unused, getCustomExpert: unused, saveCustomExpert: unused, deleteCustomExpert: unused,
   }
   const dictionary: Readonly<Record<string, string>> = en
-  const props: React.ComponentProps<typeof AgencySettingsPanel> = { remote, cache: createExpertClientState(remote), getActive: () => 'en', prepareTeamSelection: () => () => false,
+  const cache = createExpertClientState(remote)
+  const props: React.ComponentProps<typeof AgencySettingsPanel> = { remote, cache, useExpertCatalog: bindSnapshotSelector(cache.catalog), useExpertTeams: bindSnapshotSelector(cache.teams), getActive: () => 'en', prepareTeamSelection: () => () => false,
     t: (key, values) => (dictionary[key] ?? key).replace(/\{(\w+)\}/gu, (_, name: string) => {
       const value = values?.[name]
       if (typeof value === 'string' || typeof value === 'number') return String(value)
@@ -155,7 +157,7 @@ it.each(['expert', 'team'] as const)('keeps an unsaved %s form mounted while a r
   const cache = createExpertClientState(remote)
   const dictionary: Readonly<Record<string, string>> = en
   await act(async () => {
-    root.render(<AgencySettingsPanel remote={remote} cache={cache} getActive={() => 'en'}
+    root.render(<AgencySettingsPanel remote={remote} cache={cache} useExpertCatalog={bindSnapshotSelector(cache.catalog)} useExpertTeams={bindSnapshotSelector(cache.teams)} getActive={() => 'en'}
       prepareTeamSelection={() => () => false} t={key => dictionary[key] ?? key} />)
   })
   await click(en['custom.source'])

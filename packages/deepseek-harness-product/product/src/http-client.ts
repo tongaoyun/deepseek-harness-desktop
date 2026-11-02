@@ -316,7 +316,7 @@ function serverError(status: number, body: ColaResponse<unknown>): DeepSeekHarne
 
 async function readBoundedBody(response: Response, maxBytes: number, signal: AbortSignal): Promise<Uint8Array> {
   const chunks: Uint8Array[] = []
-  const length = await streamResponseBody(response, maxBytes, signal, async (chunk) => { chunks.push(chunk) },
+  const length = await streamResponseBody(response, maxBytes, signal, (chunk) => { chunks.push(chunk) },
     new ProductError('KNOWLEDGE_PREVIEW_TOO_LARGE', 'Original file exceeds the preview size limit', false))
   const data = new Uint8Array(length)
   let offset = 0
@@ -328,12 +328,12 @@ async function readBoundedBody(response: Response, maxBytes: number, signal: Abo
  * @param response - Response whose unlocked body belongs to this operation; a missing body is empty.
  * @param maxBytes - Maximum complete body size, including multibyte content.
  * @param signal - Request lifetime; cancellation stops outstanding reads.
- * @param write - Sequential sink; each write settles before the reader is released.
+ * @param write - Synchronous or asynchronous sequential sink; each write settles before the reader is released.
  * @param sizeError - Owning operation's failure for declared or observed overflow.
  * @returns Complete byte count; failure releases the reader without waiting for transport cleanup.
  */
 export async function streamResponseBody(response: Response, maxBytes: number, signal: AbortSignal,
-  write: (chunk: Uint8Array) => Promise<void>, sizeError: Error): Promise<number> {
+  write: (chunk: Uint8Array) => void | Promise<void>, sizeError: Error): Promise<number> {
   let reader: ReadableStreamDefaultReader<Uint8Array> | undefined
   let complete = false
   const cancel = (): void => {

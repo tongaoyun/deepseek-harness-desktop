@@ -11508,7 +11508,7 @@ index 8777befdb01422740acd5e878f38d3fec888d50a..2c72c8203fca2d385a2e6e99f3f592df
      name: 'RegisterFactory',
      declaration: 'export interface RegisterFactory {\n    <F extends keyof SlotFactoryMap & string>(options: RegisterFactoryOptions<F>, component: SlotComponent<FactoryComponentPropsOf<F>>): () => void;\n}',
 diff --git a/packages/extensions/cordis-client-runner/src/client/slot-catalog.ts b/packages/extensions/cordis-client-runner/src/client/slot-catalog.ts
-index 7341c2c743f92d059243f7aa47db63f58a4da2da..05900e3df04d821341b2307a158a139d0faf1ca7 100644
+index 7341c2c743f92d059243f7aa47db63f58a4da2da..b5dad19b038ef37ddc83b0f175de02b3746a01f0 100644
 --- a/packages/extensions/cordis-client-runner/src/client/slot-catalog.ts
 +++ b/packages/extensions/cordis-client-runner/src/client/slot-catalog.ts
 @@ -182,7 +182,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
@@ -11931,7 +11931,7 @@ index 7341c2c743f92d059243f7aa47db63f58a4da2da..05900e3df04d821341b2307a158a139d
        'client-ui-conversation ConversationPanel key \'conversation\'',
        'client-ui-plugin-manager PluginManagerPage',
        'client-ui-schedule TaskManagerPage',
-+      '@deepseek-harness/product-experts (props) => React.createElement(\'div\', { className: \'produ… key \'deepseek-harness-experts\'',
++      '@deepseek-harness/product-experts AgencySettingsPage key \'deepseek-harness-experts\'',
 +      '@deepseek-harness/product-skills props => h(\'div\', { className: \'product-capability-page\' … key \'deepseek-harness-skills\'',
 +      '@deepseek-harness/product-ui Component',
      ],
@@ -13723,7 +13723,7 @@ index 3feb65d17109c713f4d8fde9b000fbee919dab7d..700b0f2e422077f63e8b7e86a7ff6c97
    if (!ctx.get('agents')) await ctx.plugin(AgentRegistry)
    if (!ctx.get('fs')) await ctx.plugin(FileSystem)
 diff --git a/pnpm-lock.yaml b/pnpm-lock.yaml
-index 3bb5b2fd3e73be2afa0611f2012206d2071c61dc..94514425bd0eea98702debef6ebf4de1ab02f224 100644
+index 3bb5b2fd3e73be2afa0611f2012206d2071c61dc..33945008fd83aca92a4d30942d1f8803b46367da 100644
 --- a/pnpm-lock.yaml
 +++ b/pnpm-lock.yaml
 @@ -770,6 +770,9 @@ importers:
@@ -13825,7 +13825,7 @@ index 3bb5b2fd3e73be2afa0611f2012206d2071c61dc..94514425bd0eea98702debef6ebf4de1
        '@deepseek-ai/dsh-util-values':
          specifier: workspace:*
          version: link:../../util/values
-@@ -7851,57 +7915,569 @@ importers:
+@@ -7851,57 +7915,572 @@ importers:
          specifier: workspace:~
          version: link:../../../vendor/cordis
  
@@ -14094,6 +14094,9 @@ index 3bb5b2fd3e73be2afa0611f2012206d2071c61dc..94514425bd0eea98702debef6ebf4de1
 +      '@deepseek-ai/dsh-client-store':
 +        specifier: workspace:*
 +        version: link:../../client/store
++      '@deepseek-ai/dsh-client-test-runtime':
++        specifier: workspace:*
++        version: link:../../test-support/client-runtime
 +      '@deepseek-ai/dsh-client-ui-conversation':
 +        specifier: workspace:*
 +        version: link:../../client/ui-conversation
@@ -14433,7 +14436,7 @@ index 3bb5b2fd3e73be2afa0611f2012206d2071c61dc..94514425bd0eea98702debef6ebf4de1
        zod:
          specifier: 4.4.3
          version: 4.4.3
-@@ -7909,18 +8485,99 @@ importers:
+@@ -7909,18 +8488,99 @@ importers:
        '@deepseek-ai/cordis':
          specifier: workspace:~
          version: link:../../../vendor/cordis
@@ -14541,7 +14544,7 @@ index 3bb5b2fd3e73be2afa0611f2012206d2071c61dc..94514425bd0eea98702debef6ebf4de1
  
    packages/deliverables/deliverable-file-references:
      devDependencies:
-@@ -11759,6 +12416,90 @@ importers:
+@@ -11759,6 +12419,90 @@ importers:
          specifier: ^18.2.0
          version: 18.3.1
  
@@ -14632,7 +14635,7 @@ index 3bb5b2fd3e73be2afa0611f2012206d2071c61dc..94514425bd0eea98702debef6ebf4de1
    packages/feedback/command-feedback:
      dependencies:
        zod:
-@@ -19991,10 +20732,18 @@ packages:
+@@ -19991,10 +20735,18 @@ packages:
    '@mixmark-io/domino@2.2.0':
      resolution: {integrity: sha512-Y28PR25bHXUg88kCV7nivXrP2Nj2RueZ3/l/jdx6J9f8J4nsEGcgX0Qe6lt7Pa+J79+kPiJU3LguR6O/6zrLOw==}
  
@@ -14651,7 +14654,7 @@ index 3bb5b2fd3e73be2afa0611f2012206d2071c61dc..94514425bd0eea98702debef6ebf4de1
    '@modelcontextprotocol/core@2.2.0':
      resolution: {integrity: sha512-iLhmprRmWI8EcosOA3wVvww22z02NkgqhV4fBH6f/odQBsi7xnJc0HGmi21yWO+/iKw2yzqVE127Zhna5/+JXw==}
      engines: {node: '>=20'}
-@@ -20027,6 +20776,10 @@ packages:
+@@ -20027,6 +20779,10 @@ packages:
      resolution: {integrity: sha512-kKaFkyAh6oipvc9+EAbJ552JafnMnOq5nzmzWkp1jJdBhTAAGpmIpWihUG1+rfNhmEFM98gUZDdCHCDD4v6a7Q==}
      hasBin: true
  
@@ -14662,7 +14665,7 @@ index 3bb5b2fd3e73be2afa0611f2012206d2071c61dc..94514425bd0eea98702debef6ebf4de1
    '@modelcontextprotocol/server@2.2.0':
      resolution: {integrity: sha512-qFnltjus6Gk8Lx6J1w2RXmr3YPN22MNT6qD6zjAkaiWIlFIFxWClz0rXHNuJF/KSUyn5YGhkSvXkWDbQHVLFEQ==}
      engines: {node: '>=20'}
-@@ -21035,6 +21788,14 @@ packages:
+@@ -21035,6 +21791,14 @@ packages:
      resolution: {integrity: sha512-4BAffykYOgO+5nzBWYwE3W90sBgLJoUPRWWcL8wlyiM8IB8ipJz3UMJ9KXQd1RKQXpKp8Tutn80HZtWsu2u76w==}
      engines: {node: '>=10'}
  
@@ -14677,7 +14680,7 @@ index 3bb5b2fd3e73be2afa0611f2012206d2071c61dc..94514425bd0eea98702debef6ebf4de1
    '@tanstack/react-virtual@3.14.10':
      resolution: {integrity: sha512-SRyoUbdFMRHuYXMijV5H4ZarQWpXkj3iANq8OFre+pybeVap8ZJjZ3Nz9bVjx4d8PfobVUQUdKyyyHYk3E+djw==}
      peerDependencies:
-@@ -27683,6 +28444,16 @@ snapshots:
+@@ -27683,6 +28447,16 @@ snapshots:
  
    '@mixmark-io/domino@2.2.0': {}
  
@@ -14694,7 +14697,7 @@ index 3bb5b2fd3e73be2afa0611f2012206d2071c61dc..94514425bd0eea98702debef6ebf4de1
    '@modelcontextprotocol/client@2.2.0':
      dependencies:
        '@modelcontextprotocol/core': 2.2.0
-@@ -27693,10 +28464,21 @@ snapshots:
+@@ -27693,10 +28467,21 @@ snapshots:
        pkce-challenge: 5.0.1
        zod: 4.4.3
  
@@ -14716,7 +14719,7 @@ index 3bb5b2fd3e73be2afa0611f2012206d2071c61dc..94514425bd0eea98702debef6ebf4de1
    '@modelcontextprotocol/node@2.0.0(@modelcontextprotocol/server@2.2.0)(hono@4.13.7)':
      dependencies:
        '@hono/node-server': 1.19.17(hono@4.13.7)
-@@ -27748,6 +28530,11 @@ snapshots:
+@@ -27748,6 +28533,11 @@ snapshots:
        - supports-color
        - zod
  
@@ -14728,7 +14731,7 @@ index 3bb5b2fd3e73be2afa0611f2012206d2071c61dc..94514425bd0eea98702debef6ebf4de1
    '@modelcontextprotocol/server@2.2.0':
      dependencies:
        '@modelcontextprotocol/core': 2.2.0
-@@ -28455,6 +29242,13 @@ snapshots:
+@@ -28455,6 +29245,13 @@ snapshots:
      dependencies:
        defer-to-connect: 2.0.1
  

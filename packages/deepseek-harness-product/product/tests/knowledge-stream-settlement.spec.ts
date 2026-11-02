@@ -11,7 +11,7 @@ it.each([200, 403].flatMap(status => [false, true].flatMap(blocked => ['caller',
   }), { status })
   const api = new DeepSeekHarnessApiClient({ baseUrl: 'https://product.test', getSessionToken: () => undefined,
     fetch: async (_url, options) => {
-      if (blocked) options?.signal?.addEventListener('abort', event => event.stopImmediatePropagation(), { once: true })
+      if (blocked) options?.signal?.addEventListener('abort', (event) => { event.stopImmediatePropagation() }, { once: true })
       return response
     } })
   const controller = new AbortController()

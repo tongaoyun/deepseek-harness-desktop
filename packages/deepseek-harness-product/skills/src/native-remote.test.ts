@@ -337,8 +337,8 @@ it.each(['request', 'disposal'].flatMap(kind => [false, true].map(blocked => ({ 
     const cleanup = Promise.withResolvers<undefined>()
     const cancel = vi.fn(() => cleanup.promise)
     vi.stubGlobal('fetch', vi.fn<typeof fetch>((_input, init) => {
-      if (blocked) init?.signal?.addEventListener('abort', event => event.stopImmediatePropagation(), { once: true })
-      const response = new Response(new ReadableStream<Uint8Array>({ start: value => body.resolve(value), cancel }))
+      if (blocked) init?.signal?.addEventListener('abort', (event) => { event.stopImmediatePropagation() }, { once: true })
+      const response = new Response(new ReadableStream<Uint8Array>({ start(value) { body.resolve(value) }, cancel }))
       started.resolve(response)
       return Promise.resolve(response)
     }))

@@ -36,7 +36,7 @@ it.each(catalogs)('$name ends a stalled body read despite blocked abort propagat
   let signal: AbortSignal | null | undefined
   const fetchImpl: typeof fetch = vi.fn(async (_url: RequestInfo | URL, init?: RequestInit) => {
     signal = init?.signal
-    signal?.addEventListener('abort', event => event.stopImmediatePropagation(), { once: true })
+    signal?.addEventListener('abort', (event) => { event.stopImmediatePropagation() }, { once: true })
     return response
   })
   const outcome = read(fetchImpl).catch((error: unknown) => error)
@@ -95,11 +95,11 @@ it('releases declared oversize responses before reading any bytes', async () => 
 
 it.each([false, true])('preserves caller cancellation with an earlier blocking listener=%s', async (blocked) => {
   const controller = new AbortController()
-  if (blocked) controller.signal.addEventListener('abort', event => event.stopImmediatePropagation(), { once: true })
+  if (blocked) controller.signal.addEventListener('abort', (event) => { event.stopImmediatePropagation() }, { once: true })
   const cleanup = Promise.withResolvers<undefined>()
   const body = Promise.withResolvers<ReadableStreamDefaultController<Uint8Array>>()
   const cancel = vi.fn(() => cleanup.promise)
-  const response = new Response(new ReadableStream<Uint8Array>({ start: value => body.resolve(value), cancel }))
+  const response = new Response(new ReadableStream<Uint8Array>({ start(value) { body.resolve(value) }, cancel }))
   const outcome = readSkillResponse(response, 6, controller.signal, new Error('Too large')).catch((error: unknown) => error)
   const reason = new Error('Owner unloaded')
   try {
