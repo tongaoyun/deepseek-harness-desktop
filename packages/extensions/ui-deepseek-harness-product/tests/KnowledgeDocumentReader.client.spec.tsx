@@ -135,6 +135,16 @@ it.each(['KNOWLEDGE_PREVIEW_UNAVAILABLE', 'KNOWLEDGE_PREVIEW_TOO_LARGE', 'KNOWLE
     expect(api.invoke.mock.calls.map(row => row[1])).toEqual(['knowledge.documents.previewMetadata', 'knowledge.documents.preview.open'])
   })
 
+it('reports private preview cleanup failure with a restart instruction and no upstream details', async () => {
+  const denied = vi.fn()
+  transport(async () => { throw new ProductError('KNOWLEDGE_PREVIEW_CLEANUP_FAILED', '/private/source/file token=secret', false) }, '业务规范.docx')
+  render(<KnowledgeDocumentReader {...props} title="业务规范.docx" onAccessDenied={denied} />)
+  expect((await screen.findByRole('alert')).textContent)
+    .toMatchInlineSnapshot('"临时预览文件清理失败，请重启桌面端后重试 (KNOWLEDGE_PREVIEW_CLEANUP_FAILED)"')
+  expect(screen.queryByText('/private/source/file token=secret')).toBeNull()
+  expect(denied).not.toHaveBeenCalled()
+})
+
 it.each([
   ['KNOWLEDGE_TRANSFER_BUSY', zh.knowledgePreviewBusy],
   ['KNOWLEDGE_DOCUMENT_CHANGED', zh.knowledgePreviewSourceChanged],

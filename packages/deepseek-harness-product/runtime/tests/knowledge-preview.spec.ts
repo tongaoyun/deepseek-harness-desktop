@@ -1,6 +1,7 @@
 import { readFile, writeFile } from 'node:fs/promises'
 import { Context } from '@deepseek-ai/cordis'
 import OfficeToPdf, { OfficeSourceKey } from '@deepseek-ai/dsh-office-to-pdf'
+import { ProductError } from '@deepseek-harness/product/errors'
 import { expect, it, onTestFinished, vi } from 'vitest'
 import { renderKnowledgeOffice } from '../src/knowledge-preview.ts'
 import type { DeepSeekHarnessProductIpc } from '../src/deepseek-harness-product-ipc.ts'
@@ -102,6 +103,59 @@ it('refuses converted bytes after an employee identity change', async () => {
     return { backend: 'native', missingFonts: [] }
   })
   await expect(render()).rejects.toMatchObject({ code: 'KNOWLEDGE_ACCESS_DENIED' })
+})
+
+it.each(['original', 'converted'] as const)('retains the %s operation failure when private-file cleanup also fails', async (phase) => {
+  const { ctx, render, invoke } = await fixture()
+  const forward = invoke.getMockImplementation()!
+  const primary = new ProductError('KNOWLEDGE_PREVIEW_FAILED', 'Private transfer operation failed', true)
+  const cleanup = new Error('Private temporary file removal failed')
+  const action = phase === 'original' ? 'runtime.knowledge.preview.readChunk' : 'runtime.knowledge.preview.write.append'
+  const close = phase === 'original' ? 'knowledge.documents.preview.close' : 'runtime.knowledge.preview.write.close'
+  const report = vi.spyOn(ctx.logger, 'error').mockImplementation(() => {})
+  onTestFinished(() => { report.mockRestore() })
+  invoke.mockImplementation(async (...args) => {
+    if (args[0] === action) throw primary
+    if (args[0] === close) throw cleanup
+    return forward(...args)
+  })
+  const failure: unknown = await render().catch((cause: unknown) => cause)
+  expect(failure).toBeInstanceOf(ProductError)
+  expect(failure).toMatchObject({ code: 'KNOWLEDGE_PREVIEW_CLEANUP_FAILED', retryable: false })
+  if (!(failure instanceof ProductError) || !(failure.cause instanceof AggregateError)) throw new Error('Missing cleanup diagnostic')
+  expect(failure.cause.errors).toEqual([primary, cleanup])
+  expect(report).not.toHaveBeenCalled()
+})
+
+it.each([false, true])('only logs failed background cleanup after a preview reader cancels: failure=%s', async (failClose) => {
+  const { ctx, render, invoke } = await fixture()
+  const forward = invoke.getMockImplementation()!
+  const entered = Promise.withResolvers<undefined>()
+  const release = Promise.withResolvers<undefined>()
+  const report = vi.spyOn(ctx.logger, 'error').mockImplementation(() => {})
+  onTestFinished(() => { report.mockRestore() })
+  invoke.mockImplementation(async (...args) => {
+    if (args[0] === 'runtime.knowledge.preview.readChunk') {
+      entered.resolve(undefined)
+      await release.promise
+    }
+    if (args[0] === 'knowledge.documents.preview.close' && failClose) throw new Error('/private/source token=secret')
+    return forward(...args)
+  })
+  const controller = new AbortController()
+  const pending = render(controller.signal)
+  const cancelled = expect(pending).rejects.toThrow('Preview reader closed')
+  try {
+    await entered.promise
+    controller.abort(new Error('Preview reader closed'))
+    await cancelled
+  } finally {
+    release.resolve(undefined)
+    await ctx.fiber.dispose()
+  }
+  expect(report).toHaveBeenCalledTimes(failClose ? 1 : 0)
+  if (failClose) expect(report).toHaveBeenCalledWith('Temporary preview file cleanup could not be confirmed. Restart the desktop app before retrying.')
+  expect(engine.render).not.toHaveBeenCalled()
 })
 
 it('does not prefetch original bytes while waiting for official conversion admission', async () => {

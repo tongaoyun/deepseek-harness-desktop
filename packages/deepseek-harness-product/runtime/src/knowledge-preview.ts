@@ -12,6 +12,7 @@ import type { DeepSeekHarnessProductIpc } from './deepseek-harness-product-ipc.t
  * @param payload - IDs-only IPC request.
  * @param signal - Preview lifetime, including cancellation and plugin disposal.
  * @returns Main-owned PDF handle and official missing-font notices.
+ * @throws ProductError when authorization, conversion, transfer, or private-file cleanup fails.
  */
 export async function renderKnowledgeOffice(ctx: Context, product: Pick<DeepSeekHarnessProductIpc, 'invoke'>,
   payload: Readonly<Record<string, unknown>>, signal: AbortSignal): Promise<KnowledgeFileTransfer> {
@@ -59,7 +60,7 @@ export async function renderKnowledgeOffice(ctx: Context, product: Pick<DeepSeek
       version: source.contentVersion, bytes: source.sizeBytes,
       read: async (lifetime, maxBytes) => {
         await checkSource(lifetime)
-        const bytes = await readOriginal(product, identity, lifetime, maxBytes, fileRequestTimeoutMs)
+        const bytes = await readOriginal(ctx, product, identity, lifetime, maxBytes, fileRequestTimeoutMs)
         await checkSource(lifetime)
         return { bytes, version: source.contentVersion }
       },
@@ -68,6 +69,7 @@ export async function renderKnowledgeOffice(ctx: Context, product: Pick<DeepSeek
     signal.throwIfAborted()
     const output = fileTransfer(await product.invoke('runtime.knowledge.preview.write.open', identity, signal))
     let committed = false
+    let failure: unknown
     try {
       for (let offset = 0; offset < result.pdf.byteLength; offset += output.chunkSize) {
         signal.throwIfAborted()
@@ -86,8 +88,11 @@ export async function renderKnowledgeOffice(ctx: Context, product: Pick<DeepSeek
       }
       committed = true
       return transfer
+    } catch (cause) {
+      failure = cause
+      throw cause
     } finally {
-      if (!committed) await product.invoke('runtime.knowledge.preview.write.close', { transferId: output.transferId }).catch(() => undefined)
+      if (!committed) await closePreviewTransfer(ctx, product, 'runtime.knowledge.preview.write.close', output.transferId, signal, failure)
     }
   } catch (cause) {
     signal.throwIfAborted()
@@ -105,9 +110,10 @@ export async function renderKnowledgeOffice(ctx: Context, product: Pick<DeepSeek
 function officeExtension(value: string | undefined): value is OfficeExtension {
   return value === 'doc' || value === 'docx' || value === 'xls' || value === 'xlsx' || value === 'ppt' || value === 'pptx'
 }
-async function readOriginal(product: Pick<DeepSeekHarnessProductIpc, 'invoke'>, identity: { knowledgeBaseId: string; documentId: string },
+async function readOriginal(ctx: Context, product: Pick<DeepSeekHarnessProductIpc, 'invoke'>, identity: { knowledgeBaseId: string; documentId: string },
   signal: AbortSignal, maxBytes: number, timeoutMs: number): Promise<Uint8Array> {
   const transfer = fileTransfer(await product.invoke('knowledge.documents.preview.open', identity, signal, timeoutMs))
+  let failure: unknown
   try {
     if (transfer.byteLength > maxBytes) throw new ProductError('KNOWLEDGE_PREVIEW_TOO_LARGE', 'Original file exceeds the reserved preview capacity', false)
     const bytes = new Uint8Array(transfer.byteLength)
@@ -130,10 +136,29 @@ async function readOriginal(product: Pick<DeepSeekHarnessProductIpc, 'invoke'>, 
     }
     signal.throwIfAborted()
     return bytes
+  } catch (cause) {
+    failure = cause
+    throw cause
   } finally {
-    await product.invoke('knowledge.documents.preview.close', { transferId: transfer.transferId }).catch(() => undefined)
+    await closePreviewTransfer(ctx, product, 'knowledge.documents.preview.close', transfer.transferId, signal, failure)
   }
 }
+
+async function closePreviewTransfer(ctx: Context, product: Pick<DeepSeekHarnessProductIpc, 'invoke'>,
+  method: 'knowledge.documents.preview.close' | 'runtime.knowledge.preview.write.close', transferId: string,
+  signal: AbortSignal, operationFailure: unknown): Promise<void> {
+  try { await product.invoke(method, { transferId }) }
+  catch (cleanupFailure) {
+    const error = new ProductError('KNOWLEDGE_PREVIEW_CLEANUP_FAILED',
+      'Temporary preview file cleanup could not be confirmed. Restart the desktop app before retrying.', false, [], {
+        cause: operationFailure === undefined ? cleanupFailure
+          : new AggregateError([operationFailure, cleanupFailure], 'Preview operation and private-file cleanup failed'),
+      })
+    if (signal.aborted) ctx.logger.error(error.message)
+    throw error
+  }
+}
+
 function fileTransfer(value: unknown): KnowledgeFileTransfer {
   if (typeof value !== 'object' || value === null || !('transferId' in value) || typeof value.transferId !== 'string'
     || !/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/u.test(value.transferId)
