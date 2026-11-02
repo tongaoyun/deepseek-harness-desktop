@@ -148,6 +148,112 @@ it.each([true, false])('only permits revocation for a broken skill with recorded
   }
 })
 
+it.each(['market', 'source', 'skill', 'category'] as const)('writes the %s switch once, refreshes its state and preserves expanded content', async (target) => {
+  const { data, mock } = await setup(true)
+  const source = data.roots.find(item => item.key === 'dsh')!
+  source.categories.push({ id: 'finance1', name: 'Finance' })
+  source.skills[0].categoryId = 'finance1'
+  const pending = deferred<undefined>()
+  const method = target === 'skill' ? 'setSkillEnabled' : target === 'category' ? 'setCategoryEnabled' : 'setSourceEnabled'
+  const label = target === 'market' ? '使用市场技能' : target === 'source' ? '启停来源 DSH' : target === 'skill' ? '启停技能 个人技能' : '启停分类 Finance'
+  const scope = target === 'market' ? { root: 'company' } : target === 'skill' ? { root: 'dsh', name: '个人技能' } : target === 'category' ? { root: 'dsh', category: 'finance1' } : { root: 'dsh' }
+  mock.unary(`skillsManager/${method}`, async () => {
+    await pending.promise
+    if (target === 'market') data.roots[0].enabled = false
+    else if (target === 'source') source.enabled = false
+    else source.skills[0].managerEnabled = false
+    return ok({})
+  })
+  await screen.findByText('共享技能')
+  if (target !== 'market') {
+    fireEvent.click(screen.getByRole('tab', { name: '我的' }))
+    fireEvent.click(screen.getByRole('button', { name: /DSH/, expanded: false }))
+    fireEvent.click(screen.getByRole('button', { name: /Finance/, expanded: false }))
+  }
+  try {
+    const toggle = screen.getByRole<HTMLButtonElement>('switch', { name: label })
+    expect(toggle.getAttribute('aria-checked')).toBe('true')
+    fireEvent.click(toggle)
+    expect(toggle.disabled).toBe(true)
+    fireEvent.click(toggle)
+    await waitFor(() => {
+      expect(mock.remote.skillsManager[method]).toHaveBeenCalledExactlyOnceWith(scope, false, expect.any(AbortSignal))
+    })
+    await act(async () => { pending.resolve(undefined); await pending.promise })
+    await waitFor(() => { expect(toggle.disabled).toBe(false) })
+    expect(toggle.getAttribute('aria-checked')).toBe('false')
+    expect(screen.getByText(target === 'market' ? '共享技能' : '个人技能')).toBeTruthy()
+    if (target !== 'market') {
+      expect(screen.getByRole('button', { name: /DSH/, expanded: true })).toBeTruthy()
+      expect(screen.getByRole('button', { name: /Finance/, expanded: true })).toBeTruthy()
+    }
+  } finally {
+    pending.resolve(undefined)
+    await pending.promise
+  }
+})
+
+it('reports a rejected switch write and leaves the previous state available for retry', async () => {
+  const { mock } = await setup(true)
+  const pending = deferred<undefined>()
+  mock.unary('skillsManager/setSkillEnabled', async () => {
+    await pending.promise
+    return { ok: false, error: new RemoteError('skills/operation', 'Permission changed', { code: 'error.proto.forbidden' }) }
+  })
+  await screen.findByText('共享技能')
+  const toggle = screen.getByRole<HTMLButtonElement>('switch', { name: '启停技能 共享技能' })
+  try {
+    fireEvent.click(toggle)
+    expect(toggle.disabled).toBe(true)
+    await act(async () => { pending.resolve(undefined); await pending.promise })
+    const message = await screen.findByText(/操作失败：/)
+    await waitFor(() => { expect(toggle.disabled).toBe(false) })
+    expect({ message: message.textContent, checked: toggle.getAttribute('aria-checked'), disabled: toggle.disabled }).toMatchInlineSnapshot(`
+      {
+        "checked": "true",
+        "disabled": false,
+        "message": "操作失败：仅本机所有者可管理技能",
+      }
+    `)
+    expect(mock.remote.skillsManager.setSkillEnabled).toHaveBeenCalledTimes(1)
+  } finally {
+    pending.resolve(undefined)
+    await pending.promise
+  }
+})
+
+it.each(['menu', 'category drop', 'reorder'] as const)('reports a rejected %s without discarding the skill rows', async (operation) => {
+  const { data, mock } = await setup(false, false)
+  const source = data.roots[0]
+  source.categories.push({ id: 'finance1', name: 'Finance' })
+  source.skills.push(skill('other-skill'))
+  source.skills.forEach((item) => { item.categoryId = 'finance1' })
+  const method = operation === 'reorder' ? 'moveInCategory' : 'assignCategory'
+  mock.unary(`skillsManager/${method}`, () => ({ ok: false,
+    error: new RemoteError('skills/operation', 'Permission changed', { code: 'error.proto.forbidden' }) }))
+  await screen.findByText('市场暂无技能，审核发布后会展示在这里。')
+  fireEvent.click(screen.getByRole('tab', { name: '我的' }))
+  fireEvent.click(screen.getByRole('button', { name: /DSH/, expanded: false }))
+  fireEvent.click(screen.getByRole('button', { name: /Finance/, expanded: false }))
+  if (operation === 'menu') {
+    fireEvent.click(screen.getAllByRole('button', { name: '更多' })[0])
+    fireEvent.click(screen.getByRole('menuitem', { name: '归入未分类' }))
+  } else {
+    const row = screen.getByText('个人技能').closest('.dssm-skill-row')!
+    const dataTransfer = { setData: vi.fn(), getData: () => JSON.stringify({ root: 'dsh', name: '个人技能', currentCategoryId: 'finance1' }) }
+    fireEvent.dragStart(row, { dataTransfer })
+    const destination = operation === 'reorder'
+      ? screen.getByText('other-skill').closest('.dssm-skill-row')!
+      : screen.getByRole('button', { name: /未分类/, expanded: false }).closest('.dssm-cat')!
+    fireEvent.drop(destination, { dataTransfer, clientY: 1 })
+  }
+  await screen.findByText('操作失败：仅本机所有者可管理技能')
+  await waitFor(() => { expect(screen.getByRole('button', { name: '刷新' })).toHaveProperty('disabled', false) })
+  expect(mock.remote.skillsManager[method]).toHaveBeenCalledTimes(1)
+  expect(screen.getByText('个人技能')).toBeTruthy()
+  expect(screen.getByText('other-skill')).toBeTruthy()
+})
+
 it.each([
   ['shadowed', true], ['shadowed', false], ['unloadable', true], ['unloadable', false],
 ] as const)('filters %s skills by their enablement switch (%s), with the cause shown on the row', async (condition, enabled) => {
