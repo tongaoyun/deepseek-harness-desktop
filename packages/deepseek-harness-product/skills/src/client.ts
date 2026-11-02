@@ -14,7 +14,7 @@ import { createDestinationKit, defaultDestination, destinationPayload, destinati
 import { createSourceSelect } from "./source-select.ts";
 import { createSkillApi, TYPERT_REMOTE } from "./remote-client.ts";
 import type {} from "@deepseek-ai/dsh-api-gateway/client";
-import { Input, Button as PrimitiveButton, Modal as PrimitiveModal, SegmentedTabs, StateDot, IconChevronDownOutlineRegular, fileSizeText, type SegmentedTab } from "@deepseek-ai/dsh-client-ui-primitives";
+import { Input, Button as PrimitiveButton, Modal as PrimitiveModal, SegmentedTabs, StateDot, IconChevronDownOutlineRegular, fileSizeText, observeComposition, type SegmentedTab } from "@deepseek-ai/dsh-client-ui-primitives";
 import { TextArea } from "./plugin-ui.ts";
 import { SkillBody } from "./skill-body.ts";
 
@@ -351,6 +351,26 @@ function createSkillsPage(localeService: ClientContext["locale"]) {
               className: ["dssm-modal", props.className].filter(Boolean).join(" "),
               contentClassName: ["dssm-modal-content", props.contentClassName].filter(Boolean).join(" "),
             }, props.children ? h("div", null, props.children) : undefined);
+    }
+
+    /** Category writes require a plain Enter after the native composition lifetime ends. */
+    function CategoryNameInput(props: { label: string; value: string; onChange(value: string): void; submit(): void }) {
+      const composition = react.useRef<ReturnType<typeof observeComposition> | null>(null);
+      react.useLayoutEffect(() => {
+        const observer = observeComposition(document);
+        composition.current = observer;
+        return () => { observer.dispose(); composition.current = null; };
+      }, []);
+      return h(Input, {
+        value: props.value, maxLength: 24, "aria-label": props.label,
+        onChange: event => props.onChange(event.target.value),
+        onKeyDown: (event: React.KeyboardEvent<HTMLInputElement>) => {
+          const composing = composition.current?.guards(event.nativeEvent);
+          if (event.key !== "Enter" || composing || event.repeat || event.ctrlKey || event.altKey || event.metaKey || event.shiftKey) return;
+          event.preventDefault();
+          props.submit();
+        },
+      });
     }
 
     function SkillManagerSection(props: SectionProps) {
@@ -899,17 +919,17 @@ function createSkillsPage(localeService: ClientContext["locale"]) {
         var renaming = modal.type === "category-rename";
         var categoryModal = modal;
         var nameTrimmed = categoryName.trim();
-        var canSubmit = !!nameTrimmed && (!renaming || nameTrimmed !== (categoryModal as Extract<ConfirmModal, {type: "category-rename"}>).name);
+        var canSubmit = !!nameTrimmed && (categoryModal.type !== "category-rename" || nameTrimmed !== categoryModal.name);
         var submitCategory = function () {
           if (busy || !canSubmit) return;
-          var request = renaming
-            ? post("renameCategory", { target: { root: categoryModal.root, id: (categoryModal as Extract<ConfirmModal, {type: "category-rename"}>).id, name: nameTrimmed, workspace: categoryModal.workspace } }, "category.renamed")
+          var request = categoryModal.type === "category-rename"
+            ? post("renameCategory", { target: { root: categoryModal.root, id: categoryModal.id, name: nameTrimmed, workspace: categoryModal.workspace } }, "category.renamed")
             : post("createCategory", { target: { root: categoryModal.root, name: nameTrimmed, workspace: categoryModal.workspace } }, "category.created", { name: nameTrimmed });
           request.then(function () { setModal(null); }).catch(function () {});
         };
         content.push(h(Modal, { key: modal.type, title: renaming ? t("category.rename") : t("category.create"), closeLabel: t("btn.close"), onClose: function () { setModal(null); } },
           h("div", { className: "dssm-form" },
-            h("label", { className: "dssm-field" }, h("span", { className: "dssm-label" }, t("category.name")), h(Input, { value: categoryName, maxLength: 24, "aria-label": t("category.name"), onChange: function (event) { setCategoryName(event.target.value); }, onKeyDown: function (event: React.KeyboardEvent<HTMLInputElement>) { if (event.key === "Enter" && !event.nativeEvent.isComposing && event.nativeEvent.keyCode !== 229) { event.preventDefault(); submitCategory(); } } })),
+            h("label", { className: "dssm-field" }, h("span", { className: "dssm-label" }, t("category.name")), h(CategoryNameInput, { value: categoryName, label: t("category.name"), onChange: setCategoryName, submit: submitCategory })),
             h("p", { className: "dssm-help" }, t("category.note"))
           ),
           h("div", { className: "dssm-modal-actions" },

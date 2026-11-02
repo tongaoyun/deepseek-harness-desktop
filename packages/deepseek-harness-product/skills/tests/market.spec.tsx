@@ -1,10 +1,16 @@
 // @vitest-environment jsdom
 import { Context } from '@deepseek-ai/cordis'
+import Loader from '@deepseek-ai/cordis-plugin-loader'
+import * as Include from '@deepseek-ai/cordis-plugin-include'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
 import type { PropsRenderSlots } from '@deepseek-ai/dsh-client-ui-slots'
 import { SlotRegistry } from '@deepseek-ai/dsh-client-ui-renderer/client'
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { createElement, type ComponentType } from 'react'
+import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { pathToFileURL } from 'node:url'
 import { afterEach, expect, it, onTestFinished, vi } from 'vitest'
 import { RemoteError } from '@deepseek-ai/dsh-typert-protocol'
 import { RemoteMock, ok } from '@deepseek-ai/dsh-remote-mock'
@@ -40,8 +46,9 @@ async function setup(shared: boolean, includeCompany = true, personal = skill('�
   mock.unary('skillsManager/setSkillEnabled', () => ok({}))
   mock.unary('skillsManager/createCategory', () => ok({}))
   const remote = Object.assign(mock.remote, { $mount: async () => async () => {}, $on: () => () => {} })
+  const directory = await mkdtemp(join(tmpdir(), 'skills-page-loader-'))
   const ctx = new Context()
-  onTestFinished(() => ctx.fiber.dispose())
+  onTestFinished(async () => { await ctx.fiber.dispose(); await rm(directory, { recursive: true, force: true }) })
   await ctx.plugin(SlotRegistry).await()
   const slots = ctx.get('slots') as SlotRegistry
   const locale = new LocaleRuntime(ctx)
@@ -50,7 +57,14 @@ async function setup(shared: boolean, includeCompany = true, personal = skill('�
   ctx.provide('remote', remote)
   ctx.provide('remote.skillsManager', mock.remote.skillsManager)
   slots.register({ name: 'root', children: { main: { kind: 'keyed', scope: 'root' } } }, (props: PropsRenderSlots<'main'>) => { void props.renderSlot; return null })
-  await ctx.plugin(Skills).await()
+  ctx.baseUrl = import.meta.url
+  await ctx.plugin(Loader).await()
+  Object.assign(ctx.loader.builtins, { include: Include, skillsPage: Skills })
+  const config = join(directory, 'cordis.yml')
+  await writeFile(config, "- name: 'cordis:skillsPage'\n")
+  await ctx.loader.create({ name: 'cordis:include', config: { path: pathToFileURL(config).href } })
+  await ctx.loader.await()
+  for (const entry of ctx.loader.entries()) await entry.fiber?.await()
   const entry = slots.entries('main').find(item => item.options.key === 'deepseek-harness-skills')
   if (!entry) throw new Error('Missing skills page registration')
   const pageProps: Pick<SectionProps, 't' | 'useSessions'> = {
@@ -242,12 +256,85 @@ it.each(['zh', 'en'] as const)('submits a category with Enter but keeps IME comp
   const requests = () => mock.remote.skillsManager.createCategory.mock.calls
   fireEvent.keyDown(input, { key: 'Enter', isComposing: true })
   expect(requests()).toHaveLength(0)
+  fireEvent.compositionStart(input)
+  fireEvent.keyDown(input, { key: 'Enter', isComposing: false })
+  expect(requests()).toHaveLength(0)
+  fireEvent.compositionEnd(input)
+  fireEvent.keyDown(input, { key: 'Enter', isComposing: false })
+  expect(requests()).toHaveLength(0)
+  fireEvent.keyUp(input, { key: 'Enter' })
   fireEvent.keyDown(input, { key: 'Enter' })
   await waitFor(() => { expect(requests()).toHaveLength(1) })
   const inputData = requests()[0][0]
   const saved = { root: inputData.root, name: inputData.name }
   expect(saved).toMatchObject({ root: 'dsh', name: 'Finance' })
   expect({ inputLabel: input.getAttribute('aria-label'), saved }).toMatchSnapshot()
+})
+
+it.each([
+  { name: 'Control', ctrlKey: true }, { name: 'Alt', altKey: true },
+  { name: 'Meta', metaKey: true }, { name: 'Shift', shiftKey: true }, { name: 'repeat', repeat: true },
+])('does not write a category on $name Enter', async (key) => {
+  const { mock } = await setup(false, false)
+  await screen.findByText('市场暂无技能，审核发布后会展示在这里。')
+  fireEvent.click(screen.getByRole('tab', { name: '我的' }))
+  fireEvent.click(screen.getByRole('button', { name: '新建分类' }))
+  const input = screen.getByRole('textbox', { name: '分类名称' })
+  fireEvent.change(input, { target: { value: 'Finance' } })
+  fireEvent.keyDown(input, { key: 'Enter', ...key })
+  expect(mock.remote.skillsManager.createCategory).not.toHaveBeenCalled()
+  fireEvent.keyDown(input, { key: 'Enter' })
+  await waitFor(() => { expect(mock.remote.skillsManager.createCategory).toHaveBeenCalledTimes(1) })
+})
+
+it('releases category composition listeners on close and starts a fresh input lifetime on reopen', async () => {
+  const { mock, view } = await setup(false, false)
+  await screen.findByText('市场暂无技能，审核发布后会展示在这里。')
+  fireEvent.click(screen.getByRole('tab', { name: '我的' }))
+  const add = vi.spyOn(document, 'addEventListener')
+  const remove = vi.spyOn(document, 'removeEventListener')
+  onTestFinished(() => { add.mockRestore(); remove.mockRestore() })
+  fireEvent.click(screen.getByRole('button', { name: '新建分类' }))
+  const input = screen.getByRole('textbox', { name: '分类名称' })
+  fireEvent.compositionStart(input)
+  fireEvent.click(screen.getByRole('button', { name: '取消' }))
+  const subscriptions = add.mock.calls.filter(([name]) => name === 'compositionstart' || name === 'compositionend' || name === 'keyup')
+  expect(subscriptions.length).toBeGreaterThan(0)
+  for (const call of subscriptions) expect(remove.mock.calls).toContainEqual(call)
+  fireEvent.click(screen.getByRole('button', { name: '新建分类' }))
+  const next = screen.getByRole('textbox', { name: '分类名称' })
+  fireEvent.change(next, { target: { value: 'Finance' } })
+  fireEvent.keyDown(next, { key: 'Enter' })
+  await waitFor(() => { expect(mock.remote.skillsManager.createCategory).toHaveBeenCalledTimes(1) })
+  view.unmount()
+  for (const call of add.mock.calls.filter(([name]) => name === 'compositionstart' || name === 'compositionend' || name === 'keyup')) {
+    expect(remove.mock.calls).toContainEqual(call)
+  }
+})
+
+it('renames the selected category only after composition ends and the name changes', async () => {
+  const { data, mock } = await setup(false, false)
+  const source = data.roots.find(item => item.key === 'dsh')
+  if (!source) throw new Error('Expected local skills source')
+  source.categories.push({ id: 'finance1', name: 'Finance' })
+  mock.unary('skillsManager/renameCategory', () => ok({}))
+  await screen.findByText('市场暂无技能，审核发布后会展示在这里。')
+  fireEvent.click(screen.getByRole('tab', { name: '我的' }))
+  fireEvent.click(screen.getByRole('button', { name: /DSH/, expanded: false }))
+  fireEvent.click(screen.getByRole('button', { name: '重命名' }))
+  const input = screen.getByRole('textbox', { name: '分类名称' })
+  fireEvent.keyDown(input, { key: 'Enter' })
+  expect(mock.remote.skillsManager.renameCategory).not.toHaveBeenCalled()
+  fireEvent.change(input, { target: { value: 'Orders' } })
+  fireEvent.compositionStart(input)
+  fireEvent.compositionEnd(input)
+  fireEvent.keyDown(input, { key: 'Enter', isComposing: false })
+  expect(mock.remote.skillsManager.renameCategory).not.toHaveBeenCalled()
+  fireEvent.keyUp(input, { key: 'Enter' })
+  fireEvent.keyDown(input, { key: 'Enter' })
+  await waitFor(() => { expect(mock.remote.skillsManager.renameCategory).toHaveBeenCalledWith(
+    { root: 'dsh', id: 'finance1', name: 'Orders', workspace: undefined }, expect.any(AbortSignal)) })
+  expect(mock.remote.skillsManager.createCategory).not.toHaveBeenCalled()
 })
 
 
