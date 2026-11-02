@@ -10417,6 +10417,7 @@ function companyContentRelease(value) {
 	const files = {};
 	const paths = /* @__PURE__ */ new Set();
 	const expertIds = /* @__PURE__ */ new Set();
+	const teamMemberIds = /* @__PURE__ */ new Set();
 	let bytes = 0;
 	if (Object.keys(value.files).length > 2048) throw new Error("公司内容文件过多");
 	for (const [path, encoded] of Object.entries(value.files)) {
@@ -10449,9 +10450,14 @@ function companyContentRelease(value) {
 			if (path.endsWith("/SKILL.md")) validateSkillInvocation(metadata);
 		}
 		if (path.startsWith("teams/") && path.length > 91) throw new Error("专家团标识最多 80 个字符");
-		if (path.startsWith("teams/")) publishedTeamDocument(new TextDecoder("utf-8", { fatal: true }).decode(data));
+		if (path.startsWith("teams/")) {
+			const team = publishedTeamDocument(new TextDecoder("utf-8", { fatal: true }).decode(data));
+			const key = path.slice(6, -5);
+			for (const expert of team.experts) teamMemberIds.add(`team-${key}-${expert.key}.md`);
+		}
 		files[path] = encoded;
 	}
+	if ([...expertIds].some((id) => teamMemberIds.has(id))) throw new Error("公司专家标识与专家团成员冲突");
 	for (const path of Object.keys(files)) if (path.startsWith("skills/") && files[`${path.split("/").slice(0, 2).join("/")}/SKILL.md`] === void 0) throw new Error("公司技能缺少 SKILL.md");
 	const directories = /* @__PURE__ */ new Map();
 	for (const path of Object.keys(files)) {

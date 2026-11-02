@@ -35,6 +35,7 @@ export function companyContentRelease(value: unknown): CompanyContentRelease {
   const files: Record<string, string> = {}
   const paths = new Set<string>()
   const expertIds = new Set<string>()
+  const teamMemberIds = new Set<string>()
   let bytes = 0
   if (Object.keys(value.files).length > COMPANY_CONTENT_MAX_FILES) throw new Error('公司内容文件过多')
   for (const [path, encoded] of Object.entries(value.files)) {
@@ -83,9 +84,14 @@ export function companyContentRelease(value: unknown): CompanyContentRelease {
       }
     }
     if (path.startsWith('teams/') && path.length > 91) throw new Error('专家团标识最多 80 个字符')
-    if (path.startsWith('teams/')) publishedTeamDocument(new TextDecoder('utf-8', { fatal: true }).decode(data))
+    if (path.startsWith('teams/')) {
+      const team = publishedTeamDocument(new TextDecoder('utf-8', { fatal: true }).decode(data))
+      const key = path.slice('teams/'.length, -'.json'.length)
+      for (const expert of team.experts) teamMemberIds.add(`team-${key}-${expert.key}.md`)
+    }
     files[path] = encoded
   }
+  if ([...expertIds].some(id => teamMemberIds.has(id))) throw new Error('公司专家标识与专家团成员冲突')
   for (const path of Object.keys(files)) {
     if (path.startsWith('skills/') && files[`${path.split('/').slice(0, 2).join('/')}/SKILL.md`] === undefined) {
       throw new Error('公司技能缺少 SKILL.md')

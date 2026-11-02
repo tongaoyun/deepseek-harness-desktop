@@ -50,6 +50,22 @@ it('rejects directory case aliases before creating employee content on disk', as
   expect(await readdir(root)).toEqual([])
 })
 
+it('rejects expert IDs that collide with embedded team members before installing content', async () => {
+  const root = await fixture(), signal = new AbortController().signal
+  const document = await readFile(new URL('../../experts/tests/fixtures/team.json', import.meta.url), 'utf8')
+  const team = { 'teams/orders.json': Buffer.from(document).toString('base64') }
+  const expert = Buffer.from('---\nname: Standalone advisor\ndescription: Review orders\n---\nStandalone instructions.').toString('base64')
+  for (const member of ['member-1', 'member-2']) {
+    const files = { ...team, [`experts/operations/team-orders-${member}.md`]: expert }
+    await expect(installCompanyContent(root, 'employee', { version: '1.0.0', sha256: contentDigest(files), files }, signal))
+      .rejects.toThrow('公司专家标识与专家团成员冲突')
+    expect(await readdir(root)).toEqual([])
+  }
+  const files = { ...team, 'experts/operations/team-orders-member-8.md': expert, 'experts/operations/team-other-member-1.md': expert }
+  const installed = await installCompanyContent(root, 'employee', { version: '1.0.0', sha256: contentDigest(files), files }, signal)
+  expect(await readFile(join(installed.expertsRoot, 'operations/team-orders-member-8.md'), 'utf8')).toContain('Standalone instructions.')
+})
+
 it('rejects symlink cache roots', async () => {
   const root = await fixture(), target = await fixture()
   const link = join(root, 'link')
