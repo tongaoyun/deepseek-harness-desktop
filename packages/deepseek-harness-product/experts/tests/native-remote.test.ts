@@ -45,7 +45,7 @@ async function boot(base?: Parameters<typeof createExpertLibrary>[0]) {
     mutate: (ops, revision) => settings.mutate(ns, ops, revision),
   } satisfies Parameters<typeof createExpertLibrary>[1]
   const library = createExpertLibrary(base ?? (() => Promise.resolve([])), store, ['engineering'], () => 'en')
-  const teams = createTeamLibrary(() => library.catalog(), store, () => 'en')
+  const teams = createTeamLibrary((_sessionId, signal) => library.catalog(signal), store, () => 'en')
   await ctx.plugin(Loader)
   Object.assign(ctx.loader.builtins, {
     include: Include, typert: Typert, access: Access, gateway: Gateway, remote: Remote,
@@ -62,8 +62,8 @@ async function boot(base?: Parameters<typeof createExpertLibrary>[0]) {
   return { ctx, settings, ns, invoke, library, teams }
 }
 
-async function savedTeam() {
-  const host = await boot()
+async function savedTeam(base?: Parameters<typeof createExpertLibrary>[0]) {
+  const host = await boot(base)
   const first = catalogSnapshotSchema.parse(await host.invoke('saveCustomExpert', { expert: draft, enabled: true, expectedRevision: 0 }))
   const second = catalogSnapshotSchema.parse(await host.invoke('saveCustomExpert', { expert: { ...draft, name: 'Security' }, enabled: true, expectedRevision: first.revision }))
   const { id: _id, ...template } = TEST_TEAMS[0]
@@ -255,4 +255,66 @@ it('keeps a concurrent Settings transaction conflict typed across native dispatc
   expect(failed).toMatchObject({ status: 'rejected', reason: { code: 'experts/conflict', cause: { code: 'SETTINGS_CONFLICT' } } })
   expect(settings.describe().find(item => item.ns === ns)?.revision).toBe(2)
   expect(settings.get(ns)).toMatchObject({ customExperts: before.customExperts })
+})
+
+it.each(['saveCustomExpert', 'setEnabled', 'saveTeam', 'setTeamEnabled'])(
+  'cancels %s during catalog preparation without committing personal settings', async (method) => {
+    const reading = Promise.withResolvers<[]>()
+    const entered = Promise.withResolvers<AbortSignal | undefined>()
+    let hold = false
+    const { invoke, settings, ns, snapshot, team } = await savedTeam((signal) => {
+      if (!hold) return Promise.resolve([])
+      entered.resolve(signal)
+      return reading.promise
+    })
+    hold = true
+    const before = structuredClone(settings.get(ns))
+    const args = method === 'saveCustomExpert' ? { expert: { ...draft, name: 'Cancelled new expert' }, enabled: true }
+      : method === 'setEnabled' ? { enabled: [] }
+        : method === 'saveTeam' ? { team: { ...team, name: 'Cancelled team edit' }, enabled: true }
+          : { id: team.id, enabled: true }
+    const controller = new AbortController()
+    const pending = invoke(method, { ...args, expectedRevision: snapshot.revision }, controller.signal)
+      .then(value => ({ value }), (error: unknown) => ({ error }))
+    try {
+      const signal = await entered.promise
+      controller.abort(new Error('Editor closed before commit'))
+      expect(signal?.aborted).toBe(true)
+      reading.resolve([])
+      expect(await pending).toHaveProperty('error')
+      expect(settings.get(ns)).toEqual(before)
+      expect(settings.describe().find(item => item.ns === ns)?.revision).toBe(snapshot.revision)
+    } finally {
+      controller.abort()
+      reading.resolve([])
+      await pending
+    }
+  },
+)
+
+it('allows a dispatched Settings transaction to finish after its editor closes', async () => {
+  const { invoke, settings, ns, snapshot } = await savedTeam()
+  const entered = Promise.withResolvers<undefined>()
+  const release = Promise.withResolvers<undefined>()
+  const mutate = settings.mutate.bind(settings)
+  const transaction = vi.spyOn(settings, 'mutate').mockImplementationOnce(async (...args) => {
+    entered.resolve(undefined)
+    await release.promise
+    await mutate(...args)
+  })
+  const controller = new AbortController()
+  const pending = invoke('setEnabled', { enabled: [], expectedRevision: snapshot.revision }, controller.signal)
+    .then(value => ({ value }), (error: unknown) => ({ error }))
+  try {
+    await entered.promise
+    controller.abort()
+    release.resolve(undefined)
+    expect(await pending).toHaveProperty('error')
+    expect(settings.get(ns)).toMatchObject({ enabled: [] })
+    expect(settings.describe().find(item => item.ns === ns)?.revision).toBe(snapshot.revision + 1)
+  } finally {
+    release.resolve(undefined)
+    await pending
+    transaction.mockRestore()
+  }
 })

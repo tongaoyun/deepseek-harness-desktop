@@ -111,6 +111,7 @@ function persistDeepSeekHarnessSession(session: ProductSession, token: string | 
  */
 export function createExtension(context: ExtensionContext): ProductDesktopExtension {
   const lifecycle = new AbortController()
+  const operations = new Set<Promise<unknown>>()
   const storedDeepSeekHarnessSession = readStoredDeepSeekHarnessSession()
   const config = resolveDeepSeekHarnessProductConfig({
     packaged: app.isPackaged,
@@ -164,18 +165,27 @@ export function createExtension(context: ExtensionContext): ProductDesktopExtens
     knowledgeFiles: (method, input, api, session, signal) => knowledgeFiles.invoke(method, input, api, session, signal),
     knowledgeUpload: knowledgeUploads,
     desktopVersion: app.getVersion(),
-    persistSession: async (session, token) => {
+    persistSession: (session, token) => {
       persistDeepSeekHarnessSession(session, token)
       const employeeId = session.authenticated ? session.employeeId : undefined
+      const pending: Promise<void>[] = []
       if (employeeId !== knowledgeFileEmployeeId) {
         const previousCompany = companyContent
         companyContent = undefined
-        await previousCompany?.sync.close()
         knowledgeFileEmployeeId = employeeId
         knowledgeUploads.resetIdentity()
-        await knowledgeFiles.resetIdentity()
+        pending.push(knowledgeFiles.resetIdentity())
+        if (previousCompany) pending.push(previousCompany.sync.close())
       }
-      await personalConnectors.resetIdentity(session.authenticated ? session.employeeId : undefined)
+      pending.push(personalConnectors.resetIdentity(employeeId))
+      const operation = Promise.allSettled(pending).then((results) => {
+        const errors: unknown[] = []
+        for (const result of results) if (result.status === 'rejected') errors.push(result.reason)
+        if (errors.length > 0) throw new AggregateError(errors, 'Employee resource cleanup failed')
+      })
+      operations.add(operation)
+      void operation.finally(() => operations.delete(operation)).catch(() => undefined)
+      return operation
     },
     serverUrl: config.serverUrl,
     sessionToken,
@@ -304,7 +314,6 @@ export function createExtension(context: ExtensionContext): ProductDesktopExtens
   let closePromise: Promise<void> | undefined
   let preparePromise: Promise<NodeJS.ProcessEnv | undefined> | undefined
   let supportTimer: ReturnType<typeof setInterval> | undefined
-  const operations = new Set<Promise<unknown>>()
   const track = <T>(signal: AbortSignal | undefined, operation: (signal: AbortSignal) => Promise<T>): Promise<T> => {
     const combined = AbortSignal.any([lifecycle.signal, ...signal === undefined ? [] : [signal]])
     const pending = Promise.resolve().then(() => { combined.throwIfAborted(); return operation(combined) })
