@@ -16,11 +16,8 @@ import { AGENCY_AGENTS_DESCRIPTORS } from './remote-contract.ts'
 import { TYPERT as generatedHost } from './generated/typert.host.js'
 import { AGENCY_PERSONA_SERVICE, type AgencyPersonaSource } from './index.ts'
 import { formatHost, readHostLocale } from './i18n.ts'
-import { expertSettingsNamespace } from './settings.ts'
 import { AGENCY_LIBRARY_SERVICE, type AgencyExpertLibrary } from './expert-library.ts'
 import type { CatalogSnapshot, CustomExpertInput } from './expert-contract.ts'
-
-const AGENCY_SETTINGS_NAMESPACE = expertSettingsNamespace('agency-agents')
 
 function personaSource(ctx: Context): AgencyPersonaSource {
   try {
@@ -242,18 +239,6 @@ export default class AgencyAgentsRemote extends TypertRemoteService {
     const catalog = await this.library().deleteCustom(slug, expectedRevision)
     signal?.throwIfAborted()
     return catalog
-  }
-
-  /**
-   * 读取已保存的专家选择及官方设置修订号。
-   * @returns 专家标识与当前修订号。
-   */
-  @Remote('getEnabled')
-  getEnabled(): { enabled: string[]; revision: number } {
-    const descriptor = this.ctx.settings.describe().find(candidate => candidate.ns === AGENCY_SETTINGS_NAMESPACE)
-    if (descriptor === undefined) throw new Error(formatHost('zh', 'error.settingsMissing'))
-    const stored = descriptor.value as { enabled?: string[] }
-    return { enabled: stored.enabled ?? [], revision: descriptor.revision }
   }
 
   /**

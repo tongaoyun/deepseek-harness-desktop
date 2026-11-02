@@ -30,13 +30,13 @@ vi.mock('electron', () => ({
   safeStorage: { isEncryptionAvailable: () => false },
   screen: { getAllDisplays: () => [{ scaleFactor: 2 }] },
 }))
-vi.mock('../src/deepseek-harness-product-config.ts', () => ({ resolveDeepSeekHarnessProductServerUrl: () => 'https://example.test',
-  resolveCompanyContentRefreshInterval: () => 60000,
-  resolveDeepSeekHarnessConnectorProxyPolicy: () => ({ responseTimeoutMs: 30000, streamIdleTimeoutMs: 120000 }),
-  resolveDesktopSupportPolicy: () => ({ heartbeatIntervalMs: 300000, reportIntervalMs: 86400000 }),
-  resolveDeepSeekHarnessKnowledgeFilePolicy: () => ({ previewMaxBytes: 1024, spreadsheetMaxBytes: 1024, officeInputMaxBytes: 1024,
+vi.mock('../src/deepseek-harness-product-config.ts', () => ({ resolveDeepSeekHarnessProductConfig: () => ({ serverUrl: 'https://example.test',
+  companyContentRefreshIntervalMs: 60000,
+  connectorProxy: { responseTimeoutMs: 30000, streamIdleTimeoutMs: 120000 },
+  support: { heartbeatIntervalMs: 300000, reportIntervalMs: 86400000 },
+  knowledgeFiles: { previewMaxBytes: 1024, spreadsheetMaxBytes: 1024, officeInputMaxBytes: 1024,
     officeOutputMaxBytes: 1024, downloadMaxBytes: 1024, uploadMaxBytes: 1024, transferLifetimeMs: 60_000,
-    fileRequestTimeoutMs: 60_000, maxTransfers: 8 }) }))
+    fileRequestTimeoutMs: 60_000, maxTransfers: 8 } }) }))
 vi.mock('../src/deepseek-harness-native-process.ts', () => ({ DeepSeekHarnessNativeProcess: class {
   start = fixture.start; stop = fixture.stop; invoke = async () => ({})
 } }))

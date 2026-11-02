@@ -20,7 +20,6 @@ export class ProductData extends Service {
  * all requests that were started by that plugin before its resources vanish.
  */
 export function scopedProductInvoker(product: Pick<DeepSeekHarnessProductIpc, 'invoke'>, reason: string): {
-  readonly signal: AbortSignal
   readonly invoke: (method: ProductRuntimeMethod, payload: unknown, signal: AbortSignal) => Promise<unknown>
   readonly dispose: () => Promise<void>
 } {
@@ -42,7 +41,7 @@ export function scopedProductInvoker(product: Pick<DeepSeekHarnessProductIpc, 'i
     })()
     await disposed
   }
-  return { signal: lifecycle.signal, invoke, dispose }
+  return { invoke, dispose }
 }
 
 /** Access the private transport after Loader has satisfied the declared injection.

@@ -11,14 +11,17 @@ import { resolveConnectorProxyPolicy, type ConnectorProxyPolicy } from './connec
 export interface DeepSeekHarnessProductConfigOptions {
   readonly packaged: boolean
   readonly resourcesPath: string
-  readonly appPath: string
   readonly environment?: NodeJS.ProcessEnv
   readonly readFile?: (path: string) => string
 }
 
-interface DeepSeekHarnessProductConfigDocument {
-  readonly version: 1
+/** Validated deployment settings shared by one desktop extension lifetime. */
+export interface DeepSeekHarnessProductConfig {
   readonly serverUrl: string
+  readonly knowledgeFiles: KnowledgeFilePolicy
+  readonly support: DesktopSupportPolicy
+  readonly connectorProxy: ConnectorProxyPolicy
+  readonly companyContentRefreshIntervalMs: number
 }
 
 function validateServerUrl(value: unknown, source: string): string {
@@ -37,17 +40,12 @@ function validateServerUrl(value: unknown, source: string): string {
 }
 
 /**
- * Resolve the DeepSeekHarness server origin. Packaged applications always use their
- * packaged resource; only unpackaged development launches accept an override.
+ * Read deployment settings once before starting product resources. Packaged apps
+ * always use their server origin; development may override only the origin.
  * @param options - Runtime paths and optional development environment.
- * @returns Validated DeepSeekHarness server origin.
+ * @returns Validated settings retained for this extension's lifetime; unreadable or invalid resources throw.
  */
-export function resolveDeepSeekHarnessProductServerUrl(options: DeepSeekHarnessProductConfigOptions): string {
-  const environment = options.environment ?? process.env
-  const developmentOverride = options.packaged ? undefined : environment.DEEPSEEK_HARNESS_SERVER_URL?.trim()
-  if (developmentOverride !== undefined && developmentOverride !== '') {
-    return validateServerUrl(developmentOverride, 'DEEPSEEK_HARNESS_SERVER_URL')
-  }
+export function resolveDeepSeekHarnessProductConfig(options: DeepSeekHarnessProductConfigOptions): DeepSeekHarnessProductConfig {
   const path = options.packaged
     ? join(options.resourcesPath, 'deepseek-harness', 'product.json')
     : fileURLToPath(new URL('../resources/product.json', import.meta.url))
@@ -59,71 +57,32 @@ export function resolveDeepSeekHarnessProductServerUrl(options: DeepSeekHarnessP
     throw new Error(`deepseek-harness product: unable to read ${path}`, { cause: error })
   }
   if (typeof document !== 'object' || document === null || Array.isArray(document)
-    || (document as { version?: unknown }).version !== 1) {
+    || !('version' in document) || document.version !== 1) {
     throw new Error(`deepseek-harness product: ${path} must use schema version 1`)
   }
-  return validateServerUrl((document as DeepSeekHarnessProductConfigDocument).serverUrl, path)
-}
-
-/** Read packaged file policy; credentials and paths never come from Renderer.
- * @param options - Runtime paths and optional test file reader.
- * @returns Validated limits for the product-owned file transport.
- */
-export function resolveDeepSeekHarnessKnowledgeFilePolicy(options: DeepSeekHarnessProductConfigOptions): KnowledgeFilePolicy {
-  const path = options.packaged
-    ? join(options.resourcesPath, 'deepseek-harness', 'product.json')
-    : fileURLToPath(new URL('../resources/product.json', import.meta.url))
-  const document: unknown = JSON.parse((options.readFile ?? ((file: string) => readFileSync(file, 'utf8')))(path))
-  if (typeof document !== 'object' || document === null || Array.isArray(document) || !('version' in document) || document.version !== 1) {
-    throw new Error(`deepseek-harness product: ${path} must use schema version 1`)
-  }
-  return resolveKnowledgeFilePolicy('knowledgeFiles' in document ? document.knowledgeFiles : undefined)
-}
-
-/** Read deployment-owned heartbeat intervals from the packaged product configuration.
- * @param options - Product resource location and optional test reader.
- * @returns Validated presence and full-report intervals.
- */
-export function resolveDesktopSupportPolicy(options: DeepSeekHarnessProductConfigOptions): DesktopSupportPolicy {
-  const path = options.packaged ? join(options.resourcesPath, 'deepseek-harness', 'product.json')
-    : fileURLToPath(new URL('../resources/product.json', import.meta.url))
-  const document: unknown = JSON.parse((options.readFile ?? ((file: string) => readFileSync(file, 'utf8')))(path))
-  if (typeof document !== 'object' || document === null || !('support' in document)
-    || typeof document.support !== 'object' || document.support === null
-    || !('heartbeatIntervalMs' in document.support) || typeof document.support.heartbeatIntervalMs !== 'number'
-    || !Number.isSafeInteger(document.support.heartbeatIntervalMs) || document.support.heartbeatIntervalMs < 60_000
-    || document.support.heartbeatIntervalMs > 3_600_000
-    || !('reportIntervalMs' in document.support) || typeof document.support.reportIntervalMs !== 'number'
-    || !Number.isSafeInteger(document.support.reportIntervalMs) || document.support.reportIntervalMs < document.support.heartbeatIntervalMs
-    || document.support.reportIntervalMs > 86_400_000) throw new Error('Invalid desktop support policy')
-  return { heartbeatIntervalMs: document.support.heartbeatIntervalMs, reportIntervalMs: document.support.reportIntervalMs }
-}
-
-/** Read deployment-owned MCP transport deadlines from the product resource.
- * @param options - Product resource location and optional test reader.
- * @returns Validated header and idle deadlines for the main-process relay.
- */
-export function resolveDeepSeekHarnessConnectorProxyPolicy(options: DeepSeekHarnessProductConfigOptions): ConnectorProxyPolicy {
-  const path = options.packaged ? join(options.resourcesPath, 'deepseek-harness', 'product.json')
-    : fileURLToPath(new URL('../resources/product.json', import.meta.url))
-  const document: unknown = JSON.parse((options.readFile ?? ((file: string) => readFileSync(file, 'utf8')))(path))
-  if (typeof document !== 'object' || document === null || Array.isArray(document)
-    || !('version' in document) || document.version !== 1) throw new Error('Invalid product configuration')
-  return resolveConnectorProxyPolicy('connectorProxy' in document ? document.connectorProxy : undefined)
-}
-
-/** Read the minimum interval between successful company catalog checks.
- * @param options - Product resource location and optional test reader.
- * @returns Deployment-owned interval in milliseconds.
- */
-export function resolveCompanyContentRefreshInterval(options: DeepSeekHarnessProductConfigOptions): number {
-  const path = options.packaged ? join(options.resourcesPath, 'deepseek-harness', 'product.json')
-    : fileURLToPath(new URL('../resources/product.json', import.meta.url))
-  const document: unknown = JSON.parse((options.readFile ?? ((file: string) => readFileSync(file, 'utf8')))(path))
-  if (typeof document !== 'object' || document === null || !('companyContentRefreshIntervalMs' in document)
+  const environment = options.environment ?? process.env
+  const developmentOverride = options.packaged ? undefined : environment.DEEPSEEK_HARNESS_SERVER_URL?.trim()
+  const serverUrl = developmentOverride !== undefined && developmentOverride !== ''
+    ? validateServerUrl(developmentOverride, 'DEEPSEEK_HARNESS_SERVER_URL')
+    : validateServerUrl('serverUrl' in document ? document.serverUrl : undefined, path)
+  const support = 'support' in document ? document.support : undefined
+  if (typeof support !== 'object' || support === null
+    || !('heartbeatIntervalMs' in support) || typeof support.heartbeatIntervalMs !== 'number'
+    || !Number.isSafeInteger(support.heartbeatIntervalMs) || support.heartbeatIntervalMs < 60_000
+    || support.heartbeatIntervalMs > 3_600_000
+    || !('reportIntervalMs' in support) || typeof support.reportIntervalMs !== 'number'
+    || !Number.isSafeInteger(support.reportIntervalMs) || support.reportIntervalMs < support.heartbeatIntervalMs
+    || support.reportIntervalMs > 86_400_000) throw new Error('Invalid desktop support policy')
+  if (!('companyContentRefreshIntervalMs' in document)
     || typeof document.companyContentRefreshIntervalMs !== 'number' || !Number.isSafeInteger(document.companyContentRefreshIntervalMs)
     || document.companyContentRefreshIntervalMs < 1000 || document.companyContentRefreshIntervalMs > 3_600_000) {
     throw new Error('Invalid company content refresh interval')
   }
-  return document.companyContentRefreshIntervalMs
+  return {
+    serverUrl,
+    knowledgeFiles: resolveKnowledgeFilePolicy('knowledgeFiles' in document ? document.knowledgeFiles : undefined),
+    support: { heartbeatIntervalMs: support.heartbeatIntervalMs, reportIntervalMs: support.reportIntervalMs },
+    connectorProxy: resolveConnectorProxyPolicy('connectorProxy' in document ? document.connectorProxy : undefined),
+    companyContentRefreshIntervalMs: document.companyContentRefreshIntervalMs,
+  }
 }

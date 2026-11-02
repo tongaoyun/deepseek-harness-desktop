@@ -101,7 +101,6 @@ it('confirms the visible bulk count, cancels without writing, and preserves anot
   const remote: React.ComponentProps<typeof AgencySettingsPanel>['remote'] = {
     getCatalog: () => Promise.resolve({ ok: true, value: structuredClone(catalog) }),
     getTeams: () => Promise.resolve({ ok: true, value: emptyTeams }),
-    getEnabled: () => Promise.resolve({ ok: true, value: { enabled: catalog.enabled, revision: catalog.revision } }),
     setEnabled, getPrompt: unused, getCustomExpert: unused, saveCustomExpert: unused, deleteCustomExpert: unused,
   }
   const dictionary: Readonly<Record<string, string>> = en
@@ -151,7 +150,7 @@ it.each(['expert', 'team'] as const)('keeps an unsaved %s form mounted while a r
   const remote: React.ComponentProps<typeof AgencySettingsPanel>['remote'] = {
     getCatalog: async () => ({ ok: true, value: { experts: [], enabled: [], revision: 3 } }),
     getTeams: async () => ({ ok: true, value: { teams: [], enabledTeams: [], enabledExperts: [], revision: 3 } }),
-    getEnabled: unused, setEnabled: unused, getPrompt: unused, getCustomExpert: unused,
+    setEnabled: unused, getPrompt: unused, getCustomExpert: unused,
     saveCustomExpert: unused, deleteCustomExpert: unused,
   }
   const cache = createExpertClientState(remote)

@@ -468,7 +468,7 @@ export const CSS = PLUGIN_UI_CSS + TEAM_CSS + COMPOSER_CSS + SETTINGS_CSS + CARD
 
 /** 本插件 Remote 命名空间的 client 侧 face（ctx.remote.agencyAgents 的形状）。 */
 type AgencyAgentsRemoteApi = AgencyCatalogRemote & Partial<AgencyTeamsRemote>
-  & Pick<TypertRemoteNamespaceMap['agencyAgents'], 'getEnabled' | 'setEnabled' | 'getPrompt'>
+  & Pick<TypertRemoteNamespaceMap['agencyAgents'], 'setEnabled' | 'getPrompt'>
 
 interface EnabledState {
   readonly enabled: ReadonlySet<string>
