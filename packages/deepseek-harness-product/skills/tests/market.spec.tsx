@@ -14,8 +14,11 @@ import { pathToFileURL } from 'node:url'
 import { afterEach, expect, it, onTestFinished, vi } from 'vitest'
 import { RemoteError } from '@deepseek-ai/dsh-typert-protocol'
 import { RemoteMock, ok } from '@deepseek-ai/dsh-remote-mock'
+import * as Gateway from '@deepseek-ai/dsh-api-gateway/client'
+import { installConnection } from '@deepseek-ai/dsh-client-connection/client'
+import TypertRegistry from '@deepseek-ai/dsh-typert-registry'
 import * as Skills from '../src/client.ts'
-import type { ManagerSnapshot, SectionProps, SkillOutput } from '../src/client-types.ts'
+import type { ManagerSnapshot, SectionProps, SkillMethod, SkillOutput } from '../src/client-types.ts'
 import type { RootView, SkillView } from '../src/types.ts'
 
 afterEach(() => { cleanup(); document.querySelector('base')?.remove(); vi.unstubAllGlobals() })
@@ -41,11 +44,17 @@ async function setup(shared: boolean, includeCompany = true, personal = skill('�
     writeDestinations: [], projects: [], summary: { total: 2, enabled: 2, disabled: 0, issues: 0 }, trash: [], warnings: [] }
   vi.stubGlobal('fetch', vi.fn(() => { throw new Error('Skills UI must use native Remote') }))
   const mock = RemoteMock.create()
+  const call = vi.spyOn(mock.rpc, 'call')
+  const requests = (method: SkillMethod) => call.mock.calls.filter(([, endpoint]) => endpoint === `skillsManager/${method}`)
+  const signalFor = (method: SkillMethod) => {
+    const signal = requests(method)[0]?.[3]
+    if (!signal) throw new Error(`Missing cancellation signal for ${method}`)
+    return signal
+  }
   mock.unary('skillsManager/readState', async () => { await gate; return ok(data) })
   mock.unary('skillsManager/listWorkspaces', () => ok({ items: [] }))
   mock.unary('skillsManager/setSkillEnabled', () => ok({}))
   mock.unary('skillsManager/createCategory', () => ok({}))
-  const remote = Object.assign(mock.remote, { $mount: async () => async () => {}, $on: () => () => {} })
   const directory = await mkdtemp(join(tmpdir(), 'skills-page-loader-'))
   const ctx = new Context()
   onTestFinished(async () => { await ctx.fiber.dispose(); await rm(directory, { recursive: true, force: true }) })
@@ -54,8 +63,9 @@ async function setup(shared: boolean, includeCompany = true, personal = skill('�
   const locale = new LocaleRuntime(ctx)
   locale.setLocale(activeLocale)
   ctx.provide('locale', locale)
-  ctx.provide('remote', remote)
-  ctx.provide('remote.skillsManager', mock.remote.skillsManager)
+  installConnection(ctx, { interactions: 'none', transport: { rpc: mock.rpc } })
+  await ctx.plugin(TypertRegistry)
+  await ctx.plugin(Gateway)
   slots.register({ name: 'root', children: { main: { kind: 'keyed', scope: 'root' } } }, (props: PropsRenderSlots<'main'>) => { void props.renderSlot; return null })
   ctx.baseUrl = import.meta.url
   await ctx.plugin(Loader).await()
@@ -72,7 +82,7 @@ async function setup(shared: boolean, includeCompany = true, personal = skill('�
     t: (key: string, params?: object) => locale.bind('skills-manager')(key, { ...params }),
   }
   const view = render(createElement(entry.component as ComponentType<Pick<SectionProps, 't'>>, pageProps))
-  return { data, mock, view }
+  return { data, mock, view, requests, signalFor }
 }
 
 it.each(['Escape', 'close', 'cancel'] as const)('keeps the creation form intact until its write completes (%s)', async (dismiss) => {
@@ -289,7 +299,7 @@ it('uses native Remote independently of a reverse-proxy path prefix', async () =
 it.each([true, false])('only permits revocation for a broken skill with recorded enablement=%s', async (recorded) => {
   const broken: SkillView = { ...skill('audit-orders'), loadable: false, enabled: recorded,
     managerOverride: recorded, managerEnabled: recorded, hasFrontmatter: false, invocationPolicyValid: false }
-  const { mock } = await setup(false, true, broken)
+  const { requests } = await setup(false, true, broken)
   await screen.findByText('市场暂无技能，审核发布后会展示在这里。')
   fireEvent.click(screen.getByRole('tab', { name: '我的' }))
   fireEvent.click(screen.getByRole('button', { name: /DSH/, expanded: false }))
@@ -297,13 +307,14 @@ it.each([true, false])('only permits revocation for a broken skill with recorded
   expect(toggle.disabled).toBe(!recorded)
   if (recorded) {
     fireEvent.click(toggle)
-    await waitFor(() => { expect(mock.remote.skillsManager.setSkillEnabled).toHaveBeenCalledWith(
-      { root: 'dsh', name: 'audit-orders' }, false, expect.any(AbortSignal)) })
+    await waitFor(() => { expect(requests('setSkillEnabled')).toEqual([
+      ['/api', 'skillsManager/setSkillEnabled', { args: { target: { root: 'dsh', name: 'audit-orders' }, enabled: false } }, expect.any(AbortSignal)],
+    ]) })
   }
 })
 
 it.each(['market', 'source', 'skill', 'category'] as const)('writes the %s switch once, refreshes its state and preserves expanded content', async (target) => {
-  const { data, mock } = await setup(true)
+  const { data, mock, requests } = await setup(true)
   const source = data.roots.find(item => item.key === 'dsh')!
   source.categories.push({ id: 'finance1', name: 'Finance' })
   source.skills[0].categoryId = 'finance1'
@@ -331,7 +342,9 @@ it.each(['market', 'source', 'skill', 'category'] as const)('writes the %s switc
     expect(toggle.disabled).toBe(true)
     fireEvent.click(toggle)
     await waitFor(() => {
-      expect(mock.remote.skillsManager[method]).toHaveBeenCalledExactlyOnceWith(scope, false, expect.any(AbortSignal))
+      expect(requests(method)).toEqual([
+        ['/api', `skillsManager/${method}`, { args: { target: scope, enabled: false } }, expect.any(AbortSignal)],
+      ])
     })
     await act(async () => { pending.resolve(undefined); await pending.promise })
     await waitFor(() => { expect(toggle.disabled).toBe(false) })
@@ -524,27 +537,25 @@ it.each(['zh', 'en'] as const)('copies the exact skill body from company and loc
 
 
 it.each(['zh', 'en'] as const)('submits a category with Enter but keeps IME composition in the input (%s)', async (locale) => {
-  const { mock } = await setup(false, false, skill('audit-orders'), undefined, locale)
+  const { requests } = await setup(false, false, skill('audit-orders'), undefined, locale)
   await screen.findByText(locale === 'zh' ? '市场暂无技能，审核发布后会展示在这里。' : 'No skills in the marketplace yet. Approved publications will appear here.')
   fireEvent.click(screen.getByRole('tab', { name: locale === 'zh' ? '我的' : 'Mine' }))
   fireEvent.click(screen.getByRole('button', { name: locale === 'zh' ? '新建分类' : 'New category' }))
   const input = screen.getByRole('textbox', { name: locale === 'zh' ? '分类名称' : 'Category name' })
   fireEvent.change(input, { target: { value: 'Finance' } })
-  const requests = () => mock.remote.skillsManager.createCategory.mock.calls
   fireEvent.keyDown(input, { key: 'Enter', isComposing: true })
-  expect(requests()).toHaveLength(0)
+  expect(requests('createCategory')).toHaveLength(0)
   fireEvent.compositionStart(input)
   fireEvent.keyDown(input, { key: 'Enter', isComposing: false })
-  expect(requests()).toHaveLength(0)
+  expect(requests('createCategory')).toHaveLength(0)
   fireEvent.compositionEnd(input)
   fireEvent.keyDown(input, { key: 'Enter', isComposing: false })
-  expect(requests()).toHaveLength(0)
+  expect(requests('createCategory')).toHaveLength(0)
   fireEvent.keyUp(input, { key: 'Enter' })
   fireEvent.keyDown(input, { key: 'Enter' })
-  await waitFor(() => { expect(requests()).toHaveLength(1) })
-  const inputData = requests()[0][0]
-  const saved = { root: inputData.root, name: inputData.name }
-  expect(saved).toMatchObject({ root: 'dsh', name: 'Finance' })
+  await waitFor(() => { expect(requests('createCategory')).toHaveLength(1) })
+  const saved = requests('createCategory')[0][2]
+  expect(saved).toEqual({ args: { target: { root: 'dsh', name: 'Finance' } } })
   expect({ inputLabel: input.getAttribute('aria-label'), saved }).toMatchSnapshot()
 })
 
@@ -590,7 +601,7 @@ it('releases category composition listeners on close and starts a fresh input li
 })
 
 it('renames the selected category only after composition ends and the name changes', async () => {
-  const { data, mock } = await setup(false, false)
+  const { data, mock, requests } = await setup(false, false)
   const source = data.roots.find(item => item.key === 'dsh')
   if (!source) throw new Error('Expected local skills source')
   source.categories.push({ id: 'finance1', name: 'Finance' })
@@ -609,8 +620,9 @@ it('renames the selected category only after composition ends and the name chang
   expect(mock.remote.skillsManager.renameCategory).not.toHaveBeenCalled()
   fireEvent.keyUp(input, { key: 'Enter' })
   fireEvent.keyDown(input, { key: 'Enter' })
-  await waitFor(() => { expect(mock.remote.skillsManager.renameCategory).toHaveBeenCalledWith(
-    { root: 'dsh', id: 'finance1', name: 'Orders', workspace: undefined }, expect.any(AbortSignal)) })
+  await waitFor(() => { expect(requests('renameCategory')).toEqual([
+    ['/api', 'skillsManager/renameCategory', { args: { target: { root: 'dsh', id: 'finance1', name: 'Orders' } } }, expect.any(AbortSignal)],
+  ]) })
   expect(mock.remote.skillsManager.createCategory).not.toHaveBeenCalled()
 })
 
@@ -635,14 +647,14 @@ it.each(['zh', 'en'] as const)('shows a workspace registry failure instead of an
 
 
 it('cancels a dismissed skill detail and allows a new dialog before the old request settles', async () => {
-  const { mock } = await setup(true)
+  const { mock, signalFor } = await setup(true)
   await screen.findByText('共享技能')
   const pending = deferred<SkillOutput<'readDetail'>>()
   mock.unary('skillsManager/readDetail', async () => ok(await pending.promise))
   try {
     fireEvent.click(screen.getByRole('button', { name: '更多' }))
     fireEvent.click(screen.getByRole('menuitem', { name: '查看详情' }))
-    const signal = mock.remote.skillsManager.readDetail.mock.calls[0][1]
+    const signal = signalFor('readDetail')
     fireEvent.click(screen.getByRole('button', { name: '关闭' }))
     expect(signal?.aborted).toBe(true)
     fireEvent.click(screen.getByRole('tab', { name: '我的' }))
@@ -665,30 +677,30 @@ it('cancels a dismissed skill detail and allows a new dialog before the old requ
 
 it('cancels the initial native catalog read when the skills page is removed', async () => {
   const pending = deferred<undefined>()
-  const { mock, view } = await setup(true, true, skill('个人技能'), pending.promise)
+  const { view, signalFor } = await setup(true, true, skill('个人技能'), pending.promise)
   try {
-    const signal = mock.remote.skillsManager.readState.mock.calls[0][2]
+    const signal = signalFor('readState')
     view.unmount()
     expect(signal?.aborted).toBe(true)
   } finally { await act(async () => { pending.resolve(undefined); await pending.promise }) }
 })
 
 it('cancels native workspace listing when the skills page is removed', async () => {
-  const { mock, view } = await setup(true)
+  const { mock, view, signalFor } = await setup(true)
   await screen.findByText('共享技能')
   const pending = deferred<SkillOutput<'listWorkspaces'>>()
   mock.unary('skillsManager/listWorkspaces', async () => ok(await pending.promise))
   try {
     fireEvent.click(screen.getByRole('tab', { name: '我的' }))
     fireEvent.click(screen.getByRole('button', { name: '创建技能' }))
-    const signal = mock.remote.skillsManager.listWorkspaces.mock.calls[0][0]
+    const signal = signalFor('listWorkspaces')
     view.unmount()
     expect(signal?.aborted).toBe(true)
   } finally { await act(async () => { pending.resolve({ items: [] }); await pending.promise }) }
 })
 
 it('cancels a superseded workspace read and retains the refreshed skill list', async () => {
-  const { data, mock } = await setup(true)
+  const { data, mock, signalFor } = await setup(true)
   await screen.findByText('共享技能')
   const pending = deferred<ManagerSnapshot>()
   mock.unary('skillsManager/listWorkspaces', () => ok({ items: [{ name: '项目', available: true, registeredPaths: ['/workspace'] }] }))
@@ -700,7 +712,7 @@ it('cancels a superseded workspace read and retains the refreshed skill list', a
     fireEvent.click(screen.getByRole('tab', { name: '我的' }))
     fireEvent.click(screen.getByRole('tab', { name: '项目技能' }))
     await waitFor(() => { expect(mock.remote.skillsManager.readWorkspace).toHaveBeenCalledTimes(1) })
-    const signal = mock.remote.skillsManager.readWorkspace.mock.calls[0][1]
+    const signal = signalFor('readWorkspace')
     fireEvent.click(screen.getByRole('button', { name: '刷新' }))
     expect(signal?.aborted).toBe(true)
     await screen.findByText('refreshed-skill')

@@ -1,21 +1,20 @@
 - region "Connectors":
   - heading "Connectors" [level=1]
-  - paragraph: View enterprise system connection status, authorization scope, and read/write risk.
+  - paragraph: Browse enterprise connectors and their read/write capabilities.
   - button "Add"
   - tablist "Connector directory":
-    - tab "All" [selected]
-    - tab "Connected 1"
+    - tab "Marketplace" [selected]
     - tab "Mine"
   - searchbox "Search"
   - button "Filter by category": All categories
   - button "Refresh"
-  - tabpanel "All":
+  - tabpanel "Marketplace":
     - region "Business systems":
       - heading "Business systems 2" [level=2]
       - list:
         - listitem:
-          - button "Order management Orders, inventory, and fulfillment Connected"
+          - button "Order management Orders, inventory, and fulfillment"
           - text: 1 read-only ·1 write
         - listitem:
-          - button "Customer workspace Customer profiles and sales activity Authorization required"
+          - button "Customer workspace Customer profiles and sales activity"
           - text: 0 read-only ·0 write

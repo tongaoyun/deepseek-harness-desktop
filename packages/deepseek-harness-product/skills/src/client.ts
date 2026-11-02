@@ -981,15 +981,18 @@ function createSkillsPage(localeService: ClientContext["locale"]) {
 
 /** Register the builtin skills page in the product main area. */
 export const inject = ['slots', 'locale', 'remote'];
-export async function apply(ctx: ClientContext): Promise<void> {
+export async function apply(ctx: ClientContext): Promise<() => Promise<void>> {
   const dispose = await ctx.remote.$mount(TYPERT_REMOTE);
-  ctx.effect(() => dispose);
-  const apiForSession = (sessionId?: string) => createSkillApi(ctx.remote, sessionId);
-  const api = apiForSession();
-  const SkillManagerSection = createSkillsPage(ctx.locale);
-  ctx.effect(() => ctx.locale.register(NS, DICT));
-  ctx.slots.inject('main', () => ctx.slots.register({
-    name: 'main', key: 'deepseek-harness-skills', locale: NS,
-  }, props => h('div', { className: 'product-capability-page' },
-    h('div', { className: 'product-capability-content' }, h(SkillManagerSection, { ...props, api, apiForSession, t: (key: string, params?: object) => props.t(key, { ...params }) })))));
+  const ui = ctx.inject(['remote.skillsManager'], scope => {
+    const apiForSession = (sessionId?: string) => createSkillApi(scope.remote, sessionId);
+    const api = apiForSession();
+    const SkillManagerSection = createSkillsPage(scope.locale);
+    scope.effect(() => scope.locale.register(NS, DICT));
+    scope.slots.inject('main', () => scope.slots.register({
+      name: 'main', key: 'deepseek-harness-skills', locale: NS,
+    }, props => h('div', { className: 'product-capability-page' },
+      h('div', { className: 'product-capability-content' }, h(SkillManagerSection, { ...props, api, apiForSession, t: (key: string, params?: object) => props.t(key, { ...params }) })))));
+  });
+  try { await ui; } catch (error) { await ui.dispose(); await dispose(); throw error; }
+  return async () => { await ui.dispose(); await dispose(); };
 }

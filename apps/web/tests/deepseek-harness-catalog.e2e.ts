@@ -18,6 +18,7 @@ import { createPluginProfile } from '../../desktop/src/project-manager.ts'
 import { DESKTOP_HOST_PROTOCOL_VERSION } from '../../desktop/src/host-protocol.ts'
 import { parseDesktopRelease } from '../../desktop/src/release.ts'
 import { companyContentRelease, contentDigest } from '@deepseek-harness/product/company-content'
+import { builtinCapabilityPatches } from '../../../packages/deepseek-harness-product/desktop/src/builtin-capabilities.ts'
 import type { ProductTaskCapabilities } from '@deepseek-harness/product/protocol'
 import { startMockLlmServer } from '@deepseek-ai/dsh-llm-mock-server'
 import { ToolCallId, createAssistantMessage, createToolResultMessage, createUserMessage } from '@deepseek-ai/dsh-llm'
@@ -56,11 +57,13 @@ async function setCodingView(page: Page, enabled: boolean): Promise<void> {
 
 const connectors = [
   { id: 'erp', displayName: 'Order management', summary: 'Orders, inventory, and fulfillment', category: 'business-systems',
+    visibility: 'COMPANY', reviewStatus: 'PUBLISHED', version: '1.0.0',
     availabilityStatus: 'AVAILABLE', authMode: 'employee-bearer', status: 'ACTIVE', tools: [
       { name: 'orders_read', displayName: 'Read orders', description: 'Query order status and totals.', access: 'READ' },
       { name: 'orders_update', displayName: 'Update orders', description: 'Change order delivery details.', access: 'WRITE' },
     ] },
   { id: 'crm', displayName: 'Customer workspace', summary: 'Customer profiles and sales activity', category: 'business-systems',
+    visibility: 'COMPANY', reviewStatus: 'PUBLISHED', version: '1.0.0',
     availabilityStatus: 'AUTHORIZATION_REQUIRED', authMode: 'oauth', authorizationStatus: 'REQUIRED', tools: [] },
 ]
 const organizationKnowledge = [
@@ -403,10 +406,14 @@ it('keeps a cited XLSX original visible inside the source modal on desktop and n
 })
 
 it('keeps native themes and responsive catalogs while using official details and composer actions', async () => {
+  const fixture = await mkdtemp(join(tmpdir(), 'product-catalog-capabilities-'))
+  onTestFinished(() => rm(fixture, { recursive: true, force: true }))
+  const capabilitiesOverlay = join(fixture, 'capabilities.patch.yml')
+  await writeFile(capabilitiesOverlay, JSON.stringify(builtinCapabilityPatches()))
   const scaffold = await launchWebScaffold({
     firstUse: true,
     extraInstallAnchors: [join(REPO_ROOT, 'packages/deepseek-harness-product/desktop/package.json')],
-    extraOverlayPath: [join(packageDir, 'cordis.patch.yml'), join(REPO_ROOT, 'apps/web/tests/pin-browse-picker.overlay.yml')],
+    extraOverlayPath: [capabilitiesOverlay, join(packageDir, 'cordis.patch.yml'), join(REPO_ROOT, 'apps/web/tests/pin-browse-picker.overlay.yml')],
   })
   onTestFinished(() => scaffold.close())
   const executablePath = process.env.DSH_PLAYWRIGHT_EXECUTABLE_PATH
@@ -442,7 +449,7 @@ it('keeps native themes and responsive catalogs while using official details and
     readonly folderId?: string | null
   }[] = []
   let connectorCatalog: readonly Record<string, unknown>[] = structuredClone(connectors)
-  let capabilities: ProductTaskCapabilities = { knowledgeBaseIds: [] }
+  let capabilities: ProductTaskCapabilities = { basePresetId: 'standard', knowledgeBaseIds: [] }
   const personalResources: Record<string, unknown>[] = []
   let failSave = true
   await page.exposeFunction('__productInvoke', (method: string, payload?: { sessionId?: string; revision?: number; id?: string; name?: string; kind?: string; version?: string; draft?: Record<string, unknown>; basePresetId?: string; knowledgeBaseIds?: string[]; knowledgeBaseId?: string; documentId?: string; query?: string; page?: number; size?: number; folderId?: string | null; parentId?: string | null; pdfParseMode?: string; rendered?: boolean; transferId?: string; offset?: number }): unknown => {
@@ -452,9 +459,11 @@ it('keeps native themes and responsive catalogs while using official details and
       case 'tasks.capabilities.read': return capabilities
       case 'tasks.capabilities.prepare': {
         capabilities = { ...capabilities, knowledgeBaseIds: payload?.knowledgeBaseIds ?? capabilities.knowledgeBaseIds }
-        return { kind: 'CURRENT_SESSION', presetId: 'standard', capabilities, dependencyChecks: [] }
+        return { kind: 'CURRENT_SESSION', presetId: 'standard', capabilities,
+          dependencyChecks: capabilities.knowledgeBaseIds.map(reference => ({ kind: 'KNOWLEDGE_BASE', reference, status: 'READY' })) }
       }
       case 'connectors.list': return [...connectorCatalog, ...personalResources.filter(row => row.kind === 'connector')]
+      case 'connectors.refresh': return { connectedIds: ['erp'], unavailableIds: [] }
       case 'extensions.save': {
         if (failSave) { failSave = false; throw new Error('Transient fixture save failure') }
         personalResources.push({ ...payload, headers: {}, environment: {}, canEdit: true, canSubmit: true, canDelete: true, visibility: 'PERSONAL', reviewStatus: 'DRAFT' })
@@ -483,7 +492,7 @@ it('keeps native themes and responsive catalogs while using official details and
         const resource = personalResources.find(row => row.id === payload?.id)
         if (!resource) throw new Error('Missing resource')
         Object.assign(resource, { canSubmit: false, reviewStatus: 'SUBMITTED' })
-        return { submitted: true }
+        return { id: payload?.id, version: payload?.version, submitted: true }
       }
       case 'catalog.refresh': return undefined
       case 'knowledge.bases.list': return [...organizationKnowledge, ...newPersonalBases,
@@ -615,10 +624,14 @@ it('keeps native themes and responsive catalogs while using official details and
 
   await snapshot('extension-navigation', 'nav[aria-label="Global panels"]')
 
-  for (const [label, sectionId] of [['Expert kits', 'agency-agents'], ['Skills', 'skills-manager']] as const) {
+  for (const [label, heading, empty] of [
+    ['Expert kits', 'Expert Kits', 'No expert kits in the marketplace yet. Approved publications will appear here.'],
+    ['Skills', 'Skills', 'No skills in the marketplace yet. Approved publications will appear here.'],
+  ] as const) {
     await page.getByRole('button', { name: label, exact: true }).click()
-    const unavailable = page.locator(`[data-extension-page="${sectionId}"]`).getByRole('alert')
-    await unavailable.getByText('This extension page is unavailable. Enable the plugin in Settings and try again.', { exact: true }).waitFor()
+    await page.getByRole('heading', { name: heading, exact: true }).waitFor()
+    await page.getByText(empty, { exact: true }).waitFor()
+    expect(await page.getByRole('alert').count()).toBe(0)
     expect(await page.getByRole('dialog', { name: 'Settings', exact: true }).count()).toBe(0)
   }
   await page.locator(`[data-row-key="session:${originalSession}"]`).click()
@@ -652,10 +665,10 @@ it('keeps native themes and responsive catalogs while using official details and
   await page.locator('ul[data-catalog="connectors"]').waitFor()
   await snapshot('connector-directory', '[class*="catalogPage"]')
   const beforeFilter = calls.filter(method => method === 'tasks.capabilities.prepare').length
-  await page.getByRole('tab', { name: 'Connected 1', exact: true }).click()
+  await page.getByRole('tab', { name: 'Mine', exact: true }).click()
   expect(await page.getByText('Customer workspace', { exact: true }).count()).toBe(0)
   expect(calls.filter(method => method === 'tasks.capabilities.prepare')).toHaveLength(beforeFilter)
-  await page.getByRole('tab', { name: 'Connected 1', exact: true }).press('ArrowLeft')
+  await page.getByRole('tab', { name: 'Mine', exact: true }).press('ArrowLeft')
   await page.getByText('Customer workspace', { exact: true }).waitFor()
   await page.getByRole('button', { name: /Order management Orders/ }).click()
   const connectorDialog = page.getByRole('dialog', { name: 'Connector details' })

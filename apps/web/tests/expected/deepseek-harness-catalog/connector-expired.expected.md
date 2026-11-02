@@ -3,7 +3,7 @@
   - button "Close"
   - banner:
     - heading "Order management" [level=1]
-    - text: Business systems Shared
+    - text: v1.0.0 ·Business systems Shared
   - paragraph: Orders, inventory, and fulfillment
   - heading "Configuration and authorization" [level=2]
   - button "Reconnect account"

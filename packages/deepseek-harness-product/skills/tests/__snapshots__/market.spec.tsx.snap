@@ -36,8 +36,13 @@ exports[`submits a category with Enter but keeps IME composition in the input (e
 {
   "inputLabel": "Category name",
   "saved": {
-    "name": "Finance",
-    "root": "dsh",
+    "args": {
+      "target": {
+        "name": "Finance",
+        "root": "dsh",
+        "workspace": undefined,
+      },
+    },
   },
 }
 `;
@@ -46,8 +51,13 @@ exports[`submits a category with Enter but keeps IME composition in the input (z
 {
   "inputLabel": "分类名称",
   "saved": {
-    "name": "Finance",
-    "root": "dsh",
+    "args": {
+      "target": {
+        "name": "Finance",
+        "root": "dsh",
+        "workspace": undefined,
+      },
+    },
   },
 }
 `;
