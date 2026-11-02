@@ -8,7 +8,7 @@ import { closeTopModal } from '@deepseek-ai/dsh-client-ui-primitives'
 import { SlotRegistry } from '@deepseek-ai/dsh-client-ui-renderer/client'
 import { createSlotRenderer } from '@deepseek-ai/dsh-client-test-runtime'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
-import { act, cleanup, fireEvent, render, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { InputTriggerService, type InputTriggerSource } from '@deepseek-ai/dsh-client-ui-input-trigger/client'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import { mkdtemp, rm, writeFile } from 'node:fs/promises'
@@ -45,7 +45,8 @@ async function fixture(renderMain: boolean | 'picker' = false) {
   ctx.provide('remote', { $mount: async () => unmount } as never)
   const getCatalog = vi.fn<AgencyCatalogRemote['getCatalog']>().mockResolvedValue({ ok: true, value: { experts: [], enabled: ['old'], revision: 8 } })
   const getTeams = vi.fn<AgencyTeamsRemote['getTeams']>().mockResolvedValue({ ok: true, value: { teams: [], enabledTeams: ['old'], enabledExperts: ['old'], revision: 8 } })
-  ctx.provide('remote.agencyAgents', { getCatalog, getTeams } as never)
+  const saveCustomExpert = vi.fn<AgencyCatalogRemote['saveCustomExpert']>()
+  ctx.provide('remote.agencyAgents', { getCatalog, getTeams, saveCustomExpert } as never)
   slots.register({ name: 'root', children: {
     main: { kind: 'keyed', scope: 'root' },
     'conversation.input.left': { kind: 'list', scope: 'session' },
@@ -77,8 +78,47 @@ async function fixture(renderMain: boolean | 'picker' = false) {
   const cache = slots.entries('tool.call.toolview')[0]?.inject?.().cache as ExpertClientState | undefined
   if (!cache) throw new Error('Expert transcript contribution missing')
   await vi.waitFor(() => { expect(cache.catalog.getSnapshot().revision).toBe(8); expect(cache.teams.getSnapshot()?.revision).toBe(8) })
-  return { ctx, owner, cache, getCatalog, getTeams, unmount, slots, sources }
+  return { ctx, owner, cache, getCatalog, getTeams, saveCustomExpert, unmount, slots, sources }
 }
+
+it('closes the Loader-mounted editor category menu while saving and preserves the draft after failure', async () => {
+  const { ctx, slots, saveCustomExpert } = await fixture(true)
+  ctx.locale.setLocale('zh')
+  const t = ctx.locale.bind('agency')
+  const pending = Promise.withResolvers<Awaited<ReturnType<AgencyCatalogRemote['saveCustomExpert']>>>()
+  saveCustomExpert.mockReturnValue(pending.promise)
+  try {
+    const view = render(slots.renderSlot('root', {}))
+    fireEvent.click(within(view.container).getByRole('tab', { name: '我的' }))
+    fireEvent.click(within(view.container).getByRole('button', { name: t('custom.new') }))
+    const editor = within(screen.getByRole('dialog', { name: t('custom.new') }))
+    fireEvent.change(editor.getByRole('textbox', { name: t('custom.name') }), { target: { value: 'Reviewer' } })
+    fireEvent.change(editor.getByRole('textbox', { name: t('custom.description') }), { target: { value: 'Review code' } })
+    fireEvent.change(editor.getByRole('textbox', { name: t('custom.prompt') }), { target: { value: 'Check changes' } })
+    const category = editor.getByRole<HTMLButtonElement>('button', { name: t('custom.division') })
+    fireEvent.click(category)
+    expect(screen.getByRole('menu')).toBeTruthy()
+    fireEvent.click(editor.getByRole('button', { name: t('custom.save') }))
+    expect(saveCustomExpert).toHaveBeenCalledOnce()
+    expect(category.disabled).toBe(true)
+    expect(screen.queryByRole('menu')).toBeNull()
+    await act(async () => { pending.reject(new Error('Save unavailable')); await pending.promise.catch(() => {}) })
+    expect(editor.getByRole('alert').textContent).toBe('Save unavailable')
+    expect(category.disabled).toBe(false)
+    expect(screen.queryByRole('menu')).toBeNull()
+    expect(editor.getByRole('textbox', { name: t('custom.prompt') })).toHaveProperty('value', 'Check changes')
+    expect({ notice: editor.getByRole('alert').textContent, expanded: category.getAttribute('aria-expanded'),
+      draft: editor.getByRole<HTMLTextAreaElement>('textbox', { name: t('custom.prompt') }).value }).toMatchInlineSnapshot(`
+      {
+        "draft": "Check changes",
+        "expanded": "false",
+        "notice": "Save unavailable",
+      }
+    `)
+  } finally {
+    await act(async () => { pending.reject(new Error('Test disposed')); await pending.promise.catch(() => {}) })
+  }
+})
 
 it('clears disconnected Host data, accepts its new revision and disposes the previous mount', async () => {
   const { ctx, owner, cache, getCatalog, getTeams, unmount, slots } = await fixture()

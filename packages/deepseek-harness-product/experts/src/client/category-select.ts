@@ -7,7 +7,7 @@ export interface CategoryOption {
   readonly label: string
 }
 
-/** 分类选择使用原生按钮、菜单和图标，保留当前选择与禁用状态。 */
+/** 分类选择沿用原生菜单；禁用关闭菜单，恢复启用后等待重新打开。 */
 export function CategorySelect(props: {
   readonly id: string
   readonly value: string
@@ -16,7 +16,11 @@ export function CategorySelect(props: {
   readonly options: ReadonlyArray<CategoryOption>
   readonly onChange: (value: string) => void
 }): React.ReactElement {
-  const [open, setOpen] = React.useState(false)
+  const [requestedOpen, setOpen] = React.useState(false)
+  const open = requestedOpen && !props.disabled
+  React.useLayoutEffect(() => {
+    if (props.disabled) setOpen(false)
+  }, [props.disabled])
 
   const selectedOption = props.options.find((opt) => opt.value === props.value)
   const currentText = selectedOption ? selectedOption.label : (props.label || props.value || '')
@@ -50,7 +54,7 @@ export function CategorySelect(props: {
         disabled: props.disabled,
         className: 'aag-menu-select-trigger',
         onClick: () => {
-          if (!props.disabled) setOpen((prev) => !prev)
+          setOpen((prev) => !prev)
         },
       },
       React.createElement('span', { className: 'aag-select-label' }, currentText),
