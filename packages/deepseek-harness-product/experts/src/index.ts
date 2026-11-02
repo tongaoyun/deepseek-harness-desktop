@@ -679,11 +679,8 @@ export function apply(ctx: Context, config: Config): void {
       const locale = activeLocale()
       const catalog = await catalogForSession(exec.agent?.id, exec.signal)
       const groups = groupByDivision(catalog.experts.filter(expert => !expert.conflict && !expert.teamMember), hasFilter, locale)
-      if (hasFilter) {
-        const filtered = groups.filter((g) => matchDivision(query, g.division))
-        return { divisions: filtered, total: filtered.reduce((n, g) => n + g.count, 0) }
-      }
-      return { divisions: groups, total: catalog.enabled.length }
+      const listed = hasFilter ? groups.filter(group => matchDivision(query, group.division)) : groups
+      return { divisions: listed, total: listed.reduce((total, group) => total + group.count, 0) }
     },
   }))
 
