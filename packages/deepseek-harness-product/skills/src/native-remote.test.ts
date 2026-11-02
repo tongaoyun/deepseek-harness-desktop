@@ -16,6 +16,7 @@ import Typert from '@deepseek-ai/dsh-typert-registry'
 import Gateway from '@deepseek-ai/dsh-api-gateway'
 import Access from '@deepseek-ai/dsh-api-remote-access'
 import { Peer } from '@deepseek-ai/dsh-client-connection'
+import { promises as fs } from 'node:fs'
 import { lstat, mkdir, mkdtemp, readFile, readdir, realpath, rm, symlink, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
@@ -193,6 +194,31 @@ it('preserves creation, policy, upload, export and trash through native dispatch
   const guest = new Peer(ctx, { principal: { kind: 'skills-test-guest' } })
   ctx.remoteAccess.registerPolicy('skills-test-guest', { bindings: () => [{ resource: { kind: 'global' }, role: { name: 'test-wide', resource: 'global', actions: ['skillsManager/createSkill'] } }] })
   await expect(ctx.typertGateway.invoke({ namespace: 'skillsManager', method: 'createSkill', args: { request: { name: 'guest-orders', description: 'No', body: 'No' } }, peer: guest })).rejects.toMatchObject({ code: 'skills/operation', details: { code: 'error.proto.forbidden' } })
+}, 30000)
+
+it('invalidates the native catalog after a committed skill write even when the caller cancels at commit', async () => {
+  const { ctx, root, invoke } = await boot()
+  const name = 'committed-orders'
+  const target = join(root, '.dsh', 'skills', name)
+  expect((await ctx.skills.list()).map(skill => skill.name)).not.toContain(name)
+  const changes = vi.fn()
+  ctx.on('skills/change', changes)
+  const controller = new AbortController()
+  const rename = fs.rename
+  const probe = vi.spyOn(fs, 'rename').mockImplementation(async (source, destination) => {
+    await rename(source, destination)
+    if (destination === target) controller.abort(new Error('View closed after commit'))
+  })
+  onTestFinished(() => { probe.mockRestore() })
+  try {
+    await expect(invoke('createSkill', { request: { name, description: 'Committed orders', body: 'Review committed orders.' } }, controller.signal))
+      .rejects.toMatchObject({ code: 'gateway/cancelled' })
+  } finally {
+    probe.mockRestore()
+  }
+  expect(await readFile(join(target, 'SKILL.md'), 'utf8')).toContain('Review committed orders.')
+  expect((await ctx.skills.list()).map(skill => skill.name)).toContain(name)
+  expect(changes).toHaveBeenCalled()
 }, 30000)
 
 it.each(['entries', 'zip'] as const)('rejects nonportable %s resource paths without installing a skill, then accepts portable resources', async (format) => {

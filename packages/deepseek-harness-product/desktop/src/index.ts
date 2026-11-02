@@ -166,7 +166,6 @@ export function createExtension(context: ExtensionContext): ProductDesktopExtens
     knowledgeUpload: knowledgeUploads,
     desktopVersion: app.getVersion(),
     persistSession: (session, token) => {
-      persistDeepSeekHarnessSession(session, token)
       const employeeId = session.authenticated ? session.employeeId : undefined
       const pending: Promise<void>[] = []
       if (employeeId !== knowledgeFileEmployeeId) {
@@ -178,10 +177,11 @@ export function createExtension(context: ExtensionContext): ProductDesktopExtens
         if (previousCompany) pending.push(previousCompany.sync.close())
       }
       pending.push(personalConnectors.resetIdentity(employeeId))
+      pending.push(Promise.resolve().then(() => { persistDeepSeekHarnessSession(session, token) }))
       const operation = Promise.allSettled(pending).then((results) => {
         const errors: unknown[] = []
         for (const result of results) if (result.status === 'rejected') errors.push(result.reason)
-        if (errors.length > 0) throw new AggregateError(errors, 'Employee resource cleanup failed')
+        if (errors.length > 0) throw new AggregateError(errors, 'Employee session persistence or resource cleanup failed')
       })
       operations.add(operation)
       void operation.finally(() => operations.delete(operation)).catch(() => undefined)
