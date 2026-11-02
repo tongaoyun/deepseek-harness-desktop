@@ -78,7 +78,11 @@ it('retains blocked Agents while a replacement records literal capability identi
   const system = adapter.requests[0]!.messages.filter(message => message.role === 'system')
   const expected = `Task capability snapshot:\n${JSON.stringify(capabilities)}`
   expect(system).toHaveLength(1)
-  expect(system[0]!.content).toEqual([{ type: 'text', text: expect.stringContaining(expected) }])
+  expect(system[0]!.content).toHaveLength(1)
+  const text = system[0]!.content[0]!
+  expect(text.type).toBe('text')
+  if (text.type !== 'text') throw new Error('Expected a text system message')
+  expect(text.text).toContain(expected)
   expect(system[0]!.content).toMatchSnapshot()
   const recorded = fresh.session.snapshotEvents().filter(event => event.type === 'system/message')
   expect(recorded).toHaveLength(1)

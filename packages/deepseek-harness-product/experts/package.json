@@ -86,6 +86,7 @@
     "@deepseek-ai/dsh-skill-filesystem": "workspace:*"
   },
   "devDependencies": {
+    "@deepseek-ai/dsh-client-test-runtime": "workspace:*",
     "@deepseek-ai/cordis": "workspace:~",
     "@deepseek-ai/dsh-agent": "workspace:*",
     "@deepseek-ai/dsh-api-remotes": "workspace:*",

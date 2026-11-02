@@ -5,20 +5,25 @@ import Loader from '@deepseek-ai/cordis-plugin-loader'
 import * as Include from '@deepseek-ai/cordis-plugin-include'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
 import { SlotRegistry } from '@deepseek-ai/dsh-client-ui-renderer/client'
+import { createSlotRenderer } from '@deepseek-ai/dsh-client-test-runtime'
+import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
+import { act, cleanup, render } from '@testing-library/react'
 import { InputTriggerService, type InputTriggerSource } from '@deepseek-ai/dsh-client-ui-input-trigger/client'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import type { PropsRenderSlots } from '@deepseek-ai/dsh-client-ui-slots'
-import { expect, it, onTestFinished, vi } from 'vitest'
+import type { PropsRenderSlots, StandardSourceBinding } from '@deepseek-ai/dsh-client-ui-slots'
+import { afterEach, expect, it, onTestFinished, vi } from 'vitest'
 import * as Experts from '../../src/client/index.ts'
 import type { ExpertClientState } from '../../src/client/client-state.ts'
 import type { AgencyCatalogRemote, AgencyTeamsRemote } from '../../src/client/remote.ts'
 import { TEST_TEAMS } from '../../src/fixtures/teams.ts'
 
-async function fixture() {
+afterEach(cleanup)
+
+async function fixture(renderMain = false) {
   const ctx = new Context()
   onTestFinished(() => ctx.fiber.dispose())
   await ctx.plugin(SlotRegistry).await()
@@ -44,7 +49,13 @@ async function fixture() {
     main: { kind: 'keyed', scope: 'root' },
     'conversation.input.left': { kind: 'list', scope: 'session' },
     'tool.call.toolview': { kind: 'keyed', scope: 'session' },
-  } }, (props: PropsRenderSlots<'main' | 'conversation.input.left' | 'tool.call.toolview'>) => { void props.renderSlot; return null })
+  } }, (props: PropsRenderSlots<'main' | 'conversation.input.left' | 'tool.call.toolview'>) => renderMain
+    ? props.renderSlot('main', {}, { entryKey: 'deepseek-harness-experts' }) : null)
+  if (renderMain) {
+    slots.install(createSlotRenderer()); slots.installLocale(ctx.locale)
+    const current = createSnapshotStore<StandardSourceBinding>({ key: undefined, hooks: {}, keyedHooks: {}, props: {} })
+    slots.installScope('session', { current, bindingSource: () => current, renderArea: () => null })
+  }
   await ctx.plugin(Loader)
   Object.assign(ctx.loader.builtins, { include: Include, 'experts-client': Experts })
   const root = await mkdtemp(join(tmpdir(), 'experts-client-'))
@@ -96,6 +107,29 @@ const session = { sessionId: SessionId('expert-input') }
 const request = { query: '', position: 'inline', drilled: false, signal: new AbortController().signal } as const
 const compliance = { slug: 'compliance-review', name: '合规审查', nameEn: 'Compliance review', description: '合规检查',
   descriptionEn: 'Review compliance', emoji: '🔎', division: 'company-compliance', divisionZh: '公司合规', custom: false, company: true }
+
+it('renders confirmed library counters through Loader-mounted native Slot hooks and releases them on unload', async () => {
+  const { cache, getCatalog, getTeams, slots, owner } = await fixture(true)
+  const catalog = { experts: [compliance], enabled: [compliance.slug], revision: 9 }
+  const team = { ...TEST_TEAMS[0], company: true }
+  const teams = { teams: [team], enabledTeams: [team.id], enabledExperts: [compliance.slug], revision: 9 }
+  getCatalog.mockResolvedValue({ ok: true, value: catalog })
+  getTeams.mockResolvedValue({ ok: true, value: teams })
+  cache.catalog.accept(catalog); cache.teams.accept(teams)
+  const view = render(slots.renderSlot('root', {}))
+  const counts = () => [...view.container.querySelectorAll('.aag-tab-count strong')].map(node => node.textContent)
+  expect(counts()).toEqual(['1', '1', '1', '1'])
+  await act(async () => { await cache.catalog.refresh(); await cache.teams.refresh() })
+  act(() => {
+    cache.catalog.accept({ ...catalog, enabled: [], revision: 10 })
+    cache.teams.accept({ ...teams, enabledTeams: [], revision: 10 })
+  })
+  expect(counts()).toEqual(['1', '0', '1', '0'])
+  act(() => { cache.catalog.reset(); cache.teams.reset() })
+  expect(counts()).toEqual(['—', '—', '—', '—'])
+  await act(async () => { await owner.dispose() })
+  expect(counts()).toEqual([])
+})
 
 it('registers newly loaded company categories and removes them when their catalog is replaced', async () => {
   const { ctx, cache, getCatalog, sources, owner } = await fixture()

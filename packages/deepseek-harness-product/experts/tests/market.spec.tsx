@@ -2,15 +2,16 @@
 import { createExpertClientState } from '../src/client/client-state.ts'
 import { Context } from '@deepseek-ai/cordis'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
+import { bindSnapshotSelector } from '@deepseek-ai/dsh-client-test-runtime'
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, expect, it, onTestFinished, vi } from 'vitest'
-import type { ComponentProps } from 'react'
+import { Profiler, type ComponentProps } from 'react'
 import { AgencySettingsPanel } from '../src/client/index.ts'
 import { en, zh } from '../src/client/locales.ts'
 
 afterEach(cleanup)
 
-function setup(shared: boolean, gate?: Promise<void>) {
+function setup(shared: boolean, gate?: Promise<void>, options: { preload?: boolean; onCommit?(counts: string[]): void } = {}) {
   const experts = [{ slug: 'personal', name: '个人专家', nameEn: 'Personal', description: '我的说明', descriptionEn: '', emoji: '🧩', division: 'orders', divisionZh: '订单', custom: true },
     ...(shared ? [{ slug: 'shared', name: '共享专家', nameEn: 'Shared', description: '市场说明', descriptionEn: '', emoji: '🧩', division: 'orders', divisionZh: '订单', custom: false, company: true }] : [])]
   const remote: ComponentProps<typeof AgencySettingsPanel>['remote'] = {
@@ -26,9 +27,27 @@ function setup(shared: boolean, gate?: Promise<void>) {
   locale.register('agency', { zh, en })
   locale.setLocale('zh')
   const cache = createExpertClientState(remote)
-  const view = render(<AgencySettingsPanel cache={cache} remote={remote} t={locale.bind('agency')} getActive={() => 'zh'} prepareTeamSelection={() => () => true} />)
+  onTestFinished(() => { cache.catalog.dispose(); cache.teams.dispose() })
+  if (options.preload) {
+    cache.catalog.accept({ experts, enabled: ['shared'], revision: 0 })
+    cache.teams.accept({ teams: [], enabledTeams: [], enabledExperts: ['shared'], revision: 0 })
+  }
+  const view = render(<Profiler id="expert-library" onRender={() => options.onCommit?.([...document.querySelectorAll('.aag-tab-count strong')].map(node => node.textContent ?? ''))}>
+    <AgencySettingsPanel cache={cache} remote={remote} useExpertCatalog={bindSnapshotSelector(cache.catalog)} useExpertTeams={bindSnapshotSelector(cache.teams)} t={locale.bind('agency')} getActive={() => 'zh'} prepareTeamSelection={() => () => true} />
+  </Profiler>)
   return { remote, cache, ...view }
 }
+
+it('shows confirmed library counts in the first commit and every source-switch commit', async () => {
+  const commits: string[][] = []
+  const { cache } = setup(true, undefined, { preload: true, onCommit: counts => commits.push(counts) })
+  expect(commits[0]).toEqual(['1', '1', '0', '0'])
+  await act(async () => { await cache.catalog.refresh(); await cache.teams.refresh() })
+  commits.length = 0
+  fireEvent.click(screen.getByRole('tab', { name: '我的' }))
+  expect(commits.length).toBeGreaterThan(0)
+  for (const counts of commits) expect(counts).toEqual(['1', '0', '0', '0'])
+})
 
 for (const action of ['edit', 'prompt'] as const) {
   it.each(['source', 'view', 'reset', 'unmount'] as const)(`${action} cancels its native read on %s and ignores late success`, async (change) => {

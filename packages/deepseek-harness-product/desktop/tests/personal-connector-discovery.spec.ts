@@ -33,7 +33,7 @@ async function fixture(page: (cursor?: string) => ToolPage | Promise<ToolPage>) 
     response.end(JSON.stringify({ jsonrpc: '2.0', id: call.id, result }))
   })().catch(() => { response.writeHead(500).end() }) })
   await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve))
-  onTestFinished(async () => { server.closeAllConnections(); await new Promise<void>((resolve) => { server.close(() => resolve()) }) })
+  onTestFinished(async () => { server.closeAllConnections(); await new Promise<void>((resolve) => { server.close(() => { resolve() }) }) })
   const address = server.address()
   if (!address || typeof address === 'string') throw new Error('No fixture port')
   const secure = { isEncryptionAvailable: () => true, encryptString: (value: string) => Buffer.from(value),

@@ -1221,7 +1221,7 @@
         {
           "path": "packages/extensions/cordis-client-runner/src/client/slot-catalog.ts",
           "before": "194a46f168fbacc63be719d32e81b98e95c913e9318bd44f5bf1e3f029994a05",
-          "after": "6a1df9a96069e94fb11dddb2a4a6153c4b3c352f4af210341ea45d94e7254bc8"
+          "after": "7b7e72f1921b6c348597a835af9975013cd4b0bc40fbf05e920acf868bc8883e"
         },
         {
           "path": "packages/extensions/tool-cordis/src/api-catalog.ts",
@@ -1466,7 +1466,7 @@
         {
           "path": "pnpm-lock.yaml",
           "before": "349ecef16eae1c2166b74661fdff552b9825945894b89461b3a29f825daa6f76",
-          "after": "f9adf1c29e6d2242adf41cb4292c00aa1dc8f2b2d1839ca7fa0b702620ebfd22"
+          "after": "8c7265fbf8d733def0da99a72864421d62d21269e7ab5d3d3db388b4ded0e417"
         },
         {
           "path": "README.i18n.yaml",

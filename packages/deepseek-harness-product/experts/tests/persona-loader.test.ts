@@ -76,7 +76,7 @@ async function runPersonaScenario(mode: 'expert' | 'team', cancel = false): Prom
   const name = mode === 'expert' ? 'summon_expert' : 'summon_expert_team'
   const args = mode === 'expert' ? { expert: 'Reviewer', task: 'Review' } : { team: team.id, task: 'Review' }
   const controller = new AbortController()
-  if (cancel) controller.signal.addEventListener('abort', event => event.stopImmediatePropagation(), { once: true })
+  if (cancel) controller.signal.addEventListener('abort', (event) => { event.stopImmediatePropagation() }, { once: true })
   const execution = ctx.tools.execute({ agent: parent, signal: controller.signal,
     calls: [{ id: ToolCallId('persona-review'), type: 'tool-call', name, arguments: JSON.stringify(args) }] })
   if (cancel) {

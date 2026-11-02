@@ -2482,7 +2482,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
       'client-ui-conversation ConversationPanel key \'conversation\'',
       'client-ui-plugin-manager PluginManagerPage',
       'client-ui-schedule TaskManagerPage',
-      '@deepseek-harness/product-experts (props) => React.createElement(\'div\', { className: \'produ… key \'deepseek-harness-experts\'',
+      '@deepseek-harness/product-experts AgencySettingsPage key \'deepseek-harness-experts\'',
       '@deepseek-harness/product-skills props => h(\'div\', { className: \'product-capability-page\' … key \'deepseek-harness-skills\'',
       '@deepseek-harness/product-ui Component',
     ],

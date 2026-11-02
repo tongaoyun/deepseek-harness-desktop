@@ -377,7 +377,7 @@ it.each(['cancel', 'unload'].flatMap(action => [false, true].map(blocked => ({ a
         return Response.json({ success: true, data: { ...identity, id: identity.documentId,
           filename: 'original.pdf', contentVersion: 'v1', sizeBytes: 8, previewMaxBytes: 1024, downloadMaxBytes: 1024 } })
       }
-      if (blocked) options?.signal?.addEventListener('abort', event => event.stopImmediatePropagation(), { once: true })
+      if (blocked) options?.signal?.addEventListener('abort', (event) => { event.stopImmediatePropagation() }, { once: true })
       return new Response(new ReadableStream<Uint8Array>({
         start(controller) { body.resolve(controller); controller.enqueue(new Uint8Array([1, 2])) },
         pull() { started.resolve(undefined) }, cancel,
