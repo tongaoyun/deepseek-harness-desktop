@@ -1,5 +1,15 @@
 // Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
 
+exports[`keeps the native company catalog and member personas usable after rejecting a conflicting release > standalone expert list 1`] = `
+[
+  {
+    "text": "1 experts across 1 divisions:
+## operations (1)",
+    "type": "text",
+  },
+]
+`;
+
 exports[`keeps the native company catalog and member personas usable after rejecting a conflicting release 1`] = `
 [
   {

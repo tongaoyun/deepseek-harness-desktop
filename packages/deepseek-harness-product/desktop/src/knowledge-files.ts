@@ -80,18 +80,24 @@ export class KnowledgeFiles {
     return operation
   }
 
-  /** Destroy files when credentials change; pending requests cannot return prior bytes. */
+  /** Invalidate prior transfers and join removals; report failures after every removal settles. */
   async resetIdentity(): Promise<void> {
-    await Promise.allSettled([...this.entries.values()].map(entry => this.remove(entry)))
+    const pending = [...this.removals.values(), ...[...this.entries.values()].map(entry => this.remove(entry))]
+    const results = await Promise.allSettled(pending)
+    const errors: unknown[] = []
+    for (const result of results) if (result.status === 'rejected') errors.push(result.reason)
+    if (errors.length > 0) throw new AggregateError(errors, 'Knowledge file cleanup failed')
   }
 
-  /** Cancel file operations and wait for private resources to be released. */
+  /** Cancel and join owned work before reporting private-file cleanup failures. */
   async close(): Promise<void> {
     this.lifecycle.abort(new Error('Knowledge file transport closed'))
-    await this.resetIdentity()
-    await Promise.allSettled([...this.operations])
-    await Promise.all([...this.removals.values()])
-    await this.initialization?.catch(() => undefined)
+    const [cleanup] = await Promise.allSettled([
+      this.resetIdentity(),
+      Promise.allSettled([...this.operations]),
+      this.initialization?.catch(() => undefined),
+    ])
+    if (cleanup.status === 'rejected') throw cleanup.reason
   }
 
   private async dispatch(method: KnowledgeFileMethod, input: Readonly<Record<string, unknown>>, api: DeepSeekHarnessApiClient,

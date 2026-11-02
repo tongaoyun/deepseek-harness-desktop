@@ -4,6 +4,8 @@ import Loader from '@deepseek-ai/cordis-plugin-loader'
 import * as Include from '@deepseek-ai/cordis-plugin-include'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import Tools from '@deepseek-ai/dsh-tools'
+import * as NativeExecutor from '@deepseek-ai/dsh-tool-executor-native'
+import { ToolCallId } from '@deepseek-ai/dsh-llm'
 import { companyContentRelease, contentDigest } from '@deepseek-harness/product/company-content'
 import type { CompanyContentSource } from '@deepseek-harness/product/protocol'
 import { installCompanyContent } from '../../desktop/src/company-content.ts'
@@ -14,6 +16,7 @@ import { pathToFileURL } from 'node:url'
 import { expect, it, onTestFinished } from 'vitest'
 import * as Experts from '../src/index.ts'
 import { AGENCY_LIBRARY_SERVICE, type AgencyExpertLibrary } from '../src/expert-library.ts'
+import { createTeamAgent } from './native-team.ts'
 
 it('loads quoted YAML text and excludes malformed or non-text metadata before persona execution', async () => {
   const root = await mkdtemp(join(tmpdir(), 'expert-metadata-loader-'))
@@ -90,10 +93,12 @@ it('keeps the native company catalog and member personas usable after rejecting 
   ctx.provide('settings', { configure: () => () => {}, describe: () => [{ ns: 'agency-agents', revision: 0 }] })
   ctx.provide('webServer', {})
   await ctx.plugin(Loader)
-  Object.assign(ctx.loader.builtins, { include: Include, prompt: SystemPrompt, tools: Tools, experts: Experts })
+  Object.assign(ctx.loader.builtins, { include: Include, prompt: SystemPrompt, tools: Tools, executor: NativeExecutor, experts: Experts })
   const config = join(root, 'cordis.yml')
   await writeFile(config, JSON.stringify([
-    { name: 'cordis:prompt' }, { name: 'cordis:tools' }, { name: 'cordis:experts', config: { divisions: [] } },
+    { name: 'cordis:prompt' }, { name: 'cordis:tools' }, { name: 'cordis:executor' },
+    { name: 'cordis:experts', config: { divisions: [],
+      enabled: ['team-orders-member-1', 'team-orders-member-2', 'team-orders-member-8'], enabledTeams: ['team-shared-orders'] } },
   ]))
   await ctx.loader.create({ name: 'cordis:include', config: { path: pathToFileURL(config).href } })
   await ctx.loader.await()
@@ -104,6 +109,11 @@ it('keeps the native company catalog and member personas usable after rejecting 
   const before = await library.catalog()
   expect(before.experts.map(value => value.slug).sort())
     .toEqual(['team-orders-member-1', 'team-orders-member-2', 'team-orders-member-8'])
+  const listing = await ctx.tools.execute({ agent: createTeamAgent(ctx), signal,
+    calls: [{ id: ToolCallId('company-expert-count'), type: 'tool-call', name: 'list_experts', arguments: '{}' }] })
+  expect(listing.results[0].result).toMatchObject({ isError: false,
+    value: { divisions: [{ division: 'operations', count: 1 }], total: 1 } })
+  expect(listing.results[0].result.content).toMatchSnapshot('standalone expert list')
   const conflicting = { ...files, 'experts/operations/team-orders-member-1.md': expert }
   await expect(installCompanyContent(join(root, 'cache'), 'employee',
     { version: '2.0.0', sha256: contentDigest(conflicting), files: conflicting }, signal)).rejects.toThrow('公司专家标识与专家团成员冲突')
