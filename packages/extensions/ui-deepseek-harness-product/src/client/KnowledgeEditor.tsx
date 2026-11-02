@@ -72,6 +72,8 @@ function KnowledgeEditorForm({ knowledgeBaseId, target, onClose, onSaved, t, res
   const [unconfirmed, setUnconfirmed] = useState(restored !== undefined)
   const [error, setError] = useState('')
   const [revision, setRevision] = useState(0)
+  const translate = useRef(t)
+  translate.current = t
   const baseline = useRef({ title, content, url, parentId })
   const suspend = async () => {
     if (!operation.current.save) return
@@ -113,10 +115,10 @@ function KnowledgeEditorForm({ knowledgeBaseId, target, onClose, onSaved, t, res
         const loadedTitle = document.filename.replace(/\.md$/iu, '')
         baseline.current = { title: loadedTitle, content: document.manualContent, url: '', parentId: null }
         setMetadata(document); setTitle(loadedTitle); setContent(document.manualContent)
-      }).catch((failure: unknown) => { if (!controller.signal.aborted) setError(productErrorMessage(failure, t, 'knowledgeReadFailed')) })
+      }).catch((failure: unknown) => { if (!controller.signal.aborted) setError(productErrorMessage(failure, translate.current, 'knowledgeReadFailed')) })
       .finally(() => { if (!controller.signal.aborted) setLoading(false) })
     return () => { controller.abort() }
-  }, [request, knowledgeBaseId, target, revision, t])
+  }, [request, knowledgeBaseId, target, revision])
   const change = (set: (value: string) => void, value: string) => {
     if (pending || unconfirmed) return
     set(value); setError(''); delete operation.current.save

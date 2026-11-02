@@ -36,18 +36,20 @@ export class CompanyContentSync {
   /** Read verified local content immediately and start the first check in background.
    * @returns Directories usable by the native catalogs during network work.
    */
-  async prepare(): Promise<CompanyContentRoots> {
-    this.roots = await installCompanyContent(this.options.root, this.options.employeeId, null, this.lifecycle.signal)
-    try {
-      const latest = coordinate.parse(await this.readJson(join(this.employeeRoot, 'latest.json')))
-      this.roots = await this.restore(latest)
-      this.confirmed = true
-    } catch (error) {
-      // A damaged latest pointer does not hide task history or replace any task binding.
-      if (!missing(error)) this.lastChecked = -Infinity
-    }
-    void this.refresh().catch(() => { /* Page checks report the failure and offer retry. */ })
-    return this.read()
+  prepare(): Promise<CompanyContentRoots> {
+    return this.track(async () => {
+      this.roots = await installCompanyContent(this.options.root, this.options.employeeId, null, this.lifecycle.signal)
+      try {
+        const latest = coordinate.parse(await this.readJson(join(this.employeeRoot, 'latest.json')))
+        this.roots = await this.restore(latest)
+        this.confirmed = true
+      } catch (error) {
+        // A damaged latest pointer does not hide task history or replace any task binding.
+        if (!missing(error)) this.lastChecked = -Infinity
+      }
+      void this.refresh().catch(() => { /* Page checks report the failure and offer retry. */ })
+      return this.read()
+    })
   }
 
   /** Return the locally installed catalog without fetching credentials or remote content. */
