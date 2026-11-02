@@ -1,12 +1,14 @@
 // @vitest-environment jsdom
 /** Expert-team views follow the native store and their current mounted operations. */
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { useLayoutEffect } from 'react'
 import { afterEach, expect, it, vi } from 'vitest'
 import { createExpertClientState } from '../../src/client/client-state.ts'
 import { TeamMenu } from '../../src/client/team-composer.tsx'
 import { TeamsPanel, type TeamRemote } from '../../src/client/team-ui.tsx'
 import { TEST_TEAMS } from '../../src/fixtures/teams.ts'
 import type { TeamSnapshot } from '../../src/team-contract.ts'
+import { useTeamDirectory } from '../../src/client/team-directory.ts'
 
 const team = { ...TEST_TEAMS[0], name: 'Original team' }
 const original: TeamSnapshot = { teams: [team], enabledTeams: [team.id],
@@ -29,6 +31,33 @@ function fixture() {
   cache.teams.accept(original)
   return { remote, cache, getTeams, setTeamEnabled }
 }
+
+it('commits only the replacement directory when its mounted store changes', async () => {
+  const first = fixture()
+  const next = fixture()
+  next.cache.teams.accept(current)
+  next.getTeams.mockResolvedValue({ ok: true, value: current })
+  next.cache.catalog.accept({ experts: next.cache.catalog.getSnapshot().experts.map(expert => ({ ...expert, name: 'Replacement expert' })),
+    enabled: original.enabledExperts, revision: 3 })
+  const commits: { team: string | undefined; expert: string | undefined }[] = []
+  function Directory({ value }: { value: ReturnType<typeof fixture> }) {
+    const directory = useTeamDirectory(value)
+    useLayoutEffect(() => {
+      commits.push({ team: directory.snapshot?.teams[0]?.name, expert: directory.experts[0]?.name })
+    })
+    return null
+  }
+  const view = render(<Directory value={first} />)
+  await act(async () => { await first.cache.teams.refresh() })
+  commits.length = 0
+  view.rerender(<Directory value={next} />)
+  await act(async () => { await next.cache.teams.refresh() })
+  expect(commits.length).toBeGreaterThan(0)
+  for (const commit of commits) expect(commit).toEqual({ team: 'Current team', expert: 'Replacement expert' })
+  commits.length = 0
+  act(() => { first.cache.teams.accept({ ...original, revision: 4 }); first.cache.catalog.reset() })
+  expect(commits).toEqual([])
+})
 
 it('keeps the committed store snapshot when an earlier query continuation resumes', async () => {
   const value = fixture()

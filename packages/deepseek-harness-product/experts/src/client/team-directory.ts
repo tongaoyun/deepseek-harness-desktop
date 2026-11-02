@@ -9,8 +9,9 @@ import { useTeamLocale, localizedExperts } from './team-locale.ts'
  * Shared lifecycle for team and expert catalog data.
  *
  * TeamMenu and TeamsPanel are different views, but they consume the same
- * native stores. Keeping subscriptions, refresh coalescing and cancellation
- * here prevents one view from drifting from the other when it is remounted.
+ * native stores. React observes their current snapshots directly, including
+ * the first commit after replacing a store; refresh cancellation belongs to
+ * this mounted view.
  */
 export function useTeamDirectory(options: {
   cache: ExpertClientState
@@ -24,11 +25,9 @@ export function useTeamDirectory(options: {
   getSignal(): AbortSignal | undefined
 } {
   const { cache, remote, onError } = options
-  const [snapshot, setSnapshot] = React.useState<TeamSnapshot | null>(() => cache.teams.getSnapshot())
-  const [experts, setExperts] = React.useState<ExpertSummary[]>(() => {
-    const catalog = cache.catalog.getSnapshot()
-    return catalog.revision < 0 ? [] : [...catalog.experts]
-  })
+  const snapshot = React.useSyncExternalStore(cache.teams.subscribe, cache.teams.getSnapshot)
+  const catalog = React.useSyncExternalStore(cache.catalog.subscribe, cache.catalog.getSnapshot)
+  const experts = React.useMemo(() => catalog.revision < 0 ? [] : [...catalog.experts], [catalog])
   const lifetime = React.useRef<AbortController | undefined>(undefined)
   const onErrorRef = React.useRef(onError)
   onErrorRef.current = onError
@@ -48,18 +47,10 @@ export function useTeamDirectory(options: {
   React.useEffect(() => {
     const controller = new AbortController()
     lifetime.current = controller
-    const updateTeams = () => setSnapshot(cache.teams.getSnapshot())
-    const updateExperts = () => setExperts([...cache.catalog.getSnapshot().experts])
-    const unsubscribeTeams = cache.teams.subscribe(updateTeams)
-    const unsubscribeExperts = cache.catalog.subscribe(updateExperts)
-    updateTeams()
-    updateExperts()
     void refresh()
     return () => {
       controller.abort()
       if (lifetime.current === controller) lifetime.current = undefined
-      unsubscribeTeams()
-      unsubscribeExperts()
     }
   }, [cache, remote, refresh])
 
