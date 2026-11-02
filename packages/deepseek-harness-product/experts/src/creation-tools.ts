@@ -40,7 +40,7 @@ export function registerCreationTools(ctx: Context, drafts: CreationDrafts, libr
       emoji: { type: 'string', description: 'One emoji.' },
     }, output,
     async execute(args, exec) {
-      const id = session(exec), catalog = await library.catalog()
+      const id = session(exec), catalog = await library.catalog(exec.signal)
       const input = creationDraftSchema.parse({ kind: 'expert', data: args })
       if (input.kind !== 'expert') throw new Error('Expected expert draft')
       const division = input.data.division
@@ -56,7 +56,7 @@ export function registerCreationTools(ctx: Context, drafts: CreationDrafts, libr
     output: { schema: { type: 'string' }, render: (_args, value) => [{ type: 'text', text: value }] },
     async execute(args, exec) {
       session(exec)
-      const catalog = await library.catalog(), query = args.query?.normalize('NFKC').trim().toLowerCase() ?? ''
+      const catalog = await library.catalog(exec.signal), query = args.query?.normalize('NFKC').trim().toLowerCase() ?? ''
       const matches = catalog.experts.filter(expert => !expert.conflict && !expert.teamMember && [expert.name, expert.nameEn, expert.slug].some(name => name.normalize('NFKC').toLowerCase().includes(query)))
       return JSON.stringify({
         categories: [...new Set([...EXPERT_DIVISION_ORDER, ...catalog.experts.map(expert => expert.division)])],
@@ -82,7 +82,7 @@ export function registerCreationTools(ctx: Context, drafts: CreationDrafts, libr
       coordinatorPrompt: { type: 'string', description: 'Optional custom coordinator rules. Omit to use the selected template.' },
     }, output,
     async execute(args, exec) {
-      const id = session(exec), catalog = await library.catalog()
+      const id = session(exec), catalog = await library.catalog(exec.signal)
       const members = args.members.map((member) => {
         const match = matchMember(catalog.experts, member.expertSlug)
         if (match.kind !== 'match') throw new Error(text('成员不明确或不可用，请指定完整标识：', 'Member is ambiguous or unavailable; use a full slug: ') + member.expertSlug + '\n' + JSON.stringify(match.candidates.map(expert => ({ slug: expert.slug, name: expert.name, nameEn: expert.nameEn }))))
@@ -103,7 +103,7 @@ export function registerCreationTools(ctx: Context, drafts: CreationDrafts, libr
       const questions = ctx.get('userQuestions')
       if (!questions) throw new Error(text('确认服务不可用，请稍后重试', 'Confirmation is unavailable. Try again later.'))
       const approve = text('打开编辑器', 'Open editor')
-      const answer = await questions.ask({ agent: exec.agent, signal: exec.signal, questions: [{ id: 'open-creation-editor', question: text('打开草案编辑器进行最终核对？', 'Open this draft for final review?'), detail: renderDraft(draft, locale(), (await library.catalog()).experts), options: [{ label: approve }, { label: text('继续修改', 'Keep editing') }] }] })
+      const answer = await questions.ask({ agent: exec.agent, signal: exec.signal, questions: [{ id: 'open-creation-editor', question: text('打开草案编辑器进行最终核对？', 'Open this draft for final review?'), detail: renderDraft(draft, locale(), (await library.catalog(exec.signal)).experts), options: [{ label: approve }, { label: text('继续修改', 'Keep editing') }] }] })
       exec.signal.throwIfAborted()
       const accepted = answer.answers.find(item => item.id === 'open-creation-editor')
       if (accepted?.custom || accepted?.selected.length !== 1 || accepted.selected[0] !== approve) return { proposalId: args.proposalId, markdown: text('草案未保存，可以继续修改', 'Draft not saved. You can keep editing.'), ready: false }

@@ -10,21 +10,56 @@ function page(id: string) {
 function fixture(transport: typeof fetch, settle = () => {}) {
   const identity = new AbortController()
   const api = new DeepSeekHarnessApiClient({ baseUrl: 'https://product.test', getSessionToken: () => 'token', fetch: transport })
+  const emit = vi.fn()
   const catalogs = new ProductCatalogManager({ api,
     getSession: () => ({ authenticated: true, employeeId: 'employee-a' }),
     ensureFreshSession: async () => undefined,
-    getIdentitySignal: () => identity.signal, emit: vi.fn() })
+    getIdentitySignal: () => identity.signal, emit })
   onTestFinished(async () => { settle(); await catalogs.dispose(); api.close() })
-  return { catalogs, identity }
+  return { catalogs, identity, emit }
 }
 
-it('rejects cached reads after disposal without requesting or returning employee data', async () => {
+it('reads the current connector catalog without using an earlier snapshot when no caller signal is supplied', async () => {
+  let fail = false
+  const { catalogs } = fixture(async () => {
+    if (fail) throw new Error('Current catalog is unavailable')
+    return page('earlier')
+  })
+  await catalogs.refresh()
+  fail = true
+  await expect(catalogs.read('connectors.list')).rejects.toThrow('unavailable')
+})
+
+it('returns a pending read result even when a newer connector read fails', async () => {
+  const response = Promise.withResolvers<Response>()
+  const entered = Promise.withResolvers<undefined>()
+  let requests = 0
+  const { catalogs } = fixture(async (input) => {
+    const route = new URL(typeof input === 'string' ? input : input instanceof URL ? input.href : input.url).pathname
+    if (route !== '/api/v1/connectors') return page('knowledge')
+    if (++requests > 1) throw new Error('Newer connector read failed')
+    entered.resolve(undefined)
+    return response.promise
+  }, () => { response.resolve(page('existing')) })
+  const pending = catalogs.read('connectors.list')
+  try {
+    await entered.promise
+    await expect(catalogs.read('connectors.list', new AbortController().signal)).rejects.toThrow('Newer connector read failed')
+    response.resolve(page('existing'))
+    await expect(pending).resolves.toEqual([{ id: 'existing' }])
+  } finally {
+    response.resolve(page('existing'))
+    await pending
+  }
+})
+
+it('rejects reads after disposal without requesting or returning employee data', async () => {
   const transport = vi.fn<typeof fetch>(async () => page('cached'))
   const { catalogs } = fixture(transport)
   await expect(catalogs.read('connectors.list')).resolves.toEqual([{ id: 'cached' }])
   await catalogs.dispose()
   await expect(catalogs.read('connectors.list')).rejects.toThrow('disposed')
-  expect(transport).toHaveBeenCalledTimes(2)
+  expect(transport).toHaveBeenCalledTimes(1)
 })
 
 it.each(['connectors.list', 'knowledge.bases.list'] as const)(
@@ -32,7 +67,7 @@ it.each(['connectors.list', 'knowledge.bases.list'] as const)(
     const response = Promise.withResolvers<Response>()
     let signal: AbortSignal | null | undefined
     const { catalogs } = fixture(async (_input, init) => { signal = init?.signal; return response.promise }, () => { response.resolve(page('late')) })
-    const read = expect(catalogs.read(method, method === 'connectors.list' ? new AbortController().signal : undefined))
+    const read = expect(catalogs.read(method))
       .rejects.toThrow('disposed')
     await vi.waitFor(() => { expect(signal).toBeDefined() })
     let disposed = false
@@ -61,17 +96,18 @@ it.each(['identity', 'reset'] as const)('cancels an active catalog read on %s ch
   await read
 })
 
-it('starts a new refresh after reset without publishing the old refresh or clearing the new result', async () => {
+it('starts a new refresh after reset without publishing the old refresh', async () => {
   const response = Promise.withResolvers<Response>()
   let requests = 0
-  const { catalogs } = fixture(async () => ++requests <= 2 ? response.promise : page('new'), () => { response.resolve(page('old')) })
-  const oldRead = expect(catalogs.read('connectors.list')).rejects.toThrow('reset')
+  const { catalogs, emit } = fixture(async () => ++requests <= 2 ? response.promise : page('new'), () => { response.resolve(page('old')) })
+  const oldRefresh = expect(catalogs.refresh()).rejects.toThrow('reset')
   await vi.waitFor(() => { expect(requests).toBe(2) })
   catalogs.reset()
-  await expect(catalogs.read('connectors.list')).resolves.toEqual([{ id: 'new' }])
+  await catalogs.refresh()
+  expect(emit).toHaveBeenCalledTimes(1)
   response.resolve(page('old'))
-  await oldRead
-  await expect(catalogs.read('connectors.list')).resolves.toEqual([{ id: 'new' }])
+  await oldRefresh
+  expect(emit).toHaveBeenCalledTimes(1)
   expect(requests).toBe(4)
 })
 

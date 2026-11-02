@@ -3,7 +3,8 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { afterEach, expect, it } from 'vitest'
+import { addAbortListener } from 'node:events'
+import { afterEach, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
 import Include from '@deepseek-ai/cordis-plugin-include'
@@ -31,7 +32,11 @@ afterEach(async () => {
 })
 const resultSchema = z.object({ proposalId: z.uuid(), ready: z.boolean(), markdown: z.string() })
 const expert = { name: 'Reviewer', description: 'Review changes', division: 'engineering', prompt: 'Review the task and report findings with evidence.' }
-async function boot() {
+const team = { name: 'Review team', description: 'Review code and tests', goal: 'Find actionable defects', constraints: 'Preserve existing work', deliveryRequirements: 'Findings with evidence', tags: ['review'], examples: ['Review this change'], coordinatorTemplateId: 'technical' as const, members: [
+  { expertSlug: '代码审查员', duty: 'Code', instructions: 'Check production code' },
+  { expertSlug: 'Test Reviewer', duty: 'Tests', instructions: 'Check test coverage' },
+] }
+async function boot(loadCatalog?: (signal?: AbortSignal) => Promise<readonly ExpertSummary[]>) {
   directory = await mkdtemp(join(tmpdir(), 'harness-creation-'))
   const config = join(directory, 'cordis.yml')
   await writeFile(config, ['projections', 'agents', 'prompt', 'tools', 'executor', 'questions', 'creation'].map(name => `- name: 'cordis:${name}'`).join('\n') + '\n')
@@ -45,7 +50,7 @@ async function boot() {
   const drafts = createDrafts()
   const saved: AgencySettings = { enabled: [] }
   const members: ExpertSummary[] = [{ slug: 'engineering-reviewer', name: '代码审查员', nameEn: 'Code Reviewer', description: 'Review code', descriptionEn: '', division: 'engineering', divisionZh: '工程', emoji: '🧩', custom: false }, { slug: 'testing-reviewer', name: '测试审查员', nameEn: 'Test Reviewer', description: 'Review tests', descriptionEn: '', division: 'engineering', divisionZh: '工程', emoji: '🧩', custom: false }]
-  const library = createExpertLibrary(() => Promise.resolve(members), {
+  const library = createExpertLibrary(loadCatalog ?? (() => Promise.resolve(members)), {
     read: () => saved, revision: () => 0,
     mutate: () => Promise.reject(new Error('Creation tools must never persist content')),
   }, ['engineering'], () => 'en')
@@ -121,10 +126,7 @@ it('does not confirm a replacement draft from an old native question, and honors
 
 it('creates a team from disabled members by Chinese and English names and rejects ambiguous or duplicate choices', async () => {
   const { drafts, owner, run } = await boot()
-  const input = { name: 'Review team', description: 'Review code and tests', goal: 'Find actionable defects', constraints: 'Preserve existing work', deliveryRequirements: 'Findings with evidence', tags: ['review'], examples: ['Review this change'], coordinatorTemplateId: 'technical', members: [
-    { expertSlug: '代码审查员', duty: 'Code', instructions: 'Check production code' },
-    { expertSlug: 'Test Reviewer', duty: 'Tests', instructions: 'Check test coverage' },
-  ] }
+  const input = team
   const result = await run('propose_expert_team', input)
   expect(result.isError).toBe(false)
   if (result.isError) throw new Error(JSON.stringify(result.content))
@@ -141,3 +143,51 @@ it('creates a team from disabled members by Chinese and English names and reject
   expect(JSON.stringify(ambiguous.content)).toContain('testing-reviewer')
   expect((await run('propose_expert_team', { ...input, members: [input.members[0], input.members[0]] })).isError).toBe(true)
 }, 30000)
+
+it.each(['propose_custom_expert', 'list_creation_experts', 'propose_expert_team', 'open_custom_expert_editor', 'open_expert_team_editor'])(
+  'cancels a pending %s catalog read without changing drafts or asking for confirmation', async (name) => {
+    const response = Promise.withResolvers<readonly ExpertSummary[]>()
+    const entered = Promise.withResolvers<AbortSignal | undefined>()
+    const { context, drafts, owner, saved, run } = await boot(async (signal) => {
+      using _listener = signal === undefined ? undefined : addAbortListener(signal, () => { response.reject(signal.reason) })
+      entered.resolve(signal)
+      return await response.promise
+    })
+    const proposal = drafts.save(owner.session.id, name === 'open_expert_team_editor'
+      ? { kind: 'team', data: { ...team, coordinatorMode: 'template', coordinatorTemplateVersion: 1, coordinatorPrompt: '' } }
+      : { kind: 'expert', data: expert })
+    const save = vi.spyOn(drafts, 'save')
+    const confirm = vi.spyOn(drafts, 'confirm')
+    const ask = vi.fn(() => Promise.resolve({ answers: [] }))
+    context.on('user-questions/request', ask)
+    const controller = new AbortController()
+    const args = name.startsWith('open_') ? { proposalId: proposal.id }
+      : name === 'list_creation_experts' ? {} : name === 'propose_expert_team' ? team : expert
+    const pending = run(name, args, controller.signal)
+    try {
+      const signal = await entered.promise
+      controller.abort(new Error('Creation was cancelled'))
+      expect(signal?.aborted).toBe(true)
+      const result = await pending
+      expect(result.isError).toBe(true)
+      expect(JSON.stringify(result.content)).toContain('Creation was cancelled')
+      expect(result.content).toMatchInlineSnapshot(`
+        [
+          {
+            "text": "Error: Creation was cancelled",
+            "type": "text",
+          },
+        ]
+      `)
+      expect(save).not.toHaveBeenCalled()
+      expect(confirm).not.toHaveBeenCalled()
+      expect(ask).not.toHaveBeenCalled()
+      expect(drafts.get(owner.session.id, proposal.id)).toEqual(proposal.draft)
+      expect(saved).toEqual({ enabled: [] })
+    } finally {
+      controller.abort()
+      response.resolve([])
+      await pending
+    }
+  },
+)

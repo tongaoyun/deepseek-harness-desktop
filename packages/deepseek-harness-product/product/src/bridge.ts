@@ -271,8 +271,7 @@ export class DeepSeekHarnessProductBridge {
       await this.refreshCatalog(signal)
       return { refreshed: true }
     }
-    const freshCatalog = signal !== undefined
-    return this.withEmployeeSession(signal, lifetime => this.invokeAuthenticated(method, input, lifetime, freshCatalog))
+    return this.withEmployeeSession(signal, lifetime => this.invokeAuthenticated(method, input, lifetime))
   }
 
   /** Dispatch one Host-owned product request. Connector results receive private
@@ -332,7 +331,6 @@ export class DeepSeekHarnessProductBridge {
     method: ProductMethod,
     input: Readonly<Record<string, unknown>>,
     signal: AbortSignal,
-    freshCatalog: boolean,
   ): Promise<unknown> {
     if (this.api === undefined) throw new Error('deepseek-harness product: server URL is not configured')
     if (method.startsWith('support.')) {
@@ -429,7 +427,7 @@ export class DeepSeekHarnessProductBridge {
       return result
     }
     const value = method === 'connectors.list' && this.connectorRuntime
-      ? await this.readRuntimeConnectors(input, signal, false) : await this.catalog.read(method, freshCatalog ? signal : undefined)
+      ? await this.readRuntimeConnectors(input, signal, false) : await this.catalog.read(method, signal)
     return method === 'connectors.list' && Array.isArray(value) ? value.map(rendererConnector) : value
   }
 

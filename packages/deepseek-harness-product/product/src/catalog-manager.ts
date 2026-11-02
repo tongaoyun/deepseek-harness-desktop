@@ -23,21 +23,21 @@ export interface ProductCatalogManagerOptions {
   readonly emit: (event: ProductEvent) => void
 }
 
-/** Owns employee-scoped catalog results independently; knowledge reads always query the server. */
+/** Reads current employee catalogs and detects background payload changes. */
 export class ProductCatalogManager {
   private refreshOperation: Promise<void> | undefined
   private refreshTimer: ReturnType<typeof setTimeout> | undefined
   private generation = new AbortController()
   private signature: string | undefined
   private readonly snapshot = new Map<CatalogMethod, unknown>()
-  private readonly failures = new Map<CatalogMethod, unknown>()
+  private readonly failures = new Set<CatalogMethod>()
   private readonly revisions = new Map<CatalogMethod, number>()
   private readonly lifecycle = new AbortController()
   private readonly operations = new Set<Promise<unknown>>()
 
   constructor(private readonly options: ProductCatalogManagerOptions) {}
 
-  /** Refresh catalogs independently, preserving each last successful display result on failure.
+  /** Refresh catalogs independently, preserving each last successful payload for change detection.
    * @param signal - Optional caller cancellation; absent callers share a background refresh.
    * @returns Completion after all remote requests settle.
    */
@@ -52,39 +52,29 @@ export class ProductCatalogManager {
     return refresh
   }
 
-  /** Read a catalog; knowledge always queries the server.
+  /** Read a current catalog directly from the server.
    * @param method - Catalog operation.
-   * @param signal - Optional cancellation for a fresh remote read.
+   * @param signal - Optional caller cancellation.
    * @returns Complete employee-visible catalog; reset, identity change, or disposal rejects pending reads.
    */
   async read(method: ProductMethod, signal?: AbortSignal): Promise<unknown> {
     if (!isCatalogMethod(method)) throw new Error(`deepseek-harness product: method ${method} is not available`)
     return this.track(signal, async (control) => {
-      if (signal !== undefined || method === 'knowledge.bases.list') {
-        const revision = this.nextRevision(method)
-        try {
-          const value = await this.options.api?.listAll(CATALOG_ROUTES[method], 100, control)
-          control.throwIfAborted()
-          if (value === undefined) throw new Error('Product server is unavailable')
-          if (revision === this.revisions.get(method)) {
-            this.snapshot.set(method, value)
-            this.failures.delete(method)
-          }
-          return value
-        } catch (error) {
-          control.throwIfAborted()
-          if (revision === this.revisions.get(method)) this.failures.set(method, error)
-          throw error
+      const revision = this.nextRevision(method)
+      try {
+        const value = await this.options.api?.listAll(CATALOG_ROUTES[method], 100, control)
+        control.throwIfAborted()
+        if (value === undefined) throw new Error('Product server is unavailable')
+        if (revision === this.revisions.get(method)) {
+          this.snapshot.set(method, value)
+          this.failures.delete(method)
         }
+        return value
+      } catch (error) {
+        control.throwIfAborted()
+        if (revision === this.revisions.get(method)) this.failures.add(method)
+        throw error
       }
-      if (!this.snapshot.has(method)) {
-        try { await this.refresh() }
-        catch (error) {
-          control.throwIfAborted()
-          if (!this.snapshot.has(method)) throw this.failures.get(method) ?? error
-        }
-      }
-      return this.snapshot.get(method) ?? []
     })
   }
 
@@ -103,7 +93,7 @@ export class ProductCatalogManager {
     finally { this.operations.delete(pending) }
   }
 
-  /** Cancel pending reads and drop cached catalogs after identity or catalog changes. */
+  /** Cancel pending reads and reset comparison snapshots after identity or catalog changes. */
   reset(): void {
     this.generation.abort(new Error('Product catalog was reset'))
     this.generation = new AbortController()
@@ -154,13 +144,13 @@ export class ProductCatalogManager {
       if (result.status === 'fulfilled') {
         this.snapshot.set(method, result.value)
         this.failures.delete(method)
-      } else this.failures.set(method, result.reason)
+      } else this.failures.add(method)
     }
     // Compare payloads as well as routes. A same-route update must invalidate
     // renderer caches even when the catalog shape and keys stay unchanged.
     const nextSignature = JSON.stringify({
       snapshot: [...this.snapshot.entries()],
-      failures: [...this.failures.keys()],
+      failures: [...this.failures],
     })
     const changed = nextSignature !== this.signature
     this.signature = nextSignature
