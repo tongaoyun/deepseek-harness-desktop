@@ -1,20 +1,10 @@
 import { readCatalogResponse } from './catalog-http.ts'
-import { CATALOG_IDENTIFIER, catalogCount, catalogError, catalogString } from './catalog-utils.ts'
+import { CATALOG_IDENTIFIER, catalogCount, catalogError, catalogRecord, catalogString } from './catalog-utils.ts'
 
 const SEARCH_URL = "https://skills.sh/api/search";
 const MAX_QUERY_LENGTH = 100;
 const MAX_RESPONSE_BYTES = 1 << 20;
 const MAX_RESULTS = 100;
-
-type SkillsShEntry = {
-  id?: unknown;
-  source?: unknown;
-  skillId?: unknown;
-  name?: unknown;
-  installs?: unknown;
-};
-
-type SkillsShResponse = { skills?: unknown };
 
 /** Validated skills.sh source, skill identity, and display metadata. */
 export type SkillsShSkill = {
@@ -41,20 +31,22 @@ export async function searchSkillsSh(query: string, fetchImpl: typeof fetch = fe
   });
   const body = Buffer.from(bytes).toString("utf8");
 
-  let payload: SkillsShResponse;
+  let payload: unknown;
   try {
-    payload = JSON.parse(body) as SkillsShResponse;
+    payload = JSON.parse(body);
   } catch {
     throw catalogError("skills.sh 返回了无效的搜索结果", 502, "error.catalog.response");
   }
-  if (!payload || !Array.isArray(payload.skills)) {
+  const response = catalogRecord(payload);
+  if (!response || !Array.isArray(response.skills)) {
     throw catalogError("skills.sh 返回了无效的搜索结果", 502, "error.catalog.response");
   }
 
   const skills: SkillsShSkill[] = [];
   const seen = new Set<string>();
-  for (const candidate of payload.skills as SkillsShEntry[]) {
-    if (!candidate || typeof candidate !== "object") continue;
+  for (const value of response.skills) {
+    const candidate = catalogRecord(value);
+    if (!candidate) continue;
     const source = typeof candidate.source === "string" && candidate.source.split("/").length === 2 && candidate.source.split("/").every(part => CATALOG_IDENTIFIER.test(part)) ? candidate.source : undefined;
     const skillId = typeof candidate.skillId === "string" && CATALOG_IDENTIFIER.test(candidate.skillId) ? candidate.skillId : undefined;
     const name = catalogString(candidate.name, 256);

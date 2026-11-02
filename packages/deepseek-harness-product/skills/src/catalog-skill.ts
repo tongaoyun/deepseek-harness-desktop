@@ -94,8 +94,8 @@ export async function readCatalogSkill(input: CatalogRequest, fetchImpl: FetchLi
     return { name: parsed.name, description: parsed.description, body: parsed.body, origin: urls.origin };
   }
   const payload = parseFilesJson(await fetchFixed(urls.download, fetchImpl, "application/json", MAX_TEXT_BYTES, signal));
-  const document = payload.files?.find(file => file.path === "SKILL.md" && typeof file.contents === "string");
-  if (!document || typeof document.contents !== "string") throw catalogError("目录技能说明无效", 502, "error.catalog.response");
+  const document = payload.files.find(file => file.path === "SKILL.md");
+  if (!document) throw catalogError("目录技能说明无效", 502, "error.catalog.response");
   const parsed = skillDocSummary(document.contents);
   if (!parsed.name || !parsed.description) throw catalogError("目录技能说明无效", 502, "error.catalog.response");
   return { name: parsed.name, description: parsed.description, body: parsed.body, origin: urls.origin };
@@ -109,13 +109,13 @@ export async function loadCatalogPackage(input: CatalogRequest, fetchImpl: Fetch
     return { name: detail.name, zip: Buffer.from(bytes).toString("base64") };
   }
   const payload = parseFilesJson(await fetchFixed(urls.download, fetchImpl, "application/json", MAX_ARCHIVE_BYTES, signal));
-  if (!Array.isArray(payload.files) || !payload.files.length || payload.files.length > MAX_FILES) throw catalogError("目录技能文件无效或过多", 502, "error.catalog.response");
   const entries = payload.files.map(file => {
-    if (typeof file.path !== "string" || !SAFE_PATH.test(file.path) || typeof file.contents !== "string") throw catalogError("目录技能包含非法文件路径", 502, "error.catalog.response");
+    if (!SAFE_PATH.test(file.path)) throw catalogError("目录技能包含非法文件路径", 502, "error.catalog.response");
     return { path: file.path, data: Buffer.from(file.contents, "utf8").toString("base64") };
   });
-  if (!entries.some(entry => entry.path === "SKILL.md")) throw catalogError("目录技能缺少 SKILL.md", 502, "error.catalog.response");
-  const detail = skillDocSummary(Buffer.from(entries.find(entry => entry.path === "SKILL.md")!.data, "base64").toString("utf8"));
+  const document = payload.files.find(file => file.path === "SKILL.md");
+  if (!document) throw catalogError("目录技能缺少 SKILL.md", 502, "error.catalog.response");
+  const detail = skillDocSummary(document.contents);
   if (!detail.name) throw catalogError("目录技能说明无效", 502, "error.catalog.response");
   return { name: detail.name, entries };
 }
