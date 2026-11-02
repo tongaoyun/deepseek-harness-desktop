@@ -331,23 +331,20 @@ export class DeepSeekHarnessProductBridge {
   private async invokeAuthenticated(
     method: ProductMethod,
     input: Readonly<Record<string, unknown>>,
-    signal?: AbortSignal,
-    freshCatalog = true,
+    signal: AbortSignal,
+    freshCatalog: boolean,
   ): Promise<unknown> {
     if (this.api === undefined) throw new Error('deepseek-harness product: server URL is not configured')
     if (method.startsWith('support.')) {
-      const lifetime = AbortSignal.any([this.identityLifecycle.signal, ...signal ? [signal] : []])
       if (!this.session.authenticated || !this.session.employeeId) throw new ProductError('EMPLOYEE_UNAUTHORIZED', 'Employee sign-in is required')
       if (!this.support) throw new ProductError('FEATURE_UNAVAILABLE', 'Desktop support is unavailable')
-      return this.support(method, input, this.api, this.session, lifetime)
+      return this.support(method, input, this.api, this.session, signal)
     }
     if (method.startsWith('content.submissions.')) {
-      const lifetime = AbortSignal.any([this.identityLifecycle.signal, ...signal ? [signal] : []])
       if (!this.session.authenticated || !this.session.employeeId) throw new ProductError('EMPLOYEE_UNAUTHORIZED', 'Employee sign-in is required')
-      return invokeContentSubmission(method, input, this.api, lifetime)
+      return invokeContentSubmission(method, input, this.api, signal)
     }
     if (method.startsWith('extensions.')) {
-      signal = AbortSignal.any([this.identityLifecycle.signal, ...signal ? [signal] : []])
       if (!this.session.authenticated || !this.session.employeeId) throw new Error('Authenticated employee is required')
       if (this.connectorManagement === undefined) throw new Error('Personal extension editor is unavailable')
       try { return await this.connectorManagement(method, input, this.api, this.session, signal) }
@@ -362,11 +359,9 @@ export class DeepSeekHarnessProductBridge {
     }
     if (method === 'knowledge.references.resolve') {
       return this.api.request('/api/v1/knowledge-references/resolve', { method: 'POST',
-        headers: { 'content-type': 'application/json' }, body: JSON.stringify(input), ...(signal ? { signal } : {}) })
+        headers: { 'content-type': 'application/json' }, body: JSON.stringify(input), signal })
     }
     if (method === 'tasks.capabilities.read' || method === 'tasks.capabilities.prepare') {
-      await this.ensureFreshSession()
-      signal?.throwIfAborted()
       if (this.optionsTaskCapabilities === undefined) throw new Error('Product task runtime is unavailable')
       const request = parseTaskCapabilityRequest(input)
       const value = await this.optionsTaskCapabilities(method.endsWith('.read') ? 'read' : 'prepare', request, signal)
@@ -374,21 +369,21 @@ export class DeepSeekHarnessProductBridge {
     }
     if (method === 'connectors.authorization.status') {
       const result = await this.api.request(
-        `/api/v1/connectors/${encodeURIComponent(requiredId(input))}/authorization`, { ...(signal === undefined ? {} : { signal }) },
+        `/api/v1/connectors/${encodeURIComponent(requiredId(input))}/authorization`, { signal },
       )
       if (parseConnectorAuthorization(result, requiredId(input)).status === 'AUTHORIZED') this.catalogChanged()
       return result
     }
     if (method === 'connectors.authorization.begin') {
       const result = await this.api.request(`/api/v1/connectors/${encodeURIComponent(requiredId(input))}/authorization-requests`, {
-        method: 'POST', ...(signal === undefined ? {} : { signal }),
+        method: 'POST', signal,
       })
       parseConnectorAuthorizationLaunch(result, requiredId(input))
       return result
     }
     if (method === 'connectors.authorization.revoke') {
       const result = await this.api.request(`/api/v1/connectors/${encodeURIComponent(requiredId(input))}/authorization`, {
-        method: 'DELETE', ...(signal === undefined ? {} : { signal }),
+        method: 'DELETE', signal,
       })
       if (parseConnectorAuthorization(result, requiredId(input)).status !== 'REQUIRED') throw new Error('Connector revocation was not confirmed')
       this.catalogChanged()
@@ -408,7 +403,7 @@ export class DeepSeekHarnessProductBridge {
       return this.api.request('/api/v1/knowledge-searches', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        ...(signal === undefined ? {} : { signal }),
+        signal,
         body: JSON.stringify({
           query: query.trim(), knowledgeBaseRefs, knowledgeBaseIds,
           restrictToKnowledgeBaseRefs: input.restrictToKnowledgeBaseRefs === true || knowledgeBaseRefs.length > 0, limit,

@@ -1361,7 +1361,7 @@ export async function apply(ctx: ClientContext): Promise<() => Promise<void>> {
   void cache.catalog.refresh().catch((error: unknown) => console.warn('[agency-agents] 初始名册读取失败，目录页可重试：', error))
   ctx.effect(() => {
     const names = installNativeTeamNames(async () => {
-      if (cache.catalog.getSnapshot().revision < 0) return new Map<string, string>()
+      if (cache.catalog.getSnapshot().revision < 0) return { members: new Map<string, string>(), teams: [] }
       const snapshot = cache.teams.getSnapshot() ?? await cache.teams.refresh()
       const experts = cache.catalog.getSnapshot().experts
       const active = getActive()

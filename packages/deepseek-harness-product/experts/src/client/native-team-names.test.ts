@@ -1,213 +1,65 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+// @vitest-environment jsdom
+import { describe, it, expect, vi, afterEach } from 'vitest'
 import { installNativeTeamNames } from './native-team-names.ts'
 
-class MockTextNode {
-  nodeType = 3
-  isConnected = true
-  constructor(public data: string) {}
+const architectId = 'agency-engineering-software-architect-8a70fbbcd3'
+const securityId = 'agency-security-appsec-engineer-f29ea176a0'
+
+function rosterMember(name: string): Text {
+  const roster = document.createElement('div')
+  roster.className = 'native_roster'
+  roster.innerHTML = '<button><span class="native_memberText"><span class="native_memberName"><span class="native_memberNameText"></span></span></span></button>'
+  const node = document.createTextNode(name)
+  roster.querySelector('.native_memberNameText')!.append(node)
+  document.body.append(roster)
+  return node
 }
 
-class MockElement {
-  nodeType = 1
-  isConnected = true
-  childNodes: any[] = []
-  className = ''
-  parent: MockElement | null = null
-  constructor(public tagName: string, public classes: string[] = []) {
-    this.className = classes.join(' ')
-  }
-
-  get firstChild() {
-    return this.childNodes[0] ?? null
-  }
-
-  get textContent(): string {
-    return this.childNodes.map(child => child instanceof MockElement ? child.textContent : child.data).join('')
-  }
-
-  appendChild(child: any) {
-    if (child instanceof MockElement) child.parent = this
-    this.childNodes.push(child)
-    return child
-  }
-
-  matches(selector: string): boolean {
-    const parts = selector.split('>').map(part => part.trim())
-    let element: MockElement | null = this
-    for (let index = parts.length - 1; index >= 0; index--) {
-      const part = parts[index]!
-      const tag = part.match(/^[a-z]+/i)?.[0]
-      const classSuffix = part.match(/\[class\$="([^"]+)"\]/)?.[1]
-      if (tag && element?.tagName.toLowerCase() !== tag.toLowerCase()) return false
-      if (classSuffix && !element?.classes.some(name => name.endsWith(classSuffix))) return false
-      if (part.includes(':first-child') && element?.parent?.childNodes.filter(child => child instanceof MockElement)[0] !== element) return false
-      if (index > 0) element = element?.parent ?? null
-      if (element === null) return false
-    }
-    return true
-  }
-
-  querySelectorAll(selector: string): MockElement[] {
-    const results: MockElement[] = []
-    const traverse = (el: MockElement) => {
-      for (const child of el.childNodes) {
-        if (child instanceof MockElement) {
-          if (child.matches(selector)) {
-            results.push(child)
-          }
-          traverse(child)
-        }
-      }
-    }
-    traverse(this)
-    return results
-  }
-}
+afterEach(() => { document.body.replaceChildren() })
 
 describe('installNativeTeamNames', () => {
-  let originalDocument: any
-  let originalMutationObserver: any
-  let originalText: any
-
-  beforeEach(() => {
-    originalDocument = (globalThis as any).document
-    originalMutationObserver = (globalThis as any).MutationObserver
-    originalText = (globalThis as any).Text
-
-    ;(globalThis as any).Text = MockTextNode
-    ;(globalThis as any).MutationObserver = class {
-      observe = vi.fn()
-      disconnect = vi.fn()
-    }
-  })
-
-  afterEach(() => {
-    ;(globalThis as any).document = originalDocument
-    ;(globalThis as any).MutationObserver = originalMutationObserver
-    ;(globalThis as any).Text = originalText
-  })
-
-  it('只本地化已知成员名称，保留 lead，并在宿主替换文本后安全卸载', async () => {
-    const root = new MockElement('div')
-    const roster = new MockElement('div', ['VoX2oq_roster'])
-    root.appendChild(roster)
-
-    // lead 按钮
-    const buttonLead = new MockElement('button', ['VoX2oq_member'])
-    const memberTextLead = new MockElement('span', ['VoX2oq_memberText'])
-    const memberNameLead = new MockElement('span', ['VoX2oq_memberName'])
-    const memberNameTextLead = new MockElement('span', ['VoX2oq_memberNameText'])
-    const textNodeLead = new MockTextNode('lead')
-    memberNameTextLead.appendChild(textNodeLead)
-    memberNameLead.appendChild(memberNameTextLead)
-    memberTextLead.appendChild(memberNameLead)
-    buttonLead.appendChild(memberTextLead)
-    roster.appendChild(buttonLead)
-
-    // 队友按钮
-    const buttonTeammate = new MockElement('button', ['VoX2oq_member'])
-    const memberTextTeammate = new MockElement('span', ['VoX2oq_memberText'])
-    const memberNameTeammate = new MockElement('span', ['VoX2oq_memberName'])
-    const memberNameTextTeammate = new MockElement('span', ['VoX2oq_memberNameText'])
-    const textNodeTeammate = new MockTextNode('agency-engineering-software-architect-8a70fbbcd3')
-    memberNameTextTeammate.appendChild(textNodeTeammate)
-    memberNameTeammate.appendChild(memberNameTextTeammate)
-    memberTextTeammate.appendChild(memberNameTeammate)
-    buttonTeammate.appendChild(memberTextTeammate)
-    roster.appendChild(buttonTeammate)
-
-    ;(globalThis as any).document = {
-      body: root,
-      querySelectorAll: (sel: string) => root.querySelectorAll(sel),
-    }
-
-    const labels = new Map([
-      ['agency-engineering-software-architect-8a70fbbcd3', '软件架构师'],
-    ])
-    const loader = vi.fn(async () => labels)
+  it('localizes known member names, preserves lead, and leaves Host replacements intact on disposal', async () => {
+    const lead = rosterMember('lead')
+    const member = rosterMember(architectId)
+    const loader = vi.fn(async () => ({ members: new Map([[architectId, '软件架构师']]), teams: [] }))
     const onError = vi.fn()
-
     const handle = installNativeTeamNames(loader, onError)
-    await handle.refresh()
-
-    expect(textNodeTeammate.data).toBe('软件架构师')
-    expect(textNodeLead.data).toBe('lead')
-
-    textNodeTeammate.data = '产品经理'
-    handle.dispose()
-    expect(textNodeTeammate.data).toBe('产品经理')
-    expect(textNodeLead.data).toBe('lead')
+    try {
+      await handle.refresh()
+      expect(member.data).toBe('软件架构师')
+      expect(lead.data).toBe('lead')
+      member.data = '产品经理'
+    } finally { handle.dispose() }
+    expect(member.data).toBe('产品经理')
+    expect(lead.data).toBe('lead')
+    expect(onError).not.toHaveBeenCalled()
   })
 
-  it('仅在任务标题精确匹配已启用团队时将 lead 显示为团队名称', async () => {
-    const root = new MockElement('div')
-    const roster = new MockElement('div', ['VoX2oq_roster'])
-    const button = new MockElement('button')
-    const memberText = new MockElement('span', ['VoX2oq_memberText'])
-    const memberName = new MockElement('span', ['VoX2oq_memberName'])
-    const memberNameText = new MockElement('span', ['VoX2oq_memberNameText'])
-    const lead = new MockTextNode('lead')
-    memberNameText.appendChild(lead)
-    memberName.appendChild(memberNameText)
-    memberText.appendChild(memberName)
-    button.appendChild(memberText)
-    roster.appendChild(button)
-    root.appendChild(roster)
-
-    const taskTitle = new MockElement('div', ['VoX2oq_taskTitle'])
-    const title = new MockElement('strong')
-    title.appendChild(new MockTextNode('技术方案评审团: 软件架构师'))
-    taskTitle.appendChild(title)
-    root.appendChild(taskTitle)
-
-    ;(globalThis as any).document = {
-      body: root,
-      querySelectorAll: (sel: string) => root.querySelectorAll(sel),
-    }
-
+  it('localizes lead for a matching team title and restores the original text on disposal', async () => {
+    const lead = rosterMember('lead')
+    const title = document.createElement('div')
+    title.className = 'native_taskTitle'
+    title.innerHTML = '<strong>技术方案评审团: 软件架构师</strong>'
+    document.body.append(title)
     const loader = vi.fn(async () => ({ members: new Map<string, string>(), teams: [{ names: ['技术方案评审团'], label: '技术方案评审团' }] }))
     const handle = installNativeTeamNames(loader, vi.fn())
-    await handle.refresh()
-
-    expect(lead.data).toBe('技术方案评审团')
-    handle.dispose()
+    try {
+      await handle.refresh()
+      expect(lead.data).toBe('技术方案评审团')
+    } finally { handle.dispose() }
     expect(lead.data).toBe('lead')
   })
 
-  it('不改写任务卡片中的路由 Owner 标识', async () => {
-    const root = new MockElement('div')
-    const tasks = new MockElement('div', ['VoX2oq_tasks'])
-    const task = new MockElement('div', ['VoX2oq_task'])
-    const meta = new MockElement('div', ['VoX2oq_meta'])
-    const spanTask = new MockElement('span')
-    spanTask.appendChild(new MockTextNode('task-1'))
-    const spanOwner = new MockElement('span')
-    const textNode = new MockTextNode('Owner: agency-security-appsec-engineer-f29ea176a0')
-    spanOwner.appendChild(textNode)
-
-    meta.appendChild(spanTask)
-    meta.appendChild(spanOwner)
-    task.appendChild(meta)
-    tasks.appendChild(task)
-    root.appendChild(tasks)
-
-    ;(globalThis as any).document = {
-      body: root,
-      querySelectorAll: (sel: string) => root.querySelectorAll(sel),
-    }
-
-    const labels = new Map([
-      ['agency-security-appsec-engineer-f29ea176a0', '应用安全工程师'],
-    ])
-    const loader = vi.fn(async () => labels)
-    const onError = vi.fn()
-
-    const handle = installNativeTeamNames(loader, onError)
-    await handle.refresh()
-
-    expect(textNode.data).toBe('Owner: agency-security-appsec-engineer-f29ea176a0')
-
-    handle.dispose()
-    expect(textNode.data).toBe('Owner: agency-security-appsec-engineer-f29ea176a0')
+  it('leaves task owner routing identifiers unchanged', async () => {
+    const tasks = document.createElement('div')
+    tasks.innerHTML = `<div class="native_tasks"><div class="native_task"><div class="native_meta"><span>task-1</span><span>Owner: ${securityId}</span></div></div></div>`
+    document.body.append(tasks)
+    const loader = vi.fn(async () => ({ members: new Map([[securityId, '应用安全工程师']]), teams: [] }))
+    const handle = installNativeTeamNames(loader, vi.fn())
+    try {
+      await handle.refresh()
+      expect(tasks.textContent).toBe(`task-1Owner: ${securityId}`)
+    } finally { handle.dispose() }
+    expect(tasks.textContent).toBe(`task-1Owner: ${securityId}`)
   })
 })

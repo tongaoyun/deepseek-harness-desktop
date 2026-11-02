@@ -5,13 +5,10 @@ type NativeTeamLabels = {
 
 /** 仅替换原生成员卡片的名称叶子文本，不修改任务正文或路由字段。 */
 export function installNativeTeamNames(
-  loadLabels: () => Promise<NativeTeamLabels | ReadonlyMap<string, string>>,
+  loadLabels: () => Promise<NativeTeamLabels>,
   onError: (error: unknown) => void,
 ) {
-  const memberSelectors = [
-    '[class$="_roster"] > button > [class$="_memberText"] > span:first-child',
-    '[class$="_roster"] > button > [class$="_memberText"] > [class$="_memberName"] > [class$="_memberNameText"]',
-  ]
+  const memberSelector = '[class$="_roster"] > button > [class$="_memberText"] > [class$="_memberName"] > [class$="_memberNameText"]'
   const taskTitleSelector = '[class$="_taskTitle"] > strong'
   const tracked = new Map<Text, { original: string; shown: string }>()
   const seen = new WeakMap<Text, string>()
@@ -39,44 +36,39 @@ export function installNativeTeamNames(
     const teamName = resolveTeamName()
     for (const [node] of tracked) if (!node.isConnected) tracked.delete(node)
 
-    const visited = new Set<Element>()
-    for (const selector of memberSelectors) {
-      for (const element of document.querySelectorAll(selector)) {
-        if (visited.has(element)) continue
-        visited.add(element)
-        for (const node of element.childNodes) {
-          if (!(node instanceof Text)) continue
-          const old = tracked.get(node)
-          const text = old && node.data === old.shown ? old.original : node.data
-          if (text.trim() === 'lead') {
-            const original = text
-            if (seen.get(node) !== original) {
-              seen.set(node, original)
-              added = true
-            }
-            const shown = teamName
-              ? original.replace(/^(\s*)lead(\s*)$/u, (_match, prefix: string, suffix: string) => `${prefix}${teamName}${suffix}`)
-              : original
-            tracked.set(node, { original, shown })
-            if (node.data !== shown) node.data = shown
-            continue
-          }
-          const match = text.match(/(agency-[a-z0-9-]+-[0-9a-f]{10})/u)
-          if (!match) {
-            if (old) tracked.delete(node)
-            continue
-          }
+    for (const element of document.querySelectorAll(memberSelector)) {
+      for (const node of element.childNodes) {
+        if (!(node instanceof Text)) continue
+        const old = tracked.get(node)
+        const text = old && node.data === old.shown ? old.original : node.data
+        if (text.trim() === 'lead') {
           const original = text
           if (seen.get(node) !== original) {
             seen.set(node, original)
             added = true
           }
-          const targetId = match[1]!
-          const label = labels.get(targetId)
-          const shown = label ? original.replace(targetId, label) : original
+          const shown = teamName
+            ? original.replace(/^(\s*)lead(\s*)$/u, (_match, prefix: string, suffix: string) => `${prefix}${teamName}${suffix}`)
+            : original
           tracked.set(node, { original, shown })
           if (node.data !== shown) node.data = shown
+          continue
         }
+        const match = text.match(/(agency-[a-z0-9-]+-[0-9a-f]{10})/u)
+        if (!match) {
+          if (old) tracked.delete(node)
+          continue
+        }
+        const original = text
+        if (seen.get(node) !== original) {
+          seen.set(node, original)
+          added = true
+        }
+        const targetId = match[1]!
+        const label = labels.get(targetId)
+        const shown = label ? original.replace(targetId, label) : original
+        tracked.set(node, { original, shown })
+        if (node.data !== shown) node.data = shown
       }
     }
     return added
@@ -88,13 +80,8 @@ export function installNativeTeamNames(
     try {
       const next = await loadLabels()
       if (disposed || current !== generation) return
-      if ('members' in next) {
-        labels = next.members
-        teams = next.teams
-      } else {
-        labels = next
-        teams = []
-      }
+      labels = next.members
+      teams = next.teams
       scan()
     } catch (error) {
       if (!disposed && current === generation) onError(error)
