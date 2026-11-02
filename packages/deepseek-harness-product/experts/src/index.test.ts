@@ -858,7 +858,7 @@ describe('AgencyAgentsRemote（Host↔Client 读写链路）', () => {
     expect(writeErrorMessage('plain')).toBe('plain')
   })
 
-  it('getEnabled 读取原始配置，setEnabled 委托 library 并传递修订号与错误', async () => {
+  it('setEnabled 委托 library 并传递修订号与错误', async () => {
     let stored: { enabled: string[] } = { enabled: [] }
     let revision = 0
     const registered: unknown[] = []
@@ -886,17 +886,6 @@ describe('AgencyAgentsRemote（Host↔Client 读写链路）', () => {
 
     const remote = new AgencyAgentsRemote(ctx as never)
     expect(registered).toHaveLength(1)
-    expect(remote.getEnabled()).toEqual({ enabled: [], revision: 0 })
-
-    const liveCtx = {
-      reflect: { provide: () => undefined },
-      get: () => undefined,
-      typert: { register: () => undefined },
-      settings: {
-        describe: () => [{ ns: 'agency-agents', revision: 6, value: { enabled: ['reviewer'] } }],
-      },
-    } as never
-    expect(new AgencyAgentsRemote(liveCtx).getEnabled()).toEqual({ enabled: ['reviewer'], revision: 6 })
 
     await expect(remote.setEnabled(['reviewer', 'coder'], 0)).resolves.toEqual({ enabled: ['reviewer', 'coder'], revision: 1 })
     await expect(remote.setEnabled(['writer'], 0)).rejects.toThrow('stale revision')
@@ -960,7 +949,7 @@ describe('AgencyAgentsRemote（Host↔Client 读写链路）', () => {
 
   it('TYPERT_REMOTE 贡献描述符与 host 方法对齐（client $mount 契约）', () => {
     const endpoints = TYPERT_REMOTE.descriptors.map((d) => `${d.namespace}/${d.method}`)
-    expect(endpoints).toContain('agencyAgents/getEnabled')
+    expect(endpoints).toContain('agencyAgents/getCatalog')
     expect(endpoints).toContain('agencyAgents/setEnabled')
     expect(endpoints).toContain('agencyAgents/getPrompt')
     for (const d of TYPERT_REMOTE.descriptors) {

@@ -39,7 +39,6 @@ const validationRules = {
   'agencyAgents/saveCustomExpert': { parameters: { expert: customExpertInputSchema, enabled: z.boolean(), expectedRevision: revisionSchema }, result: catalogSnapshotSchema },
   'agencyAgents/deleteCustomExpert': { parameters: { slug: customSlugSchema, expectedRevision: revisionSchema }, result: catalogSnapshotSchema },
   'agencyAgents/getCustomExpert': { parameters: { slug: customSlugSchema }, result: expertEditSchema },
-  'agencyAgents/getEnabled': { parameters: {}, result: enabledStateSchema },
   'agencyAgents/setEnabled': { parameters: { enabled: enabledArraySchema, expectedRevision: revisionSchema }, result: enabledStateSchema },
   'agencyAgents/getPrompt': { parameters: { slug: z.string().min(1).max(128), division: z.string().min(1).max(64) }, result: z.object({ prompt: z.string() }) },
 } satisfies ValidationRules

@@ -9,7 +9,7 @@ import { ProductError } from '@deepseek-harness/product/errors'
 import { ensureDingTalkSession, DingTalkAuthorizationTimeoutError } from '@deepseek-harness/product/dingtalk-auth'
 import { isProductRuntimeMethod, type ProductSession } from '@deepseek-harness/product/protocol'
 import { DeepSeekHarnessNativeProcess } from './deepseek-harness-native-process.ts'
-import { resolveCompanyContentRefreshInterval, resolveDeepSeekHarnessConnectorProxyPolicy, resolveDeepSeekHarnessKnowledgeFilePolicy, resolveDeepSeekHarnessProductServerUrl, resolveDesktopSupportPolicy } from './deepseek-harness-product-config.ts'
+import { resolveDeepSeekHarnessProductConfig } from './deepseek-harness-product-config.ts'
 import { DesktopSupport } from './desktop-support.ts'
 import { ConnectorProxy } from './connector-proxy.ts'
 import { CompanyContentSync } from './company-content-sync.ts'
@@ -112,15 +112,12 @@ function persistDeepSeekHarnessSession(session: ProductSession, token: string | 
 export function createExtension(context: ExtensionContext): ProductDesktopExtension {
   const lifecycle = new AbortController()
   const storedDeepSeekHarnessSession = readStoredDeepSeekHarnessSession()
-  const serverUrl = resolveDeepSeekHarnessProductServerUrl({
+  const config = resolveDeepSeekHarnessProductConfig({
     packaged: app.isPackaged,
     resourcesPath: process.resourcesPath,
-    appPath: app.getAppPath(),
   })
   const sessionToken = storedDeepSeekHarnessSession?.token ?? process.env.DEEPSEEK_HARNESS_SESSION_TOKEN
-  const knowledgeFilePolicy = resolveDeepSeekHarnessKnowledgeFilePolicy({
-    packaged: app.isPackaged, resourcesPath: process.resourcesPath, appPath: app.getAppPath(),
-  })
+  const knowledgeFilePolicy = config.knowledgeFiles
   const knowledgeFiles = new KnowledgeFiles({
     directory: join(app.getPath('userData'), 'knowledge-files'),
     policy: knowledgeFilePolicy,
@@ -149,8 +146,7 @@ export function createExtension(context: ExtensionContext): ProductDesktopExtens
       ?? (app.isPackaged ? join(process.resourcesPath, 'native', process.platform === 'win32' ? 'deepseek-harness-native.exe' : 'deepseek-harness-native') : undefined),
     join(app.getPath('userData'), 'native'),
   )
-  const supportPolicy = resolveDesktopSupportPolicy({ packaged: app.isPackaged,
-    resourcesPath: process.resourcesPath, appPath: app.getAppPath() })
+  const supportPolicy = config.support
   const support = new DesktopSupport({ policy: supportPolicy,
     native: (method, signal) => nativeSidecar.invoke(method, signal),
     metadata: () => ({ desktopVersion: app.getVersion(), platform: process.platform, architecture: process.arch,
@@ -181,7 +177,7 @@ export function createExtension(context: ExtensionContext): ProductDesktopExtens
       }
       await personalConnectors.resetIdentity(session.authenticated ? session.employeeId : undefined)
     },
-    serverUrl,
+    serverUrl: config.serverUrl,
     sessionToken,
     initialSession: storedDeepSeekHarnessSession?.session,
     taskCapabilities: (method, payload, signal) => context.requestHost('product', 'tasks.capabilities.' + method, payload, signal),
@@ -209,8 +205,7 @@ export function createExtension(context: ExtensionContext): ProductDesktopExtens
   const productBridge = new DeepSeekHarnessProductBridge(productBridgeOptions)
   const connectorProxy = new ConnectorProxy((signal, ids) => productBridge.readConnectorTransports(ids, signal),
     (request, response, connector, signal) => personalConnectors.serveStdio(request, response, connector, signal),
-    resolveDeepSeekHarnessConnectorProxyPolicy({ packaged: app.isPackaged,
-      resourcesPath: process.resourcesPath, appPath: app.getAppPath() }))
+    config.connectorProxy)
   let deepseekHarnessAuthAttempt: { readonly controller: AbortController; readonly owners: Set<symbol>; promise: Promise<void> } | undefined
   const authenticationOperations = new Set<Promise<void>>()
   let deepseekHarnessAuthenticationVisible = false
@@ -342,8 +337,7 @@ export function createExtension(context: ExtensionContext): ProductDesktopExtens
         const employeeId = productBridge.getSession().employeeId
         if (!employeeId) throw new Error('Authenticated employee is required')
         const sync = new CompanyContentSync({ root: join(app.getPath('userData'), 'company-content'), employeeId,
-          refreshIntervalMs: resolveCompanyContentRefreshInterval({ packaged: app.isPackaged,
-            resourcesPath: process.resourcesPath, appPath: app.getAppPath() }),
+          refreshIntervalMs: config.companyContentRefreshIntervalMs,
           load: async (signal) => {
             if (productBridge.getSession().employeeId !== employeeId) throw new Error('Employee identity changed')
             const value = await productBridge.loadCompanyContent(signal)

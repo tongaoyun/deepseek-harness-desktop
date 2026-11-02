@@ -18,7 +18,7 @@ async function fixture() {
   const remote: React.ComponentProps<typeof AgentsButton>['remote'] = {
     getCatalog: async () => ({ ok: true, value: catalog }),
     getTeams: async () => ({ ok: true, value: teams }),
-    getEnabled: unused, setEnabled: unused, getPrompt: unused, getCustomExpert: unused,
+    setEnabled: unused, getPrompt: unused, getCustomExpert: unused,
     saveCustomExpert: unused, deleteCustomExpert: unused,
     exportTeam: unused, saveTeam: unused, deleteTeam: unused, setTeamEnabled: unused,
   }

@@ -29,7 +29,7 @@ it('keeps a rejected selection write typed and leaves the confirmed catalog unch
   const unused = (): Promise<never> => Promise.reject(new Error('Unexpected read'))
   const setEnabled = vi.fn<Parameters<typeof writeEnabled>[0]['setEnabled']>().mockResolvedValue({ ok: false, error })
   const remote: Parameters<typeof writeEnabled>[0] = { getCatalog: unused, getCustomExpert: unused, saveCustomExpert: unused,
-    deleteCustomExpert: unused, getEnabled: unused, getPrompt: unused, setEnabled }
+    deleteCustomExpert: unused, getPrompt: unused, setEnabled }
   const cache = createExpertClientState(remote)
   const before = cache.catalog.accept({ experts: [], enabled: [], revision: 1 })
   await expect(writeEnabled(remote, cache, new Set(['reviewer']), 1)).rejects.toBe(error)

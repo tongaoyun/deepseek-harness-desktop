@@ -22,6 +22,8 @@ description: "认证产品桌面用户，管理凭据、原生操作与产品资
 
 `createExtension` 向官方壳提供启动准备、产品分发、事件和关闭钩子。产品组合负责 `desktop-extension.json`、`assembly.json`、服务端资源与原生二进制。官方 profile 默认不加载产品扩展。参见[产品子系统](../../../docs/subsystems/deepseek-harness-product.md)。
 
+扩展创建时读取并校验一次 `product.json`，服务地址、文件限制、MCP 代理期限、设备上报和公司目录刷新间隔在本次扩展生命周期内保持一致。开发环境可覆盖服务地址；打包应用使用资源内的地址。
+
 同一扩展的并发 Host 准备请求共享一个操作；关闭会取消并等待准备、认证、目录同步、桥接和 sidecar 的实际结束。重复关闭共享同一个清理结果，避免退出期间重复销毁资源或让迟到的启动结果继续写入配置。
 
 企业登录、工作区配置和推理 overlay 准备完成前不启动 Host。桌面壳将认证后环境和有序 overlay 交给原生 profile 启动器，加载产品运行时与内建专家、技能；员工令牌留在主进程。通用扩展传输与页面重载规则见 [Desktop](../../../apps/desktop/README.md#low-level-development-overrides)。

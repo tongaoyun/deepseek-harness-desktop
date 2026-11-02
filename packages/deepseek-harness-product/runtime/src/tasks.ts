@@ -181,7 +181,6 @@ export async function createTaskCapabilities(ctx: Context, deps: TaskDependencie
       return (await this.prepare({ sessionId, basePresetId: requested })).presetId
     },
     async prepare(request: ProductTaskCapabilityRequest, signal?: AbortSignal): Promise<ProductTaskCapabilityResult> {
-      const dependencyChecks: ProductTaskCapabilityResult['dependencyChecks'][number][] = []
       try {
         const current = await inspect(request.sessionId, signal)
         signal?.throwIfAborted()
@@ -257,7 +256,7 @@ export async function createTaskCapabilities(ctx: Context, deps: TaskDependencie
         if (!isProductFailure(error)) throw error
         const failure = productFailure(error)
         if (failure.dependencyChecks !== undefined) throw error
-        const completed = new Map(dependencyChecks.map(check => [`${check.kind}:${check.reference}`, check]))
+        const completed = new Map<string, ProductTaskCapabilityResult['dependencyChecks'][number]>()
         for (const resource of failure.resources) {
           if (resource.kind === 'knowledge-base') completed.set(`KNOWLEDGE_BASE:${resource.id}`, {
             kind: 'KNOWLEDGE_BASE', reference: resource.id, status: 'UNAUTHORIZED',

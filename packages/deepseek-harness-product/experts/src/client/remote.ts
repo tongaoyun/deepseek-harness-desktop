@@ -11,4 +11,4 @@ export type AgencyTeamsRemote = Pick<AgencyAgentsRemote, 'exportTeam' | 'getTeam
 type RemoteValue<Call extends (...args: never[]) => Promise<RemoteResult<unknown>>> =
   Awaited<ReturnType<Call>> extends RemoteResult<infer Value> ? Value : never
 /** Saved selection returned by the native Remote. */
-export type AgencyAgentsEnabledState = RemoteValue<AgencyAgentsRemote['getEnabled']>
+export type AgencyAgentsEnabledState = RemoteValue<AgencyAgentsRemote['setEnabled']>

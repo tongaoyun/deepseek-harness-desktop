@@ -16,7 +16,6 @@ function setup(shared: boolean, gate?: Promise<void>, options: { preload?: boole
     ...(shared ? [{ slug: 'shared', name: '共享专家', nameEn: 'Shared', description: '市场说明', descriptionEn: '', emoji: '🧩', division: 'orders', divisionZh: '订单', custom: false, company: true }] : [])]
   const remote: ComponentProps<typeof AgencySettingsPanel>['remote'] = {
     getCatalog: vi.fn(async () => { await gate; return { ok: true as const, value: { experts, enabled: [], revision: 0 } } }),
-    getEnabled: async () => ({ ok: true, value: { enabled: [], revision: 0 } }),
     getPrompt: async () => ({ ok: true, value: { prompt: '说明' } }),
     setEnabled: vi.fn(), getCustomExpert: vi.fn(), saveCustomExpert: vi.fn(), deleteCustomExpert: vi.fn(),
     getTeams: async () => { await gate; return { ok: true, value: { teams: [], enabledTeams: [], enabledExperts: [], revision: 0 } } },
