@@ -66,9 +66,12 @@ export interface AgencyExpertLibrary {
   /** Read the current catalog; an optional signal cancels source preparation and discards late results. */
   catalog(signal?: AbortSignal): Promise<CatalogSnapshot>
   getCustom(slug: string): Promise<CustomExpert>
-  saveCustom(input: CustomExpertInput, enabled: boolean, expectedRevision: number): Promise<CatalogSnapshot>
-  deleteCustom(slug: string, expectedRevision: number): Promise<CatalogSnapshot>
-  setEnabled(enabled: string[], expectedRevision: number): Promise<{ enabled: string[]; revision: number }>
+  /** Cancellation stops catalog preparation before the atomic Settings transaction starts. */
+  saveCustom(input: CustomExpertInput, enabled: boolean, expectedRevision: number, signal?: AbortSignal): Promise<CatalogSnapshot>
+  /** Cancellation cannot roll back a dispatched Settings transaction. */
+  deleteCustom(slug: string, expectedRevision: number, signal?: AbortSignal): Promise<CatalogSnapshot>
+  /** Cancellation stops catalog preparation before the atomic Settings transaction starts. */
+  setEnabled(enabled: string[], expectedRevision: number, signal?: AbortSignal): Promise<{ enabled: string[]; revision: number }>
 }
 export const normalizeName = (value: string): string => value.trim().toLowerCase()
 
@@ -116,12 +119,13 @@ export function createExpertLibrary(
   const assertWritable = (slug: string): void => {
     if (!CUSTOM_EXPERT_SLUG.test(slug)) throw customError('readonly', locale())
   }
-  const persist = async (state: ReturnType<typeof read>, revision: number): Promise<CatalogSnapshot> => {
+  const persist = async (state: ReturnType<typeof read>, revision: number, signal?: AbortSignal): Promise<CatalogSnapshot> => {
+    signal?.throwIfAborted()
     await mutateExpertSettings(store, [
       { op: 'set', path: ['customExperts'], value: state.customExperts },
       { op: 'set', path: ['enabled'], value: [...new Set(state.enabled)] },
     ], revision, locale())
-    return library.catalog()
+    return library.catalog(signal)
   }
   const library: AgencyExpertLibrary = {
     async catalog(signal) {
@@ -137,8 +141,10 @@ export function createExpertLibrary(
       if (expert === undefined) throw customError('missing', locale())
       return expert
     },
-    async saveCustom(input, enabled, expectedRevision) {
-      const catalogExperts = await base()
+    async saveCustom(input, enabled, expectedRevision, signal) {
+      signal?.throwIfAborted()
+      const catalogExperts = await base(signal)
+      signal?.throwIfAborted()
       checkRevision(expectedRevision)
       const parsed = customExpertInputSchema.safeParse(input)
       if (!parsed.success || typeof enabled !== 'boolean') throw customError('invalid', locale())
@@ -151,9 +157,10 @@ export function createExpertLibrary(
       const next = state.customExperts.filter(item => item.slug !== expert.slug)
       next.push(expert)
       assertUnique(summary(expert), [...catalogExperts, ...next.filter(item => item.slug !== expert.slug).map(summary)])
-      return persist({ customExperts: next, enabled: [...state.enabled.filter(slug => slug !== expert.slug), ...(enabled ? [expert.slug] : [])] }, expectedRevision)
+      return persist({ customExperts: next, enabled: [...state.enabled.filter(slug => slug !== expert.slug), ...(enabled ? [expert.slug] : [])] }, expectedRevision, signal)
     },
-    async deleteCustom(slug, expectedRevision) {
+    async deleteCustom(slug, expectedRevision, signal) {
+      signal?.throwIfAborted()
       assertWritable(slug)
       checkRevision(expectedRevision)
       const state = read()
@@ -161,10 +168,12 @@ export function createExpertLibrary(
       return persist({
         customExperts: state.customExperts.filter(item => item.slug !== slug),
         enabled: state.enabled.filter(item => item !== slug),
-      }, expectedRevision)
+      }, expectedRevision, signal)
     },
-    async setEnabled(enabled, expectedRevision) {
-      const catalogExperts = await base()
+    async setEnabled(enabled, expectedRevision, signal) {
+      signal?.throwIfAborted()
+      const catalogExperts = await base(signal)
+      signal?.throwIfAborted()
       checkRevision(expectedRevision)
       const state = read()
       const available = new Set(project(catalogExperts, state).experts.filter(expert => !expert.conflict).map(expert => expert.slug))
@@ -174,6 +183,7 @@ export function createExpertLibrary(
         { op: 'set', path: ['customExperts'], value: state.customExperts },
         { op: 'set', path: ['enabled'], value: next },
       ], expectedRevision, locale())
+      signal?.throwIfAborted()
       return { enabled: next, revision: store.revision() }
     },
   }

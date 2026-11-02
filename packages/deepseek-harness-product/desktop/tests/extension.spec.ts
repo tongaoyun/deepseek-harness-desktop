@@ -5,6 +5,8 @@ import { ProductError } from '@deepseek-harness/product/errors'
 import { DeepSeekHarnessApiError } from '@deepseek-harness/product'
 import { createExtension } from '../src/index.ts'
 import { isProductMethod } from '@deepseek-harness/product/protocol'
+import { PersonalConnectors } from '../src/personal-connectors.ts'
+import { setImmediate } from 'node:timers/promises'
 
 const fixture = vi.hoisted(() => ({ authenticate: vi.fn<typeof import('@deepseek-harness/product/dingtalk-auth').ensureDingTalkSession>(),
   dialog: vi.fn(async (..._args: unknown[]) => ({ response: 0 })), quit: vi.fn(),
@@ -12,6 +14,7 @@ const fixture = vi.hoisted(() => ({ authenticate: vi.fn<typeof import('@deepseek
   bootstrap: vi.fn(async () => ({ modelApiKey: 'model-key', endpoints: { litellm: 'https://example.test/v1' }, models: ['deepseek-v4-flash', 'gpt-example'] })),
   start: vi.fn(async () => {}), stop: vi.fn(async () => {}), dispose: vi.fn(),
   knowledgePrepare: vi.fn(async () => {}), knowledgeClose: vi.fn(async () => {}), writeFile: vi.fn(),
+  knowledgeReset: vi.fn(async () => {}),
   companyPrepare: vi.fn(async () => {}), companyClose: vi.fn(async () => {}),
   bridgeOptions: vi.fn<(options: ProductBridgeOptions) => void>(),
   invoke: vi.fn(async (..._args: unknown[]) => ({})), refreshCatalog: vi.fn(async () => {}) }))
@@ -41,7 +44,7 @@ vi.mock('../src/deepseek-harness-native-process.ts', () => ({ DeepSeekHarnessNat
   start = fixture.start; stop = fixture.stop; invoke = async () => ({})
 } }))
 vi.mock('../src/knowledge-files.ts', () => ({ KnowledgeFiles: class {
-  prepare = fixture.knowledgePrepare; close = fixture.knowledgeClose; resetIdentity = async () => {}; invoke = async () => ({})
+  prepare = fixture.knowledgePrepare; close = fixture.knowledgeClose; resetIdentity = fixture.knowledgeReset; invoke = async () => ({})
 } }))
 vi.mock('@deepseek-harness/product/dingtalk-auth', async original => ({
   ...await original<typeof import('@deepseek-harness/product/dingtalk-auth')>(), ensureDingTalkSession: fixture.authenticate,
@@ -62,6 +65,7 @@ beforeEach(() => {
   fixture.dispose.mockReset(); fixture.knowledgeClose.mockReset().mockResolvedValue(); fixture.stop.mockReset().mockResolvedValue()
   fixture.start.mockReset().mockResolvedValue(); fixture.knowledgePrepare.mockReset().mockResolvedValue()
   fixture.companyPrepare.mockReset().mockResolvedValue(); fixture.companyClose.mockReset().mockResolvedValue()
+  fixture.knowledgeReset.mockReset().mockResolvedValue()
 })
 
 it.each(['files', 'native', 'company'] as const)('joins startup during %s preparation and rejects late startup effects on close', async (phase) => {
@@ -302,4 +306,67 @@ it('routes explicit connector refresh to Host with strict payload and lifecycle 
     await expect(extension.invoke('connectors.refresh', { headers: { Authorization: 'forged' } })).rejects.toThrow()
     expect(requestHost).toHaveBeenCalledTimes(1)
   } finally { await extension.close() }
+})
+
+it('invalidates employee resources in session order before awaiting an old company cleanup', async () => {
+  const extension = createExtension({ getWindow: () => undefined, isQuitting: () => false, requestHost: async () => ({}) })
+  const closingCompany = Promise.withResolvers<undefined>()
+  const release = Promise.withResolvers<undefined>()
+  const resets = vi.spyOn(PersonalConnectors.prototype, 'resetIdentity')
+  const pending: Promise<unknown>[] = []
+  try {
+    await extension.prepareHost({ directory: '/unused-profile', installAnchor: '/unused-runtime/package.json' })
+    fixture.companyClose.mockImplementationOnce(async () => { closingCompany.resolve(undefined); await release.promise })
+    const persist = fixture.bridgeOptions.mock.calls[0]![0].persistSession
+    if (!persist) throw new Error('Missing employee resource cleanup')
+    const first = Promise.resolve(persist({ authenticated: true, employeeId: 'second' }, 'fixture-token'))
+    pending.push(first)
+    await closingCompany.promise
+    const second = Promise.resolve(persist({ authenticated: true, employeeId: 'third' }, 'fixture-token'))
+    pending.push(second)
+    await second
+    release.resolve(undefined)
+    await first
+    expect(resets.mock.calls.map(call => call[0])).toEqual(['second', 'third'])
+    expect(fixture.knowledgeReset).toHaveBeenCalledTimes(2)
+    await persist({ authenticated: true, employeeId: 'third' }, 'refreshed-token')
+    expect(fixture.knowledgeReset).toHaveBeenCalledTimes(2)
+  } finally {
+    release.resolve(undefined)
+    await Promise.allSettled(pending)
+    await extension.close()
+    resets.mockRestore()
+  }
+})
+
+it('joins an earlier employee cleanup before reporting extension shutdown complete', async () => {
+  const extension = createExtension({ getWindow: () => undefined, isQuitting: () => false, requestHost: async () => ({}) })
+  const entered = Promise.withResolvers<undefined>()
+  const release = Promise.withResolvers<undefined>()
+  const stopped = Promise.withResolvers<undefined>()
+  let pending: Promise<void> | undefined
+  let closing: Promise<void> | undefined
+  try {
+    await extension.prepareHost({ directory: '/unused-profile', installAnchor: '/unused-runtime/package.json' })
+    fixture.companyClose.mockImplementationOnce(async () => { entered.resolve(undefined); await release.promise })
+    fixture.stop.mockImplementationOnce(async () => { stopped.resolve(undefined) })
+    const persist = fixture.bridgeOptions.mock.calls[0]![0].persistSession
+    if (!persist) throw new Error('Missing employee resource cleanup')
+    pending = Promise.resolve(persist({ authenticated: true, employeeId: 'second' }, 'fixture-token'))
+    await entered.promise
+    let closed = false
+    closing = extension.close().then(() => { closed = true })
+    await stopped.promise
+    // All other cleanup has settled; the next event-loop turn exposes an unjoined identity cleanup.
+    await setImmediate()
+    expect(closed).toBe(false)
+    release.resolve(undefined)
+    await closing
+    expect(closed).toBe(true)
+  } finally {
+    release.resolve(undefined)
+    await pending
+    await closing
+    await extension.close()
+  }
 })

@@ -132,7 +132,7 @@ export default class AgencyAgentsRemote extends TypertRemoteService {
   @Remote('saveTeam')
   async saveTeam(team: TeamInput, enabled: boolean, expectedRevision: number, signal?: AbortSignal): Promise<TeamSnapshot> {
     signal?.throwIfAborted()
-    const snapshot = await this.teams().save(team, enabled, expectedRevision)
+    const snapshot = await this.teams().save(team, enabled, expectedRevision, signal)
     signal?.throwIfAborted()
     return this.describeTeams(snapshot)
   }
@@ -148,7 +148,7 @@ export default class AgencyAgentsRemote extends TypertRemoteService {
   @Remote('setTeamEnabled')
   async setTeamEnabled(id: string, enabled: boolean, expectedRevision: number, signal?: AbortSignal): Promise<TeamSnapshot> {
     signal?.throwIfAborted()
-    const snapshot = await this.teams().setEnabled(id, enabled, expectedRevision)
+    const snapshot = await this.teams().setEnabled(id, enabled, expectedRevision, signal)
     signal?.throwIfAborted()
     return this.describeTeams(snapshot)
   }
@@ -163,7 +163,7 @@ export default class AgencyAgentsRemote extends TypertRemoteService {
   @Remote('deleteTeam')
   async deleteTeam(id: string, expectedRevision: number, signal?: AbortSignal): Promise<TeamSnapshot> {
     signal?.throwIfAborted()
-    const snapshot = await this.teams().remove(id, expectedRevision)
+    const snapshot = await this.teams().remove(id, expectedRevision, signal)
     signal?.throwIfAborted()
     return this.describeTeams(snapshot)
   }
@@ -221,7 +221,7 @@ export default class AgencyAgentsRemote extends TypertRemoteService {
   @Remote('saveCustomExpert')
   async saveCustomExpert(expert: CustomExpertInput, enabled: boolean, expectedRevision: number, signal?: AbortSignal): Promise<CatalogSnapshot> {
     signal?.throwIfAborted()
-    const catalog = await this.library().saveCustom(expert, enabled, expectedRevision)
+    const catalog = await this.library().saveCustom(expert, enabled, expectedRevision, signal)
     signal?.throwIfAborted()
     return catalog
   }
@@ -236,7 +236,7 @@ export default class AgencyAgentsRemote extends TypertRemoteService {
   @Remote('deleteCustomExpert')
   async deleteCustomExpert(slug: string, expectedRevision: number, signal?: AbortSignal): Promise<CatalogSnapshot> {
     signal?.throwIfAborted()
-    const catalog = await this.library().deleteCustom(slug, expectedRevision)
+    const catalog = await this.library().deleteCustom(slug, expectedRevision, signal)
     signal?.throwIfAborted()
     return catalog
   }
@@ -251,7 +251,7 @@ export default class AgencyAgentsRemote extends TypertRemoteService {
   @Remote('setEnabled')
   async setEnabled(enabled: string[], expectedRevision: number, signal?: AbortSignal): Promise<{ enabled: string[]; revision: number }> {
     signal?.throwIfAborted()
-    const result = await this.library().setEnabled(enabled, expectedRevision)
+    const result = await this.library().setEnabled(enabled, expectedRevision, signal)
     signal?.throwIfAborted()
     return result
   }
