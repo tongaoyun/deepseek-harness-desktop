@@ -5,6 +5,27 @@ import { expect, it, onTestFinished } from 'vitest'
 import { DeepSeekHarnessApiClient } from '@deepseek-harness/product'
 import { PersonalConnectors } from '../src/personal-connectors.ts'
 
+it.each(['read', 'delete', 'configuration.read'])('rejects %s when the server returns another connector before further work', async (method) => {
+  const root = await mkdtemp(join(tmpdir(), 'personal-mcp-identity-'))
+  onTestFinished(() => rm(root, { recursive: true, force: true }))
+  const requests: string[] = []
+  const api = new DeepSeekHarnessApiClient({ baseUrl: 'https://product.example', getSessionToken: () => 'fixture-token',
+    fetch: async (url, init) => {
+      const path = new URL(typeof url === 'string' ? url : url instanceof URL ? url.href : url.url).pathname
+      requests.push(`${init?.method ?? 'GET'} ${path}`)
+      return Response.json({ success: true, data: { id: 'unrelated-mcp', version: '1.0.0', name: 'Unrelated', summary: 'Other resource',
+        category: 'other', visibility: 'PERSONAL', ownerEmployeeId: 'employee', canEdit: true, authMode: 'none',
+        ready: true, status: 'ready', transport: 'streamable-http', url: 'https://mcp.example', tools: [{ name: 'read' }] } })
+    } })
+  const manager = new PersonalConnectors(root, {
+    isEncryptionAvailable: () => true, encryptString: value => Buffer.from(value), decryptString: value => value.toString(),
+  }, () => 'employee')
+  onTestFinished(async () => { await manager.close(); api.close() })
+  await expect(manager.manage(`extensions.connector.${method}`, { id: 'owned-mcp', version: '1.0.0' },
+    api, 'employee', new AbortController().signal)).rejects.toThrow('owned-mcp')
+  expect(requests).toEqual([`GET /api/v1/connectors/owned-mcp${method.startsWith('configuration.') ? '/configuration-template' : ''}`])
+})
+
 async function fixture() {
   const root = await mkdtemp(join(tmpdir(), 'personal-mcp-order-'))
   onTestFinished(() => rm(root, { recursive: true, force: true }))

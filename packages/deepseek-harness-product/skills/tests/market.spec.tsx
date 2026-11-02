@@ -5,7 +5,7 @@ import * as Include from '@deepseek-ai/cordis-plugin-include'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
 import type { PropsRenderSlots } from '@deepseek-ai/dsh-client-ui-slots'
 import { SlotRegistry } from '@deepseek-ai/dsh-client-ui-renderer/client'
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { createElement, type ComponentType } from 'react'
 import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -74,6 +74,160 @@ async function setup(shared: boolean, includeCompany = true, personal = skill('�
   const view = render(createElement(entry.component as ComponentType<Pick<SectionProps, 't'>>, pageProps))
   return { data, mock, view }
 }
+
+it.each(['Escape', 'close', 'cancel'] as const)('keeps the creation form intact until its write completes (%s)', async (dismiss) => {
+  const { data, mock } = await setup(true)
+  data.writeDestinations.push({ key: 'dsh', path: '/skills/dsh', label: 'DSH skills', available: true })
+  const pending = deferred<undefined>()
+  mock.unary('skillsManager/createSkill', async () => {
+    await pending.promise
+    return ok({ name: 'acceptance-skill', path: '/skills/dsh/acceptance-skill', root: 'dsh' })
+  })
+  await screen.findByText('共享技能')
+  fireEvent.click(screen.getByRole('tab', { name: '我的' }))
+  fireEvent.click(screen.getByRole('button', { name: '创建技能' }))
+  const dialog = screen.getByRole('dialog', { name: '创建技能' })
+  const form = within(dialog)
+  fireEvent.change(form.getByRole('textbox', { name: '名称' }), { target: { value: 'acceptance-skill' } })
+  fireEvent.change(form.getByRole('textbox', { name: '简介' }), { target: { value: 'Acceptance fixture' } })
+  fireEvent.change(form.getByRole('textbox', { name: '正文（Markdown）' }), { target: { value: 'Use temporary data.' } })
+  try {
+    fireEvent.click(form.getByRole('button', { name: '创建技能' }))
+    await waitFor(() => { expect(mock.remote.skillsManager.createSkill).toHaveBeenCalledTimes(1) })
+    if (dismiss === 'Escape') fireEvent.keyDown(dialog, { key: 'Escape' })
+    else fireEvent.click(form.getByRole('button', { name: dismiss === 'close' ? '关闭' : '取消' }))
+    expect(screen.getByRole('dialog', { name: '创建技能' })).toBe(dialog)
+    for (const input of form.getAllByRole('textbox')) expect(input).toHaveProperty('disabled', true)
+    expect(form.getByRole('textbox', { name: '名称' })).toHaveProperty('value', 'acceptance-skill')
+    expect(form.getByRole('button', { name: '取消' })).toHaveProperty('disabled', true)
+    expect(form.getByRole('button', { name: '创建技能' })).toHaveProperty('disabled', true)
+    await act(async () => { pending.resolve(undefined); await pending.promise })
+    await waitFor(() => { expect(screen.queryByRole('dialog', { name: '创建技能' })).toBeNull() })
+    expect(screen.getByText('已创建技能：acceptance-skill')).toBeTruthy()
+  } finally {
+    await act(async () => { pending.resolve(undefined); await pending.promise })
+  }
+})
+
+it('reserves one import through file preparation and keeps its selection until the write completes', async () => {
+  const { data, mock } = await setup(true)
+  data.writeDestinations.push({ key: 'dsh', path: '/skills/dsh', label: 'DSH skills', available: true })
+  const reading = deferred<ArrayBuffer>()
+  const writing = deferred<undefined>()
+  const bytes = new TextEncoder().encode('---\nname: acceptance-skill\ndescription: Acceptance fixture\n---\nUse temporary data.')
+  const readFile = vi.fn(() => reading.promise)
+  const file = Object.assign(new File([bytes], 'SKILL.md'), { arrayBuffer: readFile })
+  mock.unary('skillsManager/uploadSkill', async () => {
+    await writing.promise
+    return ok({ imported: [{ name: 'acceptance-skill', overwritten: false, warnings: [] }], skipped: [], failed: [] })
+  })
+  await screen.findByText('共享技能')
+  fireEvent.click(screen.getByRole('tab', { name: '我的' }))
+  fireEvent.click(screen.getByRole('button', { name: '导入技能' }))
+  const dialog = screen.getByRole('dialog', { name: '导入技能' })
+  const form = within(dialog)
+  const input = dialog.querySelector('input[type="file"][accept]')
+  if (!input) throw new Error('Missing import file input')
+  fireEvent.change(input, { target: { files: [file] } })
+  const dropRead = deferred<ErrorCallback>()
+  const dropZone = form.getByText('拖拽技能到此处').parentElement
+  if (!dropZone) throw new Error('Missing import drop zone')
+  fireEvent.drop(dropZone, { dataTransfer: { items: [{ webkitGetAsEntry: () => ({
+    isFile: true,
+    file(_onFile: FileCallback, onError: ErrorCallback) { dropRead.resolve(onError) },
+  }) }] } })
+  const failDrop = await dropRead.promise
+  try {
+    const install = form.getByRole('button', { name: '安装' })
+    fireEvent.click(install)
+    await waitFor(() => { expect(readFile).toHaveBeenCalledTimes(1) })
+    expect(install).toHaveProperty('disabled', true)
+    fireEvent.click(install)
+    fireEvent.click(form.getByRole('button', { name: '关闭' }))
+    fireEvent.keyDown(dialog, { key: 'Escape' })
+    fireEvent.click(form.getByRole('button', { name: '取消' }))
+    fireEvent.click(form.getByRole('button', { name: '移除所选内容' }))
+    expect(screen.getByRole('dialog', { name: '导入技能' })).toBe(dialog)
+    expect(form.getByText('SKILL.md')).toBeTruthy()
+    expect(readFile).toHaveBeenCalledTimes(1)
+    await act(async () => { reading.resolve(bytes.buffer); await reading.promise })
+    await waitFor(() => { expect(mock.remote.skillsManager.uploadSkill).toHaveBeenCalledTimes(1) })
+    await act(async () => { failDrop(new DOMException('Dropped file unavailable')); await Promise.resolve() })
+    expect(form.queryByRole('alert')?.textContent).toBeUndefined()
+    expect(install).toHaveProperty('disabled', true)
+    fireEvent.click(form.getByRole('button', { name: '关闭' }))
+    expect(screen.getByRole('dialog', { name: '导入技能' })).toBe(dialog)
+    await act(async () => { writing.resolve(undefined); await writing.promise })
+    await waitFor(() => { expect(screen.queryByRole('dialog', { name: '导入技能' })).toBeNull() })
+    expect(screen.getByText('导入完成：acceptance-skill')).toBeTruthy()
+  } finally {
+    await act(async () => {
+      reading.resolve(bytes.buffer)
+      writing.resolve(undefined)
+      await Promise.all([reading.promise, writing.promise])
+    })
+  }
+})
+
+it('shows file preparation failures and permits importing the same selection again', async () => {
+  const { data, mock } = await setup(true)
+  data.writeDestinations.push({ key: 'dsh', path: '/skills/dsh', label: 'DSH skills', available: true })
+  const reading = deferred<ArrayBuffer>()
+  const bytes = new TextEncoder().encode('---\nname: acceptance-skill\ndescription: Acceptance fixture\n---\nUse temporary data.')
+  const readFile = vi.fn().mockImplementationOnce(() => reading.promise).mockResolvedValue(bytes.buffer)
+  const file = Object.assign(new File([bytes], 'SKILL.md'), { arrayBuffer: readFile })
+  mock.unary('skillsManager/uploadSkill', () => ok({ imported: [{ name: 'acceptance-skill', overwritten: false, warnings: [] }], skipped: [], failed: [] }))
+  await screen.findByText('共享技能')
+  fireEvent.click(screen.getByRole('tab', { name: '我的' }))
+  fireEvent.click(screen.getByRole('button', { name: '导入技能' }))
+  const dialog = screen.getByRole('dialog', { name: '导入技能' })
+  const form = within(dialog)
+  const input = dialog.querySelector('input[type="file"][accept]')
+  if (!input) throw new Error('Missing import file input')
+  fireEvent.change(input, { target: { files: [file] } })
+  try {
+    fireEvent.click(form.getByRole('button', { name: '安装' }))
+    await waitFor(() => { expect(readFile).toHaveBeenCalledTimes(1) })
+    await act(async () => { reading.reject(new Error('File permission revoked')); await reading.promise.catch(() => {}) })
+    expect(await form.findByRole('alert')).toHaveProperty('textContent', '操作失败：File permission revoked')
+    expect(form.getByText('SKILL.md')).toBeTruthy()
+    expect(form.getByRole('button', { name: '安装' })).toHaveProperty('disabled', false)
+    fireEvent.click(form.getByRole('button', { name: '安装' }))
+    await waitFor(() => { expect(screen.queryByRole('dialog', { name: '导入技能' })).toBeNull() })
+    expect(readFile).toHaveBeenCalledTimes(2)
+    expect(mock.remote.skillsManager.uploadSkill).toHaveBeenCalledTimes(1)
+  } finally {
+    await act(async () => { reading.resolve(bytes.buffer); await reading.promise.catch(() => {}) })
+  }
+})
+
+it('does not upload prepared files after the skills page is removed', async () => {
+  const { data, mock, view } = await setup(true)
+  data.writeDestinations.push({ key: 'dsh', path: '/skills/dsh', label: 'DSH skills', available: true })
+  const reading = deferred<ArrayBuffer>()
+  const bytes = new TextEncoder().encode('---\nname: acceptance-skill\ndescription: Acceptance fixture\n---\nUse temporary data.')
+  const readFile = vi.fn(() => reading.promise)
+  const file = Object.assign(new File([bytes], 'SKILL.md'), { arrayBuffer: readFile })
+  mock.unary('skillsManager/uploadSkill', () => ok({ imported: [], skipped: [], failed: [] }))
+  await screen.findByText('共享技能')
+  fireEvent.click(screen.getByRole('tab', { name: '我的' }))
+  fireEvent.click(screen.getByRole('button', { name: '导入技能' }))
+  const dialog = screen.getByRole('dialog', { name: '导入技能' })
+  const input = dialog.querySelector('input[type="file"][accept]')
+  if (!input) throw new Error('Missing import file input')
+  fireEvent.change(input, { target: { files: [file] } })
+  try {
+    fireEvent.click(within(dialog).getByRole('button', { name: '安装' }))
+    await waitFor(() => { expect(readFile).toHaveBeenCalledTimes(1) })
+    view.unmount()
+    const reads = mock.remote.skillsManager.readState.mock.calls.length
+    await act(async () => { reading.resolve(bytes.buffer); await reading.promise })
+    expect(mock.remote.skillsManager.uploadSkill).not.toHaveBeenCalled()
+    expect(mock.remote.skillsManager.readState).toHaveBeenCalledTimes(reads)
+  } finally {
+    await act(async () => { reading.resolve(bytes.buffer); await reading.promise })
+  }
+})
 
 it('shows published company skills in Market and preserves local, project, repository and trash views in Mine', async () => {
   await setup(true)
