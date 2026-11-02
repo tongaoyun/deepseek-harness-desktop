@@ -70,7 +70,8 @@ export class PersonalConnectors {
   private async manageConnector(method: string, id: string, input: Readonly<Record<string, unknown>>,
     api: DeepSeekHarnessApiClient, employee: string, signal: AbortSignal): Promise<unknown> {
     const deviceConfiguration = method.startsWith('extensions.connector.configuration.')
-    const entry = PublicConnector.parse(await api.request(`/api/v1/connectors/${encodeURIComponent(id)}${deviceConfiguration ? '/configuration-template' : ''}`, { signal }))
+    const entry = PublicConnector.extend({ id: z.literal(id) }).parse(
+      await api.request(`/api/v1/connectors/${encodeURIComponent(id)}${deviceConfiguration ? '/configuration-template' : ''}`, { signal }))
     if (input.version !== entry.version) throw new ProductError('EXTENSION_VERSION_CONFLICT', 'Connector changed; reopen its configuration', true)
     if (deviceConfiguration) {
       if (!this.localConfigurationAllowed(entry) || entry.status !== 'ready') {

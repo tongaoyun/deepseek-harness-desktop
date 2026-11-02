@@ -579,9 +579,11 @@ function runtimeConnector(value: unknown, api: DeepSeekHarnessApiClient, session
   if (endpoint.href !== expected.href || endpoint.username || endpoint.password) {
     throw new Error('deepseek-harness product: authenticated connector must use the product server proxy')
   }
-  const headers = connectorHeaders(record.headers)
+  const headers = new Headers(connectorHeaders(record.headers))
   const version = z.string().min(1).max(128).parse(record.version)
-  return { ...record, url: endpoint.href, headers: { ...headers, Authorization: `Bearer ${sessionToken}`, 'X-Harness-Connector-Version': version } }
+  headers.set('Authorization', `Bearer ${sessionToken}`)
+  headers.set('X-Harness-Connector-Version', version)
+  return { ...record, url: endpoint.href, headers: Object.fromEntries(headers) }
 }
 
 /**

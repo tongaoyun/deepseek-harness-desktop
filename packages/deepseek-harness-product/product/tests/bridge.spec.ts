@@ -439,7 +439,7 @@ describe('DeepSeekHarnessProductBridge', () => {
     const runtime = await bridge.invokeRuntime('connectors.list')
     expect(runtime).toEqual([{ ...connector,
       url: 'https://deepseek-harness.test/root/api/v1/connectors/erp/mcp',
-      headers: { 'x-connector-key': 'private-connector-key', Authorization: 'Bearer employee-secret', 'X-Harness-Connector-Version': '1.0.0' } }])
+      headers: { 'x-connector-key': 'private-connector-key', authorization: 'Bearer employee-secret', 'x-harness-connector-version': '1.0.0' } }])
     await bridge.dispose()
   })
 
@@ -459,6 +459,24 @@ describe('DeepSeekHarnessProductBridge', () => {
     })
     try {
       await expect(bridge.invokeRuntime('connectors.list')).rejects.toThrow(/invalid connector header/)
+    } finally { await bridge.dispose() }
+  })
+
+  it.each(['employee-bearer', 'oauth'])('replaces case-insensitive authentication and version headers for %s connectors', async (authMode) => {
+    const connector = { id: 'erp', version: '1.0.0', name: 'ERP', status: 'ready', ready: true,
+      authorizationStatus: 'AUTHORIZED', authMode, transport: 'streamable-http', url: '/api/v1/connectors/erp/mcp',
+      headers: { authorization: 'Bearer outdated', AUTHORIZATION: 'Bearer duplicate',
+        'x-harness-connector-version': '0.0.1', 'X-HARNESS-CONNECTOR-VERSION': '0.0.2', 'x-connector-key': 'private-key' },
+      arguments: [], environment: {}, tools: [{ name: 'orders.get', access: 'READ' }] }
+    const bridge = new DeepSeekHarnessProductBridge({ serverUrl: 'https://deepseek-harness.test',
+      sessionToken: 'employee-secret', initialSession: { authenticated: true, employeeId: 'employee-1' },
+      fetch: catalogTransport({ ...immutableCatalog, '/api/v1/connectors': [connector] }) })
+    try {
+      const runtime = await bridge.invokeRuntime('connectors.list', { ids: ['erp'] }) as Array<{ headers: Record<string, string> }>
+      const headers = new Headers(runtime[0]?.headers)
+      expect(headers.get('authorization')).toBe('Bearer employee-secret')
+      expect(headers.get('x-harness-connector-version')).toBe('1.0.0')
+      expect(headers.get('x-connector-key')).toBe('private-key')
     } finally { await bridge.dispose() }
   })
 
