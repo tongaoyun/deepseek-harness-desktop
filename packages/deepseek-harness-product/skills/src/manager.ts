@@ -105,15 +105,12 @@ export class SkillsManager extends TypertRemoteService {
       }
       try {
         const value = await task(signal)
-        // Upstream readers may finish after transport cancellation (for
-        // example a late mocked response). Never commit a value that crossed
-        // the caller or service lifetime boundary.
-        signal.throwIfAborted()
         if (value && typeof value === 'object' && 'ok' in value && value.ok === false && 'error' in value && typeof value.error === 'string') {
           const failure: OperationError = { ok: false, error: value.error, ...'code' in value && typeof value.code === 'string' ? { code: value.code } : {}, ...'params' in value && value.params && typeof value.params === 'object' && !Array.isArray(value.params) && isJsonValue(value.params) ? { params: value.params as Record<string, JsonValue> } : {} }
           throw new RemoteError('skills/operation', failure.error, failure)
         }
         if (notify) this.afterWrite()
+        signal.throwIfAborted()
         // The discriminant above removed the core operation's failure branch.
         return value as Success<T>
       } catch (error) {

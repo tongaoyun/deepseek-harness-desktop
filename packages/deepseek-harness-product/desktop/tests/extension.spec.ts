@@ -13,7 +13,8 @@ const fixture = vi.hoisted(() => ({ authenticate: vi.fn<typeof import('@deepseek
   companyContent: vi.fn(async () => null),
   bootstrap: vi.fn(async () => ({ modelApiKey: 'model-key', endpoints: { litellm: 'https://example.test/v1' }, models: ['deepseek-v4-flash', 'gpt-example'] })),
   start: vi.fn(async () => {}), stop: vi.fn(async () => {}), dispose: vi.fn(),
-  knowledgePrepare: vi.fn(async () => {}), knowledgeClose: vi.fn(async () => {}), writeFile: vi.fn(),
+  knowledgePrepare: vi.fn(async () => {}), knowledgeClose: vi.fn(async () => {}), writeFile: vi.fn(), removeFile: vi.fn(),
+  encryptionAvailable: vi.fn(() => false),
   knowledgeReset: vi.fn(async () => {}),
   companyPrepare: vi.fn(async () => {}), companyClose: vi.fn(async () => {}),
   bridgeOptions: vi.fn<(options: ProductBridgeOptions) => void>(),
@@ -26,11 +27,12 @@ vi.mock('../src/company-content-sync.ts', () => ({ CompanyContentSync: class {
   close = fixture.companyClose
 } }))
 vi.mock('../src/builtin-capabilities.ts', () => ({ builtinCapabilityPatches: () => [] }))
-vi.mock('node:fs', async original => ({ ...await original<typeof import('node:fs')>(), writeFileSync: fixture.writeFile }))
+vi.mock('node:fs', async original => ({ ...await original<typeof import('node:fs')>(), writeFileSync: fixture.writeFile,
+  rmSync: fixture.removeFile }))
 vi.mock('electron', () => ({
   app: { isPackaged: false, getPath: () => '/unused-fixture', getAppPath: () => '/unused-fixture', getVersion: () => '0.1.0', quit: fixture.quit },
   dialog: { showMessageBox: fixture.dialog }, shell: { openExternal: vi.fn(async () => {}) },
-  safeStorage: { isEncryptionAvailable: () => false },
+  safeStorage: { isEncryptionAvailable: fixture.encryptionAvailable, encryptString: (value: string) => Buffer.from(value) },
   screen: { getAllDisplays: () => [{ scaleFactor: 2 }] },
 }))
 vi.mock('../src/deepseek-harness-product-config.ts', () => ({ resolveDeepSeekHarnessProductConfig: () => ({ serverUrl: 'https://example.test',
@@ -66,6 +68,7 @@ beforeEach(() => {
   fixture.start.mockReset().mockResolvedValue(); fixture.knowledgePrepare.mockReset().mockResolvedValue()
   fixture.companyPrepare.mockReset().mockResolvedValue(); fixture.companyClose.mockReset().mockResolvedValue()
   fixture.knowledgeReset.mockReset().mockResolvedValue()
+  fixture.writeFile.mockReset(); fixture.removeFile.mockReset(); fixture.encryptionAvailable.mockReset().mockReturnValue(false)
 })
 
 it.each(['files', 'native', 'company'] as const)('joins startup during %s preparation and rejects late startup effects on close', async (phase) => {
@@ -368,5 +371,44 @@ it('joins an earlier employee cleanup before reporting extension shutdown comple
     await pending
     await closing
     await extension.close()
+  }
+})
+
+it.each(['save', 'remove'] as const)('invalidates employee resources and joins cleanup when stored sign-in %s fails', async (operation) => {
+  const extension = createExtension({ getWindow: () => undefined, isQuitting: () => false, requestHost: async () => ({}) })
+  const entered = Promise.withResolvers<undefined>()
+  const release = Promise.withResolvers<undefined>()
+  const failure = new Error('Local session storage is unavailable')
+  const resets = vi.spyOn(PersonalConnectors.prototype, 'resetIdentity')
+  let pending: Promise<unknown> | undefined
+  try {
+    const persist = fixture.bridgeOptions.mock.calls[0]![0].persistSession
+    if (!persist) throw new Error('Missing employee resource cleanup')
+    await persist({ authenticated: true, employeeId: 'fixture' }, 'initial-token')
+    await extension.prepareHost({ directory: '/unused-profile', installAnchor: '/unused-runtime/package.json' })
+    resets.mockClear(); fixture.knowledgeReset.mockClear()
+    fixture.companyClose.mockImplementationOnce(async () => { entered.resolve(undefined); await release.promise })
+    fixture.encryptionAvailable.mockReturnValue(true)
+    const storage = operation === 'save' ? fixture.writeFile : fixture.removeFile
+    storage.mockImplementationOnce(() => { throw failure })
+    const session = operation === 'save' ? { authenticated: true, employeeId: 'second' } : { authenticated: false }
+    const token = operation === 'save' ? 'fixture-token' : undefined
+    let settled = false
+    expect(() => {
+      pending = Promise.resolve(persist(session, token)).then((value) => { settled = true; return value },
+        (error: unknown) => { settled = true; return error })
+    }).not.toThrow()
+    await entered.promise
+    expect(resets).toHaveBeenCalledWith(session.employeeId)
+    expect(fixture.knowledgeReset).toHaveBeenCalledOnce()
+    await setImmediate()
+    expect(settled).toBe(false)
+    release.resolve(undefined)
+    expect(await pending).toMatchObject({ errors: [failure] })
+  } finally {
+    release.resolve(undefined)
+    await pending
+    await extension.close()
+    resets.mockRestore()
   }
 })
