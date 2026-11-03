@@ -684,6 +684,8 @@ export function AgentsButton(props: ButtonProps): React.ReactElement {
   const [query, setQuery] = React.useState('')
   const [busy, setBusy] = React.useState(false)
   const working = React.useRef(false)
+  // 失败的读取保留到显式重试，不能以旧目录继续启用或插入。
+  const catalogRead = React.useRef<Promise<CatalogState> | undefined>(undefined)
   const epoch = React.useRef(0)
   const menuId = React.useId()
   const [menuPosition, setMenuPosition] = React.useState<ExpertMenuPosition | undefined>()
@@ -751,11 +753,12 @@ export function AgentsButton(props: ButtonProps): React.ReactElement {
     const request = epoch.current
     setInsertError(null)
     // 名册已在缓存里时后台刷新，避免搜索框下闪「正在处理…」。
-    if (catalog.experts.length === 0) setBusy(true)
-    working.current = true
-    void props.cache.catalog.refresh().catch((error: unknown) => {
+    setBusy(catalog.experts.length === 0)
+    const pending = props.cache.catalog.refresh()
+    catalogRead.current = pending
+    void pending.catch((error: unknown) => {
       if (request === epoch.current) setInsertError(writeErrorMessage(error, { t: props.t }))
-    }).finally(() => { working.current = false; setBusy(false) })
+    }).finally(() => { if (request === epoch.current) setBusy(false) })
   }
 
   const onClick = (): void => {
@@ -772,15 +775,19 @@ export function AgentsButton(props: ButtonProps): React.ReactElement {
     working.current = true
     setBusy(true)
     setInsertError(null)
-    const request = epoch.current
+    const request = ++epoch.current
     let newlyEnabled = false
+    let writeStarted = false
     try {
       const insert = props.prepareInsertion?.() ?? props.insertReference
+      await catalogRead.current
+      if (request !== epoch.current) return
       // 使用当前快照的修订号写入；冲突后刷新并交还用户重试，不静默覆盖。
       let current: EnabledState = props.cache.catalog.getSnapshot()
       const expert = current.experts.find(item => item.slug === slug)
       if (expert === undefined || expert.conflict) throw new Error(props.t('custom.unavailable'))
       if (!current.enabled.has(slug)) {
+        writeStarted = true
         current = await writeEnabled(props.remote, props.cache, new Set([...current.enabled, slug]), current.revision)
         newlyEnabled = current.enabled.has(slug)
       }
@@ -792,12 +799,15 @@ export function AgentsButton(props: ButtonProps): React.ReactElement {
       // 宿主插入操作负责把光标交还编辑器；不要再抢回工具栏按钮焦点。
       close()
     } catch (error) {
+      if (request !== epoch.current) return
       let refreshed = false
-      try { await props.cache.catalog.refresh(); refreshed = true } catch { /* 保留原错误并明确刷新是否成功。 */ }
+      if (writeStarted) {
+        try { await props.cache.catalog.refresh(); refreshed = true } catch { /* 保留原错误并明确刷新是否成功。 */ }
+      }
       if (request === epoch.current) setInsertError(writeErrorMessage(error, { refreshed, t: props.t }))
     } finally {
       working.current = false
-      setBusy(false)
+      if (request === epoch.current) setBusy(false)
     }
   }
 
