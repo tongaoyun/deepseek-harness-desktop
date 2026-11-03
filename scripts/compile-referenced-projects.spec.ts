@@ -102,6 +102,7 @@ describe('internal artifact build order', () => {
     buildLibraryArtifacts(root, hostOnly)
 
     const expected = [
+      ['--filter', '@deepseek-ai/dsh-typert-generator', 'run', 'build'],
       ['exec', 'tsdown', '--config-loader', 'native', '--env.DSH_BUILD_FACE', 'host'],
       ...hostOnly ? [] : [
         ['--filter', '@deepseek-ai/dsh-desktop', 'run', 'bundle'],
@@ -132,6 +133,7 @@ describe('internal artifact build order', () => {
 
     expect(readFileSync(join(consumer, 'lib/types/index.js'), 'utf8')).toContain('TYPERT')
     expect(commands().map(command => command.args)).toEqual([
+      ['--filter', '@deepseek-ai/dsh-typert-generator', 'run', 'build'],
       ['exec', 'tsdown', '--config-loader', 'native', '--env.DSH_BUILD_FACE', 'host'],
     ])
   })
@@ -141,7 +143,10 @@ describe('internal artifact build order', () => {
     const commands = recordedCommands(root, true)
 
     expect(() => { buildLibraryArtifacts(root, false) }).toThrow('exited with 7')
-    expect(commands()).toHaveLength(1)
+    expect(commands().map(command => command.args)).toEqual([
+      ['--filter', '@deepseek-ai/dsh-typert-generator', 'run', 'build'],
+      ['exec', 'tsdown', '--config-loader', 'native', '--env.DSH_BUILD_FACE', 'host'],
+    ])
   })
 
   it('defers benchmark diagnostics while normal artifact builds reject the same source', () => {
@@ -153,6 +158,7 @@ describe('internal artifact build order', () => {
 
     expect(commands()).toEqual([
       ['run', 'build:native-system'],
+      ['--filter', '@deepseek-ai/dsh-typert-generator', 'run', 'build'],
       ['exec', 'tsdown', '--config-loader', 'native', '--env.DSH_BUILD_FACE', 'host'],
       ['--filter', '@deepseek-ai/dsh-desktop', 'run', 'bundle'],
       ['exec', 'tsdown', '--config-loader', 'native', '--env.DSH_BUILD_FACE', 'client'],
@@ -162,7 +168,7 @@ describe('internal artifact build order', () => {
     ].map(args => ({ args, title: 'Inherited Build Title' })))
 
     expect(() => { buildLibraryArtifacts(root, false) }).toThrow('host compiler exited with')
-    expect(commands()).toHaveLength(7)
+    expect(commands()).toHaveLength(8)
   })
 })
 

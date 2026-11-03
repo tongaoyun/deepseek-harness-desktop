@@ -17,6 +17,31 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 import { expect, test, TestRunner } from 'vitest'
 
 const runner = fileURLToPath(new URL('./transform-corpus-check.ts', import.meta.url))
+const root = new URL('../../../../../', import.meta.url)
+
+function runCorpusBundleFixture(bundle: string, source: string) {
+  const script = `
+    import { registerHooks } from 'node:module'
+    const target = ${JSON.stringify(new URL(bundle, root).href)}
+    registerHooks({
+      resolve(specifier, context, nextResolve) {
+        if (specifier === target) return { url: target, shortCircuit: true }
+        return nextResolve(specifier, context)
+      },
+      load(url, context, nextLoad) {
+        if (url === target) {
+          return { format: 'module', shortCircuit: true, source: ${JSON.stringify(source)} }
+        }
+        return nextLoad(url, context)
+      },
+    })
+    process.argv = [process.execPath, 'corpus-classification', ${JSON.stringify(bundle)}]
+    await import(${JSON.stringify(pathToFileURL(runner).href)})
+  `
+  return spawnSync(process.execPath, ['--import', 'tsx/esm', '--input-type=module', '-e', script], {
+    cwd: fileURLToPath(root), encoding: 'utf8', timeout: TestRunner.getCurrentTest()!.timeout,
+  })
+}
 
 test('every built bundle imports under Node', (context) => {
   const finished = spawnSync(process.execPath, ['--import', 'tsx/esm', runner], { encoding: 'utf8' })
@@ -42,7 +67,6 @@ test.each([
   ['other-code', 1, '- UNEXPECTED BASELINE FAILURE'],
   ['clean', 1, '- STALE EXEMPTION'],
 ] as const)('classifies dockkit import: %s', (mode, status, finding) => {
-  const root = new URL('../../../../../', import.meta.url)
   const bundle = 'packages/client/ui-dockkit/lib/index.js'
   const cssBase = fileURLToPath(new URL('packages/client/ui-dockkit/lib/components/dockkit.module', root))
   const extension = mode === 'other-extension' ? '.wasm' : '.css'
@@ -58,27 +82,34 @@ test.each([
   const source = mode === 'clean'
     ? 'export {}'
     : `throw Object.assign(new Error(${JSON.stringify(message)}), { code: ${JSON.stringify(mode === 'other-code' ? 'ERR_OTHER' : 'ERR_UNKNOWN_FILE_EXTENSION')} })`
-  const script = `
-    import { registerHooks } from 'node:module'
-    const target = ${JSON.stringify(new URL(bundle, root).href)}
-    registerHooks({
-      resolve(specifier, context, nextResolve) {
-        if (specifier === target) return { url: target, shortCircuit: true }
-        return nextResolve(specifier, context)
-      },
-      load(url, context, nextLoad) {
-        if (url === target) {
-          return { format: 'module', shortCircuit: true, source: ${JSON.stringify(source)} }
-        }
-        return nextLoad(url, context)
-      },
-    })
-    process.argv = [process.execPath, 'corpus-classification', ${JSON.stringify(bundle)}]
-    await import(${JSON.stringify(pathToFileURL(runner).href)})
-  `
-  const finished = spawnSync(process.execPath, ['--import', 'tsx/esm', '--input-type=module', '-e', script], {
-    cwd: fileURLToPath(root), encoding: 'utf8', timeout: TestRunner.getCurrentTest()!.timeout,
-  })
+  const finished = runCorpusBundleFixture(bundle, source)
+  const output = `${finished.stdout}${finished.stderr}`
+  expect(finished.error).toBeUndefined()
+  expect(finished.signal).toBeNull()
+  expect(finished.status, output).toBe(status)
+  expect(output).toContain(finding)
+  if (finding.startsWith('- UNEXPECTED BASELINE FAILURE')) {
+    expect(output).toContain(`- UNEXPECTED BASELINE FAILURE ${bundle}: ${message}\n`)
+  }
+})
+
+test.each([
+  ['electron-export', 0, 'baselineExempt=1 unexpectedBaselineFailure=0'],
+  ['other-electron-export', 0, 'baselineExempt=1 unexpectedBaselineFailure=0'],
+  ['other-module', 1, '- UNEXPECTED BASELINE FAILURE'],
+  ['other-error', 1, '- UNEXPECTED BASELINE FAILURE'],
+  ['other-message', 1, '- UNEXPECTED BASELINE FAILURE'],
+  ['clean', 1, '- STALE EXEMPTION'],
+] as const)('classifies product Electron import: %s', (mode, status, finding) => {
+  const bundle = 'packages/deepseek-harness-product/desktop/lib/index.js'
+  const moduleName = mode === 'other-module' ? 'node:fs' : 'electron'
+  const name = mode === 'other-electron-export' ? 'screen' : 'app'
+  const message = mode === 'other-message'
+    ? 'product-desktop-negative-control'
+    : `The requested module '${moduleName}' does not provide an export named '${name}'`
+  const error = mode === 'other-error' ? 'Error' : 'SyntaxError'
+  const source = mode === 'clean' ? 'export {}' : `throw new ${error}(${JSON.stringify(message)})`
+  const finished = runCorpusBundleFixture(bundle, source)
   const output = `${finished.stdout}${finished.stderr}`
   expect(finished.error).toBeUndefined()
   expect(finished.signal).toBeNull()

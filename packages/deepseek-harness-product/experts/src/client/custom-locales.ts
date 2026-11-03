@@ -63,3 +63,21 @@ export const customEn = {
   "custom.continueAsNew": "Continue as new expert",
   'custom.templateText': 'You are a specialist advisor.\n\nResponsibilities\nDefine your domain and the problems you solve.\n\nApproach\nUnderstand the context and goals first. Ask when information is missing.\n\nOutput\nProvide conclusions, evidence and actionable next steps. Do not invent facts.',
 } satisfies Record<keyof typeof customZh, string>
+
+/** English fallback for the Japanese locale. */
+export const customJa: Record<keyof typeof customZh, string> = { ...customEn }
+
+/** English fallback for the Spanish locale. */
+export const customEs: Record<keyof typeof customZh, string> = { ...customEn }
+
+/** English fallback for the French locale. */
+export const customFr: Record<keyof typeof customZh, string> = { ...customEn }
+
+/** English fallback for the German locale. */
+export const customDe: Record<keyof typeof customZh, string> = { ...customEn }
+
+/** English fallback for the Russian locale. */
+export const customRu: Record<keyof typeof customZh, string> = { ...customEn }
+
+/** English fallback for the Portuguese locale. */
+export const customPt: Record<keyof typeof customZh, string> = { ...customEn }

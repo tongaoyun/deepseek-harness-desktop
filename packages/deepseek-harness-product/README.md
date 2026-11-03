@@ -30,6 +30,8 @@ kind: "package-group"
 
 专家和技能由产品桌面固定装配，页面合入产品 UI，随桌面统一更新。官方 profile 不加载这些产品模块。
 
+企业界面提供中文和英文词条；其他 Harness 语言使用英文词条。
+
 <a id="related-documentation"></a>
 ## 相关文档
 

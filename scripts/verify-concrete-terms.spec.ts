@@ -55,6 +55,12 @@ describe('concrete terminology policy', () => {
   it('excludes vendored sources and frozen Agent Notes', () => {
     expect(findConcreteTermViolations(`vendor/example/${blockedTerm}.ts`, blockedTerm)).toEqual([])
     expect(findConcreteTermViolations(
+      'packages/deepseek-harness-product/experts/tests/fixtures/vendor/example.md',
+      blockedTerm,
+    )).toEqual([])
+    const authored = 'packages/deepseek-harness-product/experts/tests/fixtures/vendor-notes.md'
+    expect(findConcreteTermViolations(authored, blockedTerm)).toEqual([{ file: authored, line: 1 }])
+    expect(findConcreteTermViolations(
       `.agents/notes/archived/process/${blockedTerm}.md`,
       blockedTerm,
     )).toEqual([])

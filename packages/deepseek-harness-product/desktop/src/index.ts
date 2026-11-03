@@ -389,8 +389,7 @@ export function createExtension(context: ExtensionContext): ProductDesktopExtens
           DSH_COMPANY_SKILLS_ROOT: roots.skillsRoot,
           DSH_COMPANY_EXPERTS_ROOT: roots.expertsRoot,
           DEEPSEEK_HARNESS_SESSION_TOKEN: undefined,
-          DEEPSEEK_API_KEY: bootstrap.modelApiKey,
-          DEEPSEEK_BASE_URL: bootstrap.endpoints.litellm,
+          DSH_PRODUCT_MODEL_API_KEY: bootstrap.modelApiKey,
           DSH_DESKTOP_PROFILE_PATCHES: JSON.stringify([
             fileURLToPath(import.meta.resolve('@deepseek-harness/product-runtime/cordis.patch.yml')),
             fileURLToPath(import.meta.resolve('@deepseek-harness/product-ui/cordis.patch.yml')),

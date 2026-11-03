@@ -13,7 +13,7 @@ function isChineseDominant(text: string): boolean {
 }
 
 async function readPersona(locale: 'en' | 'zh', division: string, slug: string): Promise<string> {
-  const root = locale === 'en' ? '../../../../vendor/product-expert-fixtures/agency-agents/' : '../../../../vendor/product-expert-fixtures/agency-agents-zh/'
+  const root = locale === 'en' ? '../tests/fixtures/vendor/agency-agents/' : '../tests/fixtures/vendor/agency-agents-zh/'
   const raw = await readFile(new URL(`${root}${division}/${slug}.md`, import.meta.url), 'utf8')
   const parsed = parseFrontmatter(raw)
   if (parsed === undefined || parsed.body === '') throw new Error(`${locale}:${division}/${slug} persona 无效`)

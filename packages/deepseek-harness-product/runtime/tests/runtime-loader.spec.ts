@@ -231,6 +231,12 @@ it('loads native skills with authorized MCP and exact knowledge scope, replays a
     await ctx.loader.root.update(structuredClone(rows)); await ctx.loader.await()
     await ctx.loader.resolve('product-runtime').fiber?.await()
   }
+  const unmount = async () => {
+    // Removed entries leave the Loader tree before their asynchronous effects settle.
+    const fiber = ctx.loader.resolve('product-runtime').fiber
+    await ctx.loader.root.update([]); await ctx.loader.await()
+    await fiber?.await()
+  }
   const request = (requestId: number, method: string, payload: object = {}) => {
     const response = new Promise<Record<string, unknown>>(resolve => responseWaiters.set(requestId, resolve))
     emitMessage({ type: 'extension-control', namespace: 'product', requestId, method, payload })
@@ -401,7 +407,7 @@ it('loads native skills with authorized MCP and exact knowledge scope, replays a
   expect((await execute(ordersRead)).isError).toBe(true)
   expect(mcpCalls).toEqual(['orders_read'])
   connectorReady = true
-  await ctx.loader.root.update([]); await ctx.loader.await()
+  await unmount()
   expect(ctx.tools.schemas(handle.agent).map(tool => tool.name)).not.toContain(ordersRead)
   expect(process.listenerCount('message')).toBe(before)
   await handle.dispose()
@@ -422,7 +428,7 @@ it('loads native skills with authorized MCP and exact knowledge scope, replays a
   expect(catalogReads).toBe(2)
   expect(mcpRequests).toEqual(requestsBeforeCreate)
   await reused.dispose()
-  await ctx.loader.root.update([]); await ctx.loader.await()
+  await unmount()
   await mount()
   expect(catalogReads).toBe(3)
   const offline = await create('offline-connectors')
@@ -434,7 +440,7 @@ it('loads native skills with authorized MCP and exact knowledge scope, replays a
   expect(JSON.stringify(offline.agent.session.snapshotEvents())).not.toContain(relayCredential)
   await offline.dispose()
   mcpAvailable = true
-  await ctx.loader.root.update([]); await ctx.loader.await()
+  await unmount()
   catalogInvalid = true
   await mount()
   const degraded = await create('invalid-connector-catalog')
@@ -471,7 +477,7 @@ it('loads native skills with authorized MCP and exact knowledge scope, replays a
   expect(await request(94, 'connectors.refresh')).toMatchObject({ result: { connectedIds: ['erp'] } })
   stopErrors()
   await degraded.dispose()
-  await ctx.loader.root.update([]); await ctx.loader.await()
+  await unmount()
   expect(ctx.tools.schemas().map(tool => tool.name)).not.toContain(ordersRead)
   await mount()
   companyBindingMissing = true
@@ -517,8 +523,7 @@ it('loads native skills with authorized MCP and exact knowledge scope, replays a
   const unloadingCompanyRead = expect(restoredCompanyContent.read()).rejects.toThrow(/unloaded|Host stopped/)
   const unloadingCompanyRefresh = expect(restoredCompanyContent.refresh()).rejects.toThrow(/unloaded|Host stopped/)
   await vi.waitFor(() => { expect(pendingCompanyCatalog).toHaveLength(4) })
-  const unloading = ctx.loader.resolve('product-runtime').fiber
-  await ctx.loader.root.update([]); await ctx.loader.await(); await unloading?.dispose()
+  await unmount()
   await Promise.all([unloadingCompanyCheck, unloadingCompanyRead, unloadingCompanyRefresh])
   expect(cancelled).toEqual(expect.arrayContaining(pendingCompanyCatalog))
   expect(cancelled).toContain(pendingPins[3])
@@ -536,8 +541,7 @@ it('loads native skills with authorized MCP and exact knowledge scope, replays a
   catalogPending = true
   const mounting = ctx.loader.root.update(structuredClone(rows)).then(() => ctx.loader.await())
   await vi.waitFor(() => { expect(pendingCatalog).toBeDefined() })
-  const starting = ctx.loader.resolve('product-runtime').fiber
-  await ctx.loader.root.update([]); await ctx.loader.await(); await starting?.dispose()
+  await unmount()
   await mounting
   expect(cancelled).toContain(pendingCatalog)
   expect(process.listenerCount('message')).toBe(before)

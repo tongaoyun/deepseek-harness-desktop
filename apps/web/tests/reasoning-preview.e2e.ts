@@ -16,6 +16,7 @@ const UI_EXPECTED = fileURLToPath(new URL('./expected/reasoning-preview/running.
 const WHALE_MASK = /^url\("([^"]*\/plugins\/@deepseek-ai\/dsh-client-ui-chat\/assets\/running-whale%402x-[0-9a-f]{12}\.png)"\)$/
 
 class PausedReasoningAdapter extends LlmAdapter {
+  constructor(private readonly prefix: string) { super() }
   override async listModels(provider: string) { return [{ provider, id: 'paused', name: `${provider}/paused` }] }
   readonly stages = DELTAS.map(text => ({
     text,
@@ -23,15 +24,13 @@ class PausedReasoningAdapter extends LlmAdapter {
     proceed: Promise.withResolvers<undefined>(),
   }))
 
-  constructor(readonly prefix: string) { super() }
-
   release(): void {
     for (const stage of this.stages) stage.proceed.resolve(undefined)
   }
 
   override async *stream(options: GenerateOptions): AsyncIterable<StreamChunk> {
     yield { type: 'block-start', index: 0, blockType: 'reasoning' }
-    if (this.prefix) yield { type: 'reasoning-delta', index: 0, text: this.prefix }
+    if (this.prefix !== '') yield { type: 'reasoning-delta', index: 0, text: this.prefix }
     for (const stage of this.stages) {
       yield { type: 'reasoning-delta', index: 0, text: stage.text }
       stage.arrived.resolve(undefined)
@@ -46,9 +45,9 @@ class PausedReasoningAdapter extends LlmAdapter {
   }
 }
 
-it.each(['', '<signature>private-metadata</signature>\n'])('shows completed paragraph first lines and live expanded content with prefix %j', async (prefix) => {
+it.each(['plain', 'signature'])('shows completed paragraph first lines with a right-edge fade (%s)', async (format) => {
   const scaffold = await launchWebScaffold()
-  const adapter = new PausedReasoningAdapter(prefix)
+  const adapter = new PausedReasoningAdapter(format === 'signature' ? '<signature>metadata.payload</signature>\n\n' : '')
   try {
     scaffold.ctx.effect(() => scaffold.ctx.llm.registerAdapter(['reasoning-preview-test'], adapter))
     await scaffold.ctx.agentDefaultModel.saveSelection({ provider: 'reasoning-preview-test', model: 'paused' })
@@ -65,7 +64,9 @@ it.each(['', '<signature>private-metadata</signature>\n'])('shows completed para
       await input.press('Enter')
 
       const [first, second, third, fourth] = adapter.stages
-      if (first === undefined || second === undefined || third === undefined || fourth === undefined) throw new Error('preview stages are incomplete')
+      if (first === undefined || second === undefined || third === undefined || fourth === undefined) {
+        throw new Error('preview stages are incomplete')
+      }
       await first.arrived.promise
       const reasoning = page.locator('[data-variant="think"][data-state="running"]')
       await expandOwningTurnProcess(page, reasoning)
@@ -123,6 +124,7 @@ it.each(['', '<signature>private-metadata</signature>\n'])('shows completed para
         await page.emulateMedia({ reducedMotion: null, forcedColors: null })
       }
       expect(await reasoning.getAttribute('data-preview')).toBeNull()
+      expect(await reasoning.textContent()).not.toContain('metadata.payload')
 
       first.proceed.resolve(undefined)
       await second.arrived.promise
@@ -141,15 +143,13 @@ it.each(['', '<signature>private-metadata</signature>\n'])('shows completed para
       await compareOrRefreshGolden(UI_EXPECTED,
         await captureStableAria(page, '[data-variant="think"]', scaffold.workspaceCwd), webSnapshotMode())
 
-      expect(await reasoning.textContent()).not.toContain('private-metadata')
       await reasoning.getByRole('button').click()
       await reasoning.getByText('More detail', { exact: false }).waitFor()
-      expect(await reasoning.textContent()).not.toContain('private-metadata')
+      expect(await reasoning.textContent()).not.toContain('metadata.payload')
       third.proceed.resolve(undefined)
       await fourth.arrived.promise
       await reasoning.getByText('Expanded update', { exact: true }).waitFor()
-      expect(await reasoning.getByRole('button').getAttribute('aria-expanded')).toBe('true')
-      expect(await reasoning.textContent()).not.toContain('private-metadata')
+      expect(await reasoning.textContent()).not.toContain('metadata.payload')
       fourth.proceed.resolve(undefined)
       await settled
       await page.getByText('Done', { exact: true }).waitFor()

@@ -37,7 +37,6 @@ export async function mountWorkflowRuntime(
   options: { cwd?: string; mode?: SandboxMode; runtimeConfig?: NodeRuntimeConfig } = {},
 ): Promise<NodePtcRuntime> {
   if (!ctx.get('sessions')) await ctx.plugin(SessionStore)
-  if (!ctx.get('agents')) await ctx.plugin(AgentRegistry)
   if (!ctx.get('sessionProjections')) await ctx.plugin(SessionProjections)
   if (!ctx.get('agents')) await ctx.plugin(AgentRegistry)
   if (!ctx.get('fs')) await ctx.plugin(FileSystem)

@@ -31,8 +31,10 @@
   cursor: pointer;
 }
 
-.tool:hover {
-  background: var(--dsw-alias-bg-hover);
+@media (hover: hover) {
+  .tool:hover {
+    background: var(--dsw-alias-interactive-bg-hover);
+  }
 }
 
 .body {

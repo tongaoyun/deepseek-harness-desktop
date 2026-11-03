@@ -80,7 +80,7 @@ describe('专家团宿主与远端集成', () => {
         },
       },
     })
-    apply(ctx, { root: fileURLToPath(new URL('../../../../vendor/product-expert-fixtures/agency-agents', import.meta.url)), provider: 'spawn', divisions: ['product', 'design', 'engineering'], ...volatileConfig(settings) } as never)
+    apply(ctx, { root: fileURLToPath(new URL('../tests/fixtures/vendor/agency-agents', import.meta.url)), provider: 'spawn', divisions: ['product', 'design', 'engineering'], ...volatileConfig(settings) } as never)
     const remote = new AgencyAgentsRemote(ctx)
     expect((await remote.getTeams(new AbortController().signal)).teams).toEqual([])
     const { id: _fixtureId, ...firstDraft } = TEST_TEAMS[0]

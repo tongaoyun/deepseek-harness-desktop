@@ -2,6 +2,7 @@
   "extends": "./tsconfig.shared.json",
   "files": [
     "src/client.ts",
+    "src/client-locales.ts",
     "src/client-types.ts",
     "src/remote.ts",
     "src/remote-client.ts",

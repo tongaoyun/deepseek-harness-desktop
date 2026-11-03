@@ -94,10 +94,10 @@ interface Dictionary {
  * name identifies a locale dictionary, plus inline `register(ns, locale, {...})`
  * literals. Read from the AST so the gate never executes package code.
  * @param file - absolute path of a candidate module.
+ * @param text - source text; omitted reads the candidate module.
  * @returns discovered dictionaries, keyed by locale-bearing name.
  */
-function dictionariesIn(file: string): Dictionary[] {
-  const text = readFileSync(file, 'utf8')
+function dictionariesIn(file: string, text = readFileSync(file, 'utf8')): Dictionary[] {
   // Cheap pre-filter: parsing every package source is wasteful. The pattern
   // must admit every shape `localeOf` accepts, or a file would be skipped
   // before parsing — the silent narrowing this gate exists to prevent. A bare
@@ -113,13 +113,25 @@ function dictionariesIn(file: string): Dictionary[] {
   // e.g. a local dictionary variable rather than an inline literal — resolves
   // through here so the gate still verifies its symmetry.
   const moduleConsts = new Map<string, ts.Expression>()
+  const imported = new Set<string>()
   for (const statement of source.statements) {
+    if (ts.isImportDeclaration(statement) && statement.importClause?.namedBindings !== undefined) {
+      const bindings = statement.importClause.namedBindings
+      if (ts.isNamedImports(bindings)) for (const binding of bindings.elements) imported.add(binding.name.text)
+    }
     if (!ts.isVariableStatement(statement)) continue
     for (const decl of statement.declarationList.declarations) {
       if (ts.isIdentifier(decl.name) && decl.initializer !== undefined) {
         moduleConsts.set(decl.name.text, decl.initializer)
       }
     }
+  }
+
+  const dictionary = (name: string, literal: ts.ObjectLiteralExpression): Dictionary => {
+    const members = dictionaryMembers(literal, moduleConsts, imported)
+    return { file: rel, name, keys: [...members.keys()].sort(), templates: Object.fromEntries(
+      [...members].flatMap(([key, value]) => ts.isStringLiteralLike(value) ? [[key, value.text]] : []),
+    ) }
   }
 
   for (const statement of source.statements) {
@@ -130,7 +142,7 @@ function dictionariesIn(file: string): Dictionary[] {
       const literal = unwrap(decl.initializer)
       if (literal === undefined || !ts.isObjectLiteralExpression(literal)) continue
       if (localeOf(decl.name.text) === undefined) continue
-      found.push({ file: rel, name: decl.name.text, keys: keysOf(literal), templates: templatesOf(literal) })
+      found.push(dictionary(decl.name.text, literal))
     }
   }
 
@@ -172,11 +184,11 @@ function dictionariesIn(file: string): Dictionary[] {
           // silently narrows.
           refuse(ns.getText(source), tag.text, why)
         }
-        const dictionary: ts.ObjectLiteralExpression = literal as ts.ObjectLiteralExpression
+        const registration: ts.ObjectLiteralExpression = literal as ts.ObjectLiteralExpression
         // The namespace expression's source text identifies the pair, so the
         // zh and en calls for one namespace meet and calls for different
         // namespaces stay apart.
-        found.push({ file: rel, name: `${tag.text}@register:${ns.getText(source)}`, keys: keysOf(dictionary), templates: templatesOf(dictionary) })
+        found.push(dictionary(`${tag.text}@register:${ns.getText(source)}`, registration))
       }
     }
     if (ts.isArrayLiteralExpression(node) && node.elements.length >= 2) {
@@ -188,7 +200,7 @@ function dictionariesIn(file: string): Dictionary[] {
         if (tag === undefined || !ts.isStringLiteral(tag)) continue
         if (literal === undefined || !ts.isObjectLiteralExpression(literal)) continue
         if (!SHIPPED_LOCALE_IDS.some(id => id === tag.text)) continue
-        found.push({ file: rel, name: `${tag.text}@inline:${site}`, keys: keysOf(literal), templates: templatesOf(literal) })
+        found.push(dictionary(`${tag.text}@inline:${site}`, literal))
       }
     }
     ts.forEachChild(node, visit)
@@ -197,26 +209,35 @@ function dictionariesIn(file: string): Dictionary[] {
   return found
 }
 
-/** Literal templates; shared spread dictionaries are checked at their own declaration. */
-function templatesOf(literal: ts.ObjectLiteralExpression): Readonly<Record<string, string>> {
-  const templates: Record<string, string> = {}
+/** Expand local dictionary spreads in runtime order; imported dictionaries are checked at their declaring module. */
+function dictionaryMembers(
+  literal: ts.ObjectLiteralExpression,
+  locals: ReadonlyMap<string, ts.Expression>,
+  imported: ReadonlySet<string>,
+  active: ReadonlySet<string> = new Set(),
+): Map<string, ts.Expression> {
+  const members = new Map<string, ts.Expression>()
   for (const property of literal.properties) {
-    if (!ts.isPropertyAssignment(property) || !ts.isStringLiteralLike(property.initializer)) continue
-    if (ts.isIdentifier(property.name) || ts.isStringLiteral(property.name)) {
-      templates[property.name.text] = property.initializer.text
+    if (ts.isSpreadAssignment(property)) {
+      let value = unwrap(property.expression)
+      const seen = new Set(active)
+      while (value !== undefined && ts.isIdentifier(value)) {
+        const name = value.text
+        if (seen.has(name)) throw new Error(`cyclic locale dictionary reference: ${name}`)
+        seen.add(name)
+        if (imported.has(name)) { value = undefined; break }
+        const declaration = locals.get(name)
+        if (declaration === undefined) throw new Error(`unknown locale dictionary reference: ${name}`)
+        value = unwrap(declaration)
+      }
+      if (value === undefined) continue
+      if (!ts.isObjectLiteralExpression(value)) throw new Error('locale dictionary spread must resolve to an object literal')
+      for (const [key, template] of dictionaryMembers(value, locals, imported, seen)) members.set(key, template)
+    } else if (ts.isPropertyAssignment(property) && (ts.isIdentifier(property.name) || ts.isStringLiteral(property.name))) {
+      members.set(property.name.text, property.initializer)
     }
   }
-  return templates
-}
-
-/** Declared property names of an object literal, sorted. */
-function keysOf(literal: ts.ObjectLiteralExpression): string[] {
-  const keys: string[] = []
-  for (const prop of literal.properties) {
-    if (!ts.isPropertyAssignment(prop)) continue
-    if (ts.isIdentifier(prop.name) || ts.isStringLiteral(prop.name)) keys.push(prop.name.text)
-  }
-  return keys.sort()
+  return members
 }
 
 /** Look through `satisfies`/`as`/parenthesized wrappers to the literal. */
@@ -307,6 +328,45 @@ function registrationProblems(file: string): string[] {
   visit(source)
   return problems
 }
+
+describe('local dictionary spreads', () => {
+  const file = resolve(root, 'packages/fixture/locale/src/locales.ts')
+
+  it('checks inherited keys and templates after typed aliases and overrides', () => {
+    const dictionaries = dictionariesIn(file, [
+      'const base = { label: "Hello {name}", count: "{count} items" }',
+      'const alias = base as Record<string, string>',
+      'export const en = { ...alias, label: "Welcome {name}" } satisfies Record<string, string>',
+      'export const ja = { ...en }',
+    ].join('\n'))
+
+    expect(dictionaries.map(({ name, keys, templates }) => ({ name, keys, templates }))).toEqual([
+      { name: 'en', keys: ['count', 'label'], templates: { label: 'Welcome {name}', count: '{count} items' } },
+      { name: 'ja', keys: ['count', 'label'], templates: { label: 'Welcome {name}', count: '{count} items' } },
+    ])
+  })
+
+  it('removes an inherited literal template when a later value is computed', () => {
+    const dictionaries = dictionariesIn(file, 'const base = { label: "{name}" }; export const en = { ...base, label: render() }')
+
+    expect(dictionaries[0]).toMatchObject({ keys: ['label'], templates: {} })
+  })
+
+  it('rejects cyclic dictionary aliases', () => {
+    expect(() => dictionariesIn(file, 'const first = second; const second = first; export const en = { ...first }'))
+      .toThrow('cyclic locale dictionary reference: first')
+  })
+
+  it('rejects unknown local dictionary references', () => {
+    expect(() => dictionariesIn(file, 'export const en = { ...missing }'))
+      .toThrow('unknown locale dictionary reference: missing')
+  })
+
+  it('rejects spreads whose values cannot be inspected statically', () => {
+    expect(() => dictionariesIn(file, 'const values = build(); export const en = { ...values }'))
+      .toThrow('locale dictionary spread must resolve to an object literal')
+  })
+})
 
 describe('shipped locale dictionaries', () => {
   it('registers every shipped language alongside every object-form bilingual dictionary', () => {

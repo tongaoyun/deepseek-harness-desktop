@@ -37,7 +37,7 @@ function latestCompletedParagraphFirstLine(text: string): string {
  * collapsed summary omits double-asterisk markers; expanded content renders
  * the complete Markdown with secondary typography. A streaming preview advances
  * when a paragraph's first line completes. Mode changes toggle CSS display without unmounting
- * collapsed summaries. The Body Slot receives original and display-ready text.
+ * collapsed summaries. The Body Slot receives both original and display-ready text.
  * @param props.text - complete or streaming reasoning text.
  * @param props.running - whether this block is the streaming tail.
  * @param props.usePresentation - live display-policy selector for this reasoning row.
@@ -57,7 +57,10 @@ export const ReasoningRow = memo(function ReasoningRow({
   t: ChatViewSlotProps['t']
 } & Pick<PropsRenderSlots<'conversation.chat.reasoning.body'>, 'renderSlot'>) {
   const { expanded, toggle } = useDisclosure()
-  const text = useMemo(() => reasoningText(rawText), [rawText])
+  const { text, hidden } = useMemo(() => {
+    const text = reasoningText(rawText)
+    return { text, hidden: text !== rawText && text.trim() === '' }
+  }, [rawText])
   const summaryText = running ? latestCompletedParagraphFirstLine(text) : firstLine(text)
   const summary = useMemo(() => summaryText.replaceAll('**', ''), [summaryText])
   const preview = usePresentation(policy => !expanded && summary !== ''
@@ -78,7 +81,7 @@ export const ReasoningRow = memo(function ReasoningRow({
     </div>
   ) : undefined, [expanded, renderSlot, running, rawText, text, textInteractionSource])
 
-  if (text !== rawText && text.trim() === '') return null
+  if (hidden) return null
 
   return (
     <div
