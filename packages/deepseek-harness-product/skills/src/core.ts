@@ -2270,9 +2270,10 @@ async function collectCandidates(dir: string): Promise<ImportCandidate[]> {
 }
 
 /** 导入内容不接受符号链接，避免把目标目录外的内容带入技能目录。 */
-async function assertNoSymbolicLinks(source: string) {
+async function assertNoSymbolicLinks(source: string, signal?: AbortSignal) {
   const pending = [{ path: source, depth: 0 }];
   while (pending.length) {
+    signal?.throwIfAborted();
     const current = pending.pop()!;
     if (current.depth > MAX_SOURCE_DEPTH)
       throw codedError(
@@ -2281,6 +2282,7 @@ async function assertNoSymbolicLinks(source: string) {
         { depth: MAX_SOURCE_DEPTH, path: source },
       );
     const st = await fs.lstat(current.path);
+    signal?.throwIfAborted();
     if (st.isSymbolicLink())
       throw codedError(
         `不支持包含符号链接的 skill 来源: ${current.path}`,
@@ -2289,6 +2291,7 @@ async function assertNoSymbolicLinks(source: string) {
       );
     if (!st.isDirectory()) continue;
     const items = await fs.readdir(current.path, { withFileTypes: true });
+    signal?.throwIfAborted();
     for (const item of items) {
       const path = join(current.path, item.name);
       if (item.isSymbolicLink())
@@ -2310,14 +2313,16 @@ function temporaryPath(target: string, kind: string) {
 }
 
 /** 先复制到同目录临时路径，复制失败时不触碰现有技能。 */
-async function copyToTemporary(source: string, target: string, isDir: boolean) {
+async function copyToTemporary(source: string, target: string, isDir: boolean, signal?: AbortSignal) {
   const temp = temporaryPath(target, "stage");
   try {
-    await assertNoSymbolicLinks(source);
+    signal?.throwIfAborted();
+    await assertNoSymbolicLinks(source, signal);
     if (isDir)
-      await fs.cp(source, temp, { recursive: true, dereference: false });
+      await fs.cp(source, temp, { recursive: true, dereference: false,
+        filter: () => { signal?.throwIfAborted(); return true; } });
     else await fs.copyFile(source, temp);
-    await assertNoSymbolicLinks(temp);
+    await assertNoSymbolicLinks(temp, signal);
     return temp;
   } catch (caught) { const error = caught as CodedError;
     await fs.rm(temp, { recursive: true, force: true }).catch(() => undefined);
@@ -2325,15 +2330,16 @@ async function copyToTemporary(source: string, target: string, isDir: boolean) {
   }
 }
 
-/** 临时副本就绪后再替换；替换失败时尽力恢复旧条目。 */
-async function replaceWithCopy(source: string, dest: string, isDir: boolean, existing: string[] = []) {
+/** 临时副本可取消；首次重命名后完整替换，失败时尽力恢复旧条目。 */
+async function replaceWithCopy(source: string, dest: string, isDir: boolean, existing: string[] = [], signal?: AbortSignal) {
   for (const path of [dest, ...existing]) {
     if (await isDirectoryLink(path))
       throw codedError(`目录链接不能删除或覆盖: ${path}`, "error.skill.linked", { path });
   }
-  const stage = await copyToTemporary(source, dest, isDir);
+  const stage = await copyToTemporary(source, dest, isDir, signal);
   const backups = [];
   try {
+    signal?.throwIfAborted();
     for (const path of existing) {
       const backup = temporaryPath(path, "backup");
       await fs.rename(path, backup);
@@ -2381,17 +2387,21 @@ async function replaceWithCopy(source: string, dest: string, isDir: boolean, exi
 /**
  * 导入技能到目标根。
  * options.conflict 控制同名条目的跳过或覆盖。
+ * 取消停止尚未提交的技能；已提交项保留在结果中，供调用方刷新目录。
  * 成功返回 { kind, imported, skipped, failed }；失败返回 { ok:false, error }。
  */
 async function importSkill(source: string, log?: Log, options: MutationOptions = {}): Promise<ImportResult> {
+  options.signal?.throwIfAborted();
   const requestedRoot = Object.prototype.hasOwnProperty.call(options, "root") ? options.root : rootByKey("dsh");
   const definition = await checkedWritableRootDefinition(requestedRoot);
+  options.signal?.throwIfAborted();
   if (definition && definition.ok === false) return definition;
   if (!definition) return readonlyError("create");
   const targetRoot = definition.path;
   const conflict = options.conflict === "overwrite" ? "overwrite" : "skip";
 
   const analysis = await analyzeSource(source);
+  options.signal?.throwIfAborted();
   if (analysis.kind === "none")
     return {
       ok: false,
@@ -2467,6 +2477,7 @@ async function importSkill(source: string, log?: Log, options: MutationOptions =
   }
 
   for (const c of candidates) {
+    options.signal?.throwIfAborted();
     if (
       !c.kebab ||
       !KEBAB_RE.test(c.kebab) ||
@@ -2528,6 +2539,7 @@ async function importSkill(source: string, log?: Log, options: MutationOptions =
   if (pending.length === 0 && conflicts.length === 0) return failureResult();
 
   if (options.beforeImport) await options.beforeImport(pending, conflicts, failed);
+  options.signal?.throwIfAborted();
 
   if (
     pending.length > 0 ||
@@ -2537,11 +2549,13 @@ async function importSkill(source: string, log?: Log, options: MutationOptions =
   }
 
   for (const p of pending) {
+    if (options.signal?.aborted) break;
     try {
-      const warnings = await replaceWithCopy(p.source, p.dest, p.isDir);
+      const warnings = await replaceWithCopy(p.source, p.dest, p.isDir, [], options.signal);
       imported.push({ name: p.name, overwritten: false, warnings });
       if (log) log("import", `导入 ${p.source} -> ${p.dest}`);
     } catch (caught) { const e = caught as CodedError;
+      if (options.signal?.aborted && caught === options.signal.reason) break;
       failed.push(
         attachCode(
           { source: p.source, error: String(e && e.message ? e.message : e) },
@@ -2553,6 +2567,7 @@ async function importSkill(source: string, log?: Log, options: MutationOptions =
 
   if (conflict === "overwrite") {
     for (const c of conflicts) {
+      if (options.signal?.aborted) break;
       try {
         const dest = c.isDir
           ? join(targetRoot, c.name)
@@ -2562,10 +2577,12 @@ async function importSkill(source: string, log?: Log, options: MutationOptions =
           dest,
           c.isDir,
           c.paths,
+          options.signal,
         );
         imported.push({ name: c.name, overwritten: true, warnings });
         if (log) log("import-overwrite", `覆盖导入 ${c.source} -> ${dest}`);
       } catch (caught) { const e = caught as CodedError;
+        if (options.signal?.aborted && caught === options.signal.reason) break;
         failed.push(
           attachCode(
             { source: c.source, error: String(e && e.message ? e.message : e) },
@@ -2578,6 +2595,7 @@ async function importSkill(source: string, log?: Log, options: MutationOptions =
     for (const c of conflicts) skipped.push({ name: c.name, source: c.source });
   }
 
+  if (imported.length === 0 && failed.length === 0) options.signal?.throwIfAborted();
   if (failed.length && imported.length === 0) return failureResult();
   return { kind: analysis.kind, imported, skipped, failed };
 }
@@ -2665,7 +2683,8 @@ function uploadError(error: CodedError): OperationError {
   );
 }
 
-async function writeUploadedEntries(contentRoot: string, entries: UploadInput["entries"]) {
+async function writeUploadedEntries(contentRoot: string, entries: UploadInput["entries"], signal?: AbortSignal) {
+  signal?.throwIfAborted();
   if (!Array.isArray(entries) || entries.length === 0)
     throw codedError("上传内容为空", "error.upload.empty");
   if (entries.length > MAX_UPLOAD_ENTRIES)
@@ -2677,6 +2696,7 @@ async function writeUploadedEntries(contentRoot: string, entries: UploadInput["e
   let total = 0;
   const seen = new Set();
   for (const entry of entries) {
+    signal?.throwIfAborted();
     const normalized = normalizeUploadPath(entry && entry.path);
     const key = normalized.path.toLowerCase();
     if (seen.has(key))
@@ -2706,11 +2726,12 @@ async function writeUploadedEntries(contentRoot: string, entries: UploadInput["e
         { path: normalized.path },
       );
     await fs.mkdir(dirname(target), { recursive: true });
-    await fs.writeFile(target, bytes);
+    await fs.writeFile(target, bytes, { signal });
   }
 }
 
-async function writeUploadedZip(contentRoot: string, encoded: string) {
+async function writeUploadedZip(contentRoot: string, encoded: string, signal?: AbortSignal) {
+  signal?.throwIfAborted();
   const archive = decodeUploadBase64(
     encoded,
     MAX_UPLOAD_ARCHIVE_BYTES,
@@ -2757,21 +2778,23 @@ async function writeUploadedZip(contentRoot: string, encoded: string) {
     path,
     data: Buffer.from(bytes).toString("base64"),
   }));
-  await writeUploadedEntries(contentRoot, entries);
+  await writeUploadedEntries(contentRoot, entries, signal);
 }
 
-async function prepareUploadedSource(sessionRoot: string, input: UploadInput) {
+async function prepareUploadedSource(sessionRoot: string, input: UploadInput, signal?: AbortSignal) {
+  signal?.throwIfAborted();
   const contentRoot = join(sessionRoot, "content");
   await fs.mkdir(contentRoot, { recursive: true });
   if (input && input.zip !== undefined)
-    await writeUploadedZip(contentRoot, input.zip);
-  else await writeUploadedEntries(contentRoot, input && input.entries);
+    await writeUploadedZip(contentRoot, input.zip, signal);
+  else await writeUploadedEntries(contentRoot, input && input.entries, signal);
+  signal?.throwIfAborted();
 
   const rootSkill = join(contentRoot, "SKILL.md");
   const rootSkillStat = await lstatOrNull(rootSkill);
   if (!rootSkillStat || !rootSkillStat.isFile()) return contentRoot;
 
-  const doc = parseSkillDoc(await fs.readFile(rootSkill, "utf8"));
+  const doc = parseSkillDoc(await fs.readFile(rootSkill, { encoding: "utf8", signal }));
   const fallback = String((input && input.name) || "uploaded-skill")
     .replace(/\.zip$/i, "")
     .replace(/^skill\.md$/i, "uploaded-skill");
@@ -2790,6 +2813,7 @@ async function prepareUploadedSource(sessionRoot: string, input: UploadInput) {
   const batchRoot = join(sessionRoot, "batch");
   const wrappedRoot = join(batchRoot, skillName);
   await fs.mkdir(batchRoot, { recursive: true });
+  signal?.throwIfAborted();
   await fs.rename(contentRoot, wrappedRoot);
   return batchRoot;
 }
@@ -2797,15 +2821,18 @@ async function prepareUploadedSource(sessionRoot: string, input: UploadInput) {
 /**
  * 接收浏览器读取后的内容，在 manager 私有目录暂存并复用现有原子导入链路。
  * input: { name, entries:[{path,data(base64)}] } 或 { name, zip:base64 }。
+ * 取消清理未提交内容；已开始的文件替换和清理完成后才返回。
  */
 export async function importUploadedSkill(input: UploadInput, log?: Log, options: MutationOptions = {}): Promise<ImportResult> {
   const uploadHome = join(managerHomePath(), "uploads");
   const sessionRoot = join(uploadHome, `.upload-${randomUUID()}`);
   try {
+    options.signal?.throwIfAborted();
     await fs.mkdir(sessionRoot, { recursive: true });
-    const source = await prepareUploadedSource(sessionRoot, input || {});
+    const source = await prepareUploadedSource(sessionRoot, input || {}, options.signal);
     return await importSkill(source, log, options);
   } catch (caught) { const error = caught as CodedError;
+    options.signal?.throwIfAborted();
     return uploadError(error);
   } finally {
     await fs

@@ -7,7 +7,7 @@
 | 模块 | 负责内容 |
 | --- | --- |
 | [产品协议](../../packages/deepseek-harness-product/product/README.md) | 钉钉会话、目录与服务端请求校验 |
-| [桌面](../../packages/deepseek-harness-product/desktop/README.md) | 凭据隔离、原生文件、sidecar 和 Host 启动准备 |
+| [桌面](../../packages/deepseek-harness-product/desktop/README.md) | 凭据隔离、原生文件、设备上报和 Host 启动准备 |
 | [运行时](../../packages/deepseek-harness-product/runtime/README.md) | MCP 工具发现、审批策略、任务知识库和内容版本绑定 |
 | [产品 UI](../../packages/extensions/ui-deepseek-harness-product/README.md) | 扩展页面、文件工作区、任务选择与反馈 |
 | [专家](../../packages/deepseek-harness-product/experts/README.md)与[技能](../../packages/deepseek-harness-product/skills/README.md) | 原生 Agent、Agent Team、Settings 与 Skill Provider 的产品入口 |

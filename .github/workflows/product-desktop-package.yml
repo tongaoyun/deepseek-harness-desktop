@@ -90,8 +90,6 @@ jobs:
         run: pnpm exec vitest run apps/product-desktop/tests/close-electron.spec.ts apps/product-desktop/tests/office-fixture.spec.ts apps/product-desktop/tests/native-update-dialog.spec.ts
       - name: Test upstream boundaries
         run: pnpm exec vitest run scripts/upstream-boundaries.spec.ts scripts/build.spec.ts apps/desktop/tests/desktop-package-plan.spec.ts apps/desktop/tests/package-target-stages.spec.ts apps/desktop/tests/runtime-preparation.spec.ts apps/desktop/tests/pack-local-packages.spec.ts scripts/release/pack.spec.ts apps/desktop/tests/prepare-package-set.spec.ts
-      - name: Test product sidecar
-        run: cargo test --manifest-path native/deepseek-harness/Cargo.toml
   package:
     needs: preflight
     name: ${{ matrix.target }} ${{ inputs.signing }}
@@ -141,9 +139,6 @@ jobs:
         with:
           node-version: '24'
           cache: pnpm
-      - name: Set up Rust
-        id: rust
-        uses: dtolnay/rust-toolchain@stable
       - name: Configure desktop cache directories
         run: |
           node --input-type=module <<'NODE'
@@ -152,7 +147,6 @@ jobs:
           for (const [key, directory] of [
             ['DSH_DESKTOP_PACKAGE_CACHE_DIR', 'harness-desktop-package-cache'],
             ['ELECTRON_BUILDER_CACHE', 'harness-desktop-builder-cache'],
-            ['CARGO_TARGET_DIR', 'harness-desktop-rust'],
             ['PNPM_CONFIG_CACHE_DIR', 'harness-pnpm-metadata-cache'],
           ]) appendFileSync(process.env.GITHUB_ENV, `${key}=${join(process.env.RUNNER_TEMP, directory)}\n`)
           NODE
@@ -166,16 +160,6 @@ jobs:
           key: desktop-downloads-v1-${{ runner.os }}-${{ matrix.target }}-${{ hashFiles('pnpm-lock.yaml', 'scripts/primary-runtime/lock.json') }}
           restore-keys: |
             desktop-downloads-v1-${{ runner.os }}-${{ matrix.target }}-
-      - name: Cache Rust compilation
-        uses: actions/cache@v6.1.0
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            ${{ env.CARGO_TARGET_DIR }}
-          key: desktop-rust-v1-${{ runner.os }}-${{ matrix.target }}-${{ steps.rust.outputs.cachekey }}-${{ hashFiles('native/deepseek-harness/Cargo.lock', 'native/deepseek-harness/Cargo.toml', 'native/deepseek-harness/src/**', 'native/deepseek-harness/build.rs') }}
-          restore-keys: |
-            desktop-rust-v1-${{ runner.os }}-${{ matrix.target }}-${{ steps.rust.outputs.cachekey }}-
       - name: Install locked dependencies
         run: pnpm install --frozen-lockfile --prefer-offline
       - name: Verify source and native architecture
@@ -242,8 +226,7 @@ jobs:
           $Installers = @(Get-ChildItem -LiteralPath $ArtifactRoot -File -Filter '*.exe')
           if ($Installers.Count -ne 1) { throw 'Expected exactly one Windows installer' }
           $Files = @($Installers[0].FullName,
-            (Join-Path $ArtifactRoot 'win-unpacked/DeepSeek Harness.exe'),
-            (Join-Path $ArtifactRoot 'win-unpacked/resources/native/deepseek-harness-native.exe'))
+            (Join-Path $ArtifactRoot 'win-unpacked/DeepSeek Harness.exe'))
           foreach ($File in $Files) {
             $Expected = if ($env:PACKAGE_SIGNING -eq 'signed') { 'Valid' } else { 'NotSigned' }
             if ((Get-AuthenticodeSignature -LiteralPath $File).Status -ne $Expected) {

@@ -210,7 +210,7 @@ it('discovers real MCP annotations without business calls, encrypts secrets, iso
   expect(await reopened.enrich([{ ...entry, ownerEmployeeId: owner }], signal)).toMatchObject([{ ready: false, configurationStatus: 'REQUIRED' }])
 })
 
-it('closes discovery and cached stdio children and scrubs ambient credentials', async () => {
+it('retires replaced stdio children, preserves other connectors and scrubs ambient credentials', async () => {
   const root = await mkdtemp(join(tmpdir(), 'personal-stdio-test-'))
   onTestFinished(() => rm(root, { recursive: true, force: true }))
   vi.stubEnv('AMBIENT_EMPLOYEE_TOKEN', 'must-not-reach-child')
@@ -240,8 +240,24 @@ it('closes discovery and cached stdio children and scrubs ambient credentials', 
   const evidence = JSON.parse(enriched[0]!.tools[0]!.description) as { pid: number; scrubbed: boolean; configured: boolean }
   expect(evidence).toMatchObject({ scrubbed: true, configured: true })
   expect(() => process.kill(evidence.pid, 0)).not.toThrow()
+  const unrelatedDraft = { ...draft, id: 'another-stdio' }
+  await manager.save(unrelatedDraft, api, 'employee-one', new AbortController().signal)
+  const unrelatedEntry = { ...unrelatedDraft, ownerEmployeeId: 'employee-one', visibility: 'PERSONAL',
+    authMode: 'none', ready: true, status: 'ready', tools: [{ name: 'read' }] }
+  const unrelated = await manager.enrich([unrelatedEntry]) as { tools: { description: string }[] }[]
+  const unrelatedPid = (JSON.parse(unrelated[0]!.tools[0]!.description) as { pid: number }).pid
+  await manager.save({ ...draft, version: '1.0.1' }, api, 'employee-one', new AbortController().signal)
+  expect(() => process.kill(evidence.pid, 0)).toThrow()
+  expect(() => process.kill(unrelatedPid, 0)).not.toThrow()
+  const updated = await manager.enrich([{ ...draft, version: '1.0.1', ownerEmployeeId: 'employee-one', visibility: 'PERSONAL',
+    authMode: 'none', ready: true, status: 'ready', tools: [{ name: 'read' }] }, unrelatedEntry]) as { tools: { description: string }[] }[]
+  const currentPid = (JSON.parse(updated[0]!.tools[0]!.description) as { pid: number }).pid
+  expect((JSON.parse(updated[1]!.tools[0]!.description) as { pid: number }).pid).toBe(unrelatedPid)
+  expect(() => process.kill(currentPid, 0)).not.toThrow()
   await manager.close()
   expect(() => process.kill(evidence.pid, 0)).toThrow()
+  expect(() => process.kill(currentPid, 0)).toThrow()
+  expect(() => process.kill(unrelatedPid, 0)).toThrow()
 })
 
 it('deletes only the selected connector connections while another connector finishes an in-flight call', async () => {

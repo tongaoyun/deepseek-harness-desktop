@@ -21,6 +21,7 @@ const Configuration = z.discriminatedUnion('transport', [
   CommonConfiguration.extend({ transport: z.literal('streamable-http'), url: z.string().min(1), command: z.undefined().optional() }),
 ])
 type Configuration = z.infer<typeof Configuration>
+interface ConfigurationRead { readonly config: Configuration | undefined; readonly signal: AbortSignal }
 interface SecureStorage { isEncryptionAvailable(): boolean; encryptString(value: string): Buffer; decryptString(value: Buffer): string }
 const PublicConnector = z.looseObject({ id: z.string(), version: z.string(), ownerEmployeeId: z.string().optional(),
   visibility: z.string().optional(), authMode: z.string().optional(), ready: z.boolean().optional(),
@@ -59,9 +60,11 @@ export class PersonalConnectors {
   private readonly lifetime = new AbortController()
   private readonly clients = new Map<string, CachedConnection>()
   private readonly operations = new Map<string, Promise<unknown>>()
+  private readonly connectorOwners = new Map<string, AbortController>()
   private identity: string | undefined
   constructor(private readonly root: string, private readonly secure: SecureStorage, private readonly employee: () => string | undefined,
-    private readonly oauthConnector?: (id: string, signal: AbortSignal) => Promise<unknown>) {}
+    private readonly oauthConnector?: (id: string, signal: AbortSignal) => Promise<unknown>,
+    private readonly catalogCommitted?: () => void) {}
 
   /** Serialize management per employee and connector; check current access and version after prior operations settle.
    * @param method Product connector management operation.
@@ -89,7 +92,7 @@ export class PersonalConnectors {
         throw new ProductError('FEATURE_UNAVAILABLE', 'This connector does not support device configuration', false)
       }
       if (method === 'extensions.connector.configuration.read') {
-        const config = await this.configuration(entry, employee)
+        const { config } = await this.configuration(entry, employee, true)
         return { id: entry.id, version: entry.version, transport: entry.transport, url: entry.url,
           command: entry.command, arguments: entry.arguments, configured: config !== undefined,
           headers: Object.keys(entry.headers), environment: Object.keys(entry.environment), timeoutSeconds: config?.timeoutSeconds ?? 60 }
@@ -99,7 +102,7 @@ export class PersonalConnectors {
       const values = z.object({ headers: z.record(z.string().min(1).max(200), z.string().max(4000)),
         environment: z.record(z.string().min(1).max(200), z.string().max(4000)),
         timeoutSeconds: z.number().int().min(1).max(600) }).strict().parse(input.configuration)
-      const previous = await this.configuration(entry, employee)
+      const { config: previous } = await this.configuration(entry, employee, true)
       const requiredValues = (provided: Record<string, string>, required: Record<string, string>, saved: Record<string, string>) => {
         if (Object.keys(provided).some(key => !Object.hasOwn(required, key))) throw new Error('Unknown private configuration key')
         return Object.fromEntries(Object.keys(required).map((key) => {
@@ -122,9 +125,8 @@ export class PersonalConnectors {
       signal.throwIfAborted()
       await mkdir(this.root, { recursive: true, mode: 0o700 })
       await this.finalize(this.filename(employee, entry.id, entry.version), config)
-      const key = this.key(employee, entry.id, entry.version)
-      const old = this.clients.get(key); this.clients.delete(key)
-      if (old) await this.disconnect(old)
+      this.catalogCommitted?.()
+      await this.disconnectConnector(employee, entry.id)
       return { id: entry.id, version: entry.version, configured: true }
     }
     if (entry.visibility !== 'PERSONAL' || entry.ownerEmployeeId !== employee || entry.canEdit !== true) {
@@ -132,18 +134,13 @@ export class PersonalConnectors {
     }
     if (method === 'extensions.connector.delete') {
       await api.request(`/api/v1/connectors/${encodeURIComponent(entry.id)}`, { method: 'DELETE', signal })
-      const removed: CachedConnection[] = []
-      for (const [key, cached] of this.clients) {
-        if (cached.employee !== employee || cached.id !== entry.id) continue
-        this.clients.delete(key)
-        removed.push(cached)
-      }
-      await Promise.allSettled(removed.map(cached => this.disconnect(cached)))
+      this.catalogCommitted?.()
+      await this.disconnectConnector(employee, entry.id)
       await rm(this.filename(employee, entry.id, entry.version), { force: true })
       await rm(`${this.filename(employee, entry.id, entry.version)}.pending`, { force: true })
       return { removed: true, id: entry.id }
     }
-    let config = entry.authMode === 'oauth' ? undefined : await this.configuration(entry, employee)
+    let config = entry.authMode === 'oauth' ? undefined : (await this.configuration(entry, employee, true)).config
     const [major, minor, patch] = entry.version.split('-')[0]?.split('.') ?? []
     if (!major || !minor || !patch || !/^\d+$/.test(patch)) throw new Error('Invalid connector version')
     const nextVersion = `${major}.${minor}.${String(BigInt(patch) + 1n)}`
@@ -229,6 +226,8 @@ export class PersonalConnectors {
         transport: 'streamable-http', url: provider.url, command: '', arguments: [], environment: {}, headers: {},
         authMode: 'oauth', oauthProviderId: draft.oauthProviderId, toolNames: tools.map(tool => tool.name),
       }) })
+      this.catalogCommitted?.()
+      await this.disconnectConnector(employee, draft.id)
       return
     }
     if (!this.secure.isEncryptionAvailable()) throw new Error('OS credential encryption is unavailable')
@@ -280,10 +279,8 @@ export class PersonalConnectors {
       throw new ProductError('CONNECTOR_SAVE_PENDING', 'Server save succeeded; encrypted device settings await restoration', true,
         [{ kind: 'connector', id: draft.id }], { cause: error })
     }
-    const key = this.key(employee, draft.id, draft.version)
-    const old = this.clients.get(key)
-    this.clients.delete(key)
-    if (old) await this.disconnect(old)
+    this.catalogCommitted?.()
+    await this.disconnectConnector(employee, draft.id)
   }
 
   /** Augment personal runtime data with local configuration and live read-only annotations.
@@ -308,21 +305,24 @@ export class PersonalConnectors {
       try {
         if (entry.authMode === 'oauth') {
           if (entry.ready !== true || !discoverTools) return raw
+          const lifetime = AbortSignal.any([signal, this.connectorSignal(employee, entry.id)])
           const client = await this.connect(Configuration.parse({ transport: 'streamable-http', url: entry.url,
-            headers: entry.headers, arguments: [], environment: {} }), signal)
+            headers: entry.headers, arguments: [], environment: {} }), lifetime)
           try {
             const declared = new Set(entry.tools.map(tool => tool.name))
-            const tools = (await this.discover(client, signal, 60)).filter(tool => declared.has(tool.name))
+            const tools = (await this.discover(client, lifetime, 60)).filter(tool => declared.has(tool.name))
             return { ...entry, tools: tools.map(tool => ({ name: tool.name, displayName: tool.title ?? tool.name,
               description: tool.description ?? '', access: tool.annotations?.readOnlyHint === true && tool.annotations.destructiveHint !== true ? 'READ' : 'WRITE' })) }
           } finally { await client.close() }
         }
-        const config = await this.configuration(entry, employee)
+        const { config, signal: owner } = await this.configuration(entry, employee)
+        const lifetime = AbortSignal.any([signal, owner])
+        lifetime.throwIfAborted()
         if (!config) return { ...entry, status: 'needs-configuration', ready: false, configurationStatus: 'REQUIRED', canConfigure: true, headers: {}, environment: {} }
         if (!discoverTools) return { ...entry, ...config, canConfigure: true, configurationStatus: 'CONFIGURED' }
-        const client = await this.client(entry, employee, config, signal)
+        const client = await this.client(entry, employee, config, lifetime)
         const declared = entry.tools.map(tool => tool.name)
-        const tools = (await this.discover(client, signal, config.timeoutSeconds)).filter(tool => declared.includes(tool.name))
+        const tools = (await this.discover(client, lifetime, config.timeoutSeconds)).filter(tool => declared.includes(tool.name))
         return { ...entry, ...config, canConfigure: true, configurationStatus: 'CONFIGURED', tools: tools.map(tool => ({ name: tool.name,
           displayName: tool.title ?? tool.name, description: tool.description ?? '', access: tool.annotations?.readOnlyHint === true && tool.annotations.destructiveHint !== true ? 'READ' : 'WRITE' })) }
       } catch (_error) {
@@ -342,7 +342,9 @@ export class PersonalConnectors {
     const entry = PublicConnector.parse(value)
     const employee = this.employee()
     if (!employee || entry.status !== 'ready' || !this.localConfigurationAllowed(entry)) throw new Error('Device connector access denied')
-    const config = await this.configuration(entry, employee)
+    const { config, signal: owner } = await this.configuration(entry, employee)
+    signal = AbortSignal.any([signal, owner])
+    signal.throwIfAborted()
     if (!config) throw new Error('Private connector configuration is missing')
     const client = await this.client(entry, employee, config, signal)
     const cached = this.clients.get(this.key(employee, entry.id, entry.version))
@@ -445,6 +447,8 @@ export class PersonalConnectors {
   /** Cancel pending connects and close every child process owned by this desktop extension. */
   async close(): Promise<void> {
     this.lifetime.abort(new Error('Personal connector manager closed'))
+    for (const owner of this.connectorOwners.values()) owner.abort(this.lifetime.signal.reason)
+    this.connectorOwners.clear()
     await Promise.allSettled([...this.operations.values()])
     await Promise.allSettled([...this.clients.values()].map(cached => this.disconnect(cached)))
     this.clients.clear()
@@ -456,6 +460,8 @@ export class PersonalConnectors {
   async resetIdentity(employee: string | undefined): Promise<void> {
     if (this.identity === employee) return
     this.identity = employee
+    for (const owner of this.connectorOwners.values()) owner.abort(new Error('Employee identity changed'))
+    this.connectorOwners.clear()
     const previous = [...this.clients.values()]
     this.clients.clear()
     await Promise.allSettled(previous.map(cached => this.disconnect(cached)))
@@ -491,26 +497,43 @@ export class PersonalConnectors {
       await rm(`${filename}.pending`, { force: true })
     } finally { await rm(staging, { force: true }) }
   }
-  private async configuration(entry: PublicConnector, employee: string): Promise<Configuration | undefined> {
+  private connectorSignal(employee: string, id: string): AbortSignal {
+    this.lifetime.signal.throwIfAborted()
+    const key = this.key(employee, id, '')
+    let owner = this.connectorOwners.get(key)
+    if (owner === undefined) {
+      owner = new AbortController()
+      this.connectorOwners.set(key, owner)
+    }
+    return owner.signal
+  }
+  private async configuration(entry: PublicConnector, employee: string, serialized = false): Promise<ConfigurationRead> {
+    let owner = this.connectorSignal(employee, entry.id)
     try {
       const filename = this.filename(employee, entry.id, entry.version)
       const pending = await this.pending(filename)
+      owner.throwIfAborted()
       if (pending && this.matchesPending(entry, employee, pending)) {
+        if (!serialized) return await this.serialize(employee, entry.id, this.lifetime.signal,
+          () => this.configuration(entry, employee, true))
         await this.finalize(filename, pending.config)
-        const key = this.key(employee, entry.id, entry.version)
-        const old = this.clients.get(key)
-        this.clients.delete(key)
-        if (old) await this.disconnect(old)
+        owner.throwIfAborted()
+        const cleanup = this.disconnectConnector(employee, entry.id)
+        owner = this.connectorSignal(employee, entry.id)
+        await cleanup
+        owner.throwIfAborted()
       }
       const encrypted = await readFile(filename)
+      owner.throwIfAborted()
       const config = Configuration.parse(JSON.parse(this.secure.decryptString(encrypted)))
       if (config.transport !== entry.transport || config.url !== entry.url || config.command !== entry.command
         || JSON.stringify(config.arguments) !== JSON.stringify(entry.arguments)) {
         throw new Error('Private settings do not match this connector version')
       }
-      return config
+      return { config, signal: owner }
     } catch (error) {
-      if (error instanceof Error && 'code' in error && error.code === 'ENOENT') return undefined
+      owner.throwIfAborted()
+      if (error instanceof Error && 'code' in error && error.code === 'ENOENT') return { config: undefined, signal: owner }
       throw new Error('Private connector settings could not be decrypted')
     }
   }
@@ -552,6 +575,18 @@ export class PersonalConnectors {
         await shared.connection.catch(() => undefined)
       }
     }
+  }
+  private async disconnectConnector(employee: string, id: string): Promise<void> {
+    const key = this.key(employee, id, '')
+    const owner = this.connectorOwners.get(key)
+    this.connectorOwners.delete(key)
+    owner?.abort(new Error('Personal connector configuration changed'))
+    const results = await Promise.allSettled([...this.clients.values()]
+      .filter(cached => cached.employee === employee && cached.id === id)
+      .map(cached => this.disconnect(cached)))
+    const errors: unknown[] = []
+    for (const result of results) if (result.status === 'rejected') errors.push(result.reason)
+    if (errors.length) throw new AggregateError(errors, 'Personal MCP connection cleanup failed')
   }
   private async disconnect(cached: CachedConnection): Promise<void> {
     cached.controller.abort(new Error('Personal MCP connection released'))

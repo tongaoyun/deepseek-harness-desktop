@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto'
 import type { DeepSeekHarnessApiClient } from '@deepseek-harness/product'
 import type { ProductSession } from '@deepseek-harness/product/protocol'
 import { ProductError, productFailure } from '@deepseek-harness/product/errors'
-import { nativeHealth, type NativeMethod } from './native-health.ts'
+import type { AnonymousUserId } from '@deepseek-ai/dsh-anonymous-user-id'
 
 /** Validated deployment intervals; full reports are refreshed independently of presence. */
 export interface DesktopSupportPolicy {
@@ -26,6 +26,7 @@ interface SupportState {
 
 /** Main-owned reports contain metadata only; feedback images are selected explicitly by the employee. */
 export class DesktopSupport {
+  private readonly deviceId: string
   private readonly lifecycle = new AbortController()
   private readonly operations = new Set<Promise<unknown>>()
   private employeeId: string | undefined
@@ -37,8 +38,13 @@ export class DesktopSupport {
   constructor(private readonly options: {
     readonly policy: DesktopSupportPolicy
     readonly metadata: () => DeviceMetadata
-    readonly native: (method: NativeMethod, signal: AbortSignal) => Promise<unknown>
-  }) {}
+    readonly installationId: AnonymousUserId
+  }) {
+    // Keep company device reports separate from the anonymous telemetry identifier.
+    const digest = createHash('sha256').update(options.installationId).digest('hex')
+    const variant = ((parseInt(digest.charAt(16), 16) & 3) | 8).toString(16)
+    this.deviceId = `${digest.slice(0, 8)}-${digest.slice(8, 12)}-8${digest.slice(13, 16)}-${variant}${digest.slice(17, 20)}-${digest.slice(20, 32)}`
+  }
 
   /** Dispatch support methods after authentication; supplied metadata and identity are ignored.
    * @param method - Allowlisted support operation.
@@ -91,9 +97,8 @@ export class DesktopSupport {
       form.append('images', new Blob([Uint8Array.from(image.data)], { type: image.mediaType }), image.name)
     }
     const metadata = this.options.metadata()
-    const deviceId = await this.deviceId(signal)
     form.append('feedback', new Blob([JSON.stringify({ message: message.trim(), category,
-      desktopVersion: metadata.desktopVersion, deviceId, taskId: '' })], { type: 'application/json' }))
+      desktopVersion: metadata.desktopVersion, deviceId: this.deviceId, taskId: '' })], { type: 'application/json' }))
     const result: unknown = await api.request('/api/v1/feedback', { method: 'POST', body: form,
       headers: { 'Idempotency-Key': operationId }, signal })
     if (typeof result !== 'object' || result === null || !('id' in result) || typeof result.id !== 'string' || !result.id.trim()) {
@@ -102,28 +107,13 @@ export class DesktopSupport {
     return { id: result.id }
   }
 
-  private async deviceId(signal: AbortSignal): Promise<string> {
-    const identity = await this.options.native('device-identity.get', signal)
-    if (typeof identity !== 'object' || identity === null || !('deviceId' in identity)
-      || typeof identity.deviceId !== 'string' || !identity.deviceId || identity.deviceId.length > 256) {
-      throw new ProductError('DEVICE_IDENTITY_INVALID', 'Native device identity is unavailable', true)
-    }
-    // A deterministic UUIDv8 projection avoids exposing the native installation identifier.
-    const digest = createHash('sha256').update(identity.deviceId).digest('hex')
-    const variant = ((parseInt(digest.charAt(16), 16) & 3) | 8).toString(16)
-    return `${digest.slice(0, 8)}-${digest.slice(8, 12)}-8${digest.slice(13, 16)}-${variant}${digest.slice(17, 20)}-${digest.slice(20, 32)}`
-  }
-
   private async report(api: DeepSeekHarnessApiClient, signal: AbortSignal): Promise<void> {
     try {
-      const deviceId = await this.deviceId(signal)
       const metadata = this.options.metadata()
-      const health = nativeHealth(await this.options.native('health', signal))
-      const payload = { deviceId, desktopVersion: metadata.desktopVersion, platform: metadata.platform,
+      const payload = { deviceId: this.deviceId, desktopVersion: metadata.desktopVersion, platform: metadata.platform,
         architecture: metadata.architecture, displayCount: metadata.displayScalePercents.length,
         displayScalePercents: metadata.displayScalePercents }
       const capabilities = [
-        ...health.capabilities.map(key => ({ key: `native.${key}`, status: 'READY', detail: `Native capability: ${key}` })),
         { key: 'credentials.encryption', status: metadata.encryptedStorage ? 'READY' : 'DEGRADED',
           detail: metadata.encryptedStorage ? 'OS credential encryption available' : 'OS credential encryption unavailable' },
       ]
@@ -156,7 +146,7 @@ export class DesktopSupport {
     }
   }
 
-  /** Cancel and await reports and feedback before the native sidecar is stopped. */
+  /** Cancel and await reports and feedback before desktop shutdown. */
   async close(): Promise<void> {
     this.lifecycle.abort(new Error('Desktop support closed'))
     await Promise.allSettled([...this.operations])

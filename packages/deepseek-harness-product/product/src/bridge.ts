@@ -199,6 +199,11 @@ export class DeepSeekHarnessProductBridge {
     })
   }
 
+  /** Invalidate connector reads synchronously after a commit, before device cleanup.
+   * The management completion publishes the change and refreshes the catalog.
+   */
+  invalidateConnectorCatalog(): void { this.catalog.reset() }
+
   /** Cancel and await background requests, suppressing later events and timers. */
   async dispose(): Promise<void> {
     this.closed = true
@@ -295,7 +300,7 @@ export class DeepSeekHarnessProductBridge {
   }
 
   private readRuntimeConnectors(payload: unknown, signal: AbortSignal | undefined, discoverTools: boolean): Promise<unknown> {
-    return this.withEmployeeSession(signal, async (lifetime) => {
+    return this.withEmployeeSession(signal, lifetime => this.catalog.withCurrentCatalog(lifetime, async (lifetime) => {
       const api = this.api
       const sessionToken = this.sessionToken
       if (api === undefined || sessionToken === undefined) {
@@ -316,7 +321,7 @@ export class DeepSeekHarnessProductBridge {
       if (!Array.isArray(selected)) throw new Error('deepseek-harness product: invalid connector catalog')
       const runtime = selected.map(entry => runtimeConnector(entry, api, sessionToken))
       return this.connectorRuntime ? this.connectorRuntime(runtime, lifetime, discoverTools) : runtime
-    })
+    }))
   }
 
   /** Resolve transport credentials for main's relay without connecting to MCP servers.

@@ -18,7 +18,7 @@ import Access from '@deepseek-ai/dsh-api-remote-access'
 import { Peer } from '@deepseek-ai/dsh-client-connection'
 import { promises as fs } from 'node:fs'
 import { lstat, mkdir, mkdtemp, readFile, readdir, realpath, rm, symlink, writeFile } from 'node:fs/promises'
-import { join } from 'node:path'
+import { basename, join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { pathToFileURL } from 'node:url'
 import { createServer } from 'node:http'
@@ -276,6 +276,128 @@ it('invalidates the native catalog after a committed skill write even when the c
   expect(await readFile(join(target, 'SKILL.md'), 'utf8')).toContain('Review committed orders.')
   expect((await ctx.skills.list()).map(skill => skill.name)).toContain(name)
   expect(changes).toHaveBeenCalled()
+}, 30000)
+
+it.each(['upload', 'stage', 'unload-stage'] as const)('cancels skill import during %s without replacing the existing skill', async (phase) => {
+  const { ctx, root, invoke } = await boot()
+  const name = 'cancelled-import', target = join(root, '.dsh/skills', name)
+  await invoke('createSkill', { request: { name, description: 'Original', body: 'Original body' } })
+  await writeFile(join(target, 'original.txt'), 'Original resource')
+  const started = Promise.withResolvers<undefined>(), release = Promise.withResolvers<undefined>()
+  const mkdir = fs.mkdir, copy = fs.cp
+  const probe = phase === 'upload'
+    ? vi.spyOn(fs, 'mkdir').mockImplementation(async (...args) => {
+      const result = await mkdir(...args)
+      if (typeof args[0] === 'string' && args[0].includes(join('uploads', '.upload-'))) {
+        started.resolve(undefined)
+        await release.promise
+      }
+      return result
+    })
+    : vi.spyOn(fs, 'cp').mockImplementation(async (...args) => {
+      await copy(...args)
+      if (typeof args[1] === 'string' && basename(args[1]).startsWith(`.${name}.dssm-stage-`)) {
+        started.resolve(undefined)
+        await release.promise
+      }
+    })
+  onTestFinished(() => { probe.mockRestore() })
+  const controller = new AbortController()
+  const pending = invoke('uploadSkill', { request: { conflict: 'overwrite', entries: [
+    { path: 'SKILL.md', data: Buffer.from(`---\nname: ${name}\ndescription: Replacement\n---\nReplacement body`).toString('base64') },
+    { path: 'replacement.txt', data: Buffer.from('Replacement resource').toString('base64') },
+  ] } }, controller.signal)
+  const outcome = pending.then(value => ({ value }), (error: unknown) => ({ error }))
+  let disposal: Promise<unknown> | undefined
+  let queued: Promise<unknown> | undefined
+  try {
+    await started.promise
+    if (phase === 'unload-stage') {
+      const manager = [...ctx.loader.entries()].find(entry => entry.options.name === 'cordis:manager')
+      if (!manager?.fiber) throw new Error('Skills manager is not mounted')
+      disposal = manager.fiber.dispose()
+    } else {
+      controller.abort(new Error('Import view closed before commit'))
+      queued = invoke('createSkill', { request: { name: 'after-cancel', description: 'Queued', body: 'Queued body' } })
+      await expect(lstat(join(root, '.dsh/skills/after-cancel'))).rejects.toMatchObject({ code: 'ENOENT' })
+    }
+    release.resolve(undefined)
+    expect(await outcome).toMatchObject({ error: { code: 'gateway/cancelled' } })
+    await Promise.all([disposal, queued])
+    expect(await readFile(join(target, 'SKILL.md'), 'utf8')).toContain('Original body')
+    expect((await readdir(target)).sort()).toEqual(['SKILL.md', 'original.txt'])
+    expect((await readdir(join(root, '.dsh/skills'))).filter(path => path.includes('.dssm-'))).toEqual([])
+    expect(await readdir(join(root, '.dsh/skills-manager/uploads'))).toEqual([])
+  } finally {
+    release.resolve(undefined)
+    await Promise.allSettled([outcome, disposal, queued])
+    probe.mockRestore()
+  }
+}, 30000)
+
+it.each(['backup', 'target'] as const)('finishes the complete import replacement after cancellation at %s rename', async (phase) => {
+  const { ctx, root, invoke } = await boot()
+  const name = 'committed-import', target = join(root, '.dsh/skills', name)
+  await invoke('createSkill', { request: { name, description: 'Original', body: 'Original body' } })
+  await writeFile(join(target, 'original.txt'), 'Original resource')
+  expect((await ctx.skills.get(name))?.content).toBe('Original body')
+  const started = Promise.withResolvers<undefined>(), release = Promise.withResolvers<undefined>()
+  const controller = new AbortController(), rename = fs.rename
+  const probe = vi.spyOn(fs, 'rename').mockImplementation(async (source, destination) => {
+    await rename(source, destination)
+    if (phase === 'backup' ? source === target : destination === target) {
+      controller.abort(new Error('Import view closed during commit'))
+      started.resolve(undefined)
+      await release.promise
+    }
+  })
+  onTestFinished(() => { probe.mockRestore() })
+  const pending = invoke('uploadSkill', { request: { conflict: 'overwrite', entries: [
+    { path: 'SKILL.md', data: Buffer.from(`---\nname: ${name}\ndescription: Replacement\n---\nReplacement body`).toString('base64') },
+    { path: 'replacement.txt', data: Buffer.from('Replacement resource').toString('base64') },
+  ] } }, controller.signal)
+  const outcome = pending.then(value => ({ value }), (error: unknown) => ({ error }))
+  let queued: Promise<unknown> | undefined
+  try {
+    await started.promise
+    queued = invoke('createSkill', { request: { name, description: 'Queued', body: 'Queued body' } })
+      .then(value => ({ value }), (error: unknown) => ({ error }))
+    release.resolve(undefined)
+    expect(await outcome).toMatchObject({ error: { code: 'gateway/cancelled' } })
+    expect(await queued).toMatchObject({ error: { code: 'skills/operation', details: { code: 'error.create.conflict' } } })
+    expect(await readFile(join(target, 'SKILL.md'), 'utf8')).toContain('Replacement body')
+    expect((await readdir(target)).sort()).toEqual(['SKILL.md', 'replacement.txt'])
+    expect((await ctx.skills.get(name))?.content).toBe('Replacement body')
+    expect((await readdir(join(root, '.dsh/skills'))).filter(path => path.includes('.dssm-'))).toEqual([])
+    expect(await readdir(join(root, '.dsh/skills-manager/uploads'))).toEqual([])
+  } finally {
+    release.resolve(undefined)
+    await Promise.allSettled([outcome, queued])
+    probe.mockRestore()
+  }
+}, 30000)
+
+it('keeps committed skills and refreshes the native catalog while cancelling later batch imports', async () => {
+  const { ctx, root, invoke } = await boot()
+  const first = join(root, '.dsh/skills/first-import')
+  expect((await ctx.skills.list()).map(skill => skill.name)).not.toContain('first-import')
+  const controller = new AbortController(), rename = fs.rename
+  const probe = vi.spyOn(fs, 'rename').mockImplementation(async (source, destination) => {
+    await rename(source, destination)
+    if (destination === first) controller.abort(new Error('Stop the remaining batch after the first commit'))
+  })
+  onTestFinished(() => { probe.mockRestore() })
+  try {
+    await expect(invoke('uploadSkill', { request: { entries: ['first-import', 'second-import'].map(name => ({
+      path: `${name}/SKILL.md`, data: Buffer.from(`---\nname: ${name}\ndescription: Batch\n---\n${name} body`).toString('base64'),
+    })) } }, controller.signal)).rejects.toMatchObject({ code: 'gateway/cancelled' })
+    expect(await readFile(join(first, 'SKILL.md'), 'utf8')).toContain('first-import body')
+    await expect(lstat(join(root, '.dsh/skills/second-import'))).rejects.toMatchObject({ code: 'ENOENT' })
+    expect((await ctx.skills.get('first-import'))?.content).toBe('first-import body')
+    expect((await ctx.skills.list()).map(skill => skill.name)).not.toContain('second-import')
+    expect((await readdir(join(root, '.dsh/skills'))).filter(path => path.includes('.dssm-'))).toEqual([])
+    expect(await readdir(join(root, '.dsh/skills-manager/uploads'))).toEqual([])
+  } finally { probe.mockRestore() }
 }, 30000)
 
 it.each(['entries', 'zip'] as const)('rejects nonportable %s resource paths without installing a skill, then accepts portable resources', async (format) => {

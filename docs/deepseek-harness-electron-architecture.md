@@ -9,7 +9,6 @@
 | Electron 主进程 | 钉钉登录、加密凭据、Bootstrap、原生文件、MCP 代理及设备上报 |
 | Host | 原生 Agent、Session、Skill Provider、专家委派、连接器发现与限定范围知识检索 |
 | Renderer | 通过原生 UI 插槽及产品桥展示扩展页面，使用官方 Session、Workspace、Preset 和草稿 API |
-| Rust sidecar | 通过 `deepseek-harness.native.v1` 提供健康检查和设备标识 |
 
 产品桥使用 `window.dshDesktop.extensions` 的 `product` 命名空间。主进程校验方法白名单，Electron 校验所属窗口、来源及主 frame；员工令牌和 Bootstrap 机密不进入 Renderer。Host 通过私有 IPC 请求产品服务，只接收推理配置和私有 loopback MCP 代理凭证。
 
