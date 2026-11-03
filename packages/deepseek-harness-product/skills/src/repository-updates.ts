@@ -1,4 +1,4 @@
-import type { CodedError, SkillRoot } from "./types.ts";
+import type { CodedError, Log, SkillRoot } from "./types.ts";
 import type { Archive, FileDigest, RepositoryDependencies, SkillRequest, InstallSource, RepositoryRoot, InstallRecord } from "./types.ts";
 // 仓库更新使用完整文件摘要预览和目录切换，保留备份，不执行下载内容。
 import { promises as fs } from "node:fs";
@@ -86,8 +86,33 @@ function changesBetween(before: FileDigest[], after: FileDigest[]) {
   return [...new Set([...a.keys(), ...b.keys()])].sort().filter(p => a.get(p) !== b.get(p)).map(path => ({ path, kind: !a.has(path) ? "added" : !b.has(path) ? "removed" : "modified" }));
 }
 
-/** 注入现有仓库存储与串行队列，避免更新和安装互相覆盖状态。 */
-export function createRepositoryUpdater({ read, write, repository, download, serialize, parseRepositoryInput, registeredWorkspaces, onWorkspaceIndexBuild }: RepositoryDependencies) {
+/**
+ * 清理已提交操作明确淘汰的备份；仍有安装记录引用的副本保持不变，失败只记诊断。
+ * @param records 被替换或永久删除的安装记录。
+ * @param retainedInstalls 提交后保留的全部安装记录，包含回收站记录。
+ * @param log 管理诊断写入器；缺省或写入失败时使用控制台警告。
+ * @returns 诊断完成；清理或诊断失败不撤销已提交操作。
+ */
+export async function cleanupRepositoryBackups(records: readonly InstallRecord[], retainedInstalls: readonly InstallRecord[], log?: Log): Promise<void> {
+  const backupRoot = join(managerHomePath(), "repository-backups");
+  for (const key of new Set(records.map(record => record.backup?.key))) {
+    if (typeof key !== "string" || !/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(key) || retainedInstalls.some(install => install.backup?.key === key)) continue;
+    const backup = join(backupRoot, key);
+    try {
+      await safeDirectory(backupRoot);
+      await fs.rm(backup, { recursive: true, force: true });
+    } catch (caught) {
+      const detail = `技能操作已完成，旧版本备份未清理: ${backup}（${caught instanceof Error ? caught.message : String(caught)}）`;
+      try {
+        if (log) await log("repository-backup-warning", detail);
+        else console.warn(detail);
+      } catch (_error) { console.warn(detail); }
+    }
+  }
+}
+
+/** 注入仓库存储与串行队列；提交后清理被替代的备份，清理失败只记诊断。 */
+export function createRepositoryUpdater({ read, write, repository, download, serialize, parseRepositoryInput, registeredWorkspaces, onWorkspaceIndexBuild, log }: RepositoryDependencies) {
   async function prepare(input: SkillRequest, includeArchive = false) {
     const { id, path } = input, data = await read();
     const registered = registeredWorkspaces?.();
@@ -148,6 +173,7 @@ export function createRepositoryUpdater({ read, write, repository, download, ser
       }
       throw error;
     } finally { if (!recoveryFailed) await fs.rm(stage, { recursive: true, force: true }); }
+    await cleanupRepositoryBackups([record], data.installs, log);
     return { name: record.name, commit: plan.commit };
   }
   async function sources() {

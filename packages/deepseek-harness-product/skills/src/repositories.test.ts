@@ -1,12 +1,15 @@
 import { createHash } from 'node:crypto'
-import { mkdir, mkdtemp, realpath, readFile, rm, writeFile } from 'node:fs/promises'
+import { promises as fs } from 'node:fs'
+import { mkdir, mkdtemp, readdir, realpath, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { zipSync, strToU8 } from 'fflate'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
+import * as atomicWrite from '@deepseek-ai/dsh-atomic-write'
 import { createRepositoryManager } from './repositories.ts'
-import { getProviderSkill, listProviderCandidates, managerHomePath, readManagerState, scanEntries, setSkillEnabled, toKebab, userRoots } from './core.ts'
+import { getProviderSkill, listProviderCandidates, managerHomePath, projectRoots, readManagerState, resolveWorkspaceTarget, scanEntries, setSkillEnabled, toKebab, trashRootPath, userRoots } from './core.ts'
 import { selectInstallRecord } from './repository-updates.ts'
+import type { Log, RepositoryState } from './types.ts'
 
 vi.mock('node:os', async importOriginal => ({ ...await importOriginal<typeof import('node:os')>(), homedir: () => process.env.DSH_HOME! }))
 let home: string
@@ -15,7 +18,7 @@ beforeEach(async () => {
   vi.stubEnv('DSH_HOME', home)
   vi.stubEnv('DSH_CODEX_HOME', join(home, '.codex'))
 })
-afterEach(async () => { vi.unstubAllEnvs(); await rm(home, { recursive: true, force: true }) })
+afterEach(async () => { vi.restoreAllMocks(); vi.unstubAllEnvs(); await rm(home, { recursive: true, force: true }) })
 const text = (body: string) => `---\nname: audit-orders\ndescription: Review ERP orders\n---\n${body}\n`
 const pack = (body: string) => ({ name: 'audit-orders', entries: [{ path: 'SKILL.md', data: Buffer.from(text(body)).toString('base64') }] })
 async function store(value: unknown) {
@@ -26,6 +29,38 @@ async function store(value: unknown) {
   return { file, raw }
 }
 const catalogId = 'clawhub:instudio/audit-orders'
+async function repositoryFixture(log?: Log, workspace?: string) {
+  let body = 'Original'
+  if (workspace) await mkdir(workspace, { recursive: true })
+  const registered = workspace ? [workspace] : undefined
+  const fetchImpl = vi.fn(async () => new Response(zipSync({ 'repo-main/skills/audit-orders/SKILL.md': strToU8(text(body)) })))
+  const manager = createRepositoryManager({ fetchImpl, log, registeredWorkspaces: () => registered })
+  const repo = await manager.add({ url: 'instudio/skills' })
+  await manager.refresh({ id: repo.id })
+  const input = { id: repo.id, path: 'skills/audit-orders', root: 'dsh' as const, ...(workspace ? { workspace } : {}) }
+  await manager.install(input, registered)
+  const destination = workspace ? await resolveWorkspaceTarget(workspace, registered) : { root: userRoots().find(root => root.key === 'dsh')! }
+  if (!('root' in destination)) throw new Error('Destination unavailable')
+  const root = destination.root
+  return {
+    manager, input, fetchImpl, root,
+    file: join(root.path, 'audit-orders/SKILL.md'),
+    stateFile: join(managerHomePath(), 'repositories.json'),
+    backupRoot: join(managerHomePath(), 'repository-backups'),
+    async refresh(value: string) { body = value; await manager.refresh({ id: repo.id }) },
+    async update(value: string) {
+      await this.refresh(value)
+      const preview = await manager.preview(input)
+      return manager.update({ ...input, token: preview.token })
+    },
+    async saved(): Promise<RepositoryState> { return JSON.parse(await readFile(this.stateFile, 'utf8')) },
+    async uninstall(entry: 'repository' | 'mine' = 'repository') {
+      const result = entry === 'mine' ? await manager.trashSkill(root, 'audit-orders') : await manager.uninstall(input)
+      if (!('id' in result) || typeof result.id !== 'string') throw new Error('Uninstall failed')
+      return { id: result.id, path: join(trashRootPath(), result.id) }
+    },
+  }
+}
 it.each([
   { version: 1, repositories: [], installs: [], catalogInstalls: [] },
   { version: 2, repositories: [], installs: [] },
@@ -84,6 +119,272 @@ it('uses archive hashes and per-copy status across update, rollback and restart'
   expect(saved).toHaveProperty('installs.0.commit', expect.stringMatching(/^[a-f0-9]{64}$/))
   expect(saved).toMatchObject({ version: 2, installs: [{
     files: [{ hash: createHash('sha256').update(text('Original')).digest('hex') }] }] })
+})
+it('retains one usable previous version across consecutive repository updates, rollback and restart', async () => {
+  const fixture = await repositoryFixture()
+  await fixture.update('Second')
+  const firstBackup = (await fixture.saved()).installs[0].backup!.key
+  await fixture.update('Third')
+  const secondBackup = (await fixture.saved()).installs[0].backup!.key
+  expect(await readdir(fixture.backupRoot)).toEqual([secondBackup])
+  expect(secondBackup).not.toBe(firstBackup)
+  expect(await readFile(join(fixture.backupRoot, secondBackup, 'SKILL.md'), 'utf8')).toBe(text('Second'))
+  const restarted = createRepositoryManager({ fetchImpl: fixture.fetchImpl })
+  const preview = await restarted.preview({ ...fixture.input, rollback: true })
+  await restarted.rollback({ ...fixture.input, token: preview.token })
+  const rollbackBackup = (await fixture.saved()).installs[0].backup!.key
+  expect(await readFile(fixture.file, 'utf8')).toBe(text('Second'))
+  expect(await readdir(fixture.backupRoot)).toEqual([rollbackBackup])
+  expect(await readFile(join(fixture.backupRoot, rollbackBackup, 'SKILL.md'), 'utf8')).toBe(text('Third'))
+  const reopened = createRepositoryManager({ fetchImpl: fixture.fetchImpl })
+  const reverse = await reopened.preview({ ...fixture.input, rollback: true })
+  await reopened.rollback({ ...fixture.input, token: reverse.token })
+  expect(await readFile(fixture.file, 'utf8')).toBe(text('Third'))
+  expect(await readdir(fixture.backupRoot)).toEqual([(await fixture.saved()).installs[0].backup!.key])
+})
+it('keeps the installed files and existing rollback when repository metadata cannot commit', async () => {
+  const fixture = await repositoryFixture()
+  await fixture.update('Second')
+  const previousBackup = (await fixture.saved()).installs[0].backup!.key
+  await fixture.refresh('Third')
+  const refreshedState = await readFile(fixture.stateFile, 'utf8')
+  const preview = await fixture.manager.preview(fixture.input)
+  vi.spyOn(atomicWrite, 'writeFileAtomic').mockRejectedValueOnce(Object.assign(new Error('metadata unavailable'), { code: 'EACCES' }))
+  await expect(fixture.manager.update({ ...fixture.input, token: preview.token })).rejects.toThrow('metadata unavailable')
+  expect(await readFile(fixture.stateFile, 'utf8')).toBe(refreshedState)
+  expect(await readFile(fixture.file, 'utf8')).toBe(text('Second'))
+  expect(await readdir(fixture.backupRoot)).toEqual([previousBackup])
+  expect(await readFile(join(fixture.backupRoot, previousBackup, 'SKILL.md'), 'utf8')).toBe(text('Original'))
+  const restarted = createRepositoryManager({ fetchImpl: fixture.fetchImpl })
+  const rollback = await restarted.preview({ ...fixture.input, rollback: true })
+  await restarted.rollback({ ...fixture.input, token: rollback.token })
+  expect(await readFile(fixture.file, 'utf8')).toBe(text('Original'))
+})
+it.each(['log', 'console', 'failed-log'] as const)('reports backup cleanup failure through %s while preserving the committed update', async mode => {
+  const log = mode === 'console' ? undefined : vi.fn<Log>(async event => {
+    if (mode === 'failed-log' && event === 'repository-backup-warning') throw new Error('logger unavailable')
+  })
+  const fallback = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+  const fixture = await repositoryFixture(log)
+  await fixture.update('Second')
+  const previousBackup = (await fixture.saved()).installs[0].backup!.key
+  const previousPath = join(fixture.backupRoot, previousBackup)
+  const remove = fs.rm.bind(fs)
+  vi.spyOn(fs, 'rm').mockImplementation(async (path, options) => {
+    if (path === previousPath) throw Object.assign(new Error('backup locked'), { code: 'EACCES' })
+    return remove(path, options)
+  })
+  const result = await fixture.update('Third')
+  const state = await fixture.saved()
+  expect(result).toEqual({ name: 'audit-orders', commit: state.installs[0].commit })
+  expect(await readFile(fixture.file, 'utf8')).toBe(text('Third'))
+  expect((await readdir(fixture.backupRoot)).sort()).toEqual([previousBackup, state.installs[0].backup!.key].sort())
+  expect(await readFile(join(fixture.backupRoot, state.installs[0].backup!.key, 'SKILL.md'), 'utf8')).toBe(text('Second'))
+  if (log) expect(log).toHaveBeenCalledWith('repository-backup-warning', expect.stringContaining(previousPath))
+  if (mode !== 'log') expect(fallback).toHaveBeenCalledWith(expect.stringContaining(previousPath))
+  else expect(fallback).not.toHaveBeenCalled()
+})
+it('preserves an old repository backup still referenced by another installation', async () => {
+  const fixture = await repositoryFixture()
+  await fixture.update('Second')
+  const state = await fixture.saved()
+  const previousBackup = state.installs[0].backup!.key
+  state.installs.push({ ...state.installs[0], root: 'agents' })
+  await writeFile(fixture.stateFile, JSON.stringify(state))
+  await fixture.update('Third')
+  const saved = await fixture.saved()
+  expect((await readdir(fixture.backupRoot)).sort()).toEqual([previousBackup, saved.installs[0].backup!.key].sort())
+  expect(saved.installs[1].backup!.key).toBe(previousBackup)
+  expect(await readFile(join(fixture.backupRoot, previousBackup, 'SKILL.md'), 'utf8')).toBe(text('Original'))
+})
+it('does not use an unsafe persisted backup key as a cleanup path', async () => {
+  const fixture = await repositoryFixture()
+  await fixture.update('Second')
+  const state = await fixture.saved()
+  const outside = join(home, 'keep-backup')
+  await mkdir(outside)
+  await writeFile(join(outside, 'keep.txt'), 'Keep local files')
+  state.installs[0].backup!.key = '../../keep-backup'
+  await writeFile(fixture.stateFile, JSON.stringify(state))
+  await fixture.update('Third')
+  expect(await readFile(join(outside, 'keep.txt'), 'utf8')).toBe('Keep local files')
+  expect(await readFile(fixture.file, 'utf8')).toBe(text('Third'))
+})
+it.each(['repository', 'mine'] as const)('keeps the repository source and rollback backup through %s trash and restore', async entry => {
+  const fixture = await repositoryFixture()
+  await fixture.update('Second')
+  const backup = (await fixture.saved()).installs[0].backup!.key
+  const trash = await fixture.uninstall(entry)
+  expect((await fixture.saved()).installs[0]).toMatchObject({ trashId: trash.id, backup: { key: backup } })
+  expect(await readFile(join(fixture.backupRoot, backup, 'SKILL.md'), 'utf8')).toBe(text('Original'))
+  const restarted = createRepositoryManager({ fetchImpl: fixture.fetchImpl })
+  await restarted.restoreTrash(trash.id)
+  expect((await fixture.saved()).installs[0]).not.toHaveProperty('trashId')
+  const rollback = await restarted.preview({ ...fixture.input, rollback: true })
+  await restarted.rollback({ ...fixture.input, token: rollback.token })
+  expect(await readFile(fixture.file, 'utf8')).toBe(text('Original'))
+  expect(await readdir(fixture.backupRoot)).toEqual([(await fixture.saved()).installs[0].backup!.key])
+})
+it.each(['repository', 'mine'] as const)('retires repository ownership and backups after %s trash and permanent deletion before reinstalling', async entry => {
+  const fixture = await repositoryFixture()
+  await fixture.update('Second')
+  const trash = await fixture.uninstall(entry)
+  expect(await fixture.manager.permanentlyDeleteTrash(trash.id)).toEqual({ id: trash.id, name: 'audit-orders' })
+  expect((await fixture.saved()).installs).toEqual([])
+  expect(await readdir(fixture.backupRoot)).toEqual([])
+  await expect(fs.lstat(trash.path)).rejects.toMatchObject({ code: 'ENOENT' })
+  const restarted = createRepositoryManager({ fetchImpl: fixture.fetchImpl })
+  await restarted.install(fixture.input)
+  const installs = (await fixture.saved()).installs
+  expect(installs).toHaveLength(1)
+  expect(installs[0]).not.toHaveProperty('backup')
+  expect(await readFile(fixture.file, 'utf8')).toBe(text('Second'))
+  expect(await readdir(fixture.backupRoot)).toEqual([])
+})
+it.each(['repository', 'mine'] as const)('keeps %s trash history when reinstalling before permanent deletion', async entry => {
+  const fixture = await repositoryFixture()
+  await fixture.update('Second')
+  const backup = (await fixture.saved()).installs[0].backup!.key
+  const trash = await fixture.uninstall(entry)
+  await fixture.manager.install(fixture.input)
+  const installed = await fixture.saved()
+  expect(installed.installs).toHaveLength(2)
+  expect(installed.installs.find(record => record.trashId === trash.id)).toMatchObject({ backup: { key: backup } })
+  expect(installed.installs.filter(record => !record.trashId)).toHaveLength(1)
+  expect(await fixture.manager.restoreTrash(trash.id)).toMatchObject({ ok: false, code: 'error.trash.conflict' })
+  expect(await readFile(fixture.file, 'utf8')).toBe(text('Second'))
+  await fixture.manager.permanentlyDeleteTrash(trash.id)
+  expect((await fixture.saved()).installs).toHaveLength(1)
+  expect((await fixture.saved()).installs[0]).not.toHaveProperty('trashId')
+  expect(await readFile(fixture.file, 'utf8')).toBe(text('Second'))
+  expect(await readdir(fixture.backupRoot)).toEqual([])
+})
+it.each(['metadata', 'move'] as const)('keeps repository source, files and rollback when Mine trash fails at %s', async failure => {
+  const fixture = await repositoryFixture()
+  await fixture.update('Second')
+  const before = await fixture.saved()
+  const backup = before.installs[0].backup!.key
+  if (failure === 'metadata') {
+    vi.spyOn(atomicWrite, 'writeFileAtomic').mockRejectedValueOnce(Object.assign(new Error('metadata unavailable'), { code: 'EACCES' }))
+  } else {
+    const rename = fs.rename.bind(fs)
+    vi.spyOn(fs, 'rename').mockImplementation(async (source, target) => {
+      if (source === join(fixture.root.path, 'audit-orders')) throw Object.assign(new Error('skill locked'), { code: 'EACCES' })
+      return rename(source, target)
+    })
+  }
+  await expect(fixture.manager.trashSkill(fixture.root, 'audit-orders')).rejects.toMatchObject({ code: 'EACCES' })
+  expect(await fixture.saved()).toEqual(before)
+  expect(await readFile(fixture.file, 'utf8')).toBe(text('Second'))
+  expect(await readdir(fixture.backupRoot)).toEqual([backup])
+  expect(await readFile(join(fixture.backupRoot, backup, 'SKILL.md'), 'utf8')).toBe(text('Original'))
+})
+it('keeps Mine trash scoped to the selected registered project', async () => {
+  const project = join(home, 'project')
+  const fixture = await repositoryFixture(undefined, project)
+  await fixture.update('Second')
+  const user = userRoots().find(root => root.key === 'dsh')!
+  const localFile = join(user.path, 'audit-orders/SKILL.md')
+  await mkdir(join(user.path, 'audit-orders'), { recursive: true })
+  await writeFile(localFile, text('Personal'))
+  const trash = await fixture.uninstall('mine')
+  expect((await fixture.saved()).installs[0]).toMatchObject({ workspace: project, trashId: trash.id })
+  expect(await readFile(localFile, 'utf8')).toBe(text('Personal'))
+  await fixture.manager.restoreTrash(trash.id, { projectCwds: [project], registeredWorkspaces: [project] })
+  const preview = await fixture.manager.preview({ ...fixture.input, rollback: true })
+  await fixture.manager.rollback({ ...fixture.input, token: preview.token })
+  expect(await readFile(fixture.file, 'utf8')).toBe(text('Original'))
+  expect(await readFile(localFile, 'utf8')).toBe(text('Personal'))
+})
+it('does not claim repository ownership from another user or project source during Mine trash', async () => {
+  const project = join(home, 'project')
+  const fixture = await repositoryFixture(undefined, project)
+  await fixture.update('Second')
+  const before = await fixture.saved()
+  const shared = userRoots().find(root => root.key === 'agents')!
+  await mkdir(join(shared.path, 'audit-orders'), { recursive: true })
+  await writeFile(join(shared.path, 'audit-orders/SKILL.md'), text('Shared'))
+  const trash = await fixture.manager.trashSkill(shared, 'audit-orders')
+  if (!('id' in trash) || typeof trash.id !== 'string') throw new Error('Trash failed')
+  await fixture.manager.permanentlyDeleteTrash(trash.id)
+  expect(await fixture.saved()).toEqual(before)
+  await mkdir(join(project, '.codex/skills/audit-orders'), { recursive: true })
+  await writeFile(join(project, '.codex/skills/audit-orders/SKILL.md'), text('Project Codex'))
+  const readonly = (await projectRoots([project])).find(root => root.kind === 'project-codex')!
+  expect(await fixture.manager.trashSkill(readonly, 'audit-orders')).toMatchObject({ ok: false })
+  expect(await fixture.saved()).toEqual(before)
+  expect(await readFile(fixture.file, 'utf8')).toBe(text('Second'))
+})
+it.each(['metadata', 'files', 'missing'] as const)('preserves repository ownership and backups when permanent deletion fails at %s', async failure => {
+  const fixture = await repositoryFixture()
+  await fixture.update('Second')
+  const trash = await fixture.uninstall()
+  const previous = await fixture.saved()
+  const backup = previous.installs[0].backup!.key
+  if (failure === 'metadata') {
+    vi.spyOn(atomicWrite, 'writeFileAtomic').mockRejectedValueOnce(Object.assign(new Error('metadata unavailable'), { code: 'EACCES' }))
+  } else if (failure === 'files') {
+    const remove = fs.rm.bind(fs)
+    vi.spyOn(fs, 'rm').mockImplementation(async (path, options) => {
+      if (path === trash.path) throw Object.assign(new Error('trash locked'), { code: 'EACCES' })
+      return remove(path, options)
+    })
+  } else await rm(trash.path, { recursive: true })
+  if (failure === 'missing') expect(await fixture.manager.permanentlyDeleteTrash(trash.id)).toMatchObject({ ok: false, code: 'error.trash.notFound' })
+  else await expect(fixture.manager.permanentlyDeleteTrash(trash.id)).rejects.toMatchObject({ code: 'EACCES' })
+  expect(await fixture.saved()).toEqual(previous)
+  expect(await readdir(fixture.backupRoot)).toEqual([backup])
+  expect(await readFile(join(fixture.backupRoot, backup, 'SKILL.md'), 'utf8')).toBe(text('Original'))
+  if (failure !== 'missing') expect(await readFile(join(trash.path, 'audit-orders/SKILL.md'), 'utf8')).toBe(text('Second'))
+})
+it('preserves a permanently deleted copy backup still referenced by another installation', async () => {
+  const fixture = await repositoryFixture()
+  await fixture.update('Second')
+  const state = await fixture.saved()
+  const backup = state.installs[0].backup!.key
+  state.installs.push({ ...state.installs[0], root: 'agents' })
+  await writeFile(fixture.stateFile, JSON.stringify(state))
+  const trash = await fixture.uninstall()
+  await fixture.manager.permanentlyDeleteTrash(trash.id)
+  expect((await fixture.saved()).installs).toMatchObject([{ root: 'agents', backup: { key: backup } }])
+  expect((await fixture.saved()).installs).toHaveLength(1)
+  expect(await readdir(fixture.backupRoot)).toEqual([backup])
+  expect(await readFile(join(fixture.backupRoot, backup, 'SKILL.md'), 'utf8')).toBe(text('Original'))
+})
+it('reports failed backup cleanup without resurrecting a permanently deleted repository copy', async () => {
+  const log = vi.fn<Log>(() => undefined)
+  const fixture = await repositoryFixture(log)
+  await fixture.update('Second')
+  const backup = (await fixture.saved()).installs[0].backup!.key
+  const backupPath = join(fixture.backupRoot, backup)
+  const trash = await fixture.uninstall()
+  const remove = fs.rm.bind(fs)
+  vi.spyOn(fs, 'rm').mockImplementation(async (path, options) => {
+    if (path === backupPath) throw Object.assign(new Error('backup locked'), { code: 'EACCES' })
+    return remove(path, options)
+  })
+  expect(await fixture.manager.permanentlyDeleteTrash(trash.id)).toEqual({ id: trash.id, name: 'audit-orders' })
+  expect((await fixture.saved()).installs).toEqual([])
+  await expect(fs.lstat(trash.path)).rejects.toMatchObject({ code: 'ENOENT' })
+  expect(await readdir(fixture.backupRoot)).toEqual([backup])
+  expect(log).toHaveBeenCalledWith('repository-backup-warning', expect.stringContaining(backupPath))
+})
+it('does not follow a replaced backup root during permanent deletion cleanup', async () => {
+  const log = vi.fn<Log>(() => undefined)
+  const fixture = await repositoryFixture(log)
+  await fixture.update('Second')
+  const backup = (await fixture.saved()).installs[0].backup!.key
+  const trash = await fixture.uninstall()
+  const outside = join(home, 'outside-backups')
+  await mkdir(join(outside, backup), { recursive: true })
+  await writeFile(join(outside, backup, 'keep.txt'), 'Keep local files')
+  await fs.rename(fixture.backupRoot, fixture.backupRoot + '.kept')
+  await fs.symlink(outside, fixture.backupRoot, process.platform === 'win32' ? 'junction' : 'dir')
+  await fixture.manager.permanentlyDeleteTrash(trash.id)
+  expect((await fixture.saved()).installs).toEqual([])
+  expect(await readFile(join(outside, backup, 'keep.txt'), 'utf8')).toBe('Keep local files')
+  expect(await readFile(join(fixture.backupRoot + '.kept', backup, 'SKILL.md'), 'utf8')).toBe(text('Original'))
+  expect(log).toHaveBeenCalledWith('repository-backup-warning', expect.stringContaining(join(fixture.backupRoot, backup)))
 })
 it('rejects old policy documents and leaves their bytes intact', async () => {
   const current = await readManagerState()

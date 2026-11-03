@@ -8,7 +8,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { unzipSync } from "fflate";
 import { writeFileAtomic } from "@deepseek-ai/dsh-atomic-write";
 import { managerHomePath, resolveWorkspaceTarget, repositoryDestinations, trashRootPath, listTrash, restoreTrash as restoreSkillTrash, permanentlyDeleteTrash, parseSkillDoc, importUploadedSkill, deleteSkill, setSkillEnabled, readManagerState, state, createWorkspaceIndex, type indexRegisteredWorkspaces } from "./core.ts";
-import { createRepositoryUpdater, fileIndex, signature, readSkillTree, repositoryInstallRoot, recordInstallRoot, selectInstallRecord } from "./repository-updates.ts";
+import { cleanupRepositoryBackups, createRepositoryUpdater, fileIndex, signature, readSkillTree, repositoryInstallRoot, recordInstallRoot, selectInstallRecord } from "./repository-updates.ts";
 
 const LIMIT = 32 << 20;
 const STATE_LIMIT = 16 << 20;
@@ -388,6 +388,31 @@ export function createRepositoryManager({ fetchImpl = globalThis.fetch, log, reg
       return result;
     }, false);
   }
+  async function trashRepositoryCopy(data: RepositoryState, record: InstallRecord) {
+    const index = requestIndex();
+    const root = await recordInstallRoot(record, index.registered, await indexedFor(record));
+    const fingerprint = signature(fileIndex(await readSkillTree(join(root.path, record.name))));
+    const trashId = `${Date.now()}-${randomUUID()}`;
+    // Retire write authorization before moving the copy. History belongs to
+    // this Trash id, never to a future same-name external installation.
+    record.trashId = trashId;
+    const catalog = catalogCopies(data, root, record.name);
+    for (const item of catalog) item.trashId = trashId;
+    await write(data);
+    try {
+      await recordInstallRoot(record, index.registered, await indexedFor(record));
+      const result = await deleteSkill(root, record.name, log, { repositoryEntryOnly: true, repositoryTrash: { id: trashId, repository: { id: record.id, path: record.path } }, ...(catalog.length ? { catalogTrash: { id: trashId, ids: catalog.map(item => item.id) } } : {}) });
+      if ("ok" in result && result.ok === false) throw failure(result.error, typeof result.code === "string" ? result.code : "error.repo.invalid", result.params);
+      return result;
+    } catch (error) {
+      if (await matches(record, fingerprint)) {
+        delete record.trashId;
+        for (const item of catalog) delete item.trashId;
+        await write(data);
+      }
+      throw error;
+    }
+  }
   const refreshVersions = new Map<string, number>();
   return {
     installCatalog: (id: string, pack: import("./types.ts").UploadInput, target: { root?: unknown; workspace?: string } = {}) => serialize(async () => {
@@ -433,6 +458,12 @@ export function createRepositoryManager({ fetchImpl = globalThis.fetch, log, reg
     list: () => serialize(list),
     trashSkill: (root: SkillRoot | undefined, name: string) => serialize(async () => {
       const data = await read();
+      if (root && (root.scope === "project" ? root.kind === "project-dsh" : root.key === "dsh" || root.key === "agents")) {
+        const target = { root: root.scope === "project" ? "dsh" : root.key, workspace: root.projectRoot, name };
+        const installed = data.installs.filter(record => !record.trashId && locationKey(record) === locationKey(target));
+        if (installed.length > 1) throw failure("安装记录不唯一，请检查技能来源状态", "error.repo.state");
+        if (installed.length === 1) return trashRepositoryCopy(data, installed[0]);
+      }
       const records = root ? catalogCopies(data, root, name) : [];
       if (!records.length) return deleteSkill(root, name, log);
       const id = `${Date.now()}-${randomUUID()}`;
@@ -455,27 +486,29 @@ export function createRepositoryManager({ fetchImpl = globalThis.fetch, log, reg
     }, false),
     permanentlyDeleteTrash: (id: string) => serialize(async () => {
       const data = await read();
-      const before = data.catalogInstalls;
-      const next = before.filter(record => record.trashId !== id);
-      if (next.length !== before.length) {
-        data.catalogInstalls = next;
-        await write(data, true);
-      }
+      const before = { catalogInstalls: data.catalogInstalls, installs: data.installs };
+      const removed = data.installs.filter(record => record.trashId === id);
+      data.catalogInstalls = before.catalogInstalls.filter(record => record.trashId !== id);
+      data.installs = before.installs.filter(record => record.trashId !== id);
+      const changed = removed.length > 0 || data.catalogInstalls.length !== before.catalogInstalls.length;
+      if (changed) await write(data, true);
+      let result: Awaited<ReturnType<typeof permanentlyDeleteTrash>>;
       try {
-        const result = await permanentlyDeleteTrash(id, log);
+        result = await permanentlyDeleteTrash(id, log);
         if ("ok" in result && result.ok === false) {
-          data.catalogInstalls = before;
-          if (next.length !== before.length) await write(data, true);
+          Object.assign(data, before);
+          if (changed) await write(data, true);
           return result;
         }
-        return result;
       } catch (error) {
-        data.catalogInstalls = before;
-        if (next.length !== before.length) await write(data, true);
+        Object.assign(data, before);
+        if (changed) await write(data, true);
         throw error;
       }
+      await cleanupRepositoryBackups(removed, data.installs, log);
+      return result;
     }, false),
-    ...createRepositoryUpdater({ read, write, repository, download, serialize, parseRepositoryInput, registeredWorkspaces, onWorkspaceIndexBuild }),
+    ...createRepositoryUpdater({ read, write, repository, download, serialize, parseRepositoryInput, registeredWorkspaces, onWorkspaceIndexBuild, log }),
     add: (input: RepositoryInput) => serialize(async () => {
       const source = parseRepositoryInput(input), data = await read();
       const id = createHash("sha256").update(JSON.stringify(source)).digest("hex").slice(0, 24);
@@ -577,32 +610,9 @@ export function createRepositoryManager({ fetchImpl = globalThis.fetch, log, reg
       }, false);
     },
     uninstall: (input: SkillRequest) => serialize(async () => {
-      const { id, path } = input;
       const data = await read();
-      const index = requestIndex();
-      const record = await selectInstallRecord(data.installs, input, index.registered, "没有可追溯的安装记录，不能卸载");
-      const root = await recordInstallRoot(record, index.registered, await indexedFor(record));
-      const fingerprint = signature(fileIndex(await readSkillTree(join(root.path, record.name))));
-      const trashId = `${Date.now()}-${randomUUID()}`;
-      // Retire write authorization before moving the copy. History belongs to
-      // this Trash id, never to a future same-name external installation.
-      record.trashId = trashId;
-      const catalog = catalogCopies(data, root, record.name);
-      for (const item of catalog) item.trashId = trashId;
-      await write(data);
-      try {
-        await recordInstallRoot(record, index.registered, await indexedFor(record));
-        const result = await deleteSkill(root, record.name, log, { repositoryEntryOnly: true, repositoryTrash: { id: trashId, repository: { id, path } }, ...(catalog.length ? { catalogTrash: { id: trashId, ids: catalog.map(item => item.id) } } : {}) });
-        if ("ok" in result && result.ok === false) throw failure(result.error, typeof result.code === "string" ? result.code : "error.repo.invalid", result.params);
-        return result;
-      } catch (error) {
-        if (await matches(record, fingerprint)) {
-          delete record.trashId;
-          for (const item of catalog) delete item.trashId;
-          await write(data);
-        }
-        throw error;
-      }
+      const record = await selectInstallRecord(data.installs, input, requestIndex().registered, "没有可追溯的安装记录，不能卸载");
+      return trashRepositoryCopy(data, record);
     }),
     install: ({ id, path, root: requestedRoot, workspace }: SkillRequest, registered?: string[]) => serialize(async () => {
       // 工作区只开放项目 DSH，不能与 Shared Agent 组合；路径必须来自宿主登记列表。
@@ -629,9 +639,9 @@ export function createRepositoryManager({ fetchImpl = globalThis.fetch, log, reg
       if (!document || hash(document) !== skill.documentHash) throw failure("仓库技能内容与扫描版本不一致，请重新刷新");
       const entries = Object.entries(archive).filter(([p]) => p.startsWith(prefix)).map(([p, bytes]) => ({ path: p.slice(prefix.length), data: Buffer.from(bytes).toString("base64") }));
       if (!entries.some((e) => e.path === "SKILL.md")) throw failure("仓库技能内容已失效");
-      // 同名记录只替换同一位置：用户级按 root 区分 DSH 与 Shared Agent，工作区按项目根区分。
-      // 另一处的安装或回收记录必须保留，否则恢复时会丢失仓库来源。
-      data.installs = data.installs.filter((i) => !(i.name === skill.name && (i.workspace ?? null) === (workspaceRoot ?? null) && i.root === recordRoot));
+      // 只替换同一位置的活动记录；回收记录由对应回收站条目持有。
+      // 用户级按 root 区分 DSH 与 Shared Agent，工作区按项目根区分。
+      data.installs = data.installs.filter((i) => i.trashId !== undefined || !(i.name === skill.name && (i.workspace ?? null) === (workspaceRoot ?? null) && i.root === recordRoot));
       const record: InstallRecord = { id, path, root: recordRoot, ...(workspaceRoot ? { workspace: workspaceRoot } : {}), source: { owner: repo.owner, name: repo.name, ref: repo.ref, subdirectory: repo.subdirectory }, name: skill.name, commit: repo.commit, complete: false, files: entries.map((e) => ({ path: e.path, hash: hash(Buffer.from(e.data, "base64")) })) };
       data.installs.push(record);
       await write(data);

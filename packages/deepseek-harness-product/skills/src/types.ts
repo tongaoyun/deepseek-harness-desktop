@@ -276,6 +276,8 @@ export interface SkillRequest {
 export type Serialize = <T>(task: () => T | Promise<T>, recover?: boolean) => Promise<T>;
 /** State, download and serialization capabilities supplied to repository operations. */
 export interface RepositoryDependencies {
+    /** Cleanup diagnostics; absence or logger failure uses console warnings. */
+    log?: Log;
     registeredWorkspaces?: () => string[] | undefined;
     /** 测试用来观察是否真的扫描了登记工作区；生产调用不传。 */
     onWorkspaceIndexBuild?: () => void;
