@@ -645,6 +645,55 @@ it.each(['zh', 'en'] as const)('shows a workspace registry failure instead of an
   expect(screen.queryByRole('alert')).toBeNull()
 })
 
+it.each(['创建技能', '导入技能'])('reports a workspace destination failure in %s and retries inside the current dialog', async (name) => {
+  const { data, mock } = await setup(true)
+  data.writeDestinations.push({ key: 'dsh', path: '/skills/dsh', label: 'DSH skills', available: true })
+  await screen.findByText('共享技能')
+  mock.unary('skillsManager/listWorkspaces', () => ({ ok: false, error: new RemoteError('skills/operation', 'Workspace registry unavailable', {
+    code: 'error.workspace.registryUnavailable', error: 'Workspace registry unavailable',
+  }) }))
+  fireEvent.click(screen.getByRole('tab', { name: '我的' }))
+  fireEvent.click(screen.getByRole('button', { name }))
+  const dialog = screen.getByRole('dialog', { name })
+  const form = within(dialog)
+  if (name === '创建技能') {
+    fireEvent.change(form.getByRole('textbox', { name: '名称' }), { target: { value: 'keep-my-draft' } })
+    fireEvent.change(form.getByRole('textbox', { name: '简介' }), { target: { value: 'Draft description' } })
+    fireEvent.change(form.getByRole('textbox', { name: '正文（Markdown）' }), { target: { value: 'Draft body' } })
+    expect(form.getByRole('button', { name: '创建技能' })).toHaveProperty('disabled', false)
+  }
+  fireEvent.click(form.getByRole('button', { name: '范围' }))
+  fireEvent.click(screen.getByRole('menuitem', { name: '指定工作区' }))
+  expect((await form.findByRole('alert')).textContent).toContain('无法读取工作区登记，请重试。')
+  expect(form.queryByText('还没有已登记的工作区。请先在侧栏添加，再回到这里选择。')).toBeNull()
+  expect(form.getByRole('button', { name: name === '创建技能' ? '创建技能' : '安装' })).toHaveProperty('disabled', true)
+  if (name === '创建技能') {
+    expect({ notice: form.getByRole('alert').textContent, workspaceDisabled: form.getByRole<HTMLButtonElement>('button', { name: '工作区' }).disabled }).toMatchInlineSnapshot(`
+      {
+        "notice": "无法读取工作区列表：无法读取工作区登记，请重试。重试",
+        "workspaceDisabled": true,
+      }
+    `)
+    fireEvent.click(form.getByRole('button', { name: '范围' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: '用户目录' }))
+    expect(form.getByRole('button', { name: '创建技能' })).toHaveProperty('disabled', false)
+    expect(form.queryByRole('alert')).toBeNull()
+    fireEvent.click(form.getByRole('button', { name: '范围' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: '指定工作区' }))
+  }
+  mock.unary('skillsManager/listWorkspaces', () => ok({ items: [{ name: '恢复的项目', path: '/workspace', registeredPaths: ['/workspace'], available: true, skillCount: 0 }] }))
+  fireEvent.click(form.getByRole('button', { name: '重试' }))
+  await waitFor(() => { expect(form.getByRole('button', { name: '工作区' })).toHaveProperty('disabled', false) })
+  fireEvent.click(form.getByRole('button', { name: '工作区' }))
+  fireEvent.click(screen.getByRole('menuitem', { name: '恢复的项目' }))
+  expect(form.queryByRole('alert')).toBeNull()
+  expect(form.getByRole('button', { name: '工作区' }).textContent).toBe('恢复的项目')
+  expect(mock.remote.skillsManager.listWorkspaces).toHaveBeenCalledTimes(2)
+  expect(mock.remote.skillsManager.createSkill).not.toHaveBeenCalled()
+  expect(mock.remote.skillsManager.uploadSkill).not.toHaveBeenCalled()
+  if (name === '创建技能') expect(form.getByRole('textbox', { name: '名称' })).toHaveProperty('value', 'keep-my-draft')
+})
+
 
 it('cancels a dismissed skill detail and allows a new dialog before the old request settles', async () => {
   const { mock, signalFor } = await setup(true)
