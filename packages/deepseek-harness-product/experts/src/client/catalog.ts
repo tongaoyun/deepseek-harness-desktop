@@ -45,14 +45,32 @@ export class ExpertCatalog {
   /** Release subscribers and prevent further work from this unmounted plugin. */
   dispose(): void { this.pending = undefined; this.companyPending = undefined; this.lifecycle.dispose(empty()) }
 
-  /** Publish a committed write without allowing an older receipt to roll it back.
-   * @param value Committed catalog.
+  /** Accept a complete catalog; lower settings revisions are ignored.
+   * @param value Full directory data from a query or direct commit.
    * @returns Latest accepted catalog.
    */
   accept(value: CatalogSnapshot): CatalogState {
     if (this.lifecycle.signal.aborted || value.revision < this.getSnapshot().revision) return this.getSnapshot()
     this.pending = undefined
     return this.publish(value)
+  }
+
+  /** Consume a full mutation receipt while preserving concurrent company content.
+   * Changed content at a lower settings revision requires a complete reread.
+   * A failed reread leaves the write committed; consumers report a directory error.
+   * @param value Complete catalog returned by the committed operation.
+   * @param started Directory captured immediately before dispatching the write.
+   * @returns Current complete catalog without replacing newer accepted content.
+   */
+  async acceptMutation(value: CatalogSnapshot, started: CatalogState): Promise<CatalogState> {
+    this.lifecycle.signal.throwIfAborted()
+    const current = this.getSnapshot()
+    if (current === started) return this.accept(value)
+    this.lifecycle.advance()
+    this.pending = undefined
+    if (current.revision >= value.revision) return current
+    this.companyPending = undefined
+    return this.refresh()
   }
 
   /** Adopt the revision shared with expert-team settings after a team mutation.
@@ -63,15 +81,18 @@ export class ExpertCatalog {
   adoptRevision(revision: number, enabled: readonly string[]): CatalogState {
     const current = this.getSnapshot()
     if (current.revision < 0 || revision < current.revision) return current
-    return this.accept({ experts: [...current.experts], enabled: [...enabled], revision })
+    return this.acceptEnabled({ enabled: [...enabled], revision })
   }
 
-  /** Apply a saved selection while preserving the current expert directory.
+  /** Apply a saved selection using currently available, non-conflicting experts.
    * @param value Committed enabled selection and settings revision.
    * @returns Latest accepted catalog.
    */
   acceptEnabled(value: { enabled: string[]; revision: number }): CatalogState {
-    return this.accept({ experts: [...this.getSnapshot().experts], ...value })
+    const current = this.getSnapshot()
+    const available = new Set(current.experts.filter(expert => !expert.conflict).map(expert => expert.slug))
+    return this.accept({ experts: [...current.experts], revision: value.revision,
+      enabled: value.enabled.filter(slug => available.has(slug)) })
   }
 
   /** Share reads and queue at most one explicit company refresh behind a local read.
@@ -83,8 +104,12 @@ export class ExpertCatalog {
     if (this.companyPending) return this.companyPending
     if (!refreshCompany) return this.pending ?? this.read(false, this.lifecycle.signal)
     const signal = this.lifecycle.signal
-    const start = () => { signal.throwIfAborted(); return this.read(true, signal) }
-    const request = this.pending ? this.pending.then(start, start) : start()
+    const previous = this.pending
+    const start = (): CatalogState | Promise<CatalogState> => {
+      signal.throwIfAborted()
+      return this.companyPending === pending ? this.read(true, signal) : this.getSnapshot()
+    }
+    const request = previous ? previous.then(start, start) : this.read(true, signal)
     const pending = request.finally(() => { if (this.companyPending === pending) this.companyPending = undefined })
     this.companyPending = pending
     return pending

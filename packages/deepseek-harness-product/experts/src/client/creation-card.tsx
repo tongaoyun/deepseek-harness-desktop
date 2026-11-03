@@ -26,7 +26,7 @@ export interface CreationCardInjected {
  */
 export function CreationCard(props: ToolCallPhaseProps & PropsLocale<'agency'> & CreationCardInjected): React.ReactElement {
   const [editor, setEditor] = React.useState<CreationEditorData | null>(null)
-  const [error, setError] = React.useState<string | null>(null)
+  const [error, setError] = React.useState<{ message: string; source?: 'expert' | 'team' } | null>(null)
   const [busy, setBusy] = React.useState(false)
   const [claimed, setClaimed] = React.useState(false)
   const pending = React.useRef<AbortController | null>(null)
@@ -58,32 +58,44 @@ export function CreationCard(props: ToolCallPhaseProps & PropsLocale<'agency'> &
         setClaimed(true)
       }
     } catch (cause: unknown) {
-      if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : String(cause))
+      if (!controller.signal.aborted) setError({ message: cause instanceof Error ? cause.message : String(cause) })
     } finally {
       if (pending.current === controller) pending.current = null
       if (!controller.signal.aborted) setBusy(false)
     }
   }
-  const refreshTeams = async () => {
+  const refreshDirectory = async (source: 'expert' | 'team') => {
     const signal = lifetime.current?.signal
     if (!signal) return
     try {
       signal.throwIfAborted()
       setError(null)
-      const current = await props.cache.teams.refresh()
-      if (!signal.aborted) props.cache.catalog.adoptRevision(current.revision, current.enabledExperts)
+      if (source === 'expert') await props.cache.catalog.refresh()
+      else {
+        const current = await props.cache.teams.refresh()
+        if (!signal.aborted) props.cache.catalog.adoptRevision(current.revision, current.enabledExperts)
+      }
     } catch (cause: unknown) {
-      if (!signal.aborted) setError(cause instanceof Error ? cause.message : String(cause))
+      if (!signal.aborted) setError({ message: cause instanceof Error ? cause.message : String(cause), source })
     }
   }
   return <div>
     <p>{props.phase === 'result' ? props.block.content.filter(part => part.type === 'text').map(part => part.text).join('\n') : props.t('creation.confirming')}</p>
     {ready?.success && <Button disabled={busy || claimed} onClick={() => { void load(ready.data.proposalId) }}>{props.t(claimed ? 'creation.opened' : 'creation.open')}</Button>}
-    {error && <p role="alert" className="aag-error">{error}{claimed && !editor && <Button onClick={() => { void refreshTeams() }}>{props.t('btn.refresh')}</Button>}</p>}
+    {error && <p role="alert" className="aag-error">{error.message}{error.source && <Button onClick={() => { if (error.source) void refreshDirectory(error.source) }}>{props.t('btn.refresh')}</Button>}</p>}
     {editor?.draft.kind === 'expert' && <CustomExpertEditor expert={editor.draft.data} enabled={false} revision={editor.catalog.revision}
       divisions={[...new Set([...EXPERT_DIVISION_ORDER, ...editor.catalog.experts.map(expert => expert.division)])]}
       remote={props.remote} signal={lifetime.current?.signal} t={props.t} locale={props.getActive()} onClose={() => { setEditor(null) }}
-      onSaved={(catalog) => { props.cache.catalog.accept(catalog); setEditor(null) }} />}
+      prepareSave={() => {
+        const started = props.cache.catalog.getSnapshot()
+        const signal = lifetime.current?.signal
+        return (catalog) => {
+          setEditor(null)
+          void props.cache.catalog.acceptMutation(catalog, started).catch((cause: unknown) => {
+            if (!signal?.aborted) setError({ message: cause instanceof Error ? cause.message : String(cause), source: 'expert' })
+          })
+        }
+      }} />}
     {editor?.draft.kind === 'team' && <TeamLocaleContext.Provider value={props.getActive()}><TeamEditor initial={editor.draft.data}
       experts={editor.catalog.experts} enabled={false} enabledExperts={editor.catalog.enabled} close={() => { setEditor(null) }}
       refresh={() => props.cache.teams.refresh()}
@@ -98,7 +110,7 @@ export function CreationCard(props: ToolCallPhaseProps & PropsLocale<'agency'> &
           const current = await props.cache.teams.acceptMutation(saved, started)
           if (!signal?.aborted) props.cache.catalog.adoptRevision(current.revision, current.enabledExperts)
         } catch (cause: unknown) {
-          if (!signal?.aborted) setError(cause instanceof Error ? cause.message : String(cause))
+          if (!signal?.aborted) setError({ message: cause instanceof Error ? cause.message : String(cause), source: 'team' })
         }
       }} /></TeamLocaleContext.Provider>}
   </div>

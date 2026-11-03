@@ -5,7 +5,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-agent-default-model'
 import type {} from '@deepseek-ai/dsh-agent'
 import type {} from '@deepseek-ai/dsh-cmdline'
-import type {} from '@deepseek-ai/dsh-settings'
+import { SettingsConflictError } from '@deepseek-ai/dsh-settings'
 import { assertUsableApiKey, LlmError } from '@deepseek-ai/dsh-llm'
 import { catalogModelInfo, registerDeepSeekProvider, resolveAdapterOptions } from '@deepseek-ai/dsh-llm-deepseek'
 import { launchEnvironmentOf } from '@deepseek-ai/dsh-launch-environment'
@@ -99,13 +99,19 @@ export function apply(ctx: Context, config: Options): void {
   const repair = () => pending ??= (async () => {
     await prepareGateway()
     signal.throwIfAborted()
+    const defaults = ctx.settings.describe().find(row => row.ns === 'agent-default-model')
+    if (defaults === undefined) throw new Error('Default model settings are unavailable')
     const previous = ctx.agentDefaultModel.currentSelection()
     if (await available(previous)) return
     signal.throwIfAborted()
     const current = ctx.agentDefaultModel.currentSelection()
     if (current.provider !== previous.provider || current.model !== previous.model
       || current.reasoningEffort !== previous.reasoningEffort) return
-    await wait(() => ctx.agentDefaultModel.saveSelection(fallback))
+    try { await wait(() => ctx.settings.replace('agent-default-model', fallback, defaults.revision)) }
+    catch (error) {
+      if (error instanceof SettingsConflictError) return
+      throw error
+    }
   })().finally(() => { pending = undefined })
   ctx.effect(() => ctx.get('appReady')?.onReady(() => {
     void repair().catch((error: unknown) => {

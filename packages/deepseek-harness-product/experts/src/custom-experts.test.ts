@@ -565,7 +565,7 @@ it.each(["删除", "改名"] as const)("他窗%s释放名称后，编辑器保�
     expert: { ...input, prompt: "需要保留的草稿内容" }, enabled: false,
     revision: previous.revision, experts: previous.experts, divisions: ["specialized"],
     remote, locale: "zh" as const, t: ((key: string) => key) as React.ComponentProps<typeof CustomExpertEditor>["t"],
-    onSaved, onClose: vi.fn(),
+    prepareSave: () => onSaved, onClose: vi.fn(),
   };
   // Node 环境只模拟 Hook 存储和表单有效性；直接调用真实组件事件与真实 library。
   const slots: unknown[] = [];

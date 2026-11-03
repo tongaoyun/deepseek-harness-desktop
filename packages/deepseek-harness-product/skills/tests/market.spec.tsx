@@ -30,6 +30,34 @@ function deferred<T>() {
   return { promise, resolve, reject }
 }
 
+function uploadFile(name: string, content: string) {
+  const bytes = new TextEncoder().encode(content)
+  return Object.assign(new File([bytes], name), { arrayBuffer: vi.fn().mockResolvedValue(bytes.buffer) })
+}
+
+function controlledDrop(kind: 'file' | 'directory', file: File, directoryName = 'older-skill') {
+  const pending = deferred<{ succeed: () => void; fail: ErrorCallback }>()
+  const fileEntry = {
+    isFile: true,
+    file(onFile: FileCallback, onError: ErrorCallback) {
+      if (kind === 'file') pending.resolve({ succeed: () => { onFile(file) }, fail: onError })
+      else onFile(file)
+    },
+  }
+  let firstBatch = true
+  const readEntries = vi.fn((onEntries: FileSystemEntriesCallback, onError: ErrorCallback) => {
+    if (!firstBatch) { onEntries([]); return }
+    firstBatch = false
+    pending.resolve({ succeed: () => { onEntries([fileEntry as FileSystemFileEntry]) }, fail: onError })
+  })
+  const directoryEntry = { isFile: false, isDirectory: true, name: directoryName, createReader: () => ({ readEntries }) }
+  return {
+    dataTransfer: { items: [{ webkitGetAsEntry: () => kind === 'file' ? fileEntry : directoryEntry }] },
+    pending: pending.promise,
+    readEntries,
+  }
+}
+
 function skill(name: string): SkillView {
   return { name, declaredName: name, description: `${name}说明`, kind: 'directory', path: `/skills/${name}`,
     modelInvocable: true, userInvocable: true, invocationPolicyValid: true, hasFrontmatter: true, loadable: true,
@@ -177,6 +205,95 @@ it('reserves one import through file preparation and keeps its selection until t
       await Promise.all([reading.promise, writing.promise])
     })
   }
+})
+
+it.each([
+  ['file', 'success'], ['file', 'failure'], ['directory', 'success'], ['directory', 'failure'],
+] as const)('keeps a reopened import selection after an older %s drop completes with %s', async (kind, outcome) => {
+  const { data, mock } = await setup(true)
+  data.writeDestinations.push({ key: 'dsh', path: '/skills/dsh', label: 'DSH skills', available: true })
+  mock.unary('skillsManager/uploadSkill', () => ok({ imported: [{ name: 'current-skill', overwritten: false, warnings: [] }], skipped: [], failed: [] }))
+  await screen.findByText('共享技能')
+  fireEvent.click(screen.getByRole('tab', { name: '我的' }))
+  fireEvent.click(screen.getByRole('button', { name: '导入技能' }))
+  const older = controlledDrop(kind, uploadFile(kind === 'file' ? 'older-skill.zip' : 'SKILL.md', 'older upload'))
+  const firstDialog = screen.getByRole('dialog', { name: '导入技能' })
+  const firstDropZone = within(firstDialog).getByText('拖拽技能到此处').parentElement
+  if (!firstDropZone) throw new Error('Missing import drop zone')
+  fireEvent.drop(firstDropZone, { dataTransfer: older.dataTransfer })
+  const finishOlder = await older.pending
+  fireEvent.click(within(firstDialog).getByRole('button', { name: '取消' }))
+  fireEvent.click(screen.getByRole('button', { name: '导入技能' }))
+  const dialog = screen.getByRole('dialog', { name: '导入技能' })
+  const form = within(dialog)
+  const input = dialog.querySelector('input[type="file"][accept]')
+  if (!input) throw new Error('Missing import file input')
+  fireEvent.change(input, { target: { files: [uploadFile('current-skill.zip', 'current upload')] } })
+  await act(async () => {
+    if (outcome === 'success') finishOlder.succeed()
+    else finishOlder.fail(new DOMException('Older drop unavailable'))
+  })
+  expect(form.getByText('current-skill.zip')).toBeTruthy()
+  expect(form.queryByRole('alert')).toBeNull()
+  if (kind === 'directory') expect(older.readEntries).toHaveBeenCalledTimes(1)
+  fireEvent.click(form.getByRole('button', { name: '安装' }))
+  await waitFor(() => { expect(mock.remote.skillsManager.uploadSkill).toHaveBeenCalledExactlyOnceWith({
+    request: { name: 'current-skill.zip', zip: Buffer.from('current upload').toString('base64'), root: 'dsh' },
+  }) })
+})
+
+it.each(['success', 'failure'] as const)('keeps the latest drop when an older drop finishes later with %s', async (outcome) => {
+  const { data, mock } = await setup(true)
+  data.writeDestinations.push({ key: 'dsh', path: '/skills/dsh', label: 'DSH skills', available: true })
+  mock.unary('skillsManager/uploadSkill', () => ok({ imported: [{ name: 'current-skill', overwritten: false, warnings: [] }], skipped: [], failed: [] }))
+  await screen.findByText('共享技能')
+  fireEvent.click(screen.getByRole('tab', { name: '我的' }))
+  fireEvent.click(screen.getByRole('button', { name: '导入技能' }))
+  const dialog = screen.getByRole('dialog', { name: '导入技能' })
+  const form = within(dialog)
+  const dropZone = form.getByText('拖拽技能到此处').parentElement
+  if (!dropZone) throw new Error('Missing import drop zone')
+  const older = controlledDrop('file', uploadFile('older-skill.zip', 'older upload'))
+  const current = controlledDrop('directory', uploadFile('SKILL.md', 'current upload'), 'current-skill')
+  fireEvent.drop(dropZone, { dataTransfer: older.dataTransfer })
+  const finishOlder = await older.pending
+  fireEvent.drop(dropZone, { dataTransfer: current.dataTransfer })
+  const finishCurrent = await current.pending
+  await act(async () => { finishCurrent.succeed() })
+  expect(form.getByText('current-skill')).toBeTruthy()
+  await act(async () => {
+    if (outcome === 'success') finishOlder.succeed()
+    else finishOlder.fail(new DOMException('Older drop unavailable'))
+  })
+  expect(form.getByText('current-skill')).toBeTruthy()
+  expect(form.queryByRole('alert')).toBeNull()
+  fireEvent.click(form.getByRole('button', { name: '安装' }))
+  await waitFor(() => { expect(mock.remote.skillsManager.uploadSkill).toHaveBeenCalledExactlyOnceWith({
+    request: { name: 'current-skill', entries: [{ path: 'current-skill/SKILL.md', data: Buffer.from('current upload').toString('base64') }], root: 'dsh' },
+  }) })
+})
+
+it('does not restore a removed import selection when a pending drop finishes', async () => {
+  const { data, mock } = await setup(true)
+  data.writeDestinations.push({ key: 'dsh', path: '/skills/dsh', label: 'DSH skills', available: true })
+  await screen.findByText('共享技能')
+  fireEvent.click(screen.getByRole('tab', { name: '我的' }))
+  fireEvent.click(screen.getByRole('button', { name: '导入技能' }))
+  const dialog = screen.getByRole('dialog', { name: '导入技能' })
+  const form = within(dialog)
+  const input = dialog.querySelector('input[type="file"][accept]')
+  const dropZone = form.getByText('拖拽技能到此处').parentElement
+  if (!input || !dropZone) throw new Error('Missing import controls')
+  fireEvent.change(input, { target: { files: [uploadFile('current-skill.zip', 'current upload')] } })
+  const pending = controlledDrop('file', uploadFile('older-skill.zip', 'older upload'))
+  fireEvent.drop(dropZone, { dataTransfer: pending.dataTransfer })
+  const finishDrop = await pending.pending
+  fireEvent.click(form.getByRole('button', { name: '移除所选内容' }))
+  await act(async () => { finishDrop.succeed() })
+  expect(form.queryByText('older-skill.zip')).toBeNull()
+  expect(form.queryByText('current-skill.zip')).toBeNull()
+  expect(form.getByRole('button', { name: '安装' })).toHaveProperty('disabled', true)
+  expect(mock.remote.skillsManager.uploadSkill).not.toHaveBeenCalled()
 })
 
 it('shows file preparation failures and permits importing the same selection again', async () => {

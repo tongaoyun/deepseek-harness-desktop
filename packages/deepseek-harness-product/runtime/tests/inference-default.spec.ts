@@ -250,6 +250,45 @@ it('preserves a valid native default and reasoning effort even when the model is
   await handle.dispose()
 })
 
+it('keeps a user selection already being saved when company default repair starts', async () => {
+  const { ctx, configure, profile } = await fixture()
+  const entered = Promise.withResolvers<undefined>()
+  const release = Promise.withResolvers<undefined>()
+  const checked = Promise.withResolvers<undefined>()
+  const nativeEdit = ctx.configEditor.edit.bind(ctx.configEditor)
+  let choosing: Promise<void> = Promise.resolve()
+  let first = true
+  vi.spyOn(ctx.configEditor, 'edit').mockImplementation(async (entry, change) => {
+    if (first) {
+      first = false
+      entered.resolve(undefined)
+      await release.promise
+    } else await choosing
+    await nativeEdit(entry, change)
+  })
+  const selected = { provider: 'personal', model: 'personal-model', reasoningEffort: ReasoningEffortId('high') }
+  choosing = ctx.agentDefaultModel.saveSelection(selected)
+  onTestFinished(async () => { release.resolve(undefined); await choosing })
+  await entered.promise
+  const current = ctx.agentDefaultModel.currentSelection.bind(ctx.agentDefaultModel)
+  let reads = 0
+  vi.spyOn(ctx.agentDefaultModel, 'currentSelection').mockImplementation(() => {
+    const selection = current()
+    if (++reads === 2) checked.resolve(undefined)
+    return selection
+  })
+  await configure([company(['deepseek-v4-flash'])])
+  await checked.promise
+  const creating = createAgent(ctx, 'pending-personal-default', 'test', 'original')
+  release.resolve(undefined)
+  await choosing
+  const handle = await creating
+  onTestFinished(() => handle.dispose())
+  expect(current()).toEqual(selected)
+  expect(loadOptionalPatches('test', profile.patchPath)?.find(row => row.id === 'agent-default-model')?.config)
+    .toEqual(selected)
+})
+
 it('selects company inference on first launch when the native default has no API-key credential', async () => {
   const { ctx, configure } = await fixture({ provider: 'deepseek-official', model: 'deepseek-flash' })
   expect(await ctx.llm.listModels('deepseek-official')).toEqual([])
