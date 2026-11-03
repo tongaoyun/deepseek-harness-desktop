@@ -26,6 +26,60 @@ function deferred<T>() {
   return { promise, resolve }
 }
 
+it.each(['transport', 'catalog'] as const)('retries failed OAuth provider %s reads without losing connector input', async (failure) => {
+  let reads = 0
+  const provider = { id: 'company-oauth', version: '1.0.0', name: 'Company OAuth', authMode: 'oauth',
+    visibility: 'COMPANY', reviewStatus: 'PUBLISHED', tools: [] }
+  const invoke = vi.fn(async (_namespace: string, method: string) => {
+    expect(method).toBe('connectors.list')
+    if (++reads === 1) {
+      if (failure === 'transport') throw new Error('Provider request unavailable')
+      return { ok: true, result: {} }
+    }
+    return { ok: true, result: [provider] }
+  })
+  vi.stubGlobal('dshDesktop', { extensions: { invoke, cancel: vi.fn() } })
+  render(<ConnectorEditor onClose={vi.fn()} onSaved={vi.fn()} t={t} />)
+  fireEvent.change(screen.getByLabelText(zh.mcpServerType), { target: { value: 'streamable-http' } })
+  fireEvent.change(screen.getByLabelText(zh.mcpServerName), { target: { value: 'My HTTP connector' } })
+  fireEvent.change(screen.getByLabelText(zh.connectorEndpoint), { target: { value: 'https://my-mcp.example.test' } })
+  fireEvent.click(screen.getByRole('button', { name: zh.addConfigurationEntry }))
+  fireEvent.change(screen.getByLabelText(`${zh.configurationKey} 1`), { target: { value: 'Authorization' } })
+  fireEvent.change(screen.getByLabelText(`${zh.configurationValue} 1`), { target: { value: 'retained-private-value' } })
+  fireEvent.change(screen.getByLabelText(zh.connectorTimeout), { target: { value: '120' } })
+  await screen.findByRole('alert')
+  expect(screen.queryByLabelText(zh.authentication)).toBeNull()
+  fireEvent.click(screen.getByRole('button', { name: zh.retry }))
+  const authentication = await screen.findByLabelText<HTMLSelectElement>(zh.authentication)
+  expect(authentication.options[1]?.text).toBe('Company OAuth · OAuth')
+  expect(screen.getByLabelText<HTMLInputElement>(zh.mcpServerName).value).toBe('My HTTP connector')
+  expect(screen.getByLabelText<HTMLInputElement>(zh.connectorEndpoint).value).toBe('https://my-mcp.example.test')
+  expect(screen.getByLabelText<HTMLInputElement>(`${zh.configurationValue} 1`).value).toBe('retained-private-value')
+  expect(screen.getByLabelText<HTMLInputElement>(zh.connectorTimeout).value).toBe('120')
+  expect(screen.queryByRole('alert')).toBeNull()
+  expect(reads).toBe(2)
+})
+
+it('cancels an OAuth provider retry when the editor closes', async () => {
+  const pending = deferred<unknown>()
+  let reads = 0
+  const invoke = vi.fn(async (_namespace: string, _method: string, _payload: unknown, _request: string) => {
+    if (++reads === 1) throw new Error('Provider request unavailable')
+    return { ok: true, result: await pending.promise }
+  })
+  const cancel = vi.fn()
+  vi.stubGlobal('dshDesktop', { extensions: { invoke, cancel } })
+  const view = render(<ConnectorEditor onClose={vi.fn()} onSaved={vi.fn()} t={t} />)
+  fireEvent.change(screen.getByLabelText(zh.mcpServerType), { target: { value: 'streamable-http' } })
+  await screen.findByRole('alert')
+  fireEvent.click(screen.getByRole('button', { name: zh.retry }))
+  expect(reads).toBe(2)
+  expect(screen.queryByRole('button', { name: zh.retry })).toBeNull()
+  view.unmount()
+  expect(cancel).toHaveBeenCalledWith('product', invoke.mock.calls[1]?.[3])
+  await act(async () => { pending.resolve([]) })
+})
+
 it.each(['header', 'escape', 'mask'] as const)('asks before discarding connector edits through %s', async (action) => {
   vi.stubGlobal('dshDesktop', { extensions: { invoke: vi.fn(async () => ({ ok: true, result: [] })), cancel: vi.fn() } })
   const onClose = vi.fn()

@@ -17,7 +17,7 @@ import type { SkillRoot, RepositoryDestination, RootInput, Diagnostic, Operation
 import { homedir } from "node:os";
 import { writeFileAtomic } from "@deepseek-ai/dsh-atomic-write";
 import { canonicalizeWatchPath, resolveDshHome, resolveAgentsHome } from '@deepseek-ai/dsh-home-paths';
-import { isSkillName } from '@deepseek-ai/dsh-skill';
+import { isSkillName, type SkillProviderObservation } from '@deepseek-ai/dsh-skill';
 import { parseSkillInvocationPolicy } from '@deepseek-ai/dsh-skill-filesystem/document';
 import { parseSkillDoc } from './skill-document.ts';
 export { parseSkillDoc };
@@ -37,6 +37,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { unzipSync } from "fflate";
 import {
   discoverReadonlyEntries,
+  isMissingSkillPath,
   validDiscoveryName,
 } from "./readonly-discovery.ts";
 
@@ -701,11 +702,14 @@ function isSameOrDescendant(parent: string, child: string) {
   );
 }
 
+type SourceLookupFailure = (error: unknown) => void;
+
 /** 解析真实路径；中间若有目录链接，按落地目录比较重叠。 */
-async function resolvedPath(path: string) {
+async function resolvedPath(path: string, onFailure?: SourceLookupFailure) {
   try {
     return await fs.realpath(path);
-  } catch {
+  } catch (error) {
+    onFailure?.(error);
     return resolve(path);
   }
 }
@@ -731,8 +735,8 @@ async function pathsOverlap(a: string, b: string) {
 }
 
 /** 预解析技能根后的根内校验，供逐条目扫描复用同一次 realpath，减少重复 IO。 */
-async function isInsideResolvedRoot(rootReal: string, path: string) {
-  return isSameOrDescendant(rootReal, await resolvedPath(path));
+async function isInsideResolvedRoot(rootReal: string, path: string, onFailure?: SourceLookupFailure) {
+  return isSameOrDescendant(rootReal, await resolvedPath(path, onFailure));
 }
 
 function pathIdentity(path: string) {
@@ -740,10 +744,11 @@ function pathIdentity(path: string) {
   return process.platform === "win32" ? canonical.toLowerCase() : canonical;
 }
 
-async function lstatOrNull(path: string) {
+async function lstatOrNull(path: string, onFailure?: SourceLookupFailure) {
   try {
     return await fs.lstat(path);
-  } catch {
+  } catch (error) {
+    onFailure?.(error);
     return null;
   }
 }
@@ -869,38 +874,40 @@ function linkedWriteError(path: string): OperationError {
   };
 }
 
-async function readlinkOrNull(path: string) {
+async function readlinkOrNull(path: string, onFailure?: SourceLookupFailure) {
   try {
     return await fs.readlink(path);
-  } catch {
+  } catch (error) {
+    if (!(error instanceof Error && "code" in error && error.code === "EINVAL")) onFailure?.(error);
     return null;
   }
 }
 
 /** 目录软链接，或 Windows 上 readlink 能解开的 junction。文件链接和普通目录不是。 */
-async function isDirectoryLink(path: string) {
-  const st = await lstatOrNull(path);
+async function isDirectoryLink(path: string, onFailure?: SourceLookupFailure) {
+  const st = await lstatOrNull(path, onFailure);
   if (!st) return false;
   if (st.isSymbolicLink()) {
     try {
       return (await fs.stat(path)).isDirectory();
-    } catch {
+    } catch (error) {
+      onFailure?.(error);
       return false;
     }
   }
   if (process.platform !== "win32" || !st.isDirectory()) return false;
-  return (await readlinkOrNull(path)) !== null;
+  return (await readlinkOrNull(path, onFailure)) !== null;
 }
 
 /**
  * 可写根的顶层目录链接。只接受指向目录、且 SKILL.md 本身是普通文件的 bundle。
  * 不是目录链接时返回 null，调用方继续按真实目录处理。
  */
-async function linkedDirectoryBundle(directory: string, name: string): Promise<DiscoveredEntry | null> {
+async function linkedDirectoryBundle(directory: string, name: string, onFailure?: SourceLookupFailure): Promise<DiscoveredEntry | null> {
   const bundlePath = entryPath(directory, name);
-  if (bundlePath === null || !(await isDirectoryLink(bundlePath))) return null;
+  if (bundlePath === null || !(await isDirectoryLink(bundlePath, onFailure))) return null;
   const docPath = join(bundlePath, "SKILL.md");
-  const docStat = await lstatOrNull(docPath);
+  const docStat = await lstatOrNull(docPath, onFailure);
   if (!docStat?.isFile() || docStat.isSymbolicLink()) return null;
   return {
     kind: "bundle",
@@ -1047,6 +1054,7 @@ export async function scanEntries(root: RootInput, options: {metadataOnly?: bool
   if (definition && (!definition.mutable || definition.key === "agents")) {
     const discovered = await discoverReadonlyEntries(definition.path);
     if (options.metadataOnly) return discovered;
+    let complete = discovered.complete;
     const entries = [];
     for (const entry of discovered.entries) {
       try {
@@ -1059,28 +1067,31 @@ export async function scanEntries(root: RootInput, options: {metadataOnly?: bool
           ),
           ...entry,
         });
-      } catch {
+      } catch (error) {
+        if (!isMissingSkillPath(error)) complete = false;
         /* 忽略已失效或不可读技能。 */
       }
     }
-    return { ...discovered, entries };
+    return { ...discovered, entries, complete };
   }
   const directory = definition ? definition.path : root as string;
-  const rootStat = await lstatOrNull(resolve(directory));
+  let complete = true;
+  const onFailure = (error: unknown) => { if (!isMissingSkillPath(error)) complete = false; };
+  const rootStat = await lstatOrNull(resolve(directory), onFailure);
   if (!rootStat || !rootStat.isDirectory() || rootStat.isSymbolicLink())
-    return { exists: false, entries: [] };
+    return { exists: false, entries: [], complete };
   let items;
   try {
     items = await fs.readdir(directory, { withFileTypes: true });
-  } catch {
-    return { exists: false, entries: [] };
+  } catch (error) {
+    return { exists: false, entries: [], complete: isMissingSkillPath(error) };
   }
   const byName = new Map<string, SkillEntry>();
-  const rootReal = await resolvedPath(directory);
+  const rootReal = await resolvedPath(directory, onFailure);
   for (const it of items) {
     try {
       if (it.isSymbolicLink() || (process.platform === "win32" && it.isDirectory())) {
-        const linked = await linkedDirectoryBundle(directory, it.name);
+        const linked = await linkedDirectoryBundle(directory, it.name, onFailure);
         if (linked) {
           const doc = options.metadataOnly
             ? { data: {}, map: {}, hasFrontmatter: false }
@@ -1095,12 +1106,11 @@ export async function scanEntries(root: RootInput, options: {metadataOnly?: bool
       }
       if (it.isDirectory() && entryPath(directory, it.name) !== null) {
         const docPath = join(directory, it.name, "SKILL.md");
-        const st = await lstatOrNull(docPath);
+        const st = await fs.lstat(docPath);
         if (
-          !st ||
           !st.isFile() ||
           st.isSymbolicLink() ||
-          !(await isInsideResolvedRoot(rootReal, docPath))
+          !(await isInsideResolvedRoot(rootReal, docPath, onFailure))
         )
           continue;
         const doc = options.metadataOnly
@@ -1122,7 +1132,7 @@ export async function scanEntries(root: RootInput, options: {metadataOnly?: bool
         const skillName = it.name.slice(0, -3);
         if (byName.has(skillName)) continue;
         const docPath = join(directory, it.name);
-        if (!(await isInsideResolvedRoot(rootReal, docPath))) continue;
+        if (!(await isInsideResolvedRoot(rootReal, docPath, onFailure))) continue;
         const doc = options.metadataOnly
           ? { data: {}, map: {}, hasFrontmatter: false }
           : parseSkillDoc(await fs.readFile(docPath, "utf8"));
@@ -1135,14 +1145,15 @@ export async function scanEntries(root: RootInput, options: {metadataOnly?: bool
           linked: false,
         });
       }
-    } catch {
+    } catch (error) {
+      if (!isMissingSkillPath(error)) complete = false;
       /* 跳过不可读条目 */
     }
   }
   const entries = [...byName.values()].sort((a, b) =>
     a.name.localeCompare(b.name),
   );
-  return { exists: true, entries };
+  return { exists: true, entries, complete };
 }
 
 /** 同一真实技能优先归属直接 SSOT；同类条目再按来源 rank 决胜。 */
@@ -2924,12 +2935,16 @@ export async function skillDetail(key: string, name: string, options: ScopeOptio
   };
 }
 
-/** 选择未停用的最高优先级副本；全部停用时保留原生覆盖或显式禁用阻断。 */
+/** 选择未停用的最高优先级副本；全部停用时保留原生覆盖或显式禁用阻断，I/O 不完整时阻止缓存。 */
 export async function listProviderCandidates(options: ScopeOptions = {}) {
+  options.signal?.throwIfAborted();
   const policyResult = await readManagerState();
+  options.signal?.throwIfAborted();
   const candidates = [];
   const user = userRoots(options.companySkillsRoot);
   const userScans = await scanDeduplicatedRoots(user);
+  options.signal?.throwIfAborted();
+  let complete = [...userScans.values()].every(scan => scan.complete);
   const items = user.flatMap((root) =>
     userScans.get(root.key)!.entries.map((entry) => ({ root, entry, policy: effectiveSkillPolicy(policyResult, root, entry) })),
   );
@@ -2937,8 +2952,11 @@ export async function listProviderCandidates(options: ScopeOptions = {}) {
     options && typeof options.cwd === "string" ? options.cwd : undefined;
   if (cwd) {
     const roots = await projectRoots([cwd]);
+    options.signal?.throwIfAborted();
     for (const root of roots) {
       const scanned = (await scanDeduplicatedRoots([root])).get(root.key)!;
+      options.signal?.throwIfAborted();
+      if (!scanned.complete) complete = false;
       for (const entry of scanned.entries) items.push({ root, entry, policy: effectiveSkillPolicy(policyResult, root, entry) });
     }
   }
@@ -3007,7 +3025,8 @@ export async function listProviderCandidates(options: ScopeOptions = {}) {
       },
     });
   }
-  return candidates;
+  options.signal?.throwIfAborted();
+  return { candidates, complete } satisfies SkillProviderObservation;
 }
 
 export async function getProviderSkill(candidate: ProviderCandidate, options: ScopeOptions = {}) {
@@ -3373,11 +3392,11 @@ export async function state(options: ScopeOptions = {}) {
 
 export { KEBAB_RE };
 
-export type ProviderCandidate = Awaited<ReturnType<typeof listProviderCandidates>>[number];
+export type ProviderCandidate = Awaited<ReturnType<typeof listProviderCandidates>>['candidates'][number];
 
 type SourceAnalysis = ({kind: "none"} & Diagnostic) | ({kind: "single"; skillFile: string} & ImportCandidate) | {kind: "batch"; rawName: string; source: string; isDir: boolean};
 type MetadataEntry = DiscoveredEntry & {name: string; providerRank?: number; policyAliases?: {rootKey: string; name: string}[]};
-interface MetadataScan {exists: boolean; entries: MetadataEntry[]; truncated?: boolean}
+interface MetadataScan {exists: boolean; entries: MetadataEntry[]; truncated?: boolean; complete: boolean}
 
 
 /** Export one native skill with its resource files, refusing symlinks and oversized trees.

@@ -13,6 +13,9 @@ import { connectorCommand, connectorCommandText, connectorConfigurations, connec
 import { useEditorCloseGuard } from './useEditorCloseGuard.ts'
 
 type Pair = { key: string; value: string }
+type Providers = { readonly status: 'loading' }
+  | { readonly status: 'ready'; readonly items: readonly ProductItem[] }
+  | { readonly status: 'failed'; readonly error: unknown }
 const pairs = (value: Record<string, string>): Pair[] => Object.entries(value).map(([key, value]) => ({ key, value }))
 const configuration = (rows: readonly Pair[]): Record<string, string> => {
   const active = rows.filter(row => row.key.trim() || row.value)
@@ -38,7 +41,7 @@ export function ConnectorEditor({ onClose, onSaved, editing, t }: {
   const [environment, setEnvironment] = useState<Pair[]>([{ key: '', value: '' }])
   const [command, setCommand] = useState('')
   const [timeout, setTimeout] = useState('60')
-  const [providers, setProviders] = useState<readonly ProductItem[]>([])
+  const [providers, setProviders] = useState<Providers>({ status: 'loading' })
   const [parsed, setParsed] = useState<readonly ConnectorDraft[]>([])
   const [selected, setSelected] = useState(0)
   const [error, setError] = useState<string>()
@@ -73,13 +76,19 @@ export function ConnectorEditor({ onClose, onSaved, editing, t }: {
     } catch (error) { if (!signal.aborted) setError(productErrorMessage(error, t, 'loadFailed')) }
     finally { if (!signal.aborted) setLoading(false) }
   }
+  const loadProviders = async (signal = lifecycle.current.signal): Promise<void> => {
+    setProviders({ status: 'loading' })
+    try {
+      const value = await invoke('connectors.list', {}, undefined, signal)
+      const candidates = items(value).filter(entry => entry.authMode === 'oauth' && entry.visibility !== 'PERSONAL')
+      if (!signal.aborted) setProviders({ status: 'ready', items: candidates })
+    } catch (error) { if (!signal.aborted) setProviders({ status: 'failed', error }) }
+  }
   useEffect(() => {
     const controller = new AbortController()
     lifecycle.current = controller
     void load(controller.signal)
-    void invoke('connectors.list', {}, undefined, controller.signal).then((value) => {
-      if (!controller.signal.aborted) setProviders(items(value).filter(entry => entry.authMode === 'oauth' && entry.visibility !== 'PERSONAL'))
-    }).catch(() => undefined)
+    void loadProviders(controller.signal)
     return () => { controller.abort() }
   }, [])
   const update = <K extends keyof ConnectorDraft>(key: K, value: ConnectorDraft[K]): void => {
@@ -202,11 +211,16 @@ export function ConnectorEditor({ onClose, onSaved, editing, t }: {
             {Object.entries(CATEGORY_KEYS).map(([value, key]) => <option key={value} value={value}>{t(key)}</option>)}
           </select></label>
           {draft.transport === 'streamable-http' ? <>
-            {providers.length > 0 && <label className={css.editorField}><span>{t('authentication')}</span><select aria-label={t('authentication')}
+            {providers.status === 'loading' && <ProductLoading label={t('loading')} />}
+            {providers.status === 'failed' && <div>
+              <p role="alert" className={css.catalogError}>{productErrorMessage(providers.error, t, 'connectorProvidersFailed')}</p>
+              <Button variant="outline" disabled={pending} onClick={() => { void loadProviders() }}>{t('retry')}</Button>
+            </div>}
+            {providers.status === 'ready' && providers.items.length > 0 && <label className={css.editorField}><span>{t('authentication')}</span><select aria-label={t('authentication')}
               value={draft.oauthProviderId ?? ''} disabled={pending} onChange={(event) => {
                 const id = event.currentTarget.value; setHeaders([]); setEnvironment([])
                 setDraft(({ oauthProviderId: _oauthProviderId, ...previous }) => ({ ...previous, ...(id ? { oauthProviderId: id } : {}) }))
-              }}><option value="">{t('localAuthentication')}</option>{providers.map(provider => <option key={provider.id} value={provider.id}>{provider.label} · {t('oauthAuthentication')}</option>)}</select></label>}
+              }}><option value="">{t('localAuthentication')}</option>{providers.items.map(provider => <option key={provider.id} value={provider.id}>{provider.label} · {t('oauthAuthentication')}</option>)}</select></label>}
             {!draft.oauthProviderId && <>{field('url', 'connectorEndpoint', 'https://example.com/mcp', true)}{privateRows(headers, setHeaders, 'privateHeaders')}</>}
           </> : <>
             <label className={css.editorField}><span>{t('mcpCommand')}<span className={css.requiredMark} aria-hidden="true">*</span></span>
