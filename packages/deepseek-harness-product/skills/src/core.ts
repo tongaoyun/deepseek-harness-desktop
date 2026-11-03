@@ -2944,7 +2944,7 @@ export async function listProviderCandidates(options: ScopeOptions = {}) {
   const user = userRoots(options.companySkillsRoot);
   const userScans = await scanDeduplicatedRoots(user);
   options.signal?.throwIfAborted();
-  let complete = [...userScans.values()].every(scan => scan.complete);
+  let complete = policyResult.writable && [...userScans.values()].every(scan => scan.complete);
   const items = user.flatMap((root) =>
     userScans.get(root.key)!.entries.map((entry) => ({ root, entry, policy: effectiveSkillPolicy(policyResult, root, entry) })),
   );

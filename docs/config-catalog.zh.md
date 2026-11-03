@@ -3294,7 +3294,7 @@ export interface Config {
 
 ## `@deepseek-ai/dsh-skill`
 
-- `source`: [`packages/skill/skill/src/index.ts:279`](../packages/skill/skill/src/index.ts)
+- `source`: [`packages/skill/skill/src/index.ts:297`](../packages/skill/skill/src/index.ts)
 
 ```ts config-catalog
 /** Skill registry configuration. */
