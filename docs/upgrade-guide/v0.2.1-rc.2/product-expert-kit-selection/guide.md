@@ -18,6 +18,6 @@ description: "移除自建专家套件和技能，改用预装原生生态插件
 1. 先部署服务端并执行 `V64__retire_product_content.sql`，安装新版桌面；机器发布配置改为 `deepseek-harness.connectors.publisher-token`。
 2. 在左侧“扩展能力”进入“专家套件”和“技能”，在“市场／我的”管理内容。企业连接器仍在左侧连接器入口配置，知识库仍从对话入口选择。
 3. 旧套件任务可查看历史和保留草稿；显式恢复为新任务，或新建对话后确认知识库范围再发送。
-4. 验证插件加载、原生技能按需读取、连接器审批和知识库范围。当前产品边界见[产品当前边界](../../../../apps/product-desktop/docs/breaking-changes.md)。
+4. 验证插件加载、原生技能按需读取、连接器审批和知识库范围。当前产品说明见[项目总览](../../../../apps/product-desktop/docs/README.md)。
 
 5. 使用本地专家目录时，检查 Markdown 文件头的 `name`、`description`、`descriptionEn` 和 `emoji`：文本中的冒号或 `#` 需要表达为字符串时加引号，长简介可用 `>-` 多行标量；删除重复键。刷新专家名册后确认名称与简介正常显示，并读取一次正文。

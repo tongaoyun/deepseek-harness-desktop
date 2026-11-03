@@ -1,39 +1,37 @@
 # DeepSeek Harness 产品层
 
-企业目录扩展官方 Harness 的 Session、执行循环、审批和会话界面。产品包负责认证、下载、能力选择、连接器策略和限定范围的知识检索。[项目总览](../../apps/product-desktop/docs/README.md)索引员工流程和仓库职责。
+产品层通过公开扩展点接入企业身份、公司内容、连接器和知识库；对话、执行、审批及持久化由 Harness 提供。员工入口见[项目总览](../../apps/product-desktop/docs/README.md)。
 
-## 产品分工
+## 模块职责
 
-产品协议包负责身份、连接器目录和知识库请求；桌面包管理凭据、原生文件与插件预装；运行时包通过 Cordis 接入连接器策略、知识库范围和会话快照；UI 包提供连接器、知识库及反馈入口。
+| 模块 | 负责内容 |
+| --- | --- |
+| [产品协议](../../packages/deepseek-harness-product/product/README.md) | 钉钉会话、目录与服务端请求校验 |
+| [桌面](../../packages/deepseek-harness-product/desktop/README.md) | 凭据隔离、原生文件、sidecar 和 Host 启动准备 |
+| [运行时](../../packages/deepseek-harness-product/runtime/README.md) | MCP 工具发现、审批策略、任务知识库和内容版本绑定 |
+| [产品 UI](../../packages/extensions/ui-deepseek-harness-product/README.md) | 扩展页面、文件工作区、任务选择与反馈 |
+| [专家](../../packages/deepseek-harness-product/experts/README.md)与[技能](../../packages/deepseek-harness-product/skills/README.md) | 原生 Agent、Agent Team、Settings 与 Skill Provider 的产品入口 |
 
-专家与技能采用预装的 Agency Agents、Skills Manager，执行仍由官方 Agent、Skill Provider 和 Session 完成。产品不维护第二套技能或套件协议、制品与安装状态。任务快照仅保存基础模式、知识库固定 ID 及官方派生定义，位于 `product-knowledge-tasks-v1`。旧产品组合失效时保留历史和草稿，显式恢复创建替代任务，禁止静默使用默认能力执行。
+## 身份与权限
 
-## 权限与检索
+员工令牌留在主进程，连接器 OAuth 凭据留在服务端。连接器工具按版本和定义绑定，执行时重新检查访问资格；READ 通过策略，WRITE 请求官方审批，未声明工具拒绝。
 
-已声明的 READ 连接器工具继续通过 Harness 策略，WRITE 工具请求官方审批。未声明连接器工具被拒绝。服务端负责实时权限校验和撤销。员工令牌留在主进程，上游连接器 OAuth 凭据留在服务端。
+知识库按 `PERSONAL`、`DEPARTMENT`、`COMPANY` 授权。服务端通过 org-directory 将已认证的 unionId 或 userid 精确映射到在职员工，授予本人、全部直属部门及配置公司的范围；不按姓名、openId 或任务中的旧部门声明授权。目录快照默认有效 26 小时，超期或组织服务故障拒绝访问。部署配置由服务端 `docs/deployment.md` 维护。
 
-知识库选择属于任务快照。搜索只接受查询和结果数量，引用片段阅读接受来源 ID。所选组合注册 `knowledge_search` 和 `knowledge_read`；空选择不注册检索工具，也不会扩大为全部可见知识库。解析后的知识库 ID 定义精确的搜索与阅读范围。服务端权限失败作为工具失败处理，超出所选 ID 的结果被拒绝。
+阅读和管理分离：个人所有者、固定管理者及配置的管理员可管理相应内容，部门成员身份只授予阅读权。普通员工只能创建个人库，共享库由管理员创建或绑定；未绑定库不可检索，文件夹不增加权限。
 
-知识库归属使用 `PERSONAL`、`DEPARTMENT`、`COMPANY`。每次目录查询和检索，服务端通过 `org-directory` 优先解析已认证的钉钉 unionId；OAuth 缺少 unionId 时按 userid 解析，随后校验员工映射、userid、员工编号、在职状态及快照有效期。租户没有该员工的 unionId 时，经过校验的 userid 作为稳定归属键，绝不使用 openId。再授予个人、全部直属部门和配置公司的范围。上级、下级和其他分支不扩大权限。快照最大有效期默认两小时。组织服务故障拒绝访问并返回可重试诊断，不使用固定团队或任务中的旧授权代替目录。
+## 任务与知识文件
 
-管理员将已有知识库绑定到目录员工或部门 ID，或配置公司。未绑定库不可检索。WeKnora 保留文档和索引，组织同步不创建库。产品失败包含错误码、相关资源、可重试性，以及准备失败时的依赖结果。
+任务在 `product-knowledge-tasks-v1` 固定执行模式、知识库 ID 和官方派生定义。只有选择了知识库才注册 `knowledge_search` 与 `knowledge_read`，查询和来源读取不能超出固定 ID；服务端实时权限仍优先于任务快照。
 
-产品元数据负责文件夹、归属及读取和管理权限。可读取不代表可写入：个人所有者、指定知识库管理者和配置的管理员 ID 可管理内容。员工显式创建个人库，共享库创建要求管理员权限。管理者可新建多层文件夹、重命名、删除空文件夹并上传到所选目录。创建携带可为 null 的 `parentId`，响应包含上级标识；上级必须属于同一知识库，同级名称唯一，存在子文件夹或资料时拒绝删除。上级重命名不移动引擎内容。Markdown 和链接创建锁定目标文件夹，由服务端先创建再移动；位置未确认返回 `IDEMPOTENCY_OPERATION_UNKNOWN`，同一命令不会重复创建。WeKnora 负责解析、索引、文档内容和原生文件夹路径。产品接口提供筛选后的文档分页、解析正文阅读、链接导入、Markdown 创建或修改、文件上传及异步删除。文件夹 ID 稳定且独立于展示名称，文件夹不影响授权。Markdown 时间检查将产品内编辑串行化，但无法对直接在 WeKnora 中修改提供原子冲突保护。实时协作编辑不属于此模块。
+公司内容按 Session 固定版本与哈希，子会话继承父会话。绑定或内容损坏时保留 Session、草稿与诊断并阻止执行，用户可显式恢复为新任务；不能用当前市场内容替换已绑定版本。结果保存需单独请求，不会把保存目标加入检索范围。
 
-任务结果保存需显式要求，独立于检索范围。可写入目标元数据与 Markdown 保存通过产品工具使用官方 Session 日志和审批，详见[运行时约定](../../packages/deepseek-harness-product/runtime/README.md)。保存不会自动将目标加入当前任务，也不表示索引已完成。
+产品元数据管理文件夹与归属，WeKnora 管理原文、解析和索引。产品提供文档分页、文件上传、Markdown 编辑及网页导入；位置不明或写入结果未知时禁止盲目重发。产品内版本锁不能约束 WeKnora 后台的直接并发编辑。
 
-原文件查看独立于检索及索引就绪状态。服务端校验原文件元数据和字节的访问权限，产品 UI 通过公开的官方文档预览 Factory 展示内容，不创建 Session。主进程流式写入私有暂存文件，向渲染进程发送有界二进制块，官方 Host Office 转换使用有界 JSON 块。传输在完成、取消或释放时关闭。已认证的服务端限制和桌面策略共同限定预览、上传及下载，官方格式保护继续生效。原文件下载和桌面系统打开留在主进程，不返回本地路径。Office 转换重新检查权限与版本；[产品桥约定](../../packages/deepseek-harness-product/product/README.md)定义限制和无凭据传输。没有保存原文件的网页导入不提供文件预览，其引用片段仍需通过检索权限检查。
-
-原件读取必须提供稳定的 `contentVersion`，服务端流传输、桌面分块校验及 Office 缓存统一使用该版本。索引处理时间不替代内容版本，原件标识缺失时拒绝读取。
+原件查看使用官方预览 Factory，不创建 Session，也不依赖索引就绪。主进程暂存并发送有界块，Office 使用官方转换；传输检查权限和稳定的 `contentVersion`，预览、上传与下载同时受服务端及桌面限制。下载和系统打开不暴露本地路径或上游凭据，未保存原件的网页不能以索引片段冒充原件。
 
 ## 桌面与上游集成
 
-官方壳提供可信启动准备、环境与 profile overlay、命名空间 IPC、事件和清理。preload 传输结构化响应：`{ ok: true, result }` 或 `{ ok: false, failure }`。产品客户端在跨过隔离世界的桥后解析失败，保留错误码、相关资源和可重试性。产品自行校验方法白名单。Electron 保留窗口、来源和主 frame 检查。运行时注册和进程监听随 Cordis 插件释放。
+官方壳提供可信启动、profile overlay、命名空间 IPC、来源检查及清理。产品校验方法白名单和结构化响应，保留错误码、关联资源及可重试性。取消贯穿 Renderer、主进程、Host 和远端请求，插件释放等待在途操作及资源清理。
 
-请求取消贯穿 Renderer、主进程、Host 和远端请求。产品释放时取消并等待在途操作，再释放监听和原生 sidecar。准备取消不会撤销其他调用方的注册或丢弃草稿。
-
-产品代码使用 Harness 公开出口，包括保留声明方 Loader 解析上下文的类型化 `agentPresets.derive`。`verify-upstream` 校验固定版本、登记补丁的完整差异、源码引用及依赖方向。升级依次更新基线、显式应用和解决补丁冲突、检查适配层并运行验收。官方 profile 可不加载产品 overlay 使用。
-
-当前上游基线为 `dsh-v0.2.2-alpha.2`。客户端构建采用官方的包目录解析和根级 React 类型依赖；浏览器 HMR 与插件变更后的技能菜单刷新使用上游实现，产品安装、卸载通过公开刷新接口更新目录。产品保留空会话的通用插槽，支持选择专家套件；已开始任务仍遵守官方锁定边界。持久化类型历史将产品消息来源接在上游用户身份记录之后，保留两者字段，Session 格式版本不变。产品 profile 继续禁用官方账号插件，员工使用钉钉登录。
-
-参见[任务能力升级说明](../upgrade-guide/v0.2.0-rc.2/product-task-capabilities/guide.md)、[知识库管理升级说明](../upgrade-guide/v0.2.1-alpha.2/product-knowledge-library/guide.md)和[补丁清单](../../scripts/upstream-patches/manifest.json)。
+产品使用公开 API，包括保留 Loader 解析上下文的 `agentPresets.derive`。固定版本见 [UPSTREAM_TAG](../../UPSTREAM_TAG)，改动清单见[上游补丁](../../scripts/upstream-patches/manifest.json)；`verify:upstream` 校验基线、登记差异及依赖方向。产品 profile 使用钉钉身份，官方 profile 可独立运行。
