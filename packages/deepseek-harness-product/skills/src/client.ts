@@ -851,7 +851,7 @@ function createSkillsPage(localeService: ClientContext["locale"]) {
                 iconButton(t("btn.delete.forever"), h(IconTrashOutlineRegular, { size: 16 }), function () { setModal({ type: "delete-confirm", id: item.id, name: item.name }); }, true, busy)));
           }) : h("div", { className: "dssm-empty" }, t("trash.empty")));
       }
-      var repositoryUI = useRepositoryUI({ active: scope === "repositories", t: t, onInstalled: function () { return Promise.all([refresh(false), refreshWorkspaceDetails()]); } });
+      var repositoryUI = useRepositoryUI({ active: scope === "repositories", t: t, getSignal: () => lifetime.current.signal, onInstalled: function () { return Promise.all([refresh(false), refreshWorkspaceDetails()]); } });
       function getTabIcon(value: string) {
         const Icon = value === "user" ? IconGlobeOutlineRegular : value === "project" ? IconFolderCloseRegular : value === "repositories" ? IconBrowseOutlineRegular : IconTrashOutlineRegular;
         return h(Icon, { size: 14 });

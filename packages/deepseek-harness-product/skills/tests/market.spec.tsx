@@ -365,7 +365,7 @@ it('reports a rejected switch write and leaves the previous state available for 
   const pending = deferred<undefined>()
   mock.unary('skillsManager/setSkillEnabled', async () => {
     await pending.promise
-    return { ok: false, error: new RemoteError('skills/operation', 'Permission changed', { code: 'error.proto.forbidden' }) }
+    return { ok: false, error: new RemoteError('skills/operation', 'Permission changed', { code: 'error.proto.forbidden', error: 'forbidden' }) }
   })
   await screen.findByText('共享技能')
   const toggle = screen.getByRole<HTMLButtonElement>('switch', { name: '启停技能 共享技能' })
@@ -397,7 +397,7 @@ it.each(['menu', 'category drop', 'reorder'] as const)('reports a rejected %s wi
   source.skills.forEach((item) => { item.categoryId = 'finance1' })
   const method = operation === 'reorder' ? 'moveInCategory' : 'assignCategory'
   mock.unary(`skillsManager/${method}`, () => ({ ok: false,
-    error: new RemoteError('skills/operation', 'Permission changed', { code: 'error.proto.forbidden' }) }))
+    error: new RemoteError('skills/operation', 'Permission changed', { code: 'error.proto.forbidden', error: 'forbidden' }) }))
   await screen.findByText('市场暂无技能，审核发布后会展示在这里。')
   fireEvent.click(screen.getByRole('tab', { name: '我的' }))
   fireEvent.click(screen.getByRole('button', { name: /DSH/, expanded: false }))
