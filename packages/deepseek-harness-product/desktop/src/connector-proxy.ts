@@ -37,7 +37,9 @@ export class ConnectorProxy {
   private readonly server: Server
   private readonly lifetime = new AbortController()
   private readonly operations = new Set<Promise<void>>()
-  private readonly key = randomUUID()
+  private identity: { employeeId: string | undefined; key: string; controller: AbortController } = {
+    employeeId: undefined, key: randomUUID(), controller: new AbortController(),
+  }
   private starting: Promise<void> | undefined
   private readonly catalogSource: (signal: AbortSignal, ids: readonly string[]) => Promise<unknown>
 
@@ -49,9 +51,12 @@ export class ConnectorProxy {
       if (this.lifetime.signal.aborted) { response.destroy(); return }
       const abort = new AbortController()
       response.once('close', () => { abort.abort() })
-      const lifetime = AbortSignal.any([abort.signal, this.lifetime.signal])
+      const identity = this.identity
+      const lifetime = AbortSignal.any([abort.signal, this.lifetime.signal, identity.controller.signal])
       const operation = (async () => {
-        if (request.headers.authorization !== `Bearer ${this.key}`) throw new Error('Unauthorized relay')
+        using _abortResponse = addAbortListener(lifetime, () => { response.destroy() })
+        lifetime.throwIfAborted()
+        if (request.headers.authorization !== `Bearer ${identity.key}`) throw new Error('Unauthorized relay')
         const parts = new URL(request.url ?? '/', 'http://localhost').pathname.slice(1).split('/')
         if (parts.length !== 2) throw new Error('Invalid connector relay address')
         const [id, version] = parts.map(part => decodeURIComponent(part))
@@ -143,6 +148,17 @@ export class ConnectorProxy {
     })
   }
 
+  /** Revoke the previous employee's relay addresses and await their in-flight requests.
+   * @param employeeId Current employee, or undefined after sign-out; the same employee retains connections.
+   */
+  async resetIdentity(employeeId: string | undefined): Promise<void> {
+    if (this.identity.employeeId === employeeId) return
+    const previous = this.identity
+    this.identity = { employeeId, key: randomUUID(), controller: new AbortController() }
+    previous.controller.abort(new Error('Connector employee identity changed'))
+    await Promise.allSettled([...this.operations])
+  }
+
   /** Share a private loopback bind; closing waits for it before releasing the listener. */
   async start(): Promise<void> {
     if (this.lifetime.signal.aborted) throw new Error('Connector relay is closed')
@@ -168,7 +184,7 @@ export class ConnectorProxy {
     return value.map((entry: Connector) => entry.transport === 'streamable-http' || entry.transport === 'stdio' ? {
       ...entry, url: `${origin}/${encodeURIComponent(entry.id)}/${encodeURIComponent(entry.version)}`,
       transport: 'streamable-http', command: undefined, arguments: [],
-      headers: { Authorization: `Bearer ${this.key}` }, environment: {},
+      headers: { Authorization: `Bearer ${this.identity.key}` }, environment: {},
     } : entry)
   }
 
