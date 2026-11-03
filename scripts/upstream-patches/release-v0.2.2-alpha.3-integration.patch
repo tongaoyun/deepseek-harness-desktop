@@ -13633,7 +13633,7 @@ index 507c4506b017cd7df22f0fe6f5b699cc282b089c..0bc0db2400eb601183786426dedfe542
        if (options.awaitConnected !== false) {
          await awaitConnected(ctx, mock, options.connectTimeoutMs ?? DEFAULT_CONNECT_TIMEOUT_MS)
 diff --git a/pnpm-lock.yaml b/pnpm-lock.yaml
-index d6ef3e506e9d477291875dd2739f0c863d4f1a38..6b2125ff91013554725541f76e37f5416b6474f3 100644
+index d6ef3e506e9d477291875dd2739f0c863d4f1a38..4ec1a3f0d66db03ea7df969b143fdd3e896a0456 100644
 --- a/pnpm-lock.yaml
 +++ b/pnpm-lock.yaml
 @@ -770,6 +770,9 @@ importers:
@@ -14248,6 +14248,12 @@ index d6ef3e506e9d477291875dd2739f0c863d4f1a38..6b2125ff91013554725541f76e37f541
 +      '@deepseek-ai/dsh-cmdline':
 +        specifier: workspace:*
 +        version: link:../../boot/cmdline
++      '@deepseek-ai/dsh-credentials':
++        specifier: workspace:*
++        version: link:../../credentials/credentials
++      '@deepseek-ai/dsh-credentials-local':
++        specifier: workspace:*
++        version: link:../../credentials/credentials-local
 +      '@deepseek-ai/dsh-home-paths':
 +        specifier: workspace:*
 +        version: link:../../util/home-paths
@@ -14330,12 +14336,6 @@ index d6ef3e506e9d477291875dd2739f0c863d4f1a38..6b2125ff91013554725541f76e37f541
 +      '@deepseek-ai/dsh-config-editor':
 +        specifier: workspace:*
 +        version: link:../../boot/config-editor
-+      '@deepseek-ai/dsh-credentials':
-+        specifier: workspace:*
-+        version: link:../../credentials/credentials
-+      '@deepseek-ai/dsh-credentials-local':
-+        specifier: workspace:*
-+        version: link:../../credentials/credentials-local
 +      '@deepseek-ai/dsh-fs-local':
 +        specifier: workspace:*
 +        version: link:../../fs/fs-local

@@ -64,7 +64,7 @@ Office 预览在原文件或转换后暂存文件清理失败时停止返回文�
 
 ## 公司模型
 
-公司推理以独立 provider 接入，DeepSeek 复用官方适配器，其他模型通过原生 Settings 的路径编辑维护 `llm-pi-ai.providers.product-gateway`。原生 API-key provider、用户路由和有效默认选择（含 reasoning effort）继续保留；公司密钥只从启动进程环境读取，不写入配置。产品组合关闭原生账号入口，钉钉员工认证与模型凭据分别管理。
+公司推理以独立 provider 接入，DeepSeek 复用官方适配器，其他模型通过原生 Settings 的路径编辑维护 `llm-pi-ai.providers.product-gateway`。原生 API-key provider、用户路由和有效默认选择（含 reasoning effort）继续保留。产品凭据服务继承原生本地存储，仅将公司密钥 `DSH_PRODUCT_MODEL_API_KEY` 设为只读且只从启动进程环境读取；本地文件、项目及用户 `.env` 的同名值不参与解析，也不能通过凭据接口写入或清除该键。个人密钥和第三方授权沿用原生存储与优先级。产品组合关闭原生账号入口，钉钉员工认证与模型凭据分别管理。
 
 公司插件同步声明可配置的 DeepSeek provider 与固定的 `DSH_PRODUCT_MODEL_API_KEY` 凭据引用，目录不受当前模型种类或其他路由异步保存的影响。原生 Welcome 和会话入口通过 Settings、Credentials 元数据识别已注入的公司密钥，无需另填原生 API key。配置拒绝改为其他凭据引用，实际请求仍只使用员工进程密钥。
 

@@ -1,17 +1,18 @@
 /** Native Loader, Settings and LLM behavior with additive company inference. */
-import { mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
+import { createServer, type IncomingHttpHeaders } from 'node:http'
 import { expect, it, onTestFinished, vi } from 'vitest'
 import { FiberState, type Context } from '@deepseek-ai/cordis'
 import { boot, initProfile, loadOptionalPatches, readProfilePatches, reconcileProfilePatches, type ProfileContext } from '@deepseek-ai/dsh-app-boot'
 import ConfigEditor from '@deepseek-ai/dsh-config-editor'
 import DefaultModel from '@deepseek-ai/dsh-agent-default-model'
 import Settings from '@deepseek-ai/dsh-settings'
-import { createLaunchEnvironmentSnapshot } from '@deepseek-ai/dsh-launch-environment'
+import { createLaunchEnvironmentSnapshot, type LaunchEnvironmentLayerInput } from '@deepseek-ai/dsh-launch-environment'
 import { withFileLock } from '@deepseek-ai/dsh-atomic-write'
-import { credentialRef } from '@deepseek-ai/dsh-credentials'
-import CredentialsLocal from '@deepseek-ai/dsh-credentials-local'
+import { credentialKey, credentialRef } from '@deepseek-ai/dsh-credentials'
+import ProductCredentials from '../src/credentials.ts'
 import { hasProviderApiKey } from '@deepseek-ai/dsh-api-session-controller/src/catalog.ts'
 import Agents from '@deepseek-ai/dsh-agent'
 import Sessions, { SessionId } from '@deepseek-ai/dsh-session'
@@ -35,7 +36,7 @@ const nativeRows = [
 const company = (models = ['deepseek-v4-flash', 'gpt-example']) => ({ id: 'product-inference-default',
   name: 'cordis:product-inference', config: { baseURL, models } })
 
-async function fixture(initial = { provider: 'test', model: 'original' }, environment: Record<string, string> = { DSH_PRODUCT_MODEL_API_KEY: 'company-model-key' }) {
+async function fixture(initial = { provider: 'test', model: 'original' }, environment: Record<string, string> = { DSH_PRODUCT_MODEL_API_KEY: 'company-model-key' }, fallbacks: readonly LaunchEnvironmentLayerInput[] = []) {
   const home = await realpath(await mkdtemp(join(tmpdir(), 'product-inference-')))
   const started: Context[] = []
   const writes: Promise<void>[] = []
@@ -66,9 +67,9 @@ async function fixture(initial = { provider: 'test', model: 'original' }, enviro
     const ctx = await boot('test', join(dir, 'cordis.yml'), readProfilePatches('test', profile), (ctx) => {
       ctx.provide('profileContext', profile)
       ctx.provide('appReady', { onReady: (listener: () => void) => { listener(); return () => {} } })
-      ctx.provide('launchEnvironment', createLaunchEnvironmentSnapshot([{ source: 'process', values: environment }]))
+      ctx.provide('launchEnvironment', createLaunchEnvironmentSnapshot([{ source: 'process', values: environment }, ...fallbacks]))
       Object.assign(ctx.loader.builtins, { editor: ConfigEditor, settings: Settings, model: DefaultModel,
-        credentials: CredentialsLocal, 'test-llm': Llm, 'test-pi': PiAi, 'native-deepseek': DeepSeekApiKey, 'product-inference': ProductInference })
+        credentials: ProductCredentials, 'test-llm': Llm, 'test-pi': PiAi, 'native-deepseek': DeepSeekApiKey, 'product-inference': ProductInference })
     })
     started.push(ctx)
     const edit = ctx.configEditor.edit.bind(ctx.configEditor)
@@ -171,6 +172,70 @@ it('rejects a company credential reference that differs from its process-only au
   await expect(ctx.settings.mutate('product-inference-default', [{ op: 'set', path: ['apiKeyEnv'], value: 'DEEPSEEK_API_KEY' }])).rejects.toThrow()
   expect(ctx.settings.describe().find(row => row.ns === 'product-inference-default')?.value)
     .toEqual({ apiKeyEnv: 'DSH_PRODUCT_MODEL_API_KEY' })
+})
+
+it.each(['current-employee-key', '', undefined])('uses only the signed-in employee key for generic company requests with process key: %s', async (key) => {
+  const present = Boolean(key)
+  const { ctx, configure, profile } = await fixture({ provider: 'personal', model: 'personal-model' },
+    key === undefined ? {} : { DSH_PRODUCT_MODEL_API_KEY: key }, [
+      { source: 'project-env', values: { DSH_PRODUCT_MODEL_API_KEY: 'project-company-key' } },
+      { source: 'user-env', values: { DSH_PRODUCT_MODEL_API_KEY: 'home-company-key' } },
+    ])
+  const filename = join(profile.home, '.credentials.yaml')
+  const stored = 'version: 1\nrefs:\n  DSH_PRODUCT_MODEL_API_KEY: prior-employee-key\n  PERSONAL_MODEL_KEY: personal-saved-key\n'
+  await writeFile(filename, stored, { mode: 0o600 })
+  const headers: IncomingHttpHeaders[] = []
+  const server = createServer((request, response) => {
+    headers.push(request.headers)
+    request.resume()
+    response.writeHead(200, { 'content-type': 'text/event-stream' })
+    response.end('data: {"choices":[{"delta":{"content":"hello"},"index":0,"finish_reason":"stop"}]}\n\ndata: [DONE]\n\n')
+  })
+  onTestFinished(() => new Promise<void>((resolve, reject) => {
+    server.close((error) => { if (error) reject(error); else resolve() })
+    server.closeAllConnections()
+  }))
+  await new Promise<void>((resolve, reject) => {
+    server.once('error', reject)
+    server.listen(0, '127.0.0.1', () => { server.off('error', reject); resolve() })
+  })
+  const address = server.address()
+  if (!address || typeof address === 'string') throw new Error('Fixture listener did not bind TCP')
+  const url = `http://127.0.0.1:${address.port}/v1`
+  await configure([{ id: 'credentials', name: 'cordis:credentials', config: { dshHome: profile.home, watch: false } },
+    { ...company(['gpt-example']), config: { baseURL: url, models: ['gpt-example'] } }])
+  await expect.poll(() => ctx.llm.listProviders().map(row => row.id)).toContain('product-gateway')
+  const companyKey = credentialRef('DSH_PRODUCT_MODEL_API_KEY')
+  expect(await ctx.credentials.resolve(companyKey)).toEqual(present ? { value: 'current-employee-key', source: 'env' } : undefined)
+  expect(await ctx.credentials.describe(companyKey)).toEqual({ configured: present, writable: false, ...present ? { source: 'env' } : {} })
+  expect(await hasProviderApiKey(ctx)).toBe(true)
+  expect(await ctx.llm.listModels('product-gateway')).toHaveLength(present ? 1 : 0)
+  const chunks = []
+  for await (const chunk of ctx.llm.stream({ provider: 'product-gateway', model: 'gpt-example', messages: [] })) chunks.push(chunk)
+  if (present) {
+    expect(headers.map(headers => headers.authorization)).toEqual(['Bearer current-employee-key'])
+    expect(chunks.find(chunk => chunk.type === 'finish')).toMatchObject({ reason: { kind: 'stop' } })
+  }
+  else {
+    expect(headers).toHaveLength(0)
+    expect(chunks.find(chunk => chunk.type === 'finish')).toMatchObject({ reason: { kind: 'error', failure: { code: 'MISSING_CREDENTIAL' } } })
+  }
+  await expect(ctx.credentials.set(companyKey, 'replacement-key')).rejects.toMatchObject({ code: 'PRODUCT_CREDENTIAL_MANAGED' })
+  await expect(ctx.credentials.unset(companyKey)).rejects.toMatchObject({ code: 'PRODUCT_CREDENTIAL_MANAGED' })
+  expect(await readFile(filename, 'utf8')).toBe(stored)
+  const personal = credentialRef('PERSONAL_MODEL_KEY')
+  expect(await ctx.credentials.resolve(personal)).toEqual({ value: 'personal-saved-key', source: 'file' })
+  await ctx.credentials.set(personal, 'personal-updated-key')
+  expect(await ctx.credentials.resolve(personal)).toEqual({ value: 'personal-updated-key', source: 'file' })
+  await ctx.credentials.unset(personal)
+  expect(await ctx.credentials.resolve(personal)).toBeUndefined()
+  const grant = credentialKey('llm-pi-ai', 'personal')
+  await ctx.credentials.modifyRecord(grant, () => Promise.resolve({ kind: 'grant', payload: { token: 'personal-grant' } }))
+  expect(await ctx.credentials.readRecord(grant)).toEqual({ kind: 'grant', payload: { token: 'personal-grant' } })
+  expect(await ctx.credentials.describeRecord(grant)).toEqual({ configured: true, kind: 'grant', writable: true })
+  expect(await ctx.credentials.listRecords()).toEqual([{ key: grant, kind: 'grant' }])
+  await ctx.credentials.deleteRecord(grant)
+  expect(await ctx.credentials.readRecord(grant)).toBeUndefined()
 })
 
 it('preserves a valid native default and reasoning effort even when the model is not in the company catalog', async () => {
