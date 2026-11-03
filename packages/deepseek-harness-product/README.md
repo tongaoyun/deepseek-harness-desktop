@@ -1,13 +1,13 @@
 ---
-description: "叠加在 DeepSeek Harness 公开扩展点之上的DeepSeek Harness产品包。"
+description: "企业桌面的身份、连接器、知识库、专家和技能集成。"
 kind: "package-group"
 ---
 
-# DeepSeek Harness产品包
+# 企业产品包
 
 ## 概述
 
-此包组将DeepSeek Harness企业服务接入 Harness 公开扩展点。执行、会话、对话、工具、审批、Browser、Office 和持久化仍由官方 Harness 包负责。
+本包组将公司服务接入 Harness，提供钉钉登录、连接器、知识库、专家和技能。对话、执行、审批、文档预览及 Session 持久化使用官方能力。
 
 ## 目录
 
@@ -21,21 +21,23 @@ kind: "package-group"
 ## 包
 
 | 包 | 职责 |
-|---|---|
-| [`product`](product/README.md) | 服务端客户端、钉钉会话适配器、能力快照和 Electron 桥接 |
-| [`runtime`](runtime/README.md) | Cordis 任务能力组合、内容快照和权限策略 |
-| [`desktop`](desktop/README.md) | 主进程认证、凭据、sidecar 与产品打包资源 |
+| --- | --- |
+| [product](product/README.md) | 产品协议、服务端访问和员工会话 |
+| [runtime](runtime/README.md) | 连接器工具、知识库范围与任务快照 |
+| [desktop](desktop/README.md) | 主进程凭据、原生文件、sidecar 与启动准备 |
+| [experts](experts/README.md) | 专家、专家团及原生委派 |
+| [skills](skills/README.md) | 技能管理与原生 Skill Provider 接入 |
+
+专家和技能由产品桌面固定装配，页面合入产品 UI，随桌面统一更新。官方 profile 不加载这些产品模块。
 
 <a id="related-documentation"></a>
 ## 相关文档
 
-从[企业桌面项目总览](../../apps/product-desktop/docs/README.md)了解产品流程和仓库职责。[DeepSeek Harness 产品子系统](../../docs/subsystems/deepseek-harness-product.md)定义集成点，[桌面装配](../../apps/product-desktop/README.md)维护本地启动和交付说明。
+- [项目总览](../../apps/product-desktop/docs/README.md)：员工入口和仓库职责。
+- [产品子系统](../../docs/subsystems/deepseek-harness-product.md)：集成与权限规则。
+- [桌面构建](../../apps/product-desktop/README.md)：本地启动和交付。
 
 <a id="dev-note"></a>
 ## 开发备注
 
-产品包只能依赖 Harness 公开 API，不替换或修改 Harness 运行时。
-
-## 内建扩展能力
-
-[专家套件](experts/README.md)与[技能](skills/README.md)由产品桌面固定装配，界面合入产品 UI，左侧直接访问，不再另行安装、配置或更新功能插件。连接器和知识库沿用现有产品模块。官方 profile 不加载这些产品能力，官方执行循环保持不变。
+产品包只使用 Harness 公开 API。
