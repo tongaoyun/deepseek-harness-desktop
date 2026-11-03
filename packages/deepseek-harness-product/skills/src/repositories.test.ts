@@ -7,7 +7,7 @@ import { zipSync, strToU8 } from 'fflate'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import * as atomicWrite from '@deepseek-ai/dsh-atomic-write'
 import { createRepositoryManager } from './repositories.ts'
-import { getProviderSkill, listProviderCandidates, managerHomePath, projectRoots, readManagerState, resolveWorkspaceTarget, scanEntries, setSkillEnabled, toKebab, trashRootPath, userRoots } from './core.ts'
+import { assignSkillCategory, createCategory, getProviderSkill, listProviderCandidates, managerHomePath, managerStatePath, projectRoots, readManagerState, resolveWorkspaceTarget, scanEntries, setSkillEnabled, toKebab, trashRootPath, userRoots } from './core.ts'
 import { selectInstallRecord } from './repository-updates.ts'
 import type { Log, RepositoryState } from './types.ts'
 
@@ -258,6 +258,120 @@ it.each(['repository', 'mine'] as const)('keeps %s trash history when reinstalli
   expect((await fixture.saved()).installs[0]).not.toHaveProperty('trashId')
   expect(await readFile(fixture.file, 'utf8')).toBe(text('Second'))
   expect(await readdir(fixture.backupRoot)).toEqual([])
+})
+it.each(['user', 'project'] as const)('keeps the replacement %s skill category when deleting its old trash entry', async scope => {
+  const workspace = scope === 'project' ? join(home, 'workspace') : undefined
+  const fixture = await repositoryFixture(undefined, workspace)
+  const options = workspace ? { projectCwds: [workspace] } : {}
+  const original = await createCategory(fixture.root.key, 'Original', undefined, options)
+  if (!('category' in original)) throw new Error('Category unavailable')
+  await assignSkillCategory(fixture.root.key, 'audit-orders', original.category.id, undefined, options)
+  const trash = await fixture.uninstall()
+  await fixture.manager.install(fixture.input, workspace ? [workspace] : undefined)
+  const replacement = await createCategory(fixture.root.key, 'Replacement', undefined, options)
+  if (!('category' in replacement)) throw new Error('Category unavailable')
+  await assignSkillCategory(fixture.root.key, 'audit-orders', replacement.category.id, undefined, options)
+  const before = (await readManagerState()).state
+
+  await fixture.manager.permanentlyDeleteTrash(trash.id)
+
+  expect((await readManagerState()).state).toEqual(before)
+  expect(await readFile(fixture.file, 'utf8')).toBe(text('Original'))
+  await expect(fs.lstat(trash.path)).rejects.toMatchObject({ code: 'ENOENT' })
+})
+it.each(['user', 'project'] as const)('keeps another recoverable %s copy category until its last trash entry is deleted', async scope => {
+  const workspace = scope === 'project' ? join(home, 'workspace') : undefined
+  const fixture = await repositoryFixture(undefined, workspace)
+  const options = workspace ? { projectCwds: [workspace], registeredWorkspaces: [workspace] } : {}
+  const original = await fixture.uninstall()
+  await fixture.manager.install(fixture.input, workspace ? [workspace] : undefined)
+  const category = await createCategory(fixture.root.key, 'Replacement', undefined, options)
+  if (!('category' in category)) throw new Error('Category unavailable')
+  await assignSkillCategory(fixture.root.key, 'audit-orders', category.category.id, undefined, options)
+  const replacement = await fixture.uninstall()
+  const before = (await readManagerState()).state
+
+  await fixture.manager.permanentlyDeleteTrash(original.id)
+  expect((await readManagerState()).state).toEqual(before)
+  await fixture.manager.restoreTrash(replacement.id, options)
+  expect((await readManagerState()).state).toEqual(before)
+  const final = await fixture.uninstall()
+  await fixture.manager.permanentlyDeleteTrash(final.id)
+
+  const after = (await readManagerState()).state
+  expect(after.categoryMembers[fixture.root.key]).not.toHaveProperty('audit-orders')
+  expect(after.categoryOrder[fixture.root.key][category.category.id]).toEqual([])
+  expect(after.categories[fixture.root.key]).toEqual(before.categories[fixture.root.key])
+})
+it.each(['available', 'unavailable'] as const)('keeps a successful deletion committed when category cleanup fails and logging is %s', async logging => {
+  const log: Log = vi.fn(async () => undefined)
+  const fixture = await repositoryFixture(log)
+  await fixture.update('Second')
+  const category = await createCategory(fixture.root.key, 'Review')
+  if (!('category' in category)) throw new Error('Category unavailable')
+  await assignSkillCategory(fixture.root.key, 'audit-orders', category.category.id)
+  const trash = await fixture.uninstall()
+  const before = (await readManagerState()).state
+  const write = atomicWrite.writeFileAtomic
+  vi.spyOn(atomicWrite, 'writeFileAtomic').mockImplementation(async (path, ...args) => {
+    if (path === managerStatePath()) throw Object.assign(new Error('policy locked'), { code: 'EACCES' })
+    return write(path, ...args)
+  })
+  const warning = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+  if (logging === 'unavailable') vi.mocked(log).mockRejectedValue(new Error('log locked'))
+
+  await expect(fixture.manager.permanentlyDeleteTrash(trash.id)).resolves.toEqual({ id: trash.id, name: 'audit-orders' })
+
+  expect((await fixture.saved()).installs).toEqual([])
+  expect(await readdir(fixture.backupRoot)).toEqual([])
+  await expect(fs.lstat(trash.path)).rejects.toMatchObject({ code: 'ENOENT' })
+  expect((await readManagerState()).state).toEqual(before)
+  expect(log).toHaveBeenCalledWith('trash-category-warning', expect.stringContaining('policy locked'))
+  if (logging === 'unavailable') expect(warning).toHaveBeenCalled()
+})
+it('preserves categories when the deleted skill source can no longer be verified', async () => {
+  const workspace = join(home, 'workspace')
+  const fixture = await repositoryFixture(undefined, workspace)
+  const category = await createCategory(fixture.root.key, 'Review', undefined, { projectCwds: [workspace] })
+  if (!('category' in category)) throw new Error('Category unavailable')
+  await assignSkillCategory(fixture.root.key, 'audit-orders', category.category.id, undefined, { projectCwds: [workspace] })
+  const trash = await fixture.uninstall()
+  const before = (await readManagerState()).state
+  const outside = join(home, 'outside')
+  await mkdir(outside)
+  await writeFile(join(outside, 'keep.txt'), 'Keep external files')
+  await fs.rename(join(workspace, '.dsh'), join(workspace, '.dsh-saved'))
+  await fs.symlink(outside, join(workspace, '.dsh'), 'dir')
+
+  await fixture.manager.permanentlyDeleteTrash(trash.id)
+
+  expect((await readManagerState()).state).toEqual(before)
+  expect(await readFile(join(outside, 'keep.txt'), 'utf8')).toBe('Keep external files')
+  await expect(fs.lstat(trash.path)).rejects.toMatchObject({ code: 'ENOENT' })
+})
+it('cleans the last source category without affecting another source with the same name', async () => {
+  const fixture = await repositoryFixture()
+  const shared = userRoots().find(root => root.key === 'agents')!
+  await fixture.manager.installCatalog(catalogId, pack('Shared'), { root: 'agents' })
+  const personalCategory = await createCategory(fixture.root.key, 'Personal')
+  const sharedCategory = await createCategory(shared.key, 'Shared')
+  if (!('category' in personalCategory) || !('category' in sharedCategory)) throw new Error('Category unavailable')
+  await assignSkillCategory(fixture.root.key, 'audit-orders', personalCategory.category.id)
+  await assignSkillCategory(shared.key, 'audit-orders', sharedCategory.category.id)
+  const sharedTrash = await fixture.manager.trashSkill(shared, 'audit-orders')
+  if (!('id' in sharedTrash)) throw new Error('Trash failed')
+  const personalTrash = await fixture.uninstall()
+  const before = (await readManagerState()).state
+
+  await fixture.manager.permanentlyDeleteTrash(personalTrash.id)
+
+  const after = (await readManagerState()).state
+  expect(after.categoryMembers[fixture.root.key]).not.toHaveProperty('audit-orders')
+  expect(after.categoryOrder[fixture.root.key][personalCategory.category.id]).toEqual([])
+  expect(after.categoryMembers[shared.key]).toEqual(before.categoryMembers[shared.key])
+  expect(after.categoryOrder[shared.key]).toEqual(before.categoryOrder[shared.key])
+  await fixture.manager.restoreTrash(sharedTrash.id)
+  expect(await readFile(join(shared.path, 'audit-orders/SKILL.md'), 'utf8')).toBe(text('Shared'))
 })
 it.each(['metadata', 'move'] as const)('keeps repository source, files and rollback when Mine trash fails at %s', async failure => {
   const fixture = await repositoryFixture()

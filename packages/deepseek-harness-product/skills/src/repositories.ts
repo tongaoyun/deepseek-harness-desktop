@@ -494,7 +494,7 @@ export function createRepositoryManager({ fetchImpl = globalThis.fetch, log, reg
       if (changed) await write(data, true);
       let result: Awaited<ReturnType<typeof permanentlyDeleteTrash>>;
       try {
-        result = await permanentlyDeleteTrash(id, log);
+        result = await permanentlyDeleteTrash(id, log, { registeredWorkspaces: requestIndex().registered });
         if ("ok" in result && result.ok === false) {
           Object.assign(data, before);
           if (changed) await write(data, true);
