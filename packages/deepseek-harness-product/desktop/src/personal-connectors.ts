@@ -6,7 +6,7 @@ import { join } from 'node:path'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { Client, StreamableHTTPClientTransport, type Tool } from '@modelcontextprotocol/client'
 import { StdioClientTransport } from '@modelcontextprotocol/client/stdio'
-import { Server } from '@modelcontextprotocol/server'
+import { Server, isInitializeRequest, type ServerContext } from '@modelcontextprotocol/server'
 import { NodeStreamableHTTPServerTransport } from '@modelcontextprotocol/node'
 import { scrubbedParentEnv } from '@deepseek-ai/dsh-subprocess'
 import { ConnectorDraftSchema, type ConnectorDraft } from '@deepseek-harness/product/connector-draft'
@@ -35,12 +35,23 @@ const PendingConfiguration = z.object({ employee: z.string(), config: Configurat
 const PendingMetadata = z.object({ id: z.string(), version: z.string(), name: z.string(), summary: z.string(), category: z.string() })
 
 interface CachedConnection {
+  readonly key: string
   readonly employee: string
   readonly id: string
   readonly controller: AbortController
   readonly connection: Promise<Client>
   waiters: number
   connected: boolean
+  relay?: RelaySession
+  closing?: Promise<void>
+}
+
+interface RelaySession {
+  readonly id: string
+  readonly transport: NodeStreamableHTTPServerTransport
+  readonly ready: Promise<void>
+  readonly requests: Set<Promise<void>>
+  close(): Promise<void>
 }
 
 /** Owns authenticated personal configuration and SDK connections for the desktop lifetime. */
@@ -334,20 +345,101 @@ export class PersonalConnectors {
     const config = await this.configuration(entry, employee)
     if (!config) throw new Error('Private connector configuration is missing')
     const client = await this.client(entry, employee, config, signal)
+    const cached = this.clients.get(this.key(employee, entry.id, entry.version))
+    if (!cached || cached.controller.signal.aborted) throw new Error('Personal MCP connection is unavailable')
+    signal.throwIfAborted()
+    using _abort = addAbortListener(signal, () => { response.destroy() })
+    let relay = cached.relay
+    let body: unknown
+    const sessionId = request.headers['mcp-session-id']
+    if (sessionId !== undefined) {
+      if (typeof sessionId !== 'string' || relay?.id !== sessionId) {
+        response.writeHead(404).end('MCP session is unavailable')
+        return
+      }
+    } else {
+      if (request.method !== 'POST') { response.writeHead(400).end('MCP initialization is required'); return }
+      const chunks: Buffer[] = []
+      let length = 0
+      for await (const chunk of request) {
+        signal.throwIfAborted()
+        const value: unknown = chunk
+        if (!(value instanceof Uint8Array)) throw new Error('Invalid MCP request bytes')
+        length += value.length
+        if (length > 2 * 1024 * 1024) throw new Error('MCP request exceeds size limit')
+        chunks.push(Buffer.from(value))
+      }
+      body = JSON.parse(Buffer.concat(chunks).toString())
+      if (!isInitializeRequest(body)) { response.writeHead(400).end('MCP initialization is required'); return }
+      signal.throwIfAborted()
+      relay = this.createRelay(cached, client, entry, config)
+    }
+    await relay.ready
+    signal.throwIfAborted()
+    if (cached.relay !== relay) { response.writeHead(404).end('MCP session is unavailable'); return }
+    const operation = relay.transport.handleRequest(request, response, body)
+    relay.requests.add(operation)
+    try { await operation }
+    finally {
+      relay.requests.delete(operation)
+      if (request.method === 'DELETE' || relay.transport.sessionId === undefined) await relay.close()
+    }
+  }
+
+  private createRelay(cached: CachedConnection, client: Client, entry: PublicConnector, config: Configuration): RelaySession {
+    const previous = cached.relay
+    const id = randomUUID()
+    const transport = new NodeStreamableHTTPServerTransport({ sessionIdGenerator: () => id })
+    const resources = client.getServerCapabilities()?.resources !== undefined
+    const instructions = client.getInstructions()
     // oxlint-disable-next-line typescript/no-deprecated -- MCP relay needs raw forwarding, not tool registration.
-    const server = new Server({ name: 'product-personal-mcp-relay', version: '1.0.0' }, { capabilities: { tools: {} } })
+    const server = new Server({ name: 'product-personal-mcp-relay', version: '1.0.0' }, {
+      capabilities: { tools: {}, ...resources ? { resources: {} } : {} },
+      ...instructions === undefined ? {} : { instructions },
+    })
+    const requestOptions = (context: ServerContext) => ({
+      signal: AbortSignal.any([cached.controller.signal, context.mcpReq.signal, this.lifetime.signal,
+        ...context.http?.req === undefined ? [] : [context.http.req.signal]]), timeout: config.timeoutSeconds * 1000,
+    })
     const declaredNames = new Set(entry.tools.map(tool => tool.name))
-    server.setRequestHandler('tools/list', async () => ({ tools: (await this.discover(client, signal, config.timeoutSeconds)).filter(tool => declaredNames.has(tool.name)) }))
+    server.setRequestHandler('tools/list', async (_request, context) => ({
+      tools: (await this.discover(client, requestOptions(context).signal, config.timeoutSeconds))
+        .filter(tool => declaredNames.has(tool.name)),
+    }))
     server.setRequestHandler('tools/call', async (request, context) => {
-      const callSignal = AbortSignal.any([signal, context.mcpReq.signal, this.lifetime.signal])
-      const current = await this.discover(client, callSignal, config.timeoutSeconds)
+      const options = requestOptions(context)
+      const current = await this.discover(client, options.signal, config.timeoutSeconds)
       const declared = entry.tools.some(tool => tool.name === request.params.name)
       if (!declared || !current.some(tool => tool.name === request.params.name)) throw new Error('Connector tool is not declared')
-      return client.callTool(request.params, { signal: callSignal, timeout: config.timeoutSeconds * 1000 })
+      return client.callTool(request.params, options)
     })
-    const transport = new NodeStreamableHTTPServerTransport({ sessionIdGenerator: undefined })
-    await server.connect(transport)
-    try { await transport.handleRequest(request, response) } finally { await server.close() }
+    if (resources) {
+      server.setRequestHandler('resources/list', (request, context) =>
+        client.listResources(request.params, requestOptions(context)))
+      server.setRequestHandler('resources/templates/list', (request, context) =>
+        client.listResourceTemplates(request.params, requestOptions(context)))
+      server.setRequestHandler('resources/read', (request, context) =>
+        client.readResource(request.params, requestOptions(context)))
+    }
+    let closing: Promise<void> | undefined
+    const relay: RelaySession = { id, transport, requests: new Set(),
+      ready: (async () => {
+        await previous?.close()
+        cached.controller.signal.throwIfAborted()
+        await server.connect(transport)
+      })(),
+      close: () => closing ??= (async () => {
+        await relay.ready.catch(() => undefined)
+        try { await server.close() }
+        finally {
+          if (cached.relay === relay) delete cached.relay
+          await Promise.allSettled([...relay.requests])
+        }
+      })(),
+    }
+    server.onclose = () => { if (cached.relay === relay) delete cached.relay }
+    cached.relay = relay
+    return relay
   }
 
   /** Cancel pending connects and close every child process owned by this desktop extension. */
@@ -429,18 +521,20 @@ export class PersonalConnectors {
     const key = this.key(employee, entry.id, entry.version)
     let cached = this.clients.get(key)
     if (cached?.controller.signal.aborted) {
-      await cached.connection.catch(() => undefined)
+      await this.disconnect(cached)
       return this.client(entry, employee, config, signal)
     }
     if (cached === undefined) {
       const controller = new AbortController()
-      const created: CachedConnection = { employee, id: entry.id, controller, connection: this.connect(config, controller.signal),
+      const created: CachedConnection = { key, employee, id: entry.id, controller, connection: this.connect(config, controller.signal),
         waiters: 0, connected: false }
       cached = created
       this.clients.set(key, created)
       void created.connection.then((value) => {
         created.connected = true
-        value.onclose = () => { if (this.clients.get(key) === created) this.clients.delete(key) }
+        value.onclose = () => { void this.disconnect(created).catch((error: unknown) => {
+          console.error('Personal MCP connection cleanup failed', error)
+        }) }
       }, () => { if (this.clients.get(key) === created) this.clients.delete(key) })
     }
     const shared = cached
@@ -461,8 +555,14 @@ export class PersonalConnectors {
   }
   private async disconnect(cached: CachedConnection): Promise<void> {
     cached.controller.abort(new Error('Personal MCP connection released'))
-    const client = await cached.connection.catch(() => undefined)
-    await client?.close()
+    return cached.closing ??= (async () => {
+      const client = await cached.connection.catch(() => undefined)
+      try { await cached.relay?.close() }
+      finally {
+        try { await client?.close() }
+        finally { if (this.clients.get(cached.key) === cached) this.clients.delete(cached.key) }
+      }
+    })()
   }
   private async connect(config: Configuration, signal: AbortSignal): Promise<Client> {
     const combined = AbortSignal.any([signal, this.lifetime.signal, AbortSignal.timeout(config.timeoutSeconds * 1000)])

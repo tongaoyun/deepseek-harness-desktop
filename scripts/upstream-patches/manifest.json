@@ -1473,7 +1473,7 @@
         {
           "path": "pnpm-lock.yaml",
           "before": "349ecef16eae1c2166b74661fdff552b9825945894b89461b3a29f825daa6f76",
-          "after": "d64e52487f9598c65a60bc9e193e65c28e55a08174b7bbea58cd23627952472c"
+          "after": "4d3a72879d29bb948b2cd9e6894677e7973210ecfa108f05fcf24e81beb3395c"
         },
         {
           "path": "README.i18n.yaml",

@@ -14092,7 +14092,7 @@ index 3feb65d17109c713f4d8fde9b000fbee919dab7d..700b0f2e422077f63e8b7e86a7ff6c97
    if (!ctx.get('agents')) await ctx.plugin(AgentRegistry)
    if (!ctx.get('fs')) await ctx.plugin(FileSystem)
 diff --git a/pnpm-lock.yaml b/pnpm-lock.yaml
-index 3bb5b2fd3e73be2afa0611f2012206d2071c61dc..d89fc65ab44bff589569fef9e83565d55aae22eb 100644
+index 3bb5b2fd3e73be2afa0611f2012206d2071c61dc..796fe45871986d3e3d30f73998f9951dabe96aa1 100644
 --- a/pnpm-lock.yaml
 +++ b/pnpm-lock.yaml
 @@ -770,6 +770,9 @@ importers:
@@ -14194,7 +14194,7 @@ index 3bb5b2fd3e73be2afa0611f2012206d2071c61dc..d89fc65ab44bff589569fef9e83565d5
        '@deepseek-ai/dsh-util-values':
          specifier: workspace:*
          version: link:../../util/values
-@@ -7790,137 +7854,745 @@ importers:
+@@ -7790,137 +7854,754 @@ importers:
          version: link:../../util/brand
        '@deepseek-ai/dsh-util-values':
          specifier: workspace:*
@@ -14450,6 +14450,12 @@ index 3bb5b2fd3e73be2afa0611f2012206d2071c61dc..d89fc65ab44bff589569fef9e83565d5
 +      '@deepseek-ai/dsh-fs-local':
 +        specifier: workspace:*
 +        version: link:../../fs/fs-local
++      '@deepseek-ai/dsh-mcp-client':
++        specifier: workspace:*
++        version: link:../../mcp/mcp-client
++      '@deepseek-ai/dsh-mcp-resources':
++        specifier: workspace:*
++        version: link:../../mcp/mcp-resources
 +      '@deepseek-ai/dsh-session-projection':
 +        specifier: workspace:*
 +        version: link:../../session/session-projection
@@ -14459,6 +14465,9 @@ index 3bb5b2fd3e73be2afa0611f2012206d2071c61dc..d89fc65ab44bff589569fef9e83565d5
 +      '@deepseek-ai/dsh-tool-executor-native':
 +        specifier: workspace:*
 +        version: link:../../core/tool-executor-native
++      '@deepseek-ai/dsh-tool-testkit':
++        specifier: workspace:*
++        version: link:../../test-support/tool-testkit
 +      '@deepseek-ai/dsh-working-directory':
 +        specifier: workspace:*
 +        version: link:../../session/working-directory
@@ -15046,7 +15055,7 @@ index 3bb5b2fd3e73be2afa0611f2012206d2071c61dc..d89fc65ab44bff589569fef9e83565d5
  
    packages/deliverables/deliverable-file-references:
      devDependencies:
-@@ -11759,6 +12431,90 @@ importers:
+@@ -11759,6 +12440,90 @@ importers:
          specifier: ^18.2.0
          version: 18.3.1
  
@@ -15137,7 +15146,7 @@ index 3bb5b2fd3e73be2afa0611f2012206d2071c61dc..d89fc65ab44bff589569fef9e83565d5
    packages/feedback/command-feedback:
      dependencies:
        zod:
-@@ -19991,10 +20747,18 @@ packages:
+@@ -19991,10 +20756,18 @@ packages:
    '@mixmark-io/domino@2.2.0':
      resolution: {integrity: sha512-Y28PR25bHXUg88kCV7nivXrP2Nj2RueZ3/l/jdx6J9f8J4nsEGcgX0Qe6lt7Pa+J79+kPiJU3LguR6O/6zrLOw==}
  
@@ -15156,7 +15165,7 @@ index 3bb5b2fd3e73be2afa0611f2012206d2071c61dc..d89fc65ab44bff589569fef9e83565d5
    '@modelcontextprotocol/core@2.2.0':
      resolution: {integrity: sha512-iLhmprRmWI8EcosOA3wVvww22z02NkgqhV4fBH6f/odQBsi7xnJc0HGmi21yWO+/iKw2yzqVE127Zhna5/+JXw==}
      engines: {node: '>=20'}
-@@ -20027,6 +20791,10 @@ packages:
+@@ -20027,6 +20800,10 @@ packages:
      resolution: {integrity: sha512-kKaFkyAh6oipvc9+EAbJ552JafnMnOq5nzmzWkp1jJdBhTAAGpmIpWihUG1+rfNhmEFM98gUZDdCHCDD4v6a7Q==}
      hasBin: true
  
@@ -15167,7 +15176,7 @@ index 3bb5b2fd3e73be2afa0611f2012206d2071c61dc..d89fc65ab44bff589569fef9e83565d5
    '@modelcontextprotocol/server@2.2.0':
      resolution: {integrity: sha512-qFnltjus6Gk8Lx6J1w2RXmr3YPN22MNT6qD6zjAkaiWIlFIFxWClz0rXHNuJF/KSUyn5YGhkSvXkWDbQHVLFEQ==}
      engines: {node: '>=20'}
-@@ -21035,6 +21803,14 @@ packages:
+@@ -21035,6 +21812,14 @@ packages:
      resolution: {integrity: sha512-4BAffykYOgO+5nzBWYwE3W90sBgLJoUPRWWcL8wlyiM8IB8ipJz3UMJ9KXQd1RKQXpKp8Tutn80HZtWsu2u76w==}
      engines: {node: '>=10'}
  
@@ -15182,7 +15191,7 @@ index 3bb5b2fd3e73be2afa0611f2012206d2071c61dc..d89fc65ab44bff589569fef9e83565d5
    '@tanstack/react-virtual@3.14.10':
      resolution: {integrity: sha512-SRyoUbdFMRHuYXMijV5H4ZarQWpXkj3iANq8OFre+pybeVap8ZJjZ3Nz9bVjx4d8PfobVUQUdKyyyHYk3E+djw==}
      peerDependencies:
-@@ -27683,6 +28459,16 @@ snapshots:
+@@ -27683,6 +28468,16 @@ snapshots:
  
    '@mixmark-io/domino@2.2.0': {}
  
@@ -15199,7 +15208,7 @@ index 3bb5b2fd3e73be2afa0611f2012206d2071c61dc..d89fc65ab44bff589569fef9e83565d5
    '@modelcontextprotocol/client@2.2.0':
      dependencies:
        '@modelcontextprotocol/core': 2.2.0
-@@ -27693,10 +28479,21 @@ snapshots:
+@@ -27693,10 +28488,21 @@ snapshots:
        pkce-challenge: 5.0.1
        zod: 4.4.3
  
@@ -15221,7 +15230,7 @@ index 3bb5b2fd3e73be2afa0611f2012206d2071c61dc..d89fc65ab44bff589569fef9e83565d5
    '@modelcontextprotocol/node@2.0.0(@modelcontextprotocol/server@2.2.0)(hono@4.13.7)':
      dependencies:
        '@hono/node-server': 1.19.17(hono@4.13.7)
-@@ -27748,6 +28545,11 @@ snapshots:
+@@ -27748,6 +28554,11 @@ snapshots:
        - supports-color
        - zod
  
@@ -15233,7 +15242,7 @@ index 3bb5b2fd3e73be2afa0611f2012206d2071c61dc..d89fc65ab44bff589569fef9e83565d5
    '@modelcontextprotocol/server@2.2.0':
      dependencies:
        '@modelcontextprotocol/core': 2.2.0
-@@ -28455,6 +29257,13 @@ snapshots:
+@@ -28455,6 +29266,13 @@ snapshots:
      dependencies:
        defer-to-connect: 2.0.1
  

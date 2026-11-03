@@ -58,6 +58,9 @@
     "@deepseek-ai/dsh-app-boot": "workspace:*"
   },
   "devDependencies": {
+    "@deepseek-ai/dsh-mcp-client": "workspace:*",
+    "@deepseek-ai/dsh-mcp-resources": "workspace:*",
+    "@deepseek-ai/dsh-tool-testkit": "workspace:*",
     "@types/node": "^22.20.0",
     "electron": "^44.0.0",
     "@deepseek-ai/dsh-config-editor": "workspace:*",

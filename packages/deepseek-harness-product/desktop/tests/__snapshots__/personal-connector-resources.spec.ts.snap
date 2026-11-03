@@ -1,0 +1,68 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`preserves native server instructions and resource operations through the personal stdio relay 1`] = `
+{
+  "instructions": "### MCP server: resources
+
+Read product://schema before using the orders tool.",
+  "listed": {
+    "content": [
+      {
+        "text": "MCP server: resources
+{"resources":[{"name":"Order schema","uri":"product://schema"},{"name":"Order rules","uri":"product://rules"}]}",
+        "type": "text",
+      },
+    ],
+    "isError": false,
+    "value": {
+      "resources": [
+        {
+          "name": "Order schema",
+          "uri": "product://schema",
+        },
+        {
+          "name": "Order rules",
+          "uri": "product://rules",
+        },
+      ],
+    },
+  },
+  "read": {
+    "content": [
+      {
+        "text": "MCP server: resources
+{"contents":[{"uri":"product://schema","mimeType":"text/plain","text":"order_id:string"}]}",
+        "type": "text",
+      },
+    ],
+    "isError": false,
+    "value": {
+      "contents": [
+        {
+          "mimeType": "text/plain",
+          "text": "order_id:string",
+          "uri": "product://schema",
+        },
+      ],
+    },
+  },
+  "templates": {
+    "content": [
+      {
+        "text": "MCP server: resources
+{"resourceTemplates":[{"name":"Order","uriTemplate":"product://orders/{id}"}]}",
+        "type": "text",
+      },
+    ],
+    "isError": false,
+    "value": {
+      "resourceTemplates": [
+        {
+          "name": "Order",
+          "uriTemplate": "product://orders/{id}",
+        },
+      ],
+    },
+  },
+}
+`;

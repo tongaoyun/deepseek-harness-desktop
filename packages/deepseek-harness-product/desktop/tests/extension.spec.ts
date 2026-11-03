@@ -1,6 +1,7 @@
 import { beforeEach, expect, it, vi } from 'vitest'
 import { DingTalkAuthorizationTimeoutError } from '@deepseek-harness/product/dingtalk-auth'
 import type { ProductBridgeOptions } from '@deepseek-harness/product/bridge'
+import type { ProductSession } from '@deepseek-harness/product'
 import { ProductError } from '@deepseek-harness/product/errors'
 import { DeepSeekHarnessApiError } from '@deepseek-harness/product'
 import { createExtension } from '../src/index.ts'
@@ -9,6 +10,8 @@ import { PersonalConnectors } from '../src/personal-connectors.ts'
 import { setImmediate } from 'node:timers/promises'
 
 const fixture = vi.hoisted(() => ({ authenticate: vi.fn<typeof import('@deepseek-harness/product/dingtalk-auth').ensureDingTalkSession>(),
+  session: { authenticated: true, employeeId: 'fixture' } as ProductSession,
+  invokeRuntime: vi.fn(async (..._args: unknown[]): Promise<unknown> => []),
   dialog: vi.fn(async (..._args: unknown[]) => ({ response: 0 })), quit: vi.fn(),
   companyContent: vi.fn(async () => null),
   bootstrap: vi.fn(async () => ({ modelApiKey: 'model-key', endpoints: { litellm: 'https://example.test/v1' }, models: ['deepseek-v4-flash', 'gpt-example'] })),
@@ -53,14 +56,16 @@ vi.mock('@deepseek-harness/product/dingtalk-auth', async original => ({
 }))
 vi.mock('@deepseek-harness/product/bridge', () => ({ DeepSeekHarnessProductBridge: class {
   constructor(options: ProductBridgeOptions) { fixture.bridgeOptions(options) }
-  dispose = fixture.dispose; invoke = fixture.invoke; invokeRuntime = async () => []
-  getSession = () => ({ authenticated: true, employeeId: 'fixture' })
+  dispose = fixture.dispose; invoke = fixture.invoke; invokeRuntime = fixture.invokeRuntime
+  getSession = () => fixture.session
   subscribe = () => () => {}; refreshCatalog = fixture.refreshCatalog
   loadRuntimeBootstrap = fixture.bootstrap
   loadCompanyContent = fixture.companyContent
 } }))
 beforeEach(() => {
   vi.clearAllMocks()
+  fixture.session = { authenticated: true, employeeId: 'fixture' }
+  fixture.invokeRuntime.mockReset().mockResolvedValue([])
   fixture.companyContent.mockReset().mockResolvedValue(null)
   fixture.authenticate.mockResolvedValue({ authenticated: true })
   fixture.invoke.mockReset().mockResolvedValue({}); fixture.refreshCatalog.mockReset().mockResolvedValue()
@@ -309,6 +314,73 @@ it('routes explicit connector refresh to Host with strict payload and lifecycle 
     await expect(extension.invoke('connectors.refresh', { headers: { Authorization: 'forged' } })).rejects.toThrow()
     expect(requestHost).toHaveBeenCalledTimes(1)
   } finally { await extension.close() }
+})
+
+it('keeps a Host bound to its startup employee while allowing the same employee to sign in again', async () => {
+  const extension = createExtension({ getWindow: () => undefined, isQuitting: () => false, requestHost: async () => ({}) })
+  const persist = fixture.bridgeOptions.mock.calls[0]![0].persistSession!
+  try {
+    await extension.prepareHost({ directory: '/unused-profile', installAnchor: '/unused-runtime/package.json' })
+    fixture.session = { authenticated: false }
+    await persist(fixture.session, undefined)
+    await expect(extension.invokeRuntime('connectors.list')).rejects.toMatchObject({ code: 'PRODUCT_HOST_IDENTITY_CHANGED' })
+    fixture.session = { authenticated: true, employeeId: 'fixture' }
+    await persist(fixture.session, 'new-token')
+    await expect(extension.invokeRuntime('connectors.list')).resolves.toEqual([])
+    fixture.session = { authenticated: true, employeeId: 'second' }
+    await persist(fixture.session, 'other-token')
+    await expect(extension.invokeRuntime('connectors.list')).rejects.toMatchObject({ code: 'PRODUCT_HOST_IDENTITY_CHANGED' })
+    await expect(extension.invokeRuntime('knowledge.search', { query: 'orders' })).rejects.toMatchObject({ code: 'PRODUCT_HOST_IDENTITY_CHANGED' })
+    await expect(extension.prepareHost({ directory: '/unused-profile', installAnchor: '/unused-runtime/package.json' }))
+      .rejects.toMatchObject({ code: 'PRODUCT_HOST_IDENTITY_CHANGED' })
+    expect(fixture.invokeRuntime).toHaveBeenCalledOnce()
+  } finally { await extension.close() }
+})
+
+it('rejects a late Host result after its employee changes', async () => {
+  const extension = createExtension({ getWindow: () => undefined, isQuitting: () => false, requestHost: async () => ({}) })
+  const entered = Promise.withResolvers<AbortSignal>()
+  const release = Promise.withResolvers<undefined>()
+  let pending: Promise<unknown> | undefined
+  try {
+    await extension.prepareHost({ directory: '/unused-profile', installAnchor: '/unused-runtime/package.json' })
+    fixture.invokeRuntime.mockImplementationOnce(async (_method, _payload, signal) => {
+      if (!(signal instanceof AbortSignal)) throw new Error('Missing identity cancellation')
+      entered.resolve(signal)
+      await release.promise
+      return []
+    })
+    pending = extension.invokeRuntime('connectors.list').catch((error: unknown) => error)
+    const signal = await entered.promise
+    fixture.session = { authenticated: true, employeeId: 'second' }
+    await fixture.bridgeOptions.mock.calls[0]![0].persistSession!(fixture.session, 'other-token')
+    expect(signal.aborted).toBe(true)
+    release.resolve(undefined)
+    expect(await pending).toBeInstanceOf(Error)
+  } finally { release.resolve(undefined); await pending; await extension.close() }
+})
+
+it.each(['bootstrap', 'company'] as const)('does not publish another employee\'s Host environment after switching during %s preparation', async (phase) => {
+  const entered = Promise.withResolvers<undefined>()
+  const release = Promise.withResolvers<undefined>()
+  if (phase === 'bootstrap') fixture.bootstrap.mockImplementationOnce(async () => {
+    entered.resolve(undefined); await release.promise
+    return { modelApiKey: 'model-key', endpoints: { litellm: 'https://example.test/v1' }, models: ['deepseek-v4-flash', 'gpt-example'] }
+  })
+  else fixture.companyPrepare.mockImplementationOnce(async () => { entered.resolve(undefined); await release.promise })
+  const extension = createExtension({ getWindow: () => undefined, isQuitting: () => false, requestHost: async () => ({}) })
+  const pending = extension.prepareHost({ directory: '/unused-profile', installAnchor: '/unused-runtime/package.json' })
+    .catch((error: unknown) => error)
+  try {
+    await entered.promise
+    fixture.session = { authenticated: true, employeeId: 'second' }
+    await fixture.bridgeOptions.mock.calls[0]![0].persistSession!(fixture.session, 'other-token')
+    release.resolve(undefined)
+    expect(await pending).toBeInstanceOf(Error)
+    expect(fixture.writeFile).not.toHaveBeenCalled()
+    await expect(extension.invokeRuntime('connectors.list')).rejects.toMatchObject({ code: 'PRODUCT_HOST_IDENTITY_CHANGED' })
+    expect(fixture.invokeRuntime).not.toHaveBeenCalled()
+  } finally { release.resolve(undefined); await pending; await extension.close() }
 })
 
 it('invalidates employee resources in session order before awaiting an old company cleanup', async () => {

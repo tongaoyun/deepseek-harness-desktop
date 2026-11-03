@@ -134,6 +134,8 @@ export function createExtension(context: ExtensionContext): ProductDesktopExtens
     openPath: path => shell.openPath(path),
   })
   let knowledgeFileEmployeeId = storedDeepSeekHarnessSession?.session.employeeId
+  let employeeLifecycle = new AbortController()
+  let hostEmployeeId: string | undefined
   let companyContent: { readonly employeeId: string; readonly sync: CompanyContentSync } | undefined
   const knowledgeUploads = new KnowledgeUploads(() => productBridge.getSession().employeeId, async (mode, signal) => {
     const window = context.getWindow()
@@ -172,10 +174,13 @@ export function createExtension(context: ExtensionContext): ProductDesktopExtens
         const previousCompany = companyContent
         companyContent = undefined
         knowledgeFileEmployeeId = employeeId
+        employeeLifecycle.abort(new Error('Employee identity changed'))
+        employeeLifecycle = new AbortController()
         knowledgeUploads.resetIdentity()
         pending.push(knowledgeFiles.resetIdentity())
         if (previousCompany) pending.push(previousCompany.sync.close())
       }
+      pending.push(connectorProxy.resetIdentity(employeeId))
       pending.push(personalConnectors.resetIdentity(employeeId))
       pending.push(Promise.resolve().then(() => { persistDeepSeekHarnessSession(session, token) }))
       const operation = Promise.allSettled(pending).then((results) => {
@@ -216,6 +221,7 @@ export function createExtension(context: ExtensionContext): ProductDesktopExtens
   const connectorProxy = new ConnectorProxy((signal, ids) => productBridge.readConnectorTransports(ids, signal),
     (request, response, connector, signal) => personalConnectors.serveStdio(request, response, connector, signal),
     config.connectorProxy)
+  void connectorProxy.resetIdentity(productBridge.getSession().employeeId)
   let deepseekHarnessAuthAttempt: { readonly controller: AbortController; readonly owners: Set<symbol>; promise: Promise<void> } | undefined
   const authenticationOperations = new Set<Promise<void>>()
   let deepseekHarnessAuthenticationVisible = false
@@ -268,15 +274,24 @@ export function createExtension(context: ExtensionContext): ProductDesktopExtens
       }
     }
   }
-  const prepareDeepSeekHarnessBootstrap = async (): Promise<ProductRuntimeBootstrap | undefined> => {
+  const prepareDeepSeekHarnessBootstrap = async (): Promise<{
+    bootstrap: ProductRuntimeBootstrap
+    employeeId: string
+    signal: AbortSignal
+  } | undefined> => {
     let operation = '钉钉登录'
     const stopped = (): boolean => context.isQuitting() || lifecycle.signal.aborted
     while (!stopped()) {
       try {
         operation = '钉钉登录'
         await ensureDeepSeekHarnessAuth()
+        const employeeId = productBridge.getSession().employeeId
+        if (!employeeId) throw new Error('Authenticated employee is required')
+        const signal = employeeLifecycle.signal
         operation = '加载工作区配置'
-        return await productBridge.loadRuntimeBootstrap()
+        const bootstrap = await productBridge.loadRuntimeBootstrap()
+        signal.throwIfAborted()
+        return { bootstrap, employeeId, signal }
       } catch (error) {
         if (stopped()) return undefined
         const expired = error instanceof DingTalkAuthorizationTimeoutError
@@ -340,11 +355,14 @@ export function createExtension(context: ExtensionContext): ProductDesktopExtens
         signal.throwIfAborted()
         const prepared = await prepareDeepSeekHarnessBootstrap()
         if (closed || prepared === undefined) return undefined
-        const bootstrap = prepared
+        const { bootstrap, employeeId } = prepared
+        const identitySignal = AbortSignal.any([signal, prepared.signal])
+        identitySignal.throwIfAborted()
+        if (hostEmployeeId !== undefined && hostEmployeeId !== employeeId) {
+          throw new ProductError('PRODUCT_HOST_IDENTITY_CHANGED', '员工身份已变化，请重启桌面端后继续。', false)
+        }
         await companyContent?.sync.close()
-        signal.throwIfAborted()
-        const employeeId = productBridge.getSession().employeeId
-        if (!employeeId) throw new Error('Authenticated employee is required')
+        identitySignal.throwIfAborted()
         const sync = new CompanyContentSync({ root: join(app.getPath('userData'), 'company-content'), employeeId,
           refreshIntervalMs: config.companyContentRefreshIntervalMs,
           load: async (signal) => {
@@ -355,7 +373,7 @@ export function createExtension(context: ExtensionContext): ProductDesktopExtens
           } })
         companyContent = { employeeId, sync }
         const roots = await sync.prepare()
-        signal.throwIfAborted()
+        identitySignal.throwIfAborted()
         reportDevice()
         if (supportTimer === undefined) {
           supportTimer = setInterval(reportDevice, supportPolicy.heartbeatIntervalMs)
@@ -366,6 +384,7 @@ export function createExtension(context: ExtensionContext): ProductDesktopExtens
           fileURLToPath(import.meta.resolve('@deepseek-harness/product-runtime/inference-default')))), { mode: 0o600 })
         const builtinCapabilities = join(app.getPath('userData'), 'product-builtin-capabilities.patch.json')
         writeFileSync(builtinCapabilities, JSON.stringify(builtinCapabilityPatches()), { mode: 0o600 })
+        hostEmployeeId = employeeId
         return {
           DSH_COMPANY_SKILLS_ROOT: roots.skillsRoot,
           DSH_COMPANY_EXPERTS_ROOT: roots.expertsRoot,
@@ -411,8 +430,13 @@ export function createExtension(context: ExtensionContext): ProductDesktopExtens
       })
     },
     async invokeRuntime(method: unknown, payload?: unknown, signal?: AbortSignal): Promise<unknown> {
-      return track(signal, async (signal) => {
+      const identitySignal = employeeLifecycle.signal
+      return track(AbortSignal.any([identitySignal, ...signal === undefined ? [] : [signal]]), async (signal) => {
         if (closed || !isProductRuntimeMethod(method)) return Promise.reject(new Error('Unsupported runtime operation'))
+        const session = productBridge.getSession()
+        if (!session.authenticated || hostEmployeeId === undefined || session.employeeId !== hostEmployeeId) {
+          throw new ProductError('PRODUCT_HOST_IDENTITY_CHANGED', '员工身份已变化，请重启桌面端后继续。', false)
+        }
         if (method.startsWith('runtime.companyContent.')) {
           const owner = companyContent
           if (!owner || !productBridge.getSession().authenticated || owner.employeeId !== productBridge.getSession().employeeId) {
@@ -426,6 +450,7 @@ export function createExtension(context: ExtensionContext): ProductDesktopExtens
           return owner.sync.pin(request, signal)
         }
         const result = await productBridge.invokeRuntime(method, payload, signal)
+        signal.throwIfAborted()
         return method === 'connectors.list' ? connectorProxy.catalog(result) : result
       })
     },
