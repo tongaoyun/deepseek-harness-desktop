@@ -52,7 +52,7 @@ description: "认证产品桌面用户，管理凭据、原生操作与产品资
 
 主进程从 Electron 提供 `runtime.environment.desktopVersion`，Renderer 无法覆盖。Host、HTTP 和原生请求将调用方取消与扩展生命周期信号组合。关闭时停止后台刷新，取消待处理操作并等待完成，确认 sidecar 已退出。单项清理失败仍按顺序释放其余资源、等待在途请求与授权结束，最后汇总报告错误。不含凭据的产品诊断保留错误码、资源 ID、可重试性和依赖结果。
 
-启动时按服务端 Bootstrap 的精确模型 ID 追加公司模型。`product-deepseek` 复用官方 DeepSeek 适配器；`product-gateway` 通过官方 Settings 的独立 provider 路径加入 pi-ai。公司密钥使用主进程注入的 `DSH_PRODUCT_MODEL_API_KEY`，不覆盖原生 DeepSeek 密钥和地址。产品 profile 禁用公共账号入口与账号模型路由；原生 API-key 路由、用户第三方 provider 及有效的默认模型和推理强度保留。原生注册表确认 provider 或模型不存在，或首次启动未保存默认且原生 API-key 路由没有可用目录时，默认模型改用服务端第一个模型。已保存选择不会因网络或凭据错误而重置。已有 Session 的模型仍通过官方选择器管理。
+企业启动先通过钉钉认证，再按服务端 Bootstrap 的精确模型 ID 追加公司模型。产品 profile 关闭原生账号设置与账号模型路由；原生欢迎页通过公司凭据元数据直接进入工作区，账号底层服务保留作桌面壳启动依赖。模型适配器、默认选择和凭据隔离见[产品运行时的公司模型](../runtime/README.md#公司模型)。已有 Session 的模型通过官方选择器管理。
 
 <a id="connectors"></a>
 ## 连接器

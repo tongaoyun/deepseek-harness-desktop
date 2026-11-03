@@ -76,9 +76,6 @@
       "path": "../../../packages/host/webserver"
     },
     {
-      "path": "../../../packages/credentials/deepseek-account"
-    },
-    {
       "path": "../../../packages/deepseek-harness-product/product"
     },
     { "path": "../../../packages/llm/llm-deepseek" },

@@ -13633,7 +13633,7 @@ index 507c4506b017cd7df22f0fe6f5b699cc282b089c..0bc0db2400eb601183786426dedfe542
        if (options.awaitConnected !== false) {
          await awaitConnected(ctx, mock, options.connectTimeoutMs ?? DEFAULT_CONNECT_TIMEOUT_MS)
 diff --git a/pnpm-lock.yaml b/pnpm-lock.yaml
-index d6ef3e506e9d477291875dd2739f0c863d4f1a38..e59057d2aa9e065afaaeeb7724a437159c0bd680 100644
+index d6ef3e506e9d477291875dd2739f0c863d4f1a38..6b2125ff91013554725541f76e37f5416b6474f3 100644
 --- a/pnpm-lock.yaml
 +++ b/pnpm-lock.yaml
 @@ -770,6 +770,9 @@ importers:
@@ -13735,7 +13735,7 @@ index d6ef3e506e9d477291875dd2739f0c863d4f1a38..e59057d2aa9e065afaaeeb7724a43715
        '@deepseek-ai/dsh-util-values':
          specifier: workspace:*
          version: link:../../util/values
-@@ -7952,137 +8016,766 @@ importers:
+@@ -7952,137 +8016,772 @@ importers:
          version: link:../../util/brand
        '@deepseek-ai/dsh-util-values':
          specifier: workspace:*
@@ -14248,9 +14248,6 @@ index d6ef3e506e9d477291875dd2739f0c863d4f1a38..e59057d2aa9e065afaaeeb7724a43715
 +      '@deepseek-ai/dsh-cmdline':
 +        specifier: workspace:*
 +        version: link:../../boot/cmdline
-+      '@deepseek-ai/dsh-deepseek-account':
-+        specifier: workspace:*
-+        version: link:../../credentials/deepseek-account
 +      '@deepseek-ai/dsh-home-paths':
 +        specifier: workspace:*
 +        version: link:../../util/home-paths
@@ -14327,9 +14324,18 @@ index d6ef3e506e9d477291875dd2739f0c863d4f1a38..e59057d2aa9e065afaaeeb7724a43715
 +        specifier: ^4.4.3
 +        version: 4.4.3
 +    devDependencies:
++      '@deepseek-ai/dsh-api-session-controller':
++        specifier: workspace:*
++        version: link:../../api/session-controller
 +      '@deepseek-ai/dsh-config-editor':
 +        specifier: workspace:*
 +        version: link:../../boot/config-editor
++      '@deepseek-ai/dsh-credentials':
++        specifier: workspace:*
++        version: link:../../credentials/credentials
++      '@deepseek-ai/dsh-credentials-local':
++        specifier: workspace:*
++        version: link:../../credentials/credentials-local
 +      '@deepseek-ai/dsh-fs-local':
 +        specifier: workspace:*
 +        version: link:../../fs/fs-local
@@ -14608,7 +14614,7 @@ index d6ef3e506e9d477291875dd2739f0c863d4f1a38..e59057d2aa9e065afaaeeb7724a43715
  
    packages/deliverables/deliverable-file-references:
      devDependencies:
-@@ -11954,6 +12647,90 @@ importers:
+@@ -11954,6 +12653,90 @@ importers:
          specifier: ^18.2.0
          version: 18.3.1
  
@@ -14699,7 +14705,7 @@ index d6ef3e506e9d477291875dd2739f0c863d4f1a38..e59057d2aa9e065afaaeeb7724a43715
    packages/feedback/command-feedback:
      dependencies:
        zod:
-@@ -20277,10 +21054,18 @@ packages:
+@@ -20277,10 +21060,18 @@ packages:
    '@mixmark-io/domino@2.2.0':
      resolution: {integrity: sha512-Y28PR25bHXUg88kCV7nivXrP2Nj2RueZ3/l/jdx6J9f8J4nsEGcgX0Qe6lt7Pa+J79+kPiJU3LguR6O/6zrLOw==}
  
@@ -14718,7 +14724,7 @@ index d6ef3e506e9d477291875dd2739f0c863d4f1a38..e59057d2aa9e065afaaeeb7724a43715
    '@modelcontextprotocol/core@2.2.0':
      resolution: {integrity: sha512-iLhmprRmWI8EcosOA3wVvww22z02NkgqhV4fBH6f/odQBsi7xnJc0HGmi21yWO+/iKw2yzqVE127Zhna5/+JXw==}
      engines: {node: '>=20'}
-@@ -20313,6 +21098,10 @@ packages:
+@@ -20313,6 +21104,10 @@ packages:
      resolution: {integrity: sha512-kKaFkyAh6oipvc9+EAbJ552JafnMnOq5nzmzWkp1jJdBhTAAGpmIpWihUG1+rfNhmEFM98gUZDdCHCDD4v6a7Q==}
      hasBin: true
  
@@ -14729,7 +14735,7 @@ index d6ef3e506e9d477291875dd2739f0c863d4f1a38..e59057d2aa9e065afaaeeb7724a43715
    '@modelcontextprotocol/server@2.2.0':
      resolution: {integrity: sha512-qFnltjus6Gk8Lx6J1w2RXmr3YPN22MNT6qD6zjAkaiWIlFIFxWClz0rXHNuJF/KSUyn5YGhkSvXkWDbQHVLFEQ==}
      engines: {node: '>=20'}
-@@ -21321,6 +22110,14 @@ packages:
+@@ -21321,6 +22116,14 @@ packages:
      resolution: {integrity: sha512-4BAffykYOgO+5nzBWYwE3W90sBgLJoUPRWWcL8wlyiM8IB8ipJz3UMJ9KXQd1RKQXpKp8Tutn80HZtWsu2u76w==}
      engines: {node: '>=10'}
  
@@ -14744,7 +14750,7 @@ index d6ef3e506e9d477291875dd2739f0c863d4f1a38..e59057d2aa9e065afaaeeb7724a43715
    '@tanstack/react-virtual@3.14.10':
      resolution: {integrity: sha512-SRyoUbdFMRHuYXMijV5H4ZarQWpXkj3iANq8OFre+pybeVap8ZJjZ3Nz9bVjx4d8PfobVUQUdKyyyHYk3E+djw==}
      peerDependencies:
-@@ -27972,6 +28769,16 @@ snapshots:
+@@ -27972,6 +28775,16 @@ snapshots:
  
    '@mixmark-io/domino@2.2.0': {}
  
@@ -14761,7 +14767,7 @@ index d6ef3e506e9d477291875dd2739f0c863d4f1a38..e59057d2aa9e065afaaeeb7724a43715
    '@modelcontextprotocol/client@2.2.0':
      dependencies:
        '@modelcontextprotocol/core': 2.2.0
-@@ -27982,10 +28789,21 @@ snapshots:
+@@ -27982,10 +28795,21 @@ snapshots:
        pkce-challenge: 5.0.1
        zod: 4.4.3
  
@@ -14783,7 +14789,7 @@ index d6ef3e506e9d477291875dd2739f0c863d4f1a38..e59057d2aa9e065afaaeeb7724a43715
    '@modelcontextprotocol/node@2.0.0(@modelcontextprotocol/server@2.2.0)(hono@4.13.7)':
      dependencies:
        '@hono/node-server': 1.19.17(hono@4.13.7)
-@@ -28037,6 +28855,11 @@ snapshots:
+@@ -28037,6 +28861,11 @@ snapshots:
        - supports-color
        - zod
  
@@ -14795,7 +14801,7 @@ index d6ef3e506e9d477291875dd2739f0c863d4f1a38..e59057d2aa9e065afaaeeb7724a43715
    '@modelcontextprotocol/server@2.2.0':
      dependencies:
        '@modelcontextprotocol/core': 2.2.0
-@@ -28744,6 +29567,13 @@ snapshots:
+@@ -28744,6 +29573,13 @@ snapshots:
      dependencies:
        defer-to-connect: 2.0.1
  
@@ -15671,6 +15677,36 @@ index f9bb1549a2395e139e66d2f7e51f1c5df482c97e..bfe0a91c76ba18a888c4104b8b1dbf12
 +    "packages/extensions/ui-deepseek-harness-product/README.md"
    ]
  }
+diff --git a/scripts/verify-concrete-terms.spec.ts b/scripts/verify-concrete-terms.spec.ts
+index 8e43525e532014d0cf9e054264062b124b1eb40e..c5cc6bb450ea3da4e8936a0113f658af65b30431 100644
+--- a/scripts/verify-concrete-terms.spec.ts
++++ b/scripts/verify-concrete-terms.spec.ts
+@@ -54,6 +54,12 @@ describe('concrete terminology policy', () => {
+ 
+   it('excludes vendored sources and frozen Agent Notes', () => {
+     expect(findConcreteTermViolations(`vendor/example/${blockedTerm}.ts`, blockedTerm)).toEqual([])
++    expect(findConcreteTermViolations(
++      'packages/deepseek-harness-product/experts/tests/fixtures/vendor/example.md',
++      blockedTerm,
++    )).toEqual([])
++    const authored = 'packages/deepseek-harness-product/experts/tests/fixtures/vendor-notes.md'
++    expect(findConcreteTermViolations(authored, blockedTerm)).toEqual([{ file: authored, line: 1 }])
+     expect(findConcreteTermViolations(
+       `.agents/notes/archived/process/${blockedTerm}.md`,
+       blockedTerm,
+diff --git a/scripts/verify-concrete-terms.ts b/scripts/verify-concrete-terms.ts
+index 342bcb6854c090a0a86bc2c420a24232655f8edc..a5f25e55f24f55f0a416ad4f40f0a0d02b72dbce 100644
+--- a/scripts/verify-concrete-terms.ts
++++ b/scripts/verify-concrete-terms.ts
+@@ -8,7 +8,7 @@ import { historicalSchemaRegion } from './historical-schema-region.ts'
+ 
+ const root = resolve(import.meta.dirname, '..')
+ const blockedTerm = 'prove' + 'nance'
+-const excludedPrefixes = ['vendor/', '.agents/notes/archived/'] as const
++const excludedPrefixes = ['vendor/', 'packages/deepseek-harness-product/experts/tests/fixtures/vendor/', '.agents/notes/archived/'] as const
+ 
+ /** One blocked term occurrence in a tracked path or text line. */
+ export interface ConcreteTermViolation {
 diff --git a/scripts/verify-package-readme-model-experience.ts b/scripts/verify-package-readme-model-experience.ts
 index 09dbf4558589eb43b6cc357d559f3aa71a079e3c..cf67a9cfa39b0d4fd8af39dc6b237df537285bb3 100644
 --- a/scripts/verify-package-readme-model-experience.ts

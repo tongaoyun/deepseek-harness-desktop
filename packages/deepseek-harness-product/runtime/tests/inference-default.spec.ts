@@ -3,11 +3,16 @@ import { mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { expect, it, onTestFinished, vi } from 'vitest'
+import { FiberState, type Context } from '@deepseek-ai/cordis'
 import { boot, initProfile, loadOptionalPatches, readProfilePatches, reconcileProfilePatches, type ProfileContext } from '@deepseek-ai/dsh-app-boot'
 import ConfigEditor from '@deepseek-ai/dsh-config-editor'
 import DefaultModel from '@deepseek-ai/dsh-agent-default-model'
 import Settings from '@deepseek-ai/dsh-settings'
 import { createLaunchEnvironmentSnapshot } from '@deepseek-ai/dsh-launch-environment'
+import { withFileLock } from '@deepseek-ai/dsh-atomic-write'
+import { credentialRef } from '@deepseek-ai/dsh-credentials'
+import CredentialsLocal from '@deepseek-ai/dsh-credentials-local'
+import { hasProviderApiKey } from '@deepseek-ai/dsh-api-session-controller/src/catalog.ts'
 import Agents from '@deepseek-ai/dsh-agent'
 import Sessions, { SessionId } from '@deepseek-ai/dsh-session'
 import Projections from '@deepseek-ai/dsh-session-projection'
@@ -30,9 +35,16 @@ const nativeRows = [
 const company = (models = ['deepseek-v4-flash', 'gpt-example']) => ({ id: 'product-inference-default',
   name: 'cordis:product-inference', config: { baseURL, models } })
 
-async function fixture(initial = { provider: 'test', model: 'original' }) {
+async function fixture(initial = { provider: 'test', model: 'original' }, environment: Record<string, string> = { DSH_PRODUCT_MODEL_API_KEY: 'company-model-key' }) {
   const home = await realpath(await mkdtemp(join(tmpdir(), 'product-inference-')))
-  onTestFinished(() => rm(home, { recursive: true, force: true }))
+  const started: Context[] = []
+  const writes: Promise<void>[] = []
+  onTestFinished(async () => {
+    const stopped = await Promise.allSettled(started.map(ctx => ctx.fiber.dispose()))
+    await Promise.allSettled(writes)
+    await rm(home, { recursive: true, force: true })
+    for (const result of stopped) if (result.status === 'rejected') throw result.reason
+  })
   const dir = join(home, 'profiles', 'test')
   initProfile(dir, ['test-bundle'])
   const bundle = join(dir, 'node_modules', 'test-bundle')
@@ -54,11 +66,17 @@ async function fixture(initial = { provider: 'test', model: 'original' }) {
     const ctx = await boot('test', join(dir, 'cordis.yml'), readProfilePatches('test', profile), (ctx) => {
       ctx.provide('profileContext', profile)
       ctx.provide('appReady', { onReady: (listener: () => void) => { listener(); return () => {} } })
-      ctx.provide('launchEnvironment', createLaunchEnvironmentSnapshot([{ source: 'process', values: { DSH_PRODUCT_MODEL_API_KEY: 'company-model-key' } }]))
+      ctx.provide('launchEnvironment', createLaunchEnvironmentSnapshot([{ source: 'process', values: environment }]))
       Object.assign(ctx.loader.builtins, { editor: ConfigEditor, settings: Settings, model: DefaultModel,
-        'test-llm': Llm, 'test-pi': PiAi, 'native-deepseek': DeepSeekApiKey, 'product-inference': ProductInference })
+        credentials: CredentialsLocal, 'test-llm': Llm, 'test-pi': PiAi, 'native-deepseek': DeepSeekApiKey, 'product-inference': ProductInference })
     })
-    onTestFinished(() => ctx.fiber.dispose())
+    started.push(ctx)
+    const edit = ctx.configEditor.edit.bind(ctx.configEditor)
+    ctx.configEditor.edit = (entry, change) => {
+      const writing = edit(entry, change)
+      writes.push(writing)
+      return writing
+    }
     return ctx
   }
   const ctx = await start()
@@ -97,6 +115,64 @@ it('adds company providers through native Loader and Settings while retaining pe
   expect(restarted.agentDefaultModel.currentSelection()).toEqual({ provider: 'personal', model: 'personal-model', reasoningEffort: 'high' })
 })
 
+it.each([true, false])('uses native provider credential detection for a DeepSeek-only company catalog with company key present: %s', async (present) => {
+  const { ctx, configure, profile } = await fixture({ provider: 'personal', model: 'personal-model' }, present ? { DSH_PRODUCT_MODEL_API_KEY: 'company-model-key' } : {})
+  const errors = vi.spyOn(ctx.logger, 'error').mockImplementation(() => {})
+  const credentials = { id: 'credentials', name: 'cordis:credentials', config: { dshHome: profile.home, watch: false } }
+  await configure([credentials, company(['deepseek-v4-flash'])])
+  expect([...ctx.loader.entries()].find(entry => entry.options.id === 'product-inference-default')?.fiber?.state).toBe(FiberState.ACTIVE)
+  expect(errors).not.toHaveBeenCalled()
+  expect(ctx.llm.listConfigurableProviders()).toContainEqual({ provider: 'product-deepseek', displayName: 'Enterprise DeepSeek',
+    settingsNs: 'product-inference-default', settingsPath: [] })
+  expect(ctx.settings.describe({ redactSecrets: true }).find(row => row.ns === 'product-inference-default'))
+    .toMatchObject({ autoGenerate: false, value: { apiKeyEnv: 'DSH_PRODUCT_MODEL_API_KEY' } })
+  expect(ctx.llm.listProviders().map(row => row.id)).not.toContain('product-gateway')
+  expect(await ctx.credentials.describe(credentialRef('DEEPSEEK_API_KEY'))).toMatchObject({ configured: false })
+  expect(await ctx.credentials.describe(credentialRef('DSH_PRODUCT_MODEL_API_KEY'))).toMatchObject({ configured: present,
+    ...present ? { source: 'env' } : {} })
+  expect(await hasProviderApiKey(ctx)).toBe(present)
+  await configure([credentials])
+  expect(ctx.llm.listConfigurableProviders().map(row => row.provider)).not.toContain('product-deepseek')
+  expect(ctx.settings.describe().map(row => row.ns)).not.toContain('product-inference-default')
+  expect(await hasProviderApiKey(ctx)).toBe(false)
+})
+
+it('advertises company credentials before a generic-only route completes its native configuration write', async () => {
+  const { ctx, configure, profile } = await fixture({ provider: 'personal', model: 'personal-model' })
+  const locked = Promise.withResolvers<undefined>()
+  const release = Promise.withResolvers<undefined>()
+  const lock = withFileLock(join(profile.dir, 'package.json'), async () => {
+    locked.resolve(undefined)
+    await release.promise
+  })
+  onTestFinished(() => { release.resolve(undefined); return lock })
+  await locked.promise
+  const nativeEdit = ctx.configEditor.edit.bind(ctx.configEditor)
+  const entered = Promise.withResolvers<Promise<void>>()
+  vi.spyOn(ctx.configEditor, 'edit').mockImplementationOnce((entry, change) => {
+    const writing = nativeEdit(entry, change)
+    entered.resolve(writing)
+    return writing
+  })
+  await configure([{ id: 'credentials', name: 'cordis:credentials', config: { dshHome: profile.home, watch: false } }, company(['gpt-example'])])
+  expect(ctx.llm.listProviders().map(row => row.id)).not.toContain('product-deepseek')
+  expect(ctx.llm.listProviders().map(row => row.id)).not.toContain('product-gateway')
+  expect(ctx.llm.listConfigurableProviders()).toContainEqual({ provider: 'product-deepseek', displayName: 'Enterprise DeepSeek',
+    settingsNs: 'product-inference-default', settingsPath: [] })
+  expect(await hasProviderApiKey(ctx)).toBe(true)
+  release.resolve(undefined)
+  await entered.promise
+  expect(ctx.llm.listProviders().map(row => row.id)).toContain('product-gateway')
+})
+
+it('rejects a company credential reference that differs from its process-only authentication key', async () => {
+  const { ctx, configure } = await fixture()
+  await configure([company(['deepseek-v4-flash'])])
+  await expect(ctx.settings.mutate('product-inference-default', [{ op: 'set', path: ['apiKeyEnv'], value: 'DEEPSEEK_API_KEY' }])).rejects.toThrow()
+  expect(ctx.settings.describe().find(row => row.ns === 'product-inference-default')?.value)
+    .toEqual({ apiKeyEnv: 'DSH_PRODUCT_MODEL_API_KEY' })
+})
+
 it('preserves a valid native default and reasoning effort even when the model is not in the company catalog', async () => {
   const { ctx, configure } = await fixture()
   await ctx.agentDefaultModel.saveSelection({ provider: 'personal', model: 'personal-model', reasoningEffort: ReasoningEffortId('high') })
@@ -130,13 +206,95 @@ it('keeps an explicitly saved native selection even when its credential is curre
 
 it('removes an obsolete company generic route while retaining personal routes and the saved default', async () => {
   const { ctx, configure } = await fixture()
+  await ctx.agentDefaultModel.saveSelection({ provider: 'personal', model: 'personal-model', reasoningEffort: ReasoningEffortId('high') })
   await configure([company()])
   await expect.poll(() => ctx.llm.listProviders().map(row => row.id)).toContain('product-gateway')
-  await ctx.agentDefaultModel.saveSelection({ provider: 'personal', model: 'personal-model', reasoningEffort: ReasoningEffortId('high') })
   await configure([company(['deepseek-v4-flash'])])
   await expect.poll(() => ctx.llm.listProviders().map(row => row.id)).not.toContain('product-gateway')
   expect(await ctx.llm.resolveModelInfo('personal', 'personal-model')).toMatchObject({ id: 'personal-model' })
   expect(ctx.agentDefaultModel.currentSelection()).toEqual({ provider: 'personal', model: 'personal-model', reasoningEffort: 'high' })
+})
+
+it('finishes a native configuration reload that unloads the caller of an in-flight company route write', async () => {
+  const { ctx, profile, configure } = await fixture()
+  const nativeEdit = ctx.configEditor.edit.bind(ctx.configEditor)
+  const writes: Promise<void>[] = []
+  vi.spyOn(ctx.configEditor, 'edit').mockImplementation((entry, change) => {
+    const result = nativeEdit(entry, change)
+    if (entry.options.id === 'llm-pi-ai') writes.push(result)
+    return result
+  })
+  await configure([company()])
+  await expect.poll(() => writes.length).toBe(1)
+  await writes[0]
+  await expect.poll(() => ctx.agentDefaultModel.currentSelection()).toEqual({ provider: 'product-deepseek', model: 'deepseek-v4-flash' })
+  await ctx.agentDefaultModel.saveSelection({ provider: 'personal', model: 'personal-model', reasoningEffort: ReasoningEffortId('high') })
+  const locked = Promise.withResolvers<undefined>()
+  const release = Promise.withResolvers<undefined>()
+  const lock = withFileLock(join(profile.dir, 'package.json'), async () => {
+    locked.resolve(undefined)
+    await release.promise
+  })
+  onTestFinished(() => { release.resolve(undefined); return lock })
+  await locked.promise
+  await configure([company(['deepseek-v4-flash', 'gpt-new'])])
+  await expect.poll(() => writes.length).toBe(2)
+  const fiber = [...ctx.loader.entries()].find(entry => entry.options.id === 'product-inference-default')?.fiber
+  if (fiber === undefined) throw new Error('Company inference did not activate')
+  const unloading = Promise.withResolvers<undefined>()
+  fiber.ctx.effect(() => () => { unloading.resolve(undefined) })
+  const saved = loadOptionalPatches('test', profile.patchPath)?.filter(row => row.insert === undefined) ?? []
+  await writeFile(profile.patchPath, JSON.stringify([{ insert: [company(['deepseek-v4-flash'])] }, ...saved]))
+  release.resolve(undefined)
+  await unloading.promise
+  // The successor must reach its own native unset while the previous write holds the profile lock.
+  await expect.poll(() => writes.length).toBe(3)
+  await Promise.all(writes)
+  expect(ctx.llm.listProviders().map(row => row.id)).not.toContain('product-gateway')
+  expect(await ctx.llm.resolveModelInfo('personal', 'personal-model')).toMatchObject({ id: 'personal-model' })
+  expect(ctx.agentDefaultModel.currentSelection()).toEqual({ provider: 'personal', model: 'personal-model', reasoningEffort: 'high' })
+})
+
+it('cancels native model lookup on unload and never saves a late default', async () => {
+  const { ctx, configure } = await fixture({ provider: 'personal', model: 'removed-model' })
+  const lookup = Promise.withResolvers<Awaited<ReturnType<typeof ctx.llm.resolveModelInfo>>>()
+  const queried = Promise.withResolvers<AbortSignal | undefined>()
+  const report = vi.spyOn(ctx.logger, 'error').mockImplementation(() => {})
+  const save = vi.spyOn(ctx.agentDefaultModel, 'saveSelection')
+  vi.spyOn(ctx.llm, 'resolveModelInfo').mockImplementationOnce((_provider, _model, signal) => {
+    queried.resolve(signal)
+    return lookup.promise
+  })
+  await configure([company(['deepseek-v4-flash'])])
+  const signal = await queried.promise
+  expect(signal?.aborted).toBe(false)
+  await configure([])
+  expect(signal?.aborted).toBe(true)
+  const failure = new LlmError('Model removed during lookup', 'UNKNOWN_MODEL')
+  lookup.reject(failure)
+  await expect.poll(() => report.mock.calls).toEqual([['Company model operation failed after unloading', failure]])
+  expect(save).not.toHaveBeenCalled()
+  expect(ctx.agentDefaultModel.currentSelection()).toEqual({ provider: 'personal', model: 'removed-model' })
+})
+
+it('reports a native configuration write failure after unload without continuing default repair', async () => {
+  const { ctx, configure } = await fixture()
+  const writing = Promise.withResolvers<undefined>()
+  const entered = Promise.withResolvers<undefined>()
+  const report = vi.spyOn(ctx.logger, 'error').mockImplementation(() => {})
+  const save = vi.spyOn(ctx.agentDefaultModel, 'saveSelection')
+  vi.spyOn(ctx.configEditor, 'edit').mockImplementationOnce(() => {
+    entered.resolve(undefined)
+    return writing.promise
+  })
+  await configure([company()])
+  await entered.promise
+  await configure([])
+  const failure = new Error('Profile write failed after reload')
+  writing.reject(failure)
+  await expect.poll(() => report.mock.calls).toEqual([['Company model operation failed after unloading', failure]])
+  expect(save).not.toHaveBeenCalled()
+  expect(ctx.agentDefaultModel.currentSelection()).toEqual({ provider: 'test', model: 'original' })
 })
 
 it('repairs a model explicitly rejected by its native adapter without replacing other provider configuration', async () => {
@@ -167,9 +325,12 @@ it('retains an unlisted but valid native model and leaves transient lookup failu
 
 it('retries failed native configuration persistence before later tasks', async () => {
   const { ctx, configure } = await fixture()
-  const edit = vi.spyOn(ctx.configEditor, 'edit').mockRejectedValueOnce(new Error('Profile temporarily unavailable'))
+  const failure = new Error('Profile temporarily unavailable')
+  const report = vi.spyOn(ctx.logger, 'error').mockImplementation(() => {})
+  const edit = vi.spyOn(ctx.configEditor, 'edit').mockRejectedValueOnce(failure)
   await configure([company()])
-  await expect.poll(() => edit.mock.calls.length).toBe(1)
+  await expect.poll(() => report.mock.calls).toEqual([['Company model preparation failed', failure]])
+  expect(edit.mock.calls).toHaveLength(1)
   expect(ctx.agentDefaultModel.currentSelection()).toEqual({ provider: 'test', model: 'original' })
   const handle = await createAgent(ctx, 'retry-default', 'test', 'original')
   expect(ctx.agentDefaultModel.currentSelection()).toEqual({ provider: 'product-deepseek', model: 'deepseek-v4-flash' })

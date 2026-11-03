@@ -34,7 +34,8 @@
         "packages/experimental/webworker-runtime/tests/compile/transform-corpus.spec.ts",
         "packages/extensions/cordis-client-runner/tests/api-catalog.client.spec.ts",
         "scripts/compile-referenced-projects.spec.ts",
-        "scripts/locale-dictionary-parity.spec.ts"
+        "scripts/locale-dictionary-parity.spec.ts",
+        "scripts/verify-concrete-terms.spec.ts"
       ],
       "files": [
         {
@@ -1545,7 +1546,7 @@
         {
           "path": "pnpm-lock.yaml",
           "before": "aa1293f2e8d3ee82cb3cfcb0e65ba8a0ef73ab80fad4c35d7ed2f7c67b95a625",
-          "after": "9db513e12b58d0300cf7d4fd1f6b5fc93b7d04b5266eb290b5cb58f6a9d56006"
+          "after": "6db58b377fcd77b6ed8ea0d03d7960f5e956482e89ea898fb52ad889b7cc007c"
         },
         {
           "path": "scripts/build.spec.ts",
@@ -1651,6 +1652,16 @@
           "path": "scripts/translation-pairing.manifest.json",
           "before": "9944a604474c609318ec2793512661aa0dfc67f124d6789df4f285e8c5910153",
           "after": "3873c63b0a930753283c5a12aee6c8b328c62bfce37ad0212b3dd5ed64d8b61e"
+        },
+        {
+          "path": "scripts/verify-concrete-terms.spec.ts",
+          "before": "fa79fd4c9cef4b8362e86c6b57dea47abc45d7d523df7e3940d7d87d60dcf9d6",
+          "after": "9418f2e8fcf2389443fbe636aba3a73a99d661aa8bad2c3f8bbb3602e34a1bdc"
+        },
+        {
+          "path": "scripts/verify-concrete-terms.ts",
+          "before": "103482489c122cc615ec09fc4067fe9c3ccb00f81ff7e201dc72172ce2af1284",
+          "after": "198bb448dac92b883ac5f817234e30b603d475df820bcad081a243549d661d24"
         },
         {
           "path": "scripts/verify-package-readme-model-experience.ts",

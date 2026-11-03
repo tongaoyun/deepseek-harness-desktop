@@ -53,7 +53,6 @@
     "@deepseek-ai/dsh-tool-executor-ptc": "workspace:*",
     "@deepseek-ai/dsh-system-prompt": "workspace:*",
     "@deepseek-ai/dsh-skill-office": "workspace:*",
-    "@deepseek-ai/dsh-deepseek-account": "workspace:*",
     "@deepseek-ai/dsh-workspace": "workspace:*",
     "@deepseek-ai/cordis-plugin-include": "workspace:~",
     "@deepseek-harness/product": "workspace:*",
@@ -61,6 +60,9 @@
     "@deepseek-ai/dsh-launch-environment": "workspace:*"
   },
   "devDependencies": {
+    "@deepseek-ai/dsh-api-session-controller": "workspace:*",
+    "@deepseek-ai/dsh-credentials": "workspace:*",
+    "@deepseek-ai/dsh-credentials-local": "workspace:*",
     "@deepseek-ai/dsh-config-editor": "workspace:*",
     "@deepseek-ai/dsh-mcp-resources": "workspace:*",
     "@deepseek-ai/dsh-ptc-runtime-node": "workspace:*",
