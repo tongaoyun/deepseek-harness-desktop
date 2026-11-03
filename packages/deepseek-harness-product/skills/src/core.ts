@@ -2116,8 +2116,7 @@ export async function restoreTrash(id: string, log?: Log, options: MutationOptio
   }
 }
 
-async function forgetCategoryMember(metadata: TrashMetadata) {
-  // 回收站目录已经删除。这里单独再写一次状态；写入失败时成员记录会留下，同名新建可能回到旧分类。不再回滚已删除的回收站目录。
+async function forgetCategoryMember(metadata: TrashMetadata, options: MutationOptions) {
   const key = metadata.root?.key;
   if (!key || !validStateSkillName(metadata.name)) return;
   const current = await readManagerState();
@@ -2127,6 +2126,38 @@ async function forgetCategoryMember(metadata: TrashMetadata) {
   const hasMember = !!(members && members[metadata.name]);
   const hasOrder = !!(orders && Object.values(orders).some((names) => names.includes(metadata.name)));
   if (!hasMember && !hasOrder) return;
+  const definition = await restoreRootDefinition(metadata, options);
+  if (!definition || definition.ok === false || definition.key !== key) return;
+  if (definition.scope !== "project" && (await checkedUserRootAncestors(definition)).ok === false) return;
+  const rootInfo = await fs.lstat(definition.path);
+  if (!rootInfo.isDirectory() || rootInfo.isSymbolicLink()) return;
+  const bundle = entryPath(definition.path, metadata.name);
+  if (bundle === null) return;
+  for (const path of [bundle, resolve(definition.path, `${metadata.name}.md`)]) {
+    try {
+      await fs.lstat(path);
+      return;
+    } catch (caught) {
+      if ((caught as CodedError).code !== "ENOENT") throw caught;
+    }
+  }
+  const trashRoot = trashRootPath();
+  const trashInfo = await fs.lstat(trashRoot);
+  if (!trashInfo.isDirectory() || trashInfo.isSymbolicLink()) return;
+  for (const item of await fs.readdir(trashRoot, { withFileTypes: true })) {
+    if (item.name.startsWith(".")) continue;
+    if (item.isFile()) continue;
+    if (!item.isDirectory()) return;
+    const itemRoot = join(trashRoot, item.name);
+    const itemInfo = await fs.lstat(itemRoot);
+    const metadataInfo = await fs.lstat(join(itemRoot, "metadata.json"));
+    if (!itemInfo.isDirectory() || itemInfo.isSymbolicLink() || !metadataInfo.isFile() || metadataInfo.isSymbolicLink()) return;
+    const other = await readTrashMetadata(item.name);
+    if (!other || !validStateSkillName(other.name)) return;
+    const otherRoot = await restoreRootDefinition(other, options);
+    if (!otherRoot || otherRoot.ok === false) return;
+    if (otherRoot.key === key && other.name === metadata.name) return;
+  }
   if (members) delete members[metadata.name];
   if (orders) {
     for (const id of Object.keys(orders))
@@ -2135,7 +2166,16 @@ async function forgetCategoryMember(metadata: TrashMetadata) {
   await writeManagerState(current.state);
 }
 
-export async function permanentlyDeleteTrash(id: string, log?: Log) {
+async function reportTrashDeletion(event: string, detail: string, log?: Log) {
+  if (log) {
+    try { await log(event, detail); return; }
+    catch (_error) { /* Console retains the diagnostic when its configured writer fails. */ }
+  }
+  try { console.warn(event, detail); }
+  catch (_error) { /* Diagnostics cannot change a committed deletion. */ }
+}
+
+export async function permanentlyDeleteTrash(id: string, log?: Log, options: MutationOptions = {}) {
   const metadata = await readTrashMetadata(id);
   if (!metadata)
     return {
@@ -2145,8 +2185,11 @@ export async function permanentlyDeleteTrash(id: string, log?: Log) {
       params: { id },
     };
   await fs.rm(join(trashRootPath(), id), { recursive: true, force: true });
-  await forgetCategoryMember(metadata);
-  if (log) log("trash-delete", `永久删除回收站条目 ${metadata.name} (${id})`);
+  try { await forgetCategoryMember(metadata, options); }
+  catch (error) {
+    await reportTrashDeletion("trash-category-warning", `回收站条目已永久删除，分类记录暂时保留: ${String(error)}`, log);
+  }
+  if (log) await reportTrashDeletion("trash-delete", `永久删除回收站条目 ${metadata.name} (${id})`, log);
   return { id, name: metadata.name };
 }
 
