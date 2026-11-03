@@ -11,3 +11,61 @@ exports[`keeps current native policies when loading cached external candidates a
   "name": "audit-orders",
 }
 `;
+
+exports[`keeps disabled skills out of the native loader during manager document read failures 1`] = `
+{
+  "recovered": {
+    "content": [
+      {
+        "text": "Error: skill "audit-orders" is not available for model invocation",
+        "type": "text",
+      },
+    ],
+    "error": {
+      "message": "skill "audit-orders" is not available for model invocation",
+    },
+    "isError": true,
+  },
+  "unavailable": {
+    "content": [
+      {
+        "text": "Error: Required skill provider "dsh-skills-manager-external" is unavailable (incomplete); no skills were selected. Retry after the source recovers.",
+        "type": "text",
+      },
+    ],
+    "error": {
+      "message": "Required skill provider "dsh-skills-manager-external" is unavailable (incomplete); no skills were selected. Retry after the source recovers.",
+    },
+    "isError": true,
+  },
+}
+`;
+
+exports[`keeps disabled skills out of the native loader during manager root read failures 1`] = `
+{
+  "recovered": {
+    "content": [
+      {
+        "text": "Error: skill "audit-orders" is not available for model invocation",
+        "type": "text",
+      },
+    ],
+    "error": {
+      "message": "skill "audit-orders" is not available for model invocation",
+    },
+    "isError": true,
+  },
+  "unavailable": {
+    "content": [
+      {
+        "text": "Error: Required skill provider "dsh-skills-manager-external" is unavailable (incomplete); no skills were selected. Retry after the source recovers.",
+        "type": "text",
+      },
+    ],
+    "error": {
+      "message": "Required skill provider "dsh-skills-manager-external" is unavailable (incomplete); no skills were selected. Retry after the source recovers.",
+    },
+    "isError": true,
+  },
+}
+`;

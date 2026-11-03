@@ -120,6 +120,29 @@ it('closes the Loader-mounted editor category menu while saving and preserves th
   }
 })
 
+it('keeps the Loader-mounted team directory retry available until a refresh succeeds', async () => {
+  const { ctx, slots, getTeams } = await fixture(true)
+  ctx.locale.setLocale('zh')
+  getTeams.mockRejectedValue(new Error('Team directory unavailable'))
+  const view = render(slots.renderSlot('root', {}))
+  fireEvent.click(within(view.container).getByRole('tab', { name: /专家团/ }))
+  expect((await screen.findByRole('alert')).textContent).toContain('Team directory unavailable')
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: '刷新重试' })) })
+  expect(screen.getByRole('alert').textContent).toContain('Team directory unavailable')
+  expect(screen.getByRole('button', { name: '刷新重试' })).toBeTruthy()
+  getTeams.mockResolvedValue({ ok: true, value: { teams: [], enabledTeams: [], enabledExperts: [], revision: 9 } })
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: '刷新重试' })) })
+  expect(screen.queryByRole('alert')).toBeNull()
+  expect(screen.getByText('审核发布后的专家团会展示在这里。')).toBeTruthy()
+  expect({ retryVisible: screen.queryByRole('button', { name: '刷新重试' }) !== null,
+    emptyDirectory: screen.getByText('审核发布后的专家团会展示在这里。').textContent }).toMatchInlineSnapshot(`
+      {
+        "emptyDirectory": "审核发布后的专家团会展示在这里。",
+        "retryVisible": false,
+      }
+    `)
+})
+
 it('clears disconnected Host data, accepts its new revision and disposes the previous mount', async () => {
   const { ctx, owner, cache, getCatalog, getTeams, unmount, slots } = await fixture()
   const disconnectedCatalog = Promise.withResolvers<Awaited<ReturnType<AgencyCatalogRemote['getCatalog']>>>()

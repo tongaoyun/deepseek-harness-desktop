@@ -248,6 +248,8 @@ export interface SkillProviderObservation {
 export interface SkillProvider {
   /** Unique provider name in the `ctx.skills` registry. */
   readonly name: string
+  /** Reject the lookup if this provider fails or reports incomplete discovery; omission keeps other providers available. */
+  readonly required?: boolean
   /**
    * List available skill candidates for the current lookup context. Provider
    * plugins register synchronously during `apply()`; remote initialization,
@@ -265,6 +267,22 @@ export interface SkillProvider {
    * @returns the full skill body, or `undefined` if it is no longer loadable.
    */
   readonly get: (candidate: SkillCandidate, options: SkillLookupOptions) => Promise<SkillDefinition | undefined>
+}
+
+/** A required source could not establish a complete skill catalog; no fallback or partial result is returned. */
+export class SkillProviderUnavailableError extends Error {
+  /** Stable identity for callers that report unavailable skill discovery. */
+  readonly code = 'SKILL_PROVIDER_UNAVAILABLE'
+
+  /**
+   * @param provider - required provider whose discovery could not complete.
+   * @param reason - failed provider call, incomplete observation, or repeated catalog invalidation.
+   * @param options - original provider failure as cause; omitted when no exception caused the failure.
+   */
+  constructor(readonly provider: string, readonly reason: 'failed' | 'incomplete' | 'unstable', options?: ErrorOptions) {
+    super(`Required skill provider "${provider}" is unavailable (${reason}); no skills were selected. Retry after the source recovers.`, options)
+    this.name = 'SkillProviderUnavailableError'
+  }
 }
 
 /** Registration-scoped lifecycle and invalidation capability borrowed by one provider. */
@@ -525,6 +543,11 @@ export class SkillRegistry extends Service {
           attempt += 1
           continue
         }
+        for (const layer of [this.layers.global, ...this.layers.chainLayers(options.scope)]) {
+          for (const { provider } of layer.providers.values()) {
+            if (provider.required === true) throw new SkillProviderUnavailableError(provider.name, 'unstable')
+          }
+        }
         return { entries: result.entries, cacheable: false }
       }
       if (result.cacheable) {
@@ -593,11 +616,13 @@ export class SkillRegistry extends Service {
         output = await waitWithAbort(provider.list(options), options.signal)
       } catch (error) {
         if (options.signal?.aborted === true) throw toError(options.signal.reason)
+        if (provider.required === true) throw new SkillProviderUnavailableError(provider.name, 'failed', { cause: error })
         cacheable = false
         this.ctx.logger.warn(`skill provider "${provider.name}" skipped: ${errorMessage(error)}`)
       }
       if (output === undefined) continue
       const observation = normalizeProviderObservation(output, provider.name)
+      if (!observation.complete && provider.required === true) throw new SkillProviderUnavailableError(provider.name, 'incomplete')
       if (!observation.complete) cacheable = false
       for (const candidate of observation.candidates) {
         validateCandidate(candidate, provider.name)

@@ -32,10 +32,6 @@ export function TeamMenu(props: {
             setConfirm(null);
         }
     }, [snapshot]);
-    const load = async () => {
-        await directory.refresh();
-        if (!directory.getSignal()?.aborted) setError('');
-    };
     const pick = async (team: ExpertTeam, example?: string, confirmed = false) => {
         const signal = directory.getSignal();
         if (busy || !snapshot || !signal || signal.aborted)
@@ -80,7 +76,7 @@ export function TeamMenu(props: {
       <Input data-modal-autofocus aria-label={tx("搜索专家团")} placeholder={tx("搜索团队或工作目标")} value={query} onChange={(e) => setQuery(e.target.value)}/>
       {error && (<div role="alert">
           {error}
-          <button type="button" className="agt-plain-btn" onClick={() => void load()}>{tx("刷新")}</button>
+          <button type="button" className="agt-plain-btn" onClick={() => void directory.refresh()}>{tx("刷新")}</button>
         </div>)}
       <div className="agt-compact-list">
         {teams.map((team) => (<div className="agt-compact-row" key={team.id}>

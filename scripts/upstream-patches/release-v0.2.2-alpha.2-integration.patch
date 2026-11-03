@@ -3814,7 +3814,7 @@ index 44dcc4fbdd84e90403a3531089630849708f0f3e..b2eb12d43c66a47355089f80a3bee511
      "tests/plugin-recommendations.e2e.ts",
      "tests/japanese-plugin-metadata.e2e.ts",
 diff --git a/docs/config-catalog.md b/docs/config-catalog.md
-index 9b409c6b553500e550b2d0555ed0c1da7e6cce1c..203d09afc38b7714fa2eaf2a5e9f2c02edbf57e3 100644
+index 9b409c6b553500e550b2d0555ed0c1da7e6cce1c..c440d64550b2809257ad295c32f96baffba291d5 100644
 --- a/docs/config-catalog.md
 +++ b/docs/config-catalog.md
 @@ -158,7 +158,7 @@ export type Config = PresetDefinition
@@ -3858,7 +3858,7 @@ index 9b409c6b553500e550b2d0555ed0c1da7e6cce1c..203d09afc38b7714fa2eaf2a5e9f2c02
  ## `@deepseek-ai/dsh-skill`
  
 -- `source`: [`packages/skill/skill/src/index.ts:278`](../packages/skill/skill/src/index.ts)
-+- `source`: [`packages/skill/skill/src/index.ts:279`](../packages/skill/skill/src/index.ts)
++- `source`: [`packages/skill/skill/src/index.ts:297`](../packages/skill/skill/src/index.ts)
  
  ```ts config-catalog
  /** Skill registry configuration. */
@@ -3945,7 +3945,7 @@ index 9b409c6b553500e550b2d0555ed0c1da7e6cce1c..203d09afc38b7714fa2eaf2a5e9f2c02
 +| `@deepseek-harness/product-desktop` | — | [`packages/deepseek-harness-product/desktop/src/index.ts`](../packages/deepseek-harness-product/desktop/src/index.ts) |
  <!-- END GENERATED config-catalog:library -->
 diff --git a/docs/config-catalog.zh.md b/docs/config-catalog.zh.md
-index 25094e00e36f1686dea4984db5716ea2fae8221d..a68aa5e414d27669e7c1e785a14f36bf4b16c653 100644
+index 25094e00e36f1686dea4984db5716ea2fae8221d..6b54d59b9da5da47fe2ba523999c45c0788aa63e 100644
 --- a/docs/config-catalog.zh.md
 +++ b/docs/config-catalog.zh.md
 @@ -160,7 +160,7 @@ export type Config = PresetDefinition
@@ -3989,7 +3989,7 @@ index 25094e00e36f1686dea4984db5716ea2fae8221d..a68aa5e414d27669e7c1e785a14f36bf
  ## `@deepseek-ai/dsh-skill`
  
 -- `source`: [`packages/skill/skill/src/index.ts:278`](../packages/skill/skill/src/index.ts)
-+- `source`: [`packages/skill/skill/src/index.ts:279`](../packages/skill/skill/src/index.ts)
++- `source`: [`packages/skill/skill/src/index.ts:297`](../packages/skill/skill/src/index.ts)
  
  ```ts config-catalog
  /** Skill registry configuration. */
@@ -4948,10 +4948,10 @@ index db4bb206f5c61087916c89efcb3181b5ac2735cd..2ca0476919257bc5efb63a71446d7cfc
  
  #### `agent-preset/selected` — emit
 diff --git a/docs/subsystems/skills.i18n.yaml b/docs/subsystems/skills.i18n.yaml
-index b9101bbb510d6a3dc8bb57d86915265237aae71e..b66cf4b6a8ad4fa720cd92e050a13b8982065187 100644
+index b9101bbb510d6a3dc8bb57d86915265237aae71e..61298dbbc2256078e045475ff72dfb5a0e679c63 100644
 --- a/docs/subsystems/skills.i18n.yaml
 +++ b/docs/subsystems/skills.i18n.yaml
-@@ -3,8 +3,8 @@
+@@ -3,11 +3,11 @@
  # After editing either side, bring the other along and re-record with:
  #   pnpm run verify-translation-pairing --write docs/subsystems/skills.md
  /skills:
@@ -4960,13 +4960,18 @@ index b9101bbb510d6a3dc8bb57d86915265237aae71e..b66cf4b6a8ad4fa720cd92e050a13b89
 +  en: 9be624c84bafb983
 +  zh: 6aee8418048ba0c2
  /skills/provider-registry:
-   en: abe338b6c6d1ebd1
-   zh: c604db2de10a23c4
+-  en: abe338b6c6d1ebd1
+-  zh: c604db2de10a23c4
++  en: 7ebaffeda7718abc
++  zh: 373d8e9dd38e103a
+ /skills/local-discovery-priority:
+   en: 390fc00bbccfb777
+   zh: 96ff7abfbd4b911b
 diff --git a/docs/subsystems/skills.md b/docs/subsystems/skills.md
-index 0c7ab18d2b3023bdbf174fc766a68a43913d5b06..8c079f22ab0f65af2c388230d1f962f7980a862a 100644
+index 0c7ab18d2b3023bdbf174fc766a68a43913d5b06..3af1fd1c7d16a7cd64d48fc956c08e532268bfd3 100644
 --- a/docs/subsystems/skills.md
 +++ b/docs/subsystems/skills.md
-@@ -6,6 +6,8 @@ The [skill capability family](../../packages/skill) includes the Service Definit
+@@ -6,15 +6,17 @@ The [skill capability family](../../packages/skill) includes the Service Definit
  
  Source: [`packages/skill/skill/src/index.ts`](../../packages/skill/skill/src/index.ts), [`packages/skill/skill-filesystem/src/index.ts`](../../packages/skill/skill-filesystem/src/index.ts), [`packages/experimental/skill-badge/src/index.ts`](../../packages/experimental/skill-badge/src/index.ts), [`packages/skill/skill-office/src/index.ts`](../../packages/skill/skill-office/src/index.ts), [`packages/sandbox/sandbox-windows-acl/src/acl-skill.ts`](../../packages/sandbox/sandbox-windows-acl/src/acl-skill.ts), and [`packages/skill/tool-skill/src/index.ts`](../../packages/skill/tool-skill/src/index.ts).
  
@@ -4975,7 +4980,27 @@ index 0c7ab18d2b3023bdbf174fc766a68a43913d5b06..8c079f22ab0f65af2c388230d1f962f7
  ## Provider registry
  
  `ctx.skills` combines local, embedded, remote, or other providers. Registration is synchronous; remote initialization and discovery belong in awaited `list()`. Provider objects, options, and candidates are borrowed readonly, while semantic fields are validated.
-@@ -348,5 +350,5 @@ A skill provider, runtime contribution, or provider-backed catalog may have chan
+ 
+ The registry is host+per-scope layered, the shape the [tools registry](tools.md) established over [dsh-scope](../../packages/core/scope): a registration files into the layer of its calling context's scope, so host rows and repository plugins land in the global layer while a plugin mounted by an agent preset's standing composition lands in that preset's layer, and provider names are unique per layer rather than process-wide. A read merges the global layer with the viewing scope's chain — the nearest layer's entry wins a duplicate skill name outright, and the rank order below decides duplicates only within one layer. Discovery caches are keyed by the resolved scope chain, so re-parenting a scope (a blank-session recompose) is visible to the next read without a registry mutation.
+ 
+-Within one layer, duplicate names resolve by rank, provider order, then local order; summaries sort by name. A rejected `list()` is logged and omitted from an incomplete observation, while an explicit incomplete observation contributes usable candidates without making the result cacheable; malformed candidates fail fast. Each provider factory receives a registration-scoped control whose `invalidate()` clears completed catalogs only while that exact registration remains active and whose signal aborts on failed registration or disposal. An in-flight discovery retries once when its provider generation changes; a second change returns the latest candidates incomplete and uncached. Provider and runtime mutations emit the unfiltered `skills/change` invalidation event; it carries no diff, so consumers refetch `snapshot()` with their own lookup options.
++Within one layer, duplicate names resolve by rank, provider order, then local order; summaries sort by name. For optional providers, a rejected `list()` is logged and omitted from an incomplete observation, while an explicit incomplete observation contributes usable candidates without making the result cacheable; malformed candidates fail fast. Each provider factory receives a registration-scoped control whose `invalidate()` clears completed catalogs only while that exact registration remains active and whose signal aborts on failed registration or disposal. An in-flight discovery retries once when its provider generation changes; a second change returns the latest candidates incomplete and uncached only when no required provider participates. Provider and runtime mutations emit the unfiltered `skills/change` invalidation event; it carries no diff, so consumers refetch `snapshot()` with their own lookup options.
+ 
+-An array returned by `SkillProvider.list()` is complete-discovery shorthand. `SkillProviderObservation` lets a provider expose candidates that remain directly loadable while reporting that the observation is not authoritative.
++An array returned by `SkillProvider.list()` is complete-discovery shorthand. `SkillProviderObservation` lets an optional provider expose directly loadable candidates from incomplete discovery. A provider with `required: true` instead rejects the lookup with `SkillProviderUnavailableError` if its call fails, its observation is incomplete, or catalog invalidation exhausts the retry limit. No partial result or fallback is returned; the next lookup retries. The error carries `provider`, `reason` (`failed`, `incomplete`, or `unstable`), and the original thrown failure as `cause`; cancellation keeps its original error. The requirement applies only to layers participating in that lookup, for the lifetime of the registration.
+ 
+ ```ts type-equiv
+ /** Provider candidates plus whether the current discovery is authoritative. */
+@@ -31,6 +33,8 @@ interface SkillProviderObservation {
+ interface SkillProvider {
+   /** Unique provider name in the `ctx.skills` registry. */
+   readonly name: string
++  /** Reject the lookup if this provider fails or reports incomplete discovery; omission keeps other providers available. */
++  readonly required?: boolean
+   /**
+    * List available skill candidates for the current lookup context. Provider
+    * plugins register synchronously during `apply()`; remote initialization,
+@@ -348,5 +352,5 @@ A skill provider, runtime contribution, or provider-backed catalog may have chan
  'skills/change'(): void
  ```
  
@@ -4983,10 +5008,10 @@ index 0c7ab18d2b3023bdbf174fc766a68a43913d5b06..8c079f22ab0f65af2c388230d1f962f7
 +Source: [`packages/skill/skill/src/types.ts`](../../packages/skill/skill/src/types.ts)
  <!-- END GENERATED cordis-surface -->
 diff --git a/docs/subsystems/skills.zh.md b/docs/subsystems/skills.zh.md
-index f2f84ab22d7cf9f4ecbf90f841fd428e44baf675..2b2f6f0e3a271788817c804b7d1d22652faf4784 100644
+index f2f84ab22d7cf9f4ecbf90f841fd428e44baf675..30ff705ed166eb8131db019e02260f66569ceb43 100644
 --- a/docs/subsystems/skills.zh.md
 +++ b/docs/subsystems/skills.zh.md
-@@ -6,6 +6,8 @@
+@@ -6,15 +6,17 @@
  
  源码：[`packages/skill/skill/src/index.ts`](../../packages/skill/skill/src/index.ts)、[`packages/skill/skill-filesystem/src/index.ts`](../../packages/skill/skill-filesystem/src/index.ts)、[`packages/experimental/skill-badge/src/index.ts`](../../packages/experimental/skill-badge/src/index.ts)、[`packages/skill/skill-office/src/index.ts`](../../packages/skill/skill-office/src/index.ts)、[`packages/sandbox/sandbox-windows-acl/src/acl-skill.ts`](../../packages/sandbox/sandbox-windows-acl/src/acl-skill.ts) 与 [`packages/skill/tool-skill/src/index.ts`](../../packages/skill/tool-skill/src/index.ts)。
  
@@ -4995,7 +5020,27 @@ index f2f84ab22d7cf9f4ecbf90f841fd428e44baf675..2b2f6f0e3a271788817c804b7d1d2265
  ## 提供方注册表
  
  `ctx.skills` 组合本地、内嵌、远程或其他提供方。注册是同步的；远程初始化与发现属于 `list()` 的 await 阶段。提供方对象、选项与候选项以只读方式借用，语义字段会被校验。
-@@ -348,5 +350,5 @@ A skill provider, runtime contribution, or provider-backed catalog may have chan
+ 
+ 注册表采用宿主 + 按 scope 的分层结构，即[工具注册表](tools.zh.md)在 [dsh-scope](../../packages/core/scope) 之上确立的形态：注册会落入调用方上下文 scope 对应的层——宿主行与 repository 插件落入全局层，由 agent（智能体） preset 常驻组合挂载的插件落入该 preset 的层——提供方名称在每层内唯一，而非进程级唯一。读取时将全局层与观察 scope 的链合并：最近层的条目直接赢得重名 skill，下文的 rank 顺序只在单层内裁决重名。发现缓存以解析后的 scope 链为键，因此重设 scope 父级（空会话重组）无需注册表变更即可被下一次读取看到。
+ 
+-在单层内，重名项依次按 rank、提供方顺序和本地顺序确定优先级；摘要按名称排序。提供方的 `list()` 被拒绝时，系统会记录日志，并从不完整观测中省略该提供方的结果；显式的不完整观测会提供可用候选项，但不会使结果变得可缓存；格式错误的候选项快速失败。每个提供方工厂都会接收一项注册作用域内的控制能力；仅当该精确注册仍处于活动状态时，其 `invalidate()` 才会清除已完成目录；注册失败或 dispose（资源释放）时，其信号会中止。若提供方代次在发现进行期间发生变化，该发现会重试一次；若再次变化，则返回最新候选项，并将结果标为不完整且不予缓存。提供方和运行时变更会发出不带过滤条件的 `skills/change` 失效事件；该事件不携带 diff，因此消费方会使用自身的查找选项重新获取 `snapshot()`。
++在单层内，重名项依次按 rank、提供方顺序和本地顺序确定优先级；摘要按名称排序。可选提供方的 `list()` 被拒绝时，系统会记录日志，并从不完整观测中省略该提供方的结果；显式的不完整观测会提供可用候选项，但不会使结果变得可缓存；格式错误的候选项快速失败。每个提供方工厂都会接收一项注册作用域内的控制能力；仅当该精确注册仍处于活动状态时，其 `invalidate()` 才会清除已完成目录；注册失败或 dispose（资源释放）时，其信号会中止。若提供方代次在发现进行期间发生变化，该发现会重试一次；若再次变化，只有未包含必需提供方的查询会返回最新候选项，并将结果标为不完整且不予缓存。提供方和运行时变更会发出不带过滤条件的 `skills/change` 失效事件；该事件不携带 diff，因此消费方会使用自身的查找选项重新获取 `snapshot()`。
+ 
+-`SkillProvider.list()` 返回的数组是完整发现的简写形式。`SkillProviderObservation` 允许提供方公开仍可直接加载的候选项，同时报告该观测不具权威性。
++`SkillProvider.list()` 返回的数组是完整发现的简写形式。`SkillProviderObservation` 允许可选提供方公开不完整发现中仍可直接加载的候选项。设置 `required: true` 的提供方在调用失败、观测不完整或目录失效耗尽重试上限时，会使查找以 `SkillProviderUnavailableError` 拒绝，不返回部分结果或回退副本；下一次查询重新发现。错误携带 `provider`、`reason`（`failed`、`incomplete` 或 `unstable`），并以 `cause` 保留原始失败；取消保留原始错误。必需要求只适用于参与当前查询的层，随注册释放而结束。
+ 
+ ```ts type-equiv
+ /** Provider candidates plus whether the current discovery is authoritative. */
+@@ -31,6 +33,8 @@ interface SkillProviderObservation {
+ interface SkillProvider {
+   /** Unique provider name in the `ctx.skills` registry. */
+   readonly name: string
++  /** Reject the lookup if this provider fails or reports incomplete discovery; omission keeps other providers available. */
++  readonly required?: boolean
+   /**
+    * List available skill candidates for the current lookup context. Provider
+    * plugins register synchronously during `apply()`; remote initialization,
+@@ -348,5 +352,5 @@ A skill provider, runtime contribution, or provider-backed catalog may have chan
  'skills/change'(): void
  ```
  
@@ -12205,7 +12250,7 @@ index 7341c2c743f92d059243f7aa47db63f58a4da2da..b5dad19b038ef37ddc83b0f175de02b3
    {
      key: 'tool.view.cordis',
 diff --git a/packages/extensions/tool-cordis/src/api-catalog.ts b/packages/extensions/tool-cordis/src/api-catalog.ts
-index 3b054c49bb525b85d8333234daab05fca4e44782..a454bfd0b40db3bc62e906fc08bc09df87098fa0 100644
+index 3b054c49bb525b85d8333234daab05fca4e44782..4a39a700d74c48f86d7b3b84220779bb7bb973be 100644
 --- a/packages/extensions/tool-cordis/src/api-catalog.ts
 +++ b/packages/extensions/tool-cordis/src/api-catalog.ts
 @@ -209,6 +209,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
@@ -12263,6 +12308,15 @@ index 3b054c49bb525b85d8333234daab05fca4e44782..a454bfd0b40db3bc62e906fc08bc09df
    },
    {
      name: 'PresetOption',
+@@ -8805,7 +8819,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
+   },
+   {
+     name: 'SkillProvider',
+-    declaration: 'export interface SkillProvider {\n    readonly name: string;\n    readonly list: (options: SkillLookupOptions) => Promise<readonly SkillCandidate[] | SkillProviderObservation>;\n    readonly get: (candidate: SkillCandidate, options: SkillLookupOptions) => Promise<SkillDefinition | undefined>;\n}',
++    declaration: 'export interface SkillProvider {\n    readonly name: string;\n    readonly required?: boolean;\n    readonly list: (options: SkillLookupOptions) => Promise<readonly SkillCandidate[] | SkillProviderObservation>;\n    readonly get: (candidate: SkillCandidate, options: SkillLookupOptions) => Promise<SkillDefinition | undefined>;\n}',
+   },
+   {
+     name: 'SkillProviderControl',
 diff --git a/packages/mcp/mcp-client/README.i18n.yaml b/packages/mcp/mcp-client/README.i18n.yaml
 index 8503666317b1007c72f90de160af6022f7222fe6..db78943a169950949a2b4511a63ccf38c710ab5d 100644
 --- a/packages/mcp/mcp-client/README.i18n.yaml
@@ -13466,10 +13520,18 @@ index 0000000000000000000000000000000000000000..55419e5ad1af94298cfff9d76f31e3cb
 +  }
 +})
 diff --git a/packages/skill/skill/README.i18n.yaml b/packages/skill/skill/README.i18n.yaml
-index d167c7bb52259a9a7af4b3dd0e93286c8c04813c..9d0f794d27c6b996bd0a6d423f081fb952af6c2b 100644
+index d167c7bb52259a9a7af4b3dd0e93286c8c04813c..bf1f7e0a7b8df18e90934e8585d6aa2c9d657ec5 100644
 --- a/packages/skill/skill/README.i18n.yaml
 +++ b/packages/skill/skill/README.i18n.yaml
-@@ -15,8 +15,8 @@
+@@ -9,14 +9,14 @@
+   en: 083f1e1c7ffedaad
+   zh: e52812b66ea22539
+ /deepseek-ai-dsh-skill/summary:
+-  en: dac8069f518e183c
+-  zh: 2e4f2983030f9270
++  en: 75a8cd3b38d73ac0
++  zh: 36a53a86f0225bf6
+ /deepseek-ai-dsh-skill/table-of-contents:
    en: d152484eb41ac6b4
    zh: 09388d293f9be9cb
  /deepseek-ai-dsh-skill/use-this-package:
@@ -13480,10 +13542,52 @@ index d167c7bb52259a9a7af4b3dd0e93286c8c04813c..9d0f794d27c6b996bd0a6d423f081fb9
  /deepseek-ai-dsh-skill/use-this-package/when-to-choose-it:
    en: ce05cda6706f18b7
    zh: 3262ebdaf645cb9a
+@@ -27,8 +27,8 @@
+   en: 0cb7936c76a84e45
+   zh: a1fb8572481af54c
+ /deepseek-ai-dsh-skill/use-this-package/observable-success-and-failures:
+-  en: b9708e51fcd5ad18
+-  zh: b22237406a0df5ff
++  en: 7611bd92398406f6
++  zh: e89aaee3ab4bb1a4
+ /deepseek-ai-dsh-skill/understand-the-implementation:
+   en: 89be1dad151abb04
+   zh: 9a1915c4d55bb9d2
+@@ -39,8 +39,8 @@
+   en: c7f6f2ecb227c68b
+   zh: b2e924975aec9692
+ /deepseek-ai-dsh-skill/understand-the-implementation/catalog-collection:
+-  en: 58a9b57dc504b69f
+-  zh: 8fe8011247bc3f2b
++  en: fe5b99413624b1e7
++  zh: 941fe0cb5d9c3c69
+ /deepseek-ai-dsh-skill/understand-the-implementation/loading-and-staleness:
+   en: e855d39692737103
+   zh: 396aa887a78989ec
+@@ -57,8 +57,8 @@
+   en: 628a45ff9f6b0e74
+   zh: fda70b0eed2df1d7
+ /deepseek-ai-dsh-skill/known-limitations-and-deferred-work:
+-  en: c5456e001203fd7a
+-  zh: 3cc6fa50700eec13
++  en: aaa749bd9a42c187
++  zh: 14893fe176a67e53
+ /deepseek-ai-dsh-skill/known-limitations-and-deferred-work/dev-note:
+   en: 259ce6914314397d
+   zh: d500b1f988a83999
 diff --git a/packages/skill/skill/README.md b/packages/skill/skill/README.md
-index 1d0ef4ce4e4921ae5c19c7901d980fc3be71b5e9..087a76fa981f3dbd31c18730ca24b2a07b0d097b 100644
+index 1d0ef4ce4e4921ae5c19c7901d980fc3be71b5e9..f0b81c7ea1a5c7c06f3d4ca6da952ef51ecf4a20 100644
 --- a/packages/skill/skill/README.md
 +++ b/packages/skill/skill/README.md
+@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
+ 
+ ## Summary
+ 
+-Use this package to give agents and users one catalog of reusable, task-specific instructions collected from local directories, embedded plugin data, or remote services. It resolves duplicate names predictably, validates entries, tolerates unavailable sources without discarding usable results, and loads the selected skill's full instructions on demand. Mount it when a composition needs skills from multiple or non-filesystem sources; pair it with `dsh-skill-filesystem` for local discovery and `dsh-tool-skill` for model access, because it includes no skill content itself.
++Use this package to give agents and users one catalog of reusable, task-specific instructions collected from local directories, embedded plugin data, or remote services. It resolves duplicate names predictably, validates entries, tolerates unavailable optional sources without discarding usable results, and loads the selected skill's full instructions on demand. Mount it when a composition needs skills from multiple or non-filesystem sources; pair it with `dsh-skill-filesystem` for local discovery and `dsh-tool-skill` for model access, because it includes no skill content itself.
+ 
+ ## Table of Contents
+ 
 @@ -27,6 +27,8 @@ Use this package to give agents and users one catalog of reusable, task-specific
  
  Mount the plugin to give a composition one skill registry. Skill sources (providers) and consumers (the model-facing catalog and loader, or your own code) all talk to `ctx.skills`; the registry merges everything any provider reports, so one lookup sees skills from every source.
@@ -13493,10 +13597,46 @@ index 1d0ef4ce4e4921ae5c19c7901d980fc3be71b5e9..087a76fa981f3dbd31c18730ca24b2a0
  ### When to choose it
  
  Use `dsh-skill` when agents should load skills from more than one source through one interface, or when the source of skills is not the local filesystem. Avoid it when a composition needs no skill loading at all — the plugin adds a service and a per-lookup discovery cost. The shipped local provider (`dsh-skill-filesystem`) and the model-facing consumer (`dsh-tool-skill`) are separate packages; mount them alongside when the deployment wants local skills and model access.
+@@ -63,7 +65,7 @@ An invocation policy on every skill decides which surfaces may advertise and loa
+ 
+ ### Observable success and failures
+ 
+-A skill that any provider reports appears in the merged catalog, and loading it by its exact kebab-case name returns the body; an invalid name returns no skill rather than throwing. A provider that fails discovery is logged and skipped, and the observation is reported incomplete so consumers can distinguish failed discovery from confirmed absence; an explicit incomplete observation still contributes its candidates. A malformed candidate fails fast — the registry validates names, descriptions, invocation booleans, and provider ownership before caching or returning anything.
++A skill that any provider reports appears in the merged catalog, and loading it by its exact kebab-case name returns the body; an invalid name returns no skill rather than throwing. By default, a provider that fails discovery is logged and skipped, and an explicit incomplete observation contributes its candidates without caching. A provider with `required: true` makes its lookup reject with `SkillProviderUnavailableError` when discovery fails, reports `complete: false`, or cannot settle within the registry's catalog-revision retry limit. This prevents fallback around a source that owns invocation restrictions; no partial catalog is returned, and a later lookup retries. The error identifies the provider and reason, retaining a thrown provider failure as its cause. Cancellation retains its original error. A malformed candidate fails fast — the registry validates names, descriptions, invocation booleans, and provider ownership before caching or returning anything.
+ 
+ Skill summaries retain the winning provider’s optional instruction-file `path` for discovery consumers that offer file previews. Listing still reads no skill body, and model-facing catalogs continue to select only their owned routing fields.
+ 
+@@ -91,7 +93,7 @@ The registry is host+per-scope layered, the shape the tools registry established
+ 
+ ### Catalog collection
+ 
+-A read (`list`/`snapshot`) collects each layer's candidates: runtime skills first, then each provider's `list()` result, awaiting providers sequentially and containing failures. Candidates are validated, deduplicated within the layer, and merged across layers; summaries sort by name. Completed collections are cached per cwd, scope chain, and revision up to `collectCacheMaxEntries`; an in-flight collection retries once when a provider or runtime mutation bumps the revision mid-read, and a second change returns the latest candidates as an incomplete, uncached observation.
++A read (`list`/`snapshot`) collects each layer's candidates: runtime skills first, then each provider's `list()` result, awaiting providers sequentially and containing optional-source failures. Candidates are validated, deduplicated within the layer, and merged across layers; summaries sort by name. Completed collections are cached per cwd, scope chain, and revision up to `collectCacheMaxEntries`; an in-flight collection retries once when a provider or runtime mutation bumps the revision mid-read. A second change rejects a lookup containing required providers; other lookups return the latest candidates as an incomplete, uncached observation.
+ 
+ ### Loading and staleness
+ 
+@@ -136,7 +138,7 @@ These limits define when the registry is a poor fit or needs special operational
+ 
+ - **Invalidation is provider-driven** — the registry has no TTL and cannot infer that an arbitrary remote source changed; each mutable provider must retain and call its registration-scoped `invalidate()` capability from its own observation mechanism.
+ - **Providers are queried sequentially** — one slow provider delays every provider registered after it; cancellation stops the caller's wait but cannot terminate work an uncooperative provider keeps running.
+-- **Incomplete observations are not retained** — rejected providers are omitted and explicitly supplied candidates remain available only to the current lookup; the registry owns neither a last-good catalog nor per-provider diagnostics.
++- **Incomplete observations are not retained** — optional providers may contribute partial candidates; an unavailable required provider rejects the whole lookup, including otherwise healthy skills. The registry owns neither a last-good catalog nor per-provider diagnostics.
+ - **Duplicate resolution is first-wins** — later lower-priority candidates within a layer are logged and hidden, and a nearer layer shadows a farther one silently; there is no API to inspect all shadowed definitions.
+ 
+ <a id="dev-note"></a>
 diff --git a/packages/skill/skill/README.zh.md b/packages/skill/skill/README.zh.md
-index 8c1094455817f601450e2e2341984de24618b1e9..5be750c58996e761981edc0fabb0d4384e84b797 100644
+index 8c1094455817f601450e2e2341984de24618b1e9..024866d407c1e2831e954e884df2644b2ac7ab5e 100644
 --- a/packages/skill/skill/README.zh.md
 +++ b/packages/skill/skill/README.zh.md
+@@ -9,7 +9,7 @@ kind: "package-reference"
+ 
+ ## 概述
+ 
+-使用本包可让 agent（智能体）和用户通过一个目录访问从本地目录、嵌入式插件数据或远程服务收集的可复用任务专项指令。它会以可预测的方式裁决重名项、验证条目、在来源不可用时保留可用结果，并按需加载所选 skill 的完整指令。当组合需要多个来源或非文件系统来源的 skill 时，请挂载本包；本包自身不含 skill 内容，因此本地发现需搭配 `dsh-skill-filesystem`，模型访问需搭配 `dsh-tool-skill`。
++使用本包可让 agent（智能体）和用户通过一个目录访问从本地目录、嵌入式插件数据或远程服务收集的可复用任务专项指令。它会以可预测的方式裁决重名项、验证条目、在可选来源不可用时保留可用结果，并按需加载所选 skill 的完整指令。当组合需要多个来源或非文件系统来源的 skill 时，请挂载本包；本包自身不含 skill 内容，因此本地发现需搭配 `dsh-skill-filesystem`，模型访问需搭配 `dsh-tool-skill`。
+ 
+ ## 目录
+ 
 @@ -27,6 +27,8 @@ kind: "package-reference"
  
  挂载插件即可让组合拥有一个统一的 skill 注册表。skill 来源（提供方）和消费方（面向模型的目录与 loader，或你自己的代码）都通过 `ctx.skills` 交互；注册表合并任意提供方报告的一切内容，因此一次查找就能看到所有来源的 skill。
@@ -13506,6 +13646,33 @@ index 8c1094455817f601450e2e2341984de24618b1e9..5be750c58996e761981edc0fabb0d438
  ### 何时选择
  
  当 agent 需要通过同一个接口从多个来源加载 skill，或 skill 来源并非本地文件系统时，选择 `dsh-skill`。当组合完全不需要加载 skill 时，请避免使用——插件会增加一个服务以及每次查找的发现成本。随附的本地提供方（`dsh-skill-filesystem`）和面向模型的消费方（`dsh-tool-skill`）是独立包；部署需要本地 skill 和模型访问时，请一并挂载。
+@@ -63,7 +65,7 @@ kind: "package-reference"
+ 
+ ### 可观察的成功与失败
+ 
+-任意提供方报告的 skill 都会出现在合并目录中，按其精确 kebab-case 名称加载即可返回正文；无效名称返回无结果而非抛错。发现失败的提供方会被记录并跳过，观测被标记为不完整，因此消费方可区分发现失败与已确认的缺失；显式的不完整观测仍会贡献其候选项。格式错误的候选项会快速失败——注册表在缓存或返回任何内容之前，会先验证名称、描述、调用布尔值与提供方归属。
++任意提供方报告的 skill 都会出现在合并目录中，按其精确 kebab-case 名称加载即可返回正文；无效名称返回无结果而非抛错。默认情况下，发现失败的提供方会被记录并跳过，显式不完整观测可贡献候选项但不缓存。设置 `required: true` 的提供方在发现失败、报告 `complete: false` 或目录修订次数超出注册表重试上限时，会使当前查找以 `SkillProviderUnavailableError` 拒绝。这可防止绕过负责调用限制的来源；查找不返回部分目录，下次请求会重新发现。错误包含提供方和原因，并以 cause 保留提供方抛出的原始失败；取消保留原始错误。格式错误的候选项会快速失败——注册表在缓存或返回任何内容之前，会先验证名称、描述、调用布尔值与提供方归属。
+ 
+ Skill 摘要保留胜出提供方可选的指令文件 `path`，供提供文件预览的发现消费者使用。列举仍不读取 skill 正文；面向模型的目录继续仅选择其负责的路由字段。
+ 
+@@ -91,7 +93,7 @@ Skill 摘要保留胜出提供方可选的指令文件 `path`，供提供文件
+ 
+ ### 目录收集
+ 
+-读取（`list`/`snapshot`）会收集每一层的候选项：先是运行时 skill，再是各提供方的 `list()` 结果，注册表会依次等待各提供方，并隔离失败。候选项经验证后在层内去重，跨层合并；摘要按名称排序。完成的收集按 cwd、scope 链与 revision 缓存，上限为 `collectCacheMaxEntries`；读取中途提供方或运行时变更使 revision 递增时，进行中的收集会重试一次，第二次变更则返回最新候选项并标记为不完整、不予缓存。
++读取（`list`/`snapshot`）会收集每一层的候选项：先是运行时 skill，再是各提供方的 `list()` 结果，注册表会依次等待各提供方，并隔离可选来源的失败。候选项经验证后在层内去重，跨层合并；摘要按名称排序。完成的收集按 cwd、scope 链与 revision 缓存，上限为 `collectCacheMaxEntries`；读取中途提供方或运行时变更使 revision 递增时，进行中的收集会重试一次。第二次变更会拒绝包含必需提供方的查找；其他查找则返回最新候选项并标记为不完整、不予缓存。
+ 
+ ### 加载与陈旧
+ 
+@@ -136,7 +138,7 @@ Skill 摘要保留胜出提供方可选的指令文件 `path`，供提供文件
+ 
+ - **失效由提供方驱动**——注册表没有 TTL，无法推断任意远程来源是否已发生变化；每个可变提供方都必须保留其注册作用域内的 `invalidate()` 能力，并由自身的观测机制调用它。
+ - **提供方依次查询**——一个缓慢的提供方会延迟其后注册的所有提供方；取消会停止调用方的等待，但无法终止不响应取消的提供方持续运行的工作。
+-- **不保留不完整观测**——被拒绝的提供方会被省略，显式提供的候选项也仅在当前查找中可用；注册表既不负责最后一份可用目录，也不负责逐提供方诊断。
++- **不保留不完整观测**——可选提供方可贡献部分候选项；必需提供方不可用时会拒绝整个查找，包括其他正常技能。注册表既不负责最后一份可用目录，也不负责逐提供方诊断。
+ - **重名项的裁决采用先到先得**——系统会记录并隐藏层内较晚出现的低优先级候选项，较近的层会静默遮蔽较远的层；没有 API 可检查全部被遮蔽的定义。
+ 
+ <a id="dev-note"></a>
 diff --git a/packages/skill/skill/package.json b/packages/skill/skill/package.json
 index ca9c46322f2056337d8bd08369d0d1f6bdf139a6..461bd6dc7ecdebb51b3308cba8a64a12f2535660 100644
 --- a/packages/skill/skill/package.json
@@ -13529,7 +13696,7 @@ index ca9c46322f2056337d8bd08369d0d1f6bdf139a6..461bd6dc7ecdebb51b3308cba8a64a12
    ],
    "license": "MIT",
 diff --git a/packages/skill/skill/src/index.ts b/packages/skill/skill/src/index.ts
-index 9c6bbf0ccfc87dfce966de1c9e83cb66275066af..835f51be1bdb896465c1b8d3fdbd2fbd48ca635e 100644
+index 9c6bbf0ccfc87dfce966de1c9e83cb66275066af..95c825e6254e8b7e57bc9b0af2c372e09aa66e9f 100644
 --- a/packages/skill/skill/src/index.ts
 +++ b/packages/skill/skill/src/index.ts
 @@ -10,6 +10,7 @@
@@ -13540,7 +13707,39 @@ index 9c6bbf0ccfc87dfce966de1c9e83cb66275066af..835f51be1bdb896465c1b8d3fdbd2fbd
  import { Context, Service } from '@deepseek-ai/cordis'
  import type {} from '@deepseek-ai/dsh-llm'
  import { assertNever } from '@deepseek-ai/dsh-util-values'
-@@ -284,17 +285,6 @@ declare module '@deepseek-ai/cordis' {
+@@ -247,6 +248,8 @@ export interface SkillProviderObservation {
+ export interface SkillProvider {
+   /** Unique provider name in the `ctx.skills` registry. */
+   readonly name: string
++  /** Reject the lookup if this provider fails or reports incomplete discovery; omission keeps other providers available. */
++  readonly required?: boolean
+   /**
+    * List available skill candidates for the current lookup context. Provider
+    * plugins register synchronously during `apply()`; remote initialization,
+@@ -266,6 +269,22 @@ export interface SkillProvider {
+   readonly get: (candidate: SkillCandidate, options: SkillLookupOptions) => Promise<SkillDefinition | undefined>
+ }
+ 
++/** A required source could not establish a complete skill catalog; no fallback or partial result is returned. */
++export class SkillProviderUnavailableError extends Error {
++  /** Stable identity for callers that report unavailable skill discovery. */
++  readonly code = 'SKILL_PROVIDER_UNAVAILABLE'
++
++  /**
++   * @param provider - required provider whose discovery could not complete.
++   * @param reason - failed provider call, incomplete observation, or repeated catalog invalidation.
++   * @param options - original provider failure as cause; omitted when no exception caused the failure.
++   */
++  constructor(readonly provider: string, readonly reason: 'failed' | 'incomplete' | 'unstable', options?: ErrorOptions) {
++    super(`Required skill provider "${provider}" is unavailable (${reason}); no skills were selected. Retry after the source recovers.`, options)
++    this.name = 'SkillProviderUnavailableError'
++  }
++}
++
+ /** Registration-scoped lifecycle and invalidation capability borrowed by one provider. */
+ export interface SkillProviderControl {
+   /** Aborts if registration fails or when the exact provider registration is disposed. */
+@@ -284,17 +303,6 @@ declare module '@deepseek-ai/cordis' {
    interface Context {
      skills: SkillRegistry
    }
@@ -13558,6 +13757,32 @@ index 9c6bbf0ccfc87dfce966de1c9e83cb66275066af..835f51be1bdb896465c1b8d3fdbd2fbd
  }
  
  interface IndexedCandidate {
+@@ -535,6 +543,11 @@ export class SkillRegistry extends Service {
+           attempt += 1
+           continue
+         }
++        for (const layer of [this.layers.global, ...this.layers.chainLayers(options.scope)]) {
++          for (const { provider } of layer.providers.values()) {
++            if (provider.required === true) throw new SkillProviderUnavailableError(provider.name, 'unstable')
++          }
++        }
+         return { entries: result.entries, cacheable: false }
+       }
+       if (result.cacheable) {
+@@ -603,11 +616,13 @@ export class SkillRegistry extends Service {
+         output = await waitWithAbort(provider.list(options), options.signal)
+       } catch (error) {
+         if (options.signal?.aborted === true) throw toError(options.signal.reason)
++        if (provider.required === true) throw new SkillProviderUnavailableError(provider.name, 'failed', { cause: error })
+         cacheable = false
+         this.ctx.logger.warn(`skill provider "${provider.name}" skipped: ${errorMessage(error)}`)
+       }
+       if (output === undefined) continue
+       const observation = normalizeProviderObservation(output, provider.name)
++      if (!observation.complete && provider.required === true) throw new SkillProviderUnavailableError(provider.name, 'incomplete')
+       if (!observation.complete) cacheable = false
+       for (const candidate of observation.candidates) {
+         validateCandidate(candidate, provider.name)
 diff --git a/packages/skill/skill/src/types.ts b/packages/skill/skill/src/types.ts
 new file mode 100644
 index 0000000000000000000000000000000000000000..bfa548dfd8e640de263fb65e7f1ab2ed33df8d27
@@ -13579,6 +13804,150 @@ index 0000000000000000000000000000000000000000..bfa548dfd8e640de263fb65e7f1ab2ed
 +    'skills/change'(): void
 +  }
 +}
+diff --git a/packages/skill/skill/tests/required-provider.spec.ts b/packages/skill/skill/tests/required-provider.spec.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..aadab0d332e70d4041ff35f10172961d46ea7a3f
+--- /dev/null
++++ b/packages/skill/skill/tests/required-provider.spec.ts
+@@ -0,0 +1,138 @@
++/** Required discovery prevents an incomplete policy source from exposing fallback skills. */
++import { Context } from '@deepseek-ai/cordis'
++import { createScope, scopeOf } from '@deepseek-ai/dsh-scope'
++import SkillRegistry, { type SkillCandidate, type SkillProviderControl } from '@deepseek-ai/dsh-skill'
++import { expect, it, onTestFinished, vi } from 'vitest'
++
++function candidate(provider: string, enabled: boolean): SkillCandidate {
++  return { name: 'audit-orders', description: 'Audit orders', provider, source: provider,
++    rank: enabled ? 400 : 399, invocation: { modelInvocable: enabled, userInvocable: enabled }, locator: null }
++}
++
++async function boot() {
++  const ctx = new Context()
++  onTestFinished(() => ctx.fiber.dispose())
++  await ctx.plugin(SkillRegistry)
++  const fallbackLoad = vi.fn(async () => ({ ...candidate('filesystem', true), content: 'Native fallback body.' }))
++  ctx.skills.registerProvider(() => ({ name: 'filesystem', list: async () => [candidate('filesystem', true)], get: fallbackLoad }))
++  return { ctx, fallbackLoad }
++}
++
++it.each(['throw', 'incomplete'] as const)('rejects required %s discovery before loading fallback and retries after recovery', async (mode) => {
++  const { ctx, fallbackLoad } = await boot()
++  const failure = new Error('Policy source unavailable')
++  let failing = true
++  const list = vi.fn(async () => {
++    if (failing && mode === 'throw') throw failure
++    return { candidates: [candidate('policy', false)], complete: !failing }
++  })
++  ctx.skills.registerProvider(() => ({ name: 'policy', required: true, list,
++    get: async value => ({ ...value, content: 'Disabled instructions.' }) }))
++  await expect(ctx.skills.snapshot()).rejects.toMatchObject({ name: 'SkillProviderUnavailableError', provider: 'policy',
++    ...mode === 'throw' ? { cause: failure } : {} })
++  await expect(ctx.skills.get('audit-orders')).rejects.toMatchObject({ name: 'SkillProviderUnavailableError', provider: 'policy' })
++  expect(fallbackLoad).not.toHaveBeenCalled()
++  expect(list).toHaveBeenCalledTimes(2)
++  failing = false
++  expect(await ctx.skills.snapshot()).toMatchObject({ complete: true, skills: [{ provider: 'policy', invocation: { modelInvocable: false } }] })
++  expect(await ctx.skills.get('audit-orders')).toMatchObject({ provider: 'policy', invocation: { modelInvocable: false } })
++  expect(list).toHaveBeenCalledTimes(3)
++  expect(fallbackLoad).not.toHaveBeenCalled()
++})
++
++it('preserves cancellation while waiting for a required provider', async () => {
++  const { ctx, fallbackLoad } = await boot()
++  const entered = Promise.withResolvers<undefined>()
++  const released = Promise.withResolvers<SkillCandidate[]>()
++  ctx.skills.registerProvider(() => ({ name: 'policy', required: true,
++    list: () => { entered.resolve(undefined); return released.promise }, get: async () => undefined }))
++  const controller = new AbortController()
++  const pending = ctx.skills.get('audit-orders', { signal: controller.signal })
++  await entered.promise
++  const reason = new Error('Caller cancelled required discovery')
++  controller.abort(reason)
++  try { await expect(pending).rejects.toBe(reason) }
++  finally { released.resolve([]) }
++  expect(fallbackLoad).not.toHaveBeenCalled()
++})
++
++it('limits required failures to their scope and keeps replacement registrations authoritative', async () => {
++  const { ctx, fallbackLoad } = await boot()
++  const preset = createScope(ctx, { preset: 'required-policy' })
++  onTestFinished(() => preset.dispose())
++  const skills = preset.ctx.get('skills')
++  if (!skills) throw new Error('Scoped skill registry unavailable')
++  let oldControl: SkillProviderControl | undefined
++  const dispose = skills.registerProvider((control) => {
++    oldControl = control
++    return { name: 'policy', required: true, list: async () => ({ candidates: [], complete: false }), get: async () => undefined }
++  })
++  expect(await ctx.skills.get('audit-orders')).toMatchObject({ provider: 'filesystem' })
++  await expect(ctx.skills.get('audit-orders', { scope: scopeOf(preset.ctx) })).rejects.toMatchObject({ provider: 'policy' })
++  dispose()
++  const list = vi.fn(async () => [candidate('policy', false)])
++  skills.registerProvider(() => ({ name: 'policy', required: true, list,
++    get: async value => ({ ...value, content: 'Disabled replacement.' }) }))
++  expect(await ctx.skills.get('audit-orders', { scope: scopeOf(preset.ctx) })).toMatchObject({ provider: 'policy', invocation: { userInvocable: false } })
++  oldControl?.invalidate()
++  expect(await ctx.skills.get('audit-orders', { scope: scopeOf(preset.ctx) })).toMatchObject({ provider: 'policy' })
++  expect(list).toHaveBeenCalledTimes(1)
++  expect(fallbackLoad).toHaveBeenCalledTimes(1)
++})
++
++it('rejects a required observation that becomes incomplete during an invalidated collection', async () => {
++  const { ctx, fallbackLoad } = await boot()
++  const entered = Promise.withResolvers<undefined>()
++  const released = Promise.withResolvers<undefined>()
++  let failing = false
++  let calls = 0
++  let invalidate = () => {}
++  ctx.skills.registerProvider((control) => {
++    invalidate = control.invalidate
++    return { name: 'policy', required: true, async list() {
++      calls++
++      if (calls === 1) { entered.resolve(undefined); await released.promise }
++      return { candidates: [candidate('policy', false)], complete: !failing }
++    }, get: async value => ({ ...value, content: 'Disabled instructions.' }) }
++  })
++  const pending = ctx.skills.get('audit-orders')
++  await entered.promise
++  failing = true
++  invalidate()
++  released.resolve(undefined)
++  await expect(pending).rejects.toMatchObject({ provider: 'policy' })
++  expect(fallbackLoad).not.toHaveBeenCalled()
++  failing = false
++  expect(await ctx.skills.get('audit-orders')).toMatchObject({ provider: 'policy', invocation: { modelInvocable: false } })
++})
++
++it('does not fall back when a cached required candidate fails to load', async () => {
++  const { ctx, fallbackLoad } = await boot()
++  let failing = false
++  const failure = new Error('Required body read failed')
++  ctx.skills.registerProvider(() => ({ name: 'policy', required: true,
++    list: async () => [candidate('policy', false)], async get(value) {
++      if (failing) throw failure
++      return { ...value, content: 'Disabled instructions.' }
++    } }))
++  await ctx.skills.snapshot()
++  failing = true
++  await expect(ctx.skills.get('audit-orders')).rejects.toBe(failure)
++  expect(fallbackLoad).not.toHaveBeenCalled()
++  failing = false
++  expect(await ctx.skills.get('audit-orders')).toMatchObject({ provider: 'policy' })
++})
++
++it('rejects repeated catalog invalidation while a required provider participates', async () => {
++  const { ctx, fallbackLoad } = await boot()
++  let changing = true
++  ctx.skills.registerProvider(control => ({ name: 'policy', required: true,
++    list: async () => {
++      if (changing) control.invalidate()
++      return [candidate('policy', false)]
++    }, get: async value => ({ ...value, content: 'Disabled instructions.' }) }))
++  await expect(ctx.skills.get('audit-orders')).rejects.toMatchObject({ provider: 'policy', reason: 'unstable' })
++  expect(fallbackLoad).not.toHaveBeenCalled()
++  changing = false
++  expect(await ctx.skills.get('audit-orders')).toMatchObject({ provider: 'policy', invocation: { modelInvocable: false } })
++})
 diff --git a/packages/subagent/tool-subagent-control/locale/list-agents/de.json b/packages/subagent/tool-subagent-control/locale/list-agents/de.json
 new file mode 100644
 index 0000000000000000000000000000000000000000..60910d9d384bb23bb0d1993b6ecb60b28192d8a9
@@ -13723,7 +14092,7 @@ index 3feb65d17109c713f4d8fde9b000fbee919dab7d..700b0f2e422077f63e8b7e86a7ff6c97
    if (!ctx.get('agents')) await ctx.plugin(AgentRegistry)
    if (!ctx.get('fs')) await ctx.plugin(FileSystem)
 diff --git a/pnpm-lock.yaml b/pnpm-lock.yaml
-index 3bb5b2fd3e73be2afa0611f2012206d2071c61dc..33945008fd83aca92a4d30942d1f8803b46367da 100644
+index 3bb5b2fd3e73be2afa0611f2012206d2071c61dc..d89fc65ab44bff589569fef9e83565d55aae22eb 100644
 --- a/pnpm-lock.yaml
 +++ b/pnpm-lock.yaml
 @@ -770,6 +770,9 @@ importers:
@@ -13825,11 +14194,80 @@ index 3bb5b2fd3e73be2afa0611f2012206d2071c61dc..33945008fd83aca92a4d30942d1f8803
        '@deepseek-ai/dsh-util-values':
          specifier: workspace:*
          version: link:../../util/values
-@@ -7851,57 +7915,572 @@ importers:
-         specifier: workspace:~
-         version: link:../../../vendor/cordis
- 
--  packages/credentials/credentials-local:
+@@ -7790,137 +7854,745 @@ importers:
+         version: link:../../util/brand
+       '@deepseek-ai/dsh-util-values':
+         specifier: workspace:*
+-        version: link:../../util/values
+-      '@deepseek-ai/schemastery':
+-        specifier: link:../../../vendor/schemastery
+-        version: link:../../../vendor/schemastery
+-    devDependencies:
+-      '@deepseek-ai/cordis':
+-        specifier: workspace:~
+-        version: link:../../../vendor/cordis
+-      '@deepseek-ai/dsh-agent':
++        version: link:../../util/values
++      '@deepseek-ai/schemastery':
++        specifier: link:../../../vendor/schemastery
++        version: link:../../../vendor/schemastery
++    devDependencies:
++      '@deepseek-ai/cordis':
++        specifier: workspace:~
++        version: link:../../../vendor/cordis
++      '@deepseek-ai/dsh-agent':
++        specifier: workspace:*
++        version: link:../agent
++      '@deepseek-ai/dsh-agent-loop-testkit':
++        specifier: workspace:*
++        version: link:../../test-support/agent-loop-testkit
++      '@deepseek-ai/dsh-llm':
++        specifier: workspace:*
++        version: link:../../llm/llm
++      '@deepseek-ai/dsh-scope':
++        specifier: workspace:*
++        version: link:../scope
++      '@deepseek-ai/dsh-session':
++        specifier: workspace:*
++        version: link:../session
++      '@deepseek-ai/dsh-session-projection':
++        specifier: workspace:*
++        version: link:../../session/session-projection
++      '@deepseek-ai/dsh-system-prompt':
++        specifier: workspace:*
++        version: link:../system-prompt
++      '@deepseek-ai/dsh-tool-executor-native':
++        specifier: workspace:*
++        version: link:../tool-executor-native
++      '@deepseek-ai/dsh-tool-testkit':
++        specifier: workspace:*
++        version: link:../../test-support/tool-testkit
++      '@deepseek-ai/dsh-user-approval':
++        specifier: workspace:*
++        version: link:../../interaction/user-approval
++
++  packages/credentials/authorization:
++    devDependencies:
++      '@deepseek-ai/cordis':
++        specifier: workspace:~
++        version: link:../../../vendor/cordis
++      '@deepseek-ai/dsh-credentials':
++        specifier: workspace:*
++        version: link:../credentials
++      '@deepseek-ai/dsh-llm':
++        specifier: workspace:*
++        version: link:../../llm/llm
++
++  packages/credentials/credentials:
++    dependencies:
++      '@deepseek-ai/dsh-brand':
++        specifier: workspace:*
++        version: link:../../util/brand
++    devDependencies:
++      '@deepseek-ai/cordis':
++        specifier: workspace:~
++        version: link:../../../vendor/cordis
++
 +  packages/credentials/credentials-local:
 +    dependencies:
 +      '@deepseek-ai/schemastery':
@@ -14368,62 +14806,25 @@ index 3bb5b2fd3e73be2afa0611f2012206d2071c61dc..33945008fd83aca92a4d30942d1f8803
 +        version: 22.20.1
 +
 +  packages/deepseek-harness-product/skills:
-     dependencies:
--      '@deepseek-ai/schemastery':
--        specifier: link:../../../vendor/schemastery
--        version: link:../../../vendor/schemastery
--      chokidar:
--        specifier: 5.0.0
--        version: 5.0.0
--      yaml:
--        specifier: ^2.9.0
--        version: 2.9.0
--    devDependencies:
--      '@deepseek-ai/cordis':
--        specifier: workspace:~
--        version: link:../../../vendor/cordis
-       '@deepseek-ai/dsh-atomic-write':
-         specifier: workspace:*
-         version: link:../../util/atomic-write
--      '@deepseek-ai/dsh-credentials':
--        specifier: workspace:*
--        version: link:../credentials
-       '@deepseek-ai/dsh-home-paths':
-         specifier: workspace:*
-         version: link:../../util/home-paths
--      '@deepseek-ai/dsh-launch-environment':
--        specifier: workspace:*
--        version: link:../../util/launch-environment
--
--  packages/credentials/deepseek-account:
--    devDependencies:
--      '@deepseek-ai/cordis':
--        specifier: workspace:~
--        version: link:../../../vendor/cordis
--      '@deepseek-ai/dsh-agent':
++    dependencies:
++      '@deepseek-ai/dsh-atomic-write':
++        specifier: workspace:*
++        version: link:../../util/atomic-write
++      '@deepseek-ai/dsh-home-paths':
++        specifier: workspace:*
++        version: link:../../util/home-paths
 +      '@deepseek-ai/dsh-skill-filesystem':
-         specifier: workspace:*
--        version: link:../../core/agent
--      '@deepseek-ai/dsh-brand':
++        specifier: workspace:*
 +        version: link:../../skill/skill-filesystem
 +      '@deepseek-ai/dsh-timeout':
-         specifier: workspace:*
--        version: link:../../util/brand
--      '@deepseek-ai/dsh-llm':
++        specifier: workspace:*
 +        version: link:../../util/timeout
 +      '@deepseek-ai/dsh-util-crypto':
-         specifier: workspace:*
--        version: link:../../llm/llm
++        specifier: workspace:*
 +        version: link:../../util/crypto
-       '@deepseek-ai/dsh-util-values':
-         specifier: workspace:*
-         version: link:../../util/values
--
--  packages/credentials/deepseek-account-platform:
--    dependencies:
--      '@deepseek-ai/schemastery':
--        specifier: link:../../../vendor/schemastery
--        version: link:../../../vendor/schemastery
++      '@deepseek-ai/dsh-util-values':
++        specifier: workspace:*
++        version: link:../../util/values
 +      '@deepseek-harness/product':
 +        specifier: workspace:*
 +        version: link:../product
@@ -14433,14 +14834,13 @@ index 3bb5b2fd3e73be2afa0611f2012206d2071c61dc..33945008fd83aca92a4d30942d1f8803
 +      fflate:
 +        specifier: 0.8.3
 +        version: 0.8.3
-       zod:
-         specifier: 4.4.3
-         version: 4.4.3
-@@ -7909,18 +8488,99 @@ importers:
-       '@deepseek-ai/cordis':
-         specifier: workspace:~
-         version: link:../../../vendor/cordis
--      '@deepseek-ai/dsh-authorization':
++      zod:
++        specifier: 4.4.3
++        version: 4.4.3
++    devDependencies:
++      '@deepseek-ai/cordis':
++        specifier: workspace:~
++        version: link:../../../vendor/cordis
 +      '@deepseek-ai/cordis-plugin-include':
 +        specifier: workspace:~
 +        version: link:../../../vendor/include
@@ -14448,23 +14848,16 @@ index 3bb5b2fd3e73be2afa0611f2012206d2071c61dc..33945008fd83aca92a4d30942d1f8803
 +        specifier: workspace:~
 +        version: link:../../../vendor/loader
 +      '@deepseek-ai/dsh-agent':
-         specifier: workspace:*
--        version: link:../authorization
--      '@deepseek-ai/dsh-credentials':
++        specifier: workspace:*
 +        version: link:../../core/agent
 +      '@deepseek-ai/dsh-agent-preset-registry':
-         specifier: workspace:*
--        version: link:../credentials
--      '@deepseek-ai/dsh-deepseek-account':
++        specifier: workspace:*
 +        version: link:../../preset/agent-preset-registry
 +      '@deepseek-ai/dsh-api-gateway':
-         specifier: workspace:*
--        version: link:../deepseek-account
--      '@deepseek-ai/dsh-host-webserver':
++        specifier: workspace:*
 +        version: link:../../api/gateway
 +      '@deepseek-ai/dsh-api-remote-access':
-         specifier: workspace:*
--        version: link:../../host/webserver
++        specifier: workspace:*
 +        version: link:../../api/remote-access
 +      '@deepseek-ai/dsh-client-connection':
 +        specifier: workspace:*
@@ -14485,49 +14878,158 @@ index 3bb5b2fd3e73be2afa0611f2012206d2071c61dc..33945008fd83aca92a4d30942d1f8803
 +        specifier: workspace:*
 +        version: link:../../client/ui-session
 +      '@deepseek-ai/dsh-client-ui-slots':
-+        specifier: workspace:*
+         specifier: workspace:*
+-        version: link:../agent
+-      '@deepseek-ai/dsh-agent-loop-testkit':
 +        version: link:../../client/ui-slots
 +      '@deepseek-ai/dsh-commands':
-+        specifier: workspace:*
+         specifier: workspace:*
+-        version: link:../../test-support/agent-loop-testkit
 +        version: link:../../interaction/commands
 +      '@deepseek-ai/dsh-fs-local':
 +        specifier: workspace:*
 +        version: link:../../fs/fs-local
+       '@deepseek-ai/dsh-llm':
+         specifier: workspace:*
+         version: link:../../llm/llm
 +      '@deepseek-ai/dsh-remote-mock':
 +        specifier: workspace:*
 +        version: link:../../test-support/remote-mock
-+      '@deepseek-ai/dsh-scope':
-+        specifier: workspace:*
+       '@deepseek-ai/dsh-scope':
+         specifier: workspace:*
+-        version: link:../scope
 +        version: link:../../core/scope
-+      '@deepseek-ai/dsh-session':
-+        specifier: workspace:*
+       '@deepseek-ai/dsh-session':
+         specifier: workspace:*
+-        version: link:../session
 +        version: link:../../core/session
-+      '@deepseek-ai/dsh-session-projection':
-+        specifier: workspace:*
-+        version: link:../../session/session-projection
+       '@deepseek-ai/dsh-session-projection':
+         specifier: workspace:*
+         version: link:../../session/session-projection
 +      '@deepseek-ai/dsh-skill':
 +        specifier: workspace:*
 +        version: link:../../skill/skill
-+      '@deepseek-ai/dsh-system-prompt':
-+        specifier: workspace:*
+       '@deepseek-ai/dsh-system-prompt':
+         specifier: workspace:*
+-        version: link:../system-prompt
 +        version: link:../../core/system-prompt
-+      '@deepseek-ai/dsh-tools':
+       '@deepseek-ai/dsh-tool-executor-native':
+         specifier: workspace:*
+-        version: link:../tool-executor-native
++        version: link:../../core/tool-executor-native
++      '@deepseek-ai/dsh-tool-skill':
 +        specifier: workspace:*
++        version: link:../../skill/tool-skill
+       '@deepseek-ai/dsh-tool-testkit':
+         specifier: workspace:*
+         version: link:../../test-support/tool-testkit
+-      '@deepseek-ai/dsh-user-approval':
+-        specifier: workspace:*
+-        version: link:../../interaction/user-approval
+-
+-  packages/credentials/authorization:
+-    devDependencies:
+-      '@deepseek-ai/cordis':
+-        specifier: workspace:~
+-        version: link:../../../vendor/cordis
+-      '@deepseek-ai/dsh-credentials':
+-        specifier: workspace:*
+-        version: link:../credentials
+-      '@deepseek-ai/dsh-llm':
+-        specifier: workspace:*
+-        version: link:../../llm/llm
+-
+-  packages/credentials/credentials:
+-    dependencies:
+-      '@deepseek-ai/dsh-brand':
+-        specifier: workspace:*
+-        version: link:../../util/brand
+-    devDependencies:
+-      '@deepseek-ai/cordis':
+-        specifier: workspace:~
+-        version: link:../../../vendor/cordis
+-
+-  packages/credentials/credentials-local:
+-    dependencies:
+-      '@deepseek-ai/schemastery':
+-        specifier: link:../../../vendor/schemastery
+-        version: link:../../../vendor/schemastery
+-      chokidar:
+-        specifier: 5.0.0
+-        version: 5.0.0
+-      yaml:
+-        specifier: ^2.9.0
+-        version: 2.9.0
+-    devDependencies:
+-      '@deepseek-ai/cordis':
+-        specifier: workspace:~
+-        version: link:../../../vendor/cordis
+-      '@deepseek-ai/dsh-atomic-write':
+-        specifier: workspace:*
+-        version: link:../../util/atomic-write
+-      '@deepseek-ai/dsh-credentials':
+-        specifier: workspace:*
+-        version: link:../credentials
+-      '@deepseek-ai/dsh-home-paths':
+-        specifier: workspace:*
+-        version: link:../../util/home-paths
+-      '@deepseek-ai/dsh-launch-environment':
+-        specifier: workspace:*
+-        version: link:../../util/launch-environment
+-
+-  packages/credentials/deepseek-account:
+-    devDependencies:
+-      '@deepseek-ai/cordis':
+-        specifier: workspace:~
+-        version: link:../../../vendor/cordis
+-      '@deepseek-ai/dsh-agent':
+-        specifier: workspace:*
+-        version: link:../../core/agent
+-      '@deepseek-ai/dsh-brand':
+-        specifier: workspace:*
+-        version: link:../../util/brand
+-      '@deepseek-ai/dsh-llm':
++      '@deepseek-ai/dsh-tools':
+         specifier: workspace:*
+-        version: link:../../llm/llm
+-      '@deepseek-ai/dsh-util-values':
 +        version: link:../../core/tools
 +      '@deepseek-ai/dsh-typert-generator':
-+        specifier: workspace:*
+         specifier: workspace:*
+-        version: link:../../util/values
+-
+-  packages/credentials/deepseek-account-platform:
+-    dependencies:
+-      '@deepseek-ai/schemastery':
+-        specifier: link:../../../vendor/schemastery
+-        version: link:../../../vendor/schemastery
+-      zod:
+-        specifier: 4.4.3
+-        version: 4.4.3
+-    devDependencies:
+-      '@deepseek-ai/cordis':
+-        specifier: workspace:~
+-        version: link:../../../vendor/cordis
+-      '@deepseek-ai/dsh-authorization':
 +        version: link:../../typert/generator
 +      '@deepseek-ai/dsh-typert-protocol':
-+        specifier: workspace:*
+         specifier: workspace:*
+-        version: link:../authorization
+-      '@deepseek-ai/dsh-credentials':
 +        version: link:../../typert/protocol
 +      '@deepseek-ai/dsh-typert-registry':
-+        specifier: workspace:*
+         specifier: workspace:*
+-        version: link:../credentials
+-      '@deepseek-ai/dsh-deepseek-account':
 +        version: link:../../typert/registry
 +      '@deepseek-ai/dsh-working-directory':
-+        specifier: workspace:*
+         specifier: workspace:*
+-        version: link:../deepseek-account
+-      '@deepseek-ai/dsh-host-webserver':
 +        version: link:../../session/working-directory
 +      '@deepseek-ai/dsh-workspace':
-+        specifier: workspace:*
+         specifier: workspace:*
+-        version: link:../../host/webserver
 +        version: link:../../workspace/workspace
 +      '@types/node':
 +        specifier: ^22.20.1
@@ -14544,7 +15046,7 @@ index 3bb5b2fd3e73be2afa0611f2012206d2071c61dc..33945008fd83aca92a4d30942d1f8803
  
    packages/deliverables/deliverable-file-references:
      devDependencies:
-@@ -11759,6 +12419,90 @@ importers:
+@@ -11759,6 +12431,90 @@ importers:
          specifier: ^18.2.0
          version: 18.3.1
  
@@ -14635,7 +15137,7 @@ index 3bb5b2fd3e73be2afa0611f2012206d2071c61dc..33945008fd83aca92a4d30942d1f8803
    packages/feedback/command-feedback:
      dependencies:
        zod:
-@@ -19991,10 +20735,18 @@ packages:
+@@ -19991,10 +20747,18 @@ packages:
    '@mixmark-io/domino@2.2.0':
      resolution: {integrity: sha512-Y28PR25bHXUg88kCV7nivXrP2Nj2RueZ3/l/jdx6J9f8J4nsEGcgX0Qe6lt7Pa+J79+kPiJU3LguR6O/6zrLOw==}
  
@@ -14654,7 +15156,7 @@ index 3bb5b2fd3e73be2afa0611f2012206d2071c61dc..33945008fd83aca92a4d30942d1f8803
    '@modelcontextprotocol/core@2.2.0':
      resolution: {integrity: sha512-iLhmprRmWI8EcosOA3wVvww22z02NkgqhV4fBH6f/odQBsi7xnJc0HGmi21yWO+/iKw2yzqVE127Zhna5/+JXw==}
      engines: {node: '>=20'}
-@@ -20027,6 +20779,10 @@ packages:
+@@ -20027,6 +20791,10 @@ packages:
      resolution: {integrity: sha512-kKaFkyAh6oipvc9+EAbJ552JafnMnOq5nzmzWkp1jJdBhTAAGpmIpWihUG1+rfNhmEFM98gUZDdCHCDD4v6a7Q==}
      hasBin: true
  
@@ -14665,7 +15167,7 @@ index 3bb5b2fd3e73be2afa0611f2012206d2071c61dc..33945008fd83aca92a4d30942d1f8803
    '@modelcontextprotocol/server@2.2.0':
      resolution: {integrity: sha512-qFnltjus6Gk8Lx6J1w2RXmr3YPN22MNT6qD6zjAkaiWIlFIFxWClz0rXHNuJF/KSUyn5YGhkSvXkWDbQHVLFEQ==}
      engines: {node: '>=20'}
-@@ -21035,6 +21791,14 @@ packages:
+@@ -21035,6 +21803,14 @@ packages:
      resolution: {integrity: sha512-4BAffykYOgO+5nzBWYwE3W90sBgLJoUPRWWcL8wlyiM8IB8ipJz3UMJ9KXQd1RKQXpKp8Tutn80HZtWsu2u76w==}
      engines: {node: '>=10'}
  
@@ -14680,7 +15182,7 @@ index 3bb5b2fd3e73be2afa0611f2012206d2071c61dc..33945008fd83aca92a4d30942d1f8803
    '@tanstack/react-virtual@3.14.10':
      resolution: {integrity: sha512-SRyoUbdFMRHuYXMijV5H4ZarQWpXkj3iANq8OFre+pybeVap8ZJjZ3Nz9bVjx4d8PfobVUQUdKyyyHYk3E+djw==}
      peerDependencies:
-@@ -27683,6 +28447,16 @@ snapshots:
+@@ -27683,6 +28459,16 @@ snapshots:
  
    '@mixmark-io/domino@2.2.0': {}
  
@@ -14697,7 +15199,7 @@ index 3bb5b2fd3e73be2afa0611f2012206d2071c61dc..33945008fd83aca92a4d30942d1f8803
    '@modelcontextprotocol/client@2.2.0':
      dependencies:
        '@modelcontextprotocol/core': 2.2.0
-@@ -27693,10 +28467,21 @@ snapshots:
+@@ -27693,10 +28479,21 @@ snapshots:
        pkce-challenge: 5.0.1
        zod: 4.4.3
  
@@ -14719,7 +15221,7 @@ index 3bb5b2fd3e73be2afa0611f2012206d2071c61dc..33945008fd83aca92a4d30942d1f8803
    '@modelcontextprotocol/node@2.0.0(@modelcontextprotocol/server@2.2.0)(hono@4.13.7)':
      dependencies:
        '@hono/node-server': 1.19.17(hono@4.13.7)
-@@ -27748,6 +28533,11 @@ snapshots:
+@@ -27748,6 +28545,11 @@ snapshots:
        - supports-color
        - zod
  
@@ -14731,7 +15233,7 @@ index 3bb5b2fd3e73be2afa0611f2012206d2071c61dc..33945008fd83aca92a4d30942d1f8803
    '@modelcontextprotocol/server@2.2.0':
      dependencies:
        '@modelcontextprotocol/core': 2.2.0
-@@ -28455,6 +29245,13 @@ snapshots:
+@@ -28455,6 +29257,13 @@ snapshots:
      dependencies:
        defer-to-connect: 2.0.1
  

@@ -66,6 +66,7 @@ export function externalSkillProvider(
   }
   return {
     name: 'dsh-skills-manager-external',
+    required: true,
     list: async (options?: ScopeOptions) => listProviderCandidates(await lookupOptions(options)),
     get: async (candidate: SkillCandidate, options?: ScopeOptions) =>
       getProviderSkill(candidate as ProviderCandidate, await lookupOptions(options)),

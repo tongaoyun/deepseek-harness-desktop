@@ -25,7 +25,9 @@
         "packages/client/ui-chat/tests/process-groups.client.spec.ts",
         "packages/experimental/client-ui-cot-translation/tests/translation-body.client.spec.tsx",
         "apps/web/tests/reasoning-preview.e2e.ts",
-        "scripts/deepseek-harness-electron-workflows.spec.ts"
+        "scripts/deepseek-harness-electron-workflows.spec.ts",
+        "packages/skill/skill/tests/required-provider.spec.ts",
+        "packages/deepseek-harness-product/skills/src/native-loader.test.ts"
       ],
       "files": [
         {
@@ -396,12 +398,12 @@
         {
           "path": "docs/config-catalog.md",
           "before": "f5eac6c9a779c683dccc26a0845c3556ffa449b4ceb4722248ce3bbea876d982",
-          "after": "efabf0773883f85695dd98af52e186cf852669de6d6ac58c5e81fd9b594552a1"
+          "after": "6c2247b765d989338c4fff6017740f6812c46a5a2fd1a2a3c29fcfd09c15dfab"
         },
         {
           "path": "docs/config-catalog.zh.md",
           "before": "c8ceb3109d1643100f44a72c7ee5f57d5a865d39e769ce4356db350e04a7e914",
-          "after": "9c3fca4bd0da11b2a501b5d41a75e723736f79b504d7c75161308ffa771c977b"
+          "after": "a24051a1519af3baaa518aef7bef5e045cd520edb82608eb2605db3ae67f001e"
         },
         {
           "path": "docs/development.i18n.yaml",
@@ -521,17 +523,17 @@
         {
           "path": "docs/subsystems/skills.i18n.yaml",
           "before": "2474a79351fa3954992caae9fcb866772c2e5e4fbded25b0396c2b8578f0208c",
-          "after": "6096098b8cda38f80d282819bcb9696c6839be89e680d6f25653901949f9e90c"
+          "after": "b1fb6822c6fb8d5cc5d0de47ec80c957e70ff7c46024407c7fe874b1abc2be8d"
         },
         {
           "path": "docs/subsystems/skills.md",
           "before": "aca8d782ed0dee222851fc1a7e913a7c5f420f70a2f5d3ac9fbd238afd1082ee",
-          "after": "fc6d18c30528234e173f5d923c8dbab4c613715e4168ae8e6b4319534e551b7f"
+          "after": "2ee297ededcb8a7ea9b0b5c673ee62358e2b373ed5ca03bb2aa349ceb260c6db"
         },
         {
           "path": "docs/subsystems/skills.zh.md",
           "before": "45e06dbb790c5642668a85d5cb001cbbb6499e4dc668c8d62de65b6c7e343416",
-          "after": "9a4dccc27939c9ac14aa35fde5fe5929fd2c2edae64e617c5aa05a57204ee13a"
+          "after": "5129a3ea6d7c0ce93f758925ed39486ade6ca76c4db7b93185dd2fe0646c0b51"
         },
         {
           "path": "package.json",
@@ -1226,7 +1228,7 @@
         {
           "path": "packages/extensions/tool-cordis/src/api-catalog.ts",
           "before": "adbcb1531f2bd21fb1da2030a28169b301b202f6676a1abc9c94b7a595f06c43",
-          "after": "a7d0fec8cf372e988a7184ed2ad95fafebfd07393cd9dfd648709a80dc92d910"
+          "after": "3701265979d8c3835d1f6396acc58de903fb4f415c3ef60f016ca2188472cc63"
         },
         {
           "path": "packages/mcp/mcp-client/README.i18n.yaml",
@@ -1381,27 +1383,32 @@
         {
           "path": "packages/skill/skill/README.i18n.yaml",
           "before": "6ceaf4b1524a9087c46a467976381cfbb1c3c524ca21c3458a986a1c51ec072c",
-          "after": "8264f860089f68e68521670349a833fd272dd6962ef4f14db263e7d394757e41"
+          "after": "3386d933bca894d016e221f7ba4454b2597c1068d2647cebf6726c0f82d5da78"
         },
         {
           "path": "packages/skill/skill/README.md",
           "before": "c084a66256f34d42312144bd55bfefa7218e624782557622faa48c80aaf88e6c",
-          "after": "bbddd5b7f3b0a8cddcbe51b7e312e3cb4ebb081e0f301d6a91f732974cd377c8"
+          "after": "bbc8eee6b3f38e0591bbffb9b046e4829a683962a465b07493d489021c19f939"
         },
         {
           "path": "packages/skill/skill/README.zh.md",
           "before": "2084074530a2c5e7dbb31742468f14a22723fe2d87cbca408acdb68d93d14b53",
-          "after": "0d17e7d347e9c75d6a21ca59b348cf5201c156edd779ed0dc4616520328b1ef3"
+          "after": "1007cbb35ad3a60f6677dfa6d0cdb100d5bae34b514e4125d8cb3cfcb2f342b9"
         },
         {
           "path": "packages/skill/skill/src/index.ts",
           "before": "af4fad67fb086c3f5c93aed4604830718b4535e7e59a60d680404b07ea08477c",
-          "after": "61765ca048729f4b44edbb628f0e0100ad322f07fb9590d9b09cf57becd4e0a1"
+          "after": "e9ab0a4de9163d409fff1c69b034c063c98e7f2d350c26cb960a6485ad3ee157"
         },
         {
           "path": "packages/skill/skill/src/types.ts",
           "before": null,
           "after": "eba2c4155ce76e5b1ace28ccf55951678e22b5cdbd88396ad389eb02563a8a30"
+        },
+        {
+          "path": "packages/skill/skill/tests/required-provider.spec.ts",
+          "before": null,
+          "after": "49502a30697c9d9440f55eb35b7dc98284bf8fe275ee18b015ac5f6363284103"
         },
         {
           "path": "packages/subagent/tool-subagent-control/locale/list-agents/de.json",
@@ -1466,7 +1473,7 @@
         {
           "path": "pnpm-lock.yaml",
           "before": "349ecef16eae1c2166b74661fdff552b9825945894b89461b3a29f825daa6f76",
-          "after": "8c7265fbf8d733def0da99a72864421d62d21269e7ab5d3d3db388b4ded0e417"
+          "after": "d64e52487f9598c65a60bc9e193e65c28e55a08174b7bbea58cd23627952472c"
         },
         {
           "path": "README.i18n.yaml",
