@@ -53,14 +53,12 @@ export interface ProductBridgeOptions {
   readonly knowledgeUpload?: KnowledgeUpload
   readonly serverUrl?: string | undefined
   readonly sessionToken?: string | undefined
-  readonly desktopVersion?: string | undefined
   readonly initialSession?: ProductSession | undefined
   /** Testable main-process HTTP transport. Renderer code never supplies this function. */
   readonly fetch?: typeof fetch
   readonly persistSession?: (session: ProductSession, sessionToken: string | undefined) => void | Promise<void>
   /** Dispatch task capability operations to the trusted runtime. */
   readonly taskCapabilities?: (method: 'read' | 'prepare', payload: Readonly<Record<string, unknown>>, signal?: AbortSignal) => Promise<unknown>
-  /** Dispatch knowledge selections and document rendering to the Host. */
   /** Main-owned connector management, with authenticated API access and UI-safe employee identity. */
   readonly connectorManagement?: (method: string, payload: Readonly<Record<string, unknown>>, api: DeepSeekHarnessApiClient,
     session: ProductSession, signal?: AbortSignal) => Promise<unknown>
