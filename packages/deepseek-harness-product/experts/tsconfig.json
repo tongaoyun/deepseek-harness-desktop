@@ -9,7 +9,6 @@
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
     "declaration": true,
-    "rootDir": ".",
     "strict": true,
     "jsx": "react-jsx",
     "skipLibCheck": true,

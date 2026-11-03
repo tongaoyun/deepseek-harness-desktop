@@ -56,9 +56,10 @@ async function fixture(renderMain: boolean | 'picker' = false) {
     : renderMain ? props.renderSlot('main', {}, { entryKey: 'deepseek-harness-experts' }) : null)
   if (renderMain) {
     slots.install(createSlotRenderer()); slots.installLocale(ctx.locale)
-    const current = createSnapshotStore<StandardSourceBinding>(renderMain === 'picker'
+    const binding = renderMain === 'picker'
       ? { key: SessionId('picker-session'), ctx, hooks: {}, keyedHooks: {}, props: {} } satisfies ScopedStandardSourceBinding
-      : { key: undefined, hooks: {}, keyedHooks: {}, props: {} })
+      : { key: undefined, hooks: {}, keyedHooks: {}, props: {} } satisfies StandardSourceBinding
+    const current = createSnapshotStore<StandardSourceBinding>(binding)
     slots.installScope('session', { current, bindingSource: () => current, renderArea: () => null })
   }
   await ctx.plugin(Loader)

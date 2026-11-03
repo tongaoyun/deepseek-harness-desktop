@@ -1,7 +1,7 @@
 import { teamText, type TeamLocale } from './team-i18n.ts'
 import { randomUUID } from 'node:crypto'
 import { expertConflict, type CatalogSnapshot } from './expert-contract.ts'
-import { mutateExpertSettings, type ExpertSettingsStore } from './expert-library.ts'
+import { mutateExpertSettings, projectExpertCatalog, type ExpertSettingsStore } from './expert-library.ts'
 import {
   TEAM_CUSTOM_ID,
   teamInputSchema,
@@ -18,11 +18,11 @@ export function createTeamLibrary(
   companyTeams: (sessionId?: string, signal?: AbortSignal) => Promise<ExpertTeam[]> = async () => [],
 ) {
   const tx = (key: string) => teamText(locale(), key)
-  const read = () => ({
-    custom: (store.read().customTeams ?? []).map((team) =>
+  const read = (state = store.read()) => ({
+    custom: (state.customTeams ?? []).map((team) =>
       teamSchema.parse(team),
     ),
-    enabled: [...(store.read().enabledTeams ?? [])],
+    enabled: [...(state.enabledTeams ?? [])],
   })
   const check = (revision: number) => {
     if (!Number.isSafeInteger(revision) || revision !== store.revision())
@@ -45,19 +45,24 @@ export function createTeamLibrary(
     path: ['enabled'],
     value: [...new Set([...store.read().enabled, ...team.members.map(member => member.expertSlug)])],
   })
+  const prepare = async (sessionId?: string, signal?: AbortSignal) => {
+    signal?.throwIfAborted()
+    const [all, shared] = await Promise.all([catalog(sessionId, signal), companyTeams(sessionId, signal)])
+    signal?.throwIfAborted()
+    check(all.revision)
+    return { all, shared }
+  }
+  const project = (all: CatalogSnapshot, shared: readonly ExpertTeam[]): TeamSnapshot => {
+    const state = store.read()
+    const current = projectExpertCatalog(all.experts.filter(expert => !expert.custom), state, store.revision())
+    const personal = read(state)
+    return { teams: [...shared, ...personal.custom], enabledTeams: personal.enabled,
+      enabledExperts: current.enabled, revision: current.revision }
+  }
   const library = {
     async snapshot(sessionId?: string, signal?: AbortSignal): Promise<TeamSnapshot> {
-      signal?.throwIfAborted()
-      const [all, shared] = await Promise.all([catalog(sessionId, signal), companyTeams(sessionId, signal)])
-      signal?.throwIfAborted()
-      // 读取名册期间可能有其他窗口写入，不能混用两个修订的配置。
-      check(all.revision)
-      return {
-        teams: [...shared, ...teams()],
-        enabledTeams: read().enabled,
-        enabledExperts: all.enabled,
-        revision: all.revision,
-      }
+      const { all, shared } = await prepare(sessionId, signal)
+      return project(all, shared)
     },
     async get(id: string, signal?: AbortSignal): Promise<ExpertTeam> {
       signal?.throwIfAborted()
@@ -77,8 +82,7 @@ export function createTeamLibrary(
       if (!parsed.success || typeof enabled !== 'boolean')
         throw new Error(tx('请检查团队名称、成员分工、任务示例和主理人提示词。'))
       const value = parsed.data
-      const all = await catalog(undefined, signal)
-      signal?.throwIfAborted()
+      const { all, shared } = await prepare(undefined, signal)
       check(revision)
       if (value.id && !TEAM_CUSTOM_ID.test(value.id))
         throw new Error(tx('专家团标识无效，请重新创建。'))
@@ -120,7 +124,7 @@ export function createTeamLibrary(
         revision,
         locale(),
       )
-      return library.snapshot(undefined, signal)
+      return project(all, shared)
     },
     async setEnabled(
       id: string,
@@ -129,9 +133,9 @@ export function createTeamLibrary(
       signal?: AbortSignal,
     ): Promise<TeamSnapshot> {
       signal?.throwIfAborted()
-      const team = await library.get(id, signal)
-      const all = await catalog(undefined, signal)
-      signal?.throwIfAborted()
+      const { all, shared } = await prepare(undefined, signal)
+      const team = [...shared, ...teams()].find(team => team.id === id)
+      if (!team) throw new Error(tx('专家团不存在，请重新选择。'))
       check(revision)
       if (typeof enabled !== 'boolean') throw new Error(tx('启用状态无效。'))
       if (enabled) requireMembers(team, all)
@@ -150,10 +154,10 @@ export function createTeamLibrary(
         revision,
         locale(),
       )
-      return library.snapshot(undefined, signal)
+      return project(all, shared)
     },
     async remove(id: string, revision: number, signal?: AbortSignal): Promise<TeamSnapshot> {
-      signal?.throwIfAborted()
+      const { all, shared } = await prepare(undefined, signal)
       check(revision)
       if (!TEAM_CUSTOM_ID.test(id) || !read().custom.some((t) => t.id === id))
         throw new Error(tx('只能删除已有的自定义专家团。'))
@@ -173,7 +177,7 @@ export function createTeamLibrary(
         revision,
         locale(),
       )
-      return library.snapshot(undefined, signal)
+      return project(all, shared)
     },
   }
   return library

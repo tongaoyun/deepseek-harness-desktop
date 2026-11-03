@@ -64,11 +64,12 @@ jobs:
           pnpm run build:artifacts
           node --test apps/product-desktop/tests/company-content.test.mjs
           pnpm run build:check
+          # Expert Host/Client sources and owner-local tests have a separate no-emit program.
+          pnpm --filter @deepseek-harness/product-experts run typecheck
           pnpm run rescope-vendor:check
           pnpm run verify-package-dependencies
           pnpm run verify-no-unknown-casts
-          # The aggregate product run below owns product/experts/skills tests;
-          # build:artifacts already type-checks their Host/Client package projects.
+          # The aggregate product run below owns product/experts/skills behavior tests.
           pnpm exec vitest run \
             packages/deepseek-harness-product \
             packages/extensions/ui-deepseek-harness-product \

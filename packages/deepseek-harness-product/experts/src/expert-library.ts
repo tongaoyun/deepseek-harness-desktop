@@ -75,6 +75,29 @@ export interface AgencyExpertLibrary {
 }
 export const normalizeName = (value: string): string => value.trim().toLowerCase()
 
+const summary = (expert: CustomExpert): ExpertSummary => ({
+  slug: expert.slug, name: expert.name, nameEn: expert.name,
+  description: expert.description, descriptionEn: '', emoji: expert.emoji,
+  division: expert.division, divisionZh: ZH_DIVISION[expert.division] ?? expert.division,
+  avatar: expert.avatar, custom: true,
+})
+const overlaps = (a: ExpertSummary, b: ExpertSummary): boolean => a.slug === b.slug || !a.teamMember && !b.teamMember && [a.name, a.nameEn].some(name => [b.name, b.nameEn].some(other => normalizeName(name) === normalizeName(other)))
+
+/** Project committed personal settings against an already prepared read-only catalog.
+ * @param catalogExperts Read-only experts with their source-conflict flags.
+ * @param state Current committed personal settings.
+ * @param revision Native Settings revision for this state.
+ * @returns Credential-free catalog without additional source reads.
+ */
+export function projectExpertCatalog(catalogExperts: readonly ExpertSummary[], state: Pick<AgencySettings, 'enabled' | 'customExperts'>,
+  revision: number): CatalogSnapshot {
+  const custom = (state.customExperts ?? []).map(summary)
+  const experts = [...catalogExperts,
+    ...custom.map(expert => ({ ...expert, conflict: [...catalogExperts, ...custom.filter(other => other !== expert)].some(other => overlaps(expert, other)) }))]
+  const available = new Set(experts.filter(expert => !expert.conflict).map(expert => expert.slug))
+  return { experts, enabled: [...new Set(state.enabled.filter(slug => available.has(slug)))], revision }
+}
+
 /** 合并只读基础名册与自定义数据；依赖宿主的持久化事务和修订号仲裁。 */
 export function createExpertLibrary(
   base: (signal?: AbortSignal) => Promise<ReadonlyArray<ExpertSummary>>,
@@ -89,13 +112,6 @@ export function createExpertLibrary(
   const checkRevision = (revision: number): void => {
     if (!Number.isSafeInteger(revision) || revision < 0 || revision !== store.revision()) throw customError('conflict', locale())
   }
-  const summary = (expert: CustomExpert): ExpertSummary => ({
-    slug: expert.slug, name: expert.name, nameEn: expert.name,
-    description: expert.description, descriptionEn: '', emoji: expert.emoji,
-    division: expert.division, divisionZh: ZH_DIVISION[expert.division] ?? expert.division,
-    avatar: expert.avatar, custom: true,
-  })
-  const overlaps = (a: ExpertSummary, b: ExpertSummary): boolean => a.slug === b.slug || !a.teamMember && !b.teamMember && [a.name, a.nameEn].some(name => [b.name, b.nameEn].some(other => normalizeName(name) === normalizeName(other)))
   // 只校验当前编辑对象，其他已有冲突不能阻断逐个修复。
   const assertUnique = (expert: ExpertSummary, others: readonly ExpertSummary[]): void => {
     if (others.some(other => overlaps(expert, other))) throw customError('duplicate', locale())
@@ -109,23 +125,18 @@ export function createExpertLibrary(
     return experts
   }
   const project = (catalogExperts: readonly ExpertSummary[], state: ReturnType<typeof read>): CatalogSnapshot => {
-    const ready = projectCatalog(catalogExperts)
-    const custom = state.customExperts.map(summary)
-    const experts = [...ready,
-      ...custom.map(expert => ({ ...expert, conflict: [...ready, ...custom.filter(other => other !== expert)].some(other => overlaps(expert, other)) }))]
-    const available = new Set(experts.filter(expert => !expert.conflict).map(expert => expert.slug))
-    return { experts, enabled: [...new Set(state.enabled.filter(slug => available.has(slug)))], revision: store.revision() }
+    return projectExpertCatalog(projectCatalog(catalogExperts), state, store.revision())
   }
   const assertWritable = (slug: string): void => {
     if (!CUSTOM_EXPERT_SLUG.test(slug)) throw customError('readonly', locale())
   }
-  const persist = async (state: ReturnType<typeof read>, revision: number, signal?: AbortSignal): Promise<CatalogSnapshot> => {
+  const persist = async (state: ReturnType<typeof read>, revision: number, catalogExperts: readonly ExpertSummary[], signal?: AbortSignal): Promise<CatalogSnapshot> => {
     signal?.throwIfAborted()
     await mutateExpertSettings(store, [
       { op: 'set', path: ['customExperts'], value: state.customExperts },
       { op: 'set', path: ['enabled'], value: [...new Set(state.enabled)] },
     ], revision, locale())
-    return library.catalog(signal)
+    return project(catalogExperts, read())
   }
   const library: AgencyExpertLibrary = {
     async catalog(signal) {
@@ -157,18 +168,20 @@ export function createExpertLibrary(
       const next = state.customExperts.filter(item => item.slug !== expert.slug)
       next.push(expert)
       assertUnique(summary(expert), [...catalogExperts, ...next.filter(item => item.slug !== expert.slug).map(summary)])
-      return persist({ customExperts: next, enabled: [...state.enabled.filter(slug => slug !== expert.slug), ...(enabled ? [expert.slug] : [])] }, expectedRevision, signal)
+      return persist({ customExperts: next, enabled: [...state.enabled.filter(slug => slug !== expert.slug), ...(enabled ? [expert.slug] : [])] }, expectedRevision, catalogExperts, signal)
     },
     async deleteCustom(slug, expectedRevision, signal) {
       signal?.throwIfAborted()
       assertWritable(slug)
+      const catalogExperts = await base(signal)
+      signal?.throwIfAborted()
       checkRevision(expectedRevision)
       const state = read()
       if (!state.customExperts.some(item => item.slug === slug)) throw customError('missing', locale())
       return persist({
         customExperts: state.customExperts.filter(item => item.slug !== slug),
         enabled: state.enabled.filter(item => item !== slug),
-      }, expectedRevision, signal)
+      }, expectedRevision, catalogExperts, signal)
     },
     async setEnabled(enabled, expectedRevision, signal) {
       signal?.throwIfAborted()
@@ -184,7 +197,8 @@ export function createExpertLibrary(
         { op: 'set', path: ['enabled'], value: next },
       ], expectedRevision, locale())
       signal?.throwIfAborted()
-      return { enabled: next, revision: store.revision() }
+      const current = project(catalogExperts, read())
+      return { enabled: current.enabled, revision: current.revision }
     },
   }
   return library

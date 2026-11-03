@@ -48,6 +48,8 @@ describe('DeepSeekHarness Electron workflows', () => {
     expect(command).toContain('node --test apps/product-desktop/tests/company-content.test.mjs')
     expect(command).toContain('pnpm run build:check\n')
     expect(command.indexOf('pnpm run build:artifacts\n')).toBeLessThan(command.indexOf('pnpm run build:check\n'))
+    expect(command).toContain('pnpm --filter @deepseek-harness/product-experts run typecheck\n')
+    expect(command.indexOf('pnpm run build:artifacts\n')).toBeLessThan(command.indexOf('pnpm --filter @deepseek-harness/product-experts run typecheck\n'))
     expect(command).not.toContain('pnpm run typecheck\n')
     expect(command).not.toContain('pnpm run build:lib:host')
     expect(command).not.toContain('pnpm run typecheck:contracts-ready')
