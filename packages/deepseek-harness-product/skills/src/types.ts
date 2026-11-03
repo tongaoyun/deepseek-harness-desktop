@@ -83,6 +83,8 @@ export interface Scan {
     exists: boolean;
     entries: SkillEntry[];
     truncated?: boolean;
+    /** Whether filesystem lookups completed without a non-absence I/O failure. */
+    complete: boolean;
 }
 /** Source-local list category identity and display name. */
 export interface SkillCategory {

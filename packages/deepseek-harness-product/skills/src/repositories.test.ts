@@ -132,7 +132,7 @@ it('keeps unsupported names visible for diagnosis without exposing truncated pro
       },
     ]
   `)
-  const candidates = await listProviderCandidates()
+  const { candidates } = await listProviderCandidates()
   expect(candidates.map(candidate => candidate.name).sort()).toEqual(['audit-orders', 'read-orders'])
   const candidate = candidates.find(candidate => candidate.name === 'audit-orders')!
   expect(await getProviderSkill(candidate)).toMatchObject({ content: 'audit-orders instructions' })
@@ -147,7 +147,7 @@ it('rechecks native invocation policy and manager overrides after discovery', as
   const file = join(root.path, 'audit-orders/SKILL.md')
   await mkdir(join(root.path, 'audit-orders'), { recursive: true })
   await writeFile(file, text('Original'))
-  const candidate = (await listProviderCandidates()).find(item => item.name === 'audit-orders')!
+  const candidate = (await listProviderCandidates()).candidates.find(item => item.name === 'audit-orders')!
   expect((await getProviderSkill(candidate))?.invocation).toEqual({ modelInvocable: true, userInvocable: true })
   await writeFile(file, text('Changed').replace('description:', 'disable-model-invocation: true\nuser-invocable: false\ndescription:'))
   expect((await getProviderSkill(candidate))?.invocation).toEqual({ modelInvocable: false, userInvocable: false })
@@ -175,9 +175,9 @@ it.each(['missing', 'frontmatter', 'name', 'description', 'yaml'])('revokes a re
   else expect(await readFile(file, 'utf8')).toBe(broken)
   expect(await setSkillEnabled(root, 'audit-orders', true)).toMatchObject({ ok: false })
   await writeFile(file, text('Repaired'))
-  expect((await listProviderCandidates()).find(candidate => candidate.name === 'audit-orders')?.invocation).toEqual({ modelInvocable: false, userInvocable: false })
+  expect((await listProviderCandidates()).candidates.find(candidate => candidate.name === 'audit-orders')?.invocation).toEqual({ modelInvocable: false, userInvocable: false })
   expect(await setSkillEnabled(root, 'audit-orders', true)).toMatchObject({ enabled: true })
-  expect((await listProviderCandidates()).find(candidate => candidate.name === 'audit-orders')?.invocation).toEqual({ modelInvocable: true, userInvocable: true })
+  expect((await listProviderCandidates()).candidates.find(candidate => candidate.name === 'audit-orders')?.invocation).toEqual({ modelInvocable: true, userInvocable: true })
 })
 
 it('does not create policy records for an unknown missing skill', async () => {

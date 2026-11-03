@@ -10,6 +10,14 @@ const MAX_ENTRIES = 20000;
 const identity = (path: string) =>
   process.platform === "win32" ? path.toLowerCase() : path;
 
+/** Classify missing optional sources and entries without hiding other filesystem failures.
+ * @param error - Filesystem lookup failure.
+ * @returns Whether the requested path is absent or crosses a non-directory component.
+ */
+export function isMissingSkillPath(error: unknown): boolean {
+  return error instanceof Error && "code" in error && (error.code === "ENOENT" || error.code === "ENOTDIR");
+}
+
 /** 只读条目使用根下相对路径；点号表示根本身的 SKILL.md，不接受路径穿越。 */
 export function validDiscoveryName(name: unknown): name is string {
   return (
@@ -39,6 +47,7 @@ export async function discoverReadonlyEntries(root: string) {
   let entries = 0;
   let exists = false;
   let truncated = false;
+  let complete = true;
   for (let cursor = 0; cursor < queue.length; cursor++) {
     if (directories >= MAX_DIRECTORIES || entries >= MAX_ENTRIES) {
       truncated = true;
@@ -88,7 +97,8 @@ export async function discoverReadonlyEntries(root: string) {
         entries++;
         items.push(item);
       }
-    } catch {
+    } catch (error) {
+      if (!isMissingSkillPath(error)) complete = false;
       continue;
     } // 失效链接或不可读目录不阻断其他来源。
     items.sort((a, b) => a.name.localeCompare(b.name));
@@ -140,7 +150,8 @@ export async function discoverReadonlyEntries(root: string) {
           realEntryPath,
           linked: identity(resolve(entryPath)) !== identity(realEntryPath),
         });
-      } catch {
+      } catch (error) {
+        if (!isMissingSkillPath(error)) complete = false;
         /* 来源在扫描期间失效时跳过；加载前仍复验真实路径。 */
       }
     }
@@ -149,5 +160,6 @@ export async function discoverReadonlyEntries(root: string) {
     exists,
     entries: [...byName.values()].sort((a, b) => a.name.localeCompare(b.name)),
     truncated,
+    complete,
   };
 }
