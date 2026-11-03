@@ -161,7 +161,6 @@ export function createExtension(context: ExtensionContext): ProductDesktopExtens
     support: (method, input, api, session, signal) => support.invoke(method, input, api, session, signal),
     knowledgeFiles: (method, input, api, session, signal) => knowledgeFiles.invoke(method, input, api, session, signal),
     knowledgeUpload: knowledgeUploads,
-    desktopVersion: app.getVersion(),
     persistSession: (session, token) => {
       const employeeId = session.authenticated ? session.employeeId : undefined
       const pending: Promise<void>[] = []
