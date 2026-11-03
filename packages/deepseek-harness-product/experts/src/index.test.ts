@@ -1325,14 +1325,14 @@ describe('@ 菜单分组标题本地化', () => {
 
     expect(inputTriggerSourceId('engineering')).toBe('@deepseek-harness/product-experts:engineering')
     expect(buildExpertReference(expert, 'zh')).toEqual({
-      source: '@deepseek-harness/product-experts:engineering',
+      source: '@deepseek-harness/product-experts',
       ref: 'engineering-code-reviewer',
       label: '代码审查工程师',
       appearance: 'session',
       clipboardText: '@代码审查工程师\u00A0',
     })
     expect(buildExpertReference(expert, 'en')).toMatchObject({
-      source: '@deepseek-harness/product-experts:engineering',
+      source: '@deepseek-harness/product-experts',
       label: 'Code Reviewer',
       appearance: 'session',
       clipboardText: '@Code Reviewer\u00A0',
@@ -1344,7 +1344,7 @@ describe('@ 菜单分组标题本地化', () => {
     let draft = '\uFFFC '
     let draftRev = 42
     const reference = {
-      source: '@deepseek-harness/product-experts:engineering',
+      source: '@deepseek-harness/product-experts',
       ref: 'engineering-code-reviewer',
       label: '代码审查工程师',
       appearance: 'session' as const,
@@ -1373,7 +1373,7 @@ describe('@ 菜单分组标题本地化', () => {
   it('兼容旧格式的 chip 与空格交替前缀，仍追加到最后一个 chip 后', () => {
     const calls: unknown[] = []
     const reference = {
-      source: '@deepseek-harness/product-experts:engineering',
+      source: '@deepseek-harness/product-experts',
       ref: 'engineering-code-reviewer',
       label: '代码审查工程师',
       appearance: 'session' as const,
@@ -1394,7 +1394,7 @@ describe('@ 菜单分组标题本地化', () => {
   it('优先采用宿主 occurrence 偏移，避免草稿投影隐藏占位符时把专家插到开头', () => {
     const calls: unknown[] = []
     const reference = {
-      source: '@deepseek-harness/product-experts:engineering',
+      source: '@deepseek-harness/product-experts',
       ref: 'engineering-code-reviewer',
       label: '代码审查工程师',
       clipboardText: '@代码审查工程师\u00A0',

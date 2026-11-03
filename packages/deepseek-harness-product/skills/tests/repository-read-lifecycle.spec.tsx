@@ -29,7 +29,7 @@ function deferred<T>() {
   const promise = new Promise<T>((res, rej) => { resolve = res; reject = rej })
   return { promise, resolve, reject }
 }
-async function setup(installed = false, repositories = [repo], workspaceRead: () => RemoteResult<SkillOutput<'listWorkspaces'>> | Promise<RemoteResult<SkillOutput<'listWorkspaces'>>> = () => ok({ items: [] })) {
+async function setup(installed = false, repositories = [repo], workspaceRead: () => RemoteResult<SkillOutput<'listWorkspaces'>> | Promise<RemoteResult<SkillOutput<'listWorkspaces'>>> = () => ok({ items: [] }), onInstalled?: () => unknown) {
   const mock = RemoteMock.create()
   mock.unary('skillsManager/listRepositories', () => ok({ repositories: repositories.map(item => ({ ...item, skills: installed ? [{ ...skill, installations: [{ installedRoot: 'dsh', tracked: true, status: 'installed', updateAvailable: true, canRollback: true, canUninstall: true }] }] : item.skills })), installRoots: [{ key: 'dsh', path: '/skills', label: 'DSH', available: true }], catalogInstalls: [], catalogCopies: [], catalogWarnings: [] } satisfies SkillOutput<'listRepositories'>))
   mock.unary('skillsManager/listWorkspaces', workspaceRead)
@@ -43,7 +43,7 @@ async function setup(installed = false, repositories = [repo], workspaceRead: ()
       lifetime.current = new AbortController()
       return () => { lifetime.current.abort() }
     }, [])
-    const { content } = useRepositoryUI({ active, t, getSignal: () => lifetime.current.signal })
+    const { content } = useRepositoryUI({ active, t, onInstalled, getSignal: () => lifetime.current.signal })
     return content
   }
   const view = render(h(React.StrictMode, null, h(Harness)))
@@ -365,6 +365,62 @@ it('keeps an installation mutually exclusive and its dialog open until the write
   expect(mock.remote.skillsManager.installRepository.mock.calls).toHaveLength(1)
   await act(async () => { pending.resolve({ name: 'orders', root: 'dsh', commit: 'revision' }); await pending.promise })
   await waitFor(() => { expect(screen.queryByRole('dialog')).toBeNull() })
+})
+
+const repositoryWrites = [
+  { action: 'install', method: 'installRepository', open: 'repo.install', confirm: 'repo.install', success: 'repo.installSuccess', warning: 'repo.catalog.installRefreshWarning', receipt: { name: 'orders', root: 'dsh', commit: 'revision' } },
+  { action: 'uninstall', method: 'uninstallRepository', open: 'repo.uninstall', confirm: 'repo.confirmUninstall', success: 'repo.uninstallSuccess', warning: 'repo.catalog.uninstallRefreshWarning', receipt: { id: 'trashed', name: 'orders', deletedAt: '2026-11-04T00:00:00Z', root: { key: 'dsh', scope: 'user', label: 'DSH' } } },
+  { action: 'update', method: 'updateRepository', open: 'repo.review', confirm: 'repo.confirmUpdate', success: 'repo.updateSuccess', warning: 'repo.refreshAfterWriteWarning', receipt: { name: 'orders', commit: 'new' } },
+  { action: 'rollback', method: 'rollbackRepository', open: 'repo.rollback', confirm: 'repo.confirmRollback', success: 'repo.rollbackSuccess', warning: 'repo.refreshAfterWriteWarning', receipt: { name: 'orders', commit: 'old' } },
+] as const
+
+async function prepareRepositoryWrite(write: typeof repositoryWrites[number], onInstalled?: () => unknown) {
+  const { mock } = await setup(write.action !== 'install', [repo], undefined, onInstalled)
+  mock.unary('skillsManager/previewUpdate', () => ok({ token: 'current', commit: 'new', localModified: false, changes: [{ path: 'SKILL.md', kind: 'modified' }], rollback: write.action === 'rollback' }))
+  fireEvent.click(screen.getByRole('button', { name: write.open }))
+  const confirm = await within(screen.getByRole('dialog')).findByRole('button', { name: write.confirm })
+  return { mock, confirm }
+}
+
+it.each(repositoryWrites.flatMap(write => ['repository', 'host'].map(refresh => ({ ...write, refresh }))))('keeps a successful $action when its $refresh refresh fails', async (write) => {
+  let hostRefreshes = 0
+  const { mock, confirm } = await prepareRepositoryWrite(write, () => {
+    hostRefreshes++
+    if (write.refresh === 'host') throw new Error('Host refresh unavailable')
+  })
+  mock.unary(`skillsManager/${write.method}`, () => ok(write.receipt))
+  const reads = mock.remote.skillsManager.listRepositories.mock.calls.length
+  if (write.refresh === 'repository') mock.unary('skillsManager/listRepositories', () => ({ ok: false, error: new RemoteError('skills/operation', 'Repository refresh unavailable', {
+    code: 'error.repo.network', error: 'Repository refresh unavailable',
+  }) }))
+  fireEvent.click(confirm)
+  await waitFor(() => {
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(screen.getByText(`${write.warning} · orders`).getAttribute('role')).toBe('status')
+  })
+  expect(screen.getByText(write.success).getAttribute('role')).toBe('status')
+  expect(screen.queryByRole('alert')).toBeNull()
+  expect(mock.remote.skillsManager[write.method]).toHaveBeenCalledOnce()
+  expect(mock.remote.skillsManager.listRepositories.mock.calls).toHaveLength(reads + 1)
+  expect(hostRefreshes).toBe(1)
+})
+
+it.each(repositoryWrites)('keeps a failed $action editable without starting post-write refresh', async (write) => {
+  let hostRefreshes = 0
+  const { mock, confirm } = await prepareRepositoryWrite(write, () => { hostRefreshes++ })
+  mock.unary(`skillsManager/${write.method}`, () => ({ ok: false, error: new RemoteError('skills/operation', 'Mutation rejected', {
+    code: 'error.repo.conflict', error: 'Mutation rejected',
+  }) }))
+  const reads = mock.remote.skillsManager.listRepositories.mock.calls.length
+  fireEvent.click(confirm)
+  await waitFor(() => { expect(confirm).toHaveProperty('disabled', false) })
+  expect(screen.getByRole('dialog')).toBeTruthy()
+  expect(screen.getAllByRole('alert').some(alert => alert.textContent === 'Mutation rejected')).toBe(true)
+  expect(screen.queryByText(write.success)).toBeNull()
+  expect(screen.queryByText(`${write.warning} · orders`)).toBeNull()
+  expect(mock.remote.skillsManager[write.method]).toHaveBeenCalledOnce()
+  expect(mock.remote.skillsManager.listRepositories.mock.calls).toHaveLength(reads)
+  expect(hostRefreshes).toBe(0)
 })
 
 it('preserves an editable repository form when leaving the tab', async () => {

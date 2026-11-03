@@ -30,7 +30,11 @@ async function fixture(renderMain: boolean | 'picker' = false) {
   await ctx.plugin(SlotRegistry).await()
   const slots = ctx.get('slots') as SlotRegistry
   ctx.provide('locale', new LocaleRuntime(ctx))
-  ctx.provide('sessions', { scope: () => undefined } as never)
+  const binding = { session, sessionId: session.sessionId, ctx }
+  ctx.provide('sessions', { scope: () => undefined,
+    sessionOf: (scope: Context) => scope === ctx ? session : undefined,
+    binding: (id: ReturnType<typeof SessionId>) => id === session.sessionId ? binding : undefined,
+  } as never)
   ctx.provide('conversation', {} as never)
   ctx.provide('layout', {} as never)
   await ctx.plugin(InputTriggerService).await()
@@ -243,6 +247,44 @@ it('registers newly loaded company categories and removes them when their catalo
   expect(sources.has(source.name)).toBe(false)
   await owner.dispose()
   expect(sources.size).toBe(0)
+})
+
+it.each(['moved', 'disabled', 'removed'] as const)('routes an existing expert chip through its native owner after the expert is %s', async (change) => {
+  const { ctx, cache, getCatalog, sources } = await fixture()
+  getCatalog.mockResolvedValue({ ok: true, value: { experts: [compliance], enabled: [compliance.slug], revision: 9 } })
+  await cache.catalog.refresh(true)
+  const input = ctx.inputTriggers.sessionOf(ctx)
+  const reference = Experts.buildExpertReference(compliance, 'en')
+  const signal = new AbortController().signal
+  await expect(input.serializeReference(reference.source, reference.ref, signal)).resolves.toBe('@Compliance review\u00a0')
+  const updated = { ...compliance, division: 'engineering', name: '当前合规专家', nameEn: 'Current compliance expert' }
+  getCatalog.mockResolvedValue({ ok: true, value: { experts: change === 'removed' ? [] : [updated],
+    enabled: change === 'moved' ? [compliance.slug] : [], revision: 10 } })
+  await cache.catalog.refresh(true)
+  expect(sources.has(Experts.inputTriggerSourceId(compliance.division))).toBe(false)
+  if (change === 'moved') {
+    await expect(input.serializeReference(reference.source, reference.ref, signal)).resolves.toBe('@Current compliance expert\u00a0')
+  } else {
+    await expect(input.serializeReference(reference.source, reference.ref, signal)).rejects.toThrow(ctx.locale.bind('agency')('custom.unavailable'))
+  }
+})
+
+it('keeps native reference ownership and session warmup independent of menu categories and locale', async () => {
+  const { ctx, cache, getCatalog, sources } = await fixture()
+  getCatalog.mockClear()
+  const input = ctx.inputTriggers.sessionOf(ctx)
+  expect(getCatalog).toHaveBeenCalledOnce()
+  await cache.catalog.refresh()
+  getCatalog.mockClear()
+  cache.catalog.accept({ experts: [compliance], enabled: [compliance.slug], revision: 9 })
+  ctx.locale.setLocale('zh')
+  expect(getCatalog).not.toHaveBeenCalled()
+  const reference = Experts.buildExpertReference(compliance, 'zh')
+  const owner = sources.get(reference.source)
+  expect(owner?.codec).toBeDefined()
+  expect(owner?.showGroupTitle).toBe(false)
+  await expect(owner?.candidates(session, request)).resolves.toEqual([])
+  expect(ctx.inputTriggers.sessionOf(ctx)).toBe(input)
 })
 
 it('uses committed catalog notifications for the expert lexicon and releases its subscribers', async () => {

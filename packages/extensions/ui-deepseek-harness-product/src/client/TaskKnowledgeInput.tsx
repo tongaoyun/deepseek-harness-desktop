@@ -4,7 +4,7 @@ import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-cli
 import type { NS } from '../locales.ts'
 import type { TaskModeActions } from './harness-actions.ts'
 import { TaskKnowledgeSelector } from './TaskKnowledgeSelector.tsx'
-import { productApi } from './product-api.ts'
+import { productApi, type ProductApi } from './product-api.ts'
 import { productErrorMessage } from './product-errors.ts'
 import css from '../DeepSeekHarnessProduct.module.css'
 
@@ -25,9 +25,34 @@ export function TaskKnowledgeInput({
   const [state, setState] = useState<Awaited<ReturnType<TaskModeActions['readMode']>>>()
   const [failure, setFailure] = useState('')
   const [revision, setRevision] = useState(0)
-  useEffect(() => productApi()?.subscribe((event) => {
-    if (event.type === 'catalog.changed' || event.type === 'session.changed') setRevision(value => value + 1)
-  }), [])
+  const [identityRevision, setIdentityRevision] = useState(0)
+  useEffect(() => {
+    const api = productApi()
+    let live = true
+    let identity: string | undefined
+    const updateIdentity = (session: Awaited<ReturnType<ProductApi['getSession']>>, changed = false) => {
+      const next = JSON.stringify([session.authenticated, session.employeeId])
+      if (identity === undefined ? changed : next !== identity) {
+        setState(undefined)
+        setFailure('')
+        setIdentityRevision(value => value + 1)
+      }
+      identity = next
+    }
+    const unsubscribe = api?.subscribe((event) => {
+      const value = event.payload
+      if (event.type === 'session.changed' && typeof value === 'object' && value !== null
+        && 'authenticated' in value && typeof value.authenticated === 'boolean') {
+        updateIdentity({ authenticated: value.authenticated,
+          ...'employeeId' in value && typeof value.employeeId === 'string' ? { employeeId: value.employeeId } : {} }, true)
+      }
+      if (event.type === 'catalog.changed' || event.type === 'session.changed') setRevision(value => value + 1)
+    })
+    void api?.getSession().then((session) => { if (live && identity === undefined) updateIdentity(session) }).catch(() => {
+      // Session events remain authoritative when the initial identity read fails.
+    })
+    return () => { live = false; unsubscribe?.() }
+  }, [])
   useEffect(() => { setState(undefined) }, [sessionId, presetId])
   useEffect(() => {
     let active = true
@@ -35,9 +60,10 @@ export function TaskKnowledgeInput({
     void readMode(sessionId).then((value) => { if (active) setState(value) })
       .catch((error: unknown) => { if (active) setFailure(productErrorMessage(error, t, 'taskSelectionFailed')) })
     return () => { active = false }
-  }, [sessionId, presetId, revision, readMode, t])
+  }, [sessionId, presetId, revision, identityRevision, readMode, t])
   return <>
-    <TaskKnowledgeSelector sessionId={sessionId} capabilities={state?.capabilities} readKnowledgeCatalog={readKnowledgeCatalog}
+    <TaskKnowledgeSelector key={identityRevision} sessionId={sessionId} capabilities={state?.capabilities}
+      refreshRevision={revision} readKnowledgeCatalog={readKnowledgeCatalog}
       setKnowledgeSelection={setKnowledgeSelection} recoverCapabilities={recoverCapabilities}
       retryCapabilities={retryCapabilities} openCatalog={openCatalog}
       subscribeOpen={subscribeOpen} onApplied={() => { setRevision(value => value + 1) }} t={t} />

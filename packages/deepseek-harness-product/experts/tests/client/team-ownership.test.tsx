@@ -21,16 +21,77 @@ function fixture() {
   const unused = (): Promise<never> => Promise.reject(new Error('Unexpected mutation'))
   const getTeams = vi.fn<TeamRemote['getTeams']>().mockResolvedValue({ ok: true, value: original })
   const setTeamEnabled = vi.fn<TeamRemote['setTeamEnabled']>().mockResolvedValue({ ok: true, value: original })
-  const remote: TeamRemote = { getTeams, setTeamEnabled, getCatalog: async () => ({ ok: true,
-    value: { experts: [], enabled: original.enabledExperts, revision: 1 } }), getCustomExpert: unused,
-  saveCustomExpert: unused, deleteCustomExpert: unused, exportTeam: unused, saveTeam: unused, deleteTeam: unused }
-  const cache = createExpertClientState(remote)
-  cache.catalog.accept({ experts: team.members.map(member => ({ slug: member.expertSlug, name: member.expertSlug,
+  const catalog = { experts: team.members.map(member => ({ slug: member.expertSlug, name: member.expertSlug,
     nameEn: member.expertSlug, description: 'Review', descriptionEn: 'Review', division: 'engineering',
-    divisionZh: '研发', emoji: '🔎', custom: false })), enabled: original.enabledExperts, revision: 1 })
+    divisionZh: '研发', emoji: '🔎', custom: false })), enabled: original.enabledExperts, revision: 1 }
+  const getCatalog = vi.fn<TeamRemote['getCatalog']>().mockResolvedValue({ ok: true, value: catalog })
+  const remote: TeamRemote = { getTeams, setTeamEnabled, getCatalog, getCustomExpert: unused,
+    saveCustomExpert: unused, deleteCustomExpert: unused, exportTeam: unused, saveTeam: unused, deleteTeam: unused }
+  const cache = createExpertClientState(remote)
+  cache.catalog.accept(catalog)
   cache.teams.accept(original)
-  return { remote, cache, getTeams, setTeamEnabled }
+  return { remote, cache, getTeams, getCatalog, setTeamEnabled }
 }
+
+it.each(['initial', 'retry'] as const)('refreshes initialized member data during the %s team-menu read', async (phase) => {
+  const value = fixture()
+  onTestFinished(() => { value.cache.catalog.dispose(); value.cache.teams.dispose() })
+  const originalMember = value.cache.catalog.getSnapshot().experts[0]
+  if (!originalMember) throw new Error('Team member fixture missing')
+  const member = { ...originalMember, slug: 'company-current-member', name: 'Current member', nameEn: 'Current member' }
+  const updated = { ...team, members: team.members.map((entry, index) => index === 0 ? { ...entry, expertSlug: member.slug } : entry) }
+  const next = { ...original, teams: [updated], enabledExperts: updated.members.map(entry => entry.expertSlug) }
+  value.getTeams.mockResolvedValue({ ok: true, value: next })
+  if (phase === 'retry') value.getTeams.mockRejectedValueOnce(new Error('Team directory unavailable'))
+  value.getCatalog.mockResolvedValue({ ok: true, value: { experts: [member, ...value.cache.catalog.getSnapshot().experts.slice(1)],
+    enabled: next.enabledExperts, revision: original.revision } })
+  const insert = vi.fn(() => true)
+  const selected = vi.fn()
+  await act(async () => { render(<TeamMenu {...value} prepareSelect={() => insert} onSelected={selected} />) })
+  if (phase === 'retry') {
+    expect(screen.getByRole('alert').textContent).toContain('Team directory unavailable')
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: '刷新' })) })
+  }
+  const choice = screen.getByText(team.name).closest('button')
+  if (!choice) throw new Error('Team choice missing')
+  await act(async () => { fireEvent.click(choice) })
+  expect(insert).toHaveBeenCalledWith(updated, undefined)
+  expect(selected).toHaveBeenCalledOnce()
+  expect(screen.queryByRole('alert')).toBeNull()
+  expect(value.cache.catalog.getSnapshot().experts).toContainEqual(expect.objectContaining({ slug: member.slug }))
+})
+
+it.each([
+  { change: 'unmount', outcome: 'success' }, { change: 'unmount', outcome: 'failure' },
+  { change: 'replace', outcome: 'success' }, { change: 'replace', outcome: 'failure' },
+] as const)('does not deliver $outcome member refresh callbacks to the previous view after $change', async ({ change, outcome }) => {
+  const value = fixture()
+  onTestFinished(() => { value.cache.catalog.dispose(); value.cache.teams.dispose() })
+  const response = Promise.withResolvers<Awaited<ReturnType<TeamRemote['getCatalog']>>>()
+  value.getCatalog.mockReturnValue(response.promise)
+  const onSuccess = vi.fn()
+  const onError = vi.fn()
+  function Directory(props: Parameters<typeof useTeamDirectory>[0]) {
+    useTeamDirectory(props)
+    return null
+  }
+  const view = render(<Directory {...value} onSuccess={onSuccess} onError={onError} />)
+  await act(async () => { await value.cache.teams.refresh() })
+  expect(value.getCatalog).toHaveBeenCalledOnce()
+  const nextSuccess = vi.fn()
+  const nextError = vi.fn()
+  if (change === 'unmount') view.unmount()
+  else view.rerender(<Directory {...value} remote={{ ...value.remote }} onSuccess={nextSuccess} onError={nextError} />)
+  await act(async () => {
+    if (outcome === 'success') response.resolve({ ok: true, value: { experts: [], enabled: [], revision: 2 } })
+    else response.reject(new Error('Member directory unavailable'))
+    await response.promise.catch(() => {})
+  })
+  expect(onSuccess).not.toHaveBeenCalled()
+  expect(onError).not.toHaveBeenCalled()
+  expect(nextSuccess).toHaveBeenCalledTimes(change === 'replace' && outcome === 'success' ? 1 : 0)
+  expect(nextError).toHaveBeenCalledTimes(change === 'replace' && outcome === 'failure' ? 1 : 0)
+})
 
 it.each(['menu', 'panel'] as const)('keeps the %s retry error and selection until the directory recovers', async (kind) => {
   const value = fixture()
@@ -65,8 +126,10 @@ it('commits only the replacement directory when its mounted store changes', asyn
   const next = fixture()
   next.cache.teams.accept(current)
   next.getTeams.mockResolvedValue({ ok: true, value: current })
-  next.cache.catalog.accept({ experts: next.cache.catalog.getSnapshot().experts.map(expert => ({ ...expert, name: 'Replacement expert' })),
-    enabled: original.enabledExperts, revision: 3 })
+  const replacementCatalog = { experts: next.cache.catalog.getSnapshot().experts.map(expert => ({ ...expert, name: 'Replacement expert' })),
+    enabled: original.enabledExperts, revision: 3 }
+  next.cache.catalog.accept(replacementCatalog)
+  next.getCatalog.mockResolvedValue({ ok: true, value: replacementCatalog })
   const commits: { team: string | undefined; expert: string | undefined }[] = []
   function Directory({ value }: { value: ReturnType<typeof fixture> }) {
     const directory = useTeamDirectory(value)
