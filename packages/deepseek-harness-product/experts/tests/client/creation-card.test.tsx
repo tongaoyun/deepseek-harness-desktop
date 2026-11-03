@@ -5,12 +5,13 @@ import { createExpertClientState } from '../../src/client/client-state.ts'
 import { bindSnapshotSelector } from '@deepseek-ai/dsh-client-test-runtime'
 import React, { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
-import { afterEach, beforeEach, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, expect, it, onTestFinished, vi } from 'vitest'
 import { PartialArguments } from '@deepseek-ai/dsh-util-values'
 import { CreationCard } from '../../src/client/creation-card.tsx'
 import { en, zh } from '../../src/client/locales.ts'
 import type { TeamRemote } from '../../src/client/team-ui.tsx'
 import type { CreationEditorData } from '../../src/remote-contract.ts'
+import { TEST_TEAMS } from '../../src/fixtures/teams.ts'
 
 let root: Root
 let host: HTMLDivElement
@@ -142,6 +143,37 @@ it('keeps the existing member-enable confirmation and refreshes expert activatio
   expect(saveTeam).toHaveBeenCalledWith(team, true, 3, expect.any(AbortSignal))
   expect([...props.cache.catalog.getSnapshot().enabled]).toEqual(['one', 'two'])
   expect(document.querySelector('form')).toBeNull()
+})
+
+it('closes a committed draft editor after a directory read failure and retries only the directory', async () => {
+  const { props, loadCreation } = fixture()
+  onTestFinished(() => { props.cache.catalog.dispose(); props.cache.teams.dispose() })
+  const team = TEST_TEAMS[0]
+  const { id: _id, company: _company, ...draft } = team
+  const experts = team.members.map(member => ({ slug: member.expertSlug, name: member.expertSlug, nameEn: member.expertSlug,
+    description: 'Review', descriptionEn: '', division: 'engineering', divisionZh: '研发', emoji: '🧩', custom: false }))
+  const catalog = { experts, enabled: experts.map(expert => expert.slug), revision: 3 }
+  loadCreation.mockResolvedValueOnce({ ...data, draft: { kind: 'team', data: draft }, catalog })
+  const response = Promise.withResolvers<Awaited<ReturnType<TeamRemote['saveTeam']>>>()
+  const saveTeam = vi.fn<TeamRemote['saveTeam']>().mockReturnValueOnce(response.promise)
+  const getTeams = vi.fn<TeamRemote['getTeams']>().mockRejectedValueOnce(new Error('Directory unavailable after commit'))
+  props.remote.saveTeam = saveTeam
+  props.remote.getTeams = getTeams
+  await act(async () => { root.render(<CreationCard {...props} />) })
+  await click(en['creation.open'])
+  await click(TEAM_EN['保存并启用'])
+  expect(saveTeam).toHaveBeenCalledOnce()
+  const latest = { ...data.teams, teams: [{ ...team, name: 'Updated company team' }] }
+  await act(async () => { props.cache.teams.accept(latest) })
+  await act(async () => { response.resolve({ ok: true, value: { ...data.teams, teams: [team], revision: 4 } }); await response.promise })
+  expect(document.querySelector('form')).toBeNull()
+  expect(document.querySelector('[role="alert"]')?.textContent).toContain('Directory unavailable after commit')
+  getTeams.mockResolvedValueOnce({ ok: true, value: { ...latest, enabledExperts: catalog.enabled, revision: 4 } })
+  await click(en['btn.refresh'])
+  expect(document.querySelector('[role="alert"]')).toBeNull()
+  expect(props.cache.teams.getSnapshot()?.teams[0].name).toBe('Updated company team')
+  expect(saveTeam).toHaveBeenCalledOnce()
+  expect(getTeams).toHaveBeenCalledTimes(2)
 })
 
 it.each(['expert', 'team'] as const)('keeps an unsaved %s form mounted while a reconnected Host reloads its catalog', async (kind) => {

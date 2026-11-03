@@ -38,8 +38,8 @@ export class ExpertTeams {
   /** Release subscribers and prevent new queries after plugin teardown. */
   dispose(): void { this.pending = undefined; this.lifecycle.dispose(null) }
 
-  /** Accept a committed mutation; older receipts cannot replace it.
-   * @param value Committed team settings.
+  /** Accept a complete snapshot and fence earlier reads; lower revisions are ignored.
+   * @param value Full directory data from a query or direct commit.
    * @returns Latest accepted team snapshot.
    */
   accept(value: TeamSnapshot): TeamSnapshot {
@@ -48,6 +48,23 @@ export class ExpertTeams {
     if (current !== null && value.revision < current.revision) return current
     this.pending = undefined
     return this.publish(value)
+  }
+
+  /** Consume a committed receipt without replacing concurrent directory updates.
+   * A changed directory at a lower settings revision requires a fresh complete read.
+   * Read failure leaves the write committed; consumers report a directory error.
+   * @param value Full snapshot returned by the committed mutation.
+   * @param started Directory captured immediately before dispatching the mutation.
+   * @returns Current complete directory, preserving newer accepted content.
+   */
+  async acceptMutation(value: TeamSnapshot, started: TeamSnapshot | null): Promise<TeamSnapshot> {
+    this.lifecycle.signal.throwIfAborted()
+    const current = this.getSnapshot()
+    if (current === started) return this.accept(value)
+    if (current !== null && current.revision >= value.revision) return this.accept(current)
+    this.lifecycle.advance()
+    this.pending = undefined
+    return this.refresh()
   }
 
   /** Share one current query; a superseded failure cannot hide a successful mutation.

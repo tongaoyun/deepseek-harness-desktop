@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /** Expert-team views follow the native store and their current mounted operations. */
-import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { useLayoutEffect } from 'react'
 import { afterEach, expect, it, onTestFinished, vi } from 'vitest'
 import { createExpertClientState } from '../../src/client/client-state.ts'
@@ -142,6 +142,215 @@ it('does not render an outdated mutation receipt over a newer store commit', asy
         "name": "Current team",
       }
     `)
+})
+
+it('opens refreshed team details for editing with the matching content and revision', async () => {
+  const value = fixture()
+  onTestFinished(() => { value.cache.catalog.dispose(); value.cache.teams.dispose() })
+  const response = Promise.withResolvers<Awaited<ReturnType<TeamRemote['getTeams']>>>()
+  value.getTeams.mockReturnValueOnce(response.promise)
+  const save = vi.fn<TeamRemote['saveTeam']>().mockResolvedValue({ ok: true, value: current })
+  value.remote.saveTeam = save
+  render(<TeamsPanel {...value} />)
+  fireEvent.click(screen.getByRole('button', { name: '查看详情' }))
+  await act(async () => { response.resolve({ ok: true, value: current }); await response.promise })
+  fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: '编辑专家团' }))
+  fireEvent.click(screen.getByRole('button', { name: '保存修改' }))
+  expect(save).toHaveBeenCalledWith(expect.objectContaining({ name: 'Current team' }), true, current.revision, expect.any(AbortSignal))
+})
+
+it.each((['menu', 'panel'] as const).flatMap(kind => [original.revision, current.revision].map(revision => ({ kind, revision }))))(
+  'requires a new confirmation when the $kind team changes during a refresh at revision $revision', async ({ kind, revision }) => {
+    const value = fixture()
+    onTestFinished(() => { value.cache.catalog.dispose(); value.cache.teams.dispose() })
+    const response = Promise.withResolvers<Awaited<ReturnType<TeamRemote['getTeams']>>>()
+    value.getTeams.mockReturnValueOnce(response.promise)
+    const remove = vi.fn<TeamRemote['deleteTeam']>().mockResolvedValue({ ok: true, value: current })
+    value.remote.deleteTeam = remove
+    const insert = vi.fn(async () => true)
+    const selected = vi.fn()
+    if (kind === 'menu') value.cache.teams.accept({ ...original, enabledExperts: [] })
+    render(kind === 'menu' ? <TeamMenu {...value} prepareSelect={() => insert} onSelected={selected} /> : <TeamsPanel {...value} />)
+    if (kind === 'menu') {
+      const button = screen.getByText(team.name).closest('button')
+      if (!button) throw new Error('Team choice missing')
+      fireEvent.click(button)
+    } else {
+      fireEvent.click(screen.getByRole('button', { name: '查看详情' }))
+      fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: '删除专家团' }))
+    }
+    const confirm = screen.getByRole('button', { name: kind === 'menu' ? '启用团队及所需成员' : '确认删除' })
+    await act(async () => { response.resolve({ ok: true, value: { ...current, revision } }); await response.promise })
+    await act(async () => { fireEvent.click(confirm) })
+    expect(value.setTeamEnabled).not.toHaveBeenCalled()
+    expect(remove).not.toHaveBeenCalled()
+    expect(insert).not.toHaveBeenCalled()
+    expect(selected).not.toHaveBeenCalled()
+    expect(screen.getByRole('alert').textContent).toContain('配置已更新')
+  },
+)
+
+it.each(['menu', 'panel'] as const)('keeps a %s confirmation valid when only execution metadata is refreshed', async (kind) => {
+  const value = fixture()
+  onTestFinished(() => { value.cache.catalog.dispose(); value.cache.teams.dispose() })
+  const response = Promise.withResolvers<Awaited<ReturnType<TeamRemote['getTeams']>>>()
+  value.getTeams.mockReturnValueOnce(response.promise)
+  const remove = vi.fn<TeamRemote['deleteTeam']>().mockResolvedValue({ ok: true, value: { ...original, teams: [], revision: 2 } })
+  value.remote.deleteTeam = remove
+  const insert = vi.fn(async () => true)
+  if (kind === 'menu') value.cache.teams.accept({ ...original, enabledExperts: [] })
+  render(kind === 'menu' ? <TeamMenu {...value} prepareSelect={() => insert} onSelected={vi.fn()} /> : <TeamsPanel {...value} />)
+  if (kind === 'menu') {
+    const button = screen.getByText(team.name).closest('button')
+    if (!button) throw new Error('Team choice missing')
+    fireEvent.click(button)
+  } else {
+    fireEvent.click(screen.getByRole('button', { name: '查看详情' }))
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: '删除专家团' }))
+  }
+  const unchanged: TeamSnapshot = { ...value.cache.teams.getSnapshot()!,
+    engine: { state: 'enabled', mode: 'native', reason: 'Available', recommendation: '' } }
+  await act(async () => { response.resolve({ ok: true, value: unchanged }); await response.promise })
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: kind === 'menu' ? '启用团队及所需成员' : '确认删除' })) })
+  if (kind === 'menu') {
+    expect(value.setTeamEnabled).toHaveBeenCalledWith(team.id, true, original.revision, expect.any(AbortSignal))
+    expect(insert).toHaveBeenCalledWith(team, undefined)
+  } else expect(remove).toHaveBeenCalledWith(team.id, original.revision, expect.any(AbortSignal))
+})
+
+it('selects the current team from refreshed compact-menu details', async () => {
+  const value = fixture()
+  onTestFinished(() => { value.cache.catalog.dispose(); value.cache.teams.dispose() })
+  const response = Promise.withResolvers<Awaited<ReturnType<TeamRemote['getTeams']>>>()
+  value.getTeams.mockReturnValueOnce(response.promise)
+  const insert = vi.fn(async () => true)
+  render(<TeamMenu {...value} prepareSelect={() => insert} onSelected={vi.fn()} />)
+  fireEvent.click(screen.getByRole('button', { name: '查看Original team详情' }))
+  await act(async () => { response.resolve({ ok: true, value: current }); await response.promise })
+  await act(async () => { fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: '召唤专家团' })) })
+  expect(insert).toHaveBeenCalledWith(current.teams[0], undefined)
+})
+
+it.each((['menu', 'panel'] as const).flatMap(kind => (['renamed', 'disabled', 'removed'] as const)
+  .flatMap(update => [1, 2, current.revision].map(revision => ({ kind, update, revision })))))(
+  'uses the accepted directory at revision $revision after a $kind enable receipt while the team is $update', async ({ kind, update, revision }) => {
+    const value = fixture()
+    onTestFinished(() => { value.cache.catalog.dispose(); value.cache.teams.dispose() })
+    value.cache.teams.accept({ ...original, enabledExperts: [] })
+    value.getTeams.mockResolvedValue({ ok: true, value: value.cache.teams.getSnapshot()! })
+    const response = Promise.withResolvers<Awaited<ReturnType<TeamRemote['setTeamEnabled']>>>()
+    value.setTeamEnabled.mockReturnValueOnce(response.promise)
+    const insert = vi.fn(async () => true)
+    const selected = vi.fn()
+    render(kind === 'menu' ? <TeamMenu {...value} prepareSelect={() => insert} onSelected={selected} />
+      : <TeamsPanel {...value} prepareSelect={() => insert} />)
+    await act(async () => { await Promise.resolve() })
+    if (kind === 'menu') {
+      const button = screen.getByText(team.name).closest('button')
+      if (!button) throw new Error('Team choice missing')
+      fireEvent.click(button)
+    } else {
+      fireEvent.click(screen.getByRole('button', { name: '查看详情' }))
+      fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: '召唤专家团' }))
+    }
+    fireEvent.click(screen.getByRole('button', { name: '启用团队及所需成员' }))
+    expect(value.setTeamEnabled).toHaveBeenCalledOnce()
+    const latest = { ...current, revision, ...(update === 'disabled' ? { enabledTeams: [] } : update === 'removed' ? { teams: [] } : {}) }
+    value.getTeams.mockResolvedValue({ ok: true, value: { ...latest, revision: Math.max(2, revision) } })
+    act(() => { value.cache.teams.accept(latest) })
+    await act(async () => { response.resolve({ ok: true, value: { ...original, revision: 2 } }); await response.promise })
+    if (update === 'renamed') expect(insert).toHaveBeenCalledWith(current.teams[0], undefined)
+    else {
+      expect(insert).not.toHaveBeenCalled()
+      expect(selected).not.toHaveBeenCalled()
+    }
+  },
+)
+
+it('closes a committed team editor when the follow-up directory read fails and retries only the read', async () => {
+  const value = fixture()
+  onTestFinished(() => { value.cache.catalog.dispose(); value.cache.teams.dispose() })
+  const response = Promise.withResolvers<Awaited<ReturnType<TeamRemote['saveTeam']>>>()
+  const save = vi.fn<TeamRemote['saveTeam']>().mockReturnValueOnce(response.promise)
+  value.remote.saveTeam = save
+  const onSaved = vi.fn()
+  render(<TeamsPanel {...value} onSaved={onSaved} />)
+  await act(async () => { await Promise.resolve() })
+  fireEvent.click(screen.getByRole('button', { name: '查看详情' }))
+  fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: '编辑专家团' }))
+  fireEvent.click(screen.getByRole('button', { name: '保存修改' }))
+  expect(save).toHaveBeenCalledOnce()
+  act(() => { value.cache.teams.accept({ ...current, revision: 1 }) })
+  value.getTeams.mockRejectedValueOnce(new Error('Directory unavailable after commit'))
+  await act(async () => { response.resolve({ ok: true, value: { ...original, revision: 2 } }); await response.promise })
+  expect(screen.queryByRole('dialog')).toBeNull()
+  expect(screen.getByRole('status').textContent).toContain('专家团配置已保存')
+  expect(screen.getByRole('alert').textContent).toContain('Directory unavailable after commit')
+  expect(onSaved).toHaveBeenCalledOnce()
+  value.getTeams.mockResolvedValueOnce({ ok: true, value: current })
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: '刷新重试' })) })
+  expect(screen.queryByRole('alert')).toBeNull()
+  expect(save).toHaveBeenCalledOnce()
+  expect(onSaved).toHaveBeenCalledOnce()
+})
+
+it.each(['menu', 'panel'] as const)('stops %s selection when the committed enable needs a directory read that fails', async (kind) => {
+  const value = fixture()
+  onTestFinished(() => { value.cache.catalog.dispose(); value.cache.teams.dispose() })
+  value.cache.teams.accept({ ...original, enabledExperts: [] })
+  value.getTeams.mockResolvedValue({ ok: true, value: value.cache.teams.getSnapshot()! })
+  const response = Promise.withResolvers<Awaited<ReturnType<TeamRemote['setTeamEnabled']>>>()
+  value.setTeamEnabled.mockReturnValueOnce(response.promise)
+  const insert = vi.fn(async () => true)
+  const selected = vi.fn()
+  render(kind === 'menu' ? <TeamMenu {...value} prepareSelect={() => insert} onSelected={selected} />
+    : <TeamsPanel {...value} prepareSelect={() => insert} />)
+  await act(async () => { await Promise.resolve() })
+  fireEvent.click(screen.getByRole('button', { name: kind === 'menu' ? '查看Original team详情' : '查看详情' }))
+  fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: '召唤专家团' }))
+  fireEvent.click(screen.getByRole('button', { name: '启用团队及所需成员' }))
+  act(() => { value.cache.teams.accept({ ...current, revision: 1 }) })
+  value.getTeams.mockRejectedValueOnce(new Error('Directory unavailable after commit'))
+  await act(async () => { response.resolve({ ok: true, value: { ...original, revision: 2 } }); await response.promise })
+  expect(insert).not.toHaveBeenCalled()
+  expect(selected).not.toHaveBeenCalled()
+  expect(screen.queryByRole('button', { name: '启用团队及所需成员' })).toBeNull()
+  expect(screen.getByRole('alert').textContent).toContain('Directory unavailable after commit')
+  value.getTeams.mockResolvedValueOnce({ ok: true, value: current })
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: kind === 'menu' ? '刷新' : '刷新重试' })) })
+  expect(screen.queryByRole('alert')).toBeNull()
+  expect(value.setTeamEnabled).toHaveBeenCalledOnce()
+})
+
+it.each((['menu', 'panel'] as const).flatMap(kind => (['reset', 'removed'] as const).map(update => ({ kind, update }))))(
+  'closes $kind details after the directory is $update without reopening them when the team returns', async ({ kind, update }) => {
+    const value = fixture()
+    onTestFinished(() => { value.cache.catalog.dispose(); value.cache.teams.dispose() })
+    render(kind === 'menu' ? <TeamMenu {...value} onSelected={vi.fn()} /> : <TeamsPanel {...value} />)
+    await act(async () => { await Promise.resolve() })
+    fireEvent.click(screen.getByRole('button', { name: kind === 'menu' ? '查看Original team详情' : '查看详情' }))
+    expect(screen.getByRole('dialog')).toBeTruthy()
+    act(() => { if (update === 'reset') value.cache.teams.reset(); else value.cache.teams.accept({ ...current, teams: [] }) })
+    expect(screen.queryByRole('dialog')).toBeNull()
+    act(() => { value.cache.teams.accept({ ...original, revision: 4 }) })
+    expect(screen.queryByRole('dialog')).toBeNull()
+  },
+)
+
+it('retains an open editor draft and its reviewed revision when the directory changes', async () => {
+  const value = fixture()
+  onTestFinished(() => { value.cache.catalog.dispose(); value.cache.teams.dispose() })
+  const save = vi.fn<TeamRemote['saveTeam']>().mockResolvedValue({ ok: true, value: current })
+  value.remote.saveTeam = save
+  render(<TeamsPanel {...value} />)
+  await act(async () => { await Promise.resolve() })
+  fireEvent.click(screen.getByRole('button', { name: '查看详情' }))
+  fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: '编辑专家团' }))
+  fireEvent.change(screen.getByRole('textbox', { name: '团队名称' }), { target: { value: 'My unsaved draft' } })
+  act(() => { value.cache.teams.accept(current) })
+  expect(screen.getByRole<HTMLInputElement>('textbox', { name: '团队名称' }).value).toBe('My unsaved draft')
+  fireEvent.click(screen.getByRole('button', { name: '保存修改' }))
+  expect(save).toHaveBeenCalledWith(expect.objectContaining({ name: 'My unsaved draft' }), true, original.revision, expect.any(AbortSignal))
 })
 
 it.each(['unmount', 'replace'] as const)('does not publish a save from the previous panel after %s', async (change) => {

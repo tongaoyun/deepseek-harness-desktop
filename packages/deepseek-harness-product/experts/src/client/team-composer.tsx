@@ -1,6 +1,7 @@
 import type { ExpertClientState } from './client-state.ts'
+import { deepEqualJson } from '@deepseek-ai/dsh-util-values'
 import React from 'react';
-import type { ExpertTeam } from '../team-contract.ts';
+import type { ExpertTeam, TeamSnapshot } from '../team-contract.ts';
 import { TeamDetails, unwrap, type TeamRemote } from './team-ui.tsx';
 import { TeamAvatars, TeamConfirm, teamIssue, IconEye } from './team-shared.tsx';
 import { Input } from './plugin-ui.ts';
@@ -14,47 +15,64 @@ export function TeamMenu(props: {
     const { locale, tx, error, setError, directory, snapshot, experts } = useTeamDirectoryView({ cache: props.cache, remote: props.remote, fallback: "专家团加载失败" });
     const [query, setQuery] = React.useState('');
     const [busy, setBusy] = React.useState(false);
-    const [detail, setDetail] = React.useState<ExpertTeam | null>(null);
+    const [detailId, setDetailId] = React.useState<string | null>(null);
+    const detail = snapshot?.teams.find(team => team.id === detailId) ?? null;
     const [confirm, setConfirm] = React.useState<{
         team: ExpertTeam;
         example?: string;
+        snapshot: TeamSnapshot;
     } | null>(null);
     React.useEffect(() => {
         setBusy(false);
         setError('');
-        setDetail(null);
+        setDetailId(null);
         setConfirm(null);
         // The shared directory hook owns subscriptions and request cancellation.
     }, [props.remote, props.cache]);
     React.useEffect(() => {
+        if (detailId !== null && !detail) setDetailId(null);
         if (!snapshot) {
-            setDetail(null);
             setConfirm(null);
         }
-    }, [snapshot]);
-    const pick = async (team: ExpertTeam, example?: string, confirmed = false) => {
+    }, [snapshot, detailId, detail]);
+    const pick = async (team: ExpertTeam, example?: string, reviewed?: TeamSnapshot) => {
         const signal = directory.getSignal();
         if (busy || !snapshot || !signal || signal.aborted)
             return;
-        if (!confirmed &&
+        if (reviewed && (reviewed.revision !== snapshot.revision
+            || !deepEqualJson(team, snapshot.teams.find(value => value.id === team.id) ?? null)
+            || reviewed.enabledTeams.includes(team.id) !== snapshot.enabledTeams.includes(team.id)
+            || team.members.some(member => reviewed.enabledExperts.includes(member.expertSlug) !== snapshot.enabledExperts.includes(member.expertSlug)))) {
+            setError(tx("配置已更新，请读取最新内容后重试。"));
+            return;
+        }
+        if (!reviewed &&
             (!snapshot.enabledTeams.includes(team.id) ||
                 teamIssue(team, experts, snapshot.enabledExperts))) {
-            setConfirm({ team, example });
+            setConfirm({ team, example, snapshot });
             return;
         }
         const insert = props.prepareSelect?.();
+        const started = props.cache.teams.getSnapshot();
         setBusy(true);
         try {
-            if (confirmed) {
-                const next = await unwrap(props.remote.setTeamEnabled(team.id, true, snapshot.revision, signal));
+            if (reviewed) {
+                const next = await unwrap(props.remote.setTeamEnabled(team.id, true, reviewed.revision, signal));
                 if (signal.aborted)
                     return;
-                const accepted = props.cache.teams.accept(next);
+                const accepted = await props.cache.teams.acceptMutation(next, started);
+                if (signal.aborted) return;
                 props.cache.catalog.adoptRevision(accepted.revision, accepted.enabledExperts);
             }
             if (signal.aborted)
                 return;
-            const inserted = await insert?.(team, example);
+            const current = props.cache.teams.getSnapshot();
+            const selected = current?.teams.find(value => value.id === team.id);
+            if (!current || !selected || !current.enabledTeams.includes(team.id)
+                || teamIssue(selected, props.cache.catalog.getSnapshot().experts, current.enabledExperts)) {
+                throw new Error(tx("团队已停用或成员失效，请修复后再发送。"));
+            }
+            const inserted = await insert?.(selected, example);
             if (signal.aborted) return;
             if (!inserted) throw new Error(tx("无法插入团队，请确认当前聊天草稿后重试。"));
             props.onSelected();
@@ -89,7 +107,7 @@ export function TeamMenu(props: {
                 : tx(" \u00B7 启用并选择")}
               </small>
             </button>
-            <button type="button" aria-label={tx("查看{0}详情", [team.name])} onClick={() => setDetail(team)}>
+            <button type="button" aria-label={tx("查看{0}详情", [team.name])} onClick={() => setDetailId(team.id)}>
               <IconEye size={16}/>
             </button>
           </div>))}
@@ -97,11 +115,11 @@ export function TeamMenu(props: {
             {snapshot ? tx("搜索并启用一个专家团。") : tx("正在加载…")}
           </p>)}
       </div>
-      {detail && (<TeamDetails team={detail} experts={experts} engine={snapshot?.engine} close={() => setDetail(null)} onSelect={(example) => void pick(detail, example)}/>)}
+      {detail && (<TeamDetails team={detail} experts={experts} engine={snapshot?.engine} close={() => setDetailId(null)} onSelect={(example) => void pick(detail, example)}/>)}
       {confirm && (<TeamConfirm title={tx("启用专家团")} label={tx("启用团队及所需成员")} onCancel={() => setConfirm(null)} onConfirm={() => {
                 const value = confirm;
                 setConfirm(null);
-                void pick(value.team, value.example, true);
+                void pick(value.team, value.example, value.snapshot);
             }}>
           <p>{tx("启用“")}{confirm.team.name}{tx("”及所需成员：")}{confirm.team.members
                 .map((m) => experts.find((e) => e.slug === m.expertSlug)?.name ?? tx("失效成员"))
