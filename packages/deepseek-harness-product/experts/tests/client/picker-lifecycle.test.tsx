@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
-/** Expert picker keyboard ownership follows the native modal layer. */
+/** Expert picker read waiters, selections and keyboard ownership follow their mounted lifetime. */
 import React from 'react'
-import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
-import { afterEach, expect, it, onTestFinished } from 'vitest'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { afterEach, expect, it, onTestFinished, vi } from 'vitest'
 import { AgentsButton } from '../../src/client/index.ts'
 import { createExpertClientState } from '../../src/client/client-state.ts'
 import { zh } from '../../src/client/locales.ts'
@@ -10,7 +10,7 @@ import { TEST_TEAMS } from '../../src/fixtures/teams.ts'
 
 afterEach(cleanup)
 
-async function fixture() {
+async function fixture(open = true) {
   const unused = (): Promise<never> => Promise.reject(new Error('Unexpected mutation'))
   const team = TEST_TEAMS[0]
   const catalog = { experts: [], enabled: [], revision: 1 }
@@ -26,12 +26,156 @@ async function fixture() {
   onTestFinished(() => { cache.catalog.dispose(); cache.teams.dispose() })
   cache.catalog.accept(catalog); cache.teams.accept(teams)
   const dictionary: Readonly<Record<string, string>> = zh
-  render(<><AgentsButton remote={remote} cache={cache} getActive={() => 'zh'} t={key => dictionary[key] ?? key} /><button>Outside</button></>)
+  const view = render(<><AgentsButton remote={remote} cache={cache} getActive={() => 'zh'} t={key => dictionary[key] ?? key} /><button>Outside</button></>)
   const trigger = screen.getByRole('button', { name: zh['settings.nav'] })
   trigger.focus()
-  await act(async () => { fireEvent.click(trigger); await cache.catalog.refresh() })
-  return { trigger, cache, team }
+  if (open) await act(async () => { fireEvent.click(trigger); await cache.catalog.refresh() })
+  return { trigger, cache, team, remote, view, dictionary }
 }
+
+it('reopens a dismissed picker during the shared catalog read and reports its current failure', async () => {
+  const { trigger, cache, remote } = await fixture(false)
+  const pending = Promise.withResolvers<Awaited<ReturnType<typeof remote.getCatalog>>>()
+  const read = vi.spyOn(remote, 'getCatalog').mockReturnValue(pending.promise)
+  onTestFinished(async () => {
+    pending.resolve({ ok: true, value: { experts: [], enabled: [], revision: 1 } })
+    await pending.promise.catch(() => undefined)
+  })
+  fireEvent.click(trigger)
+  expect(screen.getByRole('dialog')).toBeTruthy()
+  fireEvent.keyDown(screen.getByRole('searchbox'), { key: 'Escape' })
+  expect(screen.queryByRole('dialog')).toBeNull()
+  fireEvent.click(trigger)
+  expect(screen.getByRole('dialog')).toBeTruthy()
+  expect(read).toHaveBeenCalledOnce()
+  await act(async () => { pending.reject(new Error('Catalog unavailable')); await pending.promise.catch(() => undefined) })
+  expect(screen.getByRole('alert').textContent).toContain('Catalog unavailable')
+  expect({ expanded: trigger.getAttribute('aria-expanded'), notice: screen.getByRole('alert').textContent,
+    retryDisabled: screen.getByRole<HTMLButtonElement>('button', { name: zh['btn.refresh'] }).disabled }).toMatchInlineSnapshot(`
+    {
+      "expanded": "true",
+      "notice": "Catalog unavailable刷新",
+      "retryDisabled": false,
+    }
+  `)
+  read.mockResolvedValue({ ok: true, value: { experts: [], enabled: [], revision: 2 } })
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: zh['btn.refresh'] })); await cache.catalog.refresh() })
+  expect(screen.queryByRole('alert')).toBeNull()
+  expect(read).toHaveBeenCalledTimes(2)
+})
+
+const reviewer = { slug: 'reviewer', name: '评审专家', nameEn: 'Reviewer', description: '检查代码',
+  descriptionEn: 'Review code', emoji: '🔎', division: 'engineering', divisionZh: '研发', custom: false }
+
+it.each(['available', 'removed', 'failed'] as const)('handles a picker selection during background refresh after the directory settles as %s', async (state) => {
+  const { trigger, cache, remote, view, dictionary } = await fixture(false)
+  cache.catalog.accept({ experts: [reviewer], enabled: [], revision: 1 })
+  const pending = Promise.withResolvers<Awaited<ReturnType<typeof remote.getCatalog>>>()
+  const read = vi.spyOn(remote, 'getCatalog').mockReturnValue(pending.promise)
+  const write = vi.spyOn(remote, 'setEnabled').mockResolvedValue({ ok: true, value: { enabled: [reviewer.slug], revision: 3 } })
+  const insert = vi.fn(() => true)
+  const nextInsert = vi.fn(() => true)
+  let currentInsert = insert
+  const prepareInsertion = vi.fn(() => currentInsert)
+  view.rerender(<><AgentsButton remote={remote} cache={cache} prepareInsertion={prepareInsertion} getActive={() => 'zh'} t={key => dictionary[key] ?? key} /><button>Outside</button></>)
+  onTestFinished(async () => {
+    pending.resolve({ ok: true, value: { experts: [], enabled: [], revision: 2 } })
+    await pending.promise.catch(() => undefined)
+  })
+  fireEvent.click(trigger)
+  fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'reviewer' } })
+  const choice = screen.getByRole<HTMLButtonElement>('button', { name: /评审专家/ })
+  expect(choice.disabled).toBe(false)
+  fireEvent.click(choice)
+  fireEvent.click(choice)
+  currentInsert = nextInsert
+  expect(prepareInsertion).toHaveBeenCalledOnce()
+  expect(write).not.toHaveBeenCalled()
+  expect(insert).not.toHaveBeenCalled()
+  await act(async () => {
+    if (state === 'failed') pending.reject(new Error('Catalog unavailable'))
+    else pending.resolve({ ok: true, value: { experts: state === 'available' ? [reviewer] : [], enabled: [], revision: 2 } })
+    await pending.promise.catch(() => undefined)
+  })
+  expect(read).toHaveBeenCalledOnce()
+  if (state !== 'available') {
+    expect((await screen.findByRole('alert')).textContent).toContain(state === 'removed' ? zh['custom.unavailable'] : 'Catalog unavailable')
+    expect(write).not.toHaveBeenCalled()
+    expect(insert).not.toHaveBeenCalled()
+    if (state === 'failed') {
+      await act(async () => { fireEvent.click(choice) })
+      expect(write).not.toHaveBeenCalled()
+      expect(insert).not.toHaveBeenCalled()
+      expect(screen.getByRole('alert').textContent).toContain('Catalog unavailable')
+      read.mockResolvedValue({ ok: true, value: { experts: [reviewer], enabled: [], revision: 2 } })
+      await act(async () => { fireEvent.click(screen.getByRole('button', { name: zh['btn.refresh'] })); await cache.catalog.refresh() })
+      expect(screen.queryByRole('alert')).toBeNull()
+      expect(read).toHaveBeenCalledTimes(2)
+    }
+  } else {
+    await waitFor(() => { expect(write).toHaveBeenCalledOnce(); expect(insert).toHaveBeenCalledOnce() })
+    expect(write.mock.calls[0]?.slice(0, 2)).toEqual([[reviewer.slug], 2])
+    expect(screen.queryByRole('dialog')).toBeNull()
+  }
+  expect(nextInsert).not.toHaveBeenCalled()
+})
+
+it.each(['close', 'unmount'] as const)('does not enable or insert an expert after %s while waiting for the catalog', async (exit) => {
+  const { trigger, cache, remote, view, dictionary } = await fixture(false)
+  cache.catalog.accept({ experts: [reviewer], enabled: [], revision: 1 })
+  const pending = Promise.withResolvers<Awaited<ReturnType<typeof remote.getCatalog>>>()
+  const read = vi.spyOn(remote, 'getCatalog').mockReturnValue(pending.promise)
+  const write = vi.spyOn(remote, 'setEnabled')
+  const insert = vi.fn(() => true)
+  view.rerender(<><AgentsButton remote={remote} cache={cache} insertReference={insert} getActive={() => 'zh'} t={key => dictionary[key] ?? key} /><button>Outside</button></>)
+  onTestFinished(async () => {
+    pending.resolve({ ok: true, value: { experts: [reviewer], enabled: [], revision: 2 } })
+    await pending.promise
+  })
+  fireEvent.click(trigger)
+  fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'reviewer' } })
+  fireEvent.click(screen.getByRole('button', { name: /评审专家/ }))
+  if (exit === 'close') fireEvent.keyDown(screen.getByRole('searchbox'), { key: 'Escape' })
+  else view.unmount()
+  await act(async () => {
+    pending.resolve({ ok: true, value: { experts: [reviewer], enabled: [], revision: 2 } })
+    await pending.promise
+  })
+  expect(read).toHaveBeenCalledOnce()
+  expect(write).not.toHaveBeenCalled()
+  expect(insert).not.toHaveBeenCalled()
+  expect(screen.queryByRole('dialog')).toBeNull()
+})
+
+it('completes a dispatched enable once after closing without inserting into a later editor', async () => {
+  const { trigger, cache, remote, view, dictionary } = await fixture(false)
+  const catalog = { experts: [reviewer], enabled: [], revision: 2 }
+  cache.catalog.accept(catalog)
+  vi.spyOn(remote, 'getCatalog').mockResolvedValue({ ok: true, value: catalog })
+  const pending = Promise.withResolvers<Awaited<ReturnType<typeof remote.setEnabled>>>()
+  const write = vi.spyOn(remote, 'setEnabled').mockReturnValue(pending.promise)
+  const insert = vi.fn(() => true)
+  view.rerender(<><AgentsButton remote={remote} cache={cache} insertReference={insert} getActive={() => 'zh'} t={key => dictionary[key] ?? key} /><button>Outside</button></>)
+  onTestFinished(async () => {
+    pending.resolve({ ok: true, value: { enabled: [reviewer.slug], revision: 3 } })
+    await pending.promise
+  })
+  await act(async () => { fireEvent.click(trigger); await cache.catalog.refresh() })
+  fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'reviewer' } })
+  const choice = screen.getByRole('button', { name: /评审专家/ })
+  fireEvent.click(choice)
+  await waitFor(() => { expect(write).toHaveBeenCalledOnce() })
+  fireEvent.click(choice)
+  fireEvent.keyDown(screen.getByRole('searchbox'), { key: 'Escape' })
+  await act(async () => {
+    pending.resolve({ ok: true, value: { enabled: [reviewer.slug], revision: 3 } })
+    await pending.promise
+  })
+  expect(cache.catalog.getSnapshot().enabled.has(reviewer.slug)).toBe(true)
+  expect(write).toHaveBeenCalledOnce()
+  expect(insert).not.toHaveBeenCalled()
+  expect(screen.queryByRole('dialog')).toBeNull()
+})
 
 it.each([
   { name: 'Control', ctrlKey: true }, { name: 'Alt', altKey: true },
