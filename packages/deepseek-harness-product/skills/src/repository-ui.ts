@@ -102,7 +102,7 @@ export function createRepositoryUI({ react, Modal, SourceSelect, destination, ap
   const h = react.createElement;
   const readLoading = (label: string) => h("div", { role: "status", "aria-label": label, className: "dssm-read-loading" }, h(StateDot, { state: "ongoing", size: 14 }));
   const { DestinationPicker, defaultDestination, destinationPayload, destinationReady } = destination;
-  return function useRepositoryUI({ active, t, onInstalled }: {active: boolean; t: Translate; onInstalled?: () => unknown}) {
+  return function useRepositoryUI({ active, t, onInstalled, getSignal }: {active: boolean; t: Translate; onInstalled?: () => unknown; getSignal: () => AbortSignal}) {
     const [repos, setRepos] = react.useState<RepoView[]>([]);
     const [installRoots, setInstallRoots] = react.useState<RepositoryDestination[]>([]);
     const [busy, setBusy] = react.useState(false);
@@ -155,8 +155,10 @@ export function createRepositoryUI({ react, Modal, SourceSelect, destination, ap
     };
     react.useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
     react.useEffect(() => () => { repositoryReadAbort.current?.abort(); repositoryReadAbort.current = null; }, []);
-    async function load() {
-      const data = await api("listRepositories", {});
+    async function load(signal?: AbortSignal) {
+      signal?.throwIfAborted();
+      const data = await api("listRepositories", {}, signal);
+      signal?.throwIfAborted();
       if (mounted.current) {
         const roots = (data.installRoots || []).filter(root => root.key === "dsh" || root.key === "agents");
         setRepoLoaded(true); setRepos(data.repositories); setInstallRoots(roots); setCatalogInstallIds(data.catalogInstalls); setCatalogCopies(data.catalogCopies);
@@ -165,7 +167,7 @@ export function createRepositoryUI({ react, Modal, SourceSelect, destination, ap
           setDestination(previous => ({ ...previous, location: roots.find(root => root.available)?.key || 'dsh' }));
         // 工作区列表只读登记信息，失败不影响仓库列表本身。
         setWorkspacesLoading(true);
-        api("listWorkspaces", {}).then(listed => { if (mounted.current) setWorkspaces(listed.items || []); }).catch(() => undefined).finally(() => { if (mounted.current) setWorkspacesLoading(false); });
+        api("listWorkspaces", {}, signal).then(listed => { if (mounted.current && !signal?.aborted) setWorkspaces(listed.items || []); }).catch(() => undefined).finally(() => { if (mounted.current && !signal?.aborted) setWorkspacesLoading(false); });
       }
     }
     function copyTarget(copy: RepoCopy): CopyTarget | null {
@@ -216,7 +218,7 @@ export function createRepositoryUI({ react, Modal, SourceSelect, destination, ap
     async function perform(task: () => Promise<unknown>, reload = true, quiet = false) {
       if (locked.current) return;
       locked.current = true; if (!quiet) { setBusy(true); setFeedback(null); }
-      try { await task(); if (reload) await load(); }
+      try { await task(); if (reload && mounted.current) await load(); }
       catch (caught) { const error = caught as CodedError; if (mounted.current) setFeedback({ error: true, payload: error }); }
       finally { locked.current = false; if (mounted.current) setBusy(false); }
     }
@@ -402,19 +404,30 @@ export function createRepositoryUI({ react, Modal, SourceSelect, destination, ap
       if (!node || typeof node.getBoundingClientRect !== "function" || !catalogNearBottom(node)) return;
       void loadClawHubPage(false, true);
     }
-    async function refreshRepo(id: string) { const result = await post("refreshRepository", { request: { id } }); if (result.error) setFeedback({ error: true, payload: result.error }); }
+    async function refreshRepo(id: string) {
+      const signal = getSignal();
+      signal.throwIfAborted();
+      const result = await post("refreshRepository", { request: { id } }, signal);
+      signal.throwIfAborted();
+      if (result.error) setFeedback({ error: true, payload: result.error });
+    }
     function refresh(selected: RepoView[]) {
       return perform(async () => {
+        const signal = getSignal();
         let failed = false;
         try {
           for (let i = 0; i < selected.length; i++) {
+            signal.throwIfAborted();
             const repo = selected[i];
             setRefreshing({ id: repo.id, name: repo.owner + "/" + repo.name, index: i + 1, total: selected.length });
-            const result = await post("refreshRepository", { request: { id: repo.id } });
+            const result = await post("refreshRepository", { request: { id: repo.id } }, signal);
+            signal.throwIfAborted();
             if (result.error) { failed = true; setFeedback({ error: true, payload: result.error }); }
           }
-          await load();
+          await load(signal);
           if (!failed && mounted.current) setFeedback({ key: "repo.refreshed" });
+        } catch (error) {
+          if (!signal.aborted) throw error;
         } finally { if (mounted.current) setRefreshing(null); }
       }, false);
     }

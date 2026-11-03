@@ -28,16 +28,21 @@ function deferred<T>() {
   const promise = new Promise<T>((res, rej) => { resolve = res; reject = rej })
   return { promise, resolve, reject }
 }
-async function setup(installed = false) {
+async function setup(installed = false, repositories = [repo]) {
   const mock = RemoteMock.create()
-  mock.unary('skillsManager/listRepositories', () => ok({ repositories: [{ ...repo, skills: installed ? [{ ...skill, installations: [{ installedRoot: 'dsh', tracked: true, status: 'installed', updateAvailable: true, canRollback: true, canUninstall: true }] }] : repo.skills }], installRoots: [{ key: 'dsh', path: '/skills', label: 'DSH', available: true }], catalogInstalls: [], catalogCopies: [], catalogWarnings: [] } satisfies SkillOutput<'listRepositories'>))
+  mock.unary('skillsManager/listRepositories', () => ok({ repositories: repositories.map(item => ({ ...item, skills: installed ? [{ ...skill, installations: [{ installedRoot: 'dsh', tracked: true, status: 'installed', updateAvailable: true, canRollback: true, canUninstall: true }] }] : item.skills })), installRoots: [{ key: 'dsh', path: '/skills', label: 'DSH', available: true }], catalogInstalls: [], catalogCopies: [], catalogWarnings: [] } satisfies SkillOutput<'listRepositories'>))
   mock.unary('skillsManager/listWorkspaces', () => ok({ items: [] }))
   mock.unary('skillsManager/listClawHub', () => ok({ items: [{ ownerHandle: 'company', slug: 'orders', displayName: 'Catalog orders', summary: '' }], nextCursor: null } satisfies SkillOutput<'listClawHub'>))
   const native = createSkillApi(Object.assign(mock.remote, { $mount: async () => async () => {}, $on: () => () => {} }))
   const api = native
   const useRepositoryUI = createRepositoryUI({ react: React, Modal, SourceSelect, destination, api, translateError })
   function Harness({ active = true }: { active?: boolean }) {
-    const { content } = useRepositoryUI({ active, t })
+    const lifetime = React.useRef(new AbortController())
+    React.useEffect(() => {
+      lifetime.current = new AbortController()
+      return () => { lifetime.current.abort() }
+    }, [])
+    const { content } = useRepositoryUI({ active, t, getSignal: () => lifetime.current.signal })
     return content
   }
   const view = render(h(React.StrictMode, null, h(Harness)))
@@ -47,6 +52,53 @@ async function setup(installed = false) {
 }
 function open() { fireEvent.click(screen.getByRole('button', { name: 'repo.detail' })) }
 function close() { fireEvent.click(screen.getByRole('button', { name: 'repo.close' })) }
+
+it.each(['success', 'failure'] as const)('stops a repository refresh batch after page disposal and a late %s, then retries on reopen', async (outcome) => {
+  const second = { ...repo, id: 'second', name: 'more-skills' }
+  const { mock, view, Harness } = await setup(false, [repo, second])
+  const pending = deferred<SkillOutput<'refreshRepository'>>()
+  const refreshed: SkillOutput<'refreshRepository'> = { ...repo, skills: [{ ...skill, body: 'Instructions' }] }
+  mock.unary('skillsManager/refreshRepository', async () => ok(await pending.promise))
+  fireEvent.click(screen.getByRole('button', { name: 'repo.refresh' }))
+  expect(mock.remote.skillsManager.refreshRepository).toHaveBeenCalledOnce()
+  const signal = mock.remote.skillsManager.refreshRepository.mock.calls[0]?.[1]
+  const reads = mock.remote.skillsManager.listRepositories.mock.calls.length
+  view.unmount()
+  const cancelled = signal?.aborted
+  await act(async () => {
+    if (outcome === 'failure') pending.reject(new Error('Dismissed refresh failed'))
+    else pending.resolve(refreshed)
+    await pending.promise.catch(() => undefined)
+  })
+  expect({ cancelled, refreshes: mock.remote.skillsManager.refreshRepository.mock.calls.length,
+    reads: mock.remote.skillsManager.listRepositories.mock.calls.length - reads }).toEqual({ cancelled: true, refreshes: 1, reads: 0 })
+  mock.unary('skillsManager/refreshRepository', (request: { id: string }) => ok({ ...refreshed, id: request.id }))
+  const reopened = render(h(React.StrictMode, null, h(Harness)))
+  onTestFinished(() => { reopened.unmount() })
+  await waitFor(() => { expect(screen.getByRole<HTMLButtonElement>('button', { name: 'repo.refresh' }).disabled).toBe(false) })
+  fireEvent.click(screen.getByRole('button', { name: 'repo.refresh' }))
+  await screen.findByText('repo.refreshed')
+  expect(mock.remote.skillsManager.refreshRepository.mock.calls.map(call => call[0].id)).toEqual(['repo', 'repo', 'second'])
+  expect(mock.remote.skillsManager.refreshRepository.mock.calls.slice(1).every(call => call[1]?.aborted === false)).toBe(true)
+  expect(screen.queryByRole('alert')).toBeNull()
+})
+
+it('finishes a dispatched repository registration without starting its scan after the page closes', async () => {
+  const { mock, view } = await setup()
+  const registration = deferred<SkillOutput<'addRepository'>>()
+  mock.unary('skillsManager/addRepository', async () => ok(await registration.promise))
+  fireEvent.click(screen.getByRole('button', { name: 'repo.add' }))
+  fireEvent.change(within(screen.getByRole('dialog')).getByRole('textbox', { name: 'repo.url' }), {
+    target: { value: 'company/new-skills' },
+  })
+  fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'repo.save' }))
+  expect(mock.remote.skillsManager.addRepository).toHaveBeenCalledOnce()
+  const reads = mock.remote.skillsManager.listRepositories.mock.calls.length
+  view.unmount()
+  await act(async () => { registration.resolve({ ...repo, id: 'new', skills: [] }); await registration.promise })
+  expect(mock.remote.skillsManager.refreshRepository).not.toHaveBeenCalled()
+  expect(mock.remote.skillsManager.listRepositories.mock.calls).toHaveLength(reads)
+})
 
 const searchCatalogs = [
   { source: 'clawhub', method: 'searchClawHub', label: 'repo.catalog.searchClawhub', loading: 'repo.catalog.searchLoading', error: 'repo.catalog.searchError' },
