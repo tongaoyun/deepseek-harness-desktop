@@ -332,7 +332,7 @@ export function inputTriggerSourceName(division: string, active: 'zh' | 'en'): s
   return divisions[division] ?? division
 }
 
-/** 引用所有者必须跨语言稳定，避免草稿中的 chip 在切换界面语言后失去序列化器。 */
+/** 为动态菜单分区生成跨语言稳定的来源标识。 */
 export function inputTriggerSourceId(division: string): string {
   return `${PLUGIN_ID}:${division}`
 }
@@ -342,14 +342,14 @@ export interface ExpertReference extends ReferenceInsert {
   readonly appearance: 'session'
 }
 
-/** 将专家投影为宿主的原子引用；slug 仅作为内部 ref，不进入标签、剪贴板或模型文本。 */
+/** 将专家投影为宿主的原子引用；引用所有者不随分区变化，slug 仅作为内部 ref，不进入可见文本。 */
 export function buildExpertReference(
-  expert: Pick<ExpertView, 'slug' | 'name' | 'nameEn' | 'emoji' | 'division' | 'custom'>,
+  expert: Pick<ExpertView, 'slug' | 'name' | 'nameEn'>,
   active: 'zh' | 'en',
 ): ExpertReference {
   const name = active === 'en' ? expert.nameEn : expert.name
   return {
-    source: inputTriggerSourceId(expert.division),
+    source: PLUGIN_ID,
     ref: expert.slug,
     label: name,
     appearance: 'session',
@@ -1505,6 +1505,20 @@ export async function apply(ctx: ClientContext): Promise<() => Promise<void>> {
   ))
 
   const expertDivisions = (): string[] => [...new Set([...DIVISION_ORDER, ...cache.catalog.getSnapshot().experts.map(expert => expert.division)])]
+  ctx.effect(() => ctx.inputTriggers.registerSource({
+    trigger: '@', name: PLUGIN_ID, showGroupTitle: false,
+    candidates: async () => [],
+    onPick: () => undefined,
+    warm: refreshCatalog,
+    codec: {
+      clipboardText: slug => expertMentionFromReference(slug, getActive(), cache.catalog.getSnapshot().experts),
+      serialize: async slug => {
+        const current = await cache.catalog.refresh()
+        if (!current.experts.some(expert => expert.slug === slug) || !current.enabled.has(slug)) throw new Error(t('custom.unavailable'))
+        return expertMentionFromReference(slug, getActive(), current.experts)
+      },
+    },
+  }), 'agency-agents: expert references')
   const registerInputTriggerSources = (active: 'zh' | 'en', divisions: readonly string[]): (() => void) => {
     const disposers: Array<() => void> = []
     try {
@@ -1563,21 +1577,12 @@ export async function apply(ctx: ClientContext): Promise<() => Promise<void>> {
             if (target === undefined) return { insert: reference }
             return insertTask(target, reference, pick.session.sessionId, pick.span) ? 'handled' : undefined
           },
-          ...(i === 0 ? { warm: refreshCatalog } : {}),
           lexicon: () => {
             const current = cache.catalog.getSnapshot()
             return current.revision < 0 ? undefined
               : buildExpertMentionLexicon(current.experts.filter(expert => !expert.teamMember && expert.division === div), current.enabled, getActive())
           },
           subscribeLexicon: (_session, listener) => cache.catalog.subscribe(listener),
-          codec: {
-            clipboardText: (slug) => expertMentionFromReference(slug, getActive(), cache.catalog.getSnapshot().experts),
-            serialize: async (slug) => {
-              const current = await cache.catalog.refresh()
-              if (!current.experts.some(expert => expert.slug === slug) || !current.enabled.has(slug)) throw new Error(t('custom.unavailable'))
-              return expertMentionFromReference(slug, getActive(), current.experts)
-            },
-          },
         } satisfies InputTriggerSource
         disposers.push(ctx.inputTriggers.registerSource(source))
       }

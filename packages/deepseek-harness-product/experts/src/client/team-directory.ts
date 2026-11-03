@@ -11,7 +11,7 @@ import { useTeamLocale, localizedExperts } from './team-locale.ts'
  * TeamMenu and TeamsPanel are different views, but they consume the same
  * native stores. React observes their current snapshots directly, including
  * the first commit after replacing a store; refresh cancellation belongs to
- * this mounted view.
+ * this mounted view. Every refresh rereads teams and their member catalog.
  */
 export function useTeamDirectory(options: {
   cache: ExpertClientState
@@ -39,7 +39,7 @@ export function useTeamDirectory(options: {
     try {
       await cache.teams.refresh()
       if (signal.aborted) return
-      if (cache.catalog.getSnapshot().revision < 0) await cache.catalog.refresh()
+      await cache.catalog.refresh()
       if (!signal.aborted) callbacks.current.onSuccess?.()
     } catch (cause) {
       if (!signal.aborted) callbacks.current.onError?.(cause)

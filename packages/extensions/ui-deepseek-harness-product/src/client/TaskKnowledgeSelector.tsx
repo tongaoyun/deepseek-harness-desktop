@@ -17,7 +17,7 @@ import css from '../DeepSeekHarnessProduct.module.css'
  */
 export function TaskKnowledgeSelector({
   sessionId, recoverCapabilities, retryCapabilities, capabilities, readKnowledgeCatalog, setKnowledgeSelection,
-  openCatalog, onApplied, subscribeOpen, t,
+  openCatalog, onApplied, subscribeOpen, refreshRevision = 0, t,
 }: {
   readonly sessionId?: SessionId | undefined
   readonly recoverCapabilities: TaskModeActions['recoverCapabilities']
@@ -28,6 +28,7 @@ export function TaskKnowledgeSelector({
   readonly openCatalog: TaskModeActions['openCatalog']
   readonly onApplied: () => void
   readonly subscribeOpen: (listener: () => void) => () => void
+  readonly refreshRevision?: number
   readonly t: (key: DeepSeekHarnessProductKey, params?: Record<string, unknown>) => string
 }) {
   const [open, setOpen] = useState(false)
@@ -81,9 +82,10 @@ export function TaskKnowledgeSelector({
       } })
       .finally(() => { if (active) setLoading(false) })
     return () => { active = false; controller.abort() }
-  }, [open, identity, readKnowledgeCatalog, revision])
+  }, [open, identity, readKnowledgeCatalog, revision, refreshRevision])
   const options: readonly (Partial<ProductItem> & Pick<ProductItem, 'id' | 'label'>)[] = [
-    ...catalog ?? [], ...ids.filter(id => !catalog?.some(row => row.id === id)).map(id => ({ id, label: id })),
+    ...catalog ?? [], ...[...new Set([...ids, ...selected])]
+      .filter(id => !catalog?.some(row => row.id === id)).map(id => ({ id, label: id })),
   ]
   const unavailable = catalog !== undefined && !loadFailed && ids.some(id => !catalog.some(row => row.id === id))
   const changed = selected.length !== ids.length || selected.some(id => !ids.includes(id))

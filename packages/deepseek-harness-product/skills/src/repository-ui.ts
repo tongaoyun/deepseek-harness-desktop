@@ -21,6 +21,7 @@ export const repositoryLocales = {
     "repo.catalog.loadMore": "再加载 10 条",
     "repo.catalog.installRefreshWarning": "技能已安装并启用，但列表刷新失败。请重新打开发现页；不要重复安装。",
     "repo.catalog.uninstallRefreshWarning": "技能已移入回收站，但列表刷新失败。请刷新技能列表或重新打开设置页；不要重复卸载。",
+    "repo.refreshAfterWriteWarning": "技能文件已变更，但列表刷新失败。请重新打开发现页或设置页；不要重复操作。",
     "repo.installElsewhere": "安装到其他位置", "repo.destinationUnavailable": "原项目未登记或目录不可用，无法管理此副本。请在侧栏重新登记原项目后刷新。", "repo.scope.user": "全局", "repo.scope.project": "项目", "repo.source.dsh": "DSH", "repo.source.agents": "Shared Agent",
     "repo.refreshing": "正在检查更新…", "repo.refreshed": "刷新与更新检查完成", "repo.detailLoading": "正在读取技能说明…", "repo.previewLoading": "正在计算文件变更…",
     "repo.local": "本机", "repo.source": "安装来源", "repo.update": "可更新", "repo.review": "查看更新", "repo.rollback": "恢复上一版", "repo.confirmUpdate": "备份并更新", "repo.confirmRollback": "备份并恢复", "repo.overwrite": "备份本地修改并替换", "repo.modified": "检测到本地修改。替换会覆盖当前文件，原文件将完整备份，可恢复。", "repo.noChanges": "文件内容没有变化。", "repo.added": "新增", "repo.removed": "删除", "repo.modifiedFile": "修改", "repo.updating": "更新中…", "repo.updateProgress": "正在校验、备份并替换，请稍候…", "repo.updateSuccess": "更新完成，已保留上一版备份。", "repo.rollbackSuccess": "已恢复上一版。", "repo.manageUpdate": "管理更新", "error.repo.modified": "存在本地修改，请预览并确认备份后替换。",
@@ -41,6 +42,7 @@ export const repositoryLocales = {
     "repo.catalog.loadMore": "Load 10 more",
     "repo.catalog.installRefreshWarning": "Installed and enabled, but the list could not refresh. Reopen Discover Skills; do not install again.",
     "repo.catalog.uninstallRefreshWarning": "Moved to trash, but the list could not refresh. Refresh the skill list or reopen Settings; do not uninstall again.",
+    "repo.refreshAfterWriteWarning": "Skill files changed, but the list could not refresh. Reopen Discover Skills or Settings; do not repeat the operation.",
     "repo.installElsewhere": "Install elsewhere", "repo.destinationUnavailable": "The original project is unregistered or unavailable. Re-register it in the sidebar and refresh to manage this copy.", "repo.scope.user": "Global", "repo.scope.project": "Project", "repo.source.dsh": "DSH", "repo.source.agents": "Shared Agent",
     "repo.refreshing": "Checking updates…", "repo.refreshed": "Refresh and update check completed", "repo.detailLoading": "Loading skill instructions…", "repo.previewLoading": "Calculating file changes…",
     "repo.local": "Local", "repo.source": "Installed from", "repo.update": "Update available", "repo.review": "Review update", "repo.rollback": "Restore previous version", "repo.confirmUpdate": "Back up and update", "repo.confirmRollback": "Back up and restore", "repo.overwrite": "Back up local edits and replace", "repo.modified": "Local edits detected. Replacement overwrites current files and keeps a complete backup for restoration.", "repo.noChanges": "No file changes.", "repo.added": "Added", "repo.removed": "Removed", "repo.modifiedFile": "Modified", "repo.updating": "Updating…", "repo.updateProgress": "Verifying, backing up and replacing files. Please wait…", "repo.updateSuccess": "Updated. Previous version backed up.", "repo.rollbackSuccess": "Previous version restored.", "repo.manageUpdate": "Manage updates", "error.repo.modified": "Local edits detected. Review and confirm replacement with a backup.",
@@ -239,6 +241,10 @@ export function createRepositoryUI({ react, Modal, SourceSelect, destination, ap
       try { await task(); if (reload && mounted.current) await load(); }
       catch (caught) { const error = caught as CodedError; if (mounted.current) setFeedback({ error: true, payload: error }); }
       finally { locked.current = false; if (mounted.current) setBusy(false); }
+    }
+    async function refreshAfterWrite(key: string, name: string) {
+      const refreshed = await Promise.allSettled([load(), Promise.resolve().then(() => onInstalled?.())]);
+      if (mounted.current && refreshed.some(result => result.status === "rejected")) setFeedback({ key, name });
     }
     function post<K extends SkillMethod>(action: K, input: SkillInput<K>, signal?: AbortSignal) { return api(action, input, signal); }
     function cancelRepositoryRead() {
@@ -499,8 +505,7 @@ export function createRepositoryUI({ react, Modal, SourceSelect, destination, ap
         setCatalogCopies(prev => prev.some(copy => copy.id === catalogId && copy.installedRoot === installedRoot && copy.installedWorkspace === scope.workspace) ? prev : [...prev, { id: catalogId, name: installed.name, installedRoot, ...(scope.workspace ? { installedWorkspace: scope.workspace } : {}), canUninstall: true }]);
         setFeedback({ key: "repo.installSuccess", name: target.name });
         setModal(null);
-        const refreshed = await Promise.allSettled([load(), Promise.resolve().then(() => onInstalled?.())]);
-        if (mounted.current && refreshed.some(result => result.status === "rejected")) setFeedback({ key: "repo.catalog.installRefreshWarning", name: target.name });
+        await refreshAfterWrite("repo.catalog.installRefreshWarning", target.name);
       }, false);
     }
     react.useEffect(() => { if (active) perform(load, false); }, [active]);
@@ -599,9 +604,7 @@ export function createRepositoryUI({ react, Modal, SourceSelect, destination, ap
         const key = 'repo.' + action + 'Success';
         setInstallation({ ...target, action, key });
         setFeedback({ key, name: selected.skill.name }); setModal(null);
-        // 独立刷新仓库与宿主列表；刷新失败不改变已经完成的安装/卸载结果。
-        const results = await Promise.allSettled([load(), Promise.resolve().then(() => onInstalled?.())]);
-        for (const result of results) if (result.status === 'rejected') throw result.reason;
+        await refreshAfterWrite('repo.catalog.' + action + 'RefreshWarning', selected.skill.name);
       }, false);
     }
     function preview(repo: RepoView, skill: RepoSkill, copy: RepoCopy, rollback = false) {
@@ -641,8 +644,8 @@ export function createRepositoryUI({ react, Modal, SourceSelect, destination, ap
         if (!mounted.current) return;
         const key = rollback ? "repo.rollbackSuccess" : "repo.updateSuccess";
         setInstallation({ ...target, key }); setFeedback({ key }); setModal(null);
-        if (onInstalled) await onInstalled();
-      });
+        await refreshAfterWrite("repo.refreshAfterWriteWarning", selected.skill.name);
+      }, false);
     }
     function toolbarIconButton(key: string, iconD: string, action: () => unknown) {
       return h(PrimitiveButton, {
@@ -833,8 +836,7 @@ export function createRepositoryUI({ react, Modal, SourceSelect, destination, ap
             setCatalogCopies(prev => prev.filter(item => item !== copy && !(item.id === copy.id && item.installedRoot === copy.installedRoot && item.installedWorkspace === copy.installedWorkspace)));
             setFeedback({ key: "repo.uninstallSuccess", name: copy.name });
                         setModal(null);
-                        const refreshed = await Promise.allSettled([load(), Promise.resolve().then(() => onInstalled?.())]);
-                        if (mounted.current && refreshed.some(result => result.status === "rejected")) setFeedback({ key: "repo.catalog.uninstallRefreshWarning", name: copy.name });
+                        await refreshAfterWrite("repo.catalog.uninstallRefreshWarning", copy.name);
           }, false);
         }
         function renderCatalogActions(id: string, openDetail: () => void, openInstall: () => void) {
