@@ -155,10 +155,6 @@ export function TeamsPanel(props: {
         }).catch(cause => { if (live) setError(cause instanceof Error ? cause.message : tx("加载失败。")); });
         return () => { live = false; };
     }, [props.active, props.source, props.remote, props.cache, directory.refresh]);
-    const load = async () => {
-        await directory.refresh();
-        if (!directory.getSignal()?.aborted) setError('');
-    };
     const accept = (value: TeamSnapshot) => {
         const next = props.cache.teams.accept(value);
         props.cache.catalog.adoptRevision(next.revision, next.enabledExperts);
@@ -275,7 +271,7 @@ export function TeamsPanel(props: {
       </div>
       {error && (<div className="aag-error" role="alert">
           {error}
-          <button type="button" onClick={() => void load()}>{tx("刷新重试")}</button>
+          <button type="button" onClick={() => void directory.refresh()}>{tx("刷新重试")}</button>
         </div>)}
       <TeamExecution engine={snapshot?.engine} locale={locale}/>
       {notice && (<p role="status" className="aag-custom-notice">

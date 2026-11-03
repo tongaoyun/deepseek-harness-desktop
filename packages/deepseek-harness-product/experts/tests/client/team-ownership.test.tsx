@@ -2,7 +2,7 @@
 /** Expert-team views follow the native store and their current mounted operations. */
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { useLayoutEffect } from 'react'
-import { afterEach, expect, it, vi } from 'vitest'
+import { afterEach, expect, it, onTestFinished, vi } from 'vitest'
 import { createExpertClientState } from '../../src/client/client-state.ts'
 import { TeamMenu } from '../../src/client/team-composer.tsx'
 import { TeamsPanel, type TeamRemote } from '../../src/client/team-ui.tsx'
@@ -31,6 +31,34 @@ function fixture() {
   cache.teams.accept(original)
   return { remote, cache, getTeams, setTeamEnabled }
 }
+
+it.each(['menu', 'panel'] as const)('keeps the %s retry error and selection until the directory recovers', async (kind) => {
+  const value = fixture()
+  onTestFinished(() => { value.cache.catalog.dispose(); value.cache.teams.dispose() })
+  value.getTeams.mockRejectedValue(new Error('Team directory unavailable'))
+  render(kind === 'menu' ? <TeamMenu {...value} onSelected={vi.fn()} /> : <TeamsPanel {...value} />)
+  expect((await screen.findByRole('alert')).textContent).toContain('Team directory unavailable')
+  const search = screen.getByRole<HTMLInputElement>('textbox', { name: '搜索专家团' })
+  fireEvent.change(search, { target: { value: 'team' } })
+  const retry = Promise.withResolvers<Awaited<ReturnType<TeamRemote['getTeams']>>>()
+  value.getTeams.mockReturnValueOnce(retry.promise)
+  try {
+    fireEvent.click(screen.getByRole('button', { name: kind === 'menu' ? '刷新' : '刷新重试' }))
+    await act(async () => { retry.reject(new Error('Team directory still unavailable')); await retry.promise.catch(() => {}) })
+    expect(screen.getByRole('alert').textContent).toContain('Team directory still unavailable')
+    expect(search.value).toBe('team')
+    expect(screen.getByText('Original team')).toBeTruthy()
+    expect(value.cache.teams.getSnapshot()).toBe(original)
+    value.getTeams.mockResolvedValue({ ok: true, value: current })
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: kind === 'menu' ? '刷新' : '刷新重试' })) })
+    expect(screen.queryByRole('alert')).toBeNull()
+    expect(search.value).toBe('team')
+    expect(screen.getByText('Current team')).toBeTruthy()
+    expect(value.cache.teams.getSnapshot()).toBe(current)
+  } finally {
+    await act(async () => { retry.reject(new Error('Test disposed')); await retry.promise.catch(() => {}) })
+  }
+})
 
 it('commits only the replacement directory when its mounted store changes', async () => {
   const first = fixture()

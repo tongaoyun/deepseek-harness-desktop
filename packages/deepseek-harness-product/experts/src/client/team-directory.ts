@@ -18,19 +18,20 @@ export function useTeamDirectory(options: {
   /** Rebind the lifecycle when the native Remote instance changes. */
   remote: AgencyTeamsRemote
   onError?(cause: unknown): void
+  onSuccess?(): void
 }): {
   snapshot: TeamSnapshot | null
   experts: ExpertSummary[]
   refresh(): Promise<void>
   getSignal(): AbortSignal | undefined
 } {
-  const { cache, remote, onError } = options
+  const { cache, remote } = options
   const snapshot = React.useSyncExternalStore(cache.teams.subscribe, cache.teams.getSnapshot)
   const catalog = React.useSyncExternalStore(cache.catalog.subscribe, cache.catalog.getSnapshot)
   const experts = React.useMemo(() => catalog.revision < 0 ? [] : [...catalog.experts], [catalog])
   const lifetime = React.useRef<AbortController | undefined>(undefined)
-  const onErrorRef = React.useRef(onError)
-  onErrorRef.current = onError
+  const callbacks = React.useRef(options)
+  callbacks.current = options
 
   const refresh = React.useCallback(async () => {
     const signal = lifetime.current?.signal
@@ -39,8 +40,9 @@ export function useTeamDirectory(options: {
       await cache.teams.refresh()
       if (signal.aborted) return
       if (cache.catalog.getSnapshot().revision < 0) await cache.catalog.refresh()
+      if (!signal.aborted) callbacks.current.onSuccess?.()
     } catch (cause) {
-      if (!signal.aborted) onErrorRef.current?.(cause)
+      if (!signal.aborted) callbacks.current.onError?.(cause)
     }
   }, [cache])
 
@@ -83,6 +85,7 @@ export function useTeamDirectoryView(options: {
     cache: options.cache,
     remote: options.remote,
     onError: cause => setError(cause instanceof Error ? tx(cause.message) : tx(options.fallback)),
+    onSuccess: () => setError(''),
   })
   return {
     locale,
