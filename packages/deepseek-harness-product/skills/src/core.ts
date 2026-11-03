@@ -2868,7 +2868,9 @@ export async function createSkill(input: CreateInput, log?: Log, options: Mutati
 }
 
 export async function skillDetail(key: string, name: string, options: ScopeOptions & { workspaceBound?: boolean } = {}) {
+  options.signal?.throwIfAborted();
   const scopedRoots = await projectRoots(options.projectCwds);
+  options.signal?.throwIfAborted();
   const root = options.workspaceBound ? scopedRoots.find((item) => item.key === key) : rootByKey(key, options.companySkillsRoot) || scopedRoots.find((item) => item.key === key);
   if (!root)
     return {
@@ -2878,6 +2880,7 @@ export async function skillDetail(key: string, name: string, options: ScopeOptio
       params: { root: key },
     };
   const entry = await visibleEntryForRoot(root, name);
+  options.signal?.throwIfAborted();
   if (!entry)
     return {
       ok: false,
@@ -2887,8 +2890,12 @@ export async function skillDetail(key: string, name: string, options: ScopeOptio
     };
   let raw;
   try {
-    raw = await fs.readFile(entry.realDocPath || entry.docPath, "utf8");
-  } catch {
+    raw = await fs.readFile(entry.realDocPath || entry.docPath, {
+      encoding: "utf8",
+      signal: options.signal,
+    });
+  } catch (error) {
+    if (options.signal?.aborted) throw error;
     return {
       ok: false,
       error: `技能不存在: ${name}`,
@@ -2896,6 +2903,7 @@ export async function skillDetail(key: string, name: string, options: ScopeOptio
       params: { name },
     };
   }
+  options.signal?.throwIfAborted();
   const doc = parseSkillDoc(raw);
   const summary = entryOf(name, entry.kind, entry.docPath, doc);
   return {
@@ -3376,20 +3384,27 @@ interface MetadataScan {exists: boolean; entries: MetadataEntry[]; truncated?: b
  * @param key - Writable personal skill source identifier.
  * @param name - Installed skill directory name.
  * @param options - Selected workspace and cancellation signal.
- * @returns Stable resource key and base64-encoded complete skill files.
+ * @returns Stable resource key and base64-encoded complete skill files. Cancellation stops further reads and closes the active file before rejection.
  */
 export async function exportSkill(key: string, name: string, options: ScopeOptions & { workspaceBound?: boolean } = {}): Promise<{ resourceKey: string; files: Record<string, string> }> {
+  const signal = options.signal;
+  signal?.throwIfAborted();
   if (key === 'company') throw new Error('公司技能不能作为个人内容提交');
   const detail = await skillDetail(key, name, options);
+  signal?.throwIfAborted();
   if ('ok' in detail || !detail.loadable || !KEBAB_RE.test(detail.declaredName)) throw new Error('请先修正技能名称和 SKILL.md');
   const files: Record<string, string> = {};
   let bytes = 0;
   const add = async (file: string, path: string) => {
+    signal?.throwIfAborted();
     const handle = await fs.open(file, fsConstants.O_RDONLY | fsConstants.O_NOFOLLOW);
     try {
+      signal?.throwIfAborted();
       const info = await handle.stat();
+      signal?.throwIfAborted();
       if (!info.isFile() || info.size + bytes > 32 * 1024 * 1024 || Object.keys(files).length >= 2048) throw new Error('技能文件超出发布限制');
-      const data = await handle.readFile();
+      const data = await handle.readFile({ signal });
+      signal?.throwIfAborted();
       bytes += data.byteLength;
       if (bytes > 32 * 1024 * 1024) throw new Error('技能文件超出发布限制');
       files['skills/' + detail.declaredName + '/' + path] = data.toString('base64');
@@ -3397,10 +3412,15 @@ export async function exportSkill(key: string, name: string, options: ScopeOptio
   };
   const root = detail.kind === 'flat' ? detail.path : dirname(detail.path);
   const walk = async (directory: string, prefix: string) => {
-    if ((await fs.lstat(directory)).isSymbolicLink()) throw new Error('不能提交符号链接');
+    signal?.throwIfAborted();
+    const info = await fs.lstat(directory);
+    signal?.throwIfAborted();
+    if (info.isSymbolicLink()) throw new Error('不能提交符号链接');
     const entries = await fs.readdir(directory, { withFileTypes: true });
+    signal?.throwIfAborted();
     if (entries.length > 4096) throw new Error('技能目录条目过多');
     for (const entry of entries) {
+      signal?.throwIfAborted();
       if (['.git', '.DS_Store'].includes(entry.name)) continue;
       const path = prefix + entry.name;
       if (path.length > 200 || !/^[A-Za-z0-9_./-]+$/.test(path) || path.split('/').some(part => part === '.' || part === '..')) throw new Error('技能包含非法资源路径');
@@ -3410,7 +3430,10 @@ export async function exportSkill(key: string, name: string, options: ScopeOptio
       else throw new Error('只能提交普通文件');
     }
   };
-  if ((await fs.lstat(detail.path)).isSymbolicLink()) throw new Error('不能提交符号链接');
+  const info = await fs.lstat(detail.path);
+  signal?.throwIfAborted();
+  if (info.isSymbolicLink()) throw new Error('不能提交符号链接');
   if (detail.kind === 'flat') await add(root, 'SKILL.md'); else await walk(root, '');
+  signal?.throwIfAborted();
   return { resourceKey: 'skills/' + detail.declaredName, files };
 }

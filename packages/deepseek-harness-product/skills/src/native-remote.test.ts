@@ -196,6 +196,63 @@ it('preserves creation, policy, upload, export and trash through native dispatch
   await expect(ctx.typertGateway.invoke({ namespace: 'skillsManager', method: 'createSkill', args: { request: { name: 'guest-orders', description: 'No', body: 'No' } }, peer: guest })).rejects.toMatchObject({ code: 'skills/operation', details: { code: 'error.proto.forbidden' } })
 }, 30000)
 
+it.each(['caller', 'unload'] as const)('stops exporting skill resources after %s cancellation and closes the active file', async (source) => {
+  const { ctx, root, invoke } = await boot()
+  const name = 'cancelled-export'
+  await invoke('createSkill', { request: { name, description: 'Export cancellation', body: 'Keep this personal skill.' } })
+  const directory = join(root, '.dsh/skills', name)
+  await writeFile(join(directory, 'first.txt'), 'First resource')
+  await writeFile(join(directory, 'second.txt'), 'Second resource')
+  const started = Promise.withResolvers<undefined>(), release = Promise.withResolvers<undefined>()
+  const open = fs.open
+  const opened: Awaited<ReturnType<typeof open>>[] = []
+  let readingSignal: AbortSignal | undefined
+  const probe = vi.spyOn(fs, 'open').mockImplementation(async (...args) => {
+    const handle = await open(...args)
+    if (typeof args[0] !== 'string' || !args[0].startsWith(directory)) return handle
+    opened.push(handle)
+    if (opened.length === 1) {
+      const read = handle.readFile.bind(handle)
+      vi.spyOn(handle, 'readFile').mockImplementation(async (...options) => {
+        const input = options[0]
+        readingSignal = typeof input === 'object' && input !== null ? input.signal : undefined
+        started.resolve(undefined)
+        await release.promise
+        return read(...options)
+      })
+    }
+    return handle
+  })
+  onTestFinished(() => { probe.mockRestore() })
+  const controller = new AbortController()
+  const pending = invoke('exportSkill', { target: { root: 'dsh', name } }, controller.signal)
+  const outcome = pending.then(value => ({ value }), (error: unknown) => ({ error }))
+  const manager = [...ctx.loader.entries()].find(entry => entry.options.name === 'cordis:manager')
+  let disposal: Promise<unknown> | undefined
+  try {
+    await started.promise
+    if (source === 'caller') controller.abort(new Error('Export view closed'))
+    else {
+      if (!manager?.fiber) throw new Error('Skills manager is not mounted')
+      disposal = manager.fiber.dispose()
+      await vi.waitFor(() => { expect(readingSignal?.aborted).toBe(true) })
+    }
+    release.resolve(undefined)
+    expect(await outcome).toMatchObject({ error: { code: 'gateway/cancelled' } })
+    await disposal
+    expect(opened).toHaveLength(1)
+    expect(opened[0].fd).toBe(-1)
+    expect(readingSignal?.aborted).toBe(true)
+    expect(await readFile(join(directory, 'SKILL.md'), 'utf8')).toContain('Keep this personal skill.')
+  } finally {
+    release.resolve(undefined)
+    await outcome
+    await disposal
+    probe.mockRestore()
+    await Promise.all(opened.map(handle => handle.close()))
+  }
+}, 30000)
+
 it('invalidates the native catalog after a committed skill write even when the caller cancels at commit', async () => {
   const { ctx, root, invoke } = await boot()
   const name = 'committed-orders'
