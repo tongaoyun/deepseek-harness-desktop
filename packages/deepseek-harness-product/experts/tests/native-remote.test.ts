@@ -318,3 +318,108 @@ it('allows a dispatched Settings transaction to finish after its editor closes',
     transaction.mockRestore()
   }
 })
+
+it.each(['create-expert', 'edit-expert', 'delete-expert', 'save-team', 'enable-team', 'delete-team'] as const)(
+  'returns the committed %s receipt when the company source becomes unavailable after persistence', async (operation) => {
+    let unavailable = false
+    const { invoke, settings, ns, snapshot, team } = await savedTeam(async () => {
+      if (unavailable) throw new Error('Company catalog unavailable after commit')
+      return []
+    })
+    const expert = (settings.get(ns) as AgencySettings).customExperts![0]
+    const mutate = settings.mutate.bind(settings)
+    const transaction = vi.spyOn(settings, 'mutate').mockImplementationOnce(async (...args) => {
+      await mutate(...args)
+      unavailable = true
+    })
+    onTestFinished(() => { transaction.mockRestore() })
+    const method = operation === 'delete-expert' ? 'deleteCustomExpert'
+      : operation === 'save-team' ? 'saveTeam' : operation === 'enable-team' ? 'setTeamEnabled'
+        : operation === 'delete-team' ? 'deleteTeam' : 'saveCustomExpert'
+    const args = operation === 'create-expert' ? { expert: { ...draft, name: 'New committed reviewer' }, enabled: true }
+      : operation === 'edit-expert' ? { expert: { ...expert, name: 'Updated committed reviewer' }, enabled: true }
+        : operation === 'delete-expert' ? { slug: expert.slug }
+          : operation === 'save-team' ? { team: { ...team, name: 'Updated committed team' }, enabled: true }
+            : operation === 'enable-team' ? { id: team.id, enabled: true } : { id: team.id }
+    const result = await invoke(method, { ...args, expectedRevision: snapshot.revision })
+    if (operation.endsWith('expert')) {
+      const catalog = catalogSnapshotSchema.parse(result)
+      expect(catalog.revision).toBe(snapshot.revision + 1)
+      expect(catalog.experts.filter(item => item.custom)).toHaveLength(operation === 'create-expert' ? 3 : operation === 'delete-expert' ? 1 : 2)
+      if (operation !== 'delete-expert') expect(catalog.experts.some(item => item.name === (operation === 'create-expert'
+        ? 'New committed reviewer' : 'Updated committed reviewer') && catalog.enabled.includes(item.slug))).toBe(true)
+      else expect(catalog.experts.some(item => item.slug === expert.slug)).toBe(false)
+    } else {
+      const teams = teamSnapshotSchema.parse(result)
+      expect(teams.revision).toBe(snapshot.revision + 1)
+      expect(teams.teams).toHaveLength(operation === 'delete-team' ? 0 : 1)
+      expect(Object.keys(teams.nativeMembers ?? {})).toHaveLength(operation === 'delete-team' ? 0 : team.members.length)
+      if (operation !== 'delete-team') {
+        expect(teams.enabledTeams).toContain(team.id)
+        expect(teams.enabledExperts).toEqual(expect.arrayContaining(team.members.map(member => member.expertSlug)))
+      }
+    }
+    expect(settings.describe().find(item => item.ns === ns)?.revision).toBe(snapshot.revision + 1)
+    await expect(invoke('getCatalog', { refreshCompany: false })).rejects.toThrow('Company catalog unavailable after commit')
+  },
+)
+
+it.each(['deleteCustomExpert', 'deleteTeam'] as const)('rejects %s before committing if source preparation fails', async (method) => {
+  let unavailable = false
+  const { invoke, settings, ns, snapshot, team } = await savedTeam(async () => {
+    if (unavailable) throw new Error('Company catalog unavailable before commit')
+    return []
+  })
+  const before = structuredClone(settings.get(ns))
+  const expert = (settings.get(ns) as AgencySettings).customExperts![0]
+  unavailable = true
+  await expect(invoke(method, { ...(method === 'deleteCustomExpert' ? { slug: expert.slug } : { id: team.id }),
+    expectedRevision: snapshot.revision })).rejects.toThrow('Company catalog unavailable before commit')
+  expect(settings.get(ns)).toEqual(before)
+  expect(settings.describe().find(item => item.ns === ns)?.revision).toBe(snapshot.revision)
+})
+
+it.each(['saveCustomExpert', 'saveTeam', 'setEnabled'] as const)(
+  'includes a neighboring committed transaction in the %s receipt', async (method) => {
+    const { invoke, settings, ns, snapshot, team } = await savedTeam()
+    const mutate = settings.mutate.bind(settings)
+    const transaction = vi.spyOn(settings, 'mutate').mockImplementationOnce(async (...args) => {
+      await mutate(...args)
+      await invoke('saveCustomExpert', { expert: { ...draft, name: 'Neighboring reviewer' }, enabled: true,
+        expectedRevision: snapshot.revision + 1 })
+    })
+    onTestFinished(() => { transaction.mockRestore() })
+    const args = method === 'saveCustomExpert' ? { expert: { ...draft, name: 'First committed reviewer' }, enabled: true }
+      : method === 'saveTeam' ? { team: { ...team, name: 'First committed team' }, enabled: true } : { enabled: [] }
+    const result = await invoke(method, { ...args, expectedRevision: snapshot.revision })
+    const state = settings.get(ns) as AgencySettings
+    const neighbor = state.customExperts!.find(expert => expert.name === 'Neighboring reviewer')!
+    expect(neighbor).toBeDefined()
+    expect(settings.describe().find(item => item.ns === ns)?.revision).toBe(snapshot.revision + 2)
+    if (method === 'saveCustomExpert') {
+      const current = catalogSnapshotSchema.parse(result)
+      expect(current.revision).toBe(snapshot.revision + 2)
+      expect(current.experts.map(expert => expert.name)).toEqual(expect.arrayContaining(['First committed reviewer', neighbor.name]))
+      expect(current.enabled).toEqual(state.enabled)
+    } else if (method === 'saveTeam') {
+      const current = teamSnapshotSchema.parse(result)
+      expect(current.revision).toBe(snapshot.revision + 2)
+      expect(current.teams[0].name).toBe('First committed team')
+      expect(current.enabledExperts).toEqual(state.enabled)
+      expect(current.enabledExperts).toContain(neighbor.slug)
+    } else {
+      expect(result).toEqual({ enabled: state.enabled, revision: snapshot.revision + 2 })
+      expect(state.enabled).toContain(neighbor.slug)
+    }
+  },
+)
+
+it.each(['saveCustomExpert', 'saveTeam'] as const)('preserves the real Settings failure from %s without a success receipt', async (method) => {
+  const { invoke, settings, ns, snapshot, team } = await savedTeam()
+  const before = structuredClone(settings.get(ns))
+  settings.fail = true
+  await expect(invoke(method, { ...(method === 'saveCustomExpert' ? { expert: { ...draft, name: 'Uncommitted reviewer' }, enabled: true }
+    : { team: { ...team, name: 'Uncommitted team' }, enabled: true }), expectedRevision: snapshot.revision })).rejects.toThrow('disk full')
+  expect(settings.get(ns)).toEqual(before)
+  expect(settings.describe().find(item => item.ns === ns)?.revision).toBe(snapshot.revision)
+})

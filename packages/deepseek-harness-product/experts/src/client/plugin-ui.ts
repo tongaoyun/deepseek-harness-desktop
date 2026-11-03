@@ -12,8 +12,13 @@ export function TextArea({ rows = 3, className, ...props }: React.TextareaHTMLAt
   return React.createElement('textarea', { ...props, rows, className: classes })
 }
 
+type InputProps = React.ComponentPropsWithoutRef<typeof PrimitiveInput> & {
+  /** 原生 Modal 在记录打开按钮后聚焦此控件。 */
+  'data-modal-autofocus'?: boolean
+}
+
 /** 单行输入沿用原生属性，多行表单使用产品 TextArea。 */
-export function Input({ className, ...props }: React.ComponentPropsWithoutRef<typeof PrimitiveInput>): React.ReactElement {
+export function Input({ className, ...props }: InputProps): React.ReactElement {
   const classes = ['aag-host-input', className].filter(Boolean).join(' ')
   return React.createElement(PrimitiveInput, { ...props, className: classes })
 }
