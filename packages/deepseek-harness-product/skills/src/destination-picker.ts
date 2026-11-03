@@ -1,4 +1,5 @@
 import type * as React from "react";
+import { Button } from '@deepseek-ai/dsh-client-ui-primitives';
 import type { SourceSelectProps, Translate } from "./client-types.ts";
 import type { WorkspaceRow } from "./core.ts";
 import type { DestinationKit, DestinationValue, DestinationPickerProps } from "./destination-types.ts";
@@ -30,6 +31,7 @@ export const destinationLocales = {
     "dest.scope": "范围", "dest.scope.user": "用户目录", "dest.scope.workspace": "指定工作区",
     "dest.workspace": "工作区", "dest.workspace.placeholder": "请选择工作区", "dest.workspace.unavailable": "{name}（目录不可用）",
     "dest.pickFirst": "先选择一个已登记工作区。确认前不会创建目录。", "dest.empty": "还没有已登记的工作区。请先在侧栏添加，再回到这里选择。",
+    "dest.loadFailed": "无法读取工作区列表：{error}", "dest.retry": "重试",
     "dest.location": "位置", "dest.location.dsh": "DSH skills", "dest.location.agents": "Shared Agent",
     "dest.location.agentsOff": "工作区只支持 DSH skills。",
     "dest.projectNote": "会写进这个项目，可能被提交到仓库。",
@@ -39,6 +41,7 @@ export const destinationLocales = {
     "dest.scope": "Scope", "dest.scope.user": "User directory", "dest.scope.workspace": "Specific workspace",
     "dest.workspace": "Workspace", "dest.workspace.placeholder": "Select a workspace", "dest.workspace.unavailable": "{name} (directory unavailable)",
     "dest.pickFirst": "Select a registered workspace first. No directory is created before you confirm.", "dest.empty": "No registered workspaces yet. Add one in the sidebar, then come back.",
+    "dest.loadFailed": "Cannot read the workspace list: {error}", "dest.retry": "Retry",
     "dest.location": "Location", "dest.location.dsh": "DSH skills", "dest.location.agents": "Shared Agent",
     "dest.location.agentsOff": "Workspaces support DSH skills only.",
     "dest.projectNote": "This is written into the project and may be committed to its repository.",
@@ -72,8 +75,9 @@ interface Dependencies {
 /** 创建、导入、仓库安装共用的目标选择器：范围、工作区下拉、位置、写入预览。 */
 export function createDestinationPicker({ react, SourceSelect, translateError }: Dependencies) {
   const h = react.createElement;
-  return function DestinationPicker({ t, value, onChange, workspaces, userDestinations, allowAgents, disabled, loading = false }: DestinationPickerProps) {
+  return function DestinationPicker({ t, value, onChange, workspaces, userDestinations, allowAgents, disabled, loading = false, workspaceError, onRetryWorkspaces }: DestinationPickerProps) {
     const inWorkspace = value.scope === "workspace";
+    const workspaceDisabled = disabled || loading || !!workspaceError;
     const chosen = workspaces.find((row) => !!row.registeredPaths[0] && row.registeredPaths[0] === value.workspace);
     const scopeOptions = [
       { value: "user", label: t("dest.scope.user") },
@@ -99,8 +103,8 @@ export function createDestinationPicker({ react, SourceSelect, translateError }:
     const second = inWorkspace
       ? h("div", { className: "dssm-field", key: "workspace" },
           h("span", { className: "dssm-label" }, t("dest.workspace")),
-          h(SourceSelect, { label: t("dest.workspace"), value: value.workspace, disabled: disabled || workspaces.length === 0, options: workspaceOptions, onChange: (next: string) => {
-            if (!disabled && workspaces.length > 0 && (next === "" || destinationReady({ ...value, scope: "workspace", workspace: next }, workspaces))) onChange({ workspace: next });
+          h(SourceSelect, { label: t("dest.workspace"), value: value.workspace, disabled: workspaceDisabled || workspaces.length === 0, options: workspaceOptions, onChange: (next: string) => {
+            if (!workspaceDisabled && workspaces.length > 0 && (next === "" || destinationReady({ ...value, scope: "workspace", workspace: next }, workspaces))) onChange({ workspace: next });
           } }))
       : h("div", { className: "dssm-field", key: "location" },
           h("span", { className: "dssm-label" }, t("dest.location")),
@@ -121,7 +125,10 @@ export function createDestinationPicker({ react, SourceSelect, translateError }:
             onChange: (next: string) => { if (!disabled && (next === "workspace" || next === "user")) onChange(next === "workspace" ? { scope: "workspace", location: "dsh" } : { scope: "user", workspace: "" }); },
           })),
         second),
-      inWorkspace && !loading && workspaces.length === 0 ? h("p", { className: "dssm-feedback dssm-warning", role: "status" }, t("dest.empty")) : null,
+      inWorkspace && workspaceError ? h("div", { className: "dssm-feedback dssm-error", role: "alert" },
+        t("dest.loadFailed", { error: workspaceError }),
+        onRetryWorkspaces ? h(Button, { variant: "outline", disabled: disabled || loading, onClick: onRetryWorkspaces }, t("dest.retry")) : null) : null,
+      inWorkspace && !loading && !workspaceError && workspaces.length === 0 ? h("p", { className: "dssm-feedback dssm-warning", role: "status" }, t("dest.empty")) : null,
       inWorkspace && workspaces.length > 0 && !chosen ? h("p", { className: "dssm-note" }, t("dest.pickFirst")) : null,
       path ? h("code", { className: "dssm-destination-path" }, path) : null,
       // 不可用的位置在下拉里置灰，原因与路径写在这里，用户才知道为什么选不了。

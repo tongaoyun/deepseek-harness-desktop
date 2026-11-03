@@ -18,10 +18,13 @@ export interface DestinationPickerProps {
   onChange: (next: Partial<DestinationValue>) => void;
   workspaces: readonly WorkspaceRow[];
   userDestinations: readonly UserDestination[];
-  /** 创建与导入入口不开放 Shared Agent。 */
+  /** 是否允许用户目录中的 Shared Agent 目标。 */
   allowAgents: boolean;
   disabled?: boolean;
   loading?: boolean;
+  /** 工作区读取失败时保留原因，不能显示为已确认的空目录。 */
+  workspaceError?: string | null;
+  onRetryWorkspaces?: () => void;
 }
 export type DestinationPickerComponent = React.ComponentType<DestinationPickerProps>;
 /** 注入给各入口的一套选择器能力，保证三处共用同一实现。 */

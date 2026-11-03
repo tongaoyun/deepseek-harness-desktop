@@ -117,6 +117,8 @@ export function createRepositoryUI({ react, Modal, SourceSelect, destination, ap
     const [destination, setDestination] = react.useState<DestinationValue>(defaultDestination());
     const [workspaces, setWorkspaces] = react.useState<WorkspaceRow[]>([]);
     const [workspacesLoading, setWorkspacesLoading] = react.useState(true);
+    const [workspacesError, setWorkspacesError] = react.useState<string | null>(null);
+    const workspaceRead = react.useRef<Promise<SkillOutput<'listWorkspaces'>> | undefined>(undefined);
     const [repoLoaded, setRepoLoaded] = react.useState(false);
     const [subsource, setSubsource] = react.useState<'github' | 'skillsh' | 'clawhub'>('github');
     const [catalogQuery, setCatalogQuery] = react.useState("");
@@ -155,6 +157,23 @@ export function createRepositoryUI({ react, Modal, SourceSelect, destination, ap
     };
     react.useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
     react.useEffect(() => () => { repositoryReadAbort.current?.abort(); repositoryReadAbort.current = null; }, []);
+    async function loadWorkspaces(signal = getSignal()) {
+      if (signal.aborted || !mounted.current) return;
+      setWorkspacesLoading(true); setWorkspacesError(null);
+      const request = api("listWorkspaces", {}, signal);
+      workspaceRead.current = request;
+      try {
+        const listed = await request;
+        if (workspaceRead.current === request && mounted.current && !signal.aborted) setWorkspaces(listed.items);
+      } catch (error) {
+        if (workspaceRead.current === request && mounted.current && !signal.aborted) { setWorkspaces([]); setWorkspacesError(message(error)); }
+      } finally {
+        if (workspaceRead.current === request) {
+          workspaceRead.current = undefined;
+          if (mounted.current && !signal.aborted) setWorkspacesLoading(false);
+        }
+      }
+    }
     async function load(signal?: AbortSignal) {
       signal?.throwIfAborted();
       const data = await api("listRepositories", {}, signal);
@@ -166,8 +185,7 @@ export function createRepositoryUI({ react, Modal, SourceSelect, destination, ap
         if (destination.scope === 'user' && !roots.some(root => root.key === destination.location && root.available))
           setDestination(previous => ({ ...previous, location: roots.find(root => root.available)?.key || 'dsh' }));
         // 工作区列表只读登记信息，失败不影响仓库列表本身。
-        setWorkspacesLoading(true);
-        api("listWorkspaces", {}, signal).then(listed => { if (mounted.current && !signal?.aborted) setWorkspaces(listed.items || []); }).catch(() => undefined).finally(() => { if (mounted.current && !signal?.aborted) setWorkspacesLoading(false); });
+        void loadWorkspaces(signal);
       }
     }
     function copyTarget(copy: RepoCopy): CopyTarget | null {
@@ -745,7 +763,7 @@ export function createRepositoryUI({ react, Modal, SourceSelect, destination, ap
             let footer: React.ReactNode;
             if (modal.type === 'install') body = h('div', { className: 'dssm-repo-panel', 'aria-busy': busy },
               h('div', { className: 'dssm-name' }, modal.skill.name),
-              h(DestinationPicker, { t, value: destination, disabled: busy, allowAgents: true, workspaces, loading: workspacesLoading, userDestinations: installRoots,
+              h(DestinationPicker, { t, value: destination, disabled: busy, allowAgents: true, workspaces, loading: workspacesLoading, workspaceError: workspacesError, onRetryWorkspaces: () => { void loadWorkspaces(); }, userDestinations: installRoots,
                 onChange: updateDestination }),
               h('p', { className: 'dssm-note' }, t('repo.installLocationsHint')),
               h('p', { className: 'dssm-note' }, t('repo.installHint')),
@@ -783,7 +801,7 @@ export function createRepositoryUI({ react, Modal, SourceSelect, destination, ap
       if (modal.type === "catalog-detail" && !modal.detail) body = h("div", { role: "status", className: "dssm-repo-panel" }, modal.loading ? readLoading(t("repo.detailLoading")) : null, modal.failed ? feedbackNode : null);
       if (modal.type === "catalog-install") body = h("div", { className: "dssm-repo-panel", "aria-busy": busy },
         h("div", { className: "dssm-name" }, modal.target.name),
-        h(DestinationPicker, { t, value: destination, disabled: busy, allowAgents: true, workspaces, loading: workspacesLoading, userDestinations: installRoots, onChange: updateDestination }),
+        h(DestinationPicker, { t, value: destination, disabled: busy, allowAgents: true, workspaces, loading: workspacesLoading, workspaceError: workspacesError, onRetryWorkspaces: () => { void loadWorkspaces(); }, userDestinations: installRoots, onChange: updateDestination }),
         h("p", { className: "dssm-note" }, t("repo.installLocationsHint")),
         h("p", { className: "dssm-note" }, t("repo.installHint")),
         busy ? h("div", { role: "status", "aria-live": "polite" }, t("repo.installProgress")) : null, feedbackNode,

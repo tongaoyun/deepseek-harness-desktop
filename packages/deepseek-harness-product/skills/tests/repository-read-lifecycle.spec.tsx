@@ -3,6 +3,7 @@ import * as React from 'react'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { Modal as NativeModal } from '@deepseek-ai/dsh-client-ui-primitives'
 import { RemoteMock, ok } from '@deepseek-ai/dsh-remote-mock'
+import { RemoteError, type RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
 import { afterEach, expect, it, onTestFinished } from 'vitest'
 import type { ModalProps, SkillOutput } from '../src/client-types.ts'
 import { createDestinationKit } from '../src/destination-picker.ts'
@@ -28,10 +29,10 @@ function deferred<T>() {
   const promise = new Promise<T>((res, rej) => { resolve = res; reject = rej })
   return { promise, resolve, reject }
 }
-async function setup(installed = false, repositories = [repo]) {
+async function setup(installed = false, repositories = [repo], workspaceRead: () => RemoteResult<SkillOutput<'listWorkspaces'>> | Promise<RemoteResult<SkillOutput<'listWorkspaces'>>> = () => ok({ items: [] })) {
   const mock = RemoteMock.create()
   mock.unary('skillsManager/listRepositories', () => ok({ repositories: repositories.map(item => ({ ...item, skills: installed ? [{ ...skill, installations: [{ installedRoot: 'dsh', tracked: true, status: 'installed', updateAvailable: true, canRollback: true, canUninstall: true }] }] : item.skills })), installRoots: [{ key: 'dsh', path: '/skills', label: 'DSH', available: true }], catalogInstalls: [], catalogCopies: [], catalogWarnings: [] } satisfies SkillOutput<'listRepositories'>))
-  mock.unary('skillsManager/listWorkspaces', () => ok({ items: [] }))
+  mock.unary('skillsManager/listWorkspaces', workspaceRead)
   mock.unary('skillsManager/listClawHub', () => ok({ items: [{ ownerHandle: 'company', slug: 'orders', displayName: 'Catalog orders', summary: '' }], nextCursor: null } satisfies SkillOutput<'listClawHub'>))
   const native = createSkillApi(Object.assign(mock.remote, { $mount: async () => async () => {}, $on: () => () => {} }))
   const api = native
@@ -52,6 +53,86 @@ async function setup(installed = false, repositories = [repo]) {
 }
 function open() { fireEvent.click(screen.getByRole('button', { name: 'repo.detail' })) }
 function close() { fireEvent.click(screen.getByRole('button', { name: 'repo.close' })) }
+
+it.each(['github', 'clawhub'] as const)('reports the %s install workspace failure, preserves local installation and retries', async (source) => {
+  const { mock } = await setup(false, [repo], () => ({ ok: false, error: new RemoteError('skills/operation', 'Workspace registry unavailable', {
+    code: 'error.workspace.registryUnavailable', error: 'Workspace registry unavailable',
+  }) }))
+  if (source === 'clawhub') fireEvent.click(screen.getByRole('button', { name: 'repo.subsource.clawhub' }))
+  fireEvent.click(await screen.findByRole('button', { name: 'repo.install' }))
+  const form = within(screen.getByRole('dialog'))
+  expect(form.getByRole('button', { name: 'repo.install' })).toHaveProperty('disabled', false)
+  fireEvent.click(form.getByRole('button', { name: 'dest.scope' }))
+  fireEvent.click(screen.getByRole('menuitem', { name: 'dest.scope.workspace' }))
+  expect((await form.findByRole('alert')).textContent).toContain('dest.loadFailed')
+  expect(form.queryByText('dest.empty')).toBeNull()
+  expect(form.getByRole('button', { name: 'repo.install' })).toHaveProperty('disabled', true)
+  mock.unary('skillsManager/listWorkspaces', () => ok({ items: [] }))
+  fireEvent.click(form.getByRole('button', { name: 'dest.retry' }))
+  await form.findByText('dest.empty')
+  expect(form.queryByRole('alert')).toBeNull()
+  expect(mock.remote.skillsManager.listWorkspaces).toHaveBeenCalledTimes(2)
+  expect(mock.remote.skillsManager.installRepository).not.toHaveBeenCalled()
+  expect(mock.remote.skillsManager.installCatalog).not.toHaveBeenCalled()
+})
+
+it.each(['success', 'failure'] as const)('cancels workspace destination retry after page disposal and ignores its late %s', async (outcome) => {
+  const { mock, view } = await setup(false, [repo], () => ({ ok: false, error: new RemoteError('skills/operation', 'Workspace unavailable', {
+    code: 'error.workspace.registryUnavailable', error: 'Workspace unavailable',
+  }) }))
+  fireEvent.click(screen.getByRole('button', { name: 'repo.install' }))
+  const form = within(screen.getByRole('dialog'))
+  fireEvent.click(form.getByRole('button', { name: 'dest.scope' }))
+  fireEvent.click(screen.getByRole('menuitem', { name: 'dest.scope.workspace' }))
+  await form.findByRole('alert')
+  const pending = deferred<SkillOutput<'listWorkspaces'>>()
+  onTestFinished(async () => { pending.resolve({ items: [] }); await pending.promise.catch(() => undefined) })
+  mock.unary('skillsManager/listWorkspaces', async () => ok(await pending.promise))
+  fireEvent.click(form.getByRole('button', { name: 'dest.retry' }))
+  const signal = mock.remote.skillsManager.listWorkspaces.mock.calls.at(-1)?.[0]
+  expect(signal?.aborted).toBe(false)
+  view.unmount()
+  expect(signal?.aborted).toBe(true)
+  await act(async () => {
+    if (outcome === 'failure') pending.reject(new Error('Closed workspace retry failed'))
+    else pending.resolve({ items: [] })
+    await pending.promise.catch(() => undefined)
+  })
+  expect(screen.queryByRole('dialog')).toBeNull()
+  expect(screen.queryByRole('alert')).toBeNull()
+  expect(mock.remote.skillsManager.installRepository).not.toHaveBeenCalled()
+  expect(mock.remote.skillsManager.installCatalog).not.toHaveBeenCalled()
+})
+
+it.each(['success', 'failure'] as const)('keeps the current workspace destination after a superseded %s', async (outcome) => {
+  const { mock, view } = await setup()
+  const old = deferred<SkillOutput<'listWorkspaces'>>()
+  onTestFinished(async () => { view.unmount(); old.resolve({ items: [] }); await old.promise.catch(() => undefined) })
+  mock.unary('skillsManager/refreshRepository', () => ok({ ...repo, skills: [{ ...skill, body: 'Instructions' }] }))
+  mock.unary('skillsManager/listWorkspaces', async () => ok(await old.promise))
+  fireEvent.click(screen.getByRole('button', { name: 'repo.refresh' }))
+  await waitFor(() => { expect(mock.remote.skillsManager.listWorkspaces).toHaveBeenCalledTimes(2) })
+  await waitFor(() => { expect(screen.getByRole('button', { name: 'repo.refresh' })).toHaveProperty('disabled', false) })
+  mock.unary('skillsManager/listWorkspaces', () => ok({ items: [{ name: 'Current workspace', path: '/current', registeredPaths: ['/current'], available: true, skillCount: 0 }] }))
+  fireEvent.click(screen.getByRole('button', { name: 'repo.refresh' }))
+  await waitFor(() => { expect(mock.remote.skillsManager.listWorkspaces).toHaveBeenCalledTimes(3) })
+  fireEvent.click(screen.getByRole('button', { name: 'repo.install' }))
+  const form = within(screen.getByRole('dialog'))
+  fireEvent.click(form.getByRole('button', { name: 'dest.scope' }))
+  fireEvent.click(screen.getByRole('menuitem', { name: 'dest.scope.workspace' }))
+  fireEvent.click(form.getByRole('button', { name: 'dest.workspace' }))
+  fireEvent.click(screen.getByRole('menuitem', { name: 'Current workspace' }))
+  await act(async () => {
+    if (outcome === 'failure') old.reject(new Error('Superseded workspace read failed'))
+    else old.resolve({ items: [] })
+    await old.promise.catch(() => undefined)
+  })
+  expect(form.getByRole('button', { name: 'dest.workspace' })).toHaveProperty('disabled', false)
+  expect(form.getByRole('button', { name: 'dest.workspace' }).textContent).toBe('Current workspace')
+  expect(form.getByRole('button', { name: 'repo.install' })).toHaveProperty('disabled', false)
+  expect(form.queryByRole('alert')).toBeNull()
+  expect(form.queryByText('dest.empty')).toBeNull()
+})
 
 it.each(['success', 'failure'] as const)('stops a repository refresh batch after page disposal and a late %s, then retries on reopen', async (outcome) => {
   const second = { ...repo, id: 'second', name: 'more-skills' }
