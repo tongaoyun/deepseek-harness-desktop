@@ -29,9 +29,9 @@ it.each([
 })
 
 it.each([
-  [{ path: 'references/orders.md', contents: markdown }],
-  [file, { path: '../orders.md', contents: 'invalid' }],
-])('rejects packages missing the skill document or containing traversal paths: %j', async (files) => {
+  { files: [{ path: 'references/orders.md', contents: markdown }] },
+  { files: [file, { path: '../orders.md', contents: 'invalid' }] },
+])('rejects packages missing the skill document or containing traversal paths: %j', async ({ files }) => {
   await expect(loadCatalogPackage(target, vi.fn(async () => Response.json({ files })))).rejects.toMatchObject({ code: 'error.catalog.response', statusCode: 502 })
 })
 
