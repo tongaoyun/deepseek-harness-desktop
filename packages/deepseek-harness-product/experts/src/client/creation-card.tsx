@@ -64,10 +64,22 @@ export function CreationCard(props: ToolCallPhaseProps & PropsLocale<'agency'> &
       if (!controller.signal.aborted) setBusy(false)
     }
   }
+  const refreshTeams = async () => {
+    const signal = lifetime.current?.signal
+    if (!signal) return
+    try {
+      signal.throwIfAborted()
+      setError(null)
+      const current = await props.cache.teams.refresh()
+      if (!signal.aborted) props.cache.catalog.adoptRevision(current.revision, current.enabledExperts)
+    } catch (cause: unknown) {
+      if (!signal.aborted) setError(cause instanceof Error ? cause.message : String(cause))
+    }
+  }
   return <div>
     <p>{props.phase === 'result' ? props.block.content.filter(part => part.type === 'text').map(part => part.text).join('\n') : props.t('creation.confirming')}</p>
     {ready?.success && <Button disabled={busy || claimed} onClick={() => { void load(ready.data.proposalId) }}>{props.t(claimed ? 'creation.opened' : 'creation.open')}</Button>}
-    {error && <p role="alert" className="aag-error">{error}</p>}
+    {error && <p role="alert" className="aag-error">{error}{claimed && !editor && <Button onClick={() => { void refreshTeams() }}>{props.t('btn.refresh')}</Button>}</p>}
     {editor?.draft.kind === 'expert' && <CustomExpertEditor expert={editor.draft.data} enabled={false} revision={editor.catalog.revision}
       divisions={[...new Set([...EXPERT_DIVISION_ORDER, ...editor.catalog.experts.map(expert => expert.division)])]}
       remote={props.remote} signal={lifetime.current?.signal} t={props.t} locale={props.getActive()} onClose={() => { setEditor(null) }}
@@ -78,11 +90,16 @@ export function CreationCard(props: ToolCallPhaseProps & PropsLocale<'agency'> &
       save={async (value, enabled, revision) => {
         const signal = lifetime.current?.signal
         signal?.throwIfAborted()
+        const started = props.cache.teams.getSnapshot()
         const saved = await unwrap(props.remote.saveTeam(value, enabled, revision ?? editor.teams.revision, signal))
         signal?.throwIfAborted()
-        props.cache.teams.accept(saved)
-        props.cache.catalog.adoptRevision(saved.revision, saved.enabledExperts)
         setEditor(null)
+        try {
+          const current = await props.cache.teams.acceptMutation(saved, started)
+          if (!signal?.aborted) props.cache.catalog.adoptRevision(current.revision, current.enabledExperts)
+        } catch (cause: unknown) {
+          if (!signal?.aborted) setError(cause instanceof Error ? cause.message : String(cause))
+        }
       }} /></TeamLocaleContext.Provider>}
   </div>
 }

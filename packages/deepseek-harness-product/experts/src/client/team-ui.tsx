@@ -1,5 +1,6 @@
 import type { RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
 import type { ExpertClientState } from './client-state.ts'
+import { deepEqualJson } from '@deepseek-ai/dsh-util-values'
 import { StateDot } from '@deepseek-ai/dsh-client-ui-primitives';
 import { localizedExperts, useTeamLocale } from './team-locale.ts';
 import { useTeamDirectoryView } from './team-directory.ts';
@@ -121,7 +122,8 @@ export function TeamsPanel(props: {
     const [status, setStatus] = React.useState('');
     const [notice, setNotice] = React.useState('');
     const [busy, setBusy] = React.useState(false);
-    const [details, setDetails] = React.useState<ExpertTeam | null>(null);
+    const [detailsId, setDetailsId] = React.useState<string | null>(null);
+    const details = snapshot?.teams.find(team => team.id === detailsId) ?? null;
     const [editor, setEditor] = React.useState<{
         value?: TeamInput;
         enabled: boolean;
@@ -131,22 +133,23 @@ export function TeamsPanel(props: {
         team: ExpertTeam;
         action: 'enable' | 'delete' | 'select';
         example?: string;
+        snapshot: TeamSnapshot;
     } | null>(null);
     React.useEffect(() => {
         setBusy(false);
         setError('');
         setNotice('');
-        setDetails(null);
+        setDetailsId(null);
         setConfirm(null);
         setEditor(null);
         // The shared directory hook owns subscriptions and request cancellation.
     }, [props.remote, props.cache]);
     React.useEffect(() => {
+        if (detailsId !== null && !details) setDetailsId(null);
         if (!snapshot) {
-            setDetails(null);
             setConfirm(null);
         }
-    }, [snapshot]);
+    }, [snapshot, detailsId, details]);
     React.useEffect(() => {
         if (!props.active) return;
         let live = true;
@@ -155,51 +158,70 @@ export function TeamsPanel(props: {
         }).catch(cause => { if (live) setError(cause instanceof Error ? cause.message : tx("加载失败。")); });
         return () => { live = false; };
     }, [props.active, props.source, props.remote, props.cache, directory.refresh]);
-    const accept = (value: TeamSnapshot) => {
-        const next = props.cache.teams.accept(value);
+    const accept = async (value: TeamSnapshot, started: TeamSnapshot | null, signal: AbortSignal) => {
+        const next = await props.cache.teams.acceptMutation(value, started);
+        signal.throwIfAborted();
         props.cache.catalog.adoptRevision(next.revision, next.enabledExperts);
     };
-    const change = async (team: ExpertTeam, action: 'enable' | 'delete' | 'select', example?: string, confirmed = false) => {
+    const change = async (team: ExpertTeam, action: 'enable' | 'delete' | 'select', example?: string, reviewed?: TeamSnapshot) => {
         const signal = directory.getSignal();
         if (busy || !snapshot || !signal || signal.aborted)
             return;
+        if (reviewed && (reviewed.revision !== snapshot.revision
+            || !deepEqualJson(team, snapshot.teams.find(value => value.id === team.id) ?? null)
+            || reviewed.enabledTeams.includes(team.id) !== snapshot.enabledTeams.includes(team.id)
+            || team.members.some(member => reviewed.enabledExperts.includes(member.expertSlug) !== snapshot.enabledExperts.includes(member.expertSlug)))) {
+            setConfirm(null);
+            setError(tx("配置已更新，请读取最新内容后重试。"));
+            return;
+        }
+        const revision = (reviewed ?? snapshot).revision;
         const enabling = action !== 'delete' &&
             (action === 'select' || !snapshot.enabledTeams.includes(team.id));
         const missing = team.members.filter((m) => !snapshot.enabledExperts.includes(m.expertSlug));
-        if (!confirmed && (action === 'delete' || (enabling && missing.length))) {
-            setConfirm({ team, action, example });
+        if (!reviewed && (action === 'delete' || (enabling && missing.length))) {
+            setConfirm({ team, action, example, snapshot });
             setError('');
             return;
         }
         const insert = props.prepareSelect?.() ?? props.onSelect;
+        const started = props.cache.teams.getSnapshot();
         setBusy(true);
         setError('');
         try {
             if (action === 'delete') {
-                const next = await unwrap(props.remote.deleteTeam(team.id, snapshot.revision, signal));
+                const next = await unwrap(props.remote.deleteTeam(team.id, revision, signal));
                 if (signal.aborted) return;
-                accept(next);
-                setDetails(null);
+                setConfirm(null);
+                setDetailsId(null);
                 setNotice(tx("专家团已删除，成员与历史会话保留。"));
+                await accept(next, started, signal);
             }
             else {
                 if (action === 'enable' ||
                     !snapshot.enabledTeams.includes(team.id) ||
                     missing.length) {
-                    const next = await unwrap(props.remote.setTeamEnabled(team.id, enabling, snapshot.revision, signal));
+                    const next = await unwrap(props.remote.setTeamEnabled(team.id, enabling, revision, signal));
                     if (signal.aborted) return;
-                    accept(next);
+                    setConfirm(null);
+                    await accept(next, started, signal);
                 }
                 if (signal.aborted)
                     return;
                 if (action === 'select') {
-                    const inserted = await insert?.(team, example);
+                    const current = props.cache.teams.getSnapshot();
+                    const selected = current?.teams.find(value => value.id === team.id);
+                    if (!current || !selected || !current.enabledTeams.includes(team.id)
+                        || teamIssue(selected, props.cache.catalog.getSnapshot().experts, current.enabledExperts)) {
+                        throw new Error(tx("团队已停用或成员失效，请修复后再发送。"));
+                    }
+                    const inserted = await insert?.(selected, example);
                     if (signal.aborted) return;
                     if (!inserted) {
                         setError(tx("团队已启用，但无法写入当前聊天草稿。请关闭设置后，在聊天的专家团入口选择。"));
                         return;
                     }
-                    setDetails(null);
+                    setDetailsId(null);
                     setNotice(tx("专家团已加入草稿，确认需求后发送。"));
                 }
             }
@@ -213,7 +235,7 @@ export function TeamsPanel(props: {
         }
     };
     const copy = (team: ExpertTeam) => {
-        setDetails(null);
+        setDetailsId(null);
         const { id: _id, company: _company, ...value } = team;
         setEditor({
             value: {
@@ -301,7 +323,7 @@ export function TeamsPanel(props: {
                       { id: 'delete', label: tx("删除专家团"), icon: <IconTrash size={16} />, danger: true, disabled: busy, onSelect: () => void change(team, 'delete') },
                     ]),
                 ]} actions={<>
-                  <button type="button" className="aag-card-action" title={tx("查看详情")} aria-label={tx("查看详情")} aria-haspopup="dialog" onClick={() => setDetails(team)}>
+                  <button type="button" className="aag-card-action" title={tx("查看详情")} aria-label={tx("查看详情")} aria-haspopup="dialog" onClick={() => setDetailsId(team.id)}>
                     <IconEye size={18}/><span className="aag-card-action-text">{tx("查看详情")}</span></button>
                 </>}/>);
         })}
@@ -315,13 +337,13 @@ export function TeamsPanel(props: {
                 setStatus('');
             }}>{tx("清除筛选")}</Button>}
         </div>)}
-      {details && (<TeamDetails team={details} experts={experts} engine={snapshot?.engine} close={() => setDetails(null)} onCopy={() => copy(details)} onSelect={(example) => void change(details, 'select', example)} onEdit={details.company ? undefined : () => {
+      {details && (<TeamDetails team={details} experts={experts} engine={snapshot?.engine} close={() => setDetailsId(null)} onCopy={() => copy(details)} onSelect={(example) => void change(details, 'select', example)} onEdit={details.company ? undefined : () => {
                     setEditor({
                         value: details,
                         enabled: snapshot!.enabledTeams.includes(details.id),
                         revision: snapshot!.revision,
                     });
-                    setDetails(null);
+                    setDetailsId(null);
                 }} onDelete={details.company ? undefined : () => void change(details, 'delete')}/>)}
       {editor && (<TeamEditor initial={editor.value} experts={experts} enabled={editor.enabled} enabledExperts={snapshot?.enabledExperts ?? []} close={() => setEditor(null)} refresh={async () => {
                 const signal = directory.getSignal();
@@ -338,12 +360,17 @@ export function TeamsPanel(props: {
                 const signal = directory.getSignal();
                 if (!signal) return;
                 signal.throwIfAborted();
+                const started = props.cache.teams.getSnapshot();
                 const next = await unwrap(props.remote.saveTeam(value, enabled, revision ?? editor.revision, signal));
                 signal.throwIfAborted();
-                accept(next);
                 setEditor(null);
                 setNotice(tx("专家团配置已保存。"));
                 props.onSaved?.();
+                try {
+                    await accept(next, started, signal);
+                } catch (cause) {
+                    if (!signal.aborted) setError(cause instanceof Error ? tx(cause.message) : tx("加载失败。"));
+                }
             }}/>)}
       {confirm && (<TeamConfirm title={confirm.action === 'delete' ? tx("删除专家团？") : tx("启用团队成员")} description={confirm.action === 'delete'
                 ? tx("删除“{0}”的配置，保留成员专家和历史会话。", [confirm.team.name]) : tx("同时启用：{0}。停用团队时不会停用成员。", [confirm.team.members
@@ -351,7 +378,7 @@ export function TeamsPanel(props: {
                     .map((m) => experts.find((e) => e.slug === m.expertSlug)?.name ?? tx("失效成员"))
                     .join(locale === 'en' ? ', ' : '、')])} label={confirm.action === 'delete' ? tx("确认删除") : tx("启用团队及所需成员")} danger={confirm.action === 'delete'} busy={busy} error={error} onCancel={() => setConfirm(null)} onConfirm={() => {
                 const current = confirm;
-                void change(current.team, current.action, current.example, true);
+                void change(current.team, current.action, current.example, current.snapshot);
             }} />)}
     </section>);
     return panel;
