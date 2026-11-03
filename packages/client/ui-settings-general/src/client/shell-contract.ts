@@ -71,6 +71,7 @@ export type SettingsRootComponentProps =
     | 'settings.header'
     | 'settings.action'
     | 'settings.close'
+    | 'settings.section.icon'
     | 'settings.onboarding'
   >
   & PropsRenderFactories

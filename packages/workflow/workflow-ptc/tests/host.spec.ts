@@ -34,7 +34,6 @@ async function setup(execute?: (bindings: HostBindings, spec: PtcRunSpec) => Pro
   const ctx = new Context()
   onTestFinished(async () => { await ctx.fiber.dispose() })
   await ctx.plugin(SessionStore)
-  await ctx.plugin(AgentRegistry)
   await ctx.plugin(SessionProjections)
   await ctx.plugin(AgentRegistry)
   await ctx.plugin(SandboxPolicy, { mode: 'read-only' })

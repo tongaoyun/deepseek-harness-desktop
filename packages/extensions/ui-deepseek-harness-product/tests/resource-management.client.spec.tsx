@@ -2,7 +2,7 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, expect, it, vi } from 'vitest'
 import { ConnectorsPanel } from '../src/client/DeepSeekHarnessCatalogSection.tsx'
-import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
+import { contextMenuHook, makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import { zh as commonZh } from '@deepseek-ai/dsh-client-locale/src/locales/zh.ts'
 import { zh } from '../src/locales.ts'
 
@@ -32,6 +32,7 @@ function fixture(operation: typeof cases[number], result: () => Promise<unknown>
     subscribe: (_namespace: string, callback: typeof listener) => { listener = callback; return () => { listener = undefined } },
   } })
   const actions = {
+    useContextMenu: contextMenuHook(),
     usePanelInfo: unusedSlot, useRemoteAccess: unusedSlot, useSessionAccess: unusedSlot, useWorkspaceAccess: unusedSlot,
     useSessions: unusedSlot, useSessionStatus: unusedSlot, useSessionRetainInfo: unusedSlot,
     useWorkspaces: unusedSlot, useResource: unusedSlot, useAccess: unusedSlot, renderFactorySlot: unusedSlot,

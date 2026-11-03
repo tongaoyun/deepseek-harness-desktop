@@ -24,6 +24,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 
 const repositoryRoot = fileURLToPath(new URL('../../../../../', import.meta.url))
 const DOCKKIT_BUNDLE = 'packages/client/ui-dockkit/lib/index.js'
+const PRODUCT_DESKTOP_BUNDLE = 'packages/deepseek-harness-product/desktop/lib/index.js'
 
 /**
  * Files Node's ESM loader cannot import in this repository. None is a finding:
@@ -35,12 +36,15 @@ const DOCKKIT_BUNDLE = 'packages/client/ui-dockkit/lib/index.js'
  * exact stylesheet: the swept bundle's first unresolvable stylesheet depends on
  * its import graph and on how the launcher resolves workspace packages, so a
  * pinned path would certify an import order instead of the `.css` exemption.
+ * The product Desktop entry admits only missing Electron named exports under
+ * bare Node; its real host is Electron's main process.
  */
 const BASELINE_EXEMPT: ReadonlyMap<string, string> = new Map([
   [DOCKKIT_BUNDLE, 'imports .css, which bare Node cannot load'],
   ['packages/client/ui-primitives/lib/index.js', 'imports .css, which bare Node cannot load'],
   ['packages/client/web/lib/index.js', 'imports .css, which bare Node cannot load'],
   ['packages/test-support/client-runtime/lib/index.js', "needs vitest's internal state"],
+  [PRODUCT_DESKTOP_BUNDLE, 'requires Electron main-process exports'],
 ])
 
 let failures = 0
@@ -105,6 +109,10 @@ const isUnknownCssExtension = (reason: unknown): boolean =>
   && 'code' in reason && reason.code === 'ERR_UNKNOWN_FILE_EXTENSION'
   && reason.message.startsWith('Unknown file extension ".css" for ')
 
+const isElectronHostImportRefusal = (reason: unknown): boolean =>
+  reason instanceof SyntaxError
+  && /^The requested module 'electron' does not provide an export named '[^']+'$/u.test(reason.message)
+
 const files = process.argv.slice(2).length > 0
   ? process.argv.slice(2).map(path => (path.startsWith('/') ? path : join(process.cwd(), path)))
   : discover()
@@ -121,7 +129,8 @@ if (files.length === 0) {
     try {
       await import(pathToFileURL(file).href)
     } catch (reason) {
-      if (exemption === undefined || (key === DOCKKIT_BUNDLE && !isUnknownCssExtension(reason))) {
+      if (exemption === undefined || (key === DOCKKIT_BUNDLE && !isUnknownCssExtension(reason))
+        || (key === PRODUCT_DESKTOP_BUNDLE && !isElectronHostImportRefusal(reason))) {
         // A bundle that stopped being importable is a real finding, so it
         // fails rather than joining a tolerated total.
         fail(`- UNEXPECTED BASELINE FAILURE ${key}: ${(reason as Error).message.split('\n')[0]}`)

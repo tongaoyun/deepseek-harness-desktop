@@ -94,7 +94,7 @@ export function resolveHostLocale(value: unknown): LocaleId {
 
 /** 按当前语言格式化宿主文案。 */
 export function formatHost(locale: LocaleId, key: HostKey, params?: Record<string, string | number>): string {
-  const dict = locale === 'en' ? enHost : zhHost
+  const dict = HOST_DICTIONARIES[locale]
   let text = dict[key]
   if (params !== undefined) {
     for (const [name, value] of Object.entries(params)) text = text.replaceAll('{' + name + '}', String(value))
@@ -241,3 +241,23 @@ export function renderSummonResults(
     return '## ' + item.expert + '\n' + body
   }).join('\n\n')
 }
+
+/** English fallback for the Japanese locale. */
+export const jaHost: Record<HostKey, string> = { ...enHost }
+
+/** English fallback for the Spanish locale. */
+export const esHost: Record<HostKey, string> = { ...enHost }
+
+/** English fallback for the French locale. */
+export const frHost: Record<HostKey, string> = { ...enHost }
+
+/** English fallback for the German locale. */
+export const deHost: Record<HostKey, string> = { ...enHost }
+
+/** English fallback for the Russian locale. */
+export const ruHost: Record<HostKey, string> = { ...enHost }
+
+/** English fallback for the Portuguese locale. */
+export const ptHost: Record<HostKey, string> = { ...enHost }
+
+const HOST_DICTIONARIES = { zh: zhHost, en: enHost, ja: jaHost, es: esHost, fr: frHost, de: deHost, ru: ruHost, pt: ptHost }

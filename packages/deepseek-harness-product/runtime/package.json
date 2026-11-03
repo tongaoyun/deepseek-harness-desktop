@@ -56,9 +56,12 @@
     "@deepseek-ai/dsh-deepseek-account": "workspace:*",
     "@deepseek-ai/dsh-workspace": "workspace:*",
     "@deepseek-ai/cordis-plugin-include": "workspace:~",
-    "@deepseek-harness/product": "workspace:*"
+    "@deepseek-harness/product": "workspace:*",
+    "@deepseek-ai/dsh-llm-deepseek": "workspace:*",
+    "@deepseek-ai/dsh-launch-environment": "workspace:*"
   },
   "devDependencies": {
+    "@deepseek-ai/dsh-config-editor": "workspace:*",
     "@deepseek-ai/dsh-mcp-resources": "workspace:*",
     "@deepseek-ai/dsh-ptc-runtime-node": "workspace:*",
     "@deepseek-ai/dsh-subprocess-local": "workspace:*",
@@ -69,6 +72,7 @@
     "@deepseek-ai/dsh-fs-local": "workspace:*",
     "@deepseek-ai/dsh-tool-skill": "workspace:*",
     "@deepseek-ai/dsh-working-directory": "workspace:*",
-    "@types/node": "^22.20.0"
+    "@types/node": "^22.20.0",
+    "@deepseek-ai/dsh-llm-pi-ai": "workspace:*"
   }
 }

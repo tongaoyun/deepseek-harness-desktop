@@ -88,6 +88,7 @@ vi.mock('electron', () => ({
   nativeTheme: state.nativeTheme,
   shell: { openExternal: vi.fn(async () => {}) },
   session: { defaultSession: {
+    on: vi.fn(),
     setPermissionCheckHandler: vi.fn(), setPermissionRequestHandler: vi.fn(), webRequest: { onBeforeSendHeaders: vi.fn() },
   } },
   protocol: { registerSchemesAsPrivileged: vi.fn(), handle: vi.fn() },

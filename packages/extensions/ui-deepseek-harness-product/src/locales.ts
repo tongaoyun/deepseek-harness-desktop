@@ -786,6 +786,24 @@ export const en = {
 /** Supported translation keys in the DeepSeekHarness product namespace. */
 export type DeepSeekHarnessProductKey = keyof typeof zh
 
+/** English fallback for the Japanese locale. */
+export const ja: Record<keyof typeof zh, string> = { ...en }
+
+/** English fallback for the Spanish locale. */
+export const es: Record<keyof typeof zh, string> = { ...en }
+
+/** English fallback for the French locale. */
+export const fr: Record<keyof typeof zh, string> = { ...en }
+
+/** English fallback for the German locale. */
+export const de: Record<keyof typeof zh, string> = { ...en }
+
+/** English fallback for the Russian locale. */
+export const ru: Record<keyof typeof zh, string> = { ...en }
+
+/** English fallback for the Portuguese locale. */
+export const pt: Record<keyof typeof zh, string> = { ...en }
+
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface LocaleNamespaceMap {
     deepseekHarnessProduct: DeepSeekHarnessProductKey

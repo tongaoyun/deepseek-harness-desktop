@@ -16,7 +16,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-commands/client'
 import type { DesktopUpdateBridge } from '@deepseek-ai/dsh-client-ui-settings-general/types'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { IconDatabaseOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives'
-import { en, NS, zh } from '../locales.ts'
+import { de, en, es, fr, ja, NS, pt, ru, zh } from '../locales.ts'
 import {
   ConnectorsPanel, KnowledgePanel,
 } from './DeepSeekHarnessCatalogSection.tsx'
@@ -42,7 +42,7 @@ const PANEL_COMPONENTS = {
 
 /** Register DeepSeekHarness capability navigation in the official Harness sidebar. */
 export function apply(ctx: ClientContext): void {
-  ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'deepseek-harness-product: dictionaries')
+  ctx.effect(() => ctx.locale.register(NS, { zh, en, ja, es, fr, de, ru, pt }), 'deepseek-harness-product: dictionaries')
   ctx.plugin(Experts)
   ctx.plugin(Skills)
   registerKnowledgeToolResults(ctx)

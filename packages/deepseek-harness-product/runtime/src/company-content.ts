@@ -24,6 +24,7 @@ declare module '@deepseek-ai/cordis' {
 
 /** Credential-free company content source exposed only inside the product Host. */
 export class CompanyContent extends Service implements CompanyContentSource {
+  static inject = ['sessions', 'sessionQuery']
   private readonly lifecycle = new AbortController()
   private readonly pendingBindings = new Map<string, BindingRequest>()
   private readonly operations = new Set<Promise<unknown>>()

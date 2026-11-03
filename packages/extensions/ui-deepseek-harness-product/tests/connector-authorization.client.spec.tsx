@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, expect, it, vi } from 'vitest'
-import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
+import { contextMenuHook, makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import { zh as commonZh } from '@deepseek-ai/dsh-client-locale/src/locales/zh.ts'
 import { ConnectorDetail } from '../src/client/ConnectorView.tsx'
 import { ConnectorsPanel } from '../src/client/DeepSeekHarnessCatalogSection.tsx'
@@ -13,6 +13,7 @@ const descriptor = { visibility: 'COMPANY', reviewStatus: 'PUBLISHED', id: 'erp'
 const launch = { connectorId: 'erp', status: 'PENDING', authorizationUrl: 'https://auth.example.test/', state: 'state-private', expiresAt: 2_000_000_000 }
 function unusedSlot(): never { throw new Error('Authorization does not read this slot') }
 const actions = {
+  useContextMenu: contextMenuHook(),
   usePanelInfo: unusedSlot, useRemoteAccess: unusedSlot, useSessionAccess: unusedSlot, useWorkspaceAccess: unusedSlot,
   useSessions: unusedSlot, useSessionStatus: unusedSlot, useSessionRetainInfo: unusedSlot,
   useWorkspaces: unusedSlot, useResource: unusedSlot, useAccess: unusedSlot, renderFactorySlot: unusedSlot,

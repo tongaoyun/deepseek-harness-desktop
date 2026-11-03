@@ -43,11 +43,13 @@ interface Recorded {
   store?: unknown
   inject?: unknown
   component: unknown
+  children?: Record<string, unknown>
 }
 
 async function boot() {
   const ctx = new Context()
   ctx.provide('fileDrag', { actions: { prepare: async () => ({ start: () => true, release: () => {} }), reportFailure: () => {} }, read: () => undefined } satisfies import('@deepseek-ai/cordis').Context['fileDrag'])
+  ctx.provide('contextMenus', { open: vi.fn() } as never)
   ctx.provide('resources', createResources())
   ctx.provide('configForms', { developerTools: { enabled: createSnapshotStore(true) } } as never)
   const tabs = new SidebarRightTabRegistry(ctx)
@@ -110,6 +112,10 @@ describe('ui-sidebar-documentpreview apply', () => {
     ])
     expect([...factories]).toEqual(['document.preview'])
     expect(registered.filter(entry => entry.name === 'document.preview.body')).toHaveLength(8)
+    expect(Object.keys(registered[0]!.children!)).toEqual([
+      'sidebar.right.tab.document', 'sidebar.right.tab.document.actions',
+      'sidebar.right.tab.document.unpreviewable', 'sidebar.right.tab.document.action',
+    ])
     expect(registered[0]?.store).toBeDefined()
     expect(typeof registered[0]?.inject).toBe('function')
   })

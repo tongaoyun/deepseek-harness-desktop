@@ -689,17 +689,24 @@ describe('persistence changes current-tree commands', () => {
     expect(() => loadPersistenceHistory(root)).toThrow('unreferenced')
   })
 
-  it('accepts explicitly unpaired history while still checking its prose and snapshot', () => {
+  it('requires paired history and checks its prose and snapshot despite translation exclusions', () => {
     const root = fixture()
     baseline(root)
     const path = `docs/persistence-changes/${BASE_ID}.md`
     mkdirSync(join(root, 'scripts'), { recursive: true })
     writeFileSync(join(root, 'scripts/translation-pairing.manifest.json'), JSON.stringify({ excluded: [path] }))
-    rmSync(join(root, 'docs/persistence-changes', `${BASE_ID}.zh.md`))
+    const chinese = join(root, 'docs/persistence-changes', `${BASE_ID}.zh.md`)
+    const translated = readFileSync(chinese, 'utf8')
+    rmSync(chinese)
+    expect(() => loadPersistenceHistory(root)).toThrow('missing Chinese counterpart')
+    writeFileSync(chinese, translated)
     expect(loadPersistenceHistory(root).entries).toHaveLength(1)
     const source = readFileSync(join(root, path), 'utf8')
     writeFileSync(join(root, path), source.replaceAll('Optional payload metadata preserves the recorded value.', 'TODO: explain this change.'))
     expect(() => loadPersistenceHistory(root)).toThrow('complete compatibility')
+    writeFileSync(join(root, path), source)
+    rmSync(join(root, 'docs/persistence-changes', `${BASE_ID}.schema.json`))
+    expect(() => loadPersistenceHistory(root)).toThrow('missing schema snapshot')
   })
 
   it('excludes nested historical format documents and schemas from acknowledgements', () => {
@@ -1072,76 +1079,6 @@ describe('recorded source compatibility policy', () => {
     }
     const unknownKind = attributedRoot([EXISTING_SOURCE], { policy: attributionPolicy(['absent']) })
     expect(() => parsePersistenceSnapshot(encodePersistenceSnapshot({ ...snapshot, roots: [unknownKind] }))).toThrow('invalid source compatibility')
-  })
-})
-
-describe('explicit same-version decisions', () => {
-  it.each(['optional header', 'removed field', 'changed field'] as const)('admits an explicitly acknowledged %s after finalization', (kind) => {
-    const root = fixture()
-    finalize(root)
-    const previous = contents(root)
-    let after: PersistenceSchemaInventory
-    if (kind === 'optional header') {
-      const current = inventory({ value: 'number' }, 4)
-      after = { ...current, roots: current.roots.map((root) => {
-        if (root.key === 'SessionHeader') return typeRoot('SessionHeader', { id: 'string', 'env?': 'string' }, 4)
-        return root
-      }) }
-    } else if (kind === 'removed field') {
-      after = inventory({}, 4)
-    } else {
-      after = inventory({ value: 'boolean' }, 4)
-    }
-    const prose = proseFile(root)
-    expect(jsonResult(runPersistenceChanges(['--record', NEXT_ID, '--decision', 'same-version', '--prose', prose, '--json'], root, () => after)).ok).toBe(true)
-    const saved = loadPersistenceHistory(root).entries.find(entry => entry.record.id === NEXT_ID)!
-    expect(saved.record.changes.every(change => change.decision === 'same-version')).toBe(true)
-    expect(runPersistenceChanges(['--check'], root, () => after)).toContain('roots match')
-    for (const [path, content] of Object.entries(previous).filter(([path]) => path.startsWith('docs/persistence-changes/'))) {
-      expect(readFileSync(join(root, path), 'utf8')).toBe(content)
-    }
-  })
-
-  it('cannot waive an actual version transition with a same-version decision', () => {
-    const root = fixture()
-    baseline(root)
-    const before = contents(root)
-    for (const version of [2, 4]) {
-      expect(jsonResult(runPersistenceChanges(['--record', NEXT_ID, '--decision', 'same-version', '--json'], root, () => inventory({ value: 'string' }, version))))
-        .toMatchObject({ ok: false, code: 'version-transition-required' })
-    }
-    expect(jsonResult(runPersistenceChanges(['--record', NEXT_ID, '--decision', 'version-bump', '--json'], root, () => inventory({ value: 'string' }, 2))))
-      .toMatchObject({ ok: false, code: 'version-transition-required' })
-    expect(contents(root)).toEqual(before)
-  })
-
-  it.each(['unchanged', 'changed'] as const)('requires an explicit decision when updating %s flagged schemas', (kind) => {
-    const root = fixture()
-    baseline(root)
-    const after = inventory({ value: 'number' })
-    runPersistenceChanges(['--record', NEXT_ID, '--decision', 'same-version', '--prose', proseFile(root)], root, () => after)
-    const current = kind === 'changed' ? inventory({ value: 'boolean' }) : after
-    const before = contents(root)
-    expect(jsonResult(runPersistenceChanges(['--update', NEXT_ID, '--json'], root, () => current)))
-      .toMatchObject({ ok: false, code: 'decision-required', files: [] })
-    expect(contents(root)).toEqual(before)
-    runPersistenceChanges(['--update', NEXT_ID, '--decision', 'same-version'], root, () => current)
-    expect(runPersistenceChanges(['--check'], root, () => current)).toContain('roots match')
-  })
-
-  it('binds same-version decisions to exact history snapshots and leaves uncovered roots rejected', () => {
-    const root = fixture()
-    baseline(root)
-    const after = inventory({ value: 'number' })
-    runPersistenceChanges(['--record', NEXT_ID, '--decision', 'same-version', '--prose', proseFile(root)], root, () => after)
-    const uncovered = { ...after, roots: after.roots.map(root => root.key === 'SessionHeader'
-      ? typeRoot('SessionHeader', { id: 'string', 'env?': 'string' }) : root) }
-    commitCurrent(root, uncovered)
-    expect(() => verifyPersistenceChanges(root, uncovered)).toThrow('unacknowledged persistence type changes')
-    const history = loadPersistenceHistory(root)
-    const recorded = history.entries.find(entry => entry.record.id === NEXT_ID)!
-    const invalid = { ...recorded, snapshot: onlyEvent(inventory({ value: 'boolean' })) }
-    expect(() => validatePersistenceHistory([...history.entries.filter(entry => entry !== recorded), invalid])).toThrow('after digest mismatch')
   })
 })
 

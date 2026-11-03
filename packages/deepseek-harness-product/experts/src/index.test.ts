@@ -625,7 +625,7 @@ describe('summon_expert', () => {
       },
     })
 
-    applyOnHost(ctx, { root: fileURLToPath(new URL('../../../../vendor/product-expert-fixtures/agency-agents-zh', import.meta.url)), provider: 'spawn', divisions: ['company'] })
+    applyOnHost(ctx, { root: fileURLToPath(new URL('../tests/fixtures/vendor/agency-agents-zh', import.meta.url)), provider: 'spawn', divisions: ['company'] })
     const summon = tools.find((tool) => (tool as { name?: string }).name === 'summon_expert') as {
       execute: (args: unknown, exec: unknown) => Promise<unknown>
     }

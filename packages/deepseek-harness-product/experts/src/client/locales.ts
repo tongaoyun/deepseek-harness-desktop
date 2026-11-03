@@ -4,7 +4,7 @@
  * {word} 形式（locale 服务 translate 以 /\{(\w+)\}/g 替换）。
  */
 import { EN_DIVISION, ZH_DIVISION } from '../names.ts'
-import { customEn, customZh } from './custom-locales.ts'
+import { customDe, customEn, customEs, customFr, customJa, customPt, customRu, customZh } from './custom-locales.ts'
 
 /** 简体中文词条（key 集真相源）。 */
 export const zh = {
@@ -168,3 +168,21 @@ export const en = {
   'division.company': EN_DIVISION['company'],
   'division.specialized': EN_DIVISION['specialized'],
 } satisfies Record<AgencyKey, string>
+
+/** English fallback for the Japanese locale. */
+export const ja: Record<AgencyKey, string> = { ...en, ...customJa }
+
+/** English fallback for the Spanish locale. */
+export const es: Record<AgencyKey, string> = { ...en, ...customEs }
+
+/** English fallback for the French locale. */
+export const fr: Record<AgencyKey, string> = { ...en, ...customFr }
+
+/** English fallback for the German locale. */
+export const de: Record<AgencyKey, string> = { ...en, ...customDe }
+
+/** English fallback for the Russian locale. */
+export const ru: Record<AgencyKey, string> = { ...en, ...customRu }
+
+/** English fallback for the Portuguese locale. */
+export const pt: Record<AgencyKey, string> = { ...en, ...customPt }

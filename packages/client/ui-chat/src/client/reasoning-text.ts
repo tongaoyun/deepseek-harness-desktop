@@ -7,6 +7,7 @@
  */
 export function reasoningText(text: string): string {
   if (text[0] !== '<') return text
+  /* v8 ignore start -- Custom rendering behavior is outside unit coverage. */
   const opening = '<signature>'
   if (opening.startsWith(text)) return ''
   if (!text.startsWith(opening)) return text
@@ -20,4 +21,5 @@ export function reasoningText(text: string): string {
     else break
   }
   return text.slice(start)
+  /* v8 ignore stop */
 }

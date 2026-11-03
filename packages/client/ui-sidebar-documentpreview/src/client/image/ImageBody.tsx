@@ -1,4 +1,5 @@
 /** Complete image bytes rendered in a shared zoom viewport. */
+import type { ContextMenuTriggerProps } from '@deepseek-ai/dsh-client-ui-context-menu/client'
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode, type RefCallback } from 'react'
 import { DraggableImage } from '@deepseek-ai/dsh-client-ui-primitives'
 import { bindImagePan } from './pan.ts'
@@ -62,6 +63,7 @@ export function imageMediaType(path: string): ImageMediaType | undefined {
  * @returns a rounded image fitted or scaled at its intrinsic aspect ratio.
  */
 export function ImageBody(props: ImageBodyProps): ReactNode {
+  const { getTriggerProps } = props.useContextMenu()
   const { content, resourceAddress, t } = props
   const { tab } = props.useTabInfo()
   const preference = props.useStore(state => state.byTab[tab.id] ?? DEFAULT_ZOOM)
@@ -75,6 +77,7 @@ export function ImageBody(props: ImageBodyProps): ReactNode {
 
   return <ImageDocumentView path={path} data={content.kind === 'bytes' ? content.data : undefined}
     preference={preference} onPreference={setPreference} signal={tab.signal}
+    contextMenu={(url, mediaType) => getTriggerProps({ kind: 'image', value: { sessionId: props.sessionId, path, url, mediaType } })}
     scrollportRef={props.scrollportRef} t={t} drag={{ fileDrag: props.fileDrag, resourceAddress }} />
 }
 
@@ -87,13 +90,17 @@ export interface ImageDocumentProps extends PropsLocale<'sidebarImage'> {
   readonly signal: AbortSignal
   readonly scrollportRef: RefCallback<HTMLElement>
   readonly drag?: { readonly fileDrag: ImageBodyInjected['fileDrag']; readonly resourceAddress: string }
+  /** Workspace consumers supply the native image-menu trigger; external sources omit workspace actions. */
+  readonly contextMenu?: (url: string, mediaType: ImageMediaType) => ContextMenuTriggerProps
 }
 
 /** Reuse the native image renderer for authorized bytes without requiring a workspace resource.
  * @param props - complete bytes, viewing lifetime, zoom and optional workspace drag identity.
  * @returns the ordinary zoomable image view.
  */
-export function ImageDocumentView({ path, data, preference, onPreference, signal, scrollportRef, t, drag }: ImageDocumentProps): ReactNode {
+export function ImageDocumentView({
+  path, data, preference, onPreference, signal, scrollportRef, t, drag, contextMenu,
+}: ImageDocumentProps): ReactNode {
   const mediaType = imageMediaType(path)
   const [source, setSource] = useState<ImageSource>()
 
@@ -126,12 +133,13 @@ export function ImageDocumentView({ path, data, preference, onPreference, signal
   }
   return <LoadedImage key={source.url} url={source.url} name={name} file={source.file}
     preference={preference} onPreference={onPreference} labels={labels} signal={signal}
-    scrollportRef={scrollportRef} t={t} drag={drag} />
+    scrollportRef={scrollportRef} t={t} drag={drag} contextMenuProps={contextMenu?.(source.url, mediaType)} />
 }
 
 /** SVG stays in the browser's static image mode because its bytes only reach an img Blob URL. */
-function LoadedImage({ url, name, file, preference, onPreference, labels, signal, scrollportRef, t, drag }: {
+function LoadedImage({ url, name, file, preference, onPreference, labels, signal, scrollportRef, t, drag, contextMenuProps }: {
   readonly drag: ImageDocumentProps['drag']
+  readonly contextMenuProps: ContextMenuTriggerProps | undefined
   readonly url: string
   readonly name: string
   readonly file: File
@@ -164,6 +172,7 @@ function LoadedImage({ url, name, file, preference, onPreference, labels, signal
       <div className={`${css.surface} ${zoomSurfaceClass}`} data-document-zoom-surface
         style={{ '--document-zoom-width': `${width ?? 0}px` } as CSSProperties} hidden={state !== 'ready'}>
         {drag ? <DraggableImage
+          {...contextMenuProps}
           fileDrag={drag.fileDrag} resourceAddress={drag.resourceAddress} ref={attachImage}
           className={css.image} src={url} alt={t('preview', { name })} decoding="async"
           name={name} original={file} referrerPolicy="no-referrer"

@@ -27,5 +27,5 @@ export interface NativeProductUpdateQualification {
  * @returns Native update operation and cleanup owner.
  */
 export function prepareNativeProductUpdate(options: {
-  installed: string; root: string; home: string; userData: string; serverUrl: string; modelUrl: string; token: string; environment: NodeJS.ProcessEnv
+  installed: string; root: string; home: string; userData: string; serverUrl: string; token: string; environment: NodeJS.ProcessEnv
 }): Promise<NativeProductUpdateQualification>

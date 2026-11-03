@@ -115,7 +115,7 @@ async function rewriteApplication(appPath, version, bootstrap, mirror) {
  * @returns {Promise<object>} UI upgrade operation and owned fixture cleanup.
  */
 export async function prepareNativeProductUpdate(options) {
-  const { installed, root, home, userData, serverUrl, modelUrl, token, environment } = options
+  const { installed, root, home, userData, serverUrl, token, environment } = options
   const appPath = windows ? dirname(installed) : resolve(dirname(installed), '../..')
   if (!windows) await verifyInternalApplication(appPath, environment)
   const directory = join(root, 'native-update')
@@ -135,8 +135,9 @@ export async function prepareNativeProductUpdate(options) {
 import { watch, writeFileSync } from 'node:fs'
 process.env.DSH_HOME = ${JSON.stringify(home)}
 process.env.DSH_DESKTOP_USER_DATA_DIR = ${JSON.stringify(userData)}
-process.env.DEEPSEEK_BASE_URL = ${JSON.stringify(modelUrl)}
-process.env.DEEPSEEK_API_KEY = 'fixture-model-key'
+delete process.env.DEEPSEEK_BASE_URL
+delete process.env.DEEPSEEK_API_KEY
+delete process.env.DSH_PRODUCT_MODEL_API_KEY
 process.env.DEEPSEEK_HARNESS_SESSION_TOKEN = ${JSON.stringify(token)}
 process.env.DSH_TELEMETRY_DISABLED = '1'
 app.setPath('userData', ${JSON.stringify(userData)})

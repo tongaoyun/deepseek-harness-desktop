@@ -36,7 +36,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
 import { EXPERT_DIVISION_ORDER, ZH_DIVISION, EN_DIVISION } from '../names.ts'
 import { EXPERT_AVATAR_URLS } from './avatars.ts'
-import { zh, en, type AgencyKey } from './locales.ts'
+import { zh, en, ja, es, fr, de, ru, pt, type AgencyKey } from './locales.ts'
 import { TYPERT_REMOTE } from './remote.ts'
 import { DEFAULT_EXPERT_EMOJI, isExpertConflict, type CustomExpertInput, type CatalogSnapshot } from '../expert-contract.ts'
 import { CustomExpertEditor, CustomDeleteDialog, CUSTOM_EDITOR_CSS } from './custom-editor.ts'
@@ -1348,9 +1348,9 @@ export async function apply(ctx: ClientContext): Promise<() => Promise<void>> {
     return () => { tag.remove() }
   }, 'agency-agents: style')
 
-  // 注册双语词条；t 为稳定引用（调用时读取当前 locale），locale 切换由
+  // t 为稳定引用（调用时读取当前 locale），locale 切换由
   // framework 以 (namespace, revision) 重新派生注入的 t 并触发重渲染。
-  ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'agency-agents: dictionaries')
+  ctx.effect(() => ctx.locale.register(NS, { zh, en, ja, es, fr, de, ru, pt }), 'agency-agents: dictionaries')
   const t = ctx.locale.bind(NS)
   const getActive = (): 'zh' | 'en' => ctx.locale.getSnapshot().active === 'en' ? 'en' : 'zh'
 

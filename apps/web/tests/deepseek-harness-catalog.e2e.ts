@@ -11,7 +11,7 @@ import { _electron, chromium, type ElectronApplication, type Locator, type Page 
 import { expect, it, onTestFinished } from 'vitest'
 import { z } from 'zod'
 import { captureStableAria, compareOrRefreshGolden, launchWebScaffold, seedSession, watchConsole, webSnapshotMode } from './scaffold.ts'
-import { expandOwningTurnProcess, newEnglishPage, REPO_ROOT } from './support.ts'
+import { expandOwningTurnProcess, newEnglishPage, REPO_ROOT, revealNavigationDrawer } from './support.ts'
 import { prepareDevelopmentProject } from '../../desktop/scripts/development-project.ts'
 import { developmentRuntimeDirectory, resolveDesktopBuildTarget } from '../../desktop/scripts/desktop-build-paths.mjs'
 import { createPluginProfile } from '../../desktop/src/project-manager.ts'
@@ -21,6 +21,7 @@ import { companyContentRelease, contentDigest } from '@deepseek-harness/product/
 import { builtinCapabilityPatches } from '../../../packages/deepseek-harness-product/desktop/src/builtin-capabilities.ts'
 import type { ProductTaskCapabilities } from '@deepseek-harness/product/protocol'
 import { startMockLlmServer } from '@deepseek-ai/dsh-llm-mock-server'
+import { loadOptionalPatches } from '@deepseek-ai/dsh-app-boot'
 import { ToolCallId, createAssistantMessage, createToolResultMessage, createUserMessage } from '@deepseek-ai/dsh-llm'
 import { SESSION_FORMAT_VERSION, Session, SessionId } from '@deepseek-ai/dsh-session'
 import { pdfFixture } from '../../../packages/client/ui-sidebar-documentpreview/tests/pdf-fixture.ts'
@@ -642,12 +643,14 @@ it('keeps native themes and responsive catalogs while using official details and
     for (const viewport of [{ width: 1440, height: 900 }, { width: 1024, height: 768 }, { width: 390, height: 844 }]) {
       await page.setViewportSize(viewport)
       for (const [label, catalog] of [['Connectors', 'connectors']] as const) {
+        await revealNavigationDrawer(page, 'en')
         await page.getByRole('button', { name: label, exact: true }).click()
         await page.locator(`ul[data-catalog='${catalog}']`).waitFor()
         await expectLayout(page, catalog, viewport.width === 390 ? 1 : 2)
         await page.screenshot({ path: join(screenshots, `${catalog}-${theme}-${viewport.width}.png`) })
         if (theme === 'light' && viewport.width === 1440) await snapshot(catalog)
       }
+      await revealNavigationDrawer(page, 'en')
       await page.getByRole('button', { name: 'Knowledge bases', exact: true }).click()
       const knowledgeList = await openKnowledgeNavigation(page)
       await knowledgeList.getByRole('button', { name: 'Sales procedures', exact: true }).waitFor()
@@ -1046,6 +1049,7 @@ for (const { mode, installed, surface } of desktopCarriers) {
           { id: 'policy', name: 'Operations playbook', scope: 'COMPANY', companyId: 'fixture-company', ownerName: 'Fixture company', referenceKey: 'company:policy', canRead: true, canManage: false }],
       }
       let knowledgeUnavailable = false
+      let bootstrapLoads = 0
       const uploadedFiles: { mode: string; filename: string; folderId?: string }[] = []
       const deviceReports: Record<string, unknown>[] = []
       const feedbackBodies: string[] = []
@@ -1074,6 +1078,7 @@ for (const { mode, installed, surface } of desktopCarriers) {
           response.end(JSON.stringify({ success: true, data: { ...catalogRows['/api/v1/connectors']![0],
             url: new URL('/api/v1/connectors/erp/mcp', origin).href } }))
         } else if (path === '/api/v1/bootstrap') {
+          bootstrapLoads++
           response.end(JSON.stringify({ success: true, data: { modelApiKey: 'fixture-model-key',
             endpoints: { litellm: model.baseURL + '/v1' }, models: ['deepseek-v4-flash'] } }))
         } else if (path === '/api/v1/device-capabilities' || path === '/api/v1/device-capabilities/presence') {
@@ -1259,7 +1264,7 @@ for (const { mode, installed, surface } of desktopCarriers) {
         onTestFinished(() => writeFile(configPath, original))
         if (['darwin', 'win32'].includes(process.platform) && process.env.PACKAGE_SIGNING === 'internal') {
           nativeUpdate = await prepareNativeProductUpdate({ installed, root, home, userData,
-            serverUrl: origin, modelUrl: model.baseURL + '/v1', token: secret, environment: process.env })
+            serverUrl: origin, token: secret, environment: process.env })
           onTestFinished(() => nativeUpdate!.dispose())
         } else await writeFile(configPath, JSON.stringify({ ...JSON.parse(original), serverUrl: origin }))
       }
@@ -1278,6 +1283,20 @@ for (const { mode, installed, surface } of desktopCarriers) {
       }
       const profile = join(home, 'profiles/desktop')
       createPluginProfile(profile)
+      const assertCompanyInference = () => {
+        const saved: unknown = loadOptionalPatches('dsh', join(profile, 'cordis.patch.yml'))
+          ?.find(row => row.id === 'agent-default-model')?.config
+        expect(z.object({ provider: z.string(), model: z.string() }).parse(saved))
+          .toEqual({ provider: 'product-deepseek', model: 'deepseek-v4-flash' })
+        expect(model.requests.length).toBeGreaterThan(0)
+        for (const request of model.requests) {
+          expect(request.path).toBe('/v1/messages')
+          expect(request.body).toMatchObject({ model: 'deepseek-v4-flash' })
+          expect(request.headers['x-api-key']).toBe('fixture-model-key')
+          expect(request.headers.authorization).toBeUndefined()
+        }
+        expect(JSON.stringify(model.requests)).not.toContain(secret)
+      }
       const hostDiagnostic = join(root, 'host-modules.json')
       const diagnosticPlugin = join(root, 'desktop-module-diagnostics.mjs')
       await copyFile(join(REPO_ROOT, 'apps/product-desktop/tests/fixtures/desktop-module-diagnostics.mjs'), diagnosticPlugin)
@@ -1317,9 +1336,9 @@ for (const { mode, installed, surface } of desktopCarriers) {
           DSH_DESKTOP_OPEN_DEVTOOLS: '0',
           ...installed === undefined ? { DSH_DESKTOP_DSH_DIR: project,
             DSH_DESKTOP_PRIMARY_RUNTIME_DIR: developmentRuntimeDirectory({}, process.platform, process.arch) } : {},
-          DEEPSEEK_API_KEY: 'fixture-model-key',
-          DEEPSEEK_BASE_URL: model.baseURL + '/v1',
-          ...mode === 'official' ? {} : {
+          ...mode === 'official' ? {
+            DEEPSEEK_API_KEY: 'fixture-model-key', DEEPSEEK_BASE_URL: model.baseURL + '/v1',
+          } : {
             DEEPSEEK_HARNESS_SERVER_URL: origin, DEEPSEEK_HARNESS_SESSION_TOKEN: secret,
             ...installed === undefined ? { DSH_DESKTOP_EXTENSION: pathToFileURL(join(REPO_ROOT, 'packages/deepseek-harness-product/desktop/lib/index.js')).href,
               DEEPSEEK_HARNESS_NATIVE_BINARY: join(resolve(REPO_ROOT, process.env.CARGO_TARGET_DIR ?? 'native/deepseek-harness/target'), 'release',
@@ -1535,9 +1554,7 @@ for (const { mode, installed, surface } of desktopCarriers) {
           await composer.press('Enter')
           await page.locator('p').filter({ hasText: /^Fixture review complete\.$/ }).waitFor()
           await expect.poll(() => page.locator('[data-chat-running]').count()).toBe(0)
-          expect(model.requests.length).toBeGreaterThan(0)
-          expect(model.requests[0]?.body).toMatchObject({ model: 'deepseek-v4-flash' })
-          expect(JSON.stringify(model.requests.map(request => request.body))).not.toContain(secret)
+          assertCompanyInference()
           await page.getByRole('button', { name: /^(New session|新建会话)$/, exact: true }).last().click()
         } else {
           await composer.fill('Keep this task draft')
@@ -1877,16 +1894,17 @@ for (const { mode, installed, surface } of desktopCarriers) {
           expect(await readFile(pinnedPath, 'utf8')).toBe('{broken snapshot')
           expect(await readFile(`${pinnedPath}.diagnostic.json`, 'utf8')).toContain('TASK_SNAPSHOT_INVALID')
           await expect(invoke('tasks.capabilities.read', { sessionId })).resolves.toMatchObject({ knowledgeBaseIds: ['policy'] })
-          expect(model.requests.length).toBeGreaterThan(0)
-          expect(model.requests[0]?.body).toMatchObject({ model: 'deepseek-v4-flash' })
-          expect(JSON.stringify(model.requests.map(request => request.body))).not.toContain(secret)
+          assertCompanyInference()
           await page.screenshot({ path: join(screenshots, `electron-${carrier}-product-recovered-task.png`), animations: 'disabled' })
         }
       }
       expect(tripwire.pageErrors).toEqual([])
       if (nativeUpdate !== undefined) {
         if (app === undefined) throw new Error('Native update qualification has no application owner')
+        const previousBootstrapLoads = bootstrapLoads
         page = await nativeUpdate.upgrade(app, page, () => { app = undefined })
+        expect(bootstrapLoads).toBeGreaterThan(previousBootstrapLoads)
+        assertCompanyInference()
       }
       await mkdir(screenshots, { recursive: true })
       await page.screenshot({ path: join(screenshots, `electron-${carrier}-${mode}.png`) })

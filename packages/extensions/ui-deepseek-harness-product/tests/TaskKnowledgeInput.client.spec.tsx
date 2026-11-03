@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import type { ComponentProps } from 'react'
+import { contextMenuHook } from '@deepseek-ai/dsh-client-test-runtime'
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, expect, it, vi } from 'vitest'
 import { SessionId } from '@deepseek-ai/dsh-session/types'
@@ -27,6 +28,7 @@ function fixture() {
     requiredKnowledgeBaseIds: [], knowledgeBaseRefs: [],
   } }))
   const props: ComponentProps<typeof TaskKnowledgeInput> = {
+    useContextMenu: contextMenuHook(),
     sessionId, useSessions: selector => selector({ ids: [sessionId], phase: 'ready', projectionsBySession: {}, byId: {
       [sessionId]: { id: sessionId, displayTitle: 'Session', blank: true, running: false, updatedAt: 0,
         retainedBy: { mainView: 1 }, projectionValues: { agentPreset: 'standard' } },

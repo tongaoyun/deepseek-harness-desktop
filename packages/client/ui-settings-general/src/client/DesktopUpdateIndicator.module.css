@@ -20,8 +20,10 @@
   cursor: pointer;
 }
 
-.indicator:hover {
-  background: color-mix(in srgb, var(--dsw-alias-brand-primary-new-colorprimary-new-color) 8%, transparent);
+@media (hover: hover) {
+  .indicator:hover {
+    background: color-mix(in srgb, var(--dsw-alias-brand-primary-new-colorprimary-new-color) 8%, transparent);
+  }
 }
 
 .indicator:focus-visible {
