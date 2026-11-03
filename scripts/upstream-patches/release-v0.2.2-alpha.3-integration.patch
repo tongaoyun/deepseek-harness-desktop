@@ -5081,21 +5081,20 @@ index 0000000000000000000000000000000000000000..9ebc9146c956d184429a3fd6a8ee3d76
 +2. 向 Content Factory 传入选定的 `text` 或其译文，不要重复执行 Chat 的显示处理。
 +3. 重新构建扩展，使用每种支持的模型格式验证流式与完成后的渲染、翻译和未翻译视图。
 diff --git a/package.json b/package.json
-index dcf0f5a6093bd0bde21874429e9ffcaca1436d0e..dad9ec704c0e7b17ce2d2ae369c8e6a12bee6dd4 100644
+index dcf0f5a6093bd0bde21874429e9ffcaca1436d0e..021017e9794a57698d9ca0a67b1411f7bc8d3ea8 100644
 --- a/package.json
 +++ b/package.json
-@@ -18,6 +18,10 @@
+@@ -18,6 +18,9 @@
    ],
    "scripts": {
      "prepare:primary-runtime": "tsx scripts/primary-runtime/prepare.ts",
 +    "build:product": "pnpm --dir packages/deepseek-harness-product/product build && pnpm exec tsdown --config-loader native --config packages/deepseek-harness-product/product/tsdown.config.ts",
-+    "build:native-product": "cargo build --release --manifest-path native/deepseek-harness/Cargo.toml",
 +    "verify:upstream": "node scripts/verify-upstream.mjs",
 +    "sync:upstream": "node scripts/sync-upstream.mjs",
      "build": "tsx scripts/build.ts",
      "build:artifacts": "tsx scripts/build.ts --scope artifacts",
      "build:check": "tsx scripts/build.ts --scope check",
-@@ -30,6 +34,8 @@
+@@ -30,6 +33,8 @@
      "build:desktop": "pnpm --filter @deepseek-ai/dsh-desktop run build",
      "dev:desktop": "pnpm --filter @deepseek-ai/dsh-desktop run dev",
      "start:desktop": "pnpm --filter @deepseek-ai/dsh-desktop run start",
@@ -13633,7 +13632,7 @@ index 507c4506b017cd7df22f0fe6f5b699cc282b089c..0bc0db2400eb601183786426dedfe542
        if (options.awaitConnected !== false) {
          await awaitConnected(ctx, mock, options.connectTimeoutMs ?? DEFAULT_CONNECT_TIMEOUT_MS)
 diff --git a/pnpm-lock.yaml b/pnpm-lock.yaml
-index d6ef3e506e9d477291875dd2739f0c863d4f1a38..4ec1a3f0d66db03ea7df969b143fdd3e896a0456 100644
+index d6ef3e506e9d477291875dd2739f0c863d4f1a38..a3fb70c797c7b6fdaa9c4f6df4b073897d1f429f 100644
 --- a/pnpm-lock.yaml
 +++ b/pnpm-lock.yaml
 @@ -770,6 +770,9 @@ importers:
@@ -13735,7 +13734,7 @@ index d6ef3e506e9d477291875dd2739f0c863d4f1a38..4ec1a3f0d66db03ea7df969b143fdd3e
        '@deepseek-ai/dsh-util-values':
          specifier: workspace:*
          version: link:../../util/values
-@@ -7952,137 +8016,772 @@ importers:
+@@ -7952,137 +8016,775 @@ importers:
          version: link:../../util/brand
        '@deepseek-ai/dsh-util-values':
          specifier: workspace:*
@@ -13885,6 +13884,9 @@ index d6ef3e506e9d477291875dd2739f0c863d4f1a38..4ec1a3f0d66db03ea7df969b143fdd3e
 +      '@deepseek-ai/cordis':
 +        specifier: workspace:~
 +        version: link:../../../vendor/cordis
++      '@deepseek-ai/dsh-anonymous-user-id':
++        specifier: workspace:*
++        version: link:../../identity/anonymous-user-id
 +      '@deepseek-ai/dsh-api-remotes':
 +        specifier: workspace:*
 +        version: link:../../api/remotes
@@ -14614,7 +14616,7 @@ index d6ef3e506e9d477291875dd2739f0c863d4f1a38..4ec1a3f0d66db03ea7df969b143fdd3e
  
    packages/deliverables/deliverable-file-references:
      devDependencies:
-@@ -11954,6 +12653,90 @@ importers:
+@@ -11954,6 +12656,90 @@ importers:
          specifier: ^18.2.0
          version: 18.3.1
  
@@ -14705,7 +14707,7 @@ index d6ef3e506e9d477291875dd2739f0c863d4f1a38..4ec1a3f0d66db03ea7df969b143fdd3e
    packages/feedback/command-feedback:
      dependencies:
        zod:
-@@ -20277,10 +21060,18 @@ packages:
+@@ -20277,10 +21063,18 @@ packages:
    '@mixmark-io/domino@2.2.0':
      resolution: {integrity: sha512-Y28PR25bHXUg88kCV7nivXrP2Nj2RueZ3/l/jdx6J9f8J4nsEGcgX0Qe6lt7Pa+J79+kPiJU3LguR6O/6zrLOw==}
  
@@ -14724,7 +14726,7 @@ index d6ef3e506e9d477291875dd2739f0c863d4f1a38..4ec1a3f0d66db03ea7df969b143fdd3e
    '@modelcontextprotocol/core@2.2.0':
      resolution: {integrity: sha512-iLhmprRmWI8EcosOA3wVvww22z02NkgqhV4fBH6f/odQBsi7xnJc0HGmi21yWO+/iKw2yzqVE127Zhna5/+JXw==}
      engines: {node: '>=20'}
-@@ -20313,6 +21104,10 @@ packages:
+@@ -20313,6 +21107,10 @@ packages:
      resolution: {integrity: sha512-kKaFkyAh6oipvc9+EAbJ552JafnMnOq5nzmzWkp1jJdBhTAAGpmIpWihUG1+rfNhmEFM98gUZDdCHCDD4v6a7Q==}
      hasBin: true
  
@@ -14735,7 +14737,7 @@ index d6ef3e506e9d477291875dd2739f0c863d4f1a38..4ec1a3f0d66db03ea7df969b143fdd3e
    '@modelcontextprotocol/server@2.2.0':
      resolution: {integrity: sha512-qFnltjus6Gk8Lx6J1w2RXmr3YPN22MNT6qD6zjAkaiWIlFIFxWClz0rXHNuJF/KSUyn5YGhkSvXkWDbQHVLFEQ==}
      engines: {node: '>=20'}
-@@ -21321,6 +22116,14 @@ packages:
+@@ -21321,6 +22119,14 @@ packages:
      resolution: {integrity: sha512-4BAffykYOgO+5nzBWYwE3W90sBgLJoUPRWWcL8wlyiM8IB8ipJz3UMJ9KXQd1RKQXpKp8Tutn80HZtWsu2u76w==}
      engines: {node: '>=10'}
  
@@ -14750,7 +14752,7 @@ index d6ef3e506e9d477291875dd2739f0c863d4f1a38..4ec1a3f0d66db03ea7df969b143fdd3e
    '@tanstack/react-virtual@3.14.10':
      resolution: {integrity: sha512-SRyoUbdFMRHuYXMijV5H4ZarQWpXkj3iANq8OFre+pybeVap8ZJjZ3Nz9bVjx4d8PfobVUQUdKyyyHYk3E+djw==}
      peerDependencies:
-@@ -27972,6 +28775,16 @@ snapshots:
+@@ -27972,6 +28778,16 @@ snapshots:
  
    '@mixmark-io/domino@2.2.0': {}
  
@@ -14767,7 +14769,7 @@ index d6ef3e506e9d477291875dd2739f0c863d4f1a38..4ec1a3f0d66db03ea7df969b143fdd3e
    '@modelcontextprotocol/client@2.2.0':
      dependencies:
        '@modelcontextprotocol/core': 2.2.0
-@@ -27982,10 +28795,21 @@ snapshots:
+@@ -27982,10 +28798,21 @@ snapshots:
        pkce-challenge: 5.0.1
        zod: 4.4.3
  
@@ -14789,7 +14791,7 @@ index d6ef3e506e9d477291875dd2739f0c863d4f1a38..4ec1a3f0d66db03ea7df969b143fdd3e
    '@modelcontextprotocol/node@2.0.0(@modelcontextprotocol/server@2.2.0)(hono@4.13.7)':
      dependencies:
        '@hono/node-server': 1.19.17(hono@4.13.7)
-@@ -28037,6 +28861,11 @@ snapshots:
+@@ -28037,6 +28864,11 @@ snapshots:
        - supports-color
        - zod
  
@@ -14801,7 +14803,7 @@ index d6ef3e506e9d477291875dd2739f0c863d4f1a38..4ec1a3f0d66db03ea7df969b143fdd3e
    '@modelcontextprotocol/server@2.2.0':
      dependencies:
        '@modelcontextprotocol/core': 2.2.0
-@@ -28744,6 +29573,13 @@ snapshots:
+@@ -28744,6 +29576,13 @@ snapshots:
      dependencies:
        defer-to-connect: 2.0.1
  

@@ -15,7 +15,7 @@ const fixture = vi.hoisted(() => ({ authenticate: vi.fn<typeof import('@deepseek
   dialog: vi.fn(async (..._args: unknown[]) => ({ response: 0 })), quit: vi.fn(),
   companyContent: vi.fn(async () => null),
   bootstrap: vi.fn(async () => ({ modelApiKey: 'model-key', endpoints: { litellm: 'https://example.test/v1' }, models: ['deepseek-v4-flash', 'gpt-example'] })),
-  start: vi.fn(async () => {}), stop: vi.fn(async () => {}), dispose: vi.fn(),
+  connectorsClose: vi.fn(async () => {}), dispose: vi.fn(),
   knowledgePrepare: vi.fn(async () => {}), knowledgeClose: vi.fn(async () => {}), writeFile: vi.fn(), removeFile: vi.fn(),
   encryptionAvailable: vi.fn(() => false),
   knowledgeReset: vi.fn(async () => {}),
@@ -45,9 +45,7 @@ vi.mock('../src/deepseek-harness-product-config.ts', () => ({ resolveDeepSeekHar
   knowledgeFiles: { previewMaxBytes: 1024, spreadsheetMaxBytes: 1024, officeInputMaxBytes: 1024,
     officeOutputMaxBytes: 1024, downloadMaxBytes: 1024, uploadMaxBytes: 1024, transferLifetimeMs: 60_000,
     fileRequestTimeoutMs: 60_000, maxTransfers: 8 } }) }))
-vi.mock('../src/deepseek-harness-native-process.ts', () => ({ DeepSeekHarnessNativeProcess: class {
-  start = fixture.start; stop = fixture.stop; invoke = async () => ({})
-} }))
+vi.mock('@deepseek-ai/dsh-anonymous-user-id', () => ({ getOrCreateAnonymousUserId: () => '00000000-0000-4000-8000-000000000001' }))
 vi.mock('../src/knowledge-files.ts', () => ({ KnowledgeFiles: class {
   prepare = fixture.knowledgePrepare; close = fixture.knowledgeClose; resetIdentity = fixture.knowledgeReset; invoke = async () => ({})
 } }))
@@ -63,26 +61,29 @@ vi.mock('@deepseek-harness/product/bridge', () => ({ DeepSeekHarnessProductBridg
   loadCompanyContent = fixture.companyContent
 } }))
 beforeEach(() => {
+  vi.restoreAllMocks()
   vi.clearAllMocks()
+  vi.spyOn(PersonalConnectors.prototype, 'close').mockImplementation(fixture.connectorsClose)
   fixture.session = { authenticated: true, employeeId: 'fixture' }
   fixture.invokeRuntime.mockReset().mockResolvedValue([])
   fixture.companyContent.mockReset().mockResolvedValue(null)
   fixture.authenticate.mockResolvedValue({ authenticated: true })
   fixture.invoke.mockReset().mockResolvedValue({}); fixture.refreshCatalog.mockReset().mockResolvedValue()
-  fixture.dispose.mockReset(); fixture.knowledgeClose.mockReset().mockResolvedValue(); fixture.stop.mockReset().mockResolvedValue()
-  fixture.start.mockReset().mockResolvedValue(); fixture.knowledgePrepare.mockReset().mockResolvedValue()
+  fixture.dispose.mockReset(); fixture.knowledgeClose.mockReset().mockResolvedValue()
+  fixture.connectorsClose.mockReset().mockResolvedValue()
+  fixture.knowledgePrepare.mockReset().mockResolvedValue()
   fixture.companyPrepare.mockReset().mockResolvedValue(); fixture.companyClose.mockReset().mockResolvedValue()
   fixture.knowledgeReset.mockReset().mockResolvedValue()
   fixture.writeFile.mockReset(); fixture.removeFile.mockReset(); fixture.encryptionAvailable.mockReset().mockReturnValue(false)
 })
 
-it.each(['files', 'native', 'company'] as const)('joins startup during %s preparation and rejects late startup effects on close', async (phase) => {
+it.each(['files', 'company'] as const)('joins startup during %s preparation and rejects late startup effects on close', async (phase) => {
   const entered = Promise.withResolvers<undefined>()
   const release = Promise.withResolvers<undefined>()
-  const delayed = phase === 'files' ? fixture.knowledgePrepare : phase === 'native' ? fixture.start : fixture.companyPrepare
+  const delayed = phase === 'files' ? fixture.knowledgePrepare : fixture.companyPrepare
   delayed.mockImplementationOnce(async () => { entered.resolve(undefined); await release.promise })
   const cleaned = Promise.withResolvers<undefined>()
-  fixture.stop.mockImplementationOnce(async () => { cleaned.resolve(undefined) })
+  fixture.connectorsClose.mockImplementationOnce(async () => { cleaned.resolve(undefined) })
   const extension = createExtension({ getWindow: () => undefined, isQuitting: () => false, requestHost: async () => ({}) })
   const pending = extension.prepareHost({ directory: '/unused-profile', installAnchor: '/unused-runtime/package.json' })
   const outcome = pending.then(value => value, (error: unknown) => error)
@@ -99,7 +100,6 @@ it.each(['files', 'native', 'company'] as const)('joins startup during %s prepar
   expect(await outcome).toBeUndefined()
   expect(fixture.writeFile).not.toHaveBeenCalled()
   expect(fixture.invoke).not.toHaveBeenCalled()
-  if (phase === 'files') expect(fixture.start).not.toHaveBeenCalled()
   if (phase !== 'company') expect(fixture.companyPrepare).not.toHaveBeenCalled()
   else expect(fixture.companyClose).toHaveBeenCalledOnce()
 })
@@ -117,7 +117,6 @@ it('coalesces concurrent Host preparation instead of replacing the company sync 
     release.resolve(undefined)
     await expect(first).resolves.toMatchObject({ DSH_PRODUCT_MODEL_API_KEY: 'model-key' })
     expect(fixture.knowledgePrepare).toHaveBeenCalledOnce()
-    expect(fixture.start).toHaveBeenCalledOnce()
     expect(fixture.companyPrepare).toHaveBeenCalledOnce()
   } finally {
     release.resolve(undefined)
@@ -138,7 +137,7 @@ it('shares cleanup completion and failure across repeated close calls', async ()
   expect(await first).toMatchObject({ errors: [failure] })
   expect(await second).toBe(await first)
   expect(fixture.dispose).toHaveBeenCalledOnce()
-  expect(fixture.stop).toHaveBeenCalledOnce()
+  expect(fixture.connectorsClose).toHaveBeenCalledOnce()
 })
 
 it('releases remaining resources and joins in-flight requests before reporting cleanup failures', async () => {
@@ -150,7 +149,7 @@ it('releases remaining resources and joins in-flight requests before reporting c
   const release = Promise.withResolvers<undefined>()
   const stopped = Promise.withResolvers<undefined>()
   fixture.invoke.mockImplementationOnce(async () => { entered.resolve(undefined); await release.promise; return {} })
-  fixture.stop.mockImplementationOnce(async () => { stopped.resolve(undefined) })
+  fixture.connectorsClose.mockImplementationOnce(async () => { stopped.resolve(undefined) })
   const extension = createExtension({ getWindow: () => undefined, isQuitting: () => false, requestHost: async () => ({}) })
   const operation = extension.invoke('catalog.list')
   await entered.promise
@@ -167,7 +166,7 @@ it('releases remaining resources and joins in-flight requests before reporting c
   }
   expect(await closing).toBeInstanceOf(AggregateError)
   expect(await closing).toMatchObject({ errors: [bridgeFailure, filesFailure] })
-  expect(fixture.stop).toHaveBeenCalledOnce()
+  expect(fixture.connectorsClose).toHaveBeenCalledOnce()
 })
 
 it('cancels a shared sign-in only after its last caller cancels and allows a new attempt', async () => {
@@ -220,7 +219,7 @@ it('retries expired DingTalk sign-in and supplies only model configuration and p
     expect(JSON.parse(environment!.DSH_DESKTOP_PROFILE_PATCHES!)).toContain('/unused-fixture/product-inference.patch.json')
     expect(Object.keys(environment!)).toEqual(['DSH_COMPANY_SKILLS_ROOT', 'DSH_COMPANY_EXPERTS_ROOT', 'DEEPSEEK_HARNESS_SESSION_TOKEN', 'DSH_PRODUCT_MODEL_API_KEY', 'DSH_DESKTOP_PROFILE_PATCHES'])
   } finally { await extension.close() }
-  expect(fixture.stop).toHaveBeenCalledOnce()
+  expect(fixture.connectorsClose).toHaveBeenCalledOnce()
   expect(fixture.dispose).toHaveBeenCalledOnce()
   const signal = fixture.authenticate.mock.calls[0]?.[2]?.signal as AbortSignal
   expect(signal.aborted).toBe(true)
@@ -426,7 +425,7 @@ it('joins an earlier employee cleanup before reporting extension shutdown comple
   try {
     await extension.prepareHost({ directory: '/unused-profile', installAnchor: '/unused-runtime/package.json' })
     fixture.companyClose.mockImplementationOnce(async () => { entered.resolve(undefined); await release.promise })
-    fixture.stop.mockImplementationOnce(async () => { stopped.resolve(undefined) })
+    fixture.connectorsClose.mockImplementationOnce(async () => { stopped.resolve(undefined) })
     const persist = fixture.bridgeOptions.mock.calls[0]![0].persistSession
     if (!persist) throw new Error('Missing employee resource cleanup')
     pending = Promise.resolve(persist({ authenticated: true, employeeId: 'second' }, 'fixture-token'))

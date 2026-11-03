@@ -3,7 +3,7 @@ import { z } from 'zod'
 import { isProductFailure, ProductError, type ProductFailure } from './errors.ts'
 
 
-/** Protocol identifier for the product sidecar bridge. */
+/** Protocol identifier for the product desktop bridge. */
 export const PRODUCT_PROTOCOL = 'deepseek-harness.native.v1' as const
 
 /** Immutable company documents, owned by main and shared with native Host plugins. */
@@ -123,7 +123,7 @@ export type KnowledgeFileMethod =
   | 'runtime.knowledge.preview.write.commit'
   | 'runtime.knowledge.preview.write.close'
 
-/** Allowlisted product and native sidecar operations. */
+/** Allowlisted product desktop operations. */
 export type ProductMethod =
   | 'support.device.report'
   | 'support.feedback.submit'

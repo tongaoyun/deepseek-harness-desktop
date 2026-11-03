@@ -265,9 +265,7 @@ app.whenReady().then(() => writeFileSync(${JSON.stringify(directory)} + '/boot-'
       initialWindowsProcess = previousSnapshot?.find(process => process.pid === oldPid)
       const previousChildren = windows ? windowsProcessDescendants(previousSnapshot, oldPid) : await descendants(oldPid)
       const host = previousChildren.find(child => (child.command ?? '').replaceAll('\\', '/').includes('/dsh-desktop-host/'))
-      const sidecar = previousChildren.find(child => (child.command ?? '').replaceAll('\\', '/').includes('/deepseek-harness-native'))
       assert.ok(host, 'Product Host must be running before update')
-      assert.ok(sidecar, 'Product native sidecar must be running before update')
       const exited = new Promise(resolve => application.process().once('exit', resolve))
       const debuggingPort = join(userData, 'DevToolsActivePort')
       await rm(debuggingPort)
@@ -322,7 +320,7 @@ app.whenReady().then(() => writeFileSync(${JSON.stringify(directory)} + '/boot-'
       await writeFile(join(evidence, `native-${windows ? 'windows' : 'macos'}-update-${process.arch}.json`), JSON.stringify({ passed: true, from: initialVersion, to: version,
         nativeInstaller: windows ? 'NSIS' : 'Squirrel.Mac', deferredRestartRetainedVersion: true, sessionAndDraftRetained: true,
         packageMirrorDownloaded: true,
-        oldProcessExited: true, hostExited: host.pid, sidecarExited: sidecar.pid,
+        oldProcessExited: true, hostExited: host.pid,
         oldChildProcessesExited: previousChildren.map(child => child.pid),
         ...(windows ? { oldProcessIdentities: [initialWindowsProcess, ...previousChildren]
           .map(describeWindowsProcess) } : {}) }) + '\n')

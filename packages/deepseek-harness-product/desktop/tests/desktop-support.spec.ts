@@ -1,19 +1,30 @@
 import { afterEach, expect, it, vi } from 'vitest'
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { getOrCreateAnonymousUserId, type AnonymousUserId } from '@deepseek-ai/dsh-anonymous-user-id'
 import { DeepSeekHarnessProductBridge } from '@deepseek-harness/product/bridge'
 import { isProductRuntimeMethod } from '@deepseek-harness/product/protocol'
 import { DesktopSupport } from '../src/desktop-support.ts'
 
-afterEach(() => vi.restoreAllMocks())
+const homes: string[] = []
+afterEach(() => {
+  vi.restoreAllMocks()
+  for (const home of homes.splice(0)) rmSync(home, { recursive: true, force: true })
+})
+function installationId(): AnonymousUserId {
+  const home = mkdtempSync(join(tmpdir(), 'product-device-home-'))
+  homes.push(home)
+  return getOrCreateAnonymousUserId({ env: { DSH_HOME: home } })
+}
 const policy = { heartbeatIntervalMs: 300000, reportIntervalMs: 86400000 }
-function fixture(transport: typeof fetch) {
-  const native = vi.fn<(method: string) => Promise<unknown>>(async method => method === 'device-identity.get' ? { deviceId: 'private-installation-id' }
-    : { ready: true, protocol: 'deepseek-harness.native.v1', capabilities: ['device-identity'] })
-  const support = new DesktopSupport({ policy, native, metadata: () => ({ desktopVersion: '0.2.1-alpha.2',
+function fixture(transport: typeof fetch, id = installationId()) {
+  const support = new DesktopSupport({ policy, installationId: id, metadata: () => ({ desktopVersion: '0.2.1-alpha.2',
     platform: 'darwin', architecture: 'arm64', displayScalePercents: [200], encryptedStorage: true }) })
   const bridge = new DeepSeekHarnessProductBridge({ serverUrl: 'https://product.test', fetch: transport,
     sessionToken: 'fixture-private-token', initialSession: { authenticated: true, employeeId: 'employee-1', expiresAt: '2099-01-01T00:00:00Z' },
     support: (method, input, api, session, signal) => support.invoke(method, input, api, session, signal) })
-  return { bridge, support, native, close: async () => { await bridge.dispose(); await support.close() } }
+  return { bridge, support, close: async () => { await bridge.dispose(); await support.close() } }
 }
 
 function requestUrl(input: Parameters<typeof fetch>[0]): string {
@@ -42,7 +53,6 @@ it('reports true main metadata, reuses stable installation identity and sends on
     expect(report.deviceId).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-8[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/)
     expect(presence.deviceId).toEqual(report.deviceId)
     expect(report.capabilities).toEqual([
-      { key: 'native.device-identity', status: 'READY', detail: 'Native capability: device-identity' },
       { key: 'credentials.encryption', status: 'READY', detail: 'OS credential encryption available' },
     ])
     expect(report).not.toHaveProperty('employeeId')
@@ -166,18 +176,33 @@ it('clears an earlier presence failure after a successful heartbeat', async () =
   } finally { await f.close() }
 })
 
-it.each([
-  null,
-  { ready: true, protocol: 'deepseek-harness.native.v0', capabilities: ['device-identity'] },
-  { ready: true, protocol: 'deepseek-harness.native.v1', capabilities: ['filesystem'] },
-  { ready: true, protocol: 'deepseek-harness.native.v1', capabilities: ['device-identity', 'device-identity'] },
-])('does not report an unusable sidecar as ready: %j', async (health) => {
-  vi.spyOn(console, 'warn').mockImplementation(() => undefined)
-  const transport = vi.fn<typeof fetch>()
-  const f = fixture(transport)
-  f.native.mockResolvedValueOnce({ deviceId: 'private-installation-id' }).mockResolvedValueOnce(health)
+it('uses one home-scoped identity across reports and feedback without exposing the anonymous id', async () => {
+  const firstId = installationId()
+  const sameId = getOrCreateAnonymousUserId({ env: { DSH_HOME: homes.at(-1)! } })
+  expect(sameId).toBe(firstId)
+  const reports: string[] = []
+  const feedback: string[] = []
+  const transport: typeof fetch = async (_url, init) => {
+    if (init?.body instanceof FormData) {
+      const metadata = init.body.get('feedback')
+      if (!(metadata instanceof Blob)) throw new Error('Missing feedback metadata')
+      feedback.push((JSON.parse(await metadata.text()) as { deviceId: string }).deviceId)
+      return Response.json({ success: true, data: { id: 'feedback-id' } })
+    }
+    const body = requestBody(init)
+    expect(body).not.toContain(firstId)
+    reports.push((JSON.parse(body) as { deviceId: string }).deviceId)
+    return Response.json({ success: true, data: { createdAt: '2026-11-03T00:00:00Z' } })
+  }
+  const fixtures = [fixture(transport, firstId), fixture(transport, sameId), fixture(transport)]
   try {
-    await expect(f.bridge.invoke('support.device.report')).rejects.toMatchObject({ code: 'DEVICE_HEALTH_INVALID' })
-    expect(transport).not.toHaveBeenCalled()
-  } finally { await f.close() }
+    for (const f of fixtures) {
+      await f.bridge.invoke('support.device.report')
+      await f.bridge.invoke('support.feedback.submit', { operationId: '00000000-0000-4000-8000-000000000001',
+        message: 'Check installation identity', category: 'BUG' })
+    }
+    expect(reports[0]).toBe(reports[1])
+    expect(reports[0]).not.toBe(reports[2])
+    expect(feedback).toEqual(reports)
+  } finally { await Promise.all(fixtures.map(f => f.close())) }
 })

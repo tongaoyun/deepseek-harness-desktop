@@ -32,11 +32,11 @@ node apps/product-desktop/scripts/sync-github.mjs --repository OWNER/deepseek-ha
 
 main CI 先通过 `build:artifacts` 构建并检查包代码，再通过 `build:check` 检查 Host 与 Client 的测试和脚本，不重复生成声明或编译包。原生打包使用 `build:artifacts`，保留本地或正式品牌配置、生成声明和构建记录校验。打包前按官方 CLI、Desktop Host 和产品装配根计算生产依赖闭包，仅打包选中的工作区；包筛选参数由原生 Node 进程接收，避免 Windows 命令脚本的长度限制；安装包组装时再次从实际 tarball 核对依赖闭包和 Host 入口文件。
 
-源码构建与运行时下载、解压并行，工作区打包接在编译之后；Electron 与主运行时也独立准备。全部完成后再复制依赖编译输出的 CLI；任一失败均等待已启动的任务结束，再停止后续组装。应用目录仅组装一次，DMG 与 ZIP 从同一目录生成；内部 DMG 使用 ULFO（LZFSE）压缩；ZIP 使用 `DSH_DESKTOP_MACOS_ZIP_COMPRESSION_LEVEL`（默认 `3`）。安装包上传 Actions Artifact 时关闭二次 ZIP 压缩，日志与截图沿用默认压缩。产品模块随统一构建生成，前端图标编入客户端产物，不作为运行时依赖分发整套图标库。Rust sidecar 在产品入口构建一次；源码启动和验收使用 `CARGO_TARGET_DIR` 指定的编译目录。依赖安装保留 frozen lock 并优先复用本地 store；pnpm 元数据与 npm 引导下载分别缓存到持久目录，供应链策略检查继续执行。
+源码构建与运行时下载、解压并行，工作区打包接在编译之后；Electron 与主运行时也独立准备。全部完成后再复制依赖编译输出的 CLI；任一失败均等待已启动的任务结束，再停止后续组装。应用目录仅组装一次，DMG 与 ZIP 从同一目录生成；内部 DMG 使用 ULFO（LZFSE）压缩；ZIP 使用 `DSH_DESKTOP_MACOS_ZIP_COMPRESSION_LEVEL`（默认 `3`）。安装包上传 Actions Artifact 时关闭二次 ZIP 压缩，日志与截图沿用默认压缩。产品模块随统一构建生成，前端图标编入客户端产物，不作为运行时依赖分发整套图标库。依赖安装保留 frozen lock 并优先复用本地 store；pnpm 元数据与 npm 引导下载分别缓存到持久目录，供应链策略检查继续执行。
 
 内部 Mac 包通过 electron-builder 原生自定义签名入口执行一次固定证书签名，按目录深度从内向外处理嵌套代码，先签 Helper 再签所属框架，保留官方 afterSign 检查。Mac A→B 验收先验证已安装应用的固定签名；资格副本仅修改版本、ASAR 和更新源，再重签根资源。未改动的外置原生文件以流传给 ASAR 写入器，避免完整读取大型二进制。嵌套执行文件不重复签名，仍执行严格深度签名验证及真实原生升级。首次生产组装继续完整签名。
 
-GitHub 按系统及架构缓存 Electron、锁定的 Node/Python 与 Office 下载、桌面运行时 pnpm store、electron-builder 工具以及 Rust registry、Git 依赖和编译中间产物。下载缓存随依赖锁更新，Rust 缓存同时区分工具链与源码；无精确命中时复用同目标的旧缓存，由下载校验和 Cargo 增量构建确认有效性。首次运行仍需填充缓存。基础运行时在 `prepare:dsh` 完成组装和必要签名后验证，下载准备阶段不重复执行同一检查；封装后的 ASAR、安装及更新验收继续独立执行。构建产物、安装状态和签名凭据不进入这些缓存，真实安装、启动和自动更新验收每次执行。
+GitHub 按系统及架构缓存 Electron、锁定的 Node/Python 与 Office 下载、桌面运行时 pnpm store、electron-builder 工具。下载缓存随依赖锁更新；无精确命中时复用同目标的旧缓存，并验证下载校验和。首次运行仍需填充缓存。基础运行时在 `prepare:dsh` 完成组装和必要签名后验证，下载准备阶段不重复执行同一检查；封装后的 ASAR、安装及更新验收继续独立执行。构建产物、安装状态和签名凭据不进入这些缓存，真实安装、启动和自动更新验收每次执行。
 
 Windows 全语言安装器回归按工作流、安装器脚本、资源、依赖锁及测试输入记录成功结果，同一 runner 镜像和 Node 版本在同一周内复用；未命中或 GitHub 输入 `full_installer_regression=true` 时完整执行。缓存只记录成功标记，不保存安装状态。签名校验、真实产品安装和原生 A→B 更新验收每次执行。
 
@@ -69,7 +69,7 @@ Windows 安装更新验收通过流水线已有的 PowerShell 7 查询所需进�
 
 ### 免费内部更新
 
-`signing=internal` 使用标准 GitHub 托管 runner。Mac 使用同一张固定自签证书签署应用、Electron 组件和产品 sidecar，不进行 Apple 公证；已准备的 Harness 与 Python 运行时保留原有字节和签名，并由官方清单与应用资源封装验证；Windows 保持未签名 NSIS 安装器。Mac 同时产出 DMG 和更新 ZIP，Windows 产出 EXE；文件名带 `-internal`，清单如实记录签名方式和 `notarized: false`，不能冒充正式签名包。发布仍要求两个平台构建与安装验收全部通过。
+`signing=internal` 使用标准 GitHub 托管 runner。Mac 使用同一张固定自签证书签署应用与 Electron 组件，不进行 Apple 公证；已准备的 Harness 与 Python 运行时保留原有字节和签名，并由官方清单与应用资源封装验证；Windows 保持未签名 NSIS 安装器。Mac 同时产出 DMG 和更新 ZIP，Windows 产出 EXE；文件名带 `-internal`，清单如实记录签名方式和 `notarized: false`，不能冒充正式签名包。发布仍要求两个平台构建与安装验收全部通过。
 
 GitHub 源码仓库配置 Secrets `DESKTOP_INTERNAL_MAC_CERTIFICATE`（加密 P12 的 Base64）和 `DESKTOP_INTERNAL_MAC_PASSWORD`，以及公开变量 `DESKTOP_INTERNAL_MAC_CERTIFICATE_SHA256`。证书只在 Mac 打包及隔离安装验收步骤传入，导入独立临时钥匙串；打包结束或失败后恢复搜索列表并删除导入的凭据，不修改系统证书信任。P12 输入及密码不传入后续构建子进程、发布机或渲染进程。固定证书的创建与保管见签名说明。身份创建使用独立证书配置与显式 SHA-256 签名，避免系统配置合入重复扩展；导出显式指定 macOS 可导入的 PKCS#12 算法，支持 LibreSSL 与 OpenSSL。身份校验分别报告指纹、自签名、用途与有效期异常，仅包含公开证书信息。
 

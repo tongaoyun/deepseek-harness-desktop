@@ -24,7 +24,7 @@ kind: "package-group"
 | --- | --- |
 | [product](product/README.md) | 产品协议、服务端访问和员工会话 |
 | [runtime](runtime/README.md) | 连接器工具、知识库范围与任务快照 |
-| [desktop](desktop/README.md) | 主进程凭据、原生文件、sidecar 与启动准备 |
+| [desktop](desktop/README.md) | 主进程凭据、原生文件、设备上报与启动准备 |
 | [experts](experts/README.md) | 专家、专家团及原生委派 |
 | [skills](skills/README.md) | 技能管理与原生 Skill Provider 接入 |
 

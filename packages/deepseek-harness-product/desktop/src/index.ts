@@ -1,4 +1,4 @@
-/** Product desktop authentication, native lifecycle, and credential-owning dispatch. */
+/** Product desktop authentication, resource lifecycle, and credential-owning dispatch. */
 import { readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -8,7 +8,7 @@ import { DeepSeekHarnessApiError } from '@deepseek-harness/product'
 import { ProductError } from '@deepseek-harness/product/errors'
 import { ensureDingTalkSession, DingTalkAuthorizationTimeoutError } from '@deepseek-harness/product/dingtalk-auth'
 import { isProductRuntimeMethod, type ProductSession } from '@deepseek-harness/product/protocol'
-import { DeepSeekHarnessNativeProcess } from './deepseek-harness-native-process.ts'
+import { getOrCreateAnonymousUserId } from '@deepseek-ai/dsh-anonymous-user-id'
 import { resolveDeepSeekHarnessProductConfig } from './deepseek-harness-product-config.ts'
 import { DesktopSupport } from './desktop-support.ts'
 import { ConnectorProxy } from './connector-proxy.ts'
@@ -144,14 +144,9 @@ export function createExtension(context: ExtensionContext): ProductDesktopExtens
       ? dialog.showOpenDialog(window, options) : dialog.showOpenDialog(options), signal)
     return selected.canceled ? undefined : selected.filePaths
   }, knowledgeFilePolicy.uploadMaxBytes)
-  const nativeSidecar = new DeepSeekHarnessNativeProcess(
-    process.env.DEEPSEEK_HARNESS_NATIVE_BINARY
-      ?? (app.isPackaged ? join(process.resourcesPath, 'native', process.platform === 'win32' ? 'deepseek-harness-native.exe' : 'deepseek-harness-native') : undefined),
-    join(app.getPath('userData'), 'native'),
-  )
   const supportPolicy = config.support
   const support = new DesktopSupport({ policy: supportPolicy,
-    native: (method, signal) => nativeSidecar.invoke(method, signal),
+    installationId: getOrCreateAnonymousUserId(),
     metadata: () => ({ desktopVersion: app.getVersion(), platform: process.platform, architecture: process.arch,
       displayScalePercents: screen.getAllDisplays().map(display => Math.round(display.scaleFactor * 100)),
       encryptedStorage: safeStorage.isEncryptionAvailable() }),
@@ -161,7 +156,7 @@ export function createExtension(context: ExtensionContext): ProductDesktopExtens
       const value = await productBridge.invokeRuntime('connectors.list', { ids: [id] }, signal)
       const entries: readonly unknown[] = Array.isArray(value) ? value : []
       return entries.find(entry => typeof entry === 'object' && entry !== null && 'id' in entry && entry.id === id)
-    })
+    }, () => { productBridge.invalidateConnectorCatalog() })
   const productBridgeOptions: ProductBridgeOptions = {
     support: (method, input, api, session, signal) => support.invoke(method, input, api, session, signal),
     knowledgeFiles: (method, input, api, session, signal) => knowledgeFiles.invoke(method, input, api, session, signal),
@@ -351,8 +346,6 @@ export function createExtension(context: ExtensionContext): ProductDesktopExtens
         signal.throwIfAborted()
         await connectorProxy.start()
         signal.throwIfAborted()
-        await nativeSidecar.start()
-        signal.throwIfAborted()
         const prepared = await prepareDeepSeekHarnessBootstrap()
         if (closed || prepared === undefined) return undefined
         const { bootstrap, employeeId } = prepared
@@ -472,7 +465,6 @@ export function createExtension(context: ExtensionContext): ProductDesktopExtens
         await cleanup(() => knowledgeFiles.close())
         await cleanup(() => connectorProxy.close())
         await cleanup(() => personalConnectors.close())
-        await cleanup(() => nativeSidecar.stop())
         await Promise.allSettled([...operations])
         await Promise.allSettled([...authenticationOperations])
         if (errors.length > 0) throw new AggregateError(errors, 'Product extension cleanup failed')

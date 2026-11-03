@@ -323,7 +323,7 @@ export class SkillsManager extends TypertRemoteService {
   @Remote
   uploadSkill(request: ManagerUpload, signal: AbortSignal): Promise<SkillManagerResults['uploadSkill']> { return this.perform(async (active) => {
     if (Buffer.byteLength(JSON.stringify(request)) > (88 << 20)) throw new RemoteError('skills/operation', 'body too large', { error: 'body too large', code: 'error.proto.bodyTooLarge' })
-    return importUploadedSkill({ name: request.name, entries: request.entries, zip: request.zip }, this.log, { conflict: request.conflict ?? 'skip', ...request.workspace !== undefined || request.root === 'agents' ? { root: await this.root(request, active) } : {} }) }, signal, { mutation: true, notify: true }) }
+    return importUploadedSkill({ name: request.name, entries: request.entries, zip: request.zip }, this.log, { signal: active, conflict: request.conflict ?? 'skip', ...request.workspace !== undefined || request.root === 'agents' ? { root: await this.root(request, active) } : {} }) }, signal, { mutation: true, notify: true }) }
 
   /** Read repositories and installed copies.
    * @param signal Native invocation lifetime.

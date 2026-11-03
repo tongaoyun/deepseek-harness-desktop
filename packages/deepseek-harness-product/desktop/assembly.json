@@ -3,12 +3,7 @@
     "@deepseek-harness/product-desktop"
   ],
   "builderConfig": "../../../apps/product-desktop/electron-builder.config.mjs",
-  "buildSteps": [
-    [
-      "run",
-      "build:native-product"
-    ]
-  ],
+  "buildSteps": [],
   "packageDirectories": [
     ".",
     "../runtime",
@@ -31,16 +26,6 @@
     {
       "from": "resources/product.json",
       "to": "deepseek-harness/product.json"
-    },
-    {
-      "from": "../../../native/deepseek-harness/target/release/deepseek-harness-native",
-      "to": "native/deepseek-harness-native",
-      "platform": "darwin"
-    },
-    {
-      "from": "../../../native/deepseek-harness/target/release/deepseek-harness-native.exe",
-      "to": "native/deepseek-harness-native.exe",
-      "platform": "win32"
     }
   ]
 }

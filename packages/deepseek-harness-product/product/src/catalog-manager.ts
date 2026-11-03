@@ -44,7 +44,7 @@ export class ProductCatalogManager {
   async refresh(signal?: AbortSignal): Promise<void> {
     this.lifecycle.signal.throwIfAborted()
     if (signal === undefined && this.refreshOperation !== undefined) return this.refreshOperation
-    const refresh = this.track(signal, control => this.loadSnapshot(control)).finally(() => {
+    const refresh = this.withCurrentCatalog(signal, control => this.loadSnapshot(control)).finally(() => {
       if (this.refreshOperation === refresh) this.refreshOperation = undefined
       this.schedule()
     })
@@ -59,7 +59,7 @@ export class ProductCatalogManager {
    */
   async read(method: ProductMethod, signal?: AbortSignal): Promise<unknown> {
     if (!isCatalogMethod(method)) throw new Error(`deepseek-harness product: method ${method} is not available`)
-    return this.track(signal, async (control) => {
+    return this.withCurrentCatalog(signal, async (control) => {
       const revision = this.nextRevision(method)
       try {
         const value = await this.options.api?.listAll(CATALOG_ROUTES[method], 100, control)
@@ -78,7 +78,12 @@ export class ProductCatalogManager {
     })
   }
 
-  private async track<T>(signal: AbortSignal | undefined, operation: (signal: AbortSignal) => Promise<T>): Promise<T> {
+  /** Keep catalog-dependent work in one generation through its final result.
+   * @param signal Caller cancellation, or undefined for manager-owned work.
+   * @param operation Reads and transformations canceled together on reset or disposal.
+   * @returns Operation result while its catalog and employee remain current.
+   */
+  async withCurrentCatalog<T>(signal: AbortSignal | undefined, operation: (signal: AbortSignal) => Promise<T>): Promise<T> {
     const control = AbortSignal.any([this.lifecycle.signal, this.generation.signal, this.options.getIdentitySignal(),
       ...signal === undefined ? [] : [signal]])
     control.throwIfAborted()
