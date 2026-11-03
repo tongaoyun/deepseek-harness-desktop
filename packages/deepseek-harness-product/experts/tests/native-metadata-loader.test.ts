@@ -26,6 +26,7 @@ it('loads quoted YAML text and excludes malformed or non-text metadata before pe
     await rm(root, { recursive: true, force: true })
   })
   await mkdir(join(root, 'engineering'))
+  await writeFile(join(root, 'not-a-directory'), 'Not an expert category.')
   const cases = [
     { slug: 'quoted-colon', description: '"Review: orders"', text: 'Review: orders' },
     { slug: 'quoted-boolean', description: '"true"', text: 'true' },
@@ -52,7 +53,7 @@ it('loads quoted YAML text and excludes malformed or non-text metadata before pe
   const config = join(root, 'cordis.yml')
   await writeFile(config, JSON.stringify([
     { name: 'cordis:prompt' }, { name: 'cordis:tools' },
-    { name: 'cordis:experts', config: { root, divisions: ['engineering'] } },
+    { name: 'cordis:experts', config: { root, divisions: ['engineering', 'missing', 'not-a-directory'] } },
   ]))
   await ctx.loader.create({ name: 'cordis:include', config: { path: pathToFileURL(config).href } })
   await ctx.loader.await()

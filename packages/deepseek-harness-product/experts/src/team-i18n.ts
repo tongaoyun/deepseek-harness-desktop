@@ -30,6 +30,7 @@ export const TEAM_EN = {
   'agency-agents Remote 挂载后不可用': 'The agency-agents remote service is unavailable after mounting.',
   '无效的专家提示词请求。': 'Invalid expert prompt request.',
   '未找到专家提示词。': 'Expert prompt not found.',
+  '无法读取专家目录，请刷新后重试。': 'Could not read the expert catalog. Refresh and try again.',
   '专家提示词格式无效。': 'Invalid expert prompt format.',
   '专家团只能在主会话中召唤。': 'Expert teams can only be invoked from the main conversation.',
   '专家成员不能继续召唤专家团。': 'Expert members cannot invoke additional teams.',

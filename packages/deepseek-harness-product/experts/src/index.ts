@@ -399,7 +399,10 @@ function textBlocks(blocks: readonly ContentBlock[]): string {
 
 /** 校验 root 目录存在且为目录，否则抛出明确错误（避免静默得到空列表）。 */
 async function assertDirectory(root: string, locale: LocaleId): Promise<void> {
-  const info = await stat(root).catch(() => undefined)
+  const info = await stat(root).catch((error: unknown) => {
+    if (isMissingPath(error)) return undefined
+    throw error
+  })
   if (info === undefined) {
     throw new Error(formatHost(locale, 'error.rootMissing', { root, env: ROOT_ENV }))
   }
@@ -408,11 +411,16 @@ async function assertDirectory(root: string, locale: LocaleId): Promise<void> {
   }
 }
 
+function isMissingPath(error: unknown): boolean {
+  return error instanceof Error && 'code' in error && (error.code === 'ENOENT' || error.code === 'ENOTDIR')
+}
+
 /** 递归遍历目录下的所有 .md 文件，逐个回调其绝对路径与文件名。 */
-async function walkMarkdown(dir: string, onFile: (filePath: string, fileName: string) => Promise<void>): Promise<void> {
+async function walkMarkdown(dir: string, onFile: (filePath: string, fileName: string) => Promise<void>, optional = false): Promise<void> {
   const entries = await readdir(dir, { withFileTypes: true }).catch((error: unknown) => {
-    console.warn(`[agency-agents] 跳过无法读取的目录 ${dir}: ${error instanceof Error ? error.message : String(error)}`)
-    return undefined
+    // Configured local categories may be absent; enumerated descendants must remain readable.
+    if (optional && isMissingPath(error)) return undefined
+    throw error
   })
   if (entries === undefined) return
   // 排序让 slug 冲突时「后加载者覆盖」的顺序确定，不依赖 readdir 的返回顺序
@@ -433,22 +441,20 @@ async function walkMarkdown(dir: string, onFile: (filePath: string, fileName: st
  * @param locale - 当前界面语言。
  * @param allowNameConflicts - 是否保留冲突项供目录诊断。
  * @returns 经过目录和元数据检查的专家名册。
+ * @throws 目录或文件读取失败；缺失的配置分类和无效元数据不进入名册。
  */
 export async function loadCatalog(root: string, divisions: readonly string[], locale: LocaleId = 'zh', allowNameConflicts = false): Promise<Map<string, Expert>> {
   await assertDirectory(root, locale)
+  return readCatalog(root, divisions, locale, allowNameConflicts, true)
+}
 
+async function readCatalog(root: string, divisions: readonly string[], locale: LocaleId, allowNameConflicts: boolean, optionalDivisions: boolean): Promise<Map<string, Expert>> {
   const sources = divisions.map((division) => ({ dir: division, division }))
   const map = new Map<string, Expert>()
   for (const source of sources) {
     await walkMarkdown(join(root, source.dir), async (filePath, fileName) => {
       const slug = fileName.slice(0, -3)
-      let parsed: FrontmatterMetadata | undefined
-      try {
-        parsed = await readFrontmatterMetadata(filePath)
-      } catch (error: unknown) {
-        console.warn(`[agency-agents] 跳过无法读取的智能体文件 ${filePath}: ${error instanceof Error ? error.message : String(error)}`)
-        return
-      }
+      const parsed = await readFrontmatterMetadata(filePath)
       if (parsed === undefined || parsed.name === undefined || parsed.description === undefined) return
       if (map.has(slug)) {
         console.warn(`[agency-agents] 智能体 slug 冲突，后加载者覆盖：${slug}`)
@@ -465,7 +471,7 @@ export async function loadCatalog(root: string, divisions: readonly string[], lo
       };
       personaPaths.set(expert, filePath);
       map.set(slug, expert);
-    })
+    }, optionalDivisions)
   }
   if (map.size === 0) {
     throw new Error(formatHost(locale, 'error.catalogEmpty', { root }))
@@ -541,7 +547,7 @@ export function apply(ctx: Context, config: Config): void {
     if (!pending) {
       pending = readdir(root, { withFileTypes: true }).then(async entries => {
         const divisions = entries.filter(entry => entry.isDirectory()).map(entry => entry.name).sort()
-        const company = divisions.length ? await loadCatalog(root, divisions, activeLocale(), true) : new Map<string, Expert>()
+        const company = divisions.length ? await readCatalog(root, divisions, activeLocale(), true, false) : new Map<string, Expert>()
         await ensureReady()
         for (const [slug, expert] of company) {
           company.set(slug, { ...expert, company: true })
@@ -552,6 +558,12 @@ export function apply(ctx: Context, config: Config): void {
           company.set(slug, expert)
         }
         return { experts: company, divisions, teams }
+      }).catch((cause: unknown) => {
+        if (companyCatalogs.get(root) === pending) companyCatalogs.delete(root)
+        if (cause instanceof Error && 'code' in cause && typeof cause.code === 'string') {
+          throw new PersonaError('CATALOG_READ_FAILED', activeLocale(), cause)
+        }
+        throw cause
       })
       companyCatalogs.set(root, pending)
     }
