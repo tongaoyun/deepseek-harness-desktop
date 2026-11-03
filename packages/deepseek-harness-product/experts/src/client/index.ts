@@ -1,4 +1,5 @@
 import { bytesToBase64 } from '@deepseek-ai/dsh-util-crypto'
+import { deepEqualJson } from '@deepseek-ai/dsh-util-values'
 import { createExpertClientState, type ExpertClientState } from './client-state.ts'
 import { commitBulk } from './bulk-operations.ts'
 import { LibraryConfirm } from './library-ui.tsx'
@@ -792,6 +793,8 @@ export function AgentsButton(props: ButtonProps): React.ReactElement {
         newlyEnabled = current.enabled.has(slug)
       }
       if (request !== epoch.current) return
+      const selected = current.experts.find(item => item.slug === slug)
+      if (!selected || selected.conflict) throw new Error(props.t('custom.unavailable'))
       if (!current.enabled.has(slug) || !insertSelectedExpert(slug, props.getActive(), insert, current.experts)) {
         setInsertError(props.t(newlyEnabled ? 'discovery.enabledInsertFailed' : 'error.insertFailed'))
         return
@@ -980,16 +983,21 @@ function ExpertCardsSettings(props: PropsLocale<'agency'> & {
   const [isSaving, setIsSaving] = React.useState(false)
   const { source, onSourceChange } = props
   const [editor, setEditor] = React.useState<{ expert?: CustomExpertInput; enabled: boolean; revision: number } | null>(null)
-  const [deleting, setDeleting] = React.useState<ExpertView | null>(null)
+  const [deleting, setDeleting] = React.useState<{ expert: ExpertView; revision: number } | null>(null)
   const [bulk, setBulk] = React.useState<{ targets: string[]; enabled: boolean } | null>(null)
   const [bulkError, setBulkError] = React.useState<string | null>(null)
   const [deleteError, setDeleteError] = React.useState<string | null>(null)
   const [notice, setNotice] = React.useState<string | null>(null)
 
-  const accept = (catalog: CatalogSnapshot): void => {
-    const current = props.cache.catalog.accept(catalog)
-    setState(current)
-    setError(null)
+  const accept = async (catalog: CatalogSnapshot, started: CatalogState, signal?: AbortSignal): Promise<void> => {
+    try {
+      const current = await props.cache.catalog.acceptMutation(catalog, started)
+      if (signal?.aborted) return
+      setState(current)
+      setError(null)
+    } catch (cause: unknown) {
+      if (!signal?.aborted) setError(cause instanceof Error ? cause.message : String(cause))
+    }
   }
   const fresh = (): EnabledState | null => {
     if (state === null) return null
@@ -1015,21 +1023,28 @@ function ExpertCardsSettings(props: PropsLocale<'agency'> & {
       })
     }
   }
-  const removeExpert = (slug: string): void => {
+  const removeExpert = (reviewed: NonNullable<typeof deleting>): void => {
     const current = fresh()
     if (current === null || saving.current) return
+    const slug = reviewed.expert.slug
+    if (current.revision !== reviewed.revision || !deepEqualJson(reviewed.expert, current.experts.find(expert => expert.slug === slug) ?? null)) {
+      setDeleting(null)
+      setError(props.t('error.conflict'))
+      return
+    }
+    const started = props.cache.catalog.getSnapshot()
     saving.current = true
     setIsSaving(true)
     setDeleteError(null)
     const signal = lifetime.current?.signal
     signal?.throwIfAborted()
-    void props.remote.deleteCustomExpert(slug, current.revision, signal)
+    void props.remote.deleteCustomExpert(slug, reviewed.revision, signal)
       .then(result => {
         signal?.throwIfAborted()
         if (!result.ok) throw result.error
-        accept(result.value)
         setDeleting(null)
         setNotice(props.t('custom.deleted'))
+        void accept(result.value, started, signal)
       }).catch((cause: unknown) => {
         if (signal?.aborted) return
         const message = cause instanceof Error ? cause.message : String(cause)
@@ -1238,7 +1253,10 @@ function ExpertCardsSettings(props: PropsLocale<'agency'> & {
                 },
               } }))
             } }] : []),
-            ...(expert.custom ? [{ id: 'delete', label: props.t('custom.delete'), icon: React.createElement(TrashIcon, { size: 16, strokeWidth: 1.7, 'aria-hidden': true }), danger: true, disabled: isSaving || state === null, onSelect: () => { setDeleting(expert); setDeleteError(null) } }] : []),
+            ...(expert.custom ? [{ id: 'delete', label: props.t('custom.delete'), icon: React.createElement(TrashIcon, { size: 16, strokeWidth: 1.7, 'aria-hidden': true }), danger: true, disabled: isSaving || state === null, onSelect: () => {
+              if (state === null) return
+              setDeleting({ expert, revision: state.revision }); setDeleteError(null)
+            } }] : []),
           ],
           actions: React.createElement('button', { type: 'button', className: 'aag-card-action', title: props.t('settings.viewPromptTitle'), 'aria-label': props.t('settings.viewPromptTitle'), 'aria-haspopup': 'dialog', onClick: (event: React.MouseEvent<HTMLButtonElement>) => viewPrompt(expert, event.currentTarget) },
             React.createElement(Eye, { size: 18, strokeWidth: 1.7, 'aria-hidden': true }), React.createElement('span', { className: 'aag-card-action-text' }, props.t('settings.viewPrompt'))),
@@ -1263,12 +1281,17 @@ function ExpertCardsSettings(props: PropsLocale<'agency'> & {
       ...editor, remote: props.remote, t: props.t, locale: props.getActive(),
       signal: lifetime.current?.signal,
       divisions: [...new Set([...EXPERT_DIVISION_ORDER, ...(state?.experts ?? []).map(expert => expert.division)])],
-      onClose: () => setEditor(null), onSaved: (catalog: CatalogSnapshot) => {
-        accept(catalog); setEditor(null); onSourceChange('custom'); setQuery(''); setDivision(''); setStatus(''); setNotice(props.t('custom.saved'))
+      onClose: () => setEditor(null), prepareSave: () => {
+        const started = props.cache.catalog.getSnapshot()
+        const signal = lifetime.current?.signal
+        return (catalog: CatalogSnapshot) => {
+          setEditor(null); onSourceChange('custom'); setQuery(''); setDivision(''); setStatus(''); setNotice(props.t('custom.saved'))
+          void accept(catalog, started, signal)
+        }
       },
     }),
     deleting === null ? null : React.createElement(CustomDeleteDialog, {
-      name: deleting.name, busy: isSaving, error: deleteError, t: props.t, close: () => setDeleting(null), confirm: () => removeExpert(deleting.slug),
+      name: deleting.expert.name, busy: isSaving, error: deleteError, t: props.t, close: () => setDeleting(null), confirm: () => removeExpert(deleting),
     }),
     openPrompt === null ? null : React.createElement(PromptDialog, {
       value: openPrompt, title: props.t('settings.promptTitle', { name: openPrompt.name }), closeLabel: props.t('settings.promptClose'), returnFocus: openPrompt.returnFocus, onClose: () => setOpenPrompt(null),

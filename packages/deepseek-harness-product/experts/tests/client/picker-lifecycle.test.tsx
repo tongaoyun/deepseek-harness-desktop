@@ -3,7 +3,7 @@
 import React from 'react'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, expect, it, onTestFinished, vi } from 'vitest'
-import { AgentsButton } from '../../src/client/index.ts'
+import { AgentsButton, buildExpertMentionLexicon } from '../../src/client/index.ts'
 import { createExpertClientState } from '../../src/client/client-state.ts'
 import { zh } from '../../src/client/locales.ts'
 import { TEST_TEAMS } from '../../src/fixtures/teams.ts'
@@ -66,6 +66,31 @@ it('reopens a dismissed picker during the shared catalog read and reports its cu
 
 const reviewer = { slug: 'reviewer', name: '评审专家', nameEn: 'Reviewer', description: '检查代码',
   descriptionEn: 'Review code', emoji: '🔎', division: 'engineering', divisionZh: '研发', custom: false }
+
+it.each(['available', 'failed'] as const)('does not revive an expert that becomes conflicted during enable when the follow-up read is %s', async (state) => {
+  const { trigger, cache, remote, view, dictionary } = await fixture(false)
+  const catalog = { experts: [reviewer], enabled: [], revision: 1 }
+  cache.catalog.accept(catalog)
+  const read = vi.spyOn(remote, 'getCatalog').mockResolvedValue({ ok: true, value: catalog })
+  const pending = Promise.withResolvers<Awaited<ReturnType<typeof remote.setEnabled>>>()
+  const write = vi.spyOn(remote, 'setEnabled').mockReturnValueOnce(pending.promise)
+  const insert = vi.fn(() => true)
+  view.rerender(<AgentsButton remote={remote} cache={cache} insertReference={insert} getActive={() => 'zh'} t={key => dictionary[key] ?? key} />)
+  await act(async () => { fireEvent.click(trigger); await cache.catalog.refresh() })
+  fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'reviewer' } })
+  fireEvent.click(screen.getByRole('button', { name: /评审专家/ }))
+  await waitFor(() => { expect(write).toHaveBeenCalledOnce() })
+  const latest = { experts: [{ ...reviewer, conflict: true }], enabled: [], revision: 2 }
+  act(() => { cache.catalog.accept(latest) })
+  if (state === 'failed') read.mockRejectedValueOnce(new Error('Directory unavailable after enable'))
+  else read.mockResolvedValueOnce({ ok: true, value: latest })
+  await act(async () => { pending.resolve({ ok: true, value: { enabled: [reviewer.slug], revision: 2 } }); await pending.promise })
+  expect(insert).not.toHaveBeenCalled()
+  expect(cache.catalog.getSnapshot().enabled.has(reviewer.slug)).toBe(false)
+  expect(buildExpertMentionLexicon(cache.catalog.getSnapshot().experts, cache.catalog.getSnapshot().enabled, 'zh')).toEqual([])
+  expect(screen.getByRole('dialog')).toBeTruthy()
+  expect(screen.getByRole('alert').textContent).toContain(zh['custom.unavailable'])
+})
 
 it.each(['available', 'removed', 'failed'] as const)('handles a picker selection during background refresh after the directory settles as %s', async (state) => {
   const { trigger, cache, remote, view, dictionary } = await fixture(false)

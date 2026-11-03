@@ -20,7 +20,10 @@ export interface CustomEditorProps {
   readonly signal?: AbortSignal
   readonly t: TranslateNS<'agency'>
   readonly locale: 'zh' | 'en'
-  readonly onSaved: (catalog: CatalogSnapshot) => void
+  /** Capture the owner's current directory before dispatch.
+   * @returns Success consumer for this one write.
+   */
+  readonly prepareSave: () => (catalog: CatalogSnapshot) => void
   readonly onClose: () => void
 }
 
@@ -81,10 +84,11 @@ export function CustomExpertEditor(props: CustomEditorProps): React.ReactElement
     setBusy(true)
     setError(null)
     props.signal?.throwIfAborted()
+    const saved = props.prepareSave()
     void props.remote.saveCustomExpert(parsed.data, enabled, revision, props.signal).then(result => {
       props.signal?.throwIfAborted()
       if (!result.ok) throw result.error
-      props.onSaved(result.value)
+      saved(result.value)
     }).catch((cause: unknown) => {
       if (props.signal?.aborted) return
       const message = cause instanceof Error ? cause.message : String(cause)

@@ -156,7 +156,7 @@ it('keeps the unsaved expert when cancelling discard and closes only after expli
   const dictionary: Readonly<Record<string, string>> = en
   render(<CustomExpertEditor enabled={false} revision={1} divisions={['specialized']} locale="en" t={key => dictionary[key] ?? key}
     remote={{ getCatalog: unused, getCustomExpert: unused, saveCustomExpert: unused, deleteCustomExpert: unused }}
-    onSaved={vi.fn()} onClose={close} />)
+    prepareSave={() => vi.fn()} onClose={close} />)
   const prompt = screen.getByRole('textbox', { name: en['custom.prompt'] })
   fireEvent.change(prompt, { target: { value: 'Unsaved instructions' } })
   prompt.focus()
@@ -184,7 +184,7 @@ it('opens conflict review from the native error code even when its wording chang
   render(<CustomExpertEditor expert={{ name: 'Reviewer', description: 'Review code', division: 'specialized', prompt: 'Check changes' }}
     enabled={false} revision={1} divisions={['specialized']} locale="en" t={key => dictionary[key] ?? key}
     remote={{ getCatalog, getCustomExpert: unused, saveCustomExpert: save, deleteCustomExpert: unused }}
-    onSaved={saved} onClose={vi.fn()} />)
+    prepareSave={() => saved} onClose={vi.fn()} />)
   fireEvent.click(screen.getByRole('button', { name: en['custom.save'] }))
   const review = await screen.findByRole('button', { name: en['custom.reviewLatest'] })
   expect(screen.getByRole('alert').textContent).toBe(en['custom.conflict'])

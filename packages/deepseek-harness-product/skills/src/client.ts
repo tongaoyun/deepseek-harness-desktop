@@ -127,8 +127,33 @@ function createSkillsPage(localeService: ClientContext["locale"]) {
       return { error: { code: "select.file.invalid" } };
     }
     function buildUploadPayload(selection: UploadSelection) { return Promise.all(selection.files.map(function (file) { return file.arrayBuffer().then(function (buffer) { return { path: uploadFilePath(file), data: bytesToBase64(new Uint8Array(buffer)) }; }); })).then(function (entries) { return selection.kind === "zip" ? { name: selection.name, zip: entries[0].data } : { name: selection.name, entries: entries }; }); }
-    function readDroppedEntry(entry: FileSystemEntry, prefix: string, output: UploadFile[]): Promise<void> { if (entry.isFile) return new Promise<void>(function (resolve, reject) { (entry as FileSystemFileEntry).file(function (file: UploadFile) { file._dssmPath = prefix + file.name; output.push(file); resolve(); }, reject); }); if (!entry.isDirectory) return Promise.resolve(); return new Promise<void>(function (resolve, reject) { var reader = (entry as FileSystemDirectoryEntry).createReader(), children: FileSystemEntry[] = []; function next() { reader.readEntries(function (batch) { if (!batch.length) { Promise.all(children.map(function (child) { return readDroppedEntry(child, prefix + entry.name + "/", output); })).then(function () { resolve(); }, reject); return; } children = children.concat(batch); next(); }, reject); } next(); }); }
-    function droppedFiles(dataTransfer: DataTransfer) { var items = Array.from(dataTransfer && dataTransfer.items || []), entries = items.map(function (item) { return item.webkitGetAsEntry && item.webkitGetAsEntry(); }).filter((entry): entry is FileSystemEntry => !!entry); if (!entries.length) return Promise.resolve(Array.from(dataTransfer && dataTransfer.files || [])); var files: UploadFile[] = []; return Promise.all(entries.map(function (entry) { return readDroppedEntry(entry, "", files); })).then(function () { return files; }); }
+    async function readDroppedEntry(entry: FileSystemEntry, prefix: string, output: UploadFile[], signal: AbortSignal): Promise<void> {
+      signal.throwIfAborted();
+      if (entry.isFile) {
+        const file = await new Promise<UploadFile>((resolve, reject) => { (entry as FileSystemFileEntry).file(resolve, reject); });
+        signal.throwIfAborted();
+        file._dssmPath = prefix + file.name;
+        output.push(file);
+        return;
+      }
+      if (!entry.isDirectory) return;
+      const reader = (entry as FileSystemDirectoryEntry).createReader(), children: FileSystemEntry[] = [];
+      while (true) {
+        const batch = await new Promise<FileSystemEntry[]>((resolve, reject) => { reader.readEntries(resolve, reject); });
+        signal.throwIfAborted();
+        if (!batch.length) break;
+        children.push(...batch);
+      }
+      await Promise.all(children.map(child => readDroppedEntry(child, prefix + entry.name + "/", output, signal)));
+    }
+    async function droppedFiles(dataTransfer: DataTransfer, signal: AbortSignal) {
+      signal.throwIfAborted();
+      var items = Array.from(dataTransfer && dataTransfer.items || []), entries = items.map(function (item) { return item.webkitGetAsEntry && item.webkitGetAsEntry(); }).filter((entry): entry is FileSystemEntry => !!entry);
+      if (!entries.length) return Array.from(dataTransfer && dataTransfer.files || []);
+      var files: UploadFile[] = [];
+      await Promise.all(entries.map(entry => readDroppedEntry(entry, "", files, signal)));
+      return files;
+    }
     function hostButton(label: React.ReactNode, onClick: () => void, kind: "primary" | "outline" | "danger" = "primary", disabled?: boolean) {
           const variant = kind === "primary" ? "primary" : "outline";
           const className = kind === "danger" ? "dssm-btn-danger" : undefined;
@@ -306,6 +331,7 @@ function createSkillsPage(localeService: ClientContext["locale"]) {
       var expanded = props.expanded, setExpanded = props.setExpanded, savedFilters = props.savedFilters, setSavedFilters = props.setSavedFilters;
       var ms = react.useState<ModalState>(null), modal = ms[0];
       function setModal(value: ModalState) {
+        if (value !== "import") cancelRead("upload");
         if (value !== "detail" && readRequests.current.has("detail")) {
           cancelRead("detail");
           setBusy(false);
@@ -426,9 +452,24 @@ function createSkillsPage(localeService: ClientContext["locale"]) {
       function updateForm(key: string, value: string) { setForm(Object.assign({}, form, { [key]: value })); }
       function submitCreate() { if (!destinationReady(createDestination, workspaceRows, userDestinations)) return; post("createSkill", { request: Object.assign({}, form, { root: undefined }, destinationPayload(createDestination)) }, null).then(function (data) { setModal(null); setForm({ root: "dsh", name: "", description: "", body: "" }); setResult({ ok: true, text: t("result.created", { name: data.name }) + (createDestination.scope === "workspace" ? " · " + t("dest.createdInWorkspace") : "") }); }).catch(function () {}); }
       function dismissForm() { if (inflightRef.current) return; if (modal === "import") { pickerOpenRef.current = false; setUpload(null); setResult(null); } setModal(null); }
-      function selectUploadFiles(files: ArrayLike<UploadFile> | null) { if (inflightRef.current || lifetime.current.signal.aborted) return; pickerOpenRef.current = false; var selected = inspectUploadSelection(files); if (!selected) return; if (selected.error) { setUpload(null); setResult({ ok: false, text: translateError(t, selected.error) }); return; } setUpload(selected); setResult(null); }
+      function selectUploadFiles(files: ArrayLike<UploadFile> | null) { if (inflightRef.current || lifetime.current.signal.aborted) return; cancelRead("upload"); pickerOpenRef.current = false; var selected = inspectUploadSelection(files); if (!selected) return; if (selected.error) { setUpload(null); setResult({ ok: false, text: translateError(t, selected.error) }); return; } setUpload(selected); setResult(null); }
+      async function selectDroppedFiles(dataTransfer: DataTransfer) {
+        if (inflightRef.current) return;
+        const request = beginRead("upload");
+        try {
+          const files = await droppedFiles(dataTransfer, request.signal);
+          if (request.signal.aborted) return;
+          finishRead("upload", request);
+          selectUploadFiles(files);
+        } catch (error) {
+          if (!request.signal.aborted && !inflightRef.current) setResult({ ok: false, text: translateError(t, error) });
+        } finally {
+          finishRead("upload", request);
+        }
+      }
+      function clearUploadFiles() { if (inflightRef.current) return; cancelRead("upload"); setUpload(null); }
       function openNativePicker(ref: React.RefObject<HTMLInputElement>) { if (busy || pickerOpenRef.current || !ref.current) return; pickerOpenRef.current = true; ref.current.value = ""; try { ref.current.click(); } catch (error) { pickerOpenRef.current = false; setResult({ ok: false, text: t("error.upload.picker", { error: translateError(t, error) }) }); } }
-      function submitImport() { const selection = upload; if (!selection || !destinationReady(importDestination, workspaceRows, userDestinations)) return; post("uploadSkill", async function () { return { request: Object.assign({}, await buildUploadPayload(selection), destinationPayload(importDestination)) }; }, null).then(function (data) { var summary = summarizeImportResult(t, data); setResult({ ok: summary.ok, warning: summary.warning, text: summary.text }); if (summary.imported) { setModal(null); setUpload(null); } }).catch(function () {}); }
+      function submitImport() { const selection = upload; if (!selection || !destinationReady(importDestination, workspaceRows, userDestinations)) return; cancelRead("upload"); post("uploadSkill", async function () { return { request: Object.assign({}, await buildUploadPayload(selection), destinationPayload(importDestination)) }; }, null).then(function (data) { var summary = summarizeImportResult(t, data); setResult({ ok: summary.ok, warning: summary.warning, text: summary.text }); if (summary.imported) { setModal(null); setUpload(null); } }).catch(function () {}); }
       var data = snapshot.data || { roots: [], writeDestinations: [], projects: [], trash: [], warnings: [] }, allRoots = data.roots || [];
       var filterKey = scope === "market" ? "market" : scope === "project" ? "project" : "user", filters = savedFilters[filterKey] || { query: "", source: "", status: "" }, query = filters.query, source = filters.source;
       function updateFilter(key: string, value: string) { setSavedFilters(function (previous) { return Object.assign({}, previous, { [filterKey]: Object.assign({}, filters, { [key]: value }) }); }); }
@@ -822,12 +863,12 @@ function createSkillsPage(localeService: ClientContext["locale"]) {
       if (modal === "import") content.push(h(Modal, { key: "import", className: "dssm-modal-import", title: t("import.title"), closeLabel: t("btn.close"), onClose: dismissForm },
         h("input", { ref: importInputRef, className: "dssm-hidden-input", type: "file", disabled: busy, accept: ".zip,.md", onChange: function (event) { selectUploadFiles(event.target.files); event.target.value = ""; } }),
         h("input", { ref: folderInputRef, className: "dssm-hidden-input", type: "file", disabled: busy, multiple: true, webkitdirectory: "", directory: "", onChange: function (event) { selectUploadFiles(event.target.files); event.target.value = ""; } }),
-        h("div", { className: "dssm-dropzone", onDragOver: function (event: React.DragEvent<HTMLDivElement>) { event.preventDefault(); event.currentTarget.classList.add("dssm-dropzone-active"); }, onDragLeave: function (event: React.DragEvent<HTMLDivElement>) { event.currentTarget.classList.remove("dssm-dropzone-active"); }, onDrop: function (event: React.DragEvent<HTMLDivElement>) { event.preventDefault(); event.currentTarget.classList.remove("dssm-dropzone-active"); if (inflightRef.current) return; droppedFiles(event.dataTransfer).then(selectUploadFiles).catch(function (error) { if (!inflightRef.current && !lifetime.current.signal.aborted) setResult({ ok: false, text: translateError(t, error) }); }); } },
+        h("div", { className: "dssm-dropzone", onDragOver: function (event: React.DragEvent<HTMLDivElement>) { event.preventDefault(); event.currentTarget.classList.add("dssm-dropzone-active"); }, onDragLeave: function (event: React.DragEvent<HTMLDivElement>) { event.currentTarget.classList.remove("dssm-dropzone-active"); }, onDrop: function (event: React.DragEvent<HTMLDivElement>) { event.preventDefault(); event.currentTarget.classList.remove("dssm-dropzone-active"); void selectDroppedFiles(event.dataTransfer); } },
           h("span", { className: "dssm-dropzone-title" }, t("upload.drop.title")),
           h("span", { className: "dssm-dropzone-copy" }, t("upload.drop.copy")),
           h("div", { className: "dssm-upload-choices" }, h("button", { type: "button", className: "dssm-upload-link", disabled: busy, onClick: function (event: React.MouseEvent<HTMLButtonElement>) { event.stopPropagation(); openNativePicker(folderInputRef); } }, t("btn.folder.pick")), h("span", { className: "dssm-upload-divider" }, "/"), h("button", { type: "button", className: "dssm-upload-link", disabled: busy, onClick: function (event: React.MouseEvent<HTMLButtonElement>) { event.stopPropagation(); openNativePicker(importInputRef); } }, t("btn.file.pick")))
         ),
-        upload ? h("div", { className: "dssm-file", title: upload.name }, h("span", { className: "dssm-file-kind", "aria-hidden": "true" }, upload.kind === "zip" ? "ZIP" : upload.kind === "folder" ? "DIR" : "MD"), h("span", { className: "dssm-file-name" }, upload.name), h("span", { className: "dssm-file-meta" }, t(countKey("upload.selected", upload.count), { count: upload.count, size: fileSizeText(upload.size) })), h("button", { type: "button", className: "dssm-file-remove", "aria-label": t("upload.remove"), disabled: busy, onClick: function () { setUpload(null); } }, "×")) : null,
+        upload ? h("div", { className: "dssm-file", title: upload.name }, h("span", { className: "dssm-file-kind", "aria-hidden": "true" }, upload.kind === "zip" ? "ZIP" : upload.kind === "folder" ? "DIR" : "MD"), h("span", { className: "dssm-file-name" }, upload.name), h("span", { className: "dssm-file-meta" }, t(countKey("upload.selected", upload.count), { count: upload.count, size: fileSizeText(upload.size) })), h("button", { type: "button", className: "dssm-file-remove", "aria-label": t("upload.remove"), disabled: busy, onClick: clearUploadFiles }, "×")) : null,
         h(DestinationPicker, { t: t, value: importDestination, disabled: busy, allowAgents: true, workspaces: workspaceRows, loading: workspaceList.loading, workspaceError: workspaceList.error, onRetryWorkspaces: function () { void loadWorkspaces(false); }, userDestinations: userDestinations, onChange: function (next: Partial<DestinationValue>) { setImportDestination(Object.assign({}, importDestination, next)); } }),
         result ? h("div", { className: "dssm-feedback" + (result.warning ? " dssm-warning" : result.ok ? "" : " dssm-error"), role: "alert" }, result.text) : null,
         h("div", { className: "dssm-upload-requirements" }, h("div", { className: "dssm-label" }, t("upload.requirements")), h("ul", null, h("li", null, t("upload.requirement.skill")), h("li", null, t("upload.requirement.frontmatter")), h("li", null, t("upload.requirement.copy")))),

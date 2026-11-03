@@ -88,6 +88,35 @@ it('shows an expired or claimed draft error without opening an empty editor', as
   expect(document.querySelector('form')).toBeNull()
 })
 
+it('closes a committed expert draft and retries the expert directory after a failed post-commit read', async () => {
+  const { props, saveCustomExpert } = fixture()
+  onTestFinished(() => { props.cache.catalog.dispose(); props.cache.teams.dispose() })
+  const reply = Promise.withResolvers<Awaited<ReturnType<TeamRemote['saveCustomExpert']>>>()
+  saveCustomExpert.mockReturnValueOnce(reply.promise)
+  const getCatalog = vi.fn<TeamRemote['getCatalog']>().mockRejectedValueOnce(new Error('Expert directory unavailable after commit'))
+  const getTeams = vi.fn<TeamRemote['getTeams']>()
+  props.remote.getCatalog = getCatalog
+  props.remote.getTeams = getTeams
+  await act(async () => { root.render(<CreationCard {...props} />) })
+  await click(en['creation.open'])
+  await click(en['custom.save'])
+  expect(saveCustomExpert).toHaveBeenCalledOnce()
+  const company = { slug: 'company-reviewer', name: 'Updated company reviewer', nameEn: 'Updated company reviewer', description: 'Review',
+    descriptionEn: '', division: 'engineering', divisionZh: '研发', emoji: '🔎', custom: false, company: true }
+  const latest = { ...data.catalog, experts: [company] }
+  await act(async () => { props.cache.catalog.accept(latest) })
+  await act(async () => { reply.resolve({ ok: true, value: { ...data.catalog, revision: 4 } }); await reply.promise })
+  expect(document.querySelector('form')).toBeNull()
+  expect(document.querySelector('[role="alert"]')?.textContent).toContain('Expert directory unavailable after commit')
+  getCatalog.mockResolvedValueOnce({ ok: true, value: { ...latest, revision: 4 } })
+  await click(en['btn.refresh'])
+  expect(document.querySelector('[role="alert"]')).toBeNull()
+  expect(props.cache.catalog.getSnapshot().experts[0].name).toBe(company.name)
+  expect(saveCustomExpert).toHaveBeenCalledOnce()
+  expect(getTeams).not.toHaveBeenCalled()
+  expect(getCatalog).toHaveBeenCalledTimes(2)
+})
+
 it('confirms the visible bulk count, cancels without writing, and preserves another window’s selection', async () => {
   const { AgencySettingsPanel } = await import('../../src/client/index.ts')
   const emptyTeams = { teams: [], enabledTeams: [], enabledExperts: [], revision: 3 }
