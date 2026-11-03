@@ -187,3 +187,98 @@ it('does not sign out a renewed session when an older token returns unauthorized
     expect(bridge.getSession()).toMatchObject({ authenticated: true, employeeId: 'employee-a' })
   } finally { await bridge.dispose() }
 })
+
+it.each(['success', 'failure'] as const)('cancels one waiter without cancelling a shared session refresh that ends in %s', async (outcome) => {
+  const started = deferred<boolean>()
+  const response = deferred<Response>()
+  let refreshes = 0
+  let refreshSignal: AbortSignal | null | undefined
+  let requests = 0
+  const bridge = new DeepSeekHarnessProductBridge({ serverUrl: 'https://product.test',
+    sessionToken: 'old-token', initialSession: { authenticated: true, employeeId: 'employee-a',
+      expiresAt: String(Date.now() / 1000 + 120) },
+    fetch: async (input, init) => {
+      const url = new Request(input).url
+      if (url.endsWith('/session/refresh')) {
+        refreshes++
+        refreshSignal = init?.signal
+        started.resolve(true)
+        return response.promise
+      }
+      if (url.endsWith('/knowledge-references/resolve')) {
+        requests++
+        return Response.json({ success: true, data: [] })
+      }
+      return Response.json({ success: true, data: [], pageIndex: 1, pageSize: 100, totalCount: 0, totalPages: 0 })
+    } })
+  const controller = new AbortController()
+  const reason = new Error('Cancel only this employee request')
+  let cancelledReason: unknown
+  let liveSettled = false
+  const cancelled = bridge.invoke('knowledge.references.resolve', {}, controller.signal).catch((error: unknown) => {
+    cancelledReason = error
+  })
+  const live = bridge.invoke('knowledge.references.resolve', {}).finally(() => { liveSettled = true })
+  const liveResult = outcome === 'success' ? expect(live).resolves.toEqual([])
+    : expect(live).rejects.toMatchObject({ code: 'ORGANIZATION_UNAVAILABLE' })
+  try {
+    await started.promise
+    controller.abort(reason)
+    await expect.poll(() => cancelledReason).toBe(reason)
+    expect(refreshSignal?.aborted).toBe(false)
+    expect(liveSettled).toBe(false)
+    expect(requests).toBe(0)
+    response.resolve(outcome === 'success' ? refreshed('employee-a', 'new-token') : Response.json({
+      success: false, errCode: 'ORGANIZATION_UNAVAILABLE', errMessage: 'Organization temporarily unavailable',
+    }, { status: 503 }))
+    await Promise.all([cancelled, liveResult])
+    expect(refreshes).toBe(1)
+    expect(requests).toBe(outcome === 'success' ? 1 : 0)
+  } finally {
+    response.resolve(refreshed('employee-a', 'new-token'))
+    await Promise.allSettled([cancelled, liveResult])
+    await bridge.dispose()
+  }
+})
+
+it.each(['employee-change', 'disposal'] as const)('releases session refresh waiters on %s while draining the owned refresh', async (event) => {
+  const started = deferred<boolean>()
+  const response = deferred<Response>()
+  let refreshSignal: AbortSignal | null | undefined
+  let requests = 0
+  const bridge = new DeepSeekHarnessProductBridge({ serverUrl: 'https://product.test',
+    sessionToken: 'token-a', initialSession: { authenticated: true, employeeId: 'employee-a',
+      expiresAt: String(Date.now() / 1000 + 120) },
+    fetch: async (input, init) => {
+      const url = new Request(input).url
+      if (url.endsWith('/session/refresh')) {
+        refreshSignal = init?.signal
+        started.resolve(true)
+        return response.promise
+      }
+      if (url.endsWith('/knowledge-references/resolve')) requests++
+      return Response.json({ success: true, data: [], pageIndex: 1, pageSize: 100, totalCount: 0, totalPages: 0 })
+    } })
+  let reason: unknown
+  let disposed = false
+  let disposal: Promise<void> | undefined
+  const pending = bridge.invoke('knowledge.references.resolve', {}).catch((error: unknown) => { reason = error })
+  try {
+    await started.promise
+    if (event === 'employee-change') bridge.setSession({ authenticated: true, employeeId: 'employee-b' }, 'token-b')
+    else disposal = bridge.dispose().then(() => { disposed = true })
+    await expect.poll(() => reason).toMatchObject({ message: event === 'employee-change'
+      ? 'Product employee identity changed' : 'Product bridge closed' })
+    expect(refreshSignal?.aborted).toBe(true)
+    expect(disposed).toBe(false)
+    response.resolve(refreshed('employee-a', 'late-token-a'))
+    await Promise.all([pending, disposal])
+    expect(requests).toBe(0)
+    if (event === 'employee-change') expect(bridge.getSession()).toEqual({ authenticated: true, employeeId: 'employee-b' })
+    else expect(disposed).toBe(true)
+  } finally {
+    response.resolve(refreshed('employee-a', 'late-token-a'))
+    await Promise.allSettled([pending, disposal])
+    await bridge.dispose()
+  }
+})

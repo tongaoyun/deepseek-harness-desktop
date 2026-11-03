@@ -8,6 +8,8 @@
     "src"
   ],
   "references": [
+    { "path": "../../../packages/credentials/credentials" },
+    { "path": "../../../packages/credentials/credentials-local" },
     { "path": "../../../packages/core/scope" },
     { "path": "../../../packages/util/atomic-write" },
     { "path": "../../../packages/util/brand" },

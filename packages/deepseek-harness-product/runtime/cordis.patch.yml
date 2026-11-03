@@ -1,3 +1,7 @@
+- id: credentials
+  disabled: true
 - insert:
+    - id: product-credentials
+      name: './lib/credentials.js'
     - id: product-runtime
       name: './lib/index.js'

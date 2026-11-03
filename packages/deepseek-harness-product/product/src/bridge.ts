@@ -1,5 +1,6 @@
 /** Main-process product bridge. It owns credentials and exposes only product methods. */
 
+import { addAbortListener } from 'node:events'
 import { DeepSeekHarnessApiClient, DeepSeekHarnessApiError } from './http-client.ts'
 import { assertProductMethod, assertProductPayload, parseTaskCapabilityRequest, parseTaskCapabilities, parseTaskCapabilityResult,
   type KnowledgeFileMethod, type ProductEvent, type ProductMethod, type ProductRuntimeMethod, type ProductSession } from './protocol.ts'
@@ -214,7 +215,7 @@ export class DeepSeekHarnessProductBridge {
   /** Validate and dispatch one allowlisted product operation.
    * @param method - Candidate operation name.
    * @param payload - Candidate operation payload.
-   * @param signal - Optional cancellation for Host-owned remote work.
+   * @param signal - Optional cancellation for Host-owned remote work and waiting on a shared session refresh.
    * @returns The operation result.
    */
   async invoke(method: unknown, payload?: unknown, signal?: AbortSignal): Promise<unknown> {
@@ -533,7 +534,11 @@ export class DeepSeekHarnessProductBridge {
   private async withEmployeeSession<T>(signal: AbortSignal | undefined, operation: (signal: AbortSignal) => Promise<T>): Promise<T> {
     const lifetime = AbortSignal.any([this.identityLifecycle.signal, ...signal ? [signal] : []])
     lifetime.throwIfAborted()
-    await this.ensureFreshSession()
+    {
+      const cancelled = Promise.withResolvers<never>()
+      using _listener = addAbortListener(lifetime, () => { cancelled.reject(lifetime.reason) })
+      await Promise.race([this.ensureFreshSession(), cancelled.promise])
+    }
     lifetime.throwIfAborted()
     const token = this.sessionToken
     try {
