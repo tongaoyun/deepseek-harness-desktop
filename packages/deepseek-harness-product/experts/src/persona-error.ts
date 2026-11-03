@@ -1,11 +1,12 @@
 import { teamText, type TeamLocale } from './team-i18n.ts'
 
 const messages = {
+  CATALOG_READ_FAILED: '无法读取专家目录，请刷新后重试。',
   PERSONA_NOT_FOUND: '未找到专家提示词。',
   PERSONA_READ_FAILED: '无法读取专家提示词。',
 } as const
 
-/** 仅文件不存在允许语言回退，不能把权限或文件系统故障当成缺少译文。 */
+/** 目录和正文读取保留文件系统原因，公开文案不包含本地路径。 */
 export class PersonaError extends Error {
   constructor(readonly code: keyof typeof messages, locale: TeamLocale, cause?: unknown) {
     super(teamText(locale, messages[code]), { cause })
