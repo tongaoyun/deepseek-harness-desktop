@@ -1,6 +1,6 @@
 - region "Knowledge bases":
   - complementary:
-    - heading "Knowledge bases" [level=1]
+    - button "Knowledge bases"
     - button "Refresh"
     - navigation "Knowledge bases":
       - region "Personal":
@@ -27,6 +27,7 @@
   - main:
     - navigation "Current location":
       - button "Operations playbook"
+    - heading "Operations playbook" [level=1]
     - tablist "Browse mode":
       - tab "By folder" [selected]
       - tab "All files"

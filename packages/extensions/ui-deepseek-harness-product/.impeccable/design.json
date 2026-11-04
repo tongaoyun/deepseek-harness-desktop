@@ -1,0 +1,334 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-11-04T19:47:47.825443Z",
+  "title": "Design System: DeepSeek Harness knowledge workspace",
+  "extensions": {
+    "colorMeta": {
+      "primary-fill": {
+        "role": "primary",
+        "displayName": "Native primary fill",
+        "tonalRamp": [
+          "var(--dsw-static-neutral-bluish-1000)",
+          "var(--dsw-static-neutral-bluish-850)",
+          "var(--dsw-static-neutral-bluish-750)",
+          "var(--dsw-static-neutral-bluish-600)",
+          "var(--dsw-static-neutral-bluish-400)",
+          "var(--dsw-static-neutral-bluish-200)",
+          "var(--dsw-static-neutral-bluish-100)",
+          "var(--dsw-static-neutral-bluish-50)"
+        ]
+      },
+      "primary-foreground": {
+        "role": "neutral",
+        "displayName": "Primary foreground",
+        "tonalRamp": [
+          "var(--dsw-static-neutral-bluish-1000)",
+          "var(--dsw-static-neutral-bluish-850)",
+          "var(--dsw-static-neutral-bluish-750)",
+          "var(--dsw-static-neutral-bluish-600)",
+          "var(--dsw-static-neutral-bluish-400)",
+          "var(--dsw-static-neutral-bluish-200)",
+          "var(--dsw-static-neutral-bluish-100)",
+          "var(--dsw-static-neutral-bluish-50)"
+        ]
+      },
+      "surface-base": {
+        "role": "neutral",
+        "displayName": "Base canvas",
+        "tonalRamp": [
+          "var(--dsw-static-neutral-bluish-1000)",
+          "var(--dsw-static-neutral-bluish-850)",
+          "var(--dsw-static-neutral-bluish-750)",
+          "var(--dsw-static-neutral-bluish-600)",
+          "var(--dsw-static-neutral-bluish-400)",
+          "var(--dsw-static-neutral-bluish-200)",
+          "var(--dsw-static-neutral-bluish-100)",
+          "var(--dsw-static-neutral-bluish-50)"
+        ]
+      },
+      "surface-module": {
+        "role": "neutral",
+        "displayName": "Module surface",
+        "tonalRamp": [
+          "var(--dsw-static-neutral-bluish-1000)",
+          "var(--dsw-static-neutral-bluish-850)",
+          "var(--dsw-static-neutral-bluish-750)",
+          "var(--dsw-static-neutral-bluish-600)",
+          "var(--dsw-static-neutral-bluish-400)",
+          "var(--dsw-static-neutral-bluish-200)",
+          "var(--dsw-static-neutral-bluish-100)",
+          "var(--dsw-static-neutral-bluish-50)"
+        ]
+      },
+      "label-primary": {
+        "role": "neutral",
+        "displayName": "Primary label",
+        "tonalRamp": [
+          "var(--dsw-static-neutral-bluish-1000)",
+          "var(--dsw-static-neutral-bluish-850)",
+          "var(--dsw-static-neutral-bluish-750)",
+          "var(--dsw-static-neutral-bluish-600)",
+          "var(--dsw-static-neutral-bluish-400)",
+          "var(--dsw-static-neutral-bluish-200)",
+          "var(--dsw-static-neutral-bluish-100)",
+          "var(--dsw-static-neutral-bluish-50)"
+        ]
+      },
+      "label-secondary": {
+        "role": "neutral",
+        "displayName": "Secondary label",
+        "tonalRamp": [
+          "var(--dsw-static-neutral-bluish-1000)",
+          "var(--dsw-static-neutral-bluish-850)",
+          "var(--dsw-static-neutral-bluish-750)",
+          "var(--dsw-static-neutral-bluish-600)",
+          "var(--dsw-static-neutral-bluish-400)",
+          "var(--dsw-static-neutral-bluish-200)",
+          "var(--dsw-static-neutral-bluish-100)",
+          "var(--dsw-static-neutral-bluish-50)"
+        ]
+      },
+      "label-tertiary": {
+        "role": "neutral",
+        "displayName": "Tertiary label",
+        "tonalRamp": [
+          "var(--dsw-static-neutral-bluish-1000)",
+          "var(--dsw-static-neutral-bluish-850)",
+          "var(--dsw-static-neutral-bluish-750)",
+          "var(--dsw-static-neutral-bluish-600)",
+          "var(--dsw-static-neutral-bluish-400)",
+          "var(--dsw-static-neutral-bluish-200)",
+          "var(--dsw-static-neutral-bluish-100)",
+          "var(--dsw-static-neutral-bluish-50)"
+        ]
+      },
+      "border": {
+        "role": "neutral",
+        "displayName": "Fine border",
+        "tonalRamp": [
+          "var(--dsw-static-neutral-bluish-1000)",
+          "var(--dsw-static-neutral-bluish-850)",
+          "var(--dsw-static-neutral-bluish-750)",
+          "var(--dsw-static-neutral-bluish-600)",
+          "var(--dsw-static-neutral-bluish-400)",
+          "var(--dsw-static-neutral-bluish-200)",
+          "var(--dsw-static-neutral-bluish-100)",
+          "var(--dsw-static-neutral-bluish-50)"
+        ]
+      },
+      "hover-fill": {
+        "role": "neutral",
+        "displayName": "Hover fill",
+        "tonalRamp": [
+          "var(--dsw-static-neutral-bluish-1000)",
+          "var(--dsw-static-neutral-bluish-850)",
+          "var(--dsw-static-neutral-bluish-750)",
+          "var(--dsw-static-neutral-bluish-600)",
+          "var(--dsw-static-neutral-bluish-400)",
+          "var(--dsw-static-neutral-bluish-200)",
+          "var(--dsw-static-neutral-bluish-100)",
+          "var(--dsw-static-neutral-bluish-50)"
+        ]
+      },
+      "ready-dot": {
+        "role": "secondary",
+        "displayName": "Ready indicator",
+        "tonalRamp": [
+          "oklch(15% 0.025 145)",
+          "oklch(27% 0.06 145)",
+          "oklch(39% 0.1 145)",
+          "oklch(51% 0.15 145)",
+          "oklch(63% 0.15 145)",
+          "oklch(75% 0.11 145)",
+          "oklch(87% 0.055 145)",
+          "oklch(95% 0.018 145)"
+        ]
+      },
+      "error": {
+        "role": "tertiary",
+        "displayName": "Error",
+        "tonalRamp": [
+          "oklch(15% 0.025 25)",
+          "oklch(27% 0.06 25)",
+          "oklch(39% 0.1 25)",
+          "oklch(51% 0.17 25)",
+          "oklch(63% 0.17 25)",
+          "oklch(75% 0.11 25)",
+          "oklch(87% 0.055 25)",
+          "oklch(95% 0.018 25)"
+        ]
+      }
+    },
+    "typographyMeta": {
+      "headline": {
+        "displayName": "Directory heading",
+        "purpose": "Knowledge directory title; compact width uses 24px/32px."
+      },
+      "title": {
+        "displayName": "Materials heading",
+        "purpose": "Library or folder title; compact width uses 20px/28px."
+      },
+      "card-title": {
+        "displayName": "Library name",
+        "purpose": "Library card identity."
+      },
+      "body": {
+        "displayName": "Workspace body",
+        "purpose": "Material rows and navigation; descriptions use 22px line height."
+      },
+      "label": {
+        "displayName": "Compact label",
+        "purpose": "Small controls, status, and metadata."
+      }
+    },
+    "shadows": [
+      {
+        "name": "native-prominent",
+        "value": "var(--dsw-elevation-prominent)",
+        "purpose": "Native menus and dialogs; theme-owned elevation."
+      },
+      {
+        "name": "native-segmented-indicator",
+        "value": "var(--dsw-elevation-soft)",
+        "purpose": "Native SegmentedControl selected indicator."
+      },
+      {
+        "name": "native-outline-button",
+        "value": "inset 0 0 0 var(--dsh-hairline-width, 0.5px) var(--dsh-button-outline-color, var(--dsw-alias-border-l3))",
+        "purpose": "Native outline Button inset stroke."
+      }
+    ],
+    "motion": [
+      {
+        "name": "segmented-indicator",
+        "value": "160ms ease",
+        "purpose": "Native selected-indicator transform; disabled for reduced motion."
+      },
+      {
+        "name": "segmented-label",
+        "value": "120ms ease",
+        "purpose": "Native tab color; disabled for reduced motion."
+      },
+      {
+        "name": "native-modal-entry",
+        "value": "var(--ds-transition-duration) var(--ds-ease-in-out)",
+        "purpose": "Native modal opacity entry; disabled for reduced motion."
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "materials-container-compact",
+        "value": "680px"
+      },
+      {
+        "name": "workspace-container-compact",
+        "value": "640px"
+      },
+      {
+        "name": "viewport-wrap",
+        "value": "640px"
+      }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "Native Button primary variant with the workspace size.",
+      "html": "<button class=\"ds-button-primary\">New personal knowledge base</button>",
+      "css": ".ds-button-primary{display:inline-flex;align-items:center;justify-content:center;gap:4px;border:0;cursor:pointer;font-family:var(--dsw-font-family);height:36px;padding:0 14px;border-radius:var(--dsw-radius-md);font-size:14px;line-height:22px;color:var(--dsw-alias-label-primary-foreground);background:var(--dsw-alias-button-primary-fill);}@media(hover:hover){.ds-button-primary:hover:not(:disabled){background:var(--dsw-alias-button-primary-hover);}}.ds-button-primary:focus-visible{outline-color:var(--dsw-alias-state-business-primary);outline-width:2px;}.ds-button-primary:disabled{opacity:.4;cursor:not-allowed;}"
+    },
+    {
+      "name": "Small outline button",
+      "kind": "button",
+      "refersTo": "button-outline-small",
+      "description": "Native Button outline variant with the workspace size.",
+      "html": "<button class=\"ds-button-outline-small\">Search</button>",
+      "css": ".ds-button-outline-small{display:inline-flex;align-items:center;justify-content:center;gap:4px;border:0;cursor:pointer;font-family:var(--dsw-font-family);height:28px;padding:0 10px;border-radius:var(--dsw-radius-sm);font-size:12px;line-height:18px;color:var(--dsw-alias-label-primary);background:transparent;}.ds-button-outline-small{border:.5px solid transparent;box-shadow:inset 0 0 0 var(--dsh-hairline-width,.5px) var(--dsh-button-outline-color,var(--dsw-alias-border-l3));}@media(hover:hover){.ds-button-outline-small:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover);}}.ds-button-outline-small:focus-visible{outline-color:var(--dsw-alias-state-business-primary);outline-width:2px;}.ds-button-outline-small:disabled{opacity:.4;cursor:not-allowed;}"
+    },
+    {
+      "name": "Small ghost button",
+      "kind": "button",
+      "refersTo": "button-ghost-small",
+      "description": "Native Button ghost variant with the workspace size.",
+      "html": "<button class=\"ds-button-ghost-small\">Back to files</button>",
+      "css": ".ds-button-ghost-small{display:inline-flex;align-items:center;justify-content:center;gap:4px;border:0;cursor:pointer;font-family:var(--dsw-font-family);height:28px;padding:0 10px;border-radius:var(--dsw-radius-sm);font-size:12px;line-height:18px;color:var(--dsw-alias-label-primary);background:transparent;}@media(hover:hover){.ds-button-ghost-small:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover);}}.ds-button-ghost-small:focus-visible{outline-color:var(--dsw-alias-state-business-primary);outline-width:2px;}.ds-button-ghost-small:disabled{opacity:.4;cursor:not-allowed;}.ds-button-ghost-small:active:not(:disabled){background:var(--dsw-alias-interactive-bg-active);}"
+    },
+    {
+      "name": "Search field",
+      "kind": "input",
+      "refersTo": "search-field",
+      "description": "Labeled search wrapper shared by directory and materials.",
+      "html": "<label class=\"ds-search\"><svg width=\"16\" height=\"16\" aria-hidden=\"true\" xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 16 16\" fill=\"none\" stroke-width=\"1\"><path d=\"M6.58727 11.8586C9.55061 11.8586 11.9529 9.45637 11.9529 6.49304C11.9529 3.5297 9.55061 1.12744 6.58727 1.12744C3.62394 1.12744 1.22168 3.5297 1.22168 6.49304C1.22168 9.45637 3.62394 11.8586 6.58727 11.8586Z\" stroke=\"currentColor\"></path><path d=\"M10.2991 10.3933L14.7783 14.8725\" stroke=\"currentColor\"></path></svg><input type=\"search\" aria-label=\"Search knowledge bases\" placeholder=\"Search knowledge bases…\"></label>",
+      "css": ".ds-search{display:flex;align-items:center;gap:8px;width:min(280px,100%);height:34px;padding:0 10px;border:.5px solid var(--dsw-alias-border-l2);border-radius:7px;background:var(--dsw-alias-bg-base);color:var(--dsw-alias-label-tertiary);}.ds-search input{flex:1;min-width:0;height:100%;padding:0;border:0;outline:0;background:transparent;color:var(--dsw-alias-label-primary);font:13px/20px var(--dsw-font-family);}.ds-search input::placeholder{color:var(--dsw-alias-label-tertiary);}.ds-search:focus-within{border-color:var(--dsw-alias-border-l4);color:var(--dsw-alias-label-secondary);}"
+    },
+    {
+      "name": "Scope tabs",
+      "kind": "nav",
+      "description": "Native SegmentedControl geometry and selected state; runtime keyboard behavior remains native.",
+      "html": "<div class=\"ds-scopes\" role=\"tablist\" aria-label=\"Knowledge base scope\"><span aria-hidden=\"true\" class=\"ds-scope-indicator\"></span><button type=\"button\" role=\"tab\" aria-selected=\"true\" tabindex=\"0\">All</button><button type=\"button\" role=\"tab\" aria-selected=\"false\" tabindex=\"-1\">Personal</button><button type=\"button\" role=\"tab\" aria-selected=\"false\" tabindex=\"-1\">Department</button><button type=\"button\" role=\"tab\" aria-selected=\"false\" tabindex=\"-1\">Company</button></div>",
+      "css": ".ds-scopes{--dsh-segment-count:4;--dsh-segment-index:0;position:relative;display:inline-grid;grid-auto-flow:column;grid-auto-columns:minmax(0,1fr);gap:2px;padding:4px;border-radius:var(--dsw-radius-md);background:var(--dsw-alias-interactive-bg-hover);}.ds-scope-indicator{position:absolute;top:4px;left:4px;width:calc((100% - 8px - 2px * (var(--dsh-segment-count) - 1)) / var(--dsh-segment-count));height:calc(100% - 8px);border:0;border-radius:var(--dsw-radius-sm);background:var(--dsw-alias-bg-layer-1);box-shadow:var(--dsw-elevation-soft);transform:translateX(calc(var(--dsh-segment-index) * (100% + 2px)));transition:transform 160ms ease;pointer-events:none;}.ds-scopes button{position:relative;z-index:1;height:28px;padding:0 16px;border:0;border-radius:var(--dsw-radius-sm);background:transparent;color:var(--dsw-alias-label-secondary);font:500 13px/20px var(--dsw-font-family);white-space:nowrap;cursor:pointer;transition:color 120ms ease;}.ds-scopes button[aria-selected=\"true\"]{color:var(--dsw-alias-label-primary);}@media(hover:hover){.ds-scopes button:hover:not(:disabled){color:var(--dsw-alias-label-primary);}}.ds-scopes button:disabled{cursor:default;opacity:.4;}.ds-scopes button:focus-visible{outline:var(--dsw-focus-ring-width) solid var(--dsw-focus-ring-color,var(--dsw-alias-state-business-primary));outline-offset:-2px;}@media(prefers-reduced-motion:reduce){.ds-scope-indicator,.ds-scopes button{transition:none;}}"
+    },
+    {
+      "name": "Library card",
+      "kind": "card",
+      "refersTo": "library-card",
+      "description": "Separate open button and scope/owner footer.",
+      "html": "<article class=\"ds-library\"><button class=\"ds-library-open\"><span class=\"ds-library-icon\"><svg width=\"23\" height=\"23\" aria-hidden=\"true\" xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 16 16\" fill=\"none\" stroke-width=\"1\"><path d=\"M13.1967 5.1869C13.7232 4.77378 14.0003 4.30517 14.0001 3.82819C14.0003 3.3512 13.7232 2.88259 13.1967 2.46947C12.6702 2.05635 11.9128 1.71328 11.0006 1.47475C10.0885 1.23621 9.05371 1.11062 8.00039 1.1106C6.94707 1.11057 5.9123 1.23612 5.00009 1.47461C4.08742 1.71301 3.32948 2.05604 2.80249 2.46919C2.2755 2.88235 1.99805 3.35106 1.99805 3.82819C1.99805 4.30531 2.2755 4.77402 2.80249 5.18718C3.32948 5.60033 4.08742 5.94336 5.00009 6.18176C5.9123 6.42025 6.94707 6.5458 8.00039 6.54578C9.05371 6.54575 10.0885 6.42016 11.0006 6.18163C11.9128 5.94309 12.6702 5.60002 13.1967 5.1869Z\" stroke=\"currentColor\"></path><path d=\"M2 3.80371V11.7848\" stroke=\"currentColor\"></path><path d=\"M14 3.80371V11.7848\" stroke=\"currentColor\"></path><path d=\"M2 7.81396C2 8.60524 2.63214 9.36411 3.75736 9.92363C4.88258 10.4832 6.4087 10.7975 8 10.7975C9.5913 10.7975 11.1174 10.4832 12.2426 9.92363C13.3679 9.36411 14 8.60524 14 7.81396\" stroke=\"currentColor\"></path><path d=\"M2 11.7847C2 12.6081 2.63214 13.3977 3.75736 13.98C4.88258 14.5622 6.4087 14.8893 8 14.8893C9.5913 14.8893 11.1174 14.5622 12.2426 13.98C13.3679 13.3977 14 12.6081 14 11.7847\" stroke=\"currentColor\"></path></svg></span><h2>Personal notes</h2><p>Open this library to browse and manage work materials.</p></button><footer>Personal · Library owner</footer></article>",
+      "css": ".ds-library{display:flex;width:min(280px,100%);min-width:0;flex-direction:column;border:1px solid var(--dsw-alias-border-l2);border-radius:12px;background:var(--dsw-alias-bg-base);color:var(--dsw-alias-label-primary);overflow:hidden;font-family:var(--dsw-font-family);}.ds-library-open{display:flex;flex:1;flex-direction:column;align-items:flex-start;gap:12px;width:100%;min-width:0;padding:24px 24px 20px;border:0;background:transparent;color:inherit;text-align:left;font:inherit;cursor:pointer;}.ds-library-icon{display:grid;width:42px;height:42px;margin-bottom:4px;place-items:center;border-radius:10px;background:var(--dsw-alias-bg-module-platform);color:var(--dsw-alias-brand-primary);}.ds-library h2{width:100%;margin:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:16px;line-height:24px;font-weight:600;}.ds-library p{display:-webkit-box;min-height:44px;margin:0;overflow:hidden;-webkit-box-orient:vertical;-webkit-line-clamp:2;color:var(--dsw-alias-label-secondary);font-size:13px;line-height:22px;overflow-wrap:anywhere;}.ds-library footer{display:flex;min-height:44px;align-items:center;margin:0 24px;border-top:1px solid var(--dsw-alias-border-l2);color:var(--dsw-alias-label-secondary);font-size:12px;}.ds-library:focus-within{border-color:var(--dsw-alias-border-l4);}.ds-library-open:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:-3px;border-radius:11px;}@media(hover:hover){.ds-library:hover{border-color:var(--dsw-alias-border-l4);}.ds-library-open:hover{background:var(--dsw-alias-interactive-bg-hover);}}"
+    },
+    {
+      "name": "Folder navigation row",
+      "kind": "nav",
+      "refersTo": "navigation-row",
+      "description": "Current folder uses neutral hover fill and an explicit current-page attribute.",
+      "html": "<nav aria-label=\"Folders\"><button class=\"ds-folder\" aria-current=\"page\"><span>Policies</span></button><button class=\"ds-folder\"><span>Reference</span></button></nav>",
+      "css": ".ds-folder{display:flex;width:100%;min-height:38px;min-width:0;align-items:center;gap:8px;padding:8px;border:0;border-radius:5px;background:transparent;color:var(--dsw-alias-label-secondary);font:13px/20px var(--dsw-font-family);text-align:left;cursor:pointer;}.ds-folder span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}.ds-folder[aria-current=\"page\"]{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary);}.ds-folder:focus-visible{outline:2px solid var(--dsw-alias-border-l4);outline-offset:-2px;}.ds-folder:disabled{color:var(--dsw-alias-label-tertiary);cursor:default;}@media(hover:hover){.ds-folder:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary);}}"
+    },
+    {
+      "name": "Document status",
+      "kind": "custom",
+      "refersTo": "status-ready",
+      "description": "Textual status with a small semantic dot; the ready text keeps primary-label contrast.",
+      "html": "<span class=\"ds-status\" data-status=\"READY\">Searchable</span>",
+      "css": ".ds-status{display:inline-flex;align-items:center;gap:6px;white-space:nowrap;font-family:var(--dsw-font-family);font-size:12px;color:var(--dsw-alias-label-secondary);}.ds-status::before{width:5px;height:5px;flex:none;border-radius:50%;background:currentColor;content:\"\";}.ds-status[data-status=\"READY\"]{color:var(--dsw-alias-label-primary);}.ds-status[data-status=\"READY\"]::before{background:var(--dsw-alias-state-success-primary);}.ds-status[data-status=\"FAILED\"]{color:var(--dsw-alias-state-error-primary);}"
+    }
+  ],
+  "narrative": {
+    "northStar": "Native Harness resource workspace",
+    "overview": "This reference describes the product knowledge directory, library materials, and inline reader. WorkBuddy informs resource browsing; Harness owns the surrounding shell, theme, system typography, controls, and original-file preview.",
+    "keyCharacteristics": [
+      "Neutral light and dark surfaces with restrained semantic color.",
+      "A searchable card directory followed by a separate materials workspace.",
+      "Compact controls, generous document rows, and visible keyboard state."
+    ],
+    "rules": [
+      {
+        "name": "The Theme Alias Rule",
+        "body": "Use the native semantic aliases in both themes; primary controls and selected navigation remain neutral.",
+        "section": "colors"
+      },
+      {
+        "name": "The Readable Status Rule",
+        "body": "Ready status uses primary label text and a green dot; color supplements the localized status label.",
+        "section": "colors"
+      },
+      {
+        "name": "The Overlay Depth Rule",
+        "body": "Keep directory cards and document rows flat; native menus and dialogs own overlay elevation.",
+        "section": "elevation"
+      }
+    ],
+    "dos": [
+      "Do reuse native Button, SegmentedControl, Menu, Modal, Tooltip, icons, MarkdownText, and document.preview.",
+      "Do keep search, format, status, refresh, and clear-filter controls usable when the workspace narrows.",
+      "Do preserve localized names, explicit loading/error/empty states, permission-dependent actions, and library transition focus."
+    ],
+    "donts": [
+      "Don't hardcode a separate light/dark palette or replace the Harness text family.",
+      "Don't turn the ready label green or communicate processing state through color alone.",
+      "Don't create parallel native controls, document viewers, retrieval engines, or configuration systems."
+    ]
+  }
+}
