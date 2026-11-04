@@ -3,6 +3,19 @@ import { parseSkillFrontmatter } from '@deepseek-ai/dsh-skill-filesystem/documen
 import { stringify } from 'yaml'
 import type { ParsedSkill } from './types.ts'
 
+/** Maximum length of a portable skill category label. */
+export const SKILL_CATEGORY_NAME_MAX = 24
+
+/** Normalize one category name for package metadata and local edits.
+ * @param value User-authored or imported label.
+ * @returns Trimmed label, or undefined for an empty, oversized or multiline value.
+ */
+export function normalizeSkillCategory(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined
+  const label = value.trim()
+  return label && label.length <= SKILL_CATEGORY_NAME_MAX && !/[\u0000-\u001f\u007f]/u.test(label) ? label : undefined
+}
+
 /** Read metadata for management and imports, leaving invalid files available for diagnosis.
  * @param text Complete SKILL.md text; a UTF-8 BOM is removed for external-source compatibility.
  * @returns Native YAML fields and unchanged body text; invalid YAML exposes no metadata.
@@ -28,10 +41,7 @@ export function parseSkillDoc(text: string): ParsedSkill {
 export function skillCategory(data: Record<string, unknown>): string | undefined {
   const metadata = data.metadata
   if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) return undefined
-  const category = 'category' in metadata ? metadata.category : undefined
-  if (typeof category !== 'string') return undefined
-  const label = category.trim()
-  return label && label.length <= 24 && !/[\u0000-\u001f\u007f]/u.test(label) ? label : undefined
+  return normalizeSkillCategory('category' in metadata ? metadata.category : undefined)
 }
 
 /** Include the selected category in an exported skill while retaining other metadata and body text.

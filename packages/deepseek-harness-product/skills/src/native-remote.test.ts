@@ -98,6 +98,17 @@ it('retains categories through creation, local edits, publication and company di
   await expect(invoke('createSkill', { request: { name: 'invalid-category', description: 'No', body: 'No', category: 'x'.repeat(25) } })).rejects.toMatchObject({ details: { code: 'error.category.name' } })
   await expect(readFile(join(root, '.dsh/skills/invalid-category/SKILL.md'))).rejects.toMatchObject({ code: 'ENOENT' })
 }, 30000)
+it('rejects control characters in category creation and renaming without changing saved categories', async () => {
+  const { ctx, invoke } = await boot()
+  const signal = new AbortController().signal
+  const saved = await ctx.skillsManager.createCategory({ root: 'dsh', name: '研发开发' }, signal)
+  for (const name of ['研\n发', '研\u0000发', '研\u007f发']) {
+    await expect(invoke('createCategory', { target: { root: 'dsh', name } })).rejects.toMatchObject({ details: { code: 'error.category.name' } })
+    await expect(invoke('renameCategory', { target: { root: 'dsh', id: saved.category.id, name } })).rejects.toMatchObject({ details: { code: 'error.category.name' } })
+  }
+  const personal = (await ctx.skillsManager.readState({}, false, signal)).roots.find(item => item.key === 'dsh')
+  expect(personal?.categories).toEqual([saved.category])
+})
 it('reads project skills from the native current directory, including replay, without leaking another Session', async () => {
   const { ctx, root, invoke } = await boot()
   const original = join(root, 'original'), current = join(root, 'current')
