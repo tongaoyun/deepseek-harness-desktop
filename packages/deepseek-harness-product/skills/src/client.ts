@@ -9,14 +9,14 @@ type UploadSelection = {kind: string; name: string; files: UploadFile[]; count: 
 type SelectionResult = UploadSelection | {error: Diagnostic};
 type ResultMessage = {ok: boolean; text: string; warning?: boolean; scope?: string};
 type ConfirmModal = {type: 'trash-confirm'; root: string; name: string; workspace?: string} | {type: 'delete-confirm'; id: string; name: string} | {type: 'category-create'; root: string; workspace?: string} | {type: 'category-rename'; root: string; id: string; name: string; workspace?: string} | {type: 'category-delete'; root: string; id: string; name: string; workspace?: string} | {type: 'category-add'; root: string; id: string; name: string; workspace?: string; skills: {name: string; declaredName?: string; description?: string; currentCatName: string}[]};
-type ModalState = 'detail' | 'create' | 'import' | ConfirmModal | null;
+type ModalState = 'detail' | 'import' | ConfirmModal | null;
 import { createRepositoryUI } from "./repository-ui.ts";
 import { createDestinationKit, defaultDestination, destinationPayload, destinationReady, destinationCss, type DestinationValue } from "./destination-picker.ts";
 import { createSourceSelect } from "./source-select.ts";
 import { createSkillApi, TYPERT_REMOTE } from "./remote-client.ts";
 import type {} from "@deepseek-ai/dsh-api-gateway/client";
 import { Input, Button as PrimitiveButton, Modal as PrimitiveModal, SegmentedTabs, StateDot, Switch, IconChevronDownOutlineRegular, IconEllipsisOutlineRegular, IconPlusOutlineRegular, IconEditOutlineRegular, IconTrashOutlineRegular, IconRefreshOutlineRegular, IconUnarchiveOutlineRegular, IconFolderCloseRegular, IconFolderOpenRegular, IconGlobeOutlineRegular, IconBrowseOutlineRegular, fileSizeText, observeComposition, type SegmentedTab } from "@deepseek-ai/dsh-client-ui-primitives";
-import { TextArea } from "./plugin-ui.ts";
+import type {} from "@deepseek-ai/dsh-client-ui-workspace/client";
 import { SkillBody } from "./skill-body.ts";
 
 // dsh-skills-manager client half：按全局与项目作用域切换的多 Agent Skills 管理面板。
@@ -344,9 +344,7 @@ function createSkillsPage(localeService: ClientContext["locale"]) {
       var rs = react.useState<ResultMessage | null>(null), result = rs[0] && rs[0].scope === scope ? rs[0] : null;
       // 异步操作保留发起时的页签，完成提示不能泄漏到后来切换的页面。
       function setResult(value: ResultMessage | null) { rs[1](value ? Object.assign({}, value, { scope: scope }) : null); }
-      var fms = react.useState<Record<string, string>>({ root: "dsh", name: "", description: "", body: "" }), form = fms[0], setForm = fms[1];
       var cns = react.useState(""), categoryName = cns[0], setCategoryName = cns[1];
-      var cds = react.useState<DestinationValue>(defaultDestination()), createDestination = cds[0], setCreateDestination = cds[1];
       var ids = react.useState<DestinationValue>(defaultDestination()), importDestination = ids[0], setImportDestination = ids[1];
       var wss = react.useState<SkillOutput<"listWorkspaces">["items"]>([]), workspaceRows = wss[0], setWorkspaceRows = wss[1];
       var wps = react.useState(""), selectedWorkspace = wps[0], setSelectedWorkspace = wps[1];
@@ -449,8 +447,6 @@ function createSkillsPage(localeService: ClientContext["locale"]) {
             finishRead("detail", request);
           });
       }
-      function updateForm(key: string, value: string) { setForm(Object.assign({}, form, { [key]: value })); }
-      function submitCreate() { if (!destinationReady(createDestination, workspaceRows, userDestinations)) return; post("createSkill", { request: Object.assign({}, form, { root: undefined }, destinationPayload(createDestination)) }, null).then(function (data) { setModal(null); setForm({ root: "dsh", name: "", description: "", body: "" }); setResult({ ok: true, text: t("result.created", { name: data.name }) + (createDestination.scope === "workspace" ? " · " + t("dest.createdInWorkspace") : "") }); }).catch(function () {}); }
       function dismissForm() { if (inflightRef.current) return; if (modal === "import") { pickerOpenRef.current = false; setUpload(null); setResult(null); } setModal(null); }
       function selectUploadFiles(files: ArrayLike<UploadFile> | null) { if (inflightRef.current || lifetime.current.signal.aborted) return; cancelRead("upload"); pickerOpenRef.current = false; var selected = inspectUploadSelection(files); if (!selected) return; if (selected.error) { setUpload(null); setResult({ ok: false, text: translateError(t, selected.error) }); return; } setUpload(selected); setResult(null); }
       async function selectDroppedFiles(dataTransfer: DataTransfer) {
@@ -533,7 +529,7 @@ function createSkillsPage(localeService: ClientContext["locale"]) {
         });
         return loadWorkspaces(true, true);
       }
-      function openCreate() { setForm(Object.assign({}, form, { root: "dsh" })); setCreateDestination(defaultDestination()); setModal("create"); loadWorkspaces(); }
+      function openCreate() { props.startCreation(); }
       function openImport() { setResult(null); setUpload(null); setImportDestination(defaultDestination()); setModal("import"); loadWorkspaces(); }
       var userDestinations = (data.writeDestinations || []).filter(function (item) { return item.key === "dsh" || item.key === "agents"; });
       // 项目条目用原项目的登记路径恢复：不依赖当前会话。找不到登记路径时不编造，交给服务端按会话判断。
@@ -849,7 +845,7 @@ function createSkillsPage(localeService: ClientContext["locale"]) {
           scope === "market" ? roots.filter(canToggleSource).map(function (root) { return h("div", { key: root.key, className: "dssm-market-source" }, h("span", null, t("market.source")), h(Switch, { checked: root.enabled, disabled: busy, label: t("market.source"), onChange: function (enabled) { post("setSourceEnabled", { target: { root: root.key }, enabled }).catch(function (_error) { /* post displays the localized failure. */ }); } })); }) : null,
           iconButton(t("btn.refresh"), h(IconRefreshOutlineRegular, { size: 16 }), function () { refresh(false, true); if (scope === "project") refreshWorkspaceDetails(); }, false, busy || snapshot.loading),
           scope === "market" ? null : h(PrimitiveButton, { variant: "outline", size: "sm", icon: h("svg", { viewBox: "0 0 16 16", width: 16, height: 16, "aria-hidden": true, focusable: "false" }, h("path", { d: "M2.5 10.5v2a1 1 0 001 1h9a1 1 0 001-1v-2M8 2.5v7M5 5.5l3-3 3 3", fill: "none", stroke: "currentColor", strokeWidth: 1.5, strokeLinecap: "round", strokeLinejoin: "round" })), onClick: openImport, disabled: busy }, t("import.global")),
-          scope === "market" ? null : h(PrimitiveButton, { variant: "primary", size: "sm", icon: h(IconPlusOutlineRegular, { size: 16 }), onClick: openCreate, disabled: busy }, t("btn.create"))
+          h(PrimitiveButton, { variant: "primary", size: "sm", icon: h(IconPlusOutlineRegular, { size: 16 }), onClick: openCreate, disabled: busy }, t("btn.create"))
         ) : null)];
       var bodyContent: React.ReactNode[] = ([h("style", { key: "css" }, CSS), h("div", { key: "head", className: "dssm-head" }, h("div", { className: "dssm-title-block" }, h("div", { className: "dssm-title-row" }, h("h2", { className: "dssm-title" }, t("title"))), h("p", { className: "dssm-desc" }, t("desc"))))] as React.ReactNode[]).concat(scope === "trash" || scope === "repositories" ? [] : skillControls, [result && modal !== "import" ? h("div", { key: "result", className: "dssm-feedback" + (result.warning ? " dssm-warning" : result.ok ? "" : " dssm-error") }, result.text) : null], (data.warnings || []).map(function (warning, index) { return h("div", { key: "warning-" + index, className: "dssm-feedback dssm-warning", role: "alert" }, translateError(t, warning)); }), [snapshot.error ? h("div", { key: "error", className: "dssm-feedback dssm-error" }, snapshot.error) : null, !snapshot.data ? (snapshot.error ? null : readLoading(t("loading"))) : scope === "repositories" ? repositoryUI.content : scope === "trash" ? renderTrash() : renderList()]);
       var market = scope === "market";
@@ -859,7 +855,6 @@ function createSkillsPage(localeService: ClientContext["locale"]) {
       ] });
       var content: React.ReactNode[] = [bodyContent[0], bodyContent[1], primaryTabs, h("div", { key: "catalog-panel", id: "dssm-library-panel", role: "tabpanel", "aria-labelledby": "dssm-library-tab-" + (market ? "market" : "mine"), className: "dssm-library-panel" }, tabs, ...bodyContent.slice(2))];
 
-      if (modal === "create") content.push(h(Modal, { key: "create", title: t("create.title"), closeLabel: t("btn.close"), onClose: dismissForm }, h("div", { className: "dssm-form" }, h(DestinationPicker, { t: t, value: createDestination, disabled: busy, allowAgents: true, workspaces: workspaceRows, loading: workspaceList.loading, workspaceError: workspaceList.error, onRetryWorkspaces: function () { void loadWorkspaces(false); }, userDestinations: userDestinations, onChange: function (next: Partial<DestinationValue>) { setCreateDestination(Object.assign({}, createDestination, next)); } }), [["name", "create.name", "create.name.placeholder"], ["description", "create.description", "create.description.placeholder"]].map(function (field) {        return h("label", { key: field[0], className: "dssm-field" }, h("span", { className: "dssm-label" }, t(field[1])), h(Input, { disabled: busy, value: form[field[0]], placeholder: t(field[2]), onChange: function (e: React.ChangeEvent<HTMLInputElement>) { updateForm(field[0], e.target.value); } })); }), h("label", { className: "dssm-field" }, h("span", { className: "dssm-label" }, t("create.body")), h(TextArea, { disabled: busy, rows: 8, value: form.body, placeholder: t("create.body.placeholder"), onChange: function (e: React.ChangeEvent<HTMLTextAreaElement>) { updateForm("body", e.target.value); } })), h("p", { className: "dssm-help" }, t("create.chat.note"))), h("div", { className: "dssm-modal-actions" }, hostButton(t("btn.cancel"), dismissForm, "outline", busy), hostButton(t("btn.create.now"), submitCreate, "primary", busy || !form.name.trim() || !form.description.trim() || !form.body.trim() || !destinationReady(createDestination, workspaceRows, userDestinations)))));
       if (modal === "import") content.push(h(Modal, { key: "import", className: "dssm-modal-import", title: t("import.title"), closeLabel: t("btn.close"), onClose: dismissForm },
         h("input", { ref: importInputRef, className: "dssm-hidden-input", type: "file", disabled: busy, accept: ".zip,.md", onChange: function (event) { selectUploadFiles(event.target.files); event.target.value = ""; } }),
         h("input", { ref: folderInputRef, className: "dssm-hidden-input", type: "file", disabled: busy, multiple: true, webkitdirectory: "", directory: "", onChange: function (event) { selectUploadFiles(event.target.files); event.target.value = ""; } }),
@@ -955,18 +950,19 @@ function createSkillsPage(localeService: ClientContext["locale"]) {
 }
 
 /** Register the builtin skills page in the product main area. */
-export const inject = ['slots', 'locale', 'remote'];
+export const inject = ['slots', 'locale', 'remote', 'uiWorkspace'];
 export async function apply(ctx: ClientContext): Promise<() => Promise<void>> {
   const dispose = await ctx.remote.$mount(TYPERT_REMOTE);
   const ui = ctx.inject(['remote.skillsManager'], scope => {
     const apiForSession = (sessionId?: string) => createSkillApi(scope.remote, sessionId);
     const api = apiForSession();
     const SkillManagerSection = createSkillsPage(scope.locale);
+    const startCreation = () => scope.uiWorkspace.startSession(undefined, { prompt: scope.locale.bind(NS)('creation.prompt'), whenDraftExists: 'append' });
     scope.effect(() => scope.locale.register(NS, DICT));
     scope.slots.inject('main', () => scope.slots.register({
       name: 'main', key: 'deepseek-harness-skills', locale: NS,
     }, props => h('div', { className: 'product-capability-page' },
-      h('div', { className: 'product-capability-content' }, h(SkillManagerSection, { ...props, api, apiForSession, t: (key: string, params?: object) => props.t(key, { ...params }) })))));
+      h('div', { className: 'product-capability-content' }, h(SkillManagerSection, { ...props, api, apiForSession, startCreation, t: (key: string, params?: object) => props.t(key, { ...params }) })))));
   });
   try { await ui; } catch (error) { await ui.dispose(); await dispose(); throw error; }
   return async () => { await ui.dispose(); await dispose(); };

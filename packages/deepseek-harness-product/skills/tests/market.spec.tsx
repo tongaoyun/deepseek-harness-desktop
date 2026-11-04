@@ -91,6 +91,8 @@ async function setup(shared: boolean, includeCompany = true, personal = skill('�
   const locale = new LocaleRuntime(ctx)
   locale.setLocale(activeLocale)
   ctx.provide('locale', locale)
+  const startSession = vi.fn()
+  ctx.reflect.provide('uiWorkspace', { startSession })
   installConnection(ctx, { interactions: 'none', transport: { rpc: mock.rpc } })
   await ctx.plugin(TypertRegistry)
   await ctx.plugin(Gateway)
@@ -110,41 +112,19 @@ async function setup(shared: boolean, includeCompany = true, personal = skill('�
     t: (key: string, params?: object) => locale.bind('skills-manager')(key, { ...params }),
   }
   const view = render(createElement(entry.component as ComponentType<Pick<SectionProps, 't'>>, pageProps))
-  return { data, mock, view, requests, signalFor }
+  return { data, mock, view, requests, signalFor, startSession }
 }
 
-it.each(['Escape', 'close', 'cancel'] as const)('keeps the creation form intact until its write completes (%s)', async (dismiss) => {
-  const { data, mock } = await setup(true)
-  data.writeDestinations.push({ key: 'dsh', path: '/skills/dsh', label: 'DSH skills', available: true })
-  const pending = deferred<undefined>()
-  mock.unary('skillsManager/createSkill', async () => {
-    await pending.promise
-    return ok({ name: 'acceptance-skill', path: '/skills/dsh/acceptance-skill', root: 'dsh' })
-  })
+it('starts an AI skill conversation from both catalogs without a manual form or direct write', async () => {
+  const { startSession, mock } = await setup(true)
   await screen.findByText('共享技能')
+  fireEvent.click(screen.getByRole('button', { name: '创建技能' }))
+  expect(startSession).toHaveBeenCalledWith(undefined, { prompt: expect.stringContaining('请帮我创建一个可以实现'), whenDraftExists: 'append' })
   fireEvent.click(screen.getByRole('tab', { name: '我的' }))
   fireEvent.click(screen.getByRole('button', { name: '创建技能' }))
-  const dialog = screen.getByRole('dialog', { name: '创建技能' })
-  const form = within(dialog)
-  fireEvent.change(form.getByRole('textbox', { name: '名称' }), { target: { value: 'acceptance-skill' } })
-  fireEvent.change(form.getByRole('textbox', { name: '简介' }), { target: { value: 'Acceptance fixture' } })
-  fireEvent.change(form.getByRole('textbox', { name: '正文（Markdown）' }), { target: { value: 'Use temporary data.' } })
-  try {
-    fireEvent.click(form.getByRole('button', { name: '创建技能' }))
-    await waitFor(() => { expect(mock.remote.skillsManager.createSkill).toHaveBeenCalledTimes(1) })
-    if (dismiss === 'Escape') fireEvent.keyDown(dialog, { key: 'Escape' })
-    else fireEvent.click(form.getByRole('button', { name: dismiss === 'close' ? '关闭' : '取消' }))
-    expect(screen.getByRole('dialog', { name: '创建技能' })).toBe(dialog)
-    for (const input of form.getAllByRole('textbox')) expect(input).toHaveProperty('disabled', true)
-    expect(form.getByRole('textbox', { name: '名称' })).toHaveProperty('value', 'acceptance-skill')
-    expect(form.getByRole('button', { name: '取消' })).toHaveProperty('disabled', true)
-    expect(form.getByRole('button', { name: '创建技能' })).toHaveProperty('disabled', true)
-    await act(async () => { pending.resolve(undefined); await pending.promise })
-    await waitFor(() => { expect(screen.queryByRole('dialog', { name: '创建技能' })).toBeNull() })
-    expect(screen.getByText('已创建技能：acceptance-skill')).toBeTruthy()
-  } finally {
-    await act(async () => { pending.resolve(undefined); await pending.promise })
-  }
+  expect(startSession).toHaveBeenCalledTimes(2)
+  expect(screen.queryByRole('dialog')).toBeNull()
+  expect(mock.remote.skillsManager.createSkill).not.toHaveBeenCalled()
 })
 
 it('reserves one import through file preparation and keeps its selection until the write completes', async () => {
@@ -361,7 +341,7 @@ it('shows published company skills in Market and preserves local, project, repos
   await screen.findByText('共享技能')
   expect(screen.queryByText('个人技能')).toBeNull()
   expect(screen.getAllByRole('tab').map(tab => tab.textContent)).toEqual(['市场', '我的'])
-  expect(screen.queryByRole('button', { name: '创建技能' })).toBeNull()
+  expect(screen.getByRole('button', { name: '创建技能' })).toBeTruthy()
   expect(screen.queryByRole('button', { name: '导入技能' })).toBeNull()
   expect(screen.queryByRole('button', { name: '新建分类' })).toBeNull()
   expect(screen.queryByRole('switch', { name: '启停来源 市场' })).toBeNull()
@@ -762,7 +742,7 @@ it.each(['zh', 'en'] as const)('shows a workspace registry failure instead of an
   expect(screen.queryByRole('alert')).toBeNull()
 })
 
-it.each(['创建技能', '导入技能'])('reports a workspace destination failure in %s and retries inside the current dialog', async (name) => {
+it('reports a workspace destination failure during import and retries inside the same dialog', async () => {
   const { data, mock } = await setup(true)
   data.writeDestinations.push({ key: 'dsh', path: '/skills/dsh', label: 'DSH skills', available: true })
   await screen.findByText('共享技能')
@@ -770,34 +750,14 @@ it.each(['创建技能', '导入技能'])('reports a workspace destination failu
     code: 'error.workspace.registryUnavailable', error: 'Workspace registry unavailable',
   }) }))
   fireEvent.click(screen.getByRole('tab', { name: '我的' }))
-  fireEvent.click(screen.getByRole('button', { name }))
-  const dialog = screen.getByRole('dialog', { name })
+  fireEvent.click(screen.getByRole('button', { name: '导入技能' }))
+  const dialog = screen.getByRole('dialog', { name: '导入技能' })
   const form = within(dialog)
-  if (name === '创建技能') {
-    fireEvent.change(form.getByRole('textbox', { name: '名称' }), { target: { value: 'keep-my-draft' } })
-    fireEvent.change(form.getByRole('textbox', { name: '简介' }), { target: { value: 'Draft description' } })
-    fireEvent.change(form.getByRole('textbox', { name: '正文（Markdown）' }), { target: { value: 'Draft body' } })
-    expect(form.getByRole('button', { name: '创建技能' })).toHaveProperty('disabled', false)
-  }
   fireEvent.click(form.getByRole('button', { name: '范围' }))
   fireEvent.click(screen.getByRole('menuitem', { name: '指定工作区' }))
   expect((await form.findByRole('alert')).textContent).toContain('无法读取工作区登记，请重试。')
   expect(form.queryByText('还没有已登记的工作区。请先在侧栏添加，再回到这里选择。')).toBeNull()
-  expect(form.getByRole('button', { name: name === '创建技能' ? '创建技能' : '安装' })).toHaveProperty('disabled', true)
-  if (name === '创建技能') {
-    expect({ notice: form.getByRole('alert').textContent, workspaceDisabled: form.getByRole<HTMLButtonElement>('button', { name: '工作区' }).disabled }).toMatchInlineSnapshot(`
-      {
-        "notice": "无法读取工作区列表：无法读取工作区登记，请重试。重试",
-        "workspaceDisabled": true,
-      }
-    `)
-    fireEvent.click(form.getByRole('button', { name: '范围' }))
-    fireEvent.click(screen.getByRole('menuitem', { name: '用户目录' }))
-    expect(form.getByRole('button', { name: '创建技能' })).toHaveProperty('disabled', false)
-    expect(form.queryByRole('alert')).toBeNull()
-    fireEvent.click(form.getByRole('button', { name: '范围' }))
-    fireEvent.click(screen.getByRole('menuitem', { name: '指定工作区' }))
-  }
+  expect(form.getByRole('button', { name: '安装' })).toHaveProperty('disabled', true)
   mock.unary('skillsManager/listWorkspaces', () => ok({ items: [{ name: '恢复的项目', path: '/workspace', registeredPaths: ['/workspace'], available: true, skillCount: 0 }] }))
   fireEvent.click(form.getByRole('button', { name: '重试' }))
   await waitFor(() => { expect(form.getByRole('button', { name: '工作区' })).toHaveProperty('disabled', false) })
@@ -806,14 +766,11 @@ it.each(['创建技能', '导入技能'])('reports a workspace destination failu
   expect(form.queryByRole('alert')).toBeNull()
   expect(form.getByRole('button', { name: '工作区' }).textContent).toBe('恢复的项目')
   expect(mock.remote.skillsManager.listWorkspaces).toHaveBeenCalledTimes(2)
-  expect(mock.remote.skillsManager.createSkill).not.toHaveBeenCalled()
   expect(mock.remote.skillsManager.uploadSkill).not.toHaveBeenCalled()
-  if (name === '创建技能') expect(form.getByRole('textbox', { name: '名称' })).toHaveProperty('value', 'keep-my-draft')
 })
 
-
-it('cancels a dismissed skill detail and allows a new dialog before the old request settles', async () => {
-  const { mock, signalFor } = await setup(true)
+it('cancels a dismissed detail without blocking AI creation or surfacing the stale error', async () => {
+  const { mock, signalFor, startSession } = await setup(true)
   await screen.findByText('共享技能')
   const pending = deferred<SkillOutput<'readDetail'>>()
   mock.unary('skillsManager/readDetail', async () => ok(await pending.promise))
@@ -823,21 +780,11 @@ it('cancels a dismissed skill detail and allows a new dialog before the old requ
     const signal = signalFor('readDetail')
     fireEvent.click(screen.getByRole('button', { name: '关闭' }))
     expect(signal?.aborted).toBe(true)
-    fireEvent.click(screen.getByRole('tab', { name: '我的' }))
-    expect(screen.getByRole<HTMLButtonElement>('button', { name: '创建技能' }).disabled).toBe(false)
     fireEvent.click(screen.getByRole('button', { name: '创建技能' }))
-    fireEvent.change(screen.getByPlaceholderText('例如 code-review-helper'), { target: { value: 'keep-new-skill' } })
     await act(async () => { pending.reject(new Error('Old detail failed')); await pending.promise.catch(() => {}) })
-    expect(screen.getByRole('dialog', { name: '创建技能' })).toBeTruthy()
-    expect({ dialog: screen.getByRole('heading', { name: '创建技能' }).textContent,
-      name: screen.getByPlaceholderText<HTMLInputElement>('例如 code-review-helper').value,
-      error: screen.queryByText(/Old detail failed/)?.textContent ?? null }).toMatchInlineSnapshot(`
-      {
-        "dialog": "创建技能",
-        "error": null,
-        "name": "keep-new-skill",
-      }
-    `)
+    expect(startSession).toHaveBeenCalledOnce()
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(screen.queryByText(/Old detail failed/)).toBeNull()
   } finally { pending.reject(new Error('Detail test released')) }
 })
 
@@ -858,7 +805,7 @@ it('cancels native workspace listing when the skills page is removed', async () 
   mock.unary('skillsManager/listWorkspaces', async () => ok(await pending.promise))
   try {
     fireEvent.click(screen.getByRole('tab', { name: '我的' }))
-    fireEvent.click(screen.getByRole('button', { name: '创建技能' }))
+    fireEvent.click(screen.getByRole('button', { name: '导入技能' }))
     const signal = signalFor('listWorkspaces')
     view.unmount()
     expect(signal?.aborted).toBe(true)

@@ -278,14 +278,8 @@ export function TeamsPanel(props: {
             <Input id="aag-team-search" className="aag-search" aria-label={tx("搜索专家团")} placeholder={tx("搜索团队、用途或成员")} value={query} autoComplete="off" spellCheck={false} icon={<IconSearch size={16}/>} onChange={(event) => setQuery(event.target.value)}/>
           </div>
         </div>
-        {props.source !== 'company' && <div className="aag-filter-actions">
-          <>{props.startCreation && <Button disabled={busy} onClick={props.startCreation}>{tx('通过对话创建专家团')}</Button>}<Button
-            variant="primary"
-            size="sm"
-            disabled={!snapshot || busy}
-            icon={<IconPlus size={16} aria-hidden="true" />}
-            onClick={() => setEditor({ enabled: false, revision: snapshot!.revision })}
-          >{tx("新建专家团")}</Button></>
+        {props.startCreation && <div className="aag-filter-actions">
+          <Button variant="primary" size="sm" disabled={busy} icon={<IconPlus size={16} aria-hidden="true" />} onClick={props.startCreation}>{tx('通过对话创建专家团')}</Button>
         </div>}
       </div>
       {error && (<div className="aag-error" role="alert">
@@ -305,9 +299,9 @@ export function TeamsPanel(props: {
                 </div>} metadata={tx("{0} 位专家", [team.members.length])} description={enabled && issue
                     ? `${team.description} ${tx(issue)}`
                     : team.description} enabled={enabled} disabled={busy} enabledLabel={tx("已启用")} disabledLabel={tx("已停用")} toggle={() => void change(team, 'enable')} moreItems={[
-                    ...(team.company ? [{ id: 'copy', label: tx("复制并自定义"), disabled: busy, onSelect: () => copy(team) }] : [
-                      { id: 'edit', label: tx("编辑专家团"), icon: <IconCopy size={16} />, disabled: busy, onSelect: () => edit(team) },
-                      ...('dshDesktop' in globalThis ? [{ id: 'submit', label: tx("提交发布"), disabled: busy, onSelect: () => {
+                    ...(team.company ? [{ id: 'copy', label: tx("复制并自定义"), shortLabel: tx("复制"), disabled: busy, onSelect: () => copy(team) }] : [
+                      { id: 'edit', label: tx("编辑专家团"), shortLabel: tx("编辑"), icon: <IconCopy size={16} />, disabled: busy, onSelect: () => edit(team) },
+                      ...('dshDesktop' in globalThis ? [{ id: 'submit', label: tx("提交发布"), shortLabel: tx("提交"), disabled: busy, onSelect: () => {
                         document.dispatchEvent(new CustomEvent('dsh:company-content-submit', { cancelable: true, detail: {
                           name: team.name, prepare: async (signal: AbortSignal) => {
                             signal.throwIfAborted();
@@ -316,11 +310,11 @@ export function TeamsPanel(props: {
                           },
                         } }));
                       } }] : []),
-                      { id: 'delete', label: tx("删除专家团"), icon: <IconTrash size={16} />, danger: true, disabled: busy, onSelect: () => void change(team, 'delete') },
+                      { id: 'delete', label: tx("删除专家团"), shortLabel: tx("删除"), icon: <IconTrash size={16} />, danger: true, disabled: busy, onSelect: () => void change(team, 'delete') },
                     ]),
                 ]} actions={<>
                   <button type="button" className="aag-card-action" title={tx("查看详情")} aria-label={tx("查看详情")} aria-haspopup="dialog" onClick={() => setDetailsId(team.id)}>
-                    <IconEye size={18}/><span className="aag-card-action-text">{tx("查看详情")}</span></button>
+                    <IconEye size={18}/><span className="aag-card-action-text">{tx("详情")}</span></button>
                 </>}/>);
         })}
       </div>{' '}

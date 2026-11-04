@@ -2,14 +2,13 @@ import { deepEqualJson } from '@deepseek-ai/dsh-util-values'
 import { createExpertClientState, type ExpertClientState } from './client-state.ts'
 import { commitBulk } from './bulk-operations.ts'
 import { LibraryConfirm } from './library-ui.tsx'
-import { CreationCard } from './creation-card.tsx'
-import type {} from '@deepseek-ai/dsh-client-ui-tool/client'
+import type {} from '@deepseek-ai/dsh-client-ui-workspace/client'
 import { Button, Input } from './plugin-ui.ts'
 import { SegmentedControl, SegmentedTabs, StateDot, useModalLayer } from '@deepseek-ai/dsh-client-ui-primitives'
 import { LibraryCard } from './library-ui.tsx'
 import { IconPlus } from './team-shared.tsx'
 import type { AgencyTeamsRemote } from './remote.ts'
-import { TeamsPanel, unwrap, type TeamRemote } from './team-ui.tsx'
+import { TeamsPanel, type TeamRemote } from './team-ui.tsx'
 import { TEAM_CSS } from './team-style.ts'
 import { TeamMenu } from './team-composer.tsx'
 import { TEAM_REFERENCE_SOURCE, insertTeamReference, teamReference } from './team-reference.ts'
@@ -401,10 +400,9 @@ export const SETTINGS_CSS = `
 .aag-empty{display:flex;flex-direction:column;align-items:center;gap:12px;padding:28px 16px;border:0.5px dashed var(--dsw-alias-border-l2);border-radius:var(--dsw-radius-md,12px);background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-secondary);font-size:13px;line-height:20px;text-align:center}
 @media (max-width:560px){.aag-toolbar,.aag-title-row{flex-wrap:wrap}.aag-filters{flex-direction:column;align-items:stretch}.aag-field-category,.aag-field-search{flex:none}}
 `
-// 标题固定占两行。卡片高度必须和这个占位一致，虚拟列表不能再测量视口里的第一张卡。
-const EXPERT_CARD_GAP = 10
-const EXPERT_CARD_NAME_HEIGHT = 44
-const EXPERT_CARD_HEIGHT = 191
+// 虚拟列表行高与卡片和间距保持一致。
+const EXPERT_CARD_GAP = 16
+const EXPERT_CARD_HEIGHT = 206
 const EXPERT_CARD_ROW = EXPERT_CARD_HEIGHT + EXPERT_CARD_GAP
 
 export const CARD_SETTINGS_CSS = `
@@ -427,38 +425,40 @@ export const CARD_SETTINGS_CSS = `
 .aag-search-wrap{display:flex;align-items:center;width:100%;min-width:0;max-width:100%}
 .aag-search-wrap>.aag-search{width:100%;min-width:0;max-width:100%}
 .aag-search-wrap>.aag-search input::placeholder{color:var(--dsw-alias-label-dimmed)}
-.aag-expert-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px 12px;margin-top:2px}
+.aag-categories{display:flex;gap:6px;overflow-x:auto;padding:2px 0 6px;scrollbar-width:thin}
+.aag-category{flex:none;min-height:36px;padding:6px 12px;border:0;border-radius:var(--dsw-radius-sm,8px);background:transparent;color:var(--dsw-alias-label-secondary);font:inherit;font-size:13px;cursor:pointer;white-space:nowrap}
+.aag-category:hover,.aag-category[aria-pressed="true"]{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}
+.aag-category[aria-pressed="true"]{font-weight:600}
+.aag-category:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:-2px}
+.aag-expert-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;margin-top:2px}
 .aag-expert-window{position:relative;margin-top:2px;overflow-anchor:none}.aag-expert-window>.aag-expert-grid{position:absolute;right:0;left:0;margin-top:0}
-.aag-expert-card{display:grid;box-sizing:border-box;min-width:0;height:${EXPERT_CARD_HEIGHT}px;min-height:${EXPERT_CARD_HEIGHT}px;overflow:hidden;grid-template-rows:minmax(141px,1fr) 32px;border:0.5px solid var(--dsw-alias-border-l2);border-radius:var(--dsw-radius-md,12px);background:var(--dsw-alias-bg-layer-1)}
+.aag-expert-card{display:flex;flex-direction:column;box-sizing:border-box;min-width:0;height:${EXPERT_CARD_HEIGHT}px;min-height:${EXPERT_CARD_HEIGHT}px;overflow:hidden;border:1px solid var(--dsw-alias-border-l1);border-radius:var(--dsw-radius-lg,16px);background:var(--dsw-alias-bg-layer-1)}
 .aag-expert-card:hover{border-color:var(--dsw-alias-border-l3)}
-.aag-card-body{position:relative;display:flex;flex-direction:column;min-width:0;padding:12px 14px 10px;height:100%;box-sizing:border-box}
-.aag-card-header{position:relative;display:grid;min-width:0;grid-template-columns:44px minmax(0,1fr);column-gap:10px;align-items:center}
-.aag-expert-avatar{display:block;width:44px;height:44px;border:0;border-radius:50%;corner-shape:round;background:var(--dsw-alias-bg-layer-3);object-fit:cover;object-position:center 20%}
-.aag-card-identity{display:flex;min-width:0;flex-direction:column;padding-right:48px}
-.aag-card-name{display:flex;flex-direction:column;justify-content:flex-start;overflow:hidden;height:${EXPERT_CARD_NAME_HEIGHT}px;min-height:${EXPERT_CARD_NAME_HEIGHT}px}
-.aag-card-name-text{display:-webkit-box;overflow:hidden;font-size:16px;font-weight:650;line-height:22px;-webkit-box-orient:vertical;-webkit-line-clamp:1}
-.aag-card-division{margin-top:2px;color:var(--dsw-alias-label-secondary);font-size:12px;line-height:18px;display:flex;align-items:center;flex-wrap:wrap;gap:6px}
-.aag-division-pill{display:inline-flex;align-items:center;height:20px;padding:0 7px;border-radius:var(--dsw-radius-xs,4px);background:var(--dsw-alias-interactive-bg-hover,rgba(255,255,255,0.06));border:0.5px solid var(--dsw-alias-border-l1,rgba(255,255,255,0.1));color:var(--dsw-alias-label-secondary);font-size:11px;font-weight:500;letter-spacing:0.2px}
-.aag-card-description{flex:1;display:-webkit-box;margin:8px 0 0;overflow:hidden;color:var(--dsw-alias-label-secondary);font-size:13px;line-height:1.5;-webkit-box-orient:vertical;-webkit-line-clamp:3}
-.aag-card-actions{display:flex;align-items:stretch;height:32px;min-height:32px;max-height:32px;border-top:0.5px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-2)}
-.aag-card-action{display:inline-flex;align-items:center;justify-content:center;gap:6px;flex:1 1 0;min-width:0;height:32px;min-height:32px;padding:0 8px;border:0;background:transparent;color:var(--dsw-alias-label-secondary);font:inherit;font-size:12px;font-weight:500;line-height:18px;white-space:nowrap;cursor:pointer;transition:color 120ms ease,background 120ms ease}
-.aag-card-action svg{flex-shrink:0;width:15px;height:15px;opacity:.85;transition:opacity 120ms ease}
-.aag-card-action:hover:not(:disabled) svg{opacity:1}
-.aag-card-action+.aag-card-action{border-left:0.5px solid var(--dsw-alias-border-l2)}
+.aag-card-body{display:flex;flex:1;flex-direction:column;gap:14px;min-width:0;padding:20px 20px 8px;box-sizing:border-box}
+.aag-card-header{display:grid;min-width:0;grid-template-columns:52px minmax(0,1fr);column-gap:14px;align-items:center}
+.aag-expert-avatar{display:block;width:52px;height:52px;border:0;border-radius:var(--dsw-radius-md,12px);background:var(--dsw-alias-bg-layer-3);object-fit:cover;object-position:center 20%}
+.aag-card-identity{display:flex;min-width:0;flex-direction:column;gap:5px}
+.aag-card-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:17px;font-weight:600;line-height:24px}
+.aag-card-division{color:var(--dsw-alias-label-secondary);font-size:12px;line-height:18px;display:flex;align-items:center;flex-wrap:wrap;gap:6px}
+.aag-division-pill{display:inline-flex;align-items:center;min-height:22px;padding:1px 8px;border-radius:var(--dsw-radius-xs,4px);background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-secondary);font-size:12px}
+.aag-card-description{display:-webkit-box;margin:0;overflow:hidden;color:var(--dsw-alias-label-secondary);font-size:13px;line-height:20px;-webkit-box-orient:vertical;-webkit-line-clamp:2}
+.aag-card-actions{display:flex;align-items:center;gap:8px;min-height:40px;padding:0 16px 12px}
+.aag-card-action{display:inline-flex;align-items:center;justify-content:center;gap:5px;flex:0 1 auto;min-width:28px;min-height:28px;padding:2px 6px;border:0;border-radius:var(--dsw-radius-sm,8px);background:transparent;color:var(--dsw-alias-label-secondary);font:inherit;font-size:12px;line-height:18px;cursor:pointer}
+.aag-card-action-text{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.aag-card-action svg{flex:none;width:15px;height:15px}
 .aag-card-action:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}
 .aag-card-action:disabled{opacity:.5;cursor:default}
 .aag-card-action-danger{color:var(--dsw-alias-state-error-primary)}
-.aag-card-action-danger:hover:not(:disabled){background:var(--dsw-alias-state-error-tertiary,rgba(239,68,68,0.1))}
-.aag-card-action span.aag-card-action-text{display:none}
-.aag-card-action{padding:0 4px}
-.aag-switch{position:absolute;top:0;right:0;display:flex;align-items:center;flex-direction:column;gap:3px}
+.aag-card-action-danger:hover:not(:disabled){color:var(--dsw-alias-state-error-primary)}
+.aag-switch{display:flex;align-items:center;gap:6px;margin-left:auto;flex:none}
 .aag-switch-state{color:var(--dsw-alias-label-secondary);font-size:12px;line-height:18px;white-space:nowrap}
+@container(max-width:700px){.aag-card-action-text{display:none}}
 .aag-prompt-body{display:block;box-sizing:border-box;height:min(560px,calc(100vh - 220px));min-height:240px;margin:0;padding:12px 14px;resize:none;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:12.5px;line-height:1.75;letter-spacing:0.01em;border:0.5px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-1);border-radius:var(--dsw-radius-md,12px)}
 .aag-prompt-body::-webkit-scrollbar{width:6px;height:6px}
 .aag-prompt-body::-webkit-scrollbar-thumb{background:var(--dsw-alias-border-l3);border-radius:999px}
 .aag-prompt-body:focus,.aag-prompt-body:focus-visible{border-color:var(--dsw-alias-brand-primary);outline:none;box-shadow:none}
 @container (max-width:519px){.aag-expert-grid{grid-template-columns:1fr}.aag-title-row{gap:8px 12px}.aag-settings-links{flex-basis:100%}}
-@container (max-width:430px){.aag-card-body{grid-template-columns:40px minmax(0,1fr);column-gap:10px}.aag-expert-avatar{width:40px;height:40px}.aag-card-name{font-size:16px;line-height:22px}}
+@container (max-width:430px){.aag-card-body{padding:16px 16px 8px}.aag-card-actions{gap:4px}.aag-switch-state{display:none}}
 `
 
 import { PLUGIN_UI_CSS } from './plugin-ui.ts'
@@ -981,7 +981,7 @@ function ExpertCardsSettings(props: PropsLocale<'agency'> & {
   const saving = React.useRef(false)
   const [isSaving, setIsSaving] = React.useState(false)
   const { source, onSourceChange } = props
-  const [editor, setEditor] = React.useState<{ expert?: CustomExpertInput; enabled: boolean; revision: number } | null>(null)
+  const [editor, setEditor] = React.useState<{ expert?: CustomExpertInput; enabled: boolean; revision: number; importOnly?: boolean } | null>(null)
   const [deleting, setDeleting] = React.useState<{ expert: ExpertView; revision: number } | null>(null)
   const [bulk, setBulk] = React.useState<{ targets: string[]; enabled: boolean } | null>(null)
   const [bulkError, setBulkError] = React.useState<string | null>(null)
@@ -1006,7 +1006,7 @@ function ExpertCardsSettings(props: PropsLocale<'agency'> & {
   const openEditor = (expert?: ExpertView): void => {
     const current = fresh()
     if (current === null || isSaving || detailRequest.current) return
-    if (expert === undefined) { setEditor({ enabled: false, revision: current.revision }); return }
+    if (expert === undefined) { setEditor({ enabled: false, revision: current.revision, importOnly: true }); return }
     const revision = current.revision
     const enabled = current.enabled.has(expert.slug)
     if (expert.custom) {
@@ -1176,28 +1176,14 @@ function ExpertCardsSettings(props: PropsLocale<'agency'> & {
           props.t('summary.enabledPrefix'),
           React.createElement('strong', null, state === null ? '—' : enabledCount)))))
     const bulkActions = [true, false].map(next => React.createElement(Button, { key: next ? 'enable' : 'disable', disabled: isSaving || state === null || !filtered.some(expert => !expert.conflict && enabled.has(expert.slug) !== next), onClick: () => { setBulkError(null); setBulk({ targets: filtered.filter(expert => !expert.conflict && enabled.has(expert.slug) !== next).map(expert => expert.slug), enabled: next }) } }, props.t(next ? 'bulk.enable' : 'bulk.disable')))
-    const filterActions = React.createElement('div', { className: 'aag-filter-actions' }, bulkActions, source !== 'custom' ? null : React.createElement(React.Fragment, null,
-      props.startCreation ? React.createElement(Button, { disabled: isSaving, onClick: () => props.startCreation?.('expert') }, props.t('creation.expert')) : null,
-      React.createElement(Button, {
-        variant: 'primary',
-        size: 'sm',
-        disabled: isSaving || state === null,
+    const filterActions = React.createElement('div', { className: 'aag-filter-actions' }, bulkActions,
+      source === 'custom' ? React.createElement(Button, { disabled: isSaving || state === null, onClick: () => openEditor() }, props.t('custom.importPackage')) : null,
+      props.startCreation ? React.createElement(Button, { variant: 'primary', size: 'sm', disabled: isSaving,
         icon: React.createElement(IconPlus, { size: 16, 'aria-hidden': true }),
-        onClick: () => openEditor(),
-      }, props.t('custom.new'))))
+        onClick: () => props.startCreation?.('expert'),
+      }, props.t('creation.expert')) : null)
     if (notice !== null) nodes.push(React.createElement('div', { key: 'notice', className: 'aag-custom-notice', role: 'status' }, notice))
     nodes.push(React.createElement('div', { key: 'filters', className: 'aag-filters aag-card-filters' },
-      React.createElement('div', { className: 'aag-field aag-field-category' },
-        React.createElement(CategorySelect, {
-          id: 'aag-filter-category',
-          value: division,
-          label: props.t('settings.filter.category'),
-          onChange: setDivision,
-          options: [...new Set([...expertDivisionFilterValues(), ...experts.map(expert => expert.division)])].map((value) => ({
-            value,
-            label: value === '' ? props.t('settings.filter.allCategories') : inputTriggerSourceName(value, props.getActive()),
-          })),
-        })),
       React.createElement('div', { className: 'aag-field aag-field-status' },
         React.createElement(CategorySelect, {
           id: 'aag-filter-status', value: status, label: props.t('settings.filter.status'), onChange: setStatus,
@@ -1217,6 +1203,10 @@ function ExpertCardsSettings(props: PropsLocale<'agency'> & {
             onChange: (event: React.ChangeEvent<HTMLInputElement>) => setQuery(event.currentTarget.value),
           }))),
       filterActions))
+    nodes.push(React.createElement('nav', { key: 'categories', className: 'aag-categories', 'aria-label': props.t('settings.filter.category') },
+      [...new Set([...expertDivisionFilterValues(), ...experts.map(expert => expert.division)])].map(value =>
+        React.createElement('button', { key: value, type: 'button', className: 'aag-category', 'aria-pressed': division === value, onClick: () => setDivision(value) },
+          value === '' ? props.t('settings.filter.allCategories') : inputTriggerSourceName(value, props.getActive())))))
     if (state === null && error === null) {
       nodes.push(React.createElement('div', { key: 'loading', role: 'status', 'aria-label': props.t('settings.loading'), className: 'aag-read-loading' }, React.createElement(StateDot, { state: 'ongoing', size: 14 })))
     } else if (state !== null && filtered.length === 0) {
@@ -1243,8 +1233,8 @@ function ExpertCardsSettings(props: PropsLocale<'agency'> & {
           enabledLabel: props.t('settings.enabled'), disabledLabel: props.t('settings.disabled'),
           toggle: () => toggle(expert.slug),
           moreItems: [
-            { id: 'edit', label: props.t(expert.custom ? 'custom.edit' : 'custom.copy'), icon: React.createElement(expert.custom ? EditIcon : Copy, { size: 16, strokeWidth: 1.7, 'aria-hidden': true }), disabled: isSaving || state === null, onSelect: () => openEditor(expert) },
-            ...(expert.custom && 'dshDesktop' in globalThis ? [{ id: 'submit-company', label: props.t('custom.submitCompany'), disabled: isSaving || state === null, onSelect: () => {
+            { id: 'edit', label: props.t(expert.custom ? 'custom.edit' : 'custom.copy'), shortLabel: props.t(expert.custom ? 'card.edit' : 'card.copy'), icon: React.createElement(expert.custom ? EditIcon : Copy, { size: 16, strokeWidth: 1.7, 'aria-hidden': true }), disabled: isSaving || state === null, onSelect: () => openEditor(expert) },
+            ...(expert.custom && 'dshDesktop' in globalThis ? [{ id: 'submit-company', label: props.t('custom.submitCompany'), shortLabel: props.t('card.submit'), disabled: isSaving || state === null, onSelect: () => {
               document.dispatchEvent(new CustomEvent('dsh:company-content-submit', { cancelable: true, detail: {
                 kind: 'expert', name: expert.name, prepare: async (signal: AbortSignal) => {
                   signal.throwIfAborted()
@@ -1255,7 +1245,7 @@ function ExpertCardsSettings(props: PropsLocale<'agency'> & {
                 },
               } }))
             } }] : []),
-            ...(expert.custom ? [{ id: 'delete', label: props.t('custom.delete'), icon: React.createElement(TrashIcon, { size: 16, strokeWidth: 1.7, 'aria-hidden': true }), danger: true, disabled: isSaving || state === null, onSelect: () => {
+            ...(expert.custom ? [{ id: 'delete', label: props.t('custom.delete'), shortLabel: props.t('card.delete'), icon: React.createElement(TrashIcon, { size: 16, strokeWidth: 1.7, 'aria-hidden': true }), danger: true, disabled: isSaving || state === null, onSelect: () => {
               if (state === null) return
               setDeleting({ expert, revision: state.revision }); setDeleteError(null)
             } }] : []),
@@ -1357,7 +1347,7 @@ function AgencySettingsPage(props: React.ComponentProps<typeof AgencySettingsPan
   return React.createElement('div', { className: 'product-capability-page' },
     React.createElement('div', { className: 'product-capability-content' }, React.createElement(AgencySettingsPanel, props)))
 }
-export const inject = ['slots', 'inputTriggers', 'locale', 'remote', 'sessions', 'conversation', 'layout']
+export const inject = ['slots', 'inputTriggers', 'locale', 'remote', 'sessions', 'conversation', 'layout', 'uiWorkspace']
 
 export async function apply(ctx: ClientContext): Promise<() => Promise<void>> {
   // Read the mounted native Client Session service once and use its public contract.
@@ -1464,31 +1454,11 @@ export async function apply(ctx: ClientContext): Promise<() => Promise<void>> {
   }
 
   const startCreation = (kind: 'expert' | 'team'): void => {
-    const id = resolveTargetSessionId(sessions)
-    const actx = id === undefined ? undefined : sessions.scope(id)
-    const input = actx === undefined ? undefined : ctx.conversation.input.for(actx)
-    if (!actx || !input) throw new Error(t('creation.noSession'))
-    const snapshot = input.state.getSnapshot()
-    const length = expertDetectText(snapshot).length
-    const text = t(kind === 'expert' ? 'creation.expertPrompt' : 'creation.teamPrompt')
-    if (actx.bail(actx, 'slash/input-insert-text', { text: (length ? '\n' : '') + text, span: { start: length, end: length, draftRev: snapshot.draftRev } }) !== true) {
-      input.notify('error', t('creation.failed')); return
-    }
-    ctx.layout.selectPanel(null)
-    input.focus()
+    ctx.uiWorkspace.startSession(undefined, {
+      prompt: t(kind === 'expert' ? 'creation.expertPrompt' : 'creation.teamPrompt'),
+      whenDraftExists: 'append',
+    })
   }
-  ctx.slots.inject('tool.call.toolview', function* () {
-    for (const key of ['open_custom_expert_editor', 'open_expert_team_editor']) yield ctx.slots.register({
-      name: 'tool.call.toolview', key, locale: NS,
-      inject: (sessionId) => ({ remote: remote as TeamRemote, cache, getActive,
-        loadCreation: async (proposalId: string, signal: AbortSignal) => {
-          if (!sessionId) throw new Error(t('creation.noSession'))
-          const api = ctx.get('remote.agencyAgents')
-          return unwrap(api.claimCreation(sessionId, proposalId, signal))
-        },
-      }),
-    }, CreationCard)
-  })
 
   ctx.slots.inject('main', () => ctx.slots.register(
     { name: 'main', key: 'deepseek-harness-experts', locale: NS,

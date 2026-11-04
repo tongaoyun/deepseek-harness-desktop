@@ -24,7 +24,7 @@ import { TEST_TEAMS } from '../../src/fixtures/teams.ts'
 
 afterEach(cleanup)
 
-async function fixture(renderMain: boolean | 'picker' = false) {
+async function fixture(renderMain: boolean | 'picker' = false, personal = false) {
   const ctx = new Context()
   onTestFinished(() => ctx.fiber.dispose())
   await ctx.plugin(SlotRegistry).await()
@@ -37,6 +37,8 @@ async function fixture(renderMain: boolean | 'picker' = false) {
   } as never)
   ctx.provide('conversation', {} as never)
   ctx.provide('layout', {} as never)
+  const startSession = vi.fn()
+  ctx.reflect.provide('uiWorkspace', { startSession })
   await ctx.plugin(InputTriggerService).await()
   const sources = new Map<string, InputTriggerSource>()
   const register = ctx.inputTriggers.registerSource.bind(ctx.inputTriggers)
@@ -47,15 +49,14 @@ async function fixture(renderMain: boolean | 'picker' = false) {
   })
   const unmount = vi.fn(async () => {})
   ctx.provide('remote', { $mount: async () => unmount } as never)
-  const getCatalog = vi.fn<AgencyCatalogRemote['getCatalog']>().mockResolvedValue({ ok: true, value: { experts: [], enabled: ['old'], revision: 8 } })
+  const getCatalog = vi.fn<AgencyCatalogRemote['getCatalog']>().mockResolvedValue({ ok: true, value: { experts: personal ? [{ slug: 'custom-reviewer', name: 'Reviewer', nameEn: 'Reviewer', description: 'Review code', descriptionEn: '', division: 'engineering', divisionZh: '工程', emoji: '🧩', custom: true }] : [], enabled: ['old'], revision: 8 } })
   const getTeams = vi.fn<AgencyTeamsRemote['getTeams']>().mockResolvedValue({ ok: true, value: { teams: [], enabledTeams: ['old'], enabledExperts: ['old'], revision: 8 } })
   const saveCustomExpert = vi.fn<AgencyCatalogRemote['saveCustomExpert']>()
-  ctx.provide('remote.agencyAgents', { getCatalog, getTeams, saveCustomExpert } as never)
+  ctx.provide('remote.agencyAgents', { getCatalog, getTeams, saveCustomExpert, getCustomExpert: async () => ({ ok: true, value: { slug: 'custom-reviewer', name: 'Reviewer', description: 'Review code', division: 'engineering', prompt: 'Check changes' } }) } as never)
   slots.register({ name: 'root', children: {
     main: { kind: 'keyed', scope: 'root' },
     'conversation.input.left': { kind: 'list', scope: 'session' },
-    'tool.call.toolview': { kind: 'keyed', scope: 'session' },
-  } }, (props: PropsRenderSlots<'main' | 'conversation.input.left' | 'tool.call.toolview'>) => renderMain === 'picker'
+  } }, (props: PropsRenderSlots<'main' | 'conversation.input.left'>) => renderMain === 'picker'
     ? props.renderSlot('conversation.input.left', {})
     : renderMain ? props.renderSlot('main', {}, { entryKey: 'deepseek-harness-experts' }) : null)
   if (renderMain) {
@@ -80,14 +81,14 @@ async function fixture(renderMain: boolean | 'picker' = false) {
   const owner = [...ctx.loader.entries()].find(entry => entry.options.name === 'cordis:experts-client')?.fiber
   if (!owner) throw new Error('Expert client was not loaded')
   await owner.await()
-  const cache = slots.entries('tool.call.toolview')[0]?.inject?.().cache as ExpertClientState | undefined
+  const cache = slots.entries('main')[0]?.inject?.().cache as ExpertClientState | undefined
   if (!cache) throw new Error('Expert transcript contribution missing')
   await vi.waitFor(() => { expect(cache.catalog.getSnapshot().revision).toBe(8); expect(cache.teams.getSnapshot()?.revision).toBe(8) })
-  return { ctx, owner, cache, getCatalog, getTeams, saveCustomExpert, unmount, slots, sources }
+  return { ctx, owner, cache, getCatalog, getTeams, saveCustomExpert, unmount, slots, sources, startSession }
 }
 
 it('closes the Loader-mounted editor category menu while saving and preserves the draft after failure', async () => {
-  const { ctx, slots, saveCustomExpert } = await fixture(true)
+  const { ctx, slots, saveCustomExpert } = await fixture(true, true)
   ctx.locale.setLocale('zh')
   const t = ctx.locale.bind('agency')
   const pending = Promise.withResolvers<Awaited<ReturnType<AgencyCatalogRemote['saveCustomExpert']>>>()
@@ -95,15 +96,15 @@ it('closes the Loader-mounted editor category menu while saving and preserves th
   try {
     const view = render(slots.renderSlot('root', {}))
     fireEvent.click(within(view.container).getByRole('tab', { name: '我的' }))
-    fireEvent.click(within(view.container).getByRole('button', { name: t('custom.new') }))
-    const editor = within(screen.getByRole('dialog', { name: t('custom.new') }))
+    fireEvent.click(within(view.container).getByRole('button', { name: t('custom.edit') }))
+    const editor = within(await screen.findByRole('dialog', { name: t('custom.edit') }))
     fireEvent.change(editor.getByRole('textbox', { name: t('custom.name') }), { target: { value: 'Reviewer' } })
     fireEvent.change(editor.getByRole('textbox', { name: t('custom.description') }), { target: { value: 'Review code' } })
     fireEvent.change(editor.getByRole('textbox', { name: t('custom.prompt') }), { target: { value: 'Check changes' } })
     const category = editor.getByRole<HTMLButtonElement>('button', { name: t('custom.division') })
     fireEvent.click(category)
     expect(screen.getByRole('menu')).toBeTruthy()
-    fireEvent.click(editor.getByRole('button', { name: t('custom.save') }))
+    fireEvent.click(editor.getByRole('button', { name: t('custom.saveChanges') }))
     expect(saveCustomExpert).toHaveBeenCalledOnce()
     expect(category.disabled).toBe(true)
     expect(screen.queryByRole('menu')).toBeNull()
@@ -169,7 +170,7 @@ it('clears disconnected Host data, accepts its new revision and disposes the pre
   expect(unmount).toHaveBeenCalledTimes(1)
   const nextOwner = ctx.plugin(Experts)
   await nextOwner.await()
-  const next = slots.entries('tool.call.toolview')[0]?.inject?.().cache
+  const next = slots.entries('main')[0]?.inject?.().cache
   expect(next).not.toBe(cache)
   await nextOwner.dispose()
   expect(unmount).toHaveBeenCalledTimes(2)
@@ -324,4 +325,45 @@ it.each(['disabled', 'removed'] as const)('refuses an old team candidate after t
   cache.teams.accept({ ...value, teams: state === 'removed' ? [] : value.teams, enabledTeams: [], revision: 11 })
   expect(source.onPick({ candidate, session, position: 'inline', via: 'menu', action: 'pick',
     span: { start: 0, end: 1, draftRev: 0 } })).toBeUndefined()
+})
+
+it('creates experts and teams in a native new conversation even without a selected session', async () => {
+  const { ctx, slots, startSession } = await fixture(true)
+  ctx.locale.setLocale('zh')
+  render(slots.renderSlot('root', {}))
+  fireEvent.click(screen.getByRole('button', { name: '创建专家' }))
+  expect(startSession).toHaveBeenLastCalledWith(undefined, { prompt: expect.stringContaining('帮我创建一个'), whenDraftExists: 'append' })
+  expect(screen.queryByRole('dialog')).toBeNull()
+  fireEvent.click(screen.getByRole('tab', { name: /专家团/ }))
+  fireEvent.click(screen.getByRole('button', { name: '通过对话创建专家团' }))
+  expect(startSession).toHaveBeenCalledTimes(2)
+  expect(startSession).toHaveBeenLastCalledWith(undefined, { prompt: expect.stringContaining('帮我创建一个专家团'), whenDraftExists: 'append' })
+  expect(screen.queryByRole('dialog')).toBeNull()
+})
+
+it('opens import without empty manual creation fields', async () => {
+  const { ctx, slots } = await fixture(true)
+  ctx.locale.setLocale('zh')
+  render(slots.renderSlot('root', {}))
+  fireEvent.click(screen.getByRole('tab', { name: '我的' }))
+  fireEvent.click(screen.getByRole('button', { name: '导入专家包' }))
+  const dialog = within(screen.getByRole('dialog', { name: '导入专家包' }))
+  expect(dialog.getByRole('button', { name: '导入 ZIP' })).toBeTruthy()
+  expect(dialog.queryByRole('textbox')).toBeNull()
+  expect(dialog.queryByRole('button', { name: '保存并启用' })).toBeNull()
+})
+
+it('filters personal experts through the visible category row and preserves the selection', async () => {
+  const { ctx, slots } = await fixture(true, true)
+  ctx.locale.setLocale('zh')
+  render(slots.renderSlot('root', {}))
+  fireEvent.click(screen.getByRole('tab', { name: '我的' }))
+  expect(await screen.findByText('Reviewer')).toBeTruthy()
+  const categories = within(screen.getByRole('navigation', { name: '分类' }))
+  const orders = categories.getByRole('button', { name: '订单与售后' })
+  fireEvent.click(orders)
+  expect(orders.getAttribute('aria-pressed')).toBe('true')
+  expect(screen.queryByText('Reviewer')).toBeNull()
+  fireEvent.click(categories.getByRole('button', { name: '全部分类' }))
+  expect(screen.getByText('Reviewer')).toBeTruthy()
 })

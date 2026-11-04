@@ -32,6 +32,7 @@ export interface SectionProps extends Pick<PropsRuntime<'main'>, 'useSessions'> 
     api: import('./remote-client.ts').SkillApi;
     apiForSession: (sessionId?: string) => import('./remote-client.ts').SkillApi;
     t: Translate;
+    startCreation(): void;
 }
 export interface Filters {
     query: string;

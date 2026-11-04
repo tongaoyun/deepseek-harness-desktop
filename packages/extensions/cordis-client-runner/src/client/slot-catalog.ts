@@ -5595,7 +5595,6 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
       'client-ui-tool TodoRow key \'todo_write\'',
       'client-ui-tool WebRow key \'web_search\'',
       'client-ui-tool WebRow key \'web_fetch\'',
-      '@deepseek-harness/product-experts CreationCard',
       'client-ui-action-cards ProposeRow key \'propose_action\'',
       'client-ui-cordis CordisDefineRow key \'cordis_define\'',
       'client-ui-cordis CordisRunRow key \'cordis_run\'',

@@ -69,10 +69,10 @@
     "@deepseek-ai/dsh-tools": "workspace:*",
     "@deepseek-ai/dsh-typert-protocol": "workspace:*",
     "@deepseek-ai/dsh-typert-registry": "workspace:*",
-    "@deepseek-ai/dsh-user-questions": "workspace:*",
     "@deepseek-ai/schemastery": "workspace:~",
     "react": "^18.2.0",
-    "react-dom": "^18.2.0"
+    "react-dom": "^18.2.0",
+    "@deepseek-ai/dsh-client-ui-workspace": "workspace:*"
   },
   "peerDependenciesMeta": {
     "@deepseek-ai/dsh": {
@@ -137,7 +137,6 @@
     "@deepseek-ai/dsh-typert-protocol": "workspace:*",
     "@deepseek-ai/dsh-typert-registry": "workspace:*",
     "@deepseek-ai/dsh-user-approval": "workspace:*",
-    "@deepseek-ai/dsh-user-questions": "workspace:*",
     "@deepseek-ai/dsh-util-crypto": "workspace:*",
     "@deepseek-ai/dsh-util-time": "workspace:*",
     "@deepseek-ai/dsh-util-values": "workspace:*",
@@ -150,7 +149,8 @@
     "react-dom": "18.3.1",
     "tsdown": "^0.22.2",
     "typescript": "^6.0.3",
-    "vitest": "^4.1.11"
+    "vitest": "^4.1.11",
+    "@deepseek-ai/dsh-client-ui-workspace": "workspace:*"
   },
   "private": true
 }

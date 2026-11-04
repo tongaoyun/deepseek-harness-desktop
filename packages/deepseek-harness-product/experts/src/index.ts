@@ -1,7 +1,6 @@
 import { EXPERT_PACKAGE_SOURCE, readExpertPackage, type ExpertPackageSource } from './package-transfer.ts'
 import { expertPackageFiles } from './expert-packages.ts'
 export { default as AgencyAgentsRemote } from './remote.ts'
-import { createDrafts, CREATION_SERVICE } from './creation.ts'
 import { registerCreationTools } from './creation-tools.ts'
 import { localizeTeamTool } from './team-tool-locale.ts'
 import { ExpertPackageStore } from './expert-packages.ts'
@@ -487,10 +486,8 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
     const root = await companyRoot(sessionId, signal)
     return root ? (await companyCatalog(root)).teams.teams : []
   })
-  const creationDrafts = createDrafts(activeLocale)
-  ctx.reflect.provide(CREATION_SERVICE, creationDrafts)
-  registerCreationTools(ctx, creationDrafts, library, activeLocale)
-  ctx.systemPrompt.section({ name: 'agency:creation', order: 119, text: 'Creation requests do not invoke summon tools. When the user wants to create or customize an expert or expert team, design a personal draft with propose_custom_expert or propose_expert_team. Use list_creation_experts for available categories and members, including disabled experts. Present the complete preview, invite changes and revise through the proposal tool. Call the matching open editor tool with the exact proposalId only after explicit user confirmation. The native confirmation makes a prefilled editor available; the user must click Save. Never save silently, publish company content, or create files as a substitute.' })
+  registerCreationTools(ctx, library, teamLibrary, activeLocale)
+  ctx.systemPrompt.section({ name: 'agency:creation', order: 119, text: 'Creation requests do not invoke summon tools. For a new personal expert or team, clarify the user’s goal in conversation and generate the complete content yourself. Use list_creation_experts for category IDs and available team members. Show the design and invite revisions, then call create_custom_expert or create_expert_team to request native approval and save directly. Never send the user to an editor or ask them to fill name, description or Markdown fields. Expert files become an AgentSpec package with literal SOUL.md, optional AGENTS.md and references/assets. Team members must already exist; create missing experts with approval before saving the team. Only report success after the tool succeeds. Company publication is a separate explicit action; never publish or write substitute files.' })
   ctx.reflect.provide(AGENCY_TEAM_SERVICE, teamLibrary)
   ctx.reflect.provide('agencyAgentsTeamEngine', () => resolveTeamEngine(ctx, undefined, maxDepth).status)
   const teamDelegationGuard: ToolGuard = exec => delegationTools.has(exec.name)

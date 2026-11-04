@@ -14,6 +14,7 @@ import { loadEditorReview, continueEditorReview, type EditorReview } from "./edi
 const h = React.createElement
 export interface CustomEditorProps {
   readonly expert?: CustomExpertInput
+  readonly importOnly?: boolean
   readonly enabled: boolean
   readonly revision: number
   readonly divisions: readonly string[]
@@ -152,14 +153,15 @@ export function CustomExpertEditor(props: CustomEditorProps): React.ReactElement
     'aria-label': text, onChange: (event: React.ChangeEvent<HTMLInputElement>) => set(key, event.currentTarget.value),
     ...(key === 'name' ? { placeholder: props.t('custom.namePlaceholder') } : {}),
   })
+  const waitingForImport = props.importOnly === true && draft.prompt.trim() === ''
   return h(Modal, {
     open: true,
     className: 'aag-editor-modal',
     contentClassName: 'aag-editor-modal-content',
-    title: props.t(draft.slug ? 'custom.edit' : 'custom.new'),
+    title: props.t(props.importOnly ? 'custom.importPackage' : draft.slug ? 'custom.edit' : 'custom.new'),
     closeLabel: props.t('settings.promptClose'),
     onClose: () => { if (discard) setDiscard(false); else close() },
-    footer: h(LibraryEditorFooter, {
+    footer: waitingForImport ? h(Button, { onClick: close, disabled: busy }, props.t('custom.cancel')) : h(LibraryEditorFooter, {
       editing: !!draft.slug, busy, blocked: needsReview, inert: discard,
       help: props.t('custom.enableHint'), cancelLabel: props.t('custom.cancel'), saveLabel: props.t('custom.save'),
       primaryLabel: props.t(busy ? 'custom.saving' : draft.slug ? 'custom.saveChanges' : 'custom.saveEnable'),
@@ -167,13 +169,14 @@ export function CustomExpertEditor(props: CustomEditorProps): React.ReactElement
     }),
   },
   h('form', { ref: form, className: 'aag-custom-body', onSubmit: (event: React.FormEvent) => event.preventDefault(), inert: discard ? '' : undefined },
-    h('p', { className: 'aag-editor-intro' }, props.t('custom.intro')),
+    h('p', { className: 'aag-editor-intro' }, props.t(waitingForImport ? 'custom.importHint' : 'custom.intro')),
     h('div', { className: 'aag-package-toolbar', role: 'group', 'aria-label': props.t('custom.packageActions') },
       h('input', { ref: zipInput, type: 'file', accept: '.zip', hidden: true, disabled: busy, 'aria-label': props.t('custom.importZip'), onChange: selectFiles(importFiles) }),
       h('input', { ref: directoryInput, type: 'file', multiple: true, webkitdirectory: '', hidden: true, disabled: busy, 'aria-label': props.t('custom.importDirectory'), onChange: selectFiles(importFiles) }),
       h(Button, { disabled: busy, onClick: () => zipInput.current?.click() }, props.t('custom.importZip')),
       h(Button, { disabled: busy, onClick: () => directoryInput.current?.click() }, props.t('custom.importDirectory')),
       h(Button, { className: 'aag-package-export', disabled: busy || !draft.prompt.trim(), onClick: () => { try { downloadPackage(draftPackageFiles(draft)) } catch (cause) { setError(cause instanceof PackageTransferError ? props.t(cause.key) : cause instanceof Error ? cause.message : String(cause)) } } }, props.t('custom.exportZip'))),
+    waitingForImport ? null : h(React.Fragment, null,
     h('div', { className: 'aag-custom-identity' },
       h('img', { src: EXPERT_AVATAR_URLS[draft.avatar], width: 44, height: 44, alt: '' }),
       h(Button, { disabled: busy, 'aria-expanded': avatarExpanded, 'aria-controls': 'aag-custom-avatars', onClick: () => setAvatarExpanded(value => !value) }, props.t('custom.changeAvatar'))),
@@ -215,6 +218,7 @@ export function CustomExpertEditor(props: CustomEditorProps): React.ReactElement
           h('span', { className: 'aag-custom-resource-path', title: path }, path),
           h('span', { className: 'aag-custom-resource-size' }, new Intl.NumberFormat(props.locale, { style: 'unit', unit: base64ByteLength(value) < 1024 ? 'byte' : 'kilobyte', maximumFractionDigits: 1 }).format(base64ByteLength(value) / (base64ByteLength(value) < 1024 ? 1 : 1024))),
           h(Button, { disabled: busy, 'aria-label': `${props.t('custom.removeAttachment')}: ${path}`, onClick: () => { setError(null); setDraft(current => ({ ...current, resources: Object.fromEntries(Object.entries(current.resources).filter(([name]) => name !== path)) })) } }, props.t('custom.removeAttachment')))))),
+    ),
     error === null ? null : h('div', { className: 'aag-error', role: 'alert' }, error),
       needsReview ? h("section", { className: "aag-custom-review" },
         h(Button, { disabled: busy, onClick: refreshReview }, props.t("custom.reviewLatest")),

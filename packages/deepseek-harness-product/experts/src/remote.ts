@@ -1,7 +1,4 @@
 import { EXPERT_PACKAGE_SOURCE, importExpertPackage, type ExpertPackageSource } from './package-transfer.ts'
-import { SessionId } from '@deepseek-ai/dsh-session'
-import { CREATION_SERVICE, type CreationDrafts } from './creation.ts'
-import type { CreationEditorData } from './remote-contract.ts'
 import { publishedTeamSchema } from '@deepseek-harness/product/company-team'
 import { AGENCY_TEAM_SERVICE, type AgencyTeamLibrary } from './team-library.ts'
 import { nativeTeamMemberName } from './team-engine.ts'
@@ -43,25 +40,6 @@ export default class AgencyAgentsRemote extends TypertRemoteService {
   constructor(ctx: Context) {
     super(ctx, 'agencyAgents')
     this.ctx.typert.register(TYPERT)
-  }
-
-  /** Claim an explicitly confirmed draft for its original Session and one editor window.
-   * @param sessionId - Session owning the tool result.
-   * @param proposalId - Exact proposal confirmed by the human.
-   * @param signal - Cancellation before the draft is claimed.
-   * @returns Draft and current revision-checked editing inputs; rejects if unavailable.
-   */
-  @Remote('claimCreation')
-  async claimCreation(sessionId: SessionId, proposalId: string, signal: AbortSignal): Promise<CreationEditorData> {
-    signal.throwIfAborted()
-    const drafts = this.ctx.get(CREATION_SERVICE) as CreationDrafts | undefined
-    const catalog = await this.library().catalog(signal)
-    signal.throwIfAborted()
-    const teams = this.describeTeams(await this.teams().snapshot(undefined, signal))
-    signal.throwIfAborted()
-    const draft = drafts?.claim(SessionId(sessionId), proposalId)
-    if (!draft) throw new Error(readHostLocale(this.ctx) === 'zh' ? '草案未确认、已过期或已在其他窗口打开，请重新生成预览' : 'Draft is unconfirmed, expired or already opened elsewhere. Generate a new preview.')
-    return { draft, catalog, teams }
   }
 
   /** Import complete package bytes into a personal draft; saving remains explicit.

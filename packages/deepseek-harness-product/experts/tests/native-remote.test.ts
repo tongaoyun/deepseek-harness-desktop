@@ -20,8 +20,6 @@ import { AGENCY_TEAM_SERVICE, createTeamLibrary } from '../src/team-library.ts'
 import type { CompanyContentSource } from '@deepseek-harness/product/protocol'
 import { teamSnapshotSchema, type TeamSnapshot } from '../src/team-contract.ts'
 import { nativeTeamMemberName } from '../src/team-engine.ts'
-import { CREATION_SERVICE, createDrafts } from '../src/creation.ts'
-import { SessionId } from '@deepseek-ai/dsh-session'
 import { TEST_TEAMS } from '../src/fixtures/teams.ts'
 import { MemorySettings } from '../src/settings-memory.ts'
 import { expertSettingsNamespace } from '../src/settings.ts'
@@ -91,27 +89,6 @@ it('refuses to publish a team before its personal member experts are published',
   await expect(invoke('exportTeam', { id: team.id, expectedRevision: snapshot.revision })).rejects.toThrow('Publish the member experts')
 })
 
-it('cancelling editor preparation leaves the confirmed creation draft available', async () => {
-  const { ctx, invoke, library } = await boot()
-  const drafts = createDrafts()
-  ctx.provide(CREATION_SERVICE, drafts)
-  const session = SessionId('creation-request')
-  const proposal = drafts.save(session, { kind: 'expert', data: draft })
-  drafts.confirm(session, proposal.id)
-  const catalog = await library.catalog()
-  const reading = Promise.withResolvers<typeof catalog>()
-  const source = vi.spyOn(library, 'catalog').mockReturnValueOnce(reading.promise)
-  const controller = new AbortController()
-  const pending = invoke('claimCreation', { sessionId: session, proposalId: proposal.id }, controller.signal)
-  const rejected = expect(pending).rejects.toThrow()
-  await vi.waitFor(() => { expect(source).toHaveBeenCalledOnce() })
-  controller.abort()
-  reading.resolve(catalog)
-  await rejected
-  expect(drafts.get(session, proposal.id)).toEqual(proposal.draft)
-  expect(drafts.claim(session, proposal.id)).toEqual(proposal.draft)
-})
-
 it('preserves strict parsing, defaults, saved revisions and authorization through native dispatch', async () => {
   const { ctx, settings, ns, invoke } = await boot()
   const saved = catalogSnapshotSchema.parse(await invoke('saveCustomExpert', { expert: draft, enabled: true, expectedRevision: 0 }))
@@ -129,7 +106,6 @@ it('preserves strict parsing, defaults, saved revisions and authorization throug
     { expert: draft, enabled: true, expectedRevision: 1.5 },
   ]
   for (const args of invalid) await expect(invoke('saveCustomExpert', args)).rejects.toMatchObject({ code: 'gateway/input-invalid' })
-  await expect(invoke('claimCreation', { sessionId: 's', proposalId: 'bad-id' })).rejects.toMatchObject({ code: 'gateway/input-invalid' })
   expect(settings.describe().find(item => item.ns === ns)?.revision).toBe(1)
   const guest = new Peer(ctx, { principal: { kind: 'experts-test-guest' } })
   await expect(ctx.typertGateway.invoke({ namespace: 'agencyAgents', method: 'getCatalog', args: { refreshCompany: false }, peer: guest })).rejects.toMatchObject({ code: 'remote-access/denied' })
@@ -159,9 +135,6 @@ it('shares native method descriptors and keeps semantic codecs in ordinary and s
     expect(input.jsonSchema).toBeUndefined()
     expect(input.jsonSchemaError).toContain('semantic')
   }
-  const claim = TYPERT_REMOTE.methods['agencyAgents/claimCreation'].input().create()
-  expect(() => claim.parse({ sessionId: '', proposalId: '00000000-0000-4000-8000-000000000000' })).toThrow()
-  expect(() => claim.parse({ sessionId: 's'.repeat(129), proposalId: '00000000-0000-4000-8000-000000000000' })).toThrow()
   expect(() => TYPERT_REMOTE.methods['agencyAgents/getPrompt'].input().create().parse({ slug: 's', division: 'x'.repeat(65) })).toThrow()
   expect(() => TYPERT_REMOTE.methods['agencyAgents/getCustomExpert'].input().create().parse({ slug: '../outside' })).toThrow()
   expect(() => TYPERT_REMOTE.methods['agencyAgents/getCatalog'].result.create().parse({ experts: [], enabled: [], revision: -1 })).toThrow()
