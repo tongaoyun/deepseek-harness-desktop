@@ -8,6 +8,10 @@ import { customDe, customEn, customEs, customFr, customJa, customPt, customRu, c
 
 /** 简体中文词条（key 集真相源）。 */
 export const zh = {
+  'card.edit': '编辑',
+  'card.copy': '复制',
+  'card.submit': '提交',
+  'card.delete': '删除',
   'custom.importHint': '选择 AgentSpec 目录或 ZIP，导入后核对并保存。创建新专家请使用对话创建。',
   'custom.importPackage': '导入专家包',
   'creation.expert': '创建专家',
@@ -88,6 +92,10 @@ export type AgencyKey = keyof typeof zh
 
 /** 英文词条，key 完整性由 satisfies 在编译期保证。 */
 export const en = {
+  'card.edit': 'Edit',
+  'card.copy': 'Copy',
+  'card.submit': 'Submit',
+  'card.delete': 'Delete',
   'custom.importHint': 'Choose an AgentSpec directory or ZIP, then review and save. Use chat to create a new expert.',
   'custom.importPackage': 'Import expert package',
   'creation.expert': 'Create expert',

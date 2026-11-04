@@ -5,6 +5,7 @@ import React from 'react'
 export interface LibraryMenuItem {
   id: string
   label: string
+  shortLabel?: string
   icon?: React.ReactNode
   disabled?: boolean
   danger?: boolean
@@ -76,7 +77,7 @@ export function LibraryCard(props: {
             className={item.danger ? 'aag-card-action aag-card-action-danger' : 'aag-card-action'}
             disabled={item.disabled} title={item.label} aria-label={item.label}
             onClick={() => item.onSelect()}>
-            {item.icon}<span className="aag-card-action-text">{item.label}</span>
+            {item.icon}<span className="aag-card-action-text">{item.shortLabel ?? item.label}</span>
           </button>
         ))}
         <div className="aag-switch" onClick={(event) => {
