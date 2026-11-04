@@ -16,6 +16,7 @@ import { searchSkillsSh } from './skills-sh-catalog.ts'
 import { loadCatalogPackage, readCatalogSkill } from './catalog-skill.ts'
 import { activeSessionCwds, notifyChatCatalog, registerAgentSkillProviders, externalSkillProvider, registeredWorkspacePaths } from './host-runtime.ts'
 import { makeLog } from './log.ts'
+import { SKILL_CATEGORY_NAME_MAX } from './skill-document.ts'
 
 declare module '@deepseek-ai/cordis' {
   interface Context { skillsManager: SkillsManager }
@@ -62,7 +63,7 @@ export class SkillsManager extends TypertRemoteService {
           name: { type: 'string', description: 'Skill name; it will be normalized to kebab-case.' },
           description: { type: 'string', description: 'A concise routing description for when to use the skill.' },
           body: { type: 'string', description: 'Markdown instructions that form the skill body.' },
-          category: { type: 'string', minLength: 1, maxLength: 24, description: 'A short, reusable category in the user\'s language, for example 文档办公, 数据分析 or 研发开发. Classify by purpose; reuse an existing category when known.' },
+          category: { type: 'string', minLength: 1, maxLength: SKILL_CATEGORY_NAME_MAX, description: 'A short, reusable category in the user\'s language, for example 文档办公, 数据分析 or 研发开发. Classify by purpose; reuse an existing category when known.' },
         },
         required: ['name', 'description', 'body', 'category'],
         additionalProperties: false,

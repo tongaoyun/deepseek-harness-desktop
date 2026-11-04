@@ -1,7 +1,7 @@
 import type { JsonValue } from '@deepseek-ai/dsh-util-values';
 import type { TrashMetadata } from './types.ts';
 import type { SkillRoot, RepositoryDestination, RootInput, Diagnostic, OperationError, CodedError, Log, DiscoveredEntry, SkillEntry, ParsedSkill, Scan, ManagerState, PolicyResult, Policy, SkillItem, ViewItem, RootView, SkillView, ScopeOptions, MutationOptions, RenameOptions, UploadInput, CreateInput, ImportCandidate, ImportPending, ImportConflict, ImportFailure, ImportResult } from "./types.ts";
-// dsh-skills-manager core —— 纯 Node 技能文件管理核心（仅 ZIP 解压使用 fflate，可独立单测）
+// 用户和项目技能的文件管理、分类与原生调用策略。
 //
 // 覆盖 DSH 用户级与活动 Session 项目级技能根：
 //   - 用户根目录：~/.dsh/skills 与常见 Agent 用户目录
@@ -19,7 +19,8 @@ import { writeFileAtomic } from "@deepseek-ai/dsh-atomic-write";
 import { canonicalizeWatchPath, resolveDshHome, resolveAgentsHome } from '@deepseek-ai/dsh-home-paths';
 import { isSkillName, type SkillProviderObservation } from '@deepseek-ai/dsh-skill';
 import { parseSkillInvocationPolicy } from '@deepseek-ai/dsh-skill-filesystem/document';
-import { parseSkillDoc, skillCategory, withSkillCategory } from './skill-document.ts';
+import { parseSkillDoc, skillCategory, normalizeSkillCategory, withSkillCategory } from './skill-document.ts';
+import { companyContentRelease, contentDigest, COMPANY_CONTENT_MAX_BYTES, COMPANY_CONTENT_MAX_FILES, COMPANY_CONTENT_MAX_PATH_LENGTH } from '@deepseek-harness/product/company-content';
 export { parseSkillDoc };
 export { resolveDshHome, resolveAgentsHome };
 import { randomBytes } from "node:crypto";
@@ -1341,8 +1342,6 @@ function normalizeManagerState(value: ManagerState) {
   return normalized;
 }
 
-const CATEGORY_NAME_MAX = 24;
-
 function categoryRootKey(key: string) {
   if (rootByKey(key) || PROJECT_ROOT_KEY_RE.test(key)) return key;
   return null;
@@ -1358,8 +1357,8 @@ function normalizeCategories(value: ManagerState["categories"] | undefined) {
     for (const item of list) {
       if (!item || typeof item !== "object" || Array.isArray(item)) continue;
       const id = typeof item.id === "string" ? item.id : "";
-      const name = typeof item.name === "string" ? item.name.trim() : "";
-      if (!/^[a-z0-9]{8,32}$/.test(id) || !name || name.length > CATEGORY_NAME_MAX || seen.has(id)) continue;
+      const name = normalizeSkillCategory(item.name);
+      if (!/^[a-z0-9]{8,32}$/.test(id) || !name || seen.has(id)) continue;
       seen.add(id);
       categories[key].push({ id, name });
     }
@@ -1675,9 +1674,9 @@ function projectSkillCategories(state: ManagerState, key: string, entries: Skill
 export async function createCategory(key: string, name: string, log?: Log, options: ScopeOptions = {}) {
   const ready = await writableCategoryState(key, options);
   if ("ok" in ready) return ready;
-  const label = String(name || "").trim();
-  if (!label || label.length > CATEGORY_NAME_MAX)
-    return categoryError("error.category.name", "分类名称不能为空，且不能超过 24 个字符");
+  const label = normalizeSkillCategory(name);
+  if (!label)
+    return categoryError("error.category.name", "分类名称需为 1–24 个字符的单行文字");
   if (ready.state.categories[ready.rootKey].some((item) => item.name === label))
     return categoryError("error.category.duplicate", `已有同名分类: ${label}`, { name: label });
   const category = { id: randomBytes(8).toString("hex"), name: label };
@@ -1691,12 +1690,12 @@ export async function createCategory(key: string, name: string, log?: Log, optio
 export async function renameCategory(key: string, id: string, name: string, log?: Log, options: ScopeOptions = {}) {
   const ready = await writableCategoryState(key, options);
   if ("ok" in ready) return ready;
-  const label = String(name || "").trim();
+  const label = normalizeSkillCategory(name);
   const list = ready.state.categories[ready.rootKey];
   const category = list.find((item) => item.id === id);
   if (!category) return categoryError("error.category.notFound", "分类不存在", { id });
-  if (!label || label.length > CATEGORY_NAME_MAX)
-    return categoryError("error.category.name", "分类名称不能为空，且不能超过 24 个字符");
+  if (!label)
+    return categoryError("error.category.name", "分类名称需为 1–24 个字符的单行文字");
   if (list.some((item) => item !== category && item.name === label))
     return categoryError("error.category.duplicate", `已有同名分类: ${label}`, { name: label });
   category.name = label;
@@ -2943,9 +2942,9 @@ export async function createSkill(input: CreateInput, log?: Log, options: Mutati
     };
   if (description.length > 500 || body.length > 1 << 18)
     return { ok: false, error: "技能内容过长", code: "error.create.tooLarge" };
-  const category = input.category?.trim();
-  if (input.category !== undefined && (!category || category.length > CATEGORY_NAME_MAX || /[\u0000-\u001f\u007f]/u.test(category)))
-    return categoryError('error.category.name', '分类名称不能为空，且不能超过 24 个字符');
+  const category = normalizeSkillCategory(input.category);
+  if (input.category !== undefined && !category)
+    return categoryError('error.category.name', '分类名称需为 1–24 个字符的单行文字');
   if (
     await safeExistingEntryPaths(root, name).then((items) => items.length > 0)
   )
@@ -3478,7 +3477,6 @@ export async function state(options: ScopeOptions = {}) {
       workspaceCwds: root.workspaceCwds,
     });
   }
-  // 保留既有 HTTP 摘要契约；页面可独立计算当前 Tab 的互斥状态统计。
   result.summary = {
     total: all.length,
     enabled: all.filter((item) => item.view.enabled === true).length,
@@ -3497,11 +3495,11 @@ type MetadataEntry = DiscoveredEntry & {name: string; providerRank?: number; pol
 interface MetadataScan {exists: boolean; entries: MetadataEntry[]; truncated?: boolean; complete: boolean}
 
 
-/** Export one native skill with its resource files, refusing symlinks and oversized trees.
+/** Export one native skill with its resources under the company publication limits.
  * @param key - Writable personal skill source identifier.
  * @param name - Installed skill directory name.
  * @param options - Selected workspace and cancellation signal.
- * @returns Stable resource key and base64-encoded complete skill files. Cancellation stops further reads and closes the active file before rejection.
+ * @returns Stable resource key and validated base64-encoded skill files, including Unicode names and binary resources. Cancellation stops further reads and closes the active file before rejection.
  */
 export async function exportSkill(key: string, name: string, options: ScopeOptions & { workspaceBound?: boolean } = {}): Promise<{ resourceKey: string; files: Record<string, string> }> {
   const signal = options.signal;
@@ -3513,6 +3511,7 @@ export async function exportSkill(key: string, name: string, options: ScopeOptio
   const policy = await readManagerState();
   if (!policy.writable) throw new Error('技能分类状态不可读，请修复后重试');
   const categoryId = policy.state.categoryMembers[key]?.[name];
+  const resourceKey = 'skills/' + detail.declaredName;
   const files: Record<string, string> = {};
   let bytes = 0;
   const add = async (file: string, path: string) => {
@@ -3522,15 +3521,15 @@ export async function exportSkill(key: string, name: string, options: ScopeOptio
       signal?.throwIfAborted();
       const info = await handle.stat();
       signal?.throwIfAborted();
-      if (!info.isFile() || info.size + bytes > 32 * 1024 * 1024 || Object.keys(files).length >= 2048) throw new Error('技能文件超出发布限制');
+      if (!info.isFile() || info.size + bytes > COMPANY_CONTENT_MAX_BYTES || Object.keys(files).length >= COMPANY_CONTENT_MAX_FILES) throw new Error('技能文件超出发布限制');
       const original = await handle.readFile({ signal });
       const data = path === 'SKILL.md' && categoryId !== undefined
         ? Buffer.from(withSkillCategory(original.toString('utf8'), policy.state.categories[key]?.find(item => item.id === categoryId)?.name))
         : original;
       signal?.throwIfAborted();
       bytes += data.byteLength;
-      if (bytes > 32 * 1024 * 1024) throw new Error('技能文件超出发布限制');
-      files['skills/' + detail.declaredName + '/' + path] = data.toString('base64');
+      if (bytes > COMPANY_CONTENT_MAX_BYTES) throw new Error('技能文件超出发布限制');
+      files[resourceKey + '/' + path] = data.toString('base64');
     } finally { await handle.close(); }
   };
   const root = detail.kind === 'flat' ? detail.path : dirname(detail.path);
@@ -3546,7 +3545,7 @@ export async function exportSkill(key: string, name: string, options: ScopeOptio
       signal?.throwIfAborted();
       if (['.git', '.DS_Store'].includes(entry.name)) continue;
       const path = prefix + entry.name;
-      if (path.length > 200 || !/^[A-Za-z0-9_./-]+$/.test(path) || path.split('/').some(part => part === '.' || part === '..')) throw new Error('技能包含非法资源路径');
+      if (resourceKey.length + 1 + path.length > COMPANY_CONTENT_MAX_PATH_LENGTH || path.split('/').some(part => !portablePathSegment(part))) throw new Error('技能包含非法资源路径');
       if (entry.isSymbolicLink()) throw new Error('不能提交符号链接');
       if (entry.isDirectory()) await walk(join(directory, entry.name), path + '/');
       else if (entry.isFile()) await add(join(directory, entry.name), path);
@@ -3558,5 +3557,6 @@ export async function exportSkill(key: string, name: string, options: ScopeOptio
   if (info.isSymbolicLink()) throw new Error('不能提交符号链接');
   if (detail.kind === 'flat') await add(root, 'SKILL.md'); else await walk(root, '');
   signal?.throwIfAborted();
-  return { resourceKey: 'skills/' + detail.declaredName, files };
+  companyContentRelease({ version: '1.0.0', sha256: contentDigest(files), files });
+  return { resourceKey, files };
 }
