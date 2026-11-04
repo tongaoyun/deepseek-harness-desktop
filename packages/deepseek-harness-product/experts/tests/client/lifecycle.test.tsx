@@ -10,6 +10,7 @@ import { createSlotRenderer } from '@deepseek-ai/dsh-client-test-runtime'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { InputTriggerService, type InputTriggerSource } from '@deepseek-ai/dsh-client-ui-input-trigger/client'
+import type {} from '@deepseek-ai/dsh-client-ui-workspace/client'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -37,7 +38,7 @@ async function fixture(renderMain: boolean | 'picker' = false, personal = false)
   } as never)
   ctx.provide('conversation', {} as never)
   ctx.provide('layout', {} as never)
-  const startSession = vi.fn()
+  const startSession = vi.fn<Context['uiWorkspace']['startSession']>()
   ctx.reflect.provide('uiWorkspace', { startSession })
   await ctx.plugin(InputTriggerService).await()
   const sources = new Map<string, InputTriggerSource>()
@@ -332,12 +333,14 @@ it('creates experts and teams in a native new conversation even without a select
   ctx.locale.setLocale('zh')
   render(slots.renderSlot('root', {}))
   fireEvent.click(screen.getByRole('button', { name: '创建专家' }))
-  expect(startSession).toHaveBeenLastCalledWith(undefined, { prompt: expect.stringContaining('帮我创建一个'), whenDraftExists: 'append' })
+  expect(startSession).toHaveBeenLastCalledWith(undefined, expect.objectContaining({ whenDraftExists: 'append' }))
+  expect(startSession.mock.lastCall?.[1]?.prompt).toContain('帮我创建一个')
   expect(screen.queryByRole('dialog')).toBeNull()
   fireEvent.click(screen.getByRole('tab', { name: /专家团/ }))
   fireEvent.click(screen.getByRole('button', { name: '通过对话创建专家团' }))
   expect(startSession).toHaveBeenCalledTimes(2)
-  expect(startSession).toHaveBeenLastCalledWith(undefined, { prompt: expect.stringContaining('帮我创建一个专家团'), whenDraftExists: 'append' })
+  expect(startSession).toHaveBeenLastCalledWith(undefined, expect.objectContaining({ whenDraftExists: 'append' }))
+  expect(startSession.mock.lastCall?.[1]?.prompt).toContain('帮我创建一个专家团')
   expect(screen.queryByRole('dialog')).toBeNull()
 })
 

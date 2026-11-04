@@ -16,13 +16,14 @@ import * as NativeExecutor from '@deepseek-ai/dsh-tool-executor-native'
 import ToolRuntime from '@deepseek-ai/dsh-tools'
 import { ToolCallId } from '@deepseek-ai/dsh-llm'
 import UserApproval from '@deepseek-ai/dsh-user-approval'
-import type { ExpertSummary } from './expert-contract.ts'
-import { createTeamLibrary } from './team-library.ts'
-import { ExpertPackageStore } from './expert-packages.ts'
-import { MemorySettings } from './settings-memory.ts'
-import { agencySettingsSchema } from './expert-library.ts'
-import { createExpertLibrary, type AgencySettings } from './expert-library.ts'
-import { registerCreationTools } from './creation-tools.ts'
+import type { ExpertSummary } from '../src/expert-contract.ts'
+import { createTeamLibrary } from '../src/team-library.ts'
+import { ExpertPackageStore } from '../src/expert-packages.ts'
+import { MemorySettings } from '../src/settings-memory.ts'
+import { agencySettingsSchema } from '../src/expert-library.ts'
+import { createExpertLibrary, type AgencySettings } from '../src/expert-library.ts'
+import { registerCreationTools } from '../src/creation-tools.ts'
+import { agentSpecManifest } from '@deepseek-harness/product/company-content'
 import { z } from 'zod'
 
 let ctx: Context | undefined
@@ -105,7 +106,7 @@ it('saves a complete AgentSpec after native approval, rejects without approval, 
   expect(value).toMatchObject({ name: expert.name, prompt: expert.prompt, agents: 'Use {{literal}} literally.' })
   if (!value.resources || !value.manifest) throw new Error('Saved AgentSpec package is incomplete')
   expect(Buffer.from(value.resources['references/中文资料.md'], 'base64').toString()).toBe('Read {{literal}} unchanged.')
-  expect(JSON.parse(value.manifest).worker.suggested_name).toBe(saved.id)
+  expect(agentSpecManifest(value.manifest).worker.suggested_name).toBe(saved.id)
   expect((await library.catalog()).enabled).toContain(saved.id)
   expect(result.content).toMatchSnapshot()
   expect(owner.session.snapshotEvents().filter(event => event.type === 'approval/decided').map(event => event.data.outcome)).toEqual(['unavailable', 'rejected', 'allowed-once'])

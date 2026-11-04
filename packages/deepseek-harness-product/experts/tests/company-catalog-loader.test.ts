@@ -87,8 +87,11 @@ it.each(['root', 'metadata', 'team'] as const)('recovers the same company releas
   await expect.soft(library.catalog()).rejects.toMatchObject({ code: 'CATALOG_READ_FAILED', cause: failure })
   failing = false
   const recovered = catalogSnapshotSchema.parse(await invoke(true))
-  expect(recovered.experts.map(value => value.slug).sort())
-    .toEqual(['member-1', 'member-2', 'team-orders-member-1', 'team-orders-member-2'])
+  expect(recovered.experts.filter(value => !value.teamMember).map(value => value.slug).sort()).toEqual(['member-1', 'member-2'])
+  const members = recovered.experts.filter(value => value.teamMember)
+  expect(members).toHaveLength(2)
+  expect(new Set(members.map(value => value.slug)).size).toBe(2)
+  expect(members.every(value => /^team-member-[a-f0-9]{64}$/u.test(value.slug))).toBe(true)
   expect(refresh).toHaveBeenCalledOnce()
   expect(first instanceof Error ? first.message : 'Unexpected catalog success').toMatchInlineSnapshot('"Could not read the expert catalog. Refresh and try again."')
   failing = true

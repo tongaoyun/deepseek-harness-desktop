@@ -40,6 +40,25 @@ it('preserves literal instructions, manifest fields, Unicode filenames and binar
   await expect(packages.readFiles('order-expert', ref.packageSha256)).rejects.toThrow()
 })
 
+it.each([
+  { name: 'long Unicode text', description: '  ' + '核对中文资料与业务依据'.repeat(18) + '  ' },
+  { name: 'whitespace at truncation', description: 'Read orders '.repeat(30) },
+  { name: 'short padded text', description: '  Short description  ' },
+])('preserves a full AgentSpec description until the imported display summary is explicitly edited: $name', async ({ description }) => {
+  const { packages } = await fixture()
+  const manifest = JSON.stringify({ ...JSON.parse(draft.manifest), description }, null, 2)
+  const files = { ...expertPackageFiles('order-expert', draft), 'experts/order-expert/manifest.json': Buffer.from(manifest).toString('base64') }
+  const imported = importExpertPackage(files)
+  expect(imported.description).toBe(description.trim().slice(0, 160).trim())
+  expect(draftPackageFiles(imported)).toEqual(files)
+  const ref = await packages.save('order-expert', imported)
+  expect(await packages.readFiles('order-expert', ref.packageSha256)).toEqual(files)
+  const edited = { ...imported, description: '更新后的简介' }
+  const updated = expertPackageFiles('order-expert', edited)
+  expect(draftPackageFiles(edited)).toEqual(updated)
+  expect(JSON.parse(Buffer.from(updated['experts/order-expert/manifest.json'], 'base64').toString())).toEqual({ ...JSON.parse(manifest), description: edited.description })
+})
+
 it('imports a complete ZIP and selected directory with identical Chinese names and binary templates', async () => {
   const files = expertPackageFiles('order-expert', draft)
   const entries = Object.fromEntries(Object.entries(files).map(([path, encoded]) => [path.replace('experts/', ''), new Uint8Array(Buffer.from(encoded, 'base64'))]))

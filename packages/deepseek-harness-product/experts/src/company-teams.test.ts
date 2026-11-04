@@ -1,4 +1,4 @@
-import { teamFixture } from '../../product/tests/content-fixtures.ts'
+import { teamFixture, contentIndex, encoded, expertFiles, versionRef } from '../../product/tests/content-fixtures.ts'
 import { installCompanyIndex } from '../../desktop/src/company-content.ts'
 import { mkdtemp, rm, readFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -7,7 +7,7 @@ import { expect, it, onTestFinished, beforeAll } from 'vitest'
 import { readCompanyTeams } from './company-teams.ts'
 import { createTeamLibrary } from './team-library.ts'
 import { createExpertLibrary, type AgencySettings } from './expert-library.ts'
-import { resolveEnabledTeam } from './team-contract.ts'
+import { resolveEnabledTeam, teamSnapshotSchema } from './team-contract.ts'
 import { executeTeam } from './team-runtime.ts'
 import { publishedTeamDocument } from '@deepseek-harness/product/company-team'
 
@@ -32,6 +32,50 @@ it('installs, restores and executes published teams with pinned personas after a
     task: '分析订单', revision: 0, signal, readPersona: async expert => first.experts.get(expert.slug)!.prompt,
     run: async (member) => { expect(member.persona).toContain('固定成员说明'); return '基于证据的结论' } })
   expect(JSON.stringify(result)).toContain('基于证据的结论')
+})
+it.each([
+  { name: 'hyphenated identifiers', pairs: [['a-b', 'c'], ['a', 'b-c']] },
+  { name: 'maximum-length identifiers', pairs: [['a'.repeat(80), 'b'.repeat(80)], ['c'.repeat(80), 'd'.repeat(80)]] },
+])('keeps team member identities distinct and executable for $name', async ({ pairs }) => {
+  const root = await mkdtemp(join(tmpdir(), 'company-team-identities-'))
+  onTestFinished(() => rm(root, { recursive: true, force: true }))
+  const payloads = new Map<string, Record<string, string>>()
+  const memberIds = [...pairs.map(([, member]) => member!), 'reviewer']
+  const experts = memberIds.map(id => {
+    const files = expertFiles(id, `Instructions for ${id}`), ref = versionRef(`experts/${id}`, files)
+    payloads.set(ref.sha256, files)
+    return ref
+  })
+  const teams = pairs.map(([id, member], index) => {
+    const team = publishedTeamDocument(document)
+    team.id = id!
+    const members = [experts[index]!, experts[2]!]
+    team.team.members = team.team.members.map((value, i) => ({ ...value,
+      expertSlug: i === 0 ? member! : 'reviewer', expertVersion: members[i]!.version, expertSha256: members[i]!.sha256 }))
+    const files = { [`teams/${id}.json`]: encoded(JSON.stringify(team)) }
+    const ref = versionRef(`teams/${id}`, files, Object.fromEntries(members.map(ref => [ref.resourceKey, ref.sha256])))
+    payloads.set(ref.sha256, files)
+    return ref
+  })
+  const signal = new AbortController().signal
+  const installed = await installCompanyIndex(root, 'employee', contentIndex('1.0.0', [...experts, ...teams], experts),
+    async ref => ({ ...ref, files: payloads.get(ref.sha256) }), signal)
+  const result = await readCompanyTeams(installed.expertsRoot)
+  expect(result.experts.size).toBe(4)
+  expect(teamSnapshotSchema.safeParse({ teams: result.teams, enabledTeams: [], enabledExperts: [], revision: 0 }).success).toBe(true)
+  for (const [index, [id, member]] of pairs.entries()) {
+    const team = result.teams.find(value => value.id === `team-shared-${id}`)!
+    const expert = result.experts.get(team.members[0]!.expertSlug)!
+    expect(expert.packageSha256).toBe(experts[index]!.sha256)
+    expect(expert.prompt).toContain(`Instructions for ${member}`)
+    const execution = await executeTeam({ team, experts: [...result.experts.values()], enabled: team.members.map(value => value.expertSlug),
+      task: 'Review orders', revision: 0, signal, readPersona: async expert => result.experts.get(expert.slug)!.prompt,
+      run: async value => {
+        expect(value.persona).toContain(value.slug === expert.slug ? `Instructions for ${member}` : 'Instructions for reviewer')
+        return 'Reviewed'
+      } })
+    expect(execution.coverage.status).toBe('complete')
+  }
 })
 it('exposes shared teams as read-only and enables all bundled members atomically', async () => {
   const root = await fixture()

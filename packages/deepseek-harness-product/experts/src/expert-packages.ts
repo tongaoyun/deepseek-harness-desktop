@@ -4,6 +4,7 @@ import { join, dirname } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { agentSpecManifest, agentSpecPrompt, companyContentRelease, contentDigest } from '@deepseek-harness/product/company-content'
 import { customExpertInputSchema, type CustomExpert, type CustomExpertInput } from './expert-contract.ts'
+import { expertPackageManifest } from './package-manifest.ts'
 
 /** Encode an editable AgentSpec package without dropping resource files.
  * @param slug - Immutable package identifier.
@@ -12,9 +13,7 @@ import { customExpertInputSchema, type CustomExpert, type CustomExpertInput } fr
  */
 export function expertPackageFiles(slug: string, input: CustomExpertInput): Record<string, string> {
   const value = customExpertInputSchema.parse(input)
-  const document = value.manifest ? JSON.parse(value.manifest) : { worker: { suggested_name: slug } }
-  const manifest = value.manifest && document.description === value.description ? value.manifest
-    : JSON.stringify({ ...document, description: value.description }, null, 2)
+  const manifest = expertPackageManifest(slug, value.description, value.manifest)
   if (agentSpecManifest(manifest).worker.suggested_name !== slug) throw new Error('AgentSpec 标识与专家不一致')
   const files: Record<string, string> = { [`experts/${slug}/manifest.json`]: Buffer.from(manifest).toString('base64'),
     [`experts/${slug}/config/SOUL.md`]: Buffer.from(value.prompt).toString('base64') }
