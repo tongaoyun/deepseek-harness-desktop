@@ -24,7 +24,7 @@ declare module '@deepseek-ai/cordis' {
 type Success<T> = T extends { error: string } ? never : T
 interface OperationOptions {
   readonly mutation?: boolean
-  readonly notify?: boolean
+  readonly notify?: boolean | 'settled'
 }
 
 /** Native Remote owner for personal skills, registered projects, imports and repositories. */
@@ -104,12 +104,13 @@ export class SkillsManager extends TypertRemoteService {
         throw new RemoteError('skills/operation', 'Skill management requires the Host owner', { code: 'error.proto.forbidden', error: 'forbidden' })
       }
       try {
-        const value = await task(signal)
+        let value: T
+        try { value = await task(signal) } finally { if (notify === 'settled') this.afterWrite() }
         if (value && typeof value === 'object' && 'ok' in value && value.ok === false && 'error' in value && typeof value.error === 'string') {
           const failure: OperationError = { ok: false, error: value.error, ...'code' in value && typeof value.code === 'string' ? { code: value.code } : {}, ...'params' in value && value.params && typeof value.params === 'object' && !Array.isArray(value.params) && isJsonValue(value.params) ? { params: value.params as Record<string, JsonValue> } : {} }
           throw new RemoteError('skills/operation', failure.error, failure)
         }
-        if (notify) this.afterWrite()
+        if (notify === true) this.afterWrite()
         signal.throwIfAborted()
         // The discriminant above removed the core operation's failure branch.
         return value as Success<T>
@@ -326,11 +327,12 @@ export class SkillsManager extends TypertRemoteService {
     return importUploadedSkill({ name: request.name, entries: request.entries, zip: request.zip }, this.log, { signal: active, conflict: request.conflict ?? 'skip', ...request.workspace !== undefined || request.root === 'agents' ? { root: await this.root(request, active) } : {} }) }, signal, { mutation: true, notify: true }) }
 
   /** Read repositories and installed copies.
+   * Pending recovery serializes with local writes and refreshes native discovery even if the read fails after recovery commits.
    * @param signal Native invocation lifetime.
    * @returns The committed result or a typed operation failure.
    */
   @Remote
-  listRepositories(signal: AbortSignal): Promise<SkillManagerResults['listRepositories']> { return this.perform(() => this.repositories.list(), signal) }
+  listRepositories(signal: AbortSignal): Promise<SkillManagerResults['listRepositories']> { return this.perform(() => this.repositories.list(), signal, { mutation: true, notify: 'settled' }) }
 
   /** Register a supported repository source.
    * @param request Explicit operation input.
@@ -381,12 +383,13 @@ export class SkillsManager extends TypertRemoteService {
   uninstallRepository(request: SkillRequest, signal: AbortSignal): Promise<SkillManagerResults['uninstallRepository']> { return this.perform(() => this.repositories.uninstall(request), signal, { mutation: true, notify: true }) }
 
   /** Prepare an update preview and conflict token.
+   * Pending recovery serializes with local writes and refreshes native discovery even if the preview fails after recovery commits.
    * @param request Explicit operation input.
    * @param signal Native invocation lifetime.
    * @returns The committed result or a typed operation failure.
    */
   @Remote
-  previewUpdate(request: SkillRequest, signal: AbortSignal): Promise<SkillManagerResults['previewUpdate']> { return this.perform(() => this.repositories.preview(request), signal) }
+  previewUpdate(request: SkillRequest, signal: AbortSignal): Promise<SkillManagerResults['previewUpdate']> { return this.perform(() => this.repositories.preview(request), signal, { mutation: true, notify: 'settled' }) }
 
   /** Apply a confirmed repository update.
    * @param request Explicit operation input.

@@ -16,16 +16,20 @@ import Typert from '@deepseek-ai/dsh-typert-registry'
 import Gateway from '@deepseek-ai/dsh-api-gateway'
 import Access from '@deepseek-ai/dsh-api-remote-access'
 import { Peer } from '@deepseek-ai/dsh-client-connection'
-import { promises as fs } from 'node:fs'
+import * as AtomicWrite from '@deepseek-ai/dsh-atomic-write'
+import { promises as fs, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { lstat, mkdir, mkdtemp, readFile, readdir, realpath, rm, symlink, writeFile } from 'node:fs/promises'
 import { basename, join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { pathToFileURL } from 'node:url'
 import { createServer } from 'node:http'
+import { setImmediate as checkpoint } from 'node:timers/promises'
 import { expect, it, onTestFinished, vi } from 'vitest'
 import { z } from 'zod'
 import { zipSync, strToU8 } from 'fflate'
 import * as Managed from './index.ts'
+import * as Core from './core.ts'
+import { createRepositoryManager } from './repositories.ts'
 
 const user = vi.hoisted(() => ({ root: '' }))
 vi.mock('node:os', async original => ({ ...await original<typeof import('node:os')>(), homedir: () => user.root }))
@@ -599,6 +603,123 @@ it('retains repository install, confirmed update, rollback and uninstall through
   await invoke('removeRepository', { id: repo.id })
   expect(await invoke('listRepositories', {})).toMatchObject({ repositories: [] })
 }, 30000)
+
+async function readRecoveryState(path: string) {
+  const value: unknown = JSON.parse(await readFile(path, 'utf8'))
+  return z.object({ catalogInstalls: z.array(z.object({ name: z.string(), complete: z.boolean() }).loose()) }).loose().parse(value)
+}
+
+async function pendingRecovery(method: 'listRepositories' | 'previewUpdate', options: { uninstall?: boolean } = {}) {
+  vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(new Response(zipSync({ 'repo-main/skills/audit-orders/SKILL.md': strToU8('---\nname: audit-orders\ndescription: Audit orders\n---\nOriginal\n') })))))
+  onTestFinished(() => { vi.unstubAllGlobals() })
+  const { ctx, root, invoke } = await boot()
+  const signal = new AbortController().signal
+  let request = { id: '', path: 'skills/audit-orders', root: 'dsh' as const }
+  if (method === 'previewUpdate') {
+    const repo = z.object({ id: z.string() }).parse(await invoke('addRepository', { request: { url: 'instudio/skills' } }))
+    request = { ...request, id: repo.id }
+    await invoke('refreshRepository', { request: { id: repo.id } })
+    await invoke('installRepository', { request })
+    if (options.uninstall) await invoke('uninstallRepository', { request })
+  }
+  expect(await ctx.skills.get('recovered-orders')).toBeUndefined()
+  const document = '---\nname: recovered-orders\ndescription: Recovered order review\n---\nRecovered instructions.\n'
+  await createRepositoryManager().installCatalog('clawhub:instudio/recovered-orders', {
+    name: 'recovered-orders', entries: [{ path: 'SKILL.md', data: Buffer.from(document).toString('base64') }],
+  }, { root: 'dsh' })
+  const repositoryPath = join(root, '.dsh/skills-manager/repositories.json')
+  const stored = await readRecoveryState(repositoryPath)
+  const intent = stored.catalogInstalls.find(item => item.name === 'recovered-orders')
+  if (!intent) throw new Error('Catalog installation intent is missing')
+  intent.complete = false
+  await writeFile(repositoryPath, JSON.stringify(stored))
+  return { ctx, root, signal, document, repositoryPath, recover: () => method === 'listRepositories'
+    ? ctx.skillsManager.listRepositories(signal) : ctx.skillsManager.previewUpdate(request, signal) }
+}
+
+it.each((['listRepositories', 'previewUpdate'] as const).flatMap(method => ['disable', 'category'].map(change => ({ method, change }))))(
+  'preserves a concurrent user $change when $method recovers an installation', async ({ method, change }) => {
+    const { ctx, root, signal, document, repositoryPath, recover } = await pendingRecovery(method)
+    const started = Promise.withResolvers<undefined>(), release = Promise.withResolvers<undefined>()
+    const policyPath = Core.managerStatePath(), policyDirectory = Core.managerHomePath()
+    const read = fs.readFile, makeDirectory = fs.mkdir, write = AtomicWrite.writeFileAtomic
+    let reads = 0
+    // Synchronous policy I/O lets the checkpoint drain ready user-write microtasks; recovery keeps its promise barrier.
+    const policyRead = vi.spyOn(fs, 'readFile').mockImplementation(async (...args) => {
+      if (args[0] !== policyPath) return read(...args)
+      const value = readFileSync(policyPath, 'utf8')
+      if (++reads === 2) {
+        started.resolve(undefined)
+        await release.promise
+      }
+      return value
+    })
+    const policyDirectoryWrite = vi.spyOn(fs, 'mkdir').mockImplementation(async (...args) => {
+      return args[0] === policyDirectory ? mkdirSync(...args) : makeDirectory(...args)
+    })
+    const policyWrite = vi.spyOn(AtomicWrite, 'writeFileAtomic').mockImplementation(async (...args) => {
+      if (args[0] === policyPath) writeFileSync(args[0], args[1], { mode: args[2].mode })
+      else await write(...args)
+    })
+    const pending: Promise<unknown>[] = []
+    try {
+      const reading = recover()
+      pending.push(reading)
+      await Promise.race([started.promise, reading.then(() => { throw new Error('Pending installation was not recovered') })])
+      const writing = change === 'disable'
+        ? ctx.skillsManager.setSkillEnabled({ root: 'dsh', name: 'recovered-orders' }, false, signal)
+        : ctx.skillsManager.createCategory({ root: 'dsh', name: 'Retained category' }, signal)
+      pending.push(writing)
+      await checkpoint()
+      release.resolve(undefined)
+      await Promise.all(pending)
+      const policy = (await Core.readManagerState()).state
+      if (change === 'disable') {
+        expect(policy.disabledSkills.dsh).toContain('recovered-orders')
+        expect(policy.enabledSkills.dsh).not.toContain('recovered-orders')
+      } else {
+        expect(policy.categories.dsh).toMatchObject([{ name: 'Retained category' }])
+        expect(policy.enabledSkills.dsh).toContain('recovered-orders')
+      }
+      const confirmed = await readRecoveryState(repositoryPath)
+      expect(confirmed.catalogInstalls.find(item => item.name === 'recovered-orders')?.complete).toBe(true)
+      expect(await ctx.skills.get('recovered-orders')).toMatchObject({
+        invocation: { modelInvocable: change !== 'disable', userInvocable: change !== 'disable' },
+      })
+      expect(await readFile(join(root, '.dsh/skills/recovered-orders/SKILL.md'), 'utf8')).toBe(document)
+    } finally {
+      release.resolve(undefined)
+      await Promise.allSettled(pending)
+      policyRead.mockRestore()
+      policyDirectoryWrite.mockRestore()
+      policyWrite.mockRestore()
+    }
+  })
+
+it.each(['listRepositories', 'previewUpdate'] as const)('refreshes native discovery after %s recovers an installation without a user write', async (method) => {
+  const { ctx, root, document, repositoryPath, recover } = await pendingRecovery(method)
+  expect(await ctx.skills.get('recovered-orders')).toBeUndefined()
+  await recover()
+  const stored = await readRecoveryState(repositoryPath)
+  expect(stored.catalogInstalls.find(item => item.name === 'recovered-orders')?.complete).toBe(true)
+  expect(await ctx.skills.get('recovered-orders')).toMatchObject({
+    content: 'Recovered instructions.', invocation: { modelInvocable: true, userInvocable: true },
+  })
+  expect(await readFile(join(root, '.dsh/skills/recovered-orders/SKILL.md'), 'utf8')).toBe(document)
+})
+
+it('refreshes native discovery when installation recovery commits before an update preview is rejected', async () => {
+  const { ctx, root, document, repositoryPath, recover } = await pendingRecovery('previewUpdate', { uninstall: true })
+  expect(await ctx.skills.get('recovered-orders')).toBeUndefined()
+  await expect(recover()).rejects.toMatchObject({ code: 'skills/operation', details: { code: 'error.repo.invalid' } })
+  const stored = await readRecoveryState(repositoryPath)
+  expect(stored.catalogInstalls.find(item => item.name === 'recovered-orders')?.complete).toBe(true)
+  expect((await Core.readManagerState()).state.enabledSkills.dsh).toContain('recovered-orders')
+  expect(await ctx.skills.get('recovered-orders')).toMatchObject({
+    content: 'Recovered instructions.', invocation: { modelInvocable: true, userInvocable: true },
+  })
+  expect(await readFile(join(root, '.dsh/skills/recovered-orders/SKILL.md'), 'utf8')).toBe(document)
+})
 
 it.each(['request', 'disposal'] as const)('cancels repository downloads on %s without persisting a scan failure', async (kind) => {
   let entered!: (signal: AbortSignal) => void
