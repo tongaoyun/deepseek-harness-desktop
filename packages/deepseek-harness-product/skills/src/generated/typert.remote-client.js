@@ -1258,7 +1258,7 @@ export const TYPERT_REMOTE = createTypertRemoteInfo({
         description: 'The committed result or a typed operation failure.',
         jsonSchema: {"type":"object","properties":{"id":{"type":"string"},"skills":{"type":"array","items":{"type":"object","properties":{"path":{"type":"string"},"name":{"type":"string"},"description":{"type":"string"},"body":{"type":"string"},"valid":{"type":"boolean"},"documentHash":{"type":"string"},"files":{"type":"array","items":{"type":"object","properties":{"path":{"type":"string"},"hash":{"type":"string"}},"required":["path","hash"],"additionalProperties":true}}},"required":["path","name","description","body","valid","documentHash"],"additionalProperties":true}},"commit":{"oneOf":[{"type":"null","const":null},{"type":"string"}]},"refreshedAt":{"oneOf":[{"type":"null","const":null},{"type":"string"}]},"error":{"oneOf":[{"type":"null","const":null},{"type":"object","properties":{"code":{"type":"string"},"params":{"type":"object","properties":{},"required":[],"additionalProperties":true},"error":{"type":"string"},"level":{"type":"string"}},"required":[],"additionalProperties":true}]},"owner":{"type":"string"},"name":{"type":"string"},"ref":{"type":"string"},"subdirectory":{"type":"string"}},"required":["id","skills","commit","refreshedAt","error","owner","name","ref","subdirectory"],"additionalProperties":true},
       },
-      sourceLocation: {"file":"packages/deepseek-harness-product/skills/src/manager.ts","line":341,"column":3},
+      sourceLocation: {"file":"packages/deepseek-harness-product/skills/src/manager.ts","line":343,"column":3},
     },
     'skillsManager/assignCategory': {
       service: 'skillsManager',
@@ -1291,7 +1291,7 @@ export const TYPERT_REMOTE = createTypertRemoteInfo({
         description: 'The committed result or a typed operation failure.',
         jsonSchema: {"type":"object","properties":{"root":{"type":"string"},"name":{"type":"string"},"categoryId":{"oneOf":[{"type":"null","const":null},{"type":"string"}]}},"required":["root","name","categoryId"],"additionalProperties":true},
       },
-      sourceLocation: {"file":"packages/deepseek-harness-product/skills/src/manager.ts","line":266,"column":3},
+      sourceLocation: {"file":"packages/deepseek-harness-product/skills/src/manager.ts","line":267,"column":3},
     },
     'skillsManager/createCategory': {
       service: 'skillsManager',
@@ -1324,7 +1324,7 @@ export const TYPERT_REMOTE = createTypertRemoteInfo({
         description: 'The committed result or a typed operation failure.',
         jsonSchema: {"type":"object","properties":{"root":{"type":"string"},"category":{"type":"object","properties":{"id":{"type":"string"},"name":{"type":"string"}},"required":["id","name"],"additionalProperties":true}},"required":["root","category"],"additionalProperties":true},
       },
-      sourceLocation: {"file":"packages/deepseek-harness-product/skills/src/manager.ts","line":242,"column":3},
+      sourceLocation: {"file":"packages/deepseek-harness-product/skills/src/manager.ts","line":243,"column":3},
     },
     'skillsManager/createSkill': {
       service: 'skillsManager',
@@ -1357,7 +1357,7 @@ export const TYPERT_REMOTE = createTypertRemoteInfo({
         description: 'The committed result or a typed operation failure.',
         jsonSchemaError: 'typert tool schema: unsupported undefined value',
       },
-      sourceLocation: {"file":"packages/deepseek-harness-product/skills/src/manager.ts","line":316,"column":3},
+      sourceLocation: {"file":"packages/deepseek-harness-product/skills/src/manager.ts","line":317,"column":3},
     },
     'skillsManager/deleteCategory': {
       service: 'skillsManager',
@@ -1390,7 +1390,7 @@ export const TYPERT_REMOTE = createTypertRemoteInfo({
         description: 'The committed result or a typed operation failure.',
         jsonSchema: {"type":"object","properties":{"root":{"type":"string"},"id":{"type":"string"}},"required":["root","id"],"additionalProperties":true},
       },
-      sourceLocation: {"file":"packages/deepseek-harness-product/skills/src/manager.ts","line":258,"column":3},
+      sourceLocation: {"file":"packages/deepseek-harness-product/skills/src/manager.ts","line":259,"column":3},
     },
     'skillsManager/deleteTrash': {
       service: 'skillsManager',
@@ -1423,7 +1423,7 @@ export const TYPERT_REMOTE = createTypertRemoteInfo({
         description: 'The committed result or a typed operation failure.',
         jsonSchemaError: 'typert tool schema: unsupported undefined value',
       },
-      sourceLocation: {"file":"packages/deepseek-harness-product/skills/src/manager.ts","line":308,"column":3},
+      sourceLocation: {"file":"packages/deepseek-harness-product/skills/src/manager.ts","line":309,"column":3},
     },
     'skillsManager/exportSkill': {
       service: 'skillsManager',
@@ -1456,7 +1456,7 @@ export const TYPERT_REMOTE = createTypertRemoteInfo({
         description: 'The committed result or a typed operation failure.',
         jsonSchemaError: 'typert tool schema: selected dictionaries require string keys and unconstrained JSON values',
       },
-      sourceLocation: {"file":"packages/deepseek-harness-product/skills/src/manager.ts","line":216,"column":3},
+      sourceLocation: {"file":"packages/deepseek-harness-product/skills/src/manager.ts","line":217,"column":3},
     },
     'skillsManager/installCatalog': {
       service: 'skillsManager',
@@ -1506,7 +1506,7 @@ export const TYPERT_REMOTE = createTypertRemoteInfo({
         description: 'Installed skill identity and source.',
         jsonSchema: {"type":"object","properties":{"name":{"type":"string"},"root":{"type":"string"}},"required":["name","root"],"additionalProperties":true},
       },
-      sourceLocation: {"file":"packages/deepseek-harness-product/skills/src/manager.ts","line":447,"column":3},
+      sourceLocation: {"file":"packages/deepseek-harness-product/skills/src/manager.ts","line":450,"column":3},
     },
     'skillsManager/installRepository': {
       service: 'skillsManager',
@@ -1539,7 +1539,7 @@ export const TYPERT_REMOTE = createTypertRemoteInfo({
         description: 'The committed result or a typed operation failure.',
         jsonSchema: {"type":"object","properties":{"name":{"type":"string"},"commit":{"oneOf":[{"type":"null","const":null},{"type":"string"}]},"root":{"type":"string"}},"required":["name","commit","root"],"additionalProperties":true},
       },
-      sourceLocation: {"file":"packages/deepseek-harness-product/skills/src/manager.ts","line":373,"column":3},
+      sourceLocation: {"file":"packages/deepseek-harness-product/skills/src/manager.ts","line":375,"column":3},
     },
     'skillsManager/listClawHub': {
       service: 'skillsManager',
@@ -1572,11 +1572,11 @@ export const TYPERT_REMOTE = createTypertRemoteInfo({
         description: 'The committed result or a typed operation failure.',
         jsonSchema: {"type":"object","properties":{"items":{"type":"array","items":{"type":"object","properties":{"ownerHandle":{"type":"string"},"slug":{"type":"string"},"displayName":{"type":"string"},"summary":{"type":"string"},"stats":{"type":"object","properties":{"downloads":{"type":"number"},"installs":{"type":"number"},"stars":{"type":"number"}},"required":[],"additionalProperties":true}},"required":["ownerHandle","slug","displayName","summary"],"additionalProperties":true}},"nextCursor":{"oneOf":[{"type":"null","const":null},{"type":"string"}]}},"required":["items","nextCursor"],"additionalProperties":true},
       },
-      sourceLocation: {"file":"packages/deepseek-harness-product/skills/src/manager.ts","line":413,"column":3},
+      sourceLocation: {"file":"packages/deepseek-harness-product/skills/src/manager.ts","line":416,"column":3},
     },
     'skillsManager/listRepositories': {
       service: 'skillsManager',
-      description: 'Read repositories and installed copies.',
+      description: 'Read repositories and installed copies. Pending recovery serializes with local writes and refreshes native discovery even if the read fails after recovery commits.',
       invocation: { kind: 'direct' },
       parameters: [
       ],
@@ -1588,7 +1588,7 @@ export const TYPERT_REMOTE = createTypertRemoteInfo({
         description: 'The committed result or a typed operation failure.',
         jsonSchema: {"type":"object","properties":{"installRoots":{"type":"array","items":{"type":"object","properties":{"key":{"type":"string","enum":["dsh","agents"]},"path":{"type":"string"},"label":{"type":"string"},"localeKey":{"type":"string"},"available":{"type":"boolean"},"error":{"type":"object","properties":{"code":{"type":"string"},"params":{"type":"object","properties":{},"required":[],"additionalProperties":true},"error":{"type":"string"},"level":{"type":"string"}},"required":[],"additionalProperties":true}},"required":["key","path","label","available"],"additionalProperties":true}},"catalogInstalls":{"type":"array","items":{"type":"string"}},"catalogCopies":{"type":"array","items":{"type":"object","properties":{"id":{"type":"string"},"name":{"type":"string"},"installedRoot":{"type":"string","enum":["dsh","agents"]},"installedWorkspace":{"type":"string"},"canUninstall":{"type":"boolean"}},"required":["id","name","installedRoot","canUninstall"],"additionalProperties":true}},"catalogWarnings":{"type":"array","items":{"type":"object","properties":{"id":{"type":"string"},"code":{"type":"string"},"error":{"type":"string"}},"required":["id","code","error"],"additionalProperties":true}},"repositories":{"type":"array","items":{"type":"object","properties":{"skills":{"type":"array","items":{"type":"object","properties":{"installations":{"type":"array","items":{"type":"object","properties":{"tracked":{"type":"boolean","const":true},"updateAvailable":{"type":"boolean"},"canRollback":{"type":"boolean"},"canUninstall":{"type":"boolean"},"status":{"type":"string"},"installedWorkspace":{"type":"string"},"installedRoot":{"type":"string","enum":["dsh","agents"]}},"required":["tracked","updateAvailable","canRollback","canUninstall","status","installedRoot"],"additionalProperties":true}},"status":{"type":"string"},"path":{"type":"string"},"name":{"type":"string"},"description":{"type":"string"},"valid":{"type":"boolean"},"documentHash":{"type":"string"},"files":{"type":"array","items":{"type":"object","properties":{"path":{"type":"string"},"hash":{"type":"string"}},"required":["path","hash"],"additionalProperties":true}}},"required":["installations","status","path","name","description","valid","documentHash"],"additionalProperties":true}},"id":{"type":"string"},"commit":{"oneOf":[{"type":"null","const":null},{"type":"string"}]},"refreshedAt":{"oneOf":[{"type":"null","const":null},{"type":"string"}]},"error":{"oneOf":[{"type":"null","const":null},{"type":"object","properties":{"code":{"type":"string"},"params":{"type":"object","properties":{},"required":[],"additionalProperties":true},"error":{"type":"string"},"level":{"type":"string"}},"required":[],"additionalProperties":true}]},"owner":{"type":"string"},"name":{"type":"string"},"ref":{"type":"string"},"subdirectory":{"type":"string"}},"required":["skills","id","commit","refreshedAt","error","owner","name","ref","subdirectory"],"additionalProperties":true}}},"required":["installRoots","catalogInstalls","catalogCopies","catalogWarnings","repositories"],"additionalProperties":true},
       },
-      sourceLocation: {"file":"packages/deepseek-harness-product/skills/src/manager.ts","line":333,"column":3},
+      sourceLocation: {"file":"packages/deepseek-harness-product/skills/src/manager.ts","line":335,"column":3},
     },
     'skillsManager/listWorkspaces': {
       service: 'skillsManager',
@@ -1604,7 +1604,7 @@ export const TYPERT_REMOTE = createTypertRemoteInfo({
         description: 'Available workspace destinations.',
         jsonSchema: {"type":"object","properties":{"items":{"type":"array","items":{"type":"object","properties":{"name":{"type":"string"},"path":{"type":"string"},"projectRoot":{"type":"string"},"registeredPaths":{"type":"array","items":{"type":"string"}},"available":{"type":"boolean"},"skillCount":{"type":"number"}},"required":["name","path","registeredPaths","available","skillCount"],"additionalProperties":true}}},"required":["items"],"additionalProperties":true},
       },
-      sourceLocation: {"file":"packages/deepseek-harness-product/skills/src/manager.ts","line":187,"column":3},
+      sourceLocation: {"file":"packages/deepseek-harness-product/skills/src/manager.ts","line":188,"column":3},
     },
     'skillsManager/moveInCategory': {
       service: 'skillsManager',
@@ -1637,11 +1637,11 @@ export const TYPERT_REMOTE = createTypertRemoteInfo({
         description: 'The committed result or a typed operation failure.',
         jsonSchema: {"type":"object","properties":{"root":{"type":"string"},"name":{"type":"string"},"categoryId":{"oneOf":[{"type":"null","const":null},{"type":"string"}]},"order":{"type":"array","items":{"type":"string"}}},"required":["root","name","categoryId","order"],"additionalProperties":true},
       },
-      sourceLocation: {"file":"packages/deepseek-harness-product/skills/src/manager.ts","line":274,"column":3},
+      sourceLocation: {"file":"packages/deepseek-harness-product/skills/src/manager.ts","line":275,"column":3},
     },
     'skillsManager/previewUpdate': {
       service: 'skillsManager',
-      description: 'Prepare an update preview and conflict token.',
+      description: 'Prepare an update preview and conflict token. Pending recovery serializes with local writes and refreshes native discovery even if the preview fails after recovery commits.',
       invocation: { kind: 'direct' },
       parameters: [
         {
@@ -1670,7 +1670,7 @@ export const TYPERT_REMOTE = createTypertRemoteInfo({
         description: 'The committed result or a typed operation failure.',
         jsonSchema: {"type":"object","properties":{"token":{"type":"string"},"commit":{"oneOf":[{"type":"null","const":null},{"type":"string"}]},"localModified":{"type":"boolean"},"changes":{"type":"array","items":{"type":"object","properties":{"path":{"type":"string"},"kind":{"type":"string"}},"required":["path","kind"],"additionalProperties":true}},"rollback":{"type":"boolean"}},"required":["token","commit","localModified","changes","rollback"],"additionalProperties":true},
       },
-      sourceLocation: {"file":"packages/deepseek-harness-product/skills/src/manager.ts","line":389,"column":3},
+      sourceLocation: {"file":"packages/deepseek-harness-product/skills/src/manager.ts","line":392,"column":3},
     },
     'skillsManager/readCatalog': {
       service: 'skillsManager',
@@ -1703,7 +1703,7 @@ export const TYPERT_REMOTE = createTypertRemoteInfo({
         description: 'The committed result or a typed operation failure.',
         jsonSchema: {"type":"object","properties":{"name":{"type":"string"},"description":{"type":"string"},"body":{"type":"string"},"origin":{"type":"string"}},"required":["name","description","body","origin"],"additionalProperties":true},
       },
-      sourceLocation: {"file":"packages/deepseek-harness-product/skills/src/manager.ts","line":438,"column":3},
+      sourceLocation: {"file":"packages/deepseek-harness-product/skills/src/manager.ts","line":441,"column":3},
     },
     'skillsManager/readDetail': {
       service: 'skillsManager',
@@ -1736,7 +1736,7 @@ export const TYPERT_REMOTE = createTypertRemoteInfo({
         description: 'The committed result or a typed operation failure.',
         jsonSchemaError: 'typert tool schema: selected dictionaries require string keys and unconstrained JSON values',
       },
-      sourceLocation: {"file":"packages/deepseek-harness-product/skills/src/manager.ts","line":208,"column":3},
+      sourceLocation: {"file":"packages/deepseek-harness-product/skills/src/manager.ts","line":209,"column":3},
     },
     'skillsManager/readRepository': {
       service: 'skillsManager',
@@ -1769,7 +1769,7 @@ export const TYPERT_REMOTE = createTypertRemoteInfo({
         description: 'The committed result or a typed operation failure.',
         jsonSchema: {"type":"object","properties":{"commit":{"oneOf":[{"type":"null","const":null},{"type":"string"}]},"path":{"type":"string"},"name":{"type":"string"},"description":{"type":"string"},"body":{"type":"string"},"valid":{"type":"boolean"},"documentHash":{"type":"string"},"files":{"type":"array","items":{"type":"object","properties":{"path":{"type":"string"},"hash":{"type":"string"}},"required":["path","hash"],"additionalProperties":true}}},"required":["commit","path","name","description","body","valid","documentHash"],"additionalProperties":true},
       },
-      sourceLocation: {"file":"packages/deepseek-harness-product/skills/src/manager.ts","line":365,"column":3},
+      sourceLocation: {"file":"packages/deepseek-harness-product/skills/src/manager.ts","line":367,"column":3},
     },
     'skillsManager/readState': {
       service: 'skillsManager',
@@ -1819,7 +1819,7 @@ export const TYPERT_REMOTE = createTypertRemoteInfo({
         description: 'Current management snapshot.',
         jsonSchemaError: 'typert tool schema: selected dictionaries require string keys and unconstrained JSON values',
       },
-      sourceLocation: {"file":"packages/deepseek-harness-product/skills/src/manager.ts","line":175,"column":3},
+      sourceLocation: {"file":"packages/deepseek-harness-product/skills/src/manager.ts","line":176,"column":3},
     },
     'skillsManager/readWorkspace': {
       service: 'skillsManager',
@@ -1852,7 +1852,7 @@ export const TYPERT_REMOTE = createTypertRemoteInfo({
         description: 'Project skill sources and diagnostics.',
         jsonSchemaError: 'typert tool schema: selected dictionaries require string keys and unconstrained JSON values',
       },
-      sourceLocation: {"file":"packages/deepseek-harness-product/skills/src/manager.ts","line":195,"column":3},
+      sourceLocation: {"file":"packages/deepseek-harness-product/skills/src/manager.ts","line":196,"column":3},
     },
     'skillsManager/refreshRepository': {
       service: 'skillsManager',
@@ -1885,7 +1885,7 @@ export const TYPERT_REMOTE = createTypertRemoteInfo({
         description: 'The committed result or a typed operation failure.',
         jsonSchema: {"type":"object","properties":{"id":{"type":"string"},"skills":{"type":"array","items":{"type":"object","properties":{"path":{"type":"string"},"name":{"type":"string"},"description":{"type":"string"},"body":{"type":"string"},"valid":{"type":"boolean"},"documentHash":{"type":"string"},"files":{"type":"array","items":{"type":"object","properties":{"path":{"type":"string"},"hash":{"type":"string"}},"required":["path","hash"],"additionalProperties":true}}},"required":["path","name","description","body","valid","documentHash"],"additionalProperties":true}},"commit":{"oneOf":[{"type":"null","const":null},{"type":"string"}]},"refreshedAt":{"oneOf":[{"type":"null","const":null},{"type":"string"}]},"error":{"oneOf":[{"type":"null","const":null},{"type":"object","properties":{"code":{"type":"string"},"params":{"type":"object","properties":{},"required":[],"additionalProperties":true},"error":{"type":"string"},"level":{"type":"string"}},"required":[],"additionalProperties":true}]},"owner":{"type":"string"},"name":{"type":"string"},"ref":{"type":"string"},"subdirectory":{"type":"string"}},"required":["id","skills","commit","refreshedAt","error","owner","name","ref","subdirectory"],"additionalProperties":true},
       },
-      sourceLocation: {"file":"packages/deepseek-harness-product/skills/src/manager.ts","line":357,"column":3},
+      sourceLocation: {"file":"packages/deepseek-harness-product/skills/src/manager.ts","line":359,"column":3},
     },
     'skillsManager/removeRepository': {
       service: 'skillsManager',
@@ -1918,7 +1918,7 @@ export const TYPERT_REMOTE = createTypertRemoteInfo({
         description: 'The committed result or a typed operation failure.',
         jsonSchema: {"type":"object","properties":{"id":{"type":"string"}},"required":["id"],"additionalProperties":true},
       },
-      sourceLocation: {"file":"packages/deepseek-harness-product/skills/src/manager.ts","line":349,"column":3},
+      sourceLocation: {"file":"packages/deepseek-harness-product/skills/src/manager.ts","line":351,"column":3},
     },
     'skillsManager/renameCategory': {
       service: 'skillsManager',
@@ -1951,7 +1951,7 @@ export const TYPERT_REMOTE = createTypertRemoteInfo({
         description: 'The committed result or a typed operation failure.',
         jsonSchema: {"type":"object","properties":{"root":{"type":"string"},"category":{"type":"object","properties":{"id":{"type":"string"},"name":{"type":"string"}},"required":["id","name"],"additionalProperties":true}},"required":["root","category"],"additionalProperties":true},
       },
-      sourceLocation: {"file":"packages/deepseek-harness-product/skills/src/manager.ts","line":250,"column":3},
+      sourceLocation: {"file":"packages/deepseek-harness-product/skills/src/manager.ts","line":251,"column":3},
     },
     'skillsManager/restoreTrash': {
       service: 'skillsManager',
@@ -2001,7 +2001,7 @@ export const TYPERT_REMOTE = createTypertRemoteInfo({
         description: 'The committed result or a typed operation failure.',
         jsonSchemaError: 'typert tool schema: selected union branches overlap or have no required discriminator',
       },
-      sourceLocation: {"file":"packages/deepseek-harness-product/skills/src/manager.ts","line":300,"column":3},
+      sourceLocation: {"file":"packages/deepseek-harness-product/skills/src/manager.ts","line":301,"column":3},
     },
     'skillsManager/rollbackRepository': {
       service: 'skillsManager',
@@ -2034,7 +2034,7 @@ export const TYPERT_REMOTE = createTypertRemoteInfo({
         description: 'The committed result or a typed operation failure.',
         jsonSchema: {"type":"object","properties":{"name":{"type":"string"},"commit":{"oneOf":[{"type":"null","const":null},{"type":"string"}]}},"required":["name","commit"],"additionalProperties":true},
       },
-      sourceLocation: {"file":"packages/deepseek-harness-product/skills/src/manager.ts","line":405,"column":3},
+      sourceLocation: {"file":"packages/deepseek-harness-product/skills/src/manager.ts","line":408,"column":3},
     },
     'skillsManager/searchClawHub': {
       service: 'skillsManager',
@@ -2084,7 +2084,7 @@ export const TYPERT_REMOTE = createTypertRemoteInfo({
         description: 'The committed result or a typed operation failure.',
         jsonSchema: {"type":"object","properties":{"results":{"type":"array","items":{"type":"object","properties":{"ownerHandle":{"type":"string"},"slug":{"type":"string"},"displayName":{"type":"string"},"summary":{"type":"string"},"stats":{"type":"object","properties":{"downloads":{"type":"number"},"installs":{"type":"number"},"stars":{"type":"number"}},"required":[],"additionalProperties":true},"source":{"type":"string","const":"clawhub"},"id":{"type":"string"},"downloads":{"type":"number"}},"required":["ownerHandle","slug","displayName","summary","source"],"additionalProperties":true}}},"required":["results"],"additionalProperties":true},
       },
-      sourceLocation: {"file":"packages/deepseek-harness-product/skills/src/manager.ts","line":422,"column":3},
+      sourceLocation: {"file":"packages/deepseek-harness-product/skills/src/manager.ts","line":425,"column":3},
     },
     'skillsManager/searchSkillsSh': {
       service: 'skillsManager',
@@ -2117,7 +2117,7 @@ export const TYPERT_REMOTE = createTypertRemoteInfo({
         description: 'The committed result or a typed operation failure.',
         jsonSchema: {"type":"object","properties":{"skills":{"type":"array","items":{"type":"object","properties":{"id":{"type":"string"},"source":{"type":"string"},"skillId":{"type":"string"},"name":{"type":"string"},"installs":{"type":"number"}},"required":["id","source","skillId","name"],"additionalProperties":true}}},"required":["skills"],"additionalProperties":true},
       },
-      sourceLocation: {"file":"packages/deepseek-harness-product/skills/src/manager.ts","line":430,"column":3},
+      sourceLocation: {"file":"packages/deepseek-harness-product/skills/src/manager.ts","line":433,"column":3},
     },
     'skillsManager/setCategoryEnabled': {
       service: 'skillsManager',
@@ -2167,7 +2167,7 @@ export const TYPERT_REMOTE = createTypertRemoteInfo({
         description: 'The committed result or a typed operation failure.',
         jsonSchema: {"type":"object","properties":{"root":{"type":"string"},"categoryId":{"oneOf":[{"type":"null","const":null},{"type":"string"}]},"enabled":{"type":"boolean"},"changed":{"type":"number"},"skipped":{"type":"array","items":{"type":"string"}}},"required":["root","categoryId","enabled","changed","skipped"],"additionalProperties":true},
       },
-      sourceLocation: {"file":"packages/deepseek-harness-product/skills/src/manager.ts","line":283,"column":3},
+      sourceLocation: {"file":"packages/deepseek-harness-product/skills/src/manager.ts","line":284,"column":3},
     },
     'skillsManager/setSkillEnabled': {
       service: 'skillsManager',
@@ -2217,7 +2217,7 @@ export const TYPERT_REMOTE = createTypertRemoteInfo({
         description: 'The committed result or a typed operation failure.',
         jsonSchemaError: 'typert tool schema: unsupported undefined value',
       },
-      sourceLocation: {"file":"packages/deepseek-harness-product/skills/src/manager.ts","line":225,"column":3},
+      sourceLocation: {"file":"packages/deepseek-harness-product/skills/src/manager.ts","line":226,"column":3},
     },
     'skillsManager/setSourceEnabled': {
       service: 'skillsManager',
@@ -2267,7 +2267,7 @@ export const TYPERT_REMOTE = createTypertRemoteInfo({
         description: 'The committed result or a typed operation failure.',
         jsonSchema: {"type":"object","properties":{"root":{"type":"string"},"enabled":{"type":"boolean"}},"required":["root","enabled"],"additionalProperties":true},
       },
-      sourceLocation: {"file":"packages/deepseek-harness-product/skills/src/manager.ts","line":234,"column":3},
+      sourceLocation: {"file":"packages/deepseek-harness-product/skills/src/manager.ts","line":235,"column":3},
     },
     'skillsManager/trashSkill': {
       service: 'skillsManager',
@@ -2300,7 +2300,7 @@ export const TYPERT_REMOTE = createTypertRemoteInfo({
         description: 'The committed result or a typed operation failure.',
         jsonSchemaError: 'typert tool schema: selected union branches overlap or have no required discriminator',
       },
-      sourceLocation: {"file":"packages/deepseek-harness-product/skills/src/manager.ts","line":291,"column":3},
+      sourceLocation: {"file":"packages/deepseek-harness-product/skills/src/manager.ts","line":292,"column":3},
     },
     'skillsManager/uninstallRepository': {
       service: 'skillsManager',
@@ -2333,7 +2333,7 @@ export const TYPERT_REMOTE = createTypertRemoteInfo({
         description: 'The committed result or a typed operation failure.',
         jsonSchemaError: 'typert tool schema: selected union branches overlap or have no required discriminator',
       },
-      sourceLocation: {"file":"packages/deepseek-harness-product/skills/src/manager.ts","line":381,"column":3},
+      sourceLocation: {"file":"packages/deepseek-harness-product/skills/src/manager.ts","line":383,"column":3},
     },
     'skillsManager/updateRepository': {
       service: 'skillsManager',
@@ -2366,7 +2366,7 @@ export const TYPERT_REMOTE = createTypertRemoteInfo({
         description: 'The committed result or a typed operation failure.',
         jsonSchema: {"type":"object","properties":{"name":{"type":"string"},"commit":{"oneOf":[{"type":"null","const":null},{"type":"string"}]}},"required":["name","commit"],"additionalProperties":true},
       },
-      sourceLocation: {"file":"packages/deepseek-harness-product/skills/src/manager.ts","line":397,"column":3},
+      sourceLocation: {"file":"packages/deepseek-harness-product/skills/src/manager.ts","line":400,"column":3},
     },
     'skillsManager/uploadSkill': {
       service: 'skillsManager',
@@ -2399,7 +2399,7 @@ export const TYPERT_REMOTE = createTypertRemoteInfo({
         description: 'The committed result or a typed operation failure.',
         jsonSchema: {"type":"object","properties":{"ok":{"type":"boolean"},"kind":{"type":"string"},"imported":{"type":"array","items":{"type":"object","properties":{"name":{"type":"string"},"overwritten":{"type":"boolean"},"warnings":{"type":"array","items":{"type":"object","properties":{"code":{"type":"string"},"params":{"type":"object","properties":{},"required":[],"additionalProperties":true},"error":{"type":"string"},"level":{"type":"string"}},"required":[],"additionalProperties":true}}},"required":["name","overwritten","warnings"],"additionalProperties":true}},"skipped":{"type":"array","items":{"type":"object","properties":{"name":{"type":"string"},"source":{"type":"string"}},"required":["name","source"],"additionalProperties":true}},"failed":{"type":"array","items":{"type":"object","properties":{"source":{"type":"string"},"error":{"type":"string"},"code":{"type":"string"},"params":{"type":"object","properties":{},"required":[],"additionalProperties":true},"level":{"type":"string"}},"required":["source","error"],"additionalProperties":true}},"code":{"type":"string"},"params":{"type":"object","properties":{},"required":[],"additionalProperties":true},"error":{"type":"string"},"level":{"type":"string"}},"required":[],"additionalProperties":true},
       },
-      sourceLocation: {"file":"packages/deepseek-harness-product/skills/src/manager.ts","line":324,"column":3},
+      sourceLocation: {"file":"packages/deepseek-harness-product/skills/src/manager.ts","line":325,"column":3},
     },
   },
 }, z)
