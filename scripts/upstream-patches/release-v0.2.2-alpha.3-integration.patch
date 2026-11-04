@@ -13722,7 +13722,7 @@ index 507c4506b017cd7df22f0fe6f5b699cc282b089c..0bc0db2400eb601183786426dedfe542
        if (options.awaitConnected !== false) {
          await awaitConnected(ctx, mock, options.connectTimeoutMs ?? DEFAULT_CONNECT_TIMEOUT_MS)
 diff --git a/pnpm-lock.yaml b/pnpm-lock.yaml
-index d6ef3e506e9d477291875dd2739f0c863d4f1a38..9944c5ac9fa9ab440a22c99a34d70255739f686c 100644
+index d6ef3e506e9d477291875dd2739f0c863d4f1a38..74addd5db6471c7e5c768844a89fc56fb7d2f98e 100644
 --- a/pnpm-lock.yaml
 +++ b/pnpm-lock.yaml
 @@ -770,6 +770,9 @@ importers:
@@ -13824,7 +13824,7 @@ index d6ef3e506e9d477291875dd2739f0c863d4f1a38..9944c5ac9fa9ab440a22c99a34d70255
        '@deepseek-ai/dsh-util-values':
          specifier: workspace:*
          version: link:../../util/values
-@@ -7952,137 +8016,811 @@ importers:
+@@ -7952,137 +8016,814 @@ importers:
          version: link:../../util/brand
        '@deepseek-ai/dsh-util-values':
          specifier: workspace:*
@@ -14028,6 +14028,9 @@ index d6ef3e506e9d477291875dd2739f0c863d4f1a38..9944c5ac9fa9ab440a22c99a34d70255
 +      '@deepseek-ai/dsh-system-prompt':
 +        specifier: workspace:*
 +        version: link:../../core/system-prompt
++      '@deepseek-ai/dsh-timeout':
++        specifier: workspace:*
++        version: link:../../util/timeout
 +      '@deepseek-ai/dsh-tools':
 +        specifier: workspace:*
 +        version: link:../../core/tools
@@ -14742,7 +14745,7 @@ index d6ef3e506e9d477291875dd2739f0c863d4f1a38..9944c5ac9fa9ab440a22c99a34d70255
  
    packages/deliverables/deliverable-file-references:
      devDependencies:
-@@ -11954,6 +12692,90 @@ importers:
+@@ -11954,6 +12695,90 @@ importers:
          specifier: ^18.2.0
          version: 18.3.1
  
@@ -14833,7 +14836,7 @@ index d6ef3e506e9d477291875dd2739f0c863d4f1a38..9944c5ac9fa9ab440a22c99a34d70255
    packages/feedback/command-feedback:
      dependencies:
        zod:
-@@ -20277,10 +21099,18 @@ packages:
+@@ -20277,10 +21102,18 @@ packages:
    '@mixmark-io/domino@2.2.0':
      resolution: {integrity: sha512-Y28PR25bHXUg88kCV7nivXrP2Nj2RueZ3/l/jdx6J9f8J4nsEGcgX0Qe6lt7Pa+J79+kPiJU3LguR6O/6zrLOw==}
  
@@ -14852,7 +14855,7 @@ index d6ef3e506e9d477291875dd2739f0c863d4f1a38..9944c5ac9fa9ab440a22c99a34d70255
    '@modelcontextprotocol/core@2.2.0':
      resolution: {integrity: sha512-iLhmprRmWI8EcosOA3wVvww22z02NkgqhV4fBH6f/odQBsi7xnJc0HGmi21yWO+/iKw2yzqVE127Zhna5/+JXw==}
      engines: {node: '>=20'}
-@@ -20313,6 +21143,10 @@ packages:
+@@ -20313,6 +21146,10 @@ packages:
      resolution: {integrity: sha512-kKaFkyAh6oipvc9+EAbJ552JafnMnOq5nzmzWkp1jJdBhTAAGpmIpWihUG1+rfNhmEFM98gUZDdCHCDD4v6a7Q==}
      hasBin: true
  
@@ -14863,7 +14866,7 @@ index d6ef3e506e9d477291875dd2739f0c863d4f1a38..9944c5ac9fa9ab440a22c99a34d70255
    '@modelcontextprotocol/server@2.2.0':
      resolution: {integrity: sha512-qFnltjus6Gk8Lx6J1w2RXmr3YPN22MNT6qD6zjAkaiWIlFIFxWClz0rXHNuJF/KSUyn5YGhkSvXkWDbQHVLFEQ==}
      engines: {node: '>=20'}
-@@ -21321,6 +22155,14 @@ packages:
+@@ -21321,6 +22158,14 @@ packages:
      resolution: {integrity: sha512-4BAffykYOgO+5nzBWYwE3W90sBgLJoUPRWWcL8wlyiM8IB8ipJz3UMJ9KXQd1RKQXpKp8Tutn80HZtWsu2u76w==}
      engines: {node: '>=10'}
  
@@ -14878,7 +14881,7 @@ index d6ef3e506e9d477291875dd2739f0c863d4f1a38..9944c5ac9fa9ab440a22c99a34d70255
    '@tanstack/react-virtual@3.14.10':
      resolution: {integrity: sha512-SRyoUbdFMRHuYXMijV5H4ZarQWpXkj3iANq8OFre+pybeVap8ZJjZ3Nz9bVjx4d8PfobVUQUdKyyyHYk3E+djw==}
      peerDependencies:
-@@ -27972,6 +28814,16 @@ snapshots:
+@@ -27972,6 +28817,16 @@ snapshots:
  
    '@mixmark-io/domino@2.2.0': {}
  
@@ -14895,7 +14898,7 @@ index d6ef3e506e9d477291875dd2739f0c863d4f1a38..9944c5ac9fa9ab440a22c99a34d70255
    '@modelcontextprotocol/client@2.2.0':
      dependencies:
        '@modelcontextprotocol/core': 2.2.0
-@@ -27982,10 +28834,21 @@ snapshots:
+@@ -27982,10 +28837,21 @@ snapshots:
        pkce-challenge: 5.0.1
        zod: 4.4.3
  
@@ -14917,7 +14920,7 @@ index d6ef3e506e9d477291875dd2739f0c863d4f1a38..9944c5ac9fa9ab440a22c99a34d70255
    '@modelcontextprotocol/node@2.0.0(@modelcontextprotocol/server@2.2.0)(hono@4.13.7)':
      dependencies:
        '@hono/node-server': 1.19.17(hono@4.13.7)
-@@ -28037,6 +28900,11 @@ snapshots:
+@@ -28037,6 +28903,11 @@ snapshots:
        - supports-color
        - zod
  
@@ -14929,7 +14932,7 @@ index d6ef3e506e9d477291875dd2739f0c863d4f1a38..9944c5ac9fa9ab440a22c99a34d70255
    '@modelcontextprotocol/server@2.2.0':
      dependencies:
        '@modelcontextprotocol/core': 2.2.0
-@@ -28744,6 +29612,13 @@ snapshots:
+@@ -28744,6 +29615,13 @@ snapshots:
      dependencies:
        defer-to-connect: 2.0.1
  
