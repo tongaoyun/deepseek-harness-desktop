@@ -3,8 +3,21 @@ import { join, resolve } from 'node:path'
 import { afterEach, expect, it, vi } from 'vitest'
 import { parseSkillDoc, resolveAgentsHome, resolveDshHome, scanEntries } from './core.ts'
 import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises'
+import { skillCategory, withSkillCategory } from './skill-document.ts'
 
 afterEach(() => { vi.unstubAllEnvs() })
+
+it('exports a category without losing native permissions, unrelated metadata or literal body text', () => {
+  const raw = '---\r\nname: docs\r\ndescription: Docs\r\nmetadata:\r\n  category: 文档办公\r\n  author: Example\r\nuser-invocable: false\r\n---\r\n\r\nKeep {{literal}}.\r\n'
+  expect(withSkillCategory(raw, '文档办公')).toBe(raw)
+  const updated = parseSkillDoc(withSkillCategory(raw, '企业协作'))
+  expect(updated.data).toMatchObject({ 'user-invocable': false, metadata: { category: '企业协作', author: 'Example' } })
+  expect(updated.body).toBe('\r\nKeep {{literal}}.\r\n')
+  expect(parseSkillDoc(withSkillCategory(raw, undefined)).data).toMatchObject({ metadata: { author: 'Example' } })
+  expect(skillCategory({ metadata: { category: ['invalid'] } })).toBeUndefined()
+  expect(skillCategory({ metadata: { category: 'x'.repeat(25) } })).toBeUndefined()
+  expect(skillCategory({ metadata: { category: 'line\nbreak' } })).toBeUndefined()
+})
 
 it('uses native home expansion, absolute paths and blank override handling', () => {
   vi.stubEnv('DSH_HOME', '~/harness-native-reuse')

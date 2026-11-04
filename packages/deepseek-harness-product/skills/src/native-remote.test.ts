@@ -29,6 +29,7 @@ import { z } from 'zod'
 import { zipSync, strToU8 } from 'fflate'
 import * as Managed from './index.ts'
 import * as Core from './core.ts'
+import { parseSkillDoc } from './skill-document.ts'
 import { createRepositoryManager } from './repositories.ts'
 
 const user = vi.hoisted(() => ({ root: '' }))
@@ -56,6 +57,47 @@ async function boot() {
   const invoke = (method: string, args: Record<string, unknown>, signal?: AbortSignal) => ctx.typertGateway.invoke({ namespace: 'skillsManager', method, args, peer, signal })
   return { ctx, root, invoke }
 }
+it('retains categories through creation, local edits, publication and company discovery without changing native skill instructions', async () => {
+  const { ctx, root, invoke } = await boot()
+  const company = join(root, 'company')
+  vi.stubEnv('DSH_COMPANY_SKILLS_ROOT', company)
+  await invoke('createSkill', { request: { name: 'categorized-writing', description: 'Organize documents', body: 'Keep {{literal}} unchanged.', category: '企业协作' } })
+  const file = join(root, '.dsh/skills/categorized-writing/SKILL.md')
+  const original = await readFile(file, 'utf8')
+  const signal = new AbortController().signal
+  const personal = async () => {
+    const value = (await ctx.skillsManager.readState({}, false, signal)).roots.find(item => item.key === 'dsh')
+    if (!value) throw new Error('Personal skill source is missing')
+    return value
+  }
+  const initial = await personal()
+  expect(initial.categories).toHaveLength(1)
+  const category = initial.categories[0]
+  expect(category.name).toBe('企业协作')
+  expect(initial.skills[0]?.categoryId).toBe(category.id)
+  expect((await ctx.skills.get('categorized-writing'))?.content).toBe('Keep {{literal}} unchanged.')
+  await invoke('renameCategory', { target: { root: 'dsh', id: category.id, name: '文档办公' } })
+  const published = await ctx.skillsManager.exportSkill({ root: 'dsh', name: 'categorized-writing' }, signal)
+  const exported = Buffer.from(published.files['skills/categorized-writing/SKILL.md'], 'base64').toString()
+  expect(parseSkillDoc(exported)).toMatchObject({ data: { metadata: { category: '文档办公' } }, body: '\nKeep {{literal}} unchanged.\n' })
+  expect(await readFile(file, 'utf8')).toBe(original)
+  await mkdir(join(company, 'categorized-writing'), { recursive: true })
+  await writeFile(join(company, 'categorized-writing/SKILL.md'), exported)
+  const shared = (await ctx.skillsManager.readState({}, false, signal)).roots.find(item => item.key === 'company')
+  if (!shared) throw new Error('Company skill source is missing')
+  expect(shared.categories[0]?.name).toBe('文档办公')
+  expect(shared.skills[0]?.categoryId).toBe(shared.categories[0]?.id)
+  await expect(ctx.skillsManager.assignCategory({ root: 'company', name: 'categorized-writing', category: '' }, signal)).rejects.toMatchObject({ code: 'skills/operation' })
+  await invoke('assignCategory', { target: { root: 'dsh', name: 'categorized-writing', category: '' } })
+  expect((await personal()).skills[0]?.categoryId).toBeNull()
+  const unclassified = await ctx.skillsManager.exportSkill({ root: 'dsh', name: 'categorized-writing' }, signal)
+  expect(parseSkillDoc(Buffer.from(unclassified.files['skills/categorized-writing/SKILL.md'], 'base64').toString()).data).not.toHaveProperty('metadata.category')
+  await invoke('assignCategory', { target: { root: 'dsh', name: 'categorized-writing', category: category.id } })
+  await invoke('deleteCategory', { target: { root: 'dsh', id: category.id } })
+  expect(await personal()).toMatchObject({ categories: [], skills: [{ categoryId: null }] })
+  await expect(invoke('createSkill', { request: { name: 'invalid-category', description: 'No', body: 'No', category: 'x'.repeat(25) } })).rejects.toMatchObject({ details: { code: 'error.category.name' } })
+  await expect(readFile(join(root, '.dsh/skills/invalid-category/SKILL.md'))).rejects.toMatchObject({ code: 'ENOENT' })
+}, 30000)
 it('reads project skills from the native current directory, including replay, without leaking another Session', async () => {
   const { ctx, root, invoke } = await boot()
   const original = join(root, 'original'), current = join(root, 'current')

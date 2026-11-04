@@ -18,6 +18,7 @@ import * as Gateway from '@deepseek-ai/dsh-api-gateway/client'
 import { installConnection } from '@deepseek-ai/dsh-client-connection/client'
 import TypertRegistry from '@deepseek-ai/dsh-typert-registry'
 import * as Skills from '../src/client.ts'
+import { zh } from '../src/client-locales.ts'
 import type { ManagerSnapshot, SectionProps, SkillMethod, SkillOutput } from '../src/client-types.ts'
 import type { RootView, SkillView } from '../src/types.ts'
 
@@ -115,11 +116,62 @@ async function setup(shared: boolean, includeCompany = true, personal = skill('�
   return { data, mock, view, requests, signalFor, startSession }
 }
 
+it('filters market and personal skills by category together with search and enablement, preserving independent selections', async () => {
+  const { data } = await setup(true)
+  const company = data.roots[0], personal = data.roots[1]
+  company.categories = [{ id: 'docs1', name: '文档办公' }, { id: 'data1', name: '数据分析' }]
+  company.skills = [{ ...skill('market-docs'), categoryId: 'docs1' }, { ...skill('market-data'), categoryId: 'data1', managerEnabled: false }, skill('market-loose')]
+  personal.categories = [{ id: 'localdocs', name: '文档办公' }]
+  personal.skills = [{ ...skill('local-docs'), categoryId: 'localdocs' }, skill('local-loose')]
+  await screen.findByText('market-docs')
+  const categories = () => within(screen.getByRole('group', { name: '技能分类' }))
+  fireEvent.click(categories().getByRole('button', { name: '数据分析' }))
+  expect(screen.getByText('market-data')).toBeTruthy()
+  expect(screen.queryByText('market-docs')).toBeNull()
+  expect(screen.queryByText('market-loose')).toBeNull()
+  fireEvent.change(screen.getByRole('textbox', { name: '搜索' }), { target: { value: 'missing' } })
+  expect(screen.getByText('没有匹配的技能。')).toBeTruthy()
+  fireEvent.change(screen.getByRole('textbox', { name: '搜索' }), { target: { value: '' } })
+  fireEvent.click(screen.getByRole('button', { name: '启用状态' }))
+  fireEvent.click(screen.getByRole('menuitem', { name: '已启用' }))
+  expect(screen.getByText('没有匹配的技能。')).toBeTruthy()
+  fireEvent.click(screen.getByRole('tab', { name: '我的' }))
+  fireEvent.click(categories().getByRole('button', { name: '文档办公' }))
+  expect(screen.getByText('local-docs')).toBeTruthy()
+  expect(screen.queryByText('local-loose')).toBeNull()
+  fireEvent.click(categories().getByRole('button', { name: '未分类' }))
+  expect(screen.getByText('local-loose')).toBeTruthy()
+  expect(screen.queryByText('local-docs')).toBeNull()
+  fireEvent.click(screen.getByRole('tab', { name: '市场' }))
+  expect(categories().getByRole('button', { name: '数据分析' }).getAttribute('aria-pressed')).toBe('true')
+  expect(screen.getByText('没有匹配的技能。')).toBeTruthy()
+  expect(categories().getAllByRole('button').map(button => ({ label: button.textContent, selected: button.getAttribute('aria-pressed') }))).toMatchInlineSnapshot(`
+    [
+      {
+        "label": "全部分类",
+        "selected": "false",
+      },
+      {
+        "label": "文档办公",
+        "selected": "false",
+      },
+      {
+        "label": "数据分析",
+        "selected": "true",
+      },
+      {
+        "label": "未分类",
+        "selected": "false",
+      },
+    ]
+  `)
+})
+
 it('starts an AI skill conversation from both catalogs without a manual form or direct write', async () => {
   const { startSession, mock } = await setup(true)
   await screen.findByText('共享技能')
   fireEvent.click(screen.getByRole('button', { name: '创建技能' }))
-  expect(startSession).toHaveBeenCalledWith(undefined, { prompt: expect.stringContaining('请帮我创建一个可以实现'), whenDraftExists: 'append' })
+  expect(startSession).toHaveBeenCalledWith(undefined, { prompt: zh['creation.prompt'], whenDraftExists: 'append' })
   fireEvent.click(screen.getByRole('tab', { name: '我的' }))
   fireEvent.click(screen.getByRole('button', { name: '创建技能' }))
   expect(startSession).toHaveBeenCalledTimes(2)

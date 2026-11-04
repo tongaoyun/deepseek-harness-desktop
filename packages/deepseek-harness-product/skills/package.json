@@ -122,6 +122,7 @@
     "@deepseek-ai/cordis"
   ],
   "dependencies": {
+    "yaml": "^2.9.0",
     "fflate": "0.8.3",
     "@deepseek-harness/product": "workspace:*",
     "@deepseek-harness/product-runtime": "workspace:*",
