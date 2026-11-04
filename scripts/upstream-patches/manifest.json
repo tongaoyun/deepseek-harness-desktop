@@ -1616,7 +1616,7 @@
         {
           "path": "scripts/no-unknown-casts.baseline.json",
           "before": "1f0ac217447a12836290b9036dde8d25e5510ac5cee107e900082564803ce6bc",
-          "after": "cee4e29d55231433860296999b06cf6bccc326c062baa544a206ad1dcced91cb"
+          "after": "31550c9d1ce19bb9462ddb479aa98a90b1d14cbacf87d7dfb05fa70e0fdba90f"
         },
         {
           "path": "scripts/persistence-changes.spec.ts",

@@ -15354,18 +15354,16 @@ index 78fd5a9cf960689d3a4de536ba4fb4cf9203bcfd..391b5be291bada41c78fc64bf52f4dee
    it('reports a bad Session and still migrates a later good Session', async () => {
      const root = temporaryRoot()
 diff --git a/scripts/no-unknown-casts.baseline.json b/scripts/no-unknown-casts.baseline.json
-index d23c51577c5d43de96075f047eaf88a9541b397c..eaf77b97ed8cad241544cf87308b49c669cf34d1 100644
+index d23c51577c5d43de96075f047eaf88a9541b397c..cd12bc3f1d59eb77fa02235f2af3eb599d7cbee5 100644
 --- a/scripts/no-unknown-casts.baseline.json
 +++ b/scripts/no-unknown-casts.baseline.json
-@@ -961,6 +961,37 @@
+@@ -961,6 +961,35 @@
    "packages/credentials/credentials-local/tests/watcher.spec.ts": {
      "6dfe702b6cb8848eeb1d56c5af6ff723d84841aaa1d96790295db4ed70616c65": 1
    },
 +  "packages/deepseek-harness-product/experts/src/custom-experts.test.ts": {
 +    "0585ec2918d8249625edda41c017bc88bb5bd8538091ae218658e43a337e2caa": 1,
-+    "2c09887e37d49f9d1f85d55200134740cbc9ee9ef23674ba48a612b0ace9b682": 1,
 +    "4ec86027febf1f06ad42c7759a1145c0e4163c72ba77a5e6047d70c43c6e48a7": 1,
-+    "5254a646b2ee3bd81afd1d40d0d629fb387d81bfb21bc0f7f8799e6692a5d4c9": 1,
 +    "5e9a0c9cbc5ec8cd167153b0b222ffad3e8ff65968e4e6a1210a6c5be8e7a1e1": 1,
 +    "62c32a460fd4fbcd82004245cdbf9c956e344358451565dcfac99c689f747e57": 1,
 +    "6e6346ff4cc26f28fcea5c71093216c3198e3394a5d3061a2b9826f5d3172b10": 1,
