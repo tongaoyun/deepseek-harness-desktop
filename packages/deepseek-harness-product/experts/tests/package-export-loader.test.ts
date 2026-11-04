@@ -61,7 +61,7 @@ async function fixture() {
   const { prompt: _prompt, agents: _agents, resources: _resources, ...personalMetadata } = personal
   let current = first.installed
   ctx.provide('companyContent', {
-    read: async () => current, forSession: async () => current, refresh: async () => current,
+    read: async () => current, forSession: async () => current, refresh: async () => undefined,
   } satisfies CompanyContentSource)
   const localFiles = { ...expertFiles('local-expert', 'Local instructions {{literal}}'),
     'experts/local-expert/references/本地资料.md': encoded('Local reference') }
