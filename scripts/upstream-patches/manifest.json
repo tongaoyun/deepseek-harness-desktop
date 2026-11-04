@@ -461,12 +461,12 @@
         {
           "path": "docs/config-catalog.md",
           "before": "bbe0b78a15b3e94a62637f1d4b900aa3bc6cfc11cc065b238197500122333938",
-          "after": "27c6479df12ff18478f871fc8d4bffd52627a39007cc7e8405a080bc2e38598a"
+          "after": "ed7a15743b266f0b01690515b20824055fc2f1e62edaaad5b0118888dfb50e54"
         },
         {
           "path": "docs/config-catalog.zh.md",
           "before": "437bea12caa4ffc221c9f61db4ecaca058dd2a9e5f34bd79568697b1341ad4af",
-          "after": "27e4472dd2d7c4e9c646ef812a741a8d3856d630263bae9af017d847ecae8f90"
+          "after": "203e1507a5fc038180ec9c57a3fdac29c94d7f634ad67fa46a2872def008908d"
         },
         {
           "path": "docs/development.i18n.yaml",

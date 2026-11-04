@@ -1,5 +1,4 @@
 import { EXPERT_PACKAGE_SOURCE, readExpertPackage, type ExpertPackageSource } from './package-transfer.ts'
-import { expertPackageFiles } from './expert-packages.ts'
 export { default as AgencyAgentsRemote } from './remote.ts'
 import { registerCreationTools } from './creation-tools.ts'
 import { localizeTeamTool } from './team-tool-locale.ts'
@@ -469,13 +468,20 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
   const library = createExpertLibrary(signal => readSummaries(undefined, signal), store, divisions, activeLocale, packages, ensurePersonal)
   const packageSource: ExpertPackageSource = {
     async read(slug, signal) {
-      const catalog = await library.catalog(signal)
+      const companyDirectory = await companyRoot(undefined, signal)
+      const catalog = await createExpertLibrary(() => readRootSummaries(companyDirectory),
+        store, divisions, activeLocale, packages, ensurePersonal).catalog(signal)
       const expert = catalog.experts.find(item => item.slug === slug && !item.conflict && !item.teamMember)
       if (!expert) throw new Error(formatHost(activeLocale(), 'error.expertMissing', { query: slug }))
-      const root = await companyRoot(undefined, signal) ?? catalogRoot
-      const files = expert.custom ? expertPackageFiles(slug, await library.getCustom(slug))
-        : root ? await readExpertPackage(root, slug, signal) : undefined
-      if (!files) throw new Error('Expert package is unavailable')
+      let files: Record<string, string>
+      if (expert.custom) {
+        if (expert.packageSha256 === undefined) throw new Error('Expert package is unavailable')
+        files = await packages.readFiles(slug, expert.packageSha256)
+      } else {
+        const root = expert.company ? companyDirectory : catalogRoot
+        if (root === undefined) throw new Error('Expert package is unavailable')
+        files = await readExpertPackage(root, slug, signal)
+      }
       return { resourceKey: 'experts/' + slug, files, catalog: { name: expert.name, division: expert.division, avatar: String(expert.avatar ?? 0) } }
     },
   }
