@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, within, waitFor } from '@testing-library/react'
 import React from 'react'
+import { zipSync } from 'fflate'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { CategorySelect } from '../../src/client/category-select.ts'
 import { CustomExpertEditor } from '../../src/client/custom-editor.ts'
@@ -212,4 +213,35 @@ it('offers team conflict review by code without relying on Chinese or English ke
   await screen.findByText('该专家团已被删除，保留草稿将另存为新团队。')
   expect(refresh).toHaveBeenCalledOnce()
   expect(save).toHaveBeenCalledOnce()
+})
+
+
+it('imports the same selected ZIP again, clears old errors and uses buttons for all file pickers', async () => {
+  const expert = { name: 'Imported', description: 'Imported expert', division: 'specialized', prompt: 'Imported instructions' }
+  const importExpert = vi.fn<AgencyCatalogRemote['importExpert']>()
+    .mockRejectedValueOnce(new Error('Temporary import failure'))
+    .mockResolvedValue({ ok: true, value: expert })
+  const unused = (): Promise<never> => Promise.reject(new Error('Unexpected remote call'))
+  const dictionary: Readonly<Record<string, string>> = en
+  const view = render(<CustomExpertEditor enabled={false} revision={1} divisions={['specialized']} locale="en" t={key => dictionary[key] ?? key}
+    remote={{ getCatalog: unused, importExpert, exportExpert: unused,
+      getCustomExpert: unused, saveCustomExpert: unused, deleteCustomExpert: unused }}
+    prepareSave={() => vi.fn()} onClose={vi.fn()} />)
+  const input = screen.getByLabelText<HTMLInputElement>(en['custom.importZip'])
+  const pick = vi.spyOn(input, 'click')
+  fireEvent.click(screen.getByRole('button', { name: en['custom.importZip'] }))
+  expect(pick).toHaveBeenCalledOnce()
+  expect(input.hidden).toBe(true)
+  expect(view.container.querySelectorAll('input[type=file]:not([hidden])')).toHaveLength(0)
+  const bytes = new Uint8Array(zipSync({ 'manifest.json': new TextEncoder().encode(JSON.stringify({ worker: { suggested_name: 'imported' } })), 'config/SOUL.md': new TextEncoder().encode(expert.prompt) }))
+  const file = new File([], 'expert.zip')
+  Object.defineProperty(file, 'arrayBuffer', { value: async () => bytes.buffer })
+  fireEvent.change(input, { target: { files: [file] } })
+  await screen.findByRole('alert')
+  expect(screen.getByRole('alert').textContent).toBe('Temporary import failure')
+  fireEvent.change(input, { target: { files: [file] } })
+  await waitFor(() => { expect(screen.getByRole('textbox', { name: en['custom.prompt'] })).toHaveProperty('value', expert.prompt) })
+  expect(importExpert).toHaveBeenCalledTimes(2)
+  expect(input.value).toBe('')
+  expect(screen.queryByRole('alert')).toBeNull()
 })

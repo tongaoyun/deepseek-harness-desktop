@@ -69,7 +69,7 @@ it.each(['zh', 'en'] as const)('opens a prefilled %s editor only on an explicit 
   expect(document.querySelector<HTMLInputElement>('input[aria-label="' + copy['custom.name'] + '"]')?.value).toBe('Review expert')
   expect([...document.querySelectorAll('textarea')].map(area => area.value)).toContain('Report findings with evidence.')
   expect(saveCustomExpert).not.toHaveBeenCalled()
-  expect({ action: host.querySelector('button')?.textContent, fields: [...document.querySelectorAll('input,textarea')].filter((field): field is HTMLInputElement | HTMLTextAreaElement => (field instanceof HTMLInputElement || field instanceof HTMLTextAreaElement) && field.hasAttribute('aria-label')).map(field => ({ label: field.getAttribute('aria-label'), value: field.value })) }).toMatchSnapshot()
+  expect({ action: host.querySelector('button')?.textContent, fields: [...document.querySelectorAll('input,textarea')].filter((field): field is HTMLInputElement | HTMLTextAreaElement => (field instanceof HTMLInputElement || field instanceof HTMLTextAreaElement) && !field.hidden && field.hasAttribute('aria-label')).map(field => ({ label: field.getAttribute('aria-label'), value: field.value })) }).toMatchSnapshot()
   await click(copy['custom.save'])
   expect(document.body.textContent).toContain('Disk full')
   expect([...document.querySelectorAll('textarea')].some(area => area.value === 'Report findings with evidence.')).toBe(true)

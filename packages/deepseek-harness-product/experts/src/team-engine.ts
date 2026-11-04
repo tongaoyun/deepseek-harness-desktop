@@ -40,7 +40,7 @@ export function detectTeamEngine(service: NativeTeamService | undefined, support
     if (!supported && !compatible)
         return { state: 'unsupported', mode: 'subagent', reason: tx("当前宿主未检测到兼容的 Agent Team 能力，使用普通子代理。"), recommendation: '' };
     if (!compatible || !toolsReady)
-        return { state: 'disabled', mode: 'subagent', reason: tx("Agent Team 服务或当前会话工具尚未就绪。"), recommendation: tx("建议在插件页开启 Agent Team 的 Host 与 Web 层，并重新加载会话；未开启也可继续使用普通专家团。") };
+        return { state: 'disabled', mode: 'subagent', reason: tx("Agent Team 服务或当前会话工具尚未就绪。"), recommendation: tx("请重启应用后重试；当前仍可使用普通专家团。") };
     if (maxDepth !== undefined)
         return { state: 'enabled', mode: 'subagent', reason: tx("原生 Agent Team 暂不支持本插件配置的深度限制，本次使用普通子代理以保留该限制。"), recommendation: '' };
     return { state: 'enabled', mode: 'native', reason: tx("Agent Team 已启用，使用原生团队协作。"), recommendation: '' };

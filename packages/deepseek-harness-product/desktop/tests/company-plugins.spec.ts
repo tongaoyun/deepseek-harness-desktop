@@ -17,6 +17,7 @@ import Sessions from '@deepseek-ai/dsh-session'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import SessionQuery from '@deepseek-ai/dsh-session-query-sqlite'
 import SessionProjections from '@deepseek-ai/dsh-session-projection'
+import * as SessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
 import WorkingDirectory from '@deepseek-ai/dsh-working-directory'
 import FileSystem from '@deepseek-ai/dsh-fs-local'
 import Agents from '@deepseek-ai/dsh-agent'
@@ -91,6 +92,7 @@ it.each([{ published: false, refresh: false, collision: false }, { published: tr
     { id: 'executor', name: 'cordis:executor' }, { id: 'tools', name: 'cordis:tools' }, { id: 'prompt', name: 'cordis:prompt' },
     { id: 'skills', name: 'cordis:skills' }, { id: 'sessions', name: 'cordis:sessions' },
     { id: 'query', name: 'cordis:query', config: { path: ':memory:', openAt: 'never' } },
+    { id: 'persistence', name: 'cordis:persistence', config: { root: join(home, 'sessions'), compression: 'none' } },
     { id: 'projections', name: 'cordis:projections' }, { id: 'fs', name: 'cordis:fs' },
     { id: 'directory', name: 'cordis:directory' }, { id: 'llm', name: 'cordis:llm' },
     { id: 'agents', name: 'cordis:agents' }, { id: 'loop', name: 'cordis:loop', config: { agents: [] } },
@@ -114,7 +116,7 @@ it.each([{ published: false, refresh: false, collision: false }, { published: tr
     Object.assign(ctx.loader.builtins, { editor: ConfigEditor, settings: Settings, tools: Tools, executor: NativeExecutor,
       prompt: SystemPrompt,
       skills: Skills, sessions: Sessions, web: WebServer, typert: Typert, gateway: Gateway, access: Access,
-      query: SessionQuery, projections: SessionProjections, fs: FileSystem, directory: WorkingDirectory,
+      query: SessionQuery, persistence: SessionPersistence, projections: SessionProjections, fs: FileSystem, directory: WorkingDirectory,
       llm: Llm, agents: Agents, loop: AgentLoop, company: { inject: ['sessions', 'sessionQuery', 'systemPrompt'], apply(owner: Context) {
         new CompanyContent(owner, { invoke: async (method, payload, signal) => {
           if (method === 'runtime.companyContent.read') return sync.read()
@@ -148,6 +150,13 @@ it.each([{ published: false, refresh: false, collision: false }, { published: tr
   })
   const library = ctx.get(AGENCY_LIBRARY_SERVICE)
   expect(library).toBeDefined()
+  expect(ctx.get('agentTeams')).toBeDefined()
+  const teamLead = await ctx.agents.create({ sessionId: SessionId('default-native-team'), agentOptions: { provider: 'fixture', model: 'fixture' } })
+  onTestFinished(() => teamLead.dispose())
+  for (const name of ['spawn_teammate', 'send_message', 'wait_agent', 'team_task_create', 'team_task_update', 'team_task_list']) {
+    expect(ctx.tools.get(name, teamLead.agent), name).toBeDefined()
+  }
+  await teamLead.dispose()
   const catalog = await library!.catalog()
   const expert = catalog.experts.find(expert => expert.slug === 'orders')
   expect(expert?.company).toBe(published ? true : undefined)

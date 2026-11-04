@@ -3,10 +3,6 @@ export const TEAM_EN = {
   '发布团队前，请先发布成员专家并选择公司专家版本。': 'Publish the member experts and select their company versions before publishing the team.',
   '团队成员需要重新选择并保存。': 'Select the team members again and save the team.',
   '通过对话创建专家团': 'Create team in chat',
-  '默认执行方式': 'Default execution mode',
-  '原生智能体团队': 'Native Agent Team',
-  '普通子代理': 'Standard subagents',
-  '执行前会再次检查当前会话的可用能力，实际方式以本次召唤结果为准。': 'The current conversation’s capabilities are checked again before execution. The invocation result records the actual mode.',
   '专家团已更新，请刷新后提交': 'The team changed. Refresh before submitting.',
   '专家团成员已删除或冲突，请修复后提交': 'A team member was deleted or has a conflict. Fix the team before submitting.',
   '公司专家标识与专家团成员冲突': 'A published expert ID conflicts with a bundled team member.',
@@ -143,7 +139,7 @@ export const TEAM_EN = {
   '专家团已选择，但示例填入失败，请补充任务。': 'Team selected, but the example could not be inserted. Enter your task.',
   '示例追加失败，草稿已保留。': 'Could not append the example. Your draft is preserved.',
   '已移除团队（请重新选择）': 'Removed team (select again)', '团队已停用或成员失效，请修复后再发送。': 'The team is disabled or has unavailable members. Fix it before sending.',
-  '建议在插件页开启 Agent Team 的 Host 与 Web 层，并重新加载会话；未开启也可继续使用普通专家团。': 'Enable the Host and Web layers of Agent Team in Plugins, then reload the conversation. Standard expert teams also work without it.',
+  '请重启应用后重试；当前仍可使用普通专家团。': 'Restart the app and try again. Standard expert teams remain available.',
 } as const
 
 export type TeamLocale = 'zh' | 'en'

@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { expect, it, onTestFinished, vi } from 'vitest'
 import { zipSync } from 'fflate'
-import { importPackageFiles } from '../src/client/package-files.ts'
+import { importPackageFiles, addPackageResources, base64ByteLength, draftPackageFiles } from '../src/client/package-files.ts'
 import { contentDigest } from '@deepseek-harness/product/company-content'
 import { ExpertPackageStore, expertPackageFiles } from '../src/expert-packages.ts'
 import { importExpertPackage } from '../src/package-transfer.ts'
@@ -97,4 +97,32 @@ it('does not replace Settings references after a concurrent conversion conflict'
   const store: ExpertSettingsStore = { read: () => state, revision: () => 1, mutate: async () => { throw new Error('Revision conflict') } }
   await expect(migratePersonalExperts(store, packages)).rejects.toThrow('Revision conflict')
   expect(state).toEqual(before)
+})
+
+
+it('replaces a binary attachment at the exact file-count limit and accounts for base64 padding', async () => {
+  const resources = Object.fromEntries(Array.from({ length: 2045 }, (_, index) => [`assets/template-${index}.bin`, 'AA==']))
+  const input = { ...draft, resources }
+  const next = await addPackageResources(input, [new File([new Uint8Array([128, 255])], 'template-0.bin')], new AbortController().signal)
+  expect(next['assets/template-0.bin']).toBe('gP8=')
+  expect(Object.keys(draftPackageFiles({ ...input, resources: next }))).toHaveLength(2048)
+  expect(base64ByteLength('AA==')).toBe(1)
+  expect(base64ByteLength(next['assets/template-0.bin'])).toBe(2)
+  await expect(addPackageResources(input, [new File(['x'], 'extra.txt')], new AbortController().signal)).rejects.toThrow('custom.packageTooLarge')
+  expect(input.resources['assets/template-0.bin']).toBe('AA==')
+})
+
+it('rejects oversized and conflicting attachments before reading and cancels partial reads without changing the draft', async () => {
+  const oversized = new File([], 'large.bin')
+  Object.defineProperty(oversized, 'size', { value: 32 * 1024 * 1024 })
+  const read = vi.spyOn(oversized, 'arrayBuffer')
+  await expect(addPackageResources(draft, [oversized], new AbortController().signal)).rejects.toThrow('custom.packageTooLarge')
+  expect(read).not.toHaveBeenCalled()
+  await expect(addPackageResources(draft, [new File(['x'], '订单模板.BIN')], new AbortController().signal)).rejects.toThrow('custom.packageInvalid')
+  const controller = new AbortController()
+  const file = new File(['first'], 'first.txt')
+  vi.spyOn(file, 'arrayBuffer').mockImplementation(async () => { controller.abort(new Error('Editor closed')); return new ArrayBuffer(0) })
+  const original = structuredClone(draft)
+  await expect(addPackageResources(draft, [file], controller.signal)).rejects.toThrow('Editor closed')
+  expect(draft).toEqual(original)
 })
