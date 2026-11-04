@@ -8,8 +8,7 @@ import { LibraryCard } from './library-ui.tsx';
 import { Button, Input } from './plugin-ui.ts';
 import { CategorySelect } from './category-select.ts';
 import React from 'react';
-import { effectiveCoordinator, type ExpertTeam, type TeamInput, type TeamSnapshot, type TeamEngineStatus, } from '../team-contract.ts';
-import { TeamExecution } from './team-execution.tsx';
+import { effectiveCoordinator, type ExpertTeam, type TeamInput, type TeamSnapshot, } from '../team-contract.ts';
 import type { ExpertSummary } from '../expert-contract.ts';
 import type { AgencyCatalogRemote, AgencyTeamsRemote } from './remote.ts';
 import { TeamEditor } from './team-editor.tsx';
@@ -29,7 +28,6 @@ export async function unwrap<T>(promise: Promise<RemoteResult<T>>): Promise<T> {
 export function TeamDetails(props: {
     team: ExpertTeam;
     experts: readonly ExpertSummary[];
-    engine?: TeamEngineStatus | undefined;
     close(): void;
     onSelect?(example?: string): void;
     onCopy?(): void;
@@ -65,7 +63,6 @@ export function TeamDetails(props: {
         </div>
       </header>
       <p className="agt-description">{props.team.description}</p>
-      <TeamExecution engine={props.engine} locale={locale}/>
       <section>
         <h3>
           <IconBulb />{tx("团队帮你做")}</h3>
@@ -295,7 +292,6 @@ export function TeamsPanel(props: {
           {error}
           <button type="button" onClick={() => void directory.refresh()}>{tx("刷新重试")}</button>
         </div>)}
-      <TeamExecution engine={snapshot?.engine} locale={locale}/>
       {notice && (<p role="status" className="aag-custom-notice">
           {notice}
         </p>)}
@@ -337,7 +333,7 @@ export function TeamsPanel(props: {
                 setStatus('');
             }}>{tx("清除筛选")}</Button>}
         </div>)}
-      {details && (<TeamDetails team={details} experts={experts} engine={snapshot?.engine} close={() => setDetailsId(null)} onCopy={() => copy(details)} onSelect={(example) => void change(details, 'select', example)} onEdit={details.company ? undefined : () => {
+      {details && (<TeamDetails team={details} experts={experts} close={() => setDetailsId(null)} onCopy={() => copy(details)} onSelect={(example) => void change(details, 'select', example)} onEdit={details.company ? undefined : () => {
                     setEditor({
                         value: details,
                         enabled: snapshot!.enabledTeams.includes(details.id),

@@ -33,7 +33,7 @@ function safePath(path: string): void {
  * @param selection - User-selected ZIP or package directory.
  * @returns Complete base64-encoded package files.
  */
-export async function importPackageFiles(selection: FileList): Promise<Record<string, string>> {
+export async function importPackageFiles(selection: readonly File[]): Promise<Record<string, string>> {
   let total = 0
   const entries: Record<string, Uint8Array> = {}
   if (selection.length === 1 && selection[0].name.toLowerCase().endsWith('.zip')) {
@@ -74,6 +74,41 @@ export function draftPackageFiles(draft: CustomExpertInput): Record<string, stri
   const files = Object.fromEntries(Object.entries(draft.resources ?? {}).map(([path, value]) => [root + path, value]))
   return { ...files, [root + 'manifest.json']: encode(draft.manifest && manifest.description === draft.description ? draft.manifest : JSON.stringify({ ...manifest, description: draft.description }, null, 2)), [root + 'config/SOUL.md']: encode(draft.prompt),
     ...draft.agents ? { [root + 'config/AGENTS.md']: encode(draft.agents) } : {} }
+}
+/** Merge attachments atomically, counting replacement bytes and the complete package.
+ * @param draft - Current expert fields and resources.
+ * @param selection - Files selected for the assets directory.
+ * @param signal - Editor lifetime cancellation.
+ * @returns Complete replacement resources; callers install only after every read succeeds.
+ */
+export async function addPackageResources(draft: CustomExpertInput, selection: readonly File[], signal: AbortSignal): Promise<Record<string, string>> {
+  const resources = { ...draft.resources }
+  const files = draftPackageFiles(draft)
+  const root = Object.keys(files).find(path => path.endsWith('/manifest.json'))!.slice(0, -'manifest.json'.length)
+  const sizes = new Map(Object.entries(files).map(([path, value]) => [path, base64ByteLength(value)]))
+  for (const file of selection) {
+    signal.throwIfAborted()
+    const path = 'assets/' + file.name
+    safePath(path)
+    const full = root + path
+    if ([...sizes.keys()].some(key => key !== full && key.toLowerCase() === full.toLowerCase())) throw new PackageTransferError('custom.packageInvalid')
+    sizes.set(full, file.size)
+  }
+  if (sizes.size > 2048 || [...sizes.values()].reduce((sum, size) => sum + size, 0) > MAX_BYTES) throw new PackageTransferError('custom.packageTooLarge')
+  for (const file of selection) {
+    signal.throwIfAborted()
+    const bytes = new Uint8Array(await file.arrayBuffer())
+    signal.throwIfAborted()
+    resources['assets/' + file.name] = bytesToBase64(bytes)
+  }
+  return resources
+}
+/** Exact decoded length for package size accounting and attachment display.
+ * @param value - Canonical base64 file content.
+ * @returns Decoded byte length, excluding padding.
+ */
+export function base64ByteLength(value: string): number {
+  return value.length * 3 / 4 - (value.endsWith('==') ? 2 : value.endsWith('=') ? 1 : 0)
 }
 /** Download a complete AgentSpec ZIP using its existing package identifier.
  * @param files - Complete base64-encoded package files.

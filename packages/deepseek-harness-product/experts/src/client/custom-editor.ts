@@ -1,5 +1,4 @@
-import { PackageTransferError, importPackageFiles, draftPackageFiles, downloadPackage } from './package-files.ts'
-import { bytesToBase64 } from '@deepseek-ai/dsh-util-crypto'
+import { PackageTransferError, importPackageFiles, draftPackageFiles, downloadPackage, addPackageResources, base64ByteLength } from './package-files.ts'
 import { LibraryConfirm, LibraryEditorFooter } from './library-ui.tsx'
 import { Button, Input, Modal } from './plugin-ui.ts'
 import React from 'react'
@@ -54,6 +53,15 @@ export function CustomExpertEditor(props: CustomEditorProps): React.ReactElement
   const [error, setError] = React.useState<string | null>(null)
   const [discard, setDiscard] = React.useState(false)
   const form = React.useRef<HTMLFormElement | null>(null)
+  const zipInput = React.useRef<HTMLInputElement | null>(null)
+  const directoryInput = React.useRef<HTMLInputElement | null>(null)
+  const attachmentInput = React.useRef<HTMLInputElement | null>(null)
+  const [avatarExpanded, setAvatarExpanded] = React.useState(false)
+  const selectFiles = (action: (files: readonly File[]) => void) => (event: React.ChangeEvent<HTMLInputElement>): void => {
+    const files = Array.from(event.currentTarget.files ?? [])
+    event.currentTarget.value = ''
+    if (files.length) action(files)
+  }
   const close = (): void => {
     if (saving.current) return
     if (JSON.stringify(draft) !== JSON.stringify(initial)) setDiscard(true)
@@ -85,11 +93,12 @@ export function CustomExpertEditor(props: CustomEditorProps): React.ReactElement
     setNeedsReview(false);
     setError(null);
   };
-  const importFiles = (selection: FileList): void => {
+  const importFiles = (selection: readonly File[]): void => {
     const signal = readSignal()
     if (saving.current) return
     saving.current = true
     setBusy(true)
+    setError(null)
     void importPackageFiles(selection).then(async files => {
       signal?.throwIfAborted()
       const result = await props.remote.importExpert(files, signal)
@@ -101,19 +110,12 @@ export function CustomExpertEditor(props: CustomEditorProps): React.ReactElement
     }).catch((cause: unknown) => { if (!signal?.aborted) setError(cause instanceof PackageTransferError ? props.t(cause.key) : cause instanceof Error ? cause.message : String(cause)) })
       .finally(() => { saving.current = false; if (!signal.aborted) setBusy(false) })
   }
-  const attachments = async (selection: FileList): Promise<void> => {
+  const attachments = async (selection: readonly File[]): Promise<void> => {
     if (saving.current) return
     const signal = readSignal()
-    saving.current = true; setBusy(true)
+    saving.current = true; setBusy(true); setError(null)
     try {
-      let bytes = Object.values(draft.resources).reduce((size, value) => size + value.length * 3 / 4, 0)
-      const resources = { ...draft.resources }
-      for (const file of Array.from(selection)) {
-        signal.throwIfAborted()
-        const path = file.webkitRelativePath || 'assets/' + file.name
-        if ((bytes += file.size) > 32 * 1024 * 1024 || Object.keys(resources).length >= 2045) throw new Error(props.t('custom.packageTooLarge'))
-        resources[path] = bytesToBase64(new Uint8Array(await file.arrayBuffer()))
-      }
+      const resources = await addPackageResources(draft, selection, signal)
       signal.throwIfAborted()
       setDraft(current => ({ ...current, resources }))
     } catch (cause) { if (!signal.aborted) setError(cause instanceof PackageTransferError ? props.t(cause.key) : cause instanceof Error ? cause.message : String(cause)) }
@@ -166,15 +168,21 @@ export function CustomExpertEditor(props: CustomEditorProps): React.ReactElement
   },
   h('form', { ref: form, className: 'aag-custom-body', onSubmit: (event: React.FormEvent) => event.preventDefault(), inert: discard ? '' : undefined },
     h('p', { className: 'aag-editor-intro' }, props.t('custom.intro')),
-    label(props.t('custom.importZip'), h('input', { type: 'file', accept: '.zip', disabled: busy, onChange: (event: React.ChangeEvent<HTMLInputElement>) => { if (event.currentTarget.files?.length) importFiles(event.currentTarget.files) } })),
-    label(props.t('custom.importDirectory'), h('input', { type: 'file', multiple: true, webkitdirectory: '', disabled: busy, onChange: (event: React.ChangeEvent<HTMLInputElement>) => { if (event.currentTarget.files?.length) importFiles(event.currentTarget.files) } })),
-    h(Button, { disabled: busy || !draft.prompt.trim(), onClick: () => { try { downloadPackage(draftPackageFiles(draft)) } catch (cause) { setError(cause instanceof PackageTransferError ? props.t(cause.key) : cause instanceof Error ? cause.message : String(cause)) } } }, props.t('custom.exportZip')),
-    h('fieldset', { className: 'aag-custom-avatars', disabled: busy }, h('legend', null, props.t('custom.avatar')),
+    h('div', { className: 'aag-package-toolbar', role: 'group', 'aria-label': props.t('custom.packageActions') },
+      h('input', { ref: zipInput, type: 'file', accept: '.zip', hidden: true, disabled: busy, 'aria-label': props.t('custom.importZip'), onChange: selectFiles(importFiles) }),
+      h('input', { ref: directoryInput, type: 'file', multiple: true, webkitdirectory: '', hidden: true, disabled: busy, 'aria-label': props.t('custom.importDirectory'), onChange: selectFiles(importFiles) }),
+      h(Button, { disabled: busy, onClick: () => zipInput.current?.click() }, props.t('custom.importZip')),
+      h(Button, { disabled: busy, onClick: () => directoryInput.current?.click() }, props.t('custom.importDirectory')),
+      h(Button, { className: 'aag-package-export', disabled: busy || !draft.prompt.trim(), onClick: () => { try { downloadPackage(draftPackageFiles(draft)) } catch (cause) { setError(cause instanceof PackageTransferError ? props.t(cause.key) : cause instanceof Error ? cause.message : String(cause)) } } }, props.t('custom.exportZip'))),
+    h('div', { className: 'aag-custom-identity' },
+      h('img', { src: EXPERT_AVATAR_URLS[draft.avatar], width: 44, height: 44, alt: '' }),
+      h(Button, { disabled: busy, 'aria-expanded': avatarExpanded, 'aria-controls': 'aag-custom-avatars', onClick: () => setAvatarExpanded(value => !value) }, props.t('custom.changeAvatar'))),
+    avatarExpanded ? h('fieldset', { id: 'aag-custom-avatars', className: 'aag-custom-avatars', disabled: busy }, h('legend', null, props.t('custom.avatar')),
       EXPERT_AVATAR_URLS.map((url, index) => h('button', {
         key: url, type: 'button', 'aria-label': `${props.t('custom.avatar')} ${index + 1}`,
         'aria-pressed': draft.avatar === index, className: draft.avatar === index ? 'is-selected' : '',
-        onClick: () => setDraft(current => ({ ...current, avatar: index })),
-      }, h('img', { src: url, width: 36, height: 36, alt: '', loading: 'lazy' })))),
+        onClick: () => { setDraft(current => ({ ...current, avatar: index })); setAvatarExpanded(false) },
+      }, h('img', { src: url, width: 36, height: 36, alt: '', loading: 'lazy' })))) : null,
     label(props.t('custom.name'), input('name', props.t('custom.name'), 40), true),
     label(props.t('custom.description'), h(Input.TextArea, {
       value: draft.description, rows: 2, maxLength: 160, required: true, disabled: busy,
@@ -196,11 +204,17 @@ export function CustomExpertEditor(props: CustomEditorProps): React.ReactElement
       onChange: (event: React.ChangeEvent<HTMLTextAreaElement>) => set('prompt', event.currentTarget.value),
     }),
     label(props.t('custom.agents'), h(Input.TextArea, { value: draft.agents, rows: 5, maxLength: 128 * 1024, disabled: busy, onChange: (event: React.ChangeEvent<HTMLTextAreaElement>) => set('agents', event.currentTarget.value) })),
-    label(props.t('custom.attachments'), h('input', { type: 'file', multiple: true, disabled: busy, onChange: (event: React.ChangeEvent<HTMLInputElement>) => {
-      const files = event.currentTarget.files
-      if (files?.length) void attachments(files).catch((cause: unknown) => setError(cause instanceof PackageTransferError ? props.t(cause.key) : cause instanceof Error ? cause.message : String(cause)))
-    } })),
-    h('ul', null, Object.keys(draft.resources).sort().map(path => h('li', { key: path }, path, ' ', h(Button, { disabled: busy, onClick: () => setDraft(current => ({ ...current, resources: Object.fromEntries(Object.entries(current.resources).filter(([name]) => name !== path)) })) }, props.t('custom.removeAttachment'))))),
+    h('section', { className: 'aag-custom-resources', 'aria-label': props.t('custom.resources') },
+      h('div', { className: 'aag-custom-resource-head' },
+        h('h3', null, props.t('custom.resources')),
+        h('input', { ref: attachmentInput, type: 'file', multiple: true, hidden: true, disabled: busy, 'aria-label': props.t('custom.attachments'), onChange: selectFiles(files => { void attachments(files) }) }),
+        h(Button, { disabled: busy, onClick: () => attachmentInput.current?.click() }, props.t('custom.attachments'))),
+      Object.keys(draft.resources).length === 0
+        ? h('p', { className: 'aag-custom-resource-empty' }, props.t('custom.resourcesHint'))
+        : h('ul', { className: 'aag-custom-resource-list' }, Object.entries(draft.resources).sort(([a], [b]) => a.localeCompare(b)).map(([path, value]) => h('li', { key: path },
+          h('span', { className: 'aag-custom-resource-path', title: path }, path),
+          h('span', { className: 'aag-custom-resource-size' }, new Intl.NumberFormat(props.locale, { style: 'unit', unit: base64ByteLength(value) < 1024 ? 'byte' : 'kilobyte', maximumFractionDigits: 1 }).format(base64ByteLength(value) / (base64ByteLength(value) < 1024 ? 1 : 1024))),
+          h(Button, { disabled: busy, 'aria-label': `${props.t('custom.removeAttachment')}: ${path}`, onClick: () => { setError(null); setDraft(current => ({ ...current, resources: Object.fromEntries(Object.entries(current.resources).filter(([name]) => name !== path)) })) } }, props.t('custom.removeAttachment')))))),
     error === null ? null : h('div', { className: 'aag-error', role: 'alert' }, error),
       needsReview ? h("section", { className: "aag-custom-review" },
         h(Button, { disabled: busy, onClick: refreshReview }, props.t("custom.reviewLatest")),
@@ -239,11 +253,24 @@ export const CUSTOM_EDITOR_CSS = `
 .aag-custom-field{display:block;margin:18px 0;font-size:14px}
 .aag-custom-field>span,.aag-custom-field>label{display:block;margin-bottom:8px}
 .aag-custom-field small{font-size:11px;opacity:.65;margin-left:8px}
+.aag-package-toolbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding-bottom:20px;border-bottom:1px solid var(--dsw-alias-border-l2)}
+.aag-package-export{margin-left:auto}
+.aag-custom-identity{display:flex;align-items:center;gap:12px;margin:20px 0}
+.aag-custom-identity>img{border-radius:var(--dsw-radius-sm,8px);object-fit:cover}
+.aag-custom-resources{margin-top:24px;padding-top:20px;border-top:1px solid var(--dsw-alias-border-l2)}
+.aag-custom-resource-head{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.aag-custom-resource-head h3{margin:0;font-size:14px;font-weight:600}
+.aag-custom-resource-empty{margin:10px 0 0;color:var(--dsw-alias-label-secondary);font-size:13px;line-height:1.6}
+.aag-custom-resource-list{list-style:none;padding:0;margin:12px 0 0}
+.aag-custom-resource-list li{display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid var(--dsw-alias-border-l2)}
+.aag-custom-resource-path{flex:1;min-width:0;overflow-wrap:anywhere;font-size:13px}
+.aag-custom-resource-size{color:var(--dsw-alias-label-secondary);font-size:12px;font-variant-numeric:tabular-nums;white-space:nowrap}
 .aag-custom-avatars{border:0;padding:0;margin:20px 0;display:flex;gap:8px;flex-wrap:wrap}
 .aag-custom-avatars legend{margin-bottom:10px;font-size:13px}
 .aag-custom-avatars button{padding:3px;border:2px solid transparent;background:transparent;border-radius:var(--dsw-radius-md,12px);cursor:pointer}
 .aag-custom-avatars img{border-radius:var(--dsw-radius-sm,8px);object-fit:cover}
-.aag-custom-avatars button.is-selected{border-color:var(--dsw-alias-label-tertiary)}
+.aag-custom-avatars button.is-selected{border-color:var(--dsw-alias-brand-primary)}
+.aag-custom-avatars button:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:2px}
 .aag-custom-prompt-head{display:flex;justify-content:space-between;gap:12px;align-items:center;margin-bottom:8px;font-size:14px}
 .aag-editor-modal .aag-custom-prompt{min-height:220px;line-height:1.8}
 .aag-custom-body .aag-error{margin-top:14px}
@@ -257,5 +284,5 @@ export const CUSTOM_EDITOR_CSS = `
 .aag-custom-review{margin-top:16px;padding:14px;border:0.5px solid var(--dsw-alias-brand-primary);border-radius:var(--dsw-radius-sm,8px)}
 .aag-custom-review-actions{display:flex;flex-wrap:wrap;gap:8px}
 .aag-custom-review p{overflow-wrap:anywhere}
-@media(max-width:560px){.aag-custom-body{padding:14px}.aag-custom-footer{padding:12px 14px 16px}.aag-custom-prompt-head{flex-wrap:wrap}}
+@media(max-width:560px){.aag-package-export{margin-left:0}.aag-custom-resource-size{display:none}.aag-custom-body{padding:14px}.aag-custom-footer{padding:12px 14px 16px}.aag-custom-prompt-head{flex-wrap:wrap}}
 `

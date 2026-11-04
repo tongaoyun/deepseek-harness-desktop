@@ -10,8 +10,8 @@ describe('专家团运行引擎能力分流', () => {
   it('未安装能力时普通执行，不推荐不存在的能力', () => {
     expect(detectTeamEngine(undefined, false)).toMatchObject({ state: 'unsupported', mode: 'subagent', recommendation: '' })
   })
-  it('安装能力不代表启用，未挂载时推荐开启但允许普通调用', () => {
-    expect(detectTeamEngine(undefined, true)).toMatchObject({ state: 'disabled', mode: 'subagent', recommendation: expect.stringContaining('开启') })
+  it('安装能力不代表启用，未就绪时提示重启且允许普通调用', () => {
+    expect(detectTeamEngine(undefined, true)).toMatchObject({ state: 'disabled', mode: 'subagent', recommendation: expect.stringContaining('重启') })
   })
   it('当前原生服务和会话工具就绪才使用原生模式', () => {
     const { service } = native()

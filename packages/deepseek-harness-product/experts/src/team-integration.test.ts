@@ -179,7 +179,7 @@ describe('专家团宿主与远端集成', () => {
     services.set('agentTeams', native)
     expect((await remote.getTeams(new AbortController().signal)).engine).toMatchObject({ state: 'enabled', mode: 'native' })
     const notReady = await invoke('get_expert_team', { team: team.id })
-    expect(notReady.engine).toMatchObject({ state: 'disabled', mode: 'subagent', recommendation: expect.stringContaining('开启') })
+    expect(notReady.engine).toMatchObject({ state: 'disabled', mode: 'subagent', recommendation: expect.stringContaining('重启') })
     const priorStarts = starts.length
     const nativeReport = await invoke('summon_expert_team', { team: team.id, task: '评审整体方案' }, {
       agent: createTeamAgent(createTestContext({ get: (key: string) => key === 'tools' ? { get: () => ({}) } : undefined })), signal: new AbortController().signal,

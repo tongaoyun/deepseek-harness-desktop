@@ -6,9 +6,16 @@ import { builtinCapabilityPatches } from '../src/builtin-capabilities.ts'
 
 it('mounts fixed Host modules and keeps their content configuration identity', () => {
   const entries = composeEntries([builtinCapabilityPatches()])
-  expect(entries.map(entry => entry.id)).toEqual(['agency-agents-remote', 'agency-agents', 'skills-manager'])
+  expect(entries.map(entry => entry.id)).toEqual(['agent-team', 'tool-agent-team', 'ui-agent-team', 'agency-agents-remote', 'agency-agents', 'skills-manager'])
   expect(entries.every(entry => entry.name?.startsWith('file:'))).toBe(true)
   expect(entries.every(entry => entry.disabled === undefined)).toBe(true)
+})
+
+it('preserves an explicit native Team opt-out without removing ordinary delegation', () => {
+  const delegation = ['tool-subagent', 'tool-subagent-fork', 'tool-subagent-control'].map(id => ({ id, name: `cordis:${id}` }))
+  const entries = composeEntries([[{ insert: delegation }], builtinCapabilityPatches(), [{ id: 'agent-team', disabled: true }]])
+  expect(entries.find(entry => entry.id === 'agent-team')?.disabled).toBe(true)
+  expect(entries.filter(entry => entry.id.startsWith('tool-subagent'))).toEqual(delegation)
 })
 
 it.each(['experts', 'skills'])('does not advertise %s as an installable client plugin', (module) => {

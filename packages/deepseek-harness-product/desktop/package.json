@@ -24,6 +24,9 @@
     "./desktop-extension.json": "./desktop-extension.json"
   },
   "dependencies": {
+    "@deepseek-ai/dsh-experimental-agent-team": "workspace:*",
+    "@deepseek-ai/dsh-experimental-tool-agent-team": "workspace:*",
+    "@deepseek-ai/dsh-experimental-client-ui-agent-team": "workspace:*",
     "@deepseek-ai/dsh-subprocess": "workspace:*",
     "@modelcontextprotocol/client": "2.0.0",
     "@modelcontextprotocol/server": "2.0.0",
@@ -60,6 +63,7 @@
     "@deepseek-ai/dsh-timeout": "workspace:*"
   },
   "devDependencies": {
+    "@deepseek-ai/dsh-session-persistence-jsonl": "workspace:*",
     "@deepseek-ai/dsh-mcp-client": "workspace:*",
     "@deepseek-ai/dsh-mcp-resources": "workspace:*",
     "@deepseek-ai/dsh-tool-testkit": "workspace:*",

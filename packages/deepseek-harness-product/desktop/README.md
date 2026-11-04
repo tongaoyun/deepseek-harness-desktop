@@ -105,7 +105,7 @@ description: "认证产品桌面用户，管理凭据、原生操作与产品资
 <a id="company-content"></a>
 ## 公司内容
 
-产品 profile 固定装配内建专家和技能，页面合入产品 UI，代码随桌面更新；官方 profile 不加载。个人专家配置使用官方 Settings，本机技能使用原生文件。同步与发布见[公司内容说明](../../../apps/product-desktop/docs/company-content.md)。
+产品 profile 默认装配原生 Agent Team 服务、工具和团队面板，保留普通子代理工具；固定装配内建专家和技能，页面合入产品 UI，代码随桌面更新；官方 profile 不加载。个人专家配置使用官方 Settings，本机技能使用原生文件。同步与发布见[公司内容说明](../../../apps/product-desktop/docs/company-content.md)。
 
 公司内容由 `CompanyContentSync` 在主进程合并与节流请求；启动和页面打开先显示本地目录，后台校验更新。每位员工的目录指针、不可变文件及 Session 版本绑定独立保存，关闭时取消并等待启动缓存读取、后台刷新和任务绑定，结束后不再启动刷新。
 
