@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import type { SettingsNamespace } from '@deepseek-ai/dsh-settings'
+import { teamSchema } from './team-contract.ts'
 import { validateAgencySettings, type AgencySettings } from './expert-library.ts'
 
 /** Stable official Settings namespace for personal expert content. */
@@ -35,9 +36,41 @@ export function readAgencySettings(config: object, locale: 'zh' | 'en' = 'zh'): 
   const value: AgencySettings = {
     enabled: stringList(unwrapLive(record.enabled)),
     customExperts: objectList(unwrapLive(record.customExperts)) as AgencySettings['customExperts'],
-    customTeams: objectList(unwrapLive(record.customTeams)) as AgencySettings['customTeams'],
+    customTeams: objectList(unwrapLive(record.customTeams)).map((item) => {
+      if (item && typeof item === 'object' && 'schemaVersion' in item) {
+        const document = z.object({ schemaVersion: z.literal(1), id: z.string(),
+          team: z.record(z.string(), z.unknown()) }).strict().parse(item)
+        return teamSchema.parse({ ...document.team, id: document.id })
+      }
+      return item as NonNullable<AgencySettings['customTeams']>[number]
+    }),
     enabledTeams: stringList(unwrapLive(record.enabledTeams)),
   }
-  validateAgencySettings(value, locale)
+  if (!(value.customExperts ?? []).some(expert => 'prompt' in expert)) validateAgencySettings(value, locale)
   return structuredClone(value)
+}
+
+/** Read one employee's Settings projection; file contents stay outside Settings. */
+export function readPersonalLibraries(config: object): Record<string, unknown> {
+  const value = 'personalLibraries' in config ? unwrapLive(config.personalLibraries) : {}
+  return z.record(z.string(), z.unknown()).parse(value)
+}
+/** Whether the unscoped personal records have already been assigned to an employee. */
+export function personalContentClaimed(config: object): boolean {
+  return 'personalContentClaimed' in config && unwrapLive(config.personalContentClaimed) === true
+}
+
+/** Persist personal teams as the same versioned document used for company teams.
+ * @param value - Validated team projections.
+ * @returns Versioned team documents.
+ */
+export function personalTeamDocuments(value: unknown): unknown[] {
+  return z.array(teamSchema).parse(value).map(({ id, ...team }) => ({ schemaVersion: 1, id, team }))
+}
+/** Encode employee settings without duplicating expert package contents.
+ * @param value - Employee-scoped settings projection.
+ * @returns Persistent document with versioned team records.
+ */
+export function personalSettingsDocument(value: AgencySettings): object {
+  return { ...value, customTeams: personalTeamDocuments(value.customTeams ?? []) }
 }

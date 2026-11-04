@@ -1,4 +1,6 @@
 {
+  "schemaVersion": 1,
+  "id": "orders",
   "team": {
     "name": "订单诊断专家团",
     "description": "联合排查订单与库存问题",
@@ -12,12 +14,16 @@
       {
         "expertSlug": "member-1",
         "duty": "分工1",
-        "instructions": "核对数据口径并报告异常"
+        "instructions": "核对数据口径并报告异常",
+        "expertVersion": "0.0.0-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "expertSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
       },
       {
         "expertSlug": "member-2",
         "duty": "分工2",
-        "instructions": "核对数据口径并报告异常"
+        "instructions": "核对数据口径并报告异常",
+        "expertVersion": "0.0.0-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "expertSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
       }
     ],
     "examples": [
@@ -27,23 +33,5 @@
     "coordinatorTemplateId": "general",
     "coordinatorTemplateVersion": 1,
     "coordinatorPrompt": ""
-  },
-  "experts": [
-    {
-      "key": "member-1",
-      "name": "专家1",
-      "description": "分析业务异常",
-      "division": "operations",
-      "emoji": "🧩",
-      "prompt": "固定成员说明1。仅使用已配置且有权限的工具。"
-    },
-    {
-      "key": "member-2",
-      "name": "专家2",
-      "description": "分析业务异常",
-      "division": "operations",
-      "emoji": "🧩",
-      "prompt": "固定成员说明2。仅使用已配置且有权限的工具。"
-    }
-  ]
+  }
 }

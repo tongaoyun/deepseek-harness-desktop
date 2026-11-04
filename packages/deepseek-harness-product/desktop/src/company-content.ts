@@ -2,7 +2,7 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { mkdir, readFile, readdir, rename, rm, writeFile, lstat } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
-import { companyContentRelease, COMPANY_CONTENT_MAX_BYTES, COMPANY_CONTENT_MAX_FILES, COMPANY_CONTENT_MAX_PATH_LENGTH, type CompanyContentRelease } from '@deepseek-harness/product/company-content'
+import { companyContentRelease, COMPANY_CONTENT_MAX_BYTES, COMPANY_CONTENT_MAX_FILES, COMPANY_CONTENT_MAX_PATH_LENGTH, type CompanyContentRelease, contentDigest, companyContentIndex, type CompanyResourceVersion } from '@deepseek-harness/product/company-content'
 import type { CompanyContentRoots } from '@deepseek-harness/product/protocol'
 
 async function privateDirectory(path: string): Promise<void> {
@@ -17,7 +17,7 @@ async function verifyCache(directory: string, release: CompanyContentRelease, si
 }
 
 /** Read each file once; bounded batches join all I/O before returning a failure. */
-async function readCache(directory: string, version: string, sha256: string, signal: AbortSignal): Promise<void> {
+async function readCache(directory: string, version: string, sha256: string, signal: AbortSignal): Promise<Record<string, string>> {
   const files: Record<string, string> = {}
   const directories = new Set<string>()
   const paths = ['']
@@ -59,7 +59,7 @@ async function readCache(directory: string, version: string, sha256: string, sig
   }
   signal.throwIfAborted()
   if (typeof metadata !== 'object' || metadata === null || !('sha256' in metadata) || metadata.sha256 !== sha256
-    || !('version' in metadata) || typeof metadata.version !== 'string') throw new Error('公司内容缓存已损坏')
+    || !('version' in metadata) || metadata.version !== version) throw new Error('公司内容缓存已损坏')
   let release: CompanyContentRelease
   try {
     release = version === '0' && fileCount === 0 ? companyContentRelease(null)
@@ -74,6 +74,7 @@ async function readCache(directory: string, version: string, sha256: string, sig
   if (directories.size !== expectedDirectories.size || [...directories].some(path => !expectedDirectories.has(path))) {
     throw new Error('公司内容缓存包含未知或缺失目录')
   }
+  return files
 }
 
 /** Stage a complete release without overwriting files held by a running Host.
@@ -145,4 +146,51 @@ export async function restoreCompanyContent(root: string, employeeId: string, ve
 
 function hasCode(error: unknown, code: string): boolean {
   return error instanceof Error && 'code' in error && error.code === code
+}
+
+/** Download changed versions and atomically install a complete local catalog.
+ * @param root - Employee-isolated cache owner.
+ * @param employeeId - Main-authenticated identity.
+ * @param value - Resource index from the server.
+ * @param load - Exact-version reader retaining employee authentication in main.
+ * @param signal - Owner cancellation; an incomplete catalog is never activated.
+ * @returns Complete immutable roots for a new Session.
+ */
+export async function installCompanyIndex(root: string, employeeId: string, value: unknown,
+  load: (ref: CompanyResourceVersion, signal: AbortSignal) => Promise<unknown>, signal: AbortSignal): Promise<CompanyContentRoots> {
+  const index = companyContentIndex(value)
+  if (!index) return installCompanyContent(root, employeeId, null, signal)
+  await privateDirectory(root)
+  const resourceRoot = join(root, 'resources')
+  await privateDirectory(resourceRoot)
+  const files: Record<string, string> = {}
+  for (const ref of [...index.resources, ...index.dependencies]) {
+    signal.throwIfAborted()
+    const directory = join(resourceRoot, createHash('sha256').update(employeeId).digest('hex'), ref.sha256)
+    let content: Record<string, string>
+    try { content = await readCache(directory, ref.version, ref.sha256, signal) }
+    catch (error) {
+      if (!hasCode(error, 'ENOENT')) throw error
+      // Missing descendants of an existing version are corruption, never permission to replace it.
+      try { await lstat(directory); throw new Error('公司内容资源缓存已损坏') }
+      catch (missing) { if (!hasCode(missing, 'ENOENT')) throw missing }
+      const payload = await load(ref, signal)
+      if (typeof payload !== 'object' || payload === null || !('resourceKey' in payload) || payload.resourceKey !== ref.resourceKey
+        || !('sha256' in payload) || payload.sha256 !== ref.sha256 || !('files' in payload)) throw new Error('公司内容资源版本不匹配')
+      const validated = companyContentRelease({ version: ref.version, sha256: ref.sha256, files: payload.files })
+      if (Object.keys(validated.files).length !== ref.fileCount || Object.keys(validated.files).some(path =>
+        ref.resourceKey.startsWith('teams/') ? path !== ref.resourceKey + '.json' : !path.startsWith(ref.resourceKey + '/'))) throw new Error('资源内容与版本索引不符')
+      await installCompanyContent(resourceRoot, employeeId, validated, signal)
+      content = { ...validated.files }
+    }
+    for (const [path, encoded] of Object.entries(content)) {
+      const target = index.dependencies.includes(ref)
+        ? path.replace(/^experts\/([^/]+)\//u, `expert-versions/$1/${ref.sha256}/`) : path
+      if (Object.hasOwn(files, target) && files[target] !== encoded) throw new Error('公司内容版本冲突')
+      files[target] = encoded
+    }
+  }
+  files['catalog.json'] = Buffer.from(JSON.stringify(index)).toString('base64')
+  signal.throwIfAborted()
+  return installCompanyContent(root, employeeId, { version: index.version, sha256: contentDigest(files), files }, signal)
 }

@@ -1,6 +1,8 @@
 import type { ExpertTeam, TeamInput } from '../team-contract.js'
 const member = (expertSlug: string, duty: string, instructions: string) => ({
   expertSlug,
+  expertVersion: '0.0.0-' + 'a'.repeat(56),
+  expertSha256: 'a'.repeat(64),
   duty,
   instructions,
 })

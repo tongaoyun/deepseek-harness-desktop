@@ -18,7 +18,7 @@ async function fixture(open = true) {
   const remote: React.ComponentProps<typeof AgentsButton>['remote'] = {
     getCatalog: async () => ({ ok: true, value: catalog }),
     getTeams: async () => ({ ok: true, value: teams }),
-    setEnabled: unused, getPrompt: unused, getCustomExpert: unused,
+    setEnabled: unused, getPrompt: unused, importExpert: async () => { throw new Error('Unexpected package import') }, exportExpert: async () => { throw new Error('Unexpected package export') }, getCustomExpert: unused,
     saveCustomExpert: unused, deleteCustomExpert: unused,
     exportTeam: unused, saveTeam: unused, deleteTeam: unused, setTeamEnabled: unused,
   }

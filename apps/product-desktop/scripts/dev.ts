@@ -2,7 +2,7 @@
 import { spawn } from 'node:child_process'
 import { createRequire } from 'node:module'
 import { fileURLToPath, pathToFileURL } from 'node:url'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { productDevelopmentEnvironment } from './environment.ts'
 
 const root = fileURLToPath(new URL('../../..', import.meta.url))
@@ -16,8 +16,8 @@ const run = (command: string, args: string[], env = process.env) => new Promise<
   child.once('exit', () => { process.off('SIGINT', stop); process.off('SIGTERM', stop) })
 })
 const require = createRequire(import.meta.url)
-const entry = pathToFileURL(require.resolve('@deepseek-harness/product-desktop')).href
 const assembly = require.resolve('@deepseek-harness/product-desktop/assembly.json')
+const entry = pathToFileURL(join(dirname(assembly), 'lib/index.js')).href
 await run(process.execPath, ['--import', 'tsx/esm', join(root, 'apps/desktop/scripts/dev.ts'), ...process.argv.slice(2)], {
   ...productDevelopmentEnvironment(root, process.env),
   DSH_DESKTOP_EXTENSION: entry,

@@ -13,7 +13,7 @@ exports[`opens a prefilled en editor only on an explicit click and retains the d
       "value": "Review changes",
     },
     {
-      "label": "Expert prompt",
+      "label": "SOUL.md expert instructions",
       "value": "Report findings with evidence.",
     },
   ],
@@ -33,7 +33,7 @@ exports[`opens a prefilled zh editor only on an explicit click and retains the d
       "value": "Review changes",
     },
     {
-      "label": "专家提示词",
+      "label": "SOUL.md 专家说明",
       "value": "Report findings with evidence.",
     },
   ],

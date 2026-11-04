@@ -1,7 +1,12 @@
+import { EXPERT_PACKAGE_SOURCE, readExpertPackage, type ExpertPackageSource } from './package-transfer.ts'
+import { expertPackageFiles } from './expert-packages.ts'
 export { default as AgencyAgentsRemote } from './remote.ts'
 import { createDrafts, CREATION_SERVICE } from './creation.ts'
 import { registerCreationTools } from './creation-tools.ts'
 import { localizeTeamTool } from './team-tool-locale.ts'
+import { ExpertPackageStore } from './expert-packages.ts'
+import { migratePersonalExperts } from './personal-migration.ts'
+import { readPackageCatalog, readPackagePrompt } from './package-catalog.ts'
 import { readCompanyTeams } from './company-teams.ts'
 import { PersonaError } from './persona-error.ts'
 import { teamText } from './team-i18n.ts'
@@ -12,8 +17,7 @@ import { executeTeam, TEAM_TASK_MAX_CHARS, type TeamMemberRun } from './team-run
 /**
  * Agency Experts — a summonable specialist roster for DSH.
  *
- * Reads an explicitly configured persona collection (a directory of `<division>/*.md` files
- * with YAML frontmatter) and exposes an "expert mode":
+ * Reads an explicitly configured AgentSpec package collection and exposes an "expert mode":
  *
  *   - `list_experts(division?)`    browse the roster grouped by division.
  *   - `summon_expert(expert, task)` delegate a task to a subagent whose
@@ -40,13 +44,11 @@ import { SessionId } from '@deepseek-ai/dsh-session'
 import { PERSONA_PREFIX_SECTION } from '@deepseek-ai/dsh-system-prompt'
 import { randomUUID } from 'node:crypto'
 import { addAbortListener } from 'node:events'
-import { open, readdir, readFile, stat } from 'node:fs/promises'
-import { parseSkillFrontmatter } from '@deepseek-ai/dsh-skill-filesystem/document'
+import { readdir, stat } from 'node:fs/promises'
 import { join } from 'node:path'
-import { TextDecoder } from 'node:util'
-import { EXPERT_DIVISION_ORDER, ZH_DIVISION } from './names.ts'
+import { EXPERT_DIVISION_ORDER } from './names.ts'
 import { createHostLocaleReader, formatHost, localizedExpertDescription, localizedExpertName, matchDivision, renderExpertList, renderSummonResults, type LocaleId } from './i18n.ts'
-import { isLiveValue, readAgencySettings, expertSettingsNamespace } from './settings.ts'
+import { isLiveValue, readAgencySettings, readPersonalLibraries, personalContentClaimed, personalTeamDocuments, personalSettingsDocument, expertSettingsNamespace } from './settings.ts'
 import { AGENCY_LIBRARY_SERVICE, createExpertLibrary, type AgencySettings } from './expert-library.ts'
 
 export const name = 'agency-agents'
@@ -172,6 +174,8 @@ export function toSummonItemResult(query: unknown, result: { expert: string; ans
 /** One resolved expert ready to be summoned. */
 interface Expert {
   readonly slug: string
+  readonly packageVersion?: string
+  readonly packageSha256?: string
   readonly company?: boolean
   readonly teamMember?: boolean
   readonly name: string
@@ -185,7 +189,7 @@ interface Expert {
 
 /** Plugin config: the persona root, the subagent provider, and the divisions to scan. */
 export interface Config {
-  /** Directory holding the `division/*.md` persona files. */
+  /** Directory holding AgentSpec package directories. */
   root: string
   /** `ctx.subagents` provider name (default `spawn`). */
   provider: string
@@ -195,12 +199,16 @@ export interface Config {
   maxDepth?: number
   /** 官方实时配置引用，保存个人专家选择。 */
   enabled?: Volatile<string[]>
-  /** 个人专家正文及元数据。 */
+  /** 个人专家文件引用及展示元数据。 */
   customExperts?: Volatile<unknown[]>
   /** 个人专家团编排。 */
   customTeams?: Volatile<unknown[]>
   /** 已启用的个人专家团标识。 */
   enabledTeams?: Volatile<string[]>
+  /** 按员工隔离的个人内容设置。 */
+  personalLibraries?: Volatile<Record<string, unknown>>
+  /** 未分员工的个人内容是否已经认领。 */
+  personalContentClaimed?: Volatile<boolean>
 }
 
 /** 可显式配置本地目录；未配置时仅加载团队共享与个人内容。 */
@@ -218,6 +226,8 @@ export const Config = z.object({
   customExperts: z.array(z.any()).default([]).volatile(),
   customTeams: z.array(z.any()).default([]).volatile(),
   enabledTeams: z.array(z.string()).default([]).volatile(),
+  personalLibraries: z.any().default({}).volatile(),
+  personalContentClaimed: z.boolean().default(false).volatile(),
 })
 
 /** 解析智能体根目录：显式配置优先，其次读取环境变量，未配置时不加载基础目录。
@@ -239,154 +249,42 @@ function normalizeMaxDepth(value: unknown): number | undefined {
   return value
 }
 
-interface Frontmatter {
-  name?: string
-  description?: string
-  descriptionEn?: string
-  emoji?: string
-  body: string
-}
-
-type FrontmatterMetadata = Omit<Frontmatter, 'body'>
-
-const FRONTMATTER_READ_CHUNK_BYTES = 1_024
-// Company publishing accepts entry documents up to 128 KiB, including metadata.
-const FRONTMATTER_MAX_BYTES = 128 * 1_024
-
-/** 去除 UTF-8 BOM，避免 `^---` 因文件头部的零宽字符失配。
- * @param text - 原始文本。
- * @returns 移除文件头 BOM 的文本。
- */
-export function stripBom(text: string): string {
-  return text.charCodeAt(0) === 0xFEFF ? text.slice(1) : text
-}
-
-/** 将超长文本截断到指定长度并追加省略号。
- * @param text - 原始文本。
- * @param limit - Unicode 码点上限。
- * @returns 不超出码点上限的文本。
+/** Truncate a description by Unicode code points.
+ * @param text - Display description.
+ * @param limit - Maximum code points before the ellipsis.
+ * @returns Bounded display text.
  */
 export function truncate(text: string, limit: number): string {
-  const codePoints = Array.from(text)
-  return codePoints.length <= limit ? text : `${codePoints.slice(0, limit).join('')}…`
+  const chars = Array.from(text)
+  return chars.length <= limit ? text : chars.slice(0, limit).join('') + '…'
 }
-
-/** Parse one expert document with the native YAML reader; metadata fields must be text.
- * @param raw - 完整 Markdown 文件内容。
- * @returns 文本元数据与去除首尾空白的正文；YAML 无效或不是映射时为空。
+/** Read one AgentSpec package from a trusted installed catalog.
+ * @param root - Installed expert catalog directory.
+ * @param slug - Package identifier.
+ * @returns Literal instructions and the resource directory.
  */
-export function parseFrontmatter(raw: string): Frontmatter | undefined {
-  let parsed: ReturnType<typeof parseSkillFrontmatter>
-  try { parsed = parseSkillFrontmatter(raw) }
-  catch (_error) {
-    // Invalid local documents remain unavailable to catalog and prompt readers.
-    return undefined
-  }
-  if (parsed === undefined) return undefined
-  const text = (key: string): string | undefined => typeof parsed.data[key] === 'string' ? parsed.data[key] : undefined
-  return { name: text('name'), description: text('description'), descriptionEn: text('descriptionEn'),
-    emoji: text('emoji'), body: parsed.body.trim() }
-}
-
-/** 仅读取文件头部的 YAML frontmatter，避免启动时把全部 persona 正文读入内存。 */
-async function readFrontmatterMetadata(filePath: string): Promise<FrontmatterMetadata | undefined> {
-  const file = await open(filePath, 'r')
-  const decoder = new TextDecoder('utf-8')
-  let raw = ''
-  let position = 0
-  try {
-    while (position < FRONTMATTER_MAX_BYTES) {
-      const size = Math.min(FRONTMATTER_READ_CHUNK_BYTES, FRONTMATTER_MAX_BYTES - position)
-      const buffer = Buffer.allocUnsafe(size)
-      const { bytesRead } = await file.read(buffer, 0, size, position)
-      if (bytesRead === 0) {
-        raw += decoder.decode()
-        const match = stripBom(raw).match(/^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/)
-        return match === null ? undefined : parseFrontmatter(match[0])
-      }
-      position += bytesRead
-      raw += decoder.decode(buffer.subarray(0, bytesRead), { stream: true })
-      const match = stripBom(raw).match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n/)
-      if (match !== null) return parseFrontmatter(match[0])
-    }
-    raw += decoder.decode()
-    const match = stripBom(raw).match(/^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/)
-    return match === null ? undefined : parseFrontmatter(match[0])
-  } finally {
-    await file.close()
-  }
-}
-
-const EXPERT_PATH_SEGMENT_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
-
-/** 读取一个受允许分区约束的 persona 正文，拒绝路径穿越和无效文档。
- * @param root - 受控专家目录。
- * @param slug - 稳定专家标识。
- * @param division - 专家所属分类。
- * @param divisions - 允许读取的分类。
- * @param locale - 当前界面语言。
- * @returns 指定专家的 Markdown 正文。
- */
-export async function readExpertPrompt(
-  root: string,
-  slug: string,
-  division: string,
-  divisions: readonly string[] = DEFAULT_DIVISIONS,
-  locale: LocaleId = 'zh',
-): Promise<{ prompt: string }> {
-  if (!divisions.includes(division) || !EXPERT_PATH_SEGMENT_PATTERN.test(slug)) {
-    throw new Error(teamText(locale, '无效的专家提示词请求。'))
-  }
-  return readPersonaFile(join(root, division, `${slug}.md`), locale);
-}
-
-async function readPersonaFile(filePath: string, locale: LocaleId = 'zh'): Promise<{ prompt: string }> {
-  let raw: string
-  try {
-    raw = stripBom(await readFile(filePath, 'utf8'))
-  } catch (cause) {
-    const missing = (cause as NodeJS.ErrnoException)?.code === 'ENOENT'
-    throw new PersonaError(missing ? 'PERSONA_NOT_FOUND' : 'PERSONA_READ_FAILED', locale, cause)
-  }
-  const parsed = parseFrontmatter(raw)
-  if (parsed === undefined || parsed.name === undefined || parsed.description === undefined || parsed.body === '') {
-    throw new Error(teamText(locale, '专家提示词格式无效。'))
-  }
-  return { prompt: parsed.body }
+export async function readExpertPrompt(root: string, slug: string): Promise<{ prompt: string }> {
+  if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/u.test(slug)) throw new Error('Invalid expert identifier')
+  return readPackagePrompt(join(root, slug))
 }
 
 /** 会话固定版本的专家说明读取接口。 */
 export interface AgencyPersonaSource {
-  getPrompt(slug: string, division: string, locale: LocaleId, sessionId?: string, signal?: AbortSignal): Promise<{ prompt: string }>
+  getPrompt(slug: string, division: string, locale: LocaleId, sessionId?: string, signal?: AbortSignal, sha256?: string): Promise<{ prompt: string }>
 }
 
-// 路径仅留在 Host，不随名册摘要发送给客户端。
-const personaPaths = new WeakMap<Expert, string>();
-
-/** 创建展示与召唤共用的来源；可复用 Host 已加载的名册，按来源读取原文。
- * @param root - 受控专家目录。
- * @param divisions - 允许读取的分类。
- * @param catalog - 可选的已解析专家目录。
- * @returns 按需读取专家说明的来源。
+/** Resolve package personas from an explicitly configured catalog.
+ * @param root - Installed expert directory.
+ * @param divisions - Display divisions for catalog loading.
+ * @param catalog - Optional authoritative catalog reader.
+ * @returns Native persona source.
  */
-export function createAgencyPersonaSource(
-  root: string,
-  divisions: readonly string[],
-  catalog?: () => Promise<ReadonlyMap<string, Expert>>,
-): AgencyPersonaSource {
-  let loaded: Promise<ReadonlyMap<string, Expert>> | undefined;
-  return {
-    async getPrompt(slug, division, locale) {
-      if (!divisions.includes(division) || !EXPERT_PATH_SEGMENT_PATTERN.test(slug))
-        throw new Error(teamText(locale, '无效的专家提示词请求。'));
-      const experts = await (catalog ? catalog() : (loaded ??= loadCatalog(root, divisions, locale)));
-      const expert = experts.get(slug);
-      const path = expert === undefined ? undefined : personaPaths.get(expert);
-      if (expert?.division !== division || path === undefined)
-        throw new PersonaError('PERSONA_NOT_FOUND', locale);
-      return readPersonaFile(path, locale);
-    },
-  };
+export function createAgencyPersonaSource(root: string, divisions: readonly string[], catalog?: () => Promise<ReadonlyMap<string, Expert>>): AgencyPersonaSource {
+  return { async getPrompt(slug, _division, locale) {
+    const experts = await (catalog ? catalog() : loadCatalog(root, divisions, locale))
+    if (!experts.has(slug)) throw new PersonaError('PERSONA_NOT_FOUND', locale)
+    return readExpertPrompt(root, slug)
+  } }
 }
 
 /** Concatenate the text blocks of a subagent output. */
@@ -415,80 +313,20 @@ function isMissingPath(error: unknown): boolean {
   return error instanceof Error && 'code' in error && (error.code === 'ENOENT' || error.code === 'ENOTDIR')
 }
 
-/** 递归遍历目录下的所有 .md 文件，逐个回调其绝对路径与文件名。 */
-async function walkMarkdown(dir: string, onFile: (filePath: string, fileName: string) => Promise<void>, optional = false): Promise<void> {
-  const entries = await readdir(dir, { withFileTypes: true }).catch((error: unknown) => {
-    // Configured local categories may be absent; enumerated descendants must remain readable.
-    if (optional && isMissingPath(error)) return undefined
-    throw error
-  })
-  if (entries === undefined) return
-  // 排序让 slug 冲突时「后加载者覆盖」的顺序确定，不依赖 readdir 的返回顺序
-  entries.sort((a, b) => a.name.localeCompare(b.name))
-  for (const entry of entries) {
-    const full = join(dir, entry.name)
-    if (entry.isDirectory()) {
-      await walkMarkdown(full, onFile)
-    } else if (entry.isFile() && entry.name.endsWith('.md')) {
-      await onFile(full, entry.name)
-    }
-  }
-}
-
-/** 加载已配置分区中的专家元数据，按 slug 建立索引；persona 正文在召唤时按需读取。
- * @param root - 受控专家目录。
- * @param divisions - 允许读取的分类。
- * @param locale - 当前界面语言。
- * @param allowNameConflicts - 是否保留冲突项供目录诊断。
- * @returns 经过目录和元数据检查的专家名册。
- * @throws 目录或文件读取失败；缺失的配置分类和无效元数据不进入名册。
+/** Load AgentSpec directory metadata without reading reference materials.
+ * @param root - Installed expert directory.
+ * @param _divisions - Configured display divisions.
+ * @param locale - Locale for diagnostic messages.
+ * @param allowNameConflicts - Whether product catalog names may repeat.
+ * @returns Expert metadata indexed by package identifier.
  */
-export async function loadCatalog(root: string, divisions: readonly string[], locale: LocaleId = 'zh', allowNameConflicts = false): Promise<Map<string, Expert>> {
+export async function loadCatalog(root: string, _divisions: readonly string[], locale: LocaleId = 'zh', allowNameConflicts = false): Promise<Map<string, Expert>> {
   await assertDirectory(root, locale)
-  return readCatalog(root, divisions, locale, allowNameConflicts, true)
-}
-
-async function readCatalog(root: string, divisions: readonly string[], locale: LocaleId, allowNameConflicts: boolean, optionalDivisions: boolean): Promise<Map<string, Expert>> {
-  const sources = divisions.map((division) => ({ dir: division, division }))
-  const map = new Map<string, Expert>()
-  for (const source of sources) {
-    await walkMarkdown(join(root, source.dir), async (filePath, fileName) => {
-      const slug = fileName.slice(0, -3)
-      const parsed = await readFrontmatterMetadata(filePath)
-      if (parsed === undefined || parsed.name === undefined || parsed.description === undefined) return
-      if (map.has(slug)) {
-        console.warn(`[agency-agents] 智能体 slug 冲突，后加载者覆盖：${slug}`)
-      }
-      const expert: Expert = {
-        slug,
-        name: parsed.name,
-        nameEn: parsed.name,
-        description: parsed.description,
-        descriptionEn: parsed.descriptionEn ?? '',
-        emoji: parsed.emoji ?? '',
-        division: source.division,
-        divisionZh: ZH_DIVISION[source.division] ?? source.division,
-      };
-      personaPaths.set(expert, filePath);
-      map.set(slug, expert);
-    }, optionalDivisions)
+  const experts = await readPackageCatalog(root)
+  if (!allowNameConflicts && new Set([...experts.values()].map(expert => expert.name.toLowerCase())).size !== experts.size) {
+    throw new Error('Duplicate expert names')
   }
-  if (map.size === 0) {
-    throw new Error(formatHost(locale, 'error.catalogEmpty', { root }))
-  }
-  const nameOwners = new Map<string, Expert>()
-  for (const expert of map.values()) {
-    for (const name of [expert.name, expert.nameEn]) {
-      const normalized = normalizeExpertName(name)
-      if (normalized === '') continue
-      const owner = nameOwners.get(normalized)
-      if (!allowNameConflicts && owner !== undefined && owner.slug !== expert.slug) {
-        throw new Error(formatHost(locale, 'error.catalogDuplicateName', { name }))
-      }
-      nameOwners.set(normalized, expert)
-    }
-  }
-  return map
+  return experts
 }
 
 /** 统一专家名称的比较规则，避免名册校验和运行时查询出现不一致。 */
@@ -521,7 +359,7 @@ export function resolveExpert<T extends { readonly slug: string; readonly name: 
   throw new Error(formatHost(locale, 'error.expertMissing', { query: String(query) }))
 }
 
-export function apply(ctx: Context, config: Config): void {
+export async function apply(ctx: Context, config: Config): Promise<void> {
   const maxDepth = normalizeMaxDepth(config.maxDepth)
   const settingsNamespace = expertSettingsNamespace('agency-agents')
   let settingsSource: () => AgencySettings = () => ({ enabled: [], customExperts: [] })
@@ -547,7 +385,7 @@ export function apply(ctx: Context, config: Config): void {
     if (!pending) {
       pending = readdir(root, { withFileTypes: true }).then(async entries => {
         const divisions = entries.filter(entry => entry.isDirectory()).map(entry => entry.name).sort()
-        const company = divisions.length ? await readCatalog(root, divisions, activeLocale(), true, false) : new Map<string, Expert>()
+        const company = await loadCatalog(root, divisions, activeLocale(), true)
         await ensureReady()
         for (const [slug, expert] of company) {
           company.set(slug, { ...expert, company: true })
@@ -575,6 +413,7 @@ export function apply(ctx: Context, config: Config): void {
   const summaries = new Map<string, Array<Expert & { custom: false }>>()
   const readRootSummaries = async (root: string | undefined) => {
     await ensureReady()
+    await ensurePersonal()
     const key = root ?? ''
     let cached = summaries.get(key)
     if (!cached) {
@@ -586,6 +425,8 @@ export function apply(ctx: Context, config: Config): void {
   }
   const readSummaries = async (sessionId?: string, signal?: AbortSignal) =>
     readRootSummaries(await companyRoot(sessionId, signal))
+  const personalRoot = await companyRoot()
+  const scope = personalRoot ? personalRoot.split(/[\\/]/u).at(-3)! : 'local'
   const store: Parameters<typeof createExpertLibrary>[1] = {
     read: () => settingsSource(),
     revision: () => {
@@ -593,12 +434,53 @@ export function apply(ctx: Context, config: Config): void {
       if (descriptor === undefined) throw new Error(formatHost(activeLocale(), 'error.settingsMissing'))
       return descriptor.revision
     },
-    mutate: (ops, revision) => ctx.settings.mutate(settingsNamespace, ops, revision),
+    mutate: (ops, revision) => ctx.settings.mutate(settingsNamespace, ops.map(op => ({ ...op, ...op.op === 'set' && op.path.length === 1 && op.path[0] === 'customTeams' ? { value: personalTeamDocuments(op.value) } : {}, path: ['personalLibraries', scope, ...op.path] })), revision),
   }
   const divisions = [...new Set([...DEFAULT_DIVISIONS, ...config.divisions])]
-  const library = createExpertLibrary(signal => readSummaries(undefined, signal), store, divisions, activeLocale)
+  const packages = new ExpertPackageStore(async () => {
+    const root = await companyRoot()
+    if (!root) throw new Error('Employee-scoped personal expert storage is unavailable')
+    if (root.split(/[\\/]/u).at(-3) !== scope) throw new Error('Employee changed. Reopen the expert library.')
+    return join(root, '..', '..', 'personal-experts')
+  })
+  let personalReady: Promise<void> | undefined
+  const ensurePersonal = async (): Promise<void> => {
+    const root = await companyRoot()
+    if ((root ? root.split(/[\\/]/u).at(-3) : 'local') !== scope) throw new Error('Employee changed. Reopen the expert library.')
+    if (personalReady) return personalReady
+    personalReady = (async () => {
+      if (!(scope in readPersonalLibraries(config))) {
+    const legacy = personalContentClaimed(config) ? { enabled: [], customExperts: [], customTeams: [], enabledTeams: [] } : readAgencySettings(config, activeLocale())
+    const descriptor = ctx.settings.describe().find(item => item.ns === settingsNamespace)
+    if (!descriptor) throw new Error(formatHost(activeLocale(), 'error.settingsMissing'))
+    await ctx.settings.mutate(settingsNamespace, [
+      { op: 'set', path: ['personalLibraries', scope], value: personalSettingsDocument(legacy) },
+      ...personalContentClaimed(config) ? [] : [
+        { op: 'set' as const, path: ['personalContentClaimed'], value: true },
+        ...['enabled', 'customExperts', 'customTeams', 'enabledTeams'].map(key => ({ op: 'set' as const, path: [key], value: [] })),
+      ],
+    ], descriptor.revision)
+  }
+      await migratePersonalExperts(store, packages)
+    })().catch((error: unknown) => { personalReady = undefined; throw error })
+    return personalReady
+  }
+  const library = createExpertLibrary(signal => readSummaries(undefined, signal), store, divisions, activeLocale, packages, ensurePersonal)
+  const packageSource: ExpertPackageSource = {
+    async read(slug, signal) {
+      const catalog = await library.catalog(signal)
+      const expert = catalog.experts.find(item => item.slug === slug && !item.conflict && !item.teamMember)
+      if (!expert) throw new Error(formatHost(activeLocale(), 'error.expertMissing', { query: slug }))
+      const root = await companyRoot(undefined, signal) ?? catalogRoot
+      const files = expert.custom ? expertPackageFiles(slug, await library.getCustom(slug))
+        : root ? await readExpertPackage(root, slug, signal) : undefined
+      if (!files) throw new Error('Expert package is unavailable')
+      return { resourceKey: 'experts/' + slug, files, catalog: { name: expert.name, division: expert.division, avatar: String(expert.avatar ?? 0) } }
+    },
+  }
+  ctx.reflect.provide(EXPERT_PACKAGE_SOURCE, packageSource)
   const catalogForSession = (sessionId?: string, signal?: AbortSignal) => sessionId === undefined ? library.catalog(signal)
-    : createExpertLibrary(() => readSummaries(sessionId, signal), store, divisions, activeLocale).catalog(signal)
+    : createExpertLibrary(() => readSummaries(sessionId, signal), store, divisions, activeLocale, packages).catalog(signal)
   const teamLibrary = createTeamLibrary(catalogForSession, store, activeLocale, async (sessionId, signal) => {
     const root = await companyRoot(sessionId, signal)
     return root ? (await companyCatalog(root)).teams.teams : []
@@ -616,21 +498,22 @@ export function apply(ctx: Context, config: Config): void {
   if (!isLiveValue((config as { enabled?: unknown }).enabled)) {
     throw new Error(formatHost(activeLocale(), 'error.settingsLiveUnsupported'))
   }
-  settingsSource = () => readAgencySettings(config, activeLocale())
+  settingsSource = () => readAgencySettings((readPersonalLibraries(config)[scope] ?? {}) as object, activeLocale())
   ctx.effect(() => ctx.settings.configure({ auto: false }), 'agency-agents: settings presentation')
   // 闭包读取当前 source，避免 settings 服务替换时继续持有旧快照。
   const personaSource: AgencyPersonaSource = {
-    async getPrompt(slug, division, locale, sessionId, signal) {
+    async getPrompt(slug, division, locale, sessionId, signal, sha256) {
       await ensureReady()
-      if (slug.startsWith('custom-') && settingsSource().customExperts?.some(item => item.slug === slug)) {
+      await ensurePersonal()
+      if (settingsSource().customExperts?.some(item => item.slug === slug)) {
         const expert = await library.getCustom(slug)
         if (expert.division !== division) throw new Error(formatHost(locale, 'error.expertMissing', { query: slug }))
-        return { prompt: expert.prompt }
+        return { prompt: await library.getPrompt(slug, sha256) }
       }
       const root = await companyRoot(sessionId, signal)
       if (root) {
         const company = await companyCatalog(root)
-        const catalog = await createExpertLibrary(() => readRootSummaries(root), store, divisions, activeLocale).catalog()
+        const catalog = await createExpertLibrary(() => readRootSummaries(root), store, divisions, activeLocale, packages).catalog()
         if (catalog.experts.some(expert => expert.slug === slug && expert.conflict)) {
           throw new Error(formatHost(locale, 'error.expertAmbiguous', { query: slug, candidates: slug }))
         }
@@ -639,7 +522,9 @@ export function apply(ctx: Context, config: Config): void {
           if (member.division !== division) throw new PersonaError('PERSONA_NOT_FOUND', locale)
           return { prompt: member.prompt }
         }
-        if (company.experts.has(slug)) return readExpertPrompt(root, slug, division, company.divisions)
+        if (company.experts.has(slug)) {
+          return sha256 && company.experts.get(slug)?.packageSha256 !== sha256 ? readPackagePrompt(join(root, '..', 'expert-versions', slug, sha256)) : readExpertPrompt(root, slug)
+        }
       }
       if (basePersonaSource === undefined) throw new PersonaError('PERSONA_NOT_FOUND', locale)
       return basePersonaSource.getPrompt(slug, division, locale)
@@ -907,14 +792,14 @@ ctx.tools.register(localizeTeamTool(defineTool({ name: 'summon_expert_team', des
         if (engine.status.mode === 'native' && engine.service) {
             const result = await dispatchNativeTeam({ team, locale, experts: catalog.experts, enabled: catalog.enabled, task: String(args.task ?? ''), revision: snapshot.revision,
                 signal: exec.signal, agent: exec.agent!, service: engine.service, provider: config.provider,
-                readPersona: async (expert) => (await personaSource.getPrompt(expert.slug, expert.division, locale, exec.agent!.id, exec.signal)).prompt });
+                readPersona: async (expert) => (await personaSource.getPrompt(expert.slug, expert.division, locale, exec.agent!.id, exec.signal, expert.packageSha256)).prompt });
             return { report: JSON.stringify({ ...result, engine: engine.status }) };
         }
         const provider = ctx.subagents.getProvider(config.provider);
         if (!provider || (maxDepth !== undefined && !provider.capabilities.depthLimit))
             throw new Error(teamTx("当前子代理服务不支持专家团所需的深度限制。"));
         const result = await executeTeam({ team, locale, experts: catalog.experts, enabled: catalog.enabled, task: String(args.task ?? ''), revision: snapshot.revision, signal: exec.signal,
-            readPersona: async (expert) => (await personaSource.getPrompt(expert.slug, expert.division, locale, exec.agent!.id, exec.signal)).prompt,
+            readPersona: async (expert) => (await personaSource.getPrompt(expert.slug, expert.division, locale, exec.agent!.id, exec.signal, expert.packageSha256)).prompt,
             run: async (member: TeamMemberRun) => {
                 exec.signal?.throwIfAborted();
                 const run = await startSubagentRun(config.provider, { label: member.name, parent: exec.agent!,

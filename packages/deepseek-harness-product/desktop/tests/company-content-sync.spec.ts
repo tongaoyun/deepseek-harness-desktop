@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto'
 import { tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
 import { expect, it, onTestFinished, vi } from 'vitest'
-import { contentDigest } from '@deepseek-harness/product/company-content'
+import { encoded, expertFiles, versionRef, contentIndex } from '../../product/tests/content-fixtures.ts'
 import { CompanyContentSync } from '../src/company-content-sync.ts'
 
 vi.mock('node:fs/promises', async (original) => {
@@ -11,12 +11,15 @@ vi.mock('node:fs/promises', async (original) => {
   return { ...fs, lstat: vi.fn(fs.lstat) }
 })
 
-function release(version: string) {
-  const files = {
-    'skills/orders/SKILL.md': Buffer.from(`---\nname: orders\ndescription: orders\n---\nSkill ${version}`).toString('base64'),
-    'experts/operations/orders.md': Buffer.from(`---\nname: 订单专家\ndescription: orders\n---\nExpert ${version}`).toString('base64'),
-  }
-  return { version, sha256: contentDigest(files), files }
+const publishedFiles = new Map<string, Record<string, string>>()
+function release(version: string, extra: Record<string, string> = {}) {
+  const files = { 'skills/orders/SKILL.md': encoded(`---\nname: orders\ndescription: orders\n---\nSkill ${version}`),
+    ...expertFiles('orders', `Expert ${version}`), ...extra }
+  const resources = ['skills/orders', 'experts/orders'].map((key) => {
+    const selected = Object.fromEntries(Object.entries(files).filter(([path]) => path.startsWith(key + '/')))
+    const ref = versionRef(key, selected); publishedFiles.set(ref.sha256, selected); return ref
+  })
+  return contentIndex(version, resources)
 }
 
 async function fixture() {
@@ -24,7 +27,8 @@ async function fixture() {
   const load = vi.fn<(signal: AbortSignal) => Promise<unknown>>().mockResolvedValue(release('1.0.0'))
   const owners: CompanyContentSync[] = []
   const create = (employeeId = 'a') => {
-    const sync = new CompanyContentSync({ root, employeeId, refreshIntervalMs: 1000, load })
+    const sync = new CompanyContentSync({ root, employeeId, refreshIntervalMs: 1000, load,
+      loadResource: async ref => ({ ...ref, files: publishedFiles.get(ref.sha256)! }) })
     owners.push(sync)
     return sync
   }
@@ -115,15 +119,14 @@ it('new tasks use the new version while old tasks and child tasks keep their con
   const restored = await restarted.pin({ sessionId: 'old', started: true })
   expect(restored).toEqual(old)
   expect(await readFile(join(restored.skillsRoot, 'orders/SKILL.md'), 'utf8')).toContain('Skill 1.0.0')
-  expect(await readFile(join(restored.expertsRoot, 'operations/orders.md'), 'utf8')).toContain('Expert 1.0.0')
+  expect(await readFile(join(restored.expertsRoot, 'orders/config/SOUL.md'), 'utf8')).toContain('Expert 1.0.0')
 })
 
 it('restores a valid release with deeply nested skill resources after restart', async () => {
   const { create, load } = await fixture()
-  const value = release('1.0.0')
-  const files = { ...value.files, ...Object.fromEntries(Array.from({ length: 420 }, (_, index) =>
-    [`skills/orders/assets/item-${index}/a/b/c/d/e/f/g/h/policy.txt`, Buffer.from('Policy').toString('base64')])) }
-  load.mockResolvedValue({ ...value, files, sha256: contentDigest(files) })
+  const extra = Object.fromEntries(Array.from({ length: 420 }, (_, index) =>
+    [`skills/orders/assets/item-${index}/a/b/c/d/e/f/g/h/policy.txt`, encoded('Policy')]))
+  load.mockResolvedValue(release('1.0.0', extra))
   const first = create()
   await first.prepare(); await first.refresh()
   const pinned = await first.pin({ sessionId: 'nested', started: false })

@@ -14,7 +14,7 @@ const experts: ExpertSummary[] = team.members.map((member) => ({
   division: 'engineering',
   divisionZh: '工程',
   emoji: '',
-  custom: false,
+  custom: false, packageVersion: '0.0.0-' + 'a'.repeat(56), packageSha256: 'a'.repeat(64),
 }))
 const args = () => ({
   team,

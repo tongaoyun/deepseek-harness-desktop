@@ -355,8 +355,14 @@ export function createExtension(context: ExtensionContext): ProductDesktopExtens
         }
         await companyContent?.sync.close()
         identitySignal.throwIfAborted()
-        const sync = new CompanyContentSync({ root: join(app.getPath('userData'), 'company-content'), employeeId,
+        const sync = new CompanyContentSync({ root: join(app.getPath('userData'), 'company-content-v2'), employeeId,
           refreshIntervalMs: config.companyContentRefreshIntervalMs,
+          loadResource: async (ref, signal) => {
+            if (productBridge.getSession().employeeId !== employeeId) throw new Error('Employee identity changed')
+            const value = await productBridge.loadCompanyResource(ref, signal)
+            if (productBridge.getSession().employeeId !== employeeId) throw new Error('Employee identity changed')
+            return value
+          },
           load: async (signal) => {
             if (productBridge.getSession().employeeId !== employeeId) throw new Error('Employee identity changed')
             const value = await productBridge.loadCompanyContent(signal)

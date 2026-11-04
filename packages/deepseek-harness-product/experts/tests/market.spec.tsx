@@ -17,7 +17,8 @@ function setup(shared: boolean, gate?: Promise<void>, options: { preload?: boole
   const remote: ComponentProps<typeof AgencySettingsPanel>['remote'] = {
     getCatalog: vi.fn(async () => { await gate; return { ok: true as const, value: { experts, enabled: [], revision: 0 } } }),
     getPrompt: async () => ({ ok: true, value: { prompt: '说明' } }),
-    setEnabled: vi.fn(), getCustomExpert: vi.fn(), saveCustomExpert: vi.fn(), deleteCustomExpert: vi.fn(),
+    importExpert: vi.fn(), exportExpert: vi.fn(), setEnabled: vi.fn(),
+    getCustomExpert: vi.fn(), saveCustomExpert: vi.fn(), deleteCustomExpert: vi.fn(),
     getTeams: async () => { await gate; return { ok: true, value: { teams: [], enabledTeams: [], enabledExperts: [], revision: 0 } } },
   }
   const ctx = new Context()

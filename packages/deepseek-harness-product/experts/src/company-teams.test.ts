@@ -1,4 +1,6 @@
-import { mkdtemp, mkdir, writeFile, rm, readFile } from 'node:fs/promises'
+import { teamFixture } from '../../product/tests/content-fixtures.ts'
+import { installCompanyIndex } from '../../desktop/src/company-content.ts'
+import { mkdtemp, rm, readFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { expect, it, onTestFinished, beforeAll } from 'vitest'
@@ -13,20 +15,14 @@ let document: string
 beforeAll(async () => {
   document = await readFile(new URL('../tests/fixtures/team.json', import.meta.url), 'utf8')
 })
-async function fixture() {
+async function fixture(instructions = '固定成员说明') {
   const root = await mkdtemp(join(tmpdir(), 'company-teams-'))
   onTestFinished(() => rm(root, { recursive: true, force: true }))
-  return root
+  const value = await teamFixture('1.0.0', instructions)
+  return await installCompanyIndex(root, 'employee', value.index, async ref => ({ ...ref, files: value.payloads.get(ref.sha256) }), new AbortController().signal)
 }
 it('installs, restores and executes published teams with pinned personas after a release update', async () => {
-  const root = await fixture(), signal = new AbortController().signal
-  const old = { expertsRoot: join(root, 'first', 'experts') }
-  await mkdir(join(root, 'first', 'teams'), { recursive: true })
-  await writeFile(join(root, 'first', 'teams', 'orders.json'), document)
-  const updated = document.replaceAll('固定成员说明', '新版成员说明')
-  const latest = { expertsRoot: join(root, 'next', 'experts') }
-  await mkdir(join(root, 'next', 'teams'), { recursive: true })
-  await writeFile(join(root, 'next', 'teams', 'orders.json'), updated)
+  const old = await fixture(), latest = await fixture('新版成员说明'), signal = new AbortController().signal
   const first = await readCompanyTeams(old.expertsRoot), next = await readCompanyTeams(latest.expertsRoot)
   expect(first.teams[0].id).toBe(next.teams[0].id)
   expect(first.experts.values().next().value?.prompt).toContain('固定成员说明')
@@ -38,9 +34,8 @@ it('installs, restores and executes published teams with pinned personas after a
   expect(JSON.stringify(result)).toContain('基于证据的结论')
 })
 it('exposes shared teams as read-only and enables all bundled members atomically', async () => {
-  const root = await fixture(); await mkdir(join(root, 'teams'))
-  await writeFile(join(root, 'teams/orders.json'), document)
-  const shared = await readCompanyTeams(join(root, 'experts'))
+  const root = await fixture()
+  const shared = await readCompanyTeams(root.expertsRoot)
   let state: AgencySettings = { enabled: [], customTeams: [] }, revision = 0
   const store = { read: () => state, revision: () => revision,
     mutate: async (ops: { path: readonly string[]; value?: unknown }[], expected: number) => {
@@ -59,17 +54,16 @@ it('exposes shared teams as read-only and enables all bundled members atomically
   const experts = createExpertLibrary(async () => duplicateNames, store, ['operations'], () => 'zh')
   expect((await experts.catalog()).experts.some(expert => expert.conflict)).toBe(false)
 })
-it('rejects missing, duplicate or private-only member references before installing a team', async () => {
+it('rejects embedded personas, duplicate members and unknown document fields', () => {
   const value = publishedTeamDocument(document)
-  for (const corrupt of [ { ...value, experts: value.experts.slice(0, 1) },
-    { ...value, experts: [value.experts[0], value.experts[0]] },
-    { ...value, team: { ...value.team, members: [{ ...value.team.members[0], expertSlug: 'custom-private' }, value.team.members[1]] } },
-    { ...value, ownerEmployeeId: 'spoofed' } ]) expect(() => publishedTeamDocument(JSON.stringify(corrupt))).toThrow()
+  for (const corrupt of [{ ...value, experts: [] },
+    { ...value, team: { ...value.team, members: [value.team.members[0], value.team.members[0]] } },
+    { ...value, ownerEmployeeId: 'spoofed' }]) expect(() => publishedTeamDocument(JSON.stringify(corrupt))).toThrow()
 })
 
 it('rejects ambiguous names while an exact team ID remains selectable', async () => {
-  const root = await fixture(); await mkdir(join(root, 'teams')); await writeFile(join(root, 'teams/orders.json'), document)
-  const { teams } = await readCompanyTeams(join(root, 'experts'))
+  const root = await fixture()
+  const { teams } = await readCompanyTeams(root.expertsRoot)
   const other = { ...teams[0], id: 'team-shared-second' }
   const snapshot = { teams: [...teams, other], enabledTeams: [teams[0].id, other.id], enabledExperts: [], revision: 0 }
   expect(() => resolveEnabledTeam(snapshot, teams[0].name, 'zh')).toThrow('同名')

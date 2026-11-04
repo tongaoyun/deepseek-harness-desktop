@@ -4,7 +4,7 @@ import { resolve, relative, join } from 'node:path'
 import { homedir } from 'node:os'
 import { pathToFileURL } from 'node:url'
 import { createHash } from 'node:crypto'
-import { companyContentRelease, contentDigest, COMPANY_CONTENT_MAX_BYTES } from './company-content-codec.mjs'
+import { companyContentRelease, companyContentIndex, contentDigest, COMPANY_CONTENT_MAX_BYTES } from './company-content-codec.mjs'
 
 const MAX_JSON_BYTES = 48 * 1024 * 1024
 const MAX_FILES = 2048
@@ -80,7 +80,20 @@ export async function inspectCompanyContent(directory) {
       return !/^(?:skills|experts|teams)\/[a-z0-9]+(?:-[a-z0-9]+)*$/u.test(path) || typeof hash !== 'string' || !/^[a-f0-9]{64}$/u.test(hash)
     }))) fail('INVALID_MANIFEST', '编辑来源摘要无效，请重新导出资源。')
   if (resourceKeys(files).length > 1) fail('ONE_RESOURCE_REQUIRED', '每次只发布一个技能、专家或专家团。')
-  return { ...release, baseResources: manifest.baseResources ?? {} }
+  const catalog = validateCatalog(manifest.catalog)
+  return { ...release, catalog, baseResources: manifest.baseResources ?? {} }
+}
+
+function validateCatalog(value = {}) {
+  if (!value || typeof value !== 'object' || Array.isArray(value) || Object.keys(value).some(key => !['name', 'division', 'avatar'].includes(key))
+    || Object.values(value).some(text => typeof text !== 'string' || !text.trim() || text.length > 80 || [...text].some(char => char.charCodeAt(0) < 32 || char.charCodeAt(0) === 127))
+    || value.avatar !== undefined && !/^(?:[0-9]|[12][0-9]|3[0-5])$/u.test(value.avatar)) fail('INVALID_METADATA', '目录展示信息无效。')
+  return value
+}
+function revision(value) {
+  if (!value) return ''
+  const entries = Object.entries(validateCatalog(value.catalog)).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0)
+  return entries.length ? createHash('sha256').update(value.sha256 + '\n' + entries.map(([key, text]) => key + '\0' + text + '\n').join('')).digest('hex') : value.sha256
 }
 
 function serverURL(value) {
@@ -110,11 +123,11 @@ export async function loadPublisherConfig(path, environment = process.env) {
 }
 
 /** Bounded authenticated requests; the configured URL cannot be overridden by a plan. */
-export function publisherClient(config, fetcher = fetch, timeoutMs = 60_000) {
+export function publisherClient(config, fetcher = fetch, timeoutMs = 90_000) {
   const request = async (path, init = {}) => {
     try {
       const response = await fetcher(`${config.url}${path}`, {
-        ...init, headers: { 'content-type': 'application/json', 'X-DeepSeek-Harness-Company-Publisher-Token': config.token },
+        ...init, headers: { 'content-type': 'application/json', 'X-Harness-Content-Protocol': '2', 'X-DeepSeek-Harness-Company-Publisher-Token': config.token },
         redirect: 'error', signal: AbortSignal.timeout(timeoutMs),
       })
       if (!response.ok) {
@@ -148,14 +161,15 @@ export function publisherClient(config, fetcher = fetch, timeoutMs = 60_000) {
     if (!value || typeof value.resourceKey !== 'string' || typeof value.sha256 !== 'string' || !value.files) fail('INVALID_RESPONSE', '服务端资源回执无效。')
     const validated = validateRelease({ version: '1.0.0', files: value.files, sha256: value.sha256 })
     if (resourceKeys(validated.files).length !== 1 || resourceKeys(validated.files)[0] !== value.resourceKey) fail('INVALID_RESPONSE', '服务端资源回执不匹配。')
-    return { resourceKey: value.resourceKey, files: validated.files, sha256: validated.sha256 }
+    return { resourceKey: value.resourceKey, files: validated.files, sha256: validated.sha256, catalog: validateCatalog(value.catalog) }
   }
   return {
     url: config.url,
-    current: async () => validateRelease(await request('/api/v1/company-content')),
-    publish: async (input, expectedSha256) => resource(await request('/api/v1/admin/company-content/releases', { method: 'POST', body: JSON.stringify({ ...input, expectedSha256 }) })),
-    remove: async (resourceKey, expectedSha256) => {
-      const value = await request('/api/v1/admin/company-content/resource?' + new URLSearchParams({ resourceKey, expectedSha256 }), { method: 'DELETE' })
+    current: async () => companyContentIndex(await request('/api/v1/company-content')),
+    read: async ref => resource(await request('/api/v1/company-content/resource-versions?' + new URLSearchParams({ resourceKey: ref.resourceKey, version: ref.version, sha256: ref.sha256 }))),
+    publish: async (input, expectedRevision) => resource(await request('/api/v1/admin/company-content/releases', { method: 'POST', body: JSON.stringify({ ...input, expectedRevision }) })),
+    remove: async (resourceKey, expectedRevision) => {
+      const value = await request('/api/v1/admin/company-content/resource?' + new URLSearchParams({ resourceKey, expectedRevision }), { method: 'DELETE' })
       if (value !== true) fail('INVALID_RESPONSE', '服务端删除回执无效。')
     },
   }
@@ -177,15 +191,14 @@ function resourceKey(path) {
   if (/^teams\/[a-z0-9]+(?:-[a-z0-9]+)*$/u.test(path)) return path
   if (/^skills\/[a-z0-9]+(?:-[a-z0-9]+)*$/u.test(path)) return path
   if (/^experts\/[a-z0-9]+(?:-[a-z0-9]+)*$/u.test(path)) return path
-  if (/^experts\/[a-z][a-z0-9-]*\/[a-z0-9]+(?:-[a-z0-9]+)*\.md$/u.test(path)) return 'experts/' + path.split('/').at(-1).slice(0, -3)
   fail('INVALID_RESOURCE', '资源必须是 skills/<名称>、experts/<名称> 或 teams/<名称>。')
 }
 function resourceKeys(files) {
-  return [...new Set(Object.keys(files).map(path => resourceKey(path.startsWith('skills/') ? path.split('/').slice(0, 2).join('/') : path)))].sort()
+  return [...new Set(Object.keys(files).map(path => resourceKey(path.startsWith('teams/') ? path : path.split('/').slice(0, 2).join('/'))))].sort()
 }
 function selectedFiles(files, resource) {
   const key = resourceKey(resource)
-  return Object.fromEntries(Object.entries(files).filter(([path]) => key.startsWith('teams/') ? path === key + '.json' : key.startsWith('skills/') ? path.startsWith(key + '/') : path.startsWith('experts/') && path.endsWith('/' + key.slice(8) + '.md')))
+  return Object.fromEntries(Object.entries(files).filter(([path]) => key.startsWith('teams/') ? path === key + '.json' : path.startsWith(key + '/')))
 }
 function resourcePaths(files, resource) {
   const paths = Object.keys(selectedFiles(files, resource))
@@ -205,7 +218,7 @@ export async function exportCompanyResource(current, resource, directory) {
       await mkdir(resolve(target, '..'), { recursive: true, mode: 0o700 })
       await writeFile(target, Buffer.from(release.files[path], 'base64'), { mode: 0o600, flag: 'wx' })
     }
-    await writeFile(join(directory, '.publication.json'), `${JSON.stringify({ baseResources: { [resourceKey(resource)]: resourceDigest(release.files, resource) } })}\n`, { mode: 0o600, flag: 'wx' })
+    await writeFile(join(directory, '.publication.json'), `${JSON.stringify({ baseResources: { [resourceKey(resource)]: revision({ sha256: resourceDigest(release.files, resource), catalog: current.catalog }) }, catalog: validateCatalog(current.catalog) })}\n`, { mode: 0o600, flag: 'wx' })
   } catch (error) {
     await rm(directory, { recursive: true, force: true })
     throw error
@@ -222,14 +235,14 @@ export function planPublication(current, incoming, url, removals = []) {
   const key = keys[0], files = selectedFiles(update.files, key), before = selectedFiles(baseline.files, key)
   if (removals.length && Object.keys(files).length) fail('CONTRADICTORY_CHANGE', '同一资源不能同时删除和更新。')
   if (removals.length && !Object.keys(before).length) fail('RESOURCE_NOT_FOUND', '指定的公司资源不存在。')
-  const expectedSha256 = Object.keys(before).length ? contentDigest(before) : ''
+  const expectedRevision = Object.keys(before).length ? revision({ sha256: contentDigest(before), catalog: current?.catalog }) : ''
   const editHash = incoming.baseResources?.[key]
-  if (editHash !== undefined && editHash !== expectedSha256) fail('EDIT_CONFLICT', '编辑期间该资源已变化，请重新导出并合并修改。')
+  if (editHash !== undefined && editHash !== expectedRevision) fail('EDIT_CONFLICT', '编辑期间该资源已变化，请重新导出并合并修改。')
   if (Object.keys(before).length && editHash === undefined && !removals.length) fail('RESOURCE_EXISTS', '公司已有同名资源，请先导出后编辑。')
   const sha256 = Object.keys(files).length ? contentDigest(files) : ''
-  if (sha256 === expectedSha256) fail('NO_CHANGES', '该资源没有变化。')
-  return { schema: 2, server: serverURL(url), resourceKey: key, expectedSha256,
-    operation: removals.length ? 'delete' : 'publish', resource: { resourceKey: key, sha256, files }, changes: diffFiles(before, files) }
+  if (revision({ sha256, catalog: incoming.catalog }) === expectedRevision) fail('NO_CHANGES', '该资源没有变化。')
+  return { schema: 3, server: serverURL(url), resourceKey: key, expectedRevision,
+    operation: removals.length ? 'delete' : 'publish', resource: { resourceKey: key, sha256, files, catalog: validateCatalog(incoming.catalog) }, changes: diffFiles(before, files) }
 }
 
 /** The approval digest covers the exact plan bytes, including server and baseline. */
@@ -243,9 +256,10 @@ export async function readPublicationPlan(path, digest) {
   const data = await ordinaryFile(path, MAX_JSON_BYTES)
   if (!/^[a-f0-9]{64}$/u.test(digest ?? '') || createHash('sha256').update(data).digest('hex') !== digest) fail('PLAN_CHANGED', '发布计划已变化，请重新预览并使用对应摘要。')
   const plan = JSON.parse(data.toString('utf8'))
-  if (plan?.schema !== 2 || serverURL(plan.server) !== plan.server || resourceKey(plan.resourceKey) !== plan.resourceKey
-    || !/^(?:|[a-f0-9]{64})$/u.test(plan.expectedSha256 ?? 'invalid') || !['publish', 'delete'].includes(plan.operation)
+  if (plan?.schema !== 3 || serverURL(plan.server) !== plan.server || resourceKey(plan.resourceKey) !== plan.resourceKey
+    || !/^(?:|[a-f0-9]{64})$/u.test(plan.expectedRevision ?? 'invalid') || !['publish', 'delete'].includes(plan.operation)
     || plan.resource?.resourceKey !== plan.resourceKey || typeof plan.resource.sha256 !== 'string') fail('INVALID_PLAN', '发布计划格式无效。')
+  validateCatalog(plan.resource.catalog)
   if (plan.operation === 'publish') {
     const value = validateRelease({ version: '1.0.0', sha256: plan.resource.sha256, files: plan.resource.files })
     if (resourceKeys(value.files).length !== 1 || resourceKeys(value.files)[0] !== plan.resourceKey) fail('INVALID_PLAN', '发布计划只能包含一个资源。')
@@ -256,28 +270,30 @@ export async function readPublicationPlan(path, digest) {
 /** Write once using the target resource's hash, then verify only that resource. */
 export async function publishPlan(client, plan) {
   if (plan.server !== client.url) fail('SERVER_MISMATCH', '计划与本机发布配置指向不同服务。')
-  const hash = release => {
-    const files = selectedFiles(validateRelease(release).files, plan.resourceKey)
-    return Object.keys(files).length ? contentDigest(files) : ''
+  const hash = index => {
+    if (index === null) return ''
+    const checked = companyContentIndex(index)
+    return revision(checked?.resources.find(ref => ref.resourceKey === plan.resourceKey))
   }
+  const targetRevision = plan.operation === 'delete' ? '' : revision(plan.resource)
   const before = await client.current()
-  if (hash(before) === plan.resource.sha256) return { published: true, alreadyCurrent: true, resourceKey: plan.resourceKey, sha256: plan.resource.sha256 }
-  if (hash(before) !== plan.expectedSha256) fail('PUBLICATION_CONFLICT', '该资源已变化；请重新导出并核对，不会自动覆盖。')
+  if (hash(before) === targetRevision) return { published: true, alreadyCurrent: true, resourceKey: plan.resourceKey, sha256: plan.resource.sha256 }
+  if (hash(before) !== plan.expectedRevision) fail('PUBLICATION_CONFLICT', '该资源已变化；请重新导出并核对，不会自动覆盖。')
   try {
-    if (plan.operation === 'delete') await client.remove(plan.resourceKey, plan.expectedSha256)
+    if (plan.operation === 'delete') await client.remove(plan.resourceKey, plan.expectedRevision)
     else {
-      const receipt = await client.publish(plan.resource, plan.expectedSha256)
-      if (receipt?.resourceKey !== plan.resourceKey || receipt?.sha256 !== plan.resource.sha256) fail('INVALID_RESPONSE', '发布回执与资源不一致。')
+      const receipt = await client.publish(plan.resource, plan.expectedRevision)
+      if (receipt?.resourceKey !== plan.resourceKey || revision(receipt) !== targetRevision) fail('INVALID_RESPONSE', '发布回执与资源不一致。')
     }
   } catch (error) {
     if (!(error instanceof PublicationError) || error.code !== 'REQUEST_UNCONFIRMED') throw error
     let current
     try { current = await client.current() } catch { fail('REQUEST_UNCONFIRMED', '无法确认发布结果；没有重试写入。') }
-    if (hash(current) !== plan.resource.sha256) fail('REQUEST_UNCONFIRMED', '发布结果尚未确认；没有重试写入。')
+    if (hash(current) !== targetRevision) fail('REQUEST_UNCONFIRMED', '发布结果尚未确认；没有重试写入。')
     return { published: true, recovered: true, resourceKey: plan.resourceKey, sha256: plan.resource.sha256 }
   }
   const after = await client.current()
-  if (hash(after) !== plan.resource.sha256) fail('VERSION_NOT_CURRENT', '该资源已被更新，请查询当前内容。')
+  if (hash(after) !== targetRevision) fail('VERSION_NOT_CURRENT', '该资源已被更新，请查询当前内容。')
   return { published: true, resourceKey: plan.resourceKey, sha256: plan.resource.sha256 }
 }
 
@@ -315,14 +331,22 @@ async function main() {
   const client = publisherClient(config)
   if (args.command === 'current') {
     const current = await client.current()
-    return { version: current.version, sha256: current.sha256, paths: Object.keys(current.files).sort() }
+    return current === null ? { version: '0', resources: [] } : { version: current.version, sha256: current.sha256, resources: current.resources }
   }
-  if (args.command === 'export') return exportCompanyResource(await client.current(), args.path, args.out)
+  if (args.command === 'export') {
+    const ref = (await client.current())?.resources.find(ref => ref.resourceKey === resourceKey(args.path))
+    if (!ref) fail('RESOURCE_NOT_FOUND', '指定的公司资源不存在。')
+    return exportCompanyResource({ ...await client.read(ref), catalog: ref.catalog, version: ref.version }, args.path, args.out)
+  }
   if (args.command === 'plan') {
     const incoming = await inspectCompanyContent(args.path)
-    const plan = planPublication(await client.current(), incoming, config.url, args.removals)
+    const keys = [...resourceKeys(incoming.files), ...args.removals.map(resourceKey)]
+    if (new Set(keys).size !== 1) fail('ONE_RESOURCE_REQUIRED', '每次只处理一个资源。')
+    const ref = (await client.current())?.resources.find(ref => ref.resourceKey === keys[0])
+    const current = ref ? { ...await client.read(ref), catalog: ref.catalog, version: ref.version } : null
+    const plan = planPublication(current, incoming, config.url, args.removals)
     const confirmation = await writePublicationPlan(args.out, plan)
-    return { planned: true, resourceKey: plan.resourceKey, sha256: plan.resource.sha256, expectedSha256: plan.expectedSha256, changes: plan.changes, confirmation }
+    return { planned: true, resourceKey: plan.resourceKey, sha256: plan.resource.sha256, expectedRevision: plan.expectedRevision, changes: plan.changes, confirmation }
   }
   return publishPlan(client, await readPublicationPlan(args.path, args.confirm))
 }

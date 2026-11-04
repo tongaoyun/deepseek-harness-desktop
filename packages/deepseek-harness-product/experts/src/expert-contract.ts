@@ -4,7 +4,7 @@ import { RemoteError } from '@deepseek-ai/dsh-typert-protocol'
 /** Host 与 Client 共用的自定义专家数据契约，不包含运行时服务依赖。 */
 export const DEFAULT_EXPERT_EMOJI = '🧩'
 export const CUSTOM_EXPERT_LIMIT = 200
-export const CUSTOM_EXPERT_SLUG = /^custom-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u
+export const CUSTOM_EXPERT_SLUG = /^[a-z0-9]+(?:-[a-z0-9]+)*$/u
 const segmenter = new Intl.Segmenter(undefined, { granularity: 'grapheme' })
 
 /** 允许一个完整 Emoji（含肤色、旗帜和 ZWJ 组合），拒绝普通文本和多图标。 */
@@ -24,12 +24,18 @@ export const customExpertInputSchema = z.object({
     return trimmed !== '' && isExpertEmoji(trimmed) ? trimmed : DEFAULT_EXPERT_EMOJI
   }),
   avatar: z.number().int().min(0).max(35).default(0),
-  prompt: z.string().trim().min(1).max(20_000),
+  prompt: z.string().min(1).max(128 * 1024).refine(value => value.trim().length > 0),
+  agents: z.string().max(128 * 1024).default(''),
+  manifest: z.string().max(128 * 1024).optional(),
+  resources: z.record(z.string(), z.string()).default({}),
 }).strict()
 
-export const customExpertSchema = customExpertInputSchema.extend({
+/** Settings persist display fields and immutable file coordinates only. */
+export const customExpertSchema = customExpertInputSchema.omit({ prompt: true, agents: true, manifest: true, resources: true }).extend({
   slug: z.string().regex(CUSTOM_EXPERT_SLUG),
-})
+  packageVersion: z.string().regex(/^0\.0\.0-[a-f0-9]{56}$/u),
+  packageSha256: z.string().regex(/^[a-f0-9]{64}$/u),
+}).refine(value => value.packageVersion === `0.0.0-${value.packageSha256.slice(0, 56)}`)
 /** Editable expert fields before product defaults and normalization are applied. */
 export type CustomExpertInput = z.input<typeof customExpertInputSchema>
 export type CustomExpert = z.output<typeof customExpertSchema>
@@ -38,6 +44,7 @@ export const expertSummarySchema = z.object({
   slug: z.string(), name: z.string(), nameEn: z.string(),
   description: z.string(), descriptionEn: z.string(),
   emoji: z.string(), division: z.string(), divisionZh: z.string(),
+  packageVersion: z.string().optional(), packageSha256: z.string().optional(),
   company: z.boolean().optional(),
   teamMember: z.boolean().optional(),
   conflict: z.boolean().optional(),
@@ -50,7 +57,7 @@ export const catalogSnapshotSchema = z.object({
 })
 /** Revision-checked expert directory and enabled selection returned by the Host. */
 export type CatalogSnapshot = z.infer<typeof catalogSnapshotSchema>
-export const expertEditSchema = customExpertSchema
+export const expertEditSchema = customExpertInputSchema.extend({ slug: z.string().regex(CUSTOM_EXPERT_SLUG) })
 
 const messages = {
   invalid: ['请检查名称、简介、分类和提示词。', 'Check the name, description, category and prompt.'],

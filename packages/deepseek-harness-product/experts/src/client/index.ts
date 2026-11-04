@@ -1,4 +1,3 @@
-import { bytesToBase64 } from '@deepseek-ai/dsh-util-crypto'
 import { deepEqualJson } from '@deepseek-ai/dsh-util-values'
 import { createExpertClientState, type ExpertClientState } from './client-state.ts'
 import { commitBulk } from './bulk-operations.ts'
@@ -1013,13 +1012,19 @@ function ExpertCardsSettings(props: PropsLocale<'agency'> & {
     if (expert.custom) {
       readDetail(signal => props.remote.getCustomExpert(expert.slug, signal), (expert) => { setEditor({ expert, enabled, revision }) })
     } else {
-      withPrompt(expert, prompt => {
+      readDetail(async signal => {
+        const source = await props.remote.exportExpert(expert.slug, signal)
+        if (!source.ok) return source
+        return props.remote.importExpert(source.value.files, signal)
+      }, value => {
         const original = displayName(expert, props.getActive())
         let name = `${original.slice(0, 33)} ${props.getActive() === 'zh' ? '副本' : 'copy'}`
         let index = 2
         while (current.experts.some(item => [item.name, item.nameEn].includes(name))) name = `${original.slice(0, 28)} ${props.getActive() === 'zh' ? '副本' : 'copy'} ${index++}`
-        setEditor({ expert: { name, description: displayDescription(expert, props.getActive()).slice(0, 160), division: expert.division,
-          emoji: expert.emoji || DEFAULT_EXPERT_EMOJI, avatar: expertAvatarIndexForDivision(expert.slug, expert.division), prompt }, enabled: false, revision })
+        const manifest = value.manifest ? JSON.parse(value.manifest) as Record<string, unknown> : {}
+        manifest.worker = { ...(typeof manifest.worker === 'object' && manifest.worker !== null ? manifest.worker : {}), suggested_name: `custom-${crypto.randomUUID()}` }
+        setEditor({ expert: { ...value, slug: undefined, manifest: JSON.stringify(manifest), name, description: displayDescription(expert, props.getActive()).slice(0, 160), division: expert.division,
+          emoji: expert.emoji || DEFAULT_EXPERT_EMOJI, avatar: expertAvatarIndexForDivision(expert.slug, expert.division) }, enabled: false, revision })
       })
     }
   }
@@ -1243,13 +1248,10 @@ function ExpertCardsSettings(props: PropsLocale<'agency'> & {
               document.dispatchEvent(new CustomEvent('dsh:company-content-submit', { cancelable: true, detail: {
                 kind: 'expert', name: expert.name, prepare: async (signal: AbortSignal) => {
                   signal.throwIfAborted()
-                  const result = await props.remote.getCustomExpert(expert.slug, signal)
+                  const result = await props.remote.exportExpert(expert.slug, signal)
                   signal.throwIfAborted()
                   if (!result.ok) throw result.error
-                  const value = result.value
-                  const markdown = `---\nname: ${JSON.stringify(value.name)}\ndescription: ${JSON.stringify(value.description)}\n---\n${value.prompt}\n`
-                  const encoded = new TextEncoder().encode(markdown)
-                  return { resourceKey: 'experts/' + expert.slug, files: { ['experts/' + value.division + '/' + expert.slug + '.md']: bytesToBase64(encoded) } }
+                  return result.value
                 },
               } }))
             } }] : []),

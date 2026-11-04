@@ -138,7 +138,19 @@ export class DeepSeekHarnessProductBridge {
   async loadCompanyContent(signal?: AbortSignal): Promise<unknown> {
     if (this.api === undefined) throw new Error('Product server is unavailable')
     const api = this.api
-    return this.withEmployeeSession(signal, signal => api.request<unknown>('/api/v1/company-content', { signal }))
+    return this.withEmployeeSession(signal, signal => api.request<unknown>('/api/v1/company-content', { signal, headers: { 'X-Harness-Content-Protocol': '2' } }))
+  }
+
+  /** Read an immutable resource version through the existing employee session.
+   * @param ref - Coordinates validated by the catalog index parser.
+   * @param signal - Employee lifecycle or sync cancellation.
+   * @returns Package files whose digest is checked before local installation.
+   */
+  async loadCompanyResource(ref: { resourceKey: string; version: string; sha256: string }, signal?: AbortSignal): Promise<unknown> {
+    if (this.api === undefined) throw new Error('Product server is unavailable')
+    const api = this.api
+    const query = new URLSearchParams(ref)
+    return this.withEmployeeSession(signal, signal => api.request<unknown>('/api/v1/company-content/resource-versions?' + query.toString(), { signal }))
   }
 
   /** Replace the current session and persist the opaque token outside the Renderer.

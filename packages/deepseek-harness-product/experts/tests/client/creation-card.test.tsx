@@ -18,12 +18,12 @@ let host: HTMLDivElement
 beforeEach(() => { vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true); host = document.createElement('div'); document.body.append(host); root = createRoot(host) })
 afterEach(async () => { await act(async () => { root.unmount(); await Promise.resolve() }); host.remove(); vi.unstubAllGlobals() })
 const id = 'ef7b9672-415f-4184-a612-f81611dbd276'
-const data: CreationEditorData = { draft: { kind: 'expert', data: { name: 'Review expert', description: 'Review changes', division: 'engineering', emoji: '🧩', avatar: 0, prompt: 'Report findings with evidence.' } }, catalog: { experts: [], enabled: [], revision: 3 }, teams: { teams: [], enabledTeams: [], enabledExperts: [], revision: 3 } }
+const data: CreationEditorData = { draft: { kind: 'expert', data: { name: 'Review expert', description: 'Review changes', division: 'engineering', emoji: '🧩', avatar: 0, prompt: 'Report findings with evidence.', agents: '', resources: {} } }, catalog: { experts: [], enabled: [], revision: 3 }, teams: { teams: [], enabledTeams: [], enabledExperts: [], revision: 3 } }
 function fixture(locale: 'zh' | 'en' = 'en') {
   const unused = (): Promise<never> => Promise.reject(new Error('Unexpected operation'))
   const saveCustomExpert = vi.fn<TeamRemote['saveCustomExpert']>().mockRejectedValue(new Error('Disk full'))
   const remote: TeamRemote = {
-    getCatalog: unused, getCustomExpert: unused, saveCustomExpert, deleteCustomExpert: unused, exportTeam: unused,
+    getCatalog: unused, importExpert: async () => { throw new Error('Unexpected package import') }, exportExpert: async () => { throw new Error('Unexpected package export') }, getCustomExpert: unused, saveCustomExpert, deleteCustomExpert: unused, exportTeam: unused,
     getTeams: unused, saveTeam: unused, setTeamEnabled: unused, deleteTeam: unused,
   }
   const loadCreation = vi.fn<React.ComponentProps<typeof CreationCard>['loadCreation']>(() => Promise.resolve(structuredClone(data)))
@@ -69,7 +69,7 @@ it.each(['zh', 'en'] as const)('opens a prefilled %s editor only on an explicit 
   expect(document.querySelector<HTMLInputElement>('input[aria-label="' + copy['custom.name'] + '"]')?.value).toBe('Review expert')
   expect([...document.querySelectorAll('textarea')].map(area => area.value)).toContain('Report findings with evidence.')
   expect(saveCustomExpert).not.toHaveBeenCalled()
-  expect({ action: host.querySelector('button')?.textContent, fields: [...document.querySelectorAll('input,textarea')].filter((field): field is HTMLInputElement | HTMLTextAreaElement => field instanceof HTMLInputElement || field instanceof HTMLTextAreaElement).map(field => ({ label: field.getAttribute('aria-label'), value: field.value })) }).toMatchSnapshot()
+  expect({ action: host.querySelector('button')?.textContent, fields: [...document.querySelectorAll('input,textarea')].filter((field): field is HTMLInputElement | HTMLTextAreaElement => (field instanceof HTMLInputElement || field instanceof HTMLTextAreaElement) && field.hasAttribute('aria-label')).map(field => ({ label: field.getAttribute('aria-label'), value: field.value })) }).toMatchSnapshot()
   await click(copy['custom.save'])
   expect(document.body.textContent).toContain('Disk full')
   expect([...document.querySelectorAll('textarea')].some(area => area.value === 'Report findings with evidence.')).toBe(true)
@@ -131,7 +131,7 @@ it('confirms the visible bulk count, cancels without writing, and preserves anot
   const remote: React.ComponentProps<typeof AgencySettingsPanel>['remote'] = {
     getCatalog: () => Promise.resolve({ ok: true, value: structuredClone(catalog) }),
     getTeams: () => Promise.resolve({ ok: true, value: emptyTeams }),
-    setEnabled, getPrompt: unused, getCustomExpert: unused, saveCustomExpert: unused, deleteCustomExpert: unused,
+    setEnabled, getPrompt: unused, importExpert: async () => { throw new Error('Unexpected package import') }, exportExpert: async () => { throw new Error('Unexpected package export') }, getCustomExpert: unused, saveCustomExpert: unused, deleteCustomExpert: unused,
   }
   const dictionary: Readonly<Record<string, string>> = en
   const cache = createExpertClientState(remote)
@@ -211,7 +211,7 @@ it.each(['expert', 'team'] as const)('keeps an unsaved %s form mounted while a r
   const remote: React.ComponentProps<typeof AgencySettingsPanel>['remote'] = {
     getCatalog: async () => ({ ok: true, value: { experts: [], enabled: [], revision: 3 } }),
     getTeams: async () => ({ ok: true, value: { teams: [], enabledTeams: [], enabledExperts: [], revision: 3 } }),
-    setEnabled: unused, getPrompt: unused, getCustomExpert: unused,
+    setEnabled: unused, getPrompt: unused, importExpert: async () => { throw new Error('Unexpected package import') }, exportExpert: async () => { throw new Error('Unexpected package export') }, getCustomExpert: unused,
     saveCustomExpert: unused, deleteCustomExpert: unused,
   }
   const cache = createExpertClientState(remote)

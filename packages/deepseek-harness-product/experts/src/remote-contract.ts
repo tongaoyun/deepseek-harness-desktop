@@ -30,6 +30,8 @@ type ValidationRules = {
 // UUIDs, defaults, transformations or exact-object checks. Missing/new parameters fail closed.
 const validationRules = {
   'agencyAgents/claimCreation': { parameters: { sessionId: z.string().min(1).max(128), proposalId: z.uuid() }, result: creationEditorSchema },
+  'agencyAgents/importExpert': { parameters: { files: z.record(z.string(), z.string()).refine(files => Object.keys(files).length <= 2048 && Object.values(files).reduce((sum, value) => sum + value.length, 0) <= 44_744_704) }, result: customExpertInputSchema },
+  'agencyAgents/exportExpert': { parameters: { slug: z.string().regex(CUSTOM_EXPERT_SLUG) }, result: z.object({ resourceKey: z.string(), files: z.record(z.string(), z.string()), catalog: z.record(z.string(), z.string()) }).strict() },
   'agencyAgents/getTeams': { parameters: {}, result: teamSnapshotSchema },
   'agencyAgents/saveTeam': { parameters: { team: teamInputSchema, enabled: z.boolean(), expectedRevision: revisionSchema }, result: teamSnapshotSchema },
   'agencyAgents/setTeamEnabled': { parameters: { id: teamIdSchema, enabled: z.boolean(), expectedRevision: revisionSchema }, result: teamSnapshotSchema },

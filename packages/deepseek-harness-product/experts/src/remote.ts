@@ -1,3 +1,4 @@
+import { EXPERT_PACKAGE_SOURCE, importExpertPackage, type ExpertPackageSource } from './package-transfer.ts'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import { CREATION_SERVICE, type CreationDrafts } from './creation.ts'
 import type { CreationEditorData } from './remote-contract.ts'
@@ -63,6 +64,32 @@ export default class AgencyAgentsRemote extends TypertRemoteService {
     return { draft, catalog, teams }
   }
 
+  /** Import complete package bytes into a personal draft; saving remains explicit.
+   * @param files - Complete base64-encoded package files.
+   * @param signal - Native request cancellation.
+   * @returns Editable package draft.
+   */
+  @Remote('importExpert')
+  async importExpert(files: Record<string, string>, signal: AbortSignal): Promise<CustomExpertInput> {
+    signal.throwIfAborted()
+    return importExpertPackage(files)
+  }
+
+  /** Export the complete selected package, including binary resources.
+   * @param slug - Selected expert identifier.
+   * @param signal - Native request cancellation.
+   * @returns Complete package and catalog metadata.
+   */
+  @Remote('exportExpert')
+  async exportExpert(slug: string, signal: AbortSignal): Promise<{ resourceKey: string; files: Record<string, string>; catalog: Record<string, string> }> {
+    signal.throwIfAborted()
+    const source = this.ctx.get(EXPERT_PACKAGE_SOURCE) as ExpertPackageSource | undefined
+    if (!source) throw new Error('Expert package source is unavailable')
+    const value = await source.read(slug, signal)
+    signal.throwIfAborted()
+    return value
+  }
+
   private teams(): AgencyTeamLibrary {
     const library = this.ctx.get(AGENCY_TEAM_SERVICE) as AgencyTeamLibrary | undefined
     if (!library) throw new Error(teamText(readHostLocale(this.ctx), '专家团服务不可用，请重新加载插件。'))
@@ -83,10 +110,10 @@ export default class AgencyAgentsRemote extends TypertRemoteService {
   }
 
   /**
-   * Export one saved personal team with concrete member personas; no private slug escapes.
+   * Export one saved team with immutable references to published company experts.
    * @param id - Personal team identifier.
    * @param expectedRevision - Revision read before preparing the submission.
-   * @param signal - Native Remote cancellation for catalog and persona reads.
+   * @param signal - Native Remote cancellation for version and catalog reads.
    * @returns Resource key and Base64-encoded files for company review.
    */
   @Remote('exportTeam')
@@ -101,13 +128,10 @@ export default class AgencyAgentsRemote extends TypertRemoteService {
     if (!team || snapshot.revision !== expectedRevision) throw new Error(teamText(readHostLocale(this.ctx), '专家团已更新，请刷新后提交'))
     const catalog = await this.library().catalog(signal)
     signal.throwIfAborted()
-    const experts = await Promise.all(team.members.map(async (member, index) => {
+    for (const member of team.members) {
       const expert = catalog.experts.find(item => item.slug === member.expertSlug && !item.conflict)
-      if (!expert) throw new Error(teamText(readHostLocale(this.ctx), '专家团成员已删除或冲突，请修复后提交'))
-      return { key: `member-${index + 1}`, name: expert.name, description: expert.description,
-        division: expert.division, emoji: expert.emoji,
-        prompt: (await personaSource(this.ctx).getPrompt(expert.slug, expert.division, readHostLocale(this.ctx), undefined, signal)).prompt }
-    }))
+      if (!expert?.company || !member.expertVersion || !member.expertSha256) throw new Error(teamText(readHostLocale(this.ctx), '发布团队前，请先发布成员专家并选择公司专家版本。'))
+    }
     signal.throwIfAborted()
     const latest = await this.teams().snapshot(undefined, signal)
     signal.throwIfAborted()
@@ -115,9 +139,8 @@ export default class AgencyAgentsRemote extends TypertRemoteService {
     signal.throwIfAborted()
     if (latest.revision !== expectedRevision || latestCompany?.sha256 !== companyVersion?.sha256) throw new Error(teamText(readHostLocale(this.ctx), '专家团已更新，请刷新后提交'))
     const { id: _id, ...definition } = team
-    const content = publishedTeamSchema.parse({ team: { ...definition,
-      members: team.members.map((member, index) => ({ ...member, expertSlug: `member-${index + 1}` })) }, experts })
     const key = 'teams/' + id.slice('team-custom-'.length)
+    const content = publishedTeamSchema.parse({ schemaVersion: 1, id: key.slice('teams/'.length), team: definition })
     return { resourceKey: key, files: { [key + '.json']: Buffer.from(JSON.stringify(content)).toString('base64') } }
   }
 

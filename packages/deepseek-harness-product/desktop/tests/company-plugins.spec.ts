@@ -27,7 +27,7 @@ import Typert from '@deepseek-ai/dsh-typert-registry'
 import Gateway from '@deepseek-ai/dsh-api-gateway'
 import Access from '@deepseek-ai/dsh-api-remote-access'
 import { Peer } from '@deepseek-ai/dsh-client-connection'
-import { contentDigest } from '@deepseek-harness/product/company-content'
+import { expertFiles, versionRef, contentIndex } from '../../product/tests/content-fixtures.ts'
 import * as Agency from '@deepseek-harness/product-experts'
 const AGENCY_LIBRARY_SERVICE = 'agencyAgentsLibrary'
 interface AgencyExpertLibrary {
@@ -54,29 +54,34 @@ it.each([{ published: false, refresh: false, collision: false }, { published: tr
   onTestFinished(() => { vi.unstubAllEnvs() })
   const files: Record<string, string> = published ? {
     'skills/orders/SKILL.md': Buffer.from('---\nname: orders\ndescription: 查询公司订单\n---\nCompany order skill body.').toString('base64'),
-    'experts/operations/orders.md': Buffer.from('---\nname: 公司订单专家\ndescription: 处理公司订单\n---\nCompany order expert persona.').toString('base64'),
+    ...expertFiles('orders', 'Company order expert persona.'),
   } : {}
-  if (published) {
-    files['experts/operations/long-header.md'] = Buffer.from(
-      `---\nname: Long published expert\ndescription: ${'a'.repeat(70 * 1024)}\n---\nPublished long-header persona.`).toString('base64')
+  const presentation: Record<string, string> = { orders: '公司订单专家', 'long-header': 'Long published expert',
+    'chief-executive-officer': '冲突公司专家', 'duplicate-one': '同名专家', 'duplicate-two': '同名专家' }
+  if (published) Object.assign(files, expertFiles('long-header', 'Published instructions. ' + 'a'.repeat(70 * 1024)))
+  if (collision) for (const slug of ['chief-executive-officer', 'duplicate-one', 'duplicate-two']) Object.assign(files, expertFiles(slug, 'Must not execute.'))
+  const payloads = new Map<string, Record<string, string>>()
+  const publish = (version: string, files: Record<string, string>) => {
+    const keys = [...new Set(Object.keys(files).map(path => path.split('/').slice(0, 2).join('/')))]
+    const refs = keys.map((key) => {
+      const selected = Object.fromEntries(Object.entries(files).filter(([path]) => path.startsWith(key + '/')))
+      const ref = versionRef(key, selected)
+      if (key.startsWith('experts/')) { ref.name = presentation[key.slice(8)]!; ref.catalog = { name: ref.name, division: 'operations', avatar: '0' } }
+      payloads.set(ref.sha256, selected); return ref
+    })
+    return contentIndex(version, refs)
   }
-  if (collision) {
-    for (const [slug, name] of [['chief-executive-officer', '冲突公司专家'], ['duplicate-one', '同名专家'], ['duplicate-two', '同名专家']]) {
-      files[`experts/operations/${slug}.md`] = Buffer.from(`---\nname: ${name}\ndescription: 冲突专家\n---\nMust not execute.`).toString('base64')
-    }
-  }
-  const release = published ? { version: '1.0.0', sha256: contentDigest(files), files } : null
-  const roots = await installCompanyContent(join(home, 'company-content'), 'employee-fixture', release, new AbortController().signal)
-  let remote: unknown = release
+  let remote: unknown = published ? publish('1.0.0', files) : null
   let now = performance.now()
   if (refresh) {
     vi.spyOn(performance, 'now').mockImplementation(() => now)
     onTestFinished(() => { vi.restoreAllMocks() })
   }
   const sync = new CompanyContentSync({ root: join(home, 'company-content'), employeeId: 'employee-fixture', refreshIntervalMs: 1000,
-    load: async () => remote })
+    load: async () => remote, loadResource: async ref => ({ ...ref, files: payloads.get(ref.sha256) }) })
   onTestFinished(() => sync.close())
   await sync.prepare(); await sync.refresh()
+  const roots = sync.read()
   vi.stubEnv('DSH_COMPANY_SKILLS_ROOT', roots.skillsRoot)
   vi.stubEnv('DSH_COMPANY_EXPERTS_ROOT', roots.expertsRoot)
   const directory = join(home, 'profile')
@@ -241,9 +246,9 @@ it.each([{ published: false, refresh: false, collision: false }, { published: tr
     expect((await ctx.skills.get('orders', { scope: old.agent }))?.content).toContain('Company order skill body.')
     const next = { ...files,
       'skills/orders/SKILL.md': Buffer.from('---\nname: orders\ndescription: updated orders\n---\nSecond company skill.').toString('base64'),
-      'experts/operations/orders.md': Buffer.from('---\nname: 公司订单专家\ndescription: updated orders\n---\nSecond company expert.').toString('base64'),
+      ...expertFiles('orders', 'Second company expert.'),
     }
-    remote = { version: '2.0.0', sha256: contentDigest(next), files: next }
+    const nextIndex = publish('2.0.0', next); remote = nextIndex
     now += 2000
     await source.refresh()
     expect((await library!.catalog()).experts.find(expert => expert.slug === 'orders')?.company).toBe(true)
@@ -257,7 +262,7 @@ it.each([{ published: false, refresh: false, collision: false }, { published: tr
     const oldPrompt = await ctx.systemPrompt.assemble({ scope: old.agent })
     const freshPrompt = await ctx.systemPrompt.assemble({ scope: fresh.agent })
     expect(JSON.stringify(oldPrompt)).toContain(before.sha256)
-    expect(JSON.stringify(freshPrompt)).toContain(contentDigest(next))
+    expect(JSON.stringify(freshPrompt)).toContain(sync.read().sha256)
     await fresh.dispose(); await old.dispose()
   }
   await ctx.loader.root.update([])
@@ -270,6 +275,8 @@ it('restores personal experts through the builtin profile and official Settings 
   onTestFinished(() => { rmSync(home, { recursive: true, force: true }) })
   vi.stubEnv('DSH_HOME', home)
   onTestFinished(() => { vi.unstubAllEnvs() })
+  const personalRoots = await installCompanyContent(join(home, 'company-content'), 'employee', null, new AbortController().signal)
+  vi.stubEnv('DSH_COMPANY_EXPERTS_ROOT', personalRoots.expertsRoot)
   const directory = join(home, 'profile')
   initProfile(directory, [])
   writeFileSync(join(directory, 'cordis.yml'), '[]\n')

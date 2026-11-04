@@ -19,7 +19,7 @@ it.each(['catalog', 'expert', 'verification'] as const)('preserves the %s read f
   if (stage === 'expert') getCustomExpert.mockResolvedValueOnce({ ok: false, error })
   if (stage === 'verification') getCatalog.mockResolvedValueOnce({ ok: true, value: snapshot }).mockResolvedValueOnce({ ok: false, error })
   const unused = (): Promise<never> => Promise.reject(new Error('Unexpected mutation'))
-  await expect(loadEditorReview({ getCatalog, getCustomExpert, saveCustomExpert: unused, deleteCustomExpert: unused }, 'custom-reviewer', 'en')).rejects.toBe(error)
+  await expect(loadEditorReview({ getCatalog, getCustomExpert, importExpert: unused, exportExpert: unused, saveCustomExpert: unused, deleteCustomExpert: unused }, 'custom-reviewer', 'en')).rejects.toBe(error)
   expect(getCatalog).toHaveBeenCalledTimes(stage === 'verification' ? 2 : 1)
   expect(getCustomExpert).toHaveBeenCalledTimes(stage === 'catalog' ? 0 : 1)
 })
@@ -28,7 +28,7 @@ it('keeps a rejected selection write typed and leaves the confirmed catalog unch
   const error = expertConflict('Revision mismatch')
   const unused = (): Promise<never> => Promise.reject(new Error('Unexpected read'))
   const setEnabled = vi.fn<Parameters<typeof writeEnabled>[0]['setEnabled']>().mockResolvedValue({ ok: false, error })
-  const remote: Parameters<typeof writeEnabled>[0] = { getCatalog: unused, getCustomExpert: unused, saveCustomExpert: unused,
+  const remote: Parameters<typeof writeEnabled>[0] = { getCatalog: unused, importExpert: async () => { throw new Error('Unexpected package import') }, exportExpert: async () => { throw new Error('Unexpected package export') }, getCustomExpert: unused, saveCustomExpert: unused,
     deleteCustomExpert: unused, getPrompt: unused, setEnabled }
   const cache = createExpertClientState(remote)
   const before = cache.catalog.accept({ experts: [], enabled: [], revision: 1 })

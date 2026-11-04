@@ -6,7 +6,8 @@ import { join } from 'node:path'
 import { z } from 'zod'
 import { ProductError } from '@deepseek-harness/product/errors'
 import type { CompanyContentRoots } from '@deepseek-harness/product/protocol'
-import { installCompanyContent, restoreCompanyContent } from './company-content.ts'
+import type { CompanyResourceVersion } from '@deepseek-harness/product/company-content'
+import { installCompanyIndex, installCompanyContent, restoreCompanyContent } from './company-content.ts'
 
 const coordinate = z.object({
   version: z.string().regex(/^(?:0|\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?)$/u),
@@ -31,6 +32,7 @@ export class CompanyContentSync {
     employeeId: string
     refreshIntervalMs: number
     load: (signal: AbortSignal) => Promise<unknown>
+    loadResource: (ref: CompanyResourceVersion, signal: AbortSignal) => Promise<unknown>
   }) { this.employeeRoot = join(options.root, digest(options.employeeId)) }
 
   /** Read verified local content immediately and start the first check in background.
@@ -69,7 +71,8 @@ export class CompanyContentSync {
     if (performance.now() - this.lastChecked < this.options.refreshIntervalMs) return Promise.resolve()
     const operation = this.track(async () => {
       const value = await this.options.load(this.lifecycle.signal)
-      const roots = await installCompanyContent(this.options.root, this.options.employeeId, value, this.lifecycle.signal)
+      const roots = await installCompanyIndex(this.options.root, this.options.employeeId, value,
+        this.options.loadResource, this.lifecycle.signal)
       await this.writeJson(join(this.employeeRoot, 'latest.json'), { version: roots.version, sha256: roots.sha256 })
       this.lifecycle.signal.throwIfAborted()
       this.roots = roots

@@ -155,7 +155,7 @@ it('keeps the unsaved expert when cancelling discard and closes only after expli
   const unused = (): Promise<never> => Promise.reject(new Error('Unexpected remote mutation'))
   const dictionary: Readonly<Record<string, string>> = en
   render(<CustomExpertEditor enabled={false} revision={1} divisions={['specialized']} locale="en" t={key => dictionary[key] ?? key}
-    remote={{ getCatalog: unused, getCustomExpert: unused, saveCustomExpert: unused, deleteCustomExpert: unused }}
+    remote={{ getCatalog: unused, importExpert: async () => { throw new Error('Unexpected package import') }, exportExpert: async () => { throw new Error('Unexpected package export') }, getCustomExpert: unused, saveCustomExpert: unused, deleteCustomExpert: unused }}
     prepareSave={() => vi.fn()} onClose={close} />)
   const prompt = screen.getByRole('textbox', { name: en['custom.prompt'] })
   fireEvent.change(prompt, { target: { value: 'Unsaved instructions' } })
@@ -183,7 +183,7 @@ it('opens conflict review from the native error code even when its wording chang
   const dictionary: Readonly<Record<string, string>> = en
   render(<CustomExpertEditor expert={{ name: 'Reviewer', description: 'Review code', division: 'specialized', prompt: 'Check changes' }}
     enabled={false} revision={1} divisions={['specialized']} locale="en" t={key => dictionary[key] ?? key}
-    remote={{ getCatalog, getCustomExpert: unused, saveCustomExpert: save, deleteCustomExpert: unused }}
+    remote={{ getCatalog, importExpert: async () => { throw new Error('Unexpected package import') }, exportExpert: async () => { throw new Error('Unexpected package export') }, getCustomExpert: unused, saveCustomExpert: save, deleteCustomExpert: unused }}
     prepareSave={() => saved} onClose={vi.fn()} />)
   fireEvent.click(screen.getByRole('button', { name: en['custom.save'] }))
   const review = await screen.findByRole('button', { name: en['custom.reviewLatest'] })

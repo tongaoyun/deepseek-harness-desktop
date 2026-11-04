@@ -1,3 +1,4 @@
+import { expertFiles } from './content-fixtures.ts'
 import { describe, expect, it } from 'vitest'
 import { companyContentRelease, contentDigest } from '../src/company-content.ts'
 
@@ -37,23 +38,12 @@ describe('company native content', () => {
     expect(companyContentRelease(release())).toEqual(release())
     expect(companyContentRelease(null).files).toEqual({})
   })
-  it.each(['orders', 'company-orders'])('preserves expert and skill names without assigning a company prefix: %s', (name) => {
-    const document = Buffer.from(`---\nname: ${name}\ndescription: Orders\n---\nUse the configured tools.`).toString('base64')
-    const data = { [`experts/operations/${name}.md`]: document, [`skills/${name}/SKILL.md`]: document }
+  it.each(['orders', 'company-orders'])('preserves AgentSpec identifiers and complete package resources: %s', (name) => {
+    const data = { ...expertFiles(name, 'Literal instructions'), [`experts/${name}/references/中文.txt`]: Buffer.from('参考资料').toString('base64'),
+      [`experts/${name}/assets/template.bin`]: Buffer.from([0, 255, 17]).toString('base64') }
     expect(companyContentRelease(release(data)).files).toEqual(data)
-  })
-  it('uses native YAML semantics and preserves expert display names independently of their file ids', () => {
-    const document = (header: string) => Buffer.from(`---\n${header}\n---\nUse the configured tools.`).toString('base64')
-    const quoted = { 'experts/operations/orders.md': document('name: orders # stable id\ndescription: "查询订单"') }
-    expect(companyContentRelease(release(quoted)).files).toEqual(quoted)
-    const displayName = { 'experts/operations/orders.md': document('name: 订单专家\ndescription: Orders') }
-    expect(companyContentRelease(release(displayName)).files).toEqual(displayName)
-    expect(() => companyContentRelease(release({
-      'experts/operations/orders.md': document('name: [invalid]\ndescription: Orders'),
-    }))).toThrow('公司专家必须包含非空单行字符串名称和简介')
-    expect(() => companyContentRelease(release({
-      'experts/operations/orders.md': document('name: orders\ndescription: [broken'),
-    }))).toThrow('公司专家 YAML 格式无效')
+    expect(() => companyContentRelease(release({ ...data, [`experts/${name}/config/SOUL.md`]: '' }))).toThrow('专家说明无效')
+    expect(() => companyContentRelease(release({ ...data, [`experts/${name}/manifest.json`]: Buffer.from('{"worker":{"suggested_name":"wrong"},"description":"Orders"}').toString('base64') }))).toThrow()
   })
   it.each(['skills/orders/../../private', 'skills/orders/CON.txt', 'skills/orders/x.', 'skills/orders/.hidden/../x', 'experts/engineering/orders--invalid.md', 'skills/orders--invalid/SKILL.md', 'skills/orders-/SKILL.md'])('rejects unsafe paths: %s', (path) => {
     const data = { ...files, [path]: markdown }
