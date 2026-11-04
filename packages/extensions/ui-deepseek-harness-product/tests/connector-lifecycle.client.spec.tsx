@@ -142,6 +142,43 @@ it('uses the latest clipboard request when reads complete out of order', async (
   expect(screen.getByLabelText<HTMLInputElement>(`${zh.configurationKey} 1`).value).toBe('LATEST')
 })
 
+it.each(['stdio', 'streamable-http'] as const)('preserves remaining %s inputs when an earlier configuration row is removed', async (transport) => {
+  const invoke = vi.fn(async () => ({ ok: true, result: [] }))
+  vi.stubGlobal('dshDesktop', { extensions: { invoke, cancel: vi.fn() } })
+  render(<ConnectorEditor onClose={vi.fn()} onSaved={vi.fn()} t={t} />)
+  if (transport === 'streamable-http') {
+    fireEvent.change(screen.getByLabelText(zh.mcpServerType), { target: { value: transport } })
+    fireEvent.click(screen.getByRole('button', { name: zh.addConfigurationEntry }))
+  }
+  fireEvent.click(screen.getByRole('button', { name: transport === 'stdio' ? zh.addVariable : zh.addConfigurationEntry }))
+  fireEvent.change(screen.getByLabelText(`${zh.configurationKey} 1`), { target: { value: 'FIRST_KEY' } })
+  fireEvent.change(screen.getByLabelText(`${zh.configurationKey} 2`), { target: { value: 'SECOND_KEY' } })
+  const remaining = screen.getByLabelText<HTMLInputElement>(`${zh.configurationValue} 2`)
+  fireEvent.change(remaining, { target: { value: 'retained-private-value' } })
+  remaining.focus()
+  remaining.setSelectionRange(2, 6)
+  fireEvent.click(screen.getByRole('button', { name: `${zh.remove} 1` }))
+  expect(screen.getByLabelText(`${zh.configurationValue} 1`)).toBe(remaining)
+  expect(document.activeElement).toBe(remaining)
+  expect([remaining.selectionStart, remaining.selectionEnd]).toEqual([2, 6])
+  expect(screen.getByLabelText<HTMLInputElement>(`${zh.configurationKey} 1`).value).toBe('SECOND_KEY')
+  expect(remaining.value).toBe('retained-private-value')
+  await act(async () => {})
+  expect(invoke).toHaveBeenCalledTimes(1)
+})
+
+it('closes without a discard prompt after replacing an empty configuration row', async () => {
+  vi.stubGlobal('dshDesktop', { extensions: { invoke: vi.fn(async () => ({ ok: true, result: [] })), cancel: vi.fn() } })
+  const onClose = vi.fn()
+  render(<ConnectorEditor onClose={onClose} onSaved={vi.fn()} t={t} />)
+  fireEvent.click(screen.getByRole('button', { name: zh.addVariable }))
+  fireEvent.click(screen.getByRole('button', { name: `${zh.remove} 1` }))
+  closeDialog('header')
+  expect(onClose).toHaveBeenCalledOnce()
+  expect(screen.queryByText(zh.knowledgeDiscardDraftConfirmation)).toBeNull()
+  await act(async () => {})
+})
+
 it.each(['header', 'escape', 'mask'] as const)('protects device secrets before %s dismissal and retains them when editing continues', async (action) => {
   vi.stubGlobal('dshDesktop', { extensions: { invoke: vi.fn(async () => ({ ok: true, result: template })), cancel: vi.fn() } })
   render(<ConnectorDetail product={product} onCatalogChanged={async () => {}} t={t} />)

@@ -12,11 +12,13 @@ import { productErrorMessage } from './product-errors.ts'
 import { connectorCommand, connectorCommandText, connectorConfigurations, connectorVariables } from './connector-configuration.ts'
 import { useEditorCloseGuard } from './useEditorCloseGuard.ts'
 
-type Pair = { key: string; value: string }
+type Pair = { readonly id: string; key: string; value: string }
 type Providers = { readonly status: 'loading' }
   | { readonly status: 'ready'; readonly items: readonly ProductItem[] }
   | { readonly status: 'failed'; readonly error: unknown }
-const pairs = (value: Record<string, string>): Pair[] => Object.entries(value).map(([key, value]) => ({ key, value }))
+const pair = (key = '', value = ''): Pair => ({ id: randomUUID(), key, value })
+const pairs = (value: Record<string, string>): Pair[] => Object.entries(value).map(([key, value]) => pair(key, value))
+const pairValues = (rows: readonly Pair[]) => rows.map(({ key, value }) => ({ key, value }))
 const configuration = (rows: readonly Pair[]): Record<string, string> => {
   const active = rows.filter(row => row.key.trim() || row.value)
   const keys = active.map(row => row.key.trim())
@@ -38,7 +40,7 @@ export function ConnectorEditor({ onClose, onSaved, editing, t }: {
   const [mode, setMode] = useState<'manual' | 'json'>('manual')
   const [json, setJson] = useState('')
   const [headers, setHeaders] = useState<Pair[]>([])
-  const [environment, setEnvironment] = useState<Pair[]>([{ key: '', value: '' }])
+  const [environment, setEnvironment] = useState<Pair[]>(() => [pair()])
   const [command, setCommand] = useState('')
   const [timeout, setTimeout] = useState('60')
   const [providers, setProviders] = useState<Providers>({ status: 'loading' })
@@ -48,7 +50,7 @@ export function ConnectorEditor({ onClose, onSaved, editing, t }: {
   const [pending, setPending] = useState(false)
   const [loading, setLoading] = useState(editing !== undefined)
   const [ready, setReady] = useState(editing === undefined)
-  const values = JSON.stringify([draft, headers, environment, command, timeout, json])
+  const values = JSON.stringify([draft, pairValues(headers), pairValues(environment), command, timeout, json])
   const baseline = useRef(values)
   const close = useEditorCloseGuard(values !== baseline.current, pending, onClose)
   const inputs = [draft, headers, environment, command, timeout, json, mode, pending, close.confirming]
@@ -96,9 +98,12 @@ export function ConnectorEditor({ onClose, onSaved, editing, t }: {
   }
   const applyJson = (value: ConnectorDraft, loaded = false): void => {
     const nextDraft = editing && !loaded ? { ...value, id: editing.id, version: draft.version } : value
-    const nextHeaders = pairs(value.headers), nextEnvironment = pairs(value.environment).length ? pairs(value.environment) : [{ key: '', value: '' }]
+    const nextHeaders = pairs(value.headers), environmentRows = pairs(value.environment)
+    const nextEnvironment = environmentRows.length ? environmentRows : [pair()]
     const nextCommand = connectorCommandText(value), nextTimeout = String(value.timeoutSeconds)
-    if (loaded) baseline.current = JSON.stringify([nextDraft, nextHeaders, nextEnvironment, nextCommand, nextTimeout, json])
+    if (loaded) baseline.current = JSON.stringify([
+      nextDraft, pairValues(nextHeaders), pairValues(nextEnvironment), nextCommand, nextTimeout, json,
+    ])
     setDraft(nextDraft); setHeaders(nextHeaders); setEnvironment(nextEnvironment)
     setCommand(nextCommand); setTimeout(nextTimeout); setMode('manual'); setError(undefined)
   }
@@ -156,7 +161,7 @@ export function ConnectorEditor({ onClose, onSaved, editing, t }: {
       <div className={css.configurationHeading}><h3>{t(label)} <span>{t('optionalField')}</span></h3>
         <Button variant="ghost" size="sm" disabled={pending} onClick={() => { void paste(set, rows) }}>
           <IconDeliverDocRegular size={14} />{t('pasteConfiguration')}</Button></div>
-      {rows.map((row, index) => <div className={css.configurationRow} key={index}>
+      {rows.map((row, index) => <div className={css.configurationRow} key={row.id}>
         <input aria-label={`${t('configurationKey')} ${index + 1}`} placeholder={t('configurationKey')} disabled={pending} value={row.key}
           onChange={(event) => { set(rows.map((value, current) =>
             current === index ? { ...value, key: event.currentTarget.value } : value)) }} />
@@ -167,7 +172,7 @@ export function ConnectorEditor({ onClose, onSaved, editing, t }: {
         <Tooltip label={t('remove')}><button className={css.iconButton} type="button" aria-label={`${t('remove')} ${index + 1}`} disabled={pending}
           onClick={() => { set(rows.filter((_, current) => current !== index)) }}><IconCloseOutlineRegular size={16} /></button></Tooltip>
       </div>)}
-      <Button className={css.addVariable} variant="ghost" size="sm" disabled={pending} onClick={() => { set([...rows, { key: '', value: '' }]) }}>
+      <Button className={css.addVariable} variant="ghost" size="sm" disabled={pending} onClick={() => { set([...rows, pair()]) }}>
         <IconPlusOutlineRegular size={14} />{t(label === 'privateEnvironment' ? 'addVariable' : 'addConfigurationEntry')}</Button>
     </section>
   return <Modal open onClose={close.requestClose} title={t(editing ? 'editConnector' : 'addMcpServer')} closeLabel={t('close')} className={css.connectorEditorModal as string}
@@ -198,7 +203,7 @@ export function ConnectorEditor({ onClose, onSaved, editing, t }: {
           <label className={css.editorField}><span>{t('mcpServerType')}</span><select aria-label={t('mcpServerType')} value={draft.transport} disabled={pending}
             onChange={(event) => {
               const value = event.currentTarget.value === 'stdio' ? 'stdio' : 'streamable-http'
-              setHeaders([]); setEnvironment([{ key: '', value: '' }]); setCommand(''); setError(undefined)
+              setHeaders([]); setEnvironment([pair()]); setCommand(''); setError(undefined)
               setDraft(({ oauthProviderId: _oauthProviderId, ...previous }) => ({ ...previous, transport: value, url: '', command: '', arguments: [] }))
             }}><option value="stdio">{t('stdioTransport')}</option><option value="streamable-http">{t('httpTransport')}</option></select></label>
           {field('name', 'mcpServerName', t('connectorNamePlaceholder'), true)}
