@@ -32,16 +32,20 @@ function safePath(path: string): void {
 }
 /** Read one ZIP or selected directory with file-count and decompression bounds.
  * @param selection - User-selected ZIP or package directory.
- * @returns Complete base64-encoded package files.
+ * @param signal - Editor lifetime cancellation, checked before reading and after each completed read.
+ * @returns Complete base64-encoded package files; cancellation stops further reads and processing.
  */
-export async function importPackageFiles(selection: readonly File[]): Promise<Record<string, string>> {
+export async function importPackageFiles(selection: readonly File[], signal: AbortSignal): Promise<Record<string, string>> {
+  signal.throwIfAborted()
   let total = 0
   const entries: Record<string, Uint8Array> = {}
   if (selection.length === 1 && selection[0].name.toLowerCase().endsWith('.zip')) {
     if (selection[0].size > MAX_BYTES) throw new PackageTransferError('custom.packageTooLarge')
     let count = 0
     const seen = new Set<string>()
-    const unpacked = unzipSync(new Uint8Array(await selection[0].arrayBuffer()), { filter(info) {
+    const bytes = new Uint8Array(await selection[0].arrayBuffer())
+    signal.throwIfAborted()
+    const unpacked = unzipSync(bytes, { filter(info) {
       if (++count > 4096) throw new PackageTransferError('custom.packageTooLarge')
       if (info.name.endsWith('/')) return false
       safePath(info.name)
@@ -52,13 +56,23 @@ export async function importPackageFiles(selection: readonly File[]): Promise<Re
     Object.assign(entries, unpacked)
   } else {
     if (selection.length > 2048) throw new PackageTransferError('custom.packageTooLarge')
-    for (const file of Array.from(selection)) {
+    const seen = new Set<string>()
+    const files = selection.map(file => {
       const path = file.webkitRelativePath || file.name
       safePath(path)
-      if ((total += file.size) > MAX_BYTES || Object.hasOwn(entries, path)) throw new PackageTransferError('custom.packageTooLarge')
-      entries[path] = new Uint8Array(await file.arrayBuffer())
+      if (seen.has(path.toLowerCase())) throw new PackageTransferError('custom.packageInvalid')
+      seen.add(path.toLowerCase())
+      if ((total += file.size) > MAX_BYTES) throw new PackageTransferError('custom.packageTooLarge')
+      return { path, file }
+    })
+    for (const { path, file } of files) {
+      signal.throwIfAborted()
+      const bytes = new Uint8Array(await file.arrayBuffer())
+      signal.throwIfAborted()
+      entries[path] = bytes
     }
   }
+  signal.throwIfAborted()
   return packagePaths(entries)
 }
 /** Encode the current draft without dropping optional AgentSpec fields or binary resources.

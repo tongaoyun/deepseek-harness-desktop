@@ -64,13 +64,13 @@ it('imports a complete ZIP and selected directory with identical Chinese names a
   const entries = Object.fromEntries(Object.entries(files).map(([path, encoded]) => [path.replace('experts/', ''), new Uint8Array(Buffer.from(encoded, 'base64'))]))
   const zip = new File([new Uint8Array(zipSync(entries))], 'order-expert.zip')
   const list = (files: File[]) => Object.assign(files, { item: (index: number) => files[index] ?? null })
-  expect(await importPackageFiles(list([zip]))).toEqual(files)
+  expect(await importPackageFiles(list([zip]), new AbortController().signal)).toEqual(files)
   const directory = Object.entries(entries).map(([path, bytes]) => {
     const file = new File([new Uint8Array(bytes)], path.split('/').at(-1)!)
     Object.defineProperty(file, 'webkitRelativePath', { value: path })
     return file
   })
-  expect(await importPackageFiles(list(directory))).toEqual(files)
+  expect(await importPackageFiles(list(directory), new AbortController().signal)).toEqual(files)
 })
 
 it.each([undefined, ''])('preserves absent and empty AGENTS.md separately across a saved package round trip: %s', async (agents) => {
@@ -159,4 +159,50 @@ it('rejects oversized and conflicting attachments before reading and cancels par
   const original = structuredClone(draft)
   await expect(addPackageResources(draft, [file], controller.signal)).rejects.toThrow('Editor closed')
   expect(draft).toEqual(original)
+})
+
+
+it.each(['expert.zip', 'SOUL.md'])('does not read a cancelled package selection: %s', async (name) => {
+  const controller = new AbortController()
+  controller.abort(new Error('Editor closed'))
+  const file = new File(['unused'], name)
+  const read = vi.spyOn(file, 'arrayBuffer')
+  await expect(importPackageFiles([file], controller.signal)).rejects.toThrow('Editor closed')
+  expect(read).not.toHaveBeenCalled()
+})
+
+it('stops a directory import after the current read when its owner cancels', async () => {
+  const controller = new AbortController()
+  const pending = Promise.withResolvers<ArrayBuffer>()
+  const first = new File(['first'], 'manifest.json')
+  vi.spyOn(first, 'arrayBuffer').mockReturnValue(pending.promise)
+  const second = new File(['second'], 'SOUL.md')
+  const next = vi.spyOn(second, 'arrayBuffer')
+  const result = importPackageFiles([first, second], controller.signal)
+  const rejected = expect(result).rejects.toThrow('Employee changed')
+  controller.abort(new Error('Employee changed'))
+  pending.resolve(new ArrayBuffer(0))
+  await rejected
+  expect(next).not.toHaveBeenCalled()
+})
+
+it('does not unpack a ZIP after cancellation during its file read', async () => {
+  const controller = new AbortController()
+  const pending = Promise.withResolvers<ArrayBuffer>()
+  const zip = new File(['unused'], 'expert.zip')
+  vi.spyOn(zip, 'arrayBuffer').mockReturnValue(pending.promise)
+  const result = importPackageFiles([zip], controller.signal)
+  const rejected = expect(result).rejects.toThrow('Editor closed')
+  controller.abort(new Error('Editor closed'))
+  pending.resolve(new ArrayBuffer(0))
+  await rejected
+})
+
+it.each(['oversized', 'case-collision', 'unsafe-path'])('validates the complete directory before reading files: %s', async (kind) => {
+  const first = new File(['first'], 'manifest.json')
+  const second = new File([], kind === 'case-collision' ? 'MANIFEST.JSON' : kind === 'unsafe-path' ? '../outside' : 'large.bin')
+  if (kind === 'oversized') Object.defineProperty(second, 'size', { value: 32 * 1024 * 1024 })
+  const reads = [first, second].map(file => vi.spyOn(file, 'arrayBuffer'))
+  await expect(importPackageFiles([first, second], new AbortController().signal)).rejects.toThrow('custom.package')
+  for (const read of reads) expect(read).not.toHaveBeenCalled()
 })

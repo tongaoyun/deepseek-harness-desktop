@@ -100,7 +100,7 @@ export function CustomExpertEditor(props: CustomEditorProps): React.ReactElement
     saving.current = true
     setBusy(true)
     setError(null)
-    void importPackageFiles(selection).then(async files => {
+    void importPackageFiles(selection, signal).then(async files => {
       signal?.throwIfAborted()
       const result = await props.remote.importExpert(files, signal)
       signal?.throwIfAborted()

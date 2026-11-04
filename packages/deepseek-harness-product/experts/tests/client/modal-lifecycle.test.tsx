@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, within, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, within, waitFor } from '@testing-library/react'
 import React from 'react'
 import { zipSync } from 'fflate'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
@@ -275,4 +275,30 @@ it('imports the same selected ZIP again, clears old errors and uses buttons for 
   expect(importExpert).toHaveBeenCalledTimes(2)
   expect(input.value).toBe('')
   expect(screen.queryByRole('alert')).toBeNull()
+})
+
+
+it.each(['unmount', 'employee-change'])('stops local package reads before contacting the host after %s', async (cancel) => {
+  const controller = new AbortController()
+  const pending = Promise.withResolvers<ArrayBuffer>()
+  const first = new File([], 'manifest.json')
+  const firstRead = vi.fn(() => pending.promise)
+  Object.defineProperty(first, 'arrayBuffer', { value: firstRead })
+  const second = new File([], 'SOUL.md')
+  const secondRead = vi.fn(async () => new ArrayBuffer(0))
+  Object.defineProperty(second, 'arrayBuffer', { value: secondRead })
+  const unused = (): Promise<never> => Promise.reject(new Error('Unexpected remote call'))
+  const importExpert = vi.fn<AgencyCatalogRemote['importExpert']>()
+  const dictionary: Readonly<Record<string, string>> = en
+  const view = render(<CustomExpertEditor importOnly enabled={false} revision={1} divisions={['specialized']} locale="en" t={key => dictionary[key] ?? key}
+    remote={{ getCatalog: unused, importExpert, exportExpert: unused,
+      getCustomExpert: unused, saveCustomExpert: unused, deleteCustomExpert: unused }}
+    signal={controller.signal} prepareSave={() => vi.fn()} onClose={vi.fn()} />)
+  fireEvent.change(screen.getByLabelText(en['custom.importDirectory']), { target: { files: [first, second] } })
+  expect(firstRead).toHaveBeenCalledOnce()
+  if (cancel === 'unmount') view.unmount()
+  else controller.abort()
+  await act(async () => { pending.resolve(new ArrayBuffer(0)); await pending.promise })
+  expect(secondRead).not.toHaveBeenCalled()
+  expect(importExpert).not.toHaveBeenCalled()
 })
