@@ -11,11 +11,16 @@ import {
   type ExpertTeam,
 } from './team-contract.ts'
 export const AGENCY_TEAM_SERVICE = 'agencyAgentsTeams'
+/** Compose personal teams with experts and company teams from one prepared release.
+ * @param source - Expert catalog and company teams resolved from the same immutable directory.
+ * @param store - Revision-checked personal Settings storage.
+ * @param locale - Current language for user-facing failures.
+ * @returns Team reads and mutations using a coherent source snapshot.
+ */
 export function createTeamLibrary(
-  catalog: (sessionId?: string, signal?: AbortSignal) => Promise<CatalogSnapshot>,
+  source: (sessionId?: string, signal?: AbortSignal) => Promise<{ all: CatalogSnapshot; shared: ExpertTeam[] }>,
   store: ExpertSettingsStore,
   locale: () => TeamLocale = () => 'zh',
-  companyTeams: (sessionId?: string, signal?: AbortSignal) => Promise<ExpertTeam[]> = async () => [],
 ) {
   const tx = (key: string) => teamText(locale(), key)
   const read = (state = store.read()) => ({
@@ -47,7 +52,7 @@ export function createTeamLibrary(
   })
   const prepare = async (sessionId?: string, signal?: AbortSignal) => {
     signal?.throwIfAborted()
-    const [all, shared] = await Promise.all([catalog(sessionId, signal), companyTeams(sessionId, signal)])
+    const { all, shared } = await source(sessionId, signal)
     signal?.throwIfAborted()
     check(all.revision)
     return { all, shared }
@@ -65,9 +70,8 @@ export function createTeamLibrary(
       return project(all, shared)
     },
     async get(id: string, signal?: AbortSignal): Promise<ExpertTeam> {
-      signal?.throwIfAborted()
-      const team = [...await companyTeams(undefined, signal), ...teams()].find((team) => team.id === id)
-      signal?.throwIfAborted()
+      const { shared } = await prepare(undefined, signal)
+      const team = [...shared, ...teams()].find((team) => team.id === id)
       if (!team) throw new Error(tx('专家团不存在，请重新选择。'))
       return team
     },

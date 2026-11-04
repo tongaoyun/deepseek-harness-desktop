@@ -44,7 +44,7 @@ async function boot(base?: Parameters<typeof createExpertLibrary>[0]) {
     mutate: (ops, revision) => settings.mutate(ns, ops, revision),
   } satisfies Parameters<typeof createExpertLibrary>[1]
   const library = createExpertLibrary(base ?? (() => Promise.resolve([])), store, ['engineering'], () => 'en', testPackageStore())
-  const teams = createTeamLibrary((_sessionId, signal) => library.catalog(signal), store, () => 'en')
+  const teams = createTeamLibrary(async (_sessionId, signal) => ({ all: await library.catalog(signal), shared: [] }), store, () => 'en')
   await ctx.plugin(Loader)
   Object.assign(ctx.loader.builtins, {
     include: Include, typert: Typert, access: Access, gateway: Gateway, remote: Remote,

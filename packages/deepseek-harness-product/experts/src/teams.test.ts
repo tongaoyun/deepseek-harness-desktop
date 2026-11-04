@@ -43,7 +43,7 @@ function setup(seedTeams = false) {
     },
   }
   const library = createTeamLibrary(
-    async () => ({ experts, enabled: state.enabled, revision }),
+    async () => ({ all: { experts, enabled: state.enabled, revision }, shared: [] }),
     store,
   )
   return { library, store }
@@ -56,7 +56,7 @@ describe('专家团配置与执行', () => {
   it('服务错误按当前语言返回，不依赖客户端二次翻译', async () => {
     const { store } = setup()
     let locale: 'zh' | 'en' = 'zh'
-    const library = createTeamLibrary(async () => ({ experts, enabled: [], revision: store.revision() }), store, () => locale)
+    const library = createTeamLibrary(async () => ({ all: { experts, enabled: [], revision: store.revision() }, shared: [] }), store, () => locale)
     await expect(library.get('missing')).rejects.toThrow('专家团不存在')
     locale = 'en'
     await expect(library.get('missing')).rejects.toThrow('Team not found')
@@ -69,7 +69,7 @@ describe('专家团配置与执行', () => {
     const { store } = setup(true)
     const retained = ['temporarily-conflicted', 'outside-current-divisions']
     await store.mutate([{ path: ['enabled'], value: retained }], 0)
-    const library = createTeamLibrary(async () => ({ experts, enabled: [], revision: store.revision() }), store)
+    const library = createTeamLibrary(async () => ({ all: { experts, enabled: [], revision: store.revision() }, shared: [] }), store)
     if (action === 'save') await library.save(draft(), true, 1)
     else await library.setEnabled(TEST_TEAMS[0].id, true, 1)
     expect(store.read().enabled).toEqual([...retained, ...draft().members.map(member => member.expertSlug)])
@@ -84,7 +84,7 @@ describe('专家团配置与执行', () => {
   it('不把旧名册与新团队配置拼成同一个快照', async () => {
     const { store } = setup()
     await store.mutate([{ path: ['enabledTeams'], value: [] }], 0)
-    const library = createTeamLibrary(async () => ({ experts, enabled: [], revision: 0 }), store)
+    const library = createTeamLibrary(async () => ({ all: { experts, enabled: [], revision: 0 }, shared: [] }), store)
     await expect(library.snapshot()).rejects.toThrow('配置已更新')
   })
   it('持久化拒绝非法标识、重复标识和名称', () => {

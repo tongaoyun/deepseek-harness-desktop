@@ -63,7 +63,7 @@ async function boot(loadCatalog?: (signal?: AbortSignal) => Promise<readonly Exp
   } satisfies Parameters<typeof createExpertLibrary>[1]
   const members: ExpertSummary[] = [{ slug: 'engineering-reviewer', name: '代码审查员', nameEn: 'Code Reviewer', description: 'Review code', descriptionEn: '', division: 'engineering', divisionZh: '工程', emoji: '🧩', custom: false, packageVersion: '1.0.0', packageSha256: 'a'.repeat(64) }, { slug: 'testing-reviewer', name: '测试审查员', nameEn: 'Test Reviewer', description: 'Review tests', descriptionEn: '', division: 'engineering', divisionZh: '工程', emoji: '🧩', custom: false, packageVersion: '1.0.0', packageSha256: 'b'.repeat(64) }]
   const library = createExpertLibrary(loadCatalog ?? (() => Promise.resolve(members)), store, ['engineering'], () => 'en', new ExpertPackageStore(async () => join(root, 'packages')))
-  const teams = createTeamLibrary((_session, signal) => library.catalog(signal), store, () => 'en')
+  const teams = createTeamLibrary(async (_sessionId, signal) => ({ all: await library.catalog(signal), shared: [] }), store, () => 'en')
   context.loader.builtins.executor = NativeExecutor
   context.loader.builtins.creation = { name: 'creation-test', inject: ['tools', 'approval'], apply: (scope: Context) => { registerCreationTools(scope, library, teams, () => 'en') } }
   await context.loader.create({ name: 'cordis:include', config: { path: pathToFileURL(config).href } })
