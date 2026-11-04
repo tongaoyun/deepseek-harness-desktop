@@ -41,7 +41,7 @@ WeKnora 负责解析、索引和检索；服务端每次检查员工的实际组
 | `deepseek-harness-server` | 认证、控制中心、内容发布审核、连接器授权、组织权限及 WeKnora 适配 |
 | `k3s-gitops` | Fleet 管理的部署清单 |
 
-产品通过 Cordis、原生 Remote 和 UI 插槽扩展 Harness。连接器业务实现归属 `erp-mcp-gateway` 等业务服务，目录与授权归属服务端。包职责见[包地图](../../../packages/deepseek-harness-product/README.md)，固定基线见 [UPSTREAM_TAG](../../../UPSTREAM_TAG)，通用补丁见[补丁清单](../../../scripts/upstream-patches/manifest.json)。
+产品通过 Cordis、原生 Remote 和 UI 插槽扩展 Harness；[原生能力复用](../../../docs/subsystems/deepseek-harness-product.md#原生能力复用)说明四类扩展的职责。连接器业务实现归属 `erp-mcp-gateway` 等业务服务，目录与授权归属服务端。包职责见[包地图](../../../packages/deepseek-harness-product/README.md)，固定基线见 [UPSTREAM_TAG](../../../UPSTREAM_TAG)，通用补丁见[补丁清单](../../../scripts/upstream-patches/manifest.json)。
 
 <a id="development-and-delivery"></a>
 ## 开发与交付
