@@ -86,8 +86,10 @@ it('exposes shared teams as read-only and enables all bundled members atomically
       expect(expected).toBe(revision)
       state = { ...state, ...Object.fromEntries(ops.map(op => [op.path[0], op.value])) }; revision++
     } }
-  const library = createTeamLibrary(async () => ({ experts: [...shared.experts.values()], enabled: state.enabled, revision }), store,
-    () => 'zh', async (sessionId) => { expect(sessionId === undefined || sessionId === 'old-session').toBe(true); return shared.teams })
+  const library = createTeamLibrary(async (sessionId) => {
+    expect(sessionId === undefined || sessionId === 'old-session').toBe(true)
+    return { all: { experts: [...shared.experts.values()], enabled: state.enabled, revision }, shared: shared.teams }
+  }, store)
   expect((await library.snapshot('old-session')).teams[0].company).toBe(true)
   const enabled = await library.setEnabled(shared.teams[0].id, true, 0)
   expect(enabled.enabledExperts).toHaveLength(2)

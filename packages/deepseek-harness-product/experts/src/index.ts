@@ -488,10 +488,13 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
   ctx.reflect.provide(EXPERT_PACKAGE_SOURCE, packageSource)
   const catalogForSession = (sessionId?: string, signal?: AbortSignal) => sessionId === undefined ? library.catalog(signal)
     : createExpertLibrary(() => readSummaries(sessionId, signal), store, divisions, activeLocale, packages).catalog(signal)
-  const teamLibrary = createTeamLibrary(catalogForSession, store, activeLocale, async (sessionId, signal) => {
+  const teamLibrary = createTeamLibrary(async (sessionId, signal) => {
     const root = await companyRoot(sessionId, signal)
-    return root ? (await companyCatalog(root)).teams.teams : []
-  })
+    const all = await createExpertLibrary(() => readRootSummaries(root), store,
+      divisions, activeLocale, packages, ensurePersonal).catalog(signal)
+    const shared = root ? (await companyCatalog(root)).teams.teams : []
+    return { all, shared }
+  }, store, activeLocale)
   registerCreationTools(ctx, library, teamLibrary, activeLocale)
   ctx.systemPrompt.section({ name: 'agency:creation', order: 119, text: 'Creation requests do not invoke summon tools. For a new personal expert or team, clarify the user’s goal in conversation and generate the complete content yourself. Use list_creation_experts for category IDs and available team members. Show the design and invite revisions, then call create_custom_expert or create_expert_team to request native approval and save directly. Never send the user to an editor or ask them to fill name, description or Markdown fields. Expert files become an AgentSpec package with literal SOUL.md, optional AGENTS.md and references/assets. Team members must already exist; create missing experts with approval before saving the team. Only report success after the tool succeeds. Company publication is a separate explicit action; never publish or write substitute files.' })
   ctx.reflect.provide(AGENCY_TEAM_SERVICE, teamLibrary)
