@@ -83,14 +83,16 @@ describe('DeepSeekHarness capability navigation', () => {
       ? invalid ? [{ name: 'Unknown knowledge' }] : [{ id: 'policy', name: 'Company policy', scope: 'COMPANY', canManage: false }]
       : { items: [], page: 1, size: 20, total: 0 } })
     render(<KnowledgePanel t={t} {...actions()} />)
-    const failure = (await screen.findByRole('alert')).textContent
+    const alert = within(await screen.findByRole('alert'))
+    const failure = alert.getByText(zh.loadFailed).textContent
     expect(failure).toContain(zh.loadFailed)
+    expect(alert.getByRole('button', { name: zh.retry })).toBeDefined()
     expect(screen.queryByText('Unknown knowledge')).toBeNull()
     invalid = false
     fireEvent.click(screen.getByRole('button', { name: zh.refresh }))
-    const resource = await screen.findByTitle('Company policy')
+    const resource = await screen.findByRole('button', { name: 'Company policy', exact: true })
     expect(screen.queryByRole('alert')).toBeNull()
-    expect({ failure, recovered: resource.textContent }).toMatchSnapshot()
+    expect({ failure, recovered: resource.getAttribute('aria-label') }).toMatchSnapshot()
   })
 
   it.each([false, true])('keeps connector content mounted during refresh (empty: %s)', async (empty) => {
@@ -417,7 +419,7 @@ describe('DeepSeekHarness capability navigation', () => {
       cancel: vi.fn(),
     })
     render(<KnowledgePanel t={t} {...actions()} />)
-    expect((await screen.findByRole('alert')).textContent)
+    expect(within(await screen.findByRole('alert')).getByText(`${zh.organizationEmployeeUnmapped} (ORGANIZATION_EMPLOYEE_UNMAPPED)`).textContent)
       .toBe(`${zh.organizationEmployeeUnmapped} (ORGANIZATION_EMPLOYEE_UNMAPPED)`)
     expect(screen.queryByText('private upstream diagnostic')).toBeNull()
     expect(screen.queryByText(zh.authRequired)).toBeNull()
@@ -442,6 +444,7 @@ describe('DeepSeekHarness capability navigation', () => {
     })
     installProductApi({ invoke, getSession: async () => ({ authenticated: true, employeeId: 'employee' }) })
     const { container } = render(<KnowledgePanel t={t} {...actions()} />)
+    fireEvent.click(await screen.findByRole('button', { name: '我的资料', exact: true }))
     fireEvent.click(await screen.findByRole('button', { name: zh.knowledgeAddMaterial }))
     const navigation = within(container.querySelector('[data-knowledge-navigation]') as HTMLElement)
     const refresh = navigation.getByRole('button', { name: zh.refresh })
