@@ -1,5 +1,5 @@
 /** Bounded AgentSpec ZIP and directory transfer for the expert editor. */
-import { unzipSync, zipSync } from 'fflate'
+import { unzipSync, zipSync } from 'fflate/browser'
 import { bytesToBase64 } from '@deepseek-ai/dsh-util-crypto'
 import type { CustomExpertInput } from '../expert-contract.ts'
 

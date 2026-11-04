@@ -430,3 +430,8 @@ test('a clean sparse checkout installs the skill without node_modules or build o
   const direct = await command(join(checkout, 'apps/product-desktop/skills/harness-company-publish/scripts/publish-company-content.mjs'), ['check', source], root)
   assert.equal(direct.code, 0, direct.stderr)
 })
+
+test('built expert package transfers load without Node module or worker factories', async () => {
+  const client = await readFile(new URL('../../../packages/extensions/ui-deepseek-harness-product/lib/client.js', import.meta.url), 'utf8')
+  assert.doesNotMatch(client, /require\(["'](?:node:)?(?:module|worker_threads)["']\)/u)
+})

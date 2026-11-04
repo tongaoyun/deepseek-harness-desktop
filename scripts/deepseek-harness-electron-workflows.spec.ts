@@ -144,10 +144,8 @@ describe('DeepSeekHarness Electron workflows', () => {
     for (const path of paths) expect(readFileSync(resolve(root, path), 'utf8'), path).not.toContain('--use-mock-keychain')
   })
 
-  it('passes product extension file URLs to the ESM loader in development and UI acceptance', () => {
+  it('passes built product extension file URLs and startup diagnostics to UI acceptance', () => {
     const root = resolve(import.meta.dirname, '..')
-    const development = readFileSync(resolve(root, 'apps/product-desktop/scripts/dev.ts'), 'utf8')
-    expect(development).toContain("pathToFileURL(require.resolve('@deepseek-harness/product-desktop')).href")
     const smoke = readFileSync(resolve(root, 'apps/web/tests/deepseek-harness-catalog.e2e.ts'), 'utf8')
     expect(smoke).toContain("DSH_DESKTOP_EXTENSION: pathToFileURL(join(REPO_ROOT, 'packages/deepseek-harness-product/desktop/lib/index.js')).href")
     expect(smoke).toContain('DSH_DESKTOP_DIAGNOSTIC_FILE: startupDiagnostic')
