@@ -42,7 +42,7 @@ describe('DeepSeekHarness Electron workflows', () => {
     expect(command).toContain('pnpm run build:artifacts\n')
     expect(command).not.toContain('packages/deepseek-harness-product/experts/tsconfig.json')
     expect(command).not.toContain('packages/deepseek-harness-product/skills run typecheck')
-    expect(command).toMatch(/pnpm exec vitest run \\\n\s+packages\/deepseek-harness-product/u)
+    expect(command).toMatch(/pnpm exec vitest run --maxWorkers=4 \\\n\s+packages\/deepseek-harness-product/u)
     expect(command).not.toContain('--config packages/deepseek-harness-product/experts/vitest.config.ts')
     expect(command).not.toContain('--config packages/deepseek-harness-product/skills/vitest.config.ts')
     expect(command).toContain('node --test apps/product-desktop/tests/company-content.test.mjs')

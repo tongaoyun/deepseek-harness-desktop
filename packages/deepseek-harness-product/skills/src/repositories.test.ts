@@ -7,7 +7,7 @@ import { zipSync, strToU8 } from 'fflate'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import * as atomicWrite from '@deepseek-ai/dsh-atomic-write'
 import { createRepositoryManager } from './repositories.ts'
-import { assignSkillCategory, createCategory, getProviderSkill, listProviderCandidates, managerHomePath, managerStatePath, projectRoots, readManagerState, resolveWorkspaceTarget, scanEntries, setSkillEnabled, toKebab, trashRootPath, userRoots } from './core.ts'
+import { assignSkillCategory, createCategory, getProviderSkill, importUploadedSkill, listProviderCandidates, managerHomePath, managerStatePath, projectRoots, readManagerState, resolveWorkspaceTarget, scanEntries, setSkillEnabled, toKebab, trashRootPath, userRoots } from './core.ts'
 import { selectInstallRecord } from './repository-updates.ts'
 import type { Log, RepositoryState } from './types.ts'
 
@@ -359,7 +359,7 @@ it('cleans the last source category without affecting another source with the sa
   await assignSkillCategory(fixture.root.key, 'audit-orders', personalCategory.category.id)
   await assignSkillCategory(shared.key, 'audit-orders', sharedCategory.category.id)
   const sharedTrash = await fixture.manager.trashSkill(shared, 'audit-orders')
-  if (!('id' in sharedTrash)) throw new Error('Trash failed')
+  if (!('id' in sharedTrash) || typeof sharedTrash.id !== 'string') throw new Error('Trash failed')
   const personalTrash = await fixture.uninstall()
   const before = (await readManagerState()).state
 
@@ -599,4 +599,42 @@ it('does not create policy records for an unknown missing skill', async () => {
   const root = userRoots().find(root => root.key === 'codex')!
   expect(await setSkillEnabled(root, 'missing', false)).toMatchObject({ ok: false, code: 'error.skill.notFound' })
   expect((await readManagerState()).state.disabledSkills.codex).toEqual([])
+})
+
+it.each(['skip', 'overwrite'] as const)('applies %s to an existing dangling flat skill link', async conflict => {
+  const root = userRoots().find(root => root.key === 'dsh')!
+  await mkdir(root.path, { recursive: true })
+  const file = join(root.path, 'audit-orders.md')
+  const unavailable = join(home, 'offline-share/audit-orders.md')
+  await fs.symlink(unavailable, file)
+  const result = await importUploadedSkill({ entries: [{ path: 'audit-orders.md', data: Buffer.from(text('Replacement')).toString('base64') }] }, undefined, conflict === 'overwrite' ? { conflict } : {})
+  if (conflict === 'skip') {
+    expect(result).toMatchObject({ imported: [], skipped: [{ name: 'audit-orders' }], failed: [] })
+    expect((await fs.lstat(file)).isSymbolicLink()).toBe(true)
+    expect(await fs.readlink(file)).toBe(unavailable)
+  } else {
+    expect(result).toMatchObject({ imported: [{ name: 'audit-orders', overwritten: true }], skipped: [], failed: [] })
+    expect((await fs.lstat(file)).isSymbolicLink()).toBe(false)
+    expect(await readFile(file, 'utf8')).toBe(text('Replacement'))
+  }
+  await expect(fs.lstat(unavailable)).rejects.toMatchObject({ code: 'ENOENT' })
+})
+
+it.each(['EACCES', 'EIO'])('preserves a flat skill when conflict inspection fails with %s', async code => {
+  const root = userRoots().find(root => root.key === 'dsh')!
+  await mkdir(root.path, { recursive: true })
+  const file = join(root.path, 'audit-orders.md')
+  await writeFile(file, text('Original'))
+  const lstat = fs.lstat, stat = fs.stat
+  vi.spyOn(fs, 'lstat').mockImplementation(async (...args) => {
+    if (args[0] === file) throw Object.assign(new Error('Conflict inspection unavailable'), { code })
+    return lstat(...args)
+  })
+  vi.spyOn(fs, 'stat').mockImplementation(async (...args) => {
+    if (args[0] === file) throw Object.assign(new Error('Conflict inspection unavailable'), { code })
+    return stat(...args)
+  })
+  expect(await importUploadedSkill({ entries: [{ path: 'audit-orders.md', data: Buffer.from(text('Replacement')).toString('base64') }] }))
+    .toMatchObject({ ok: false, error: 'Conflict inspection unavailable' })
+  expect(await readFile(file, 'utf8')).toBe(text('Original'))
 })

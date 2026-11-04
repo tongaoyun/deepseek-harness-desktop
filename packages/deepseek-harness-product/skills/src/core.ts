@@ -2563,9 +2563,11 @@ async function importSkill(source: string, log?: Log, options: MutationOptions =
     const existing = [];
     for (const path of paths) {
       try {
-        await fs.stat(path);
+        await fs.lstat(path);
         existing.push(path);
-      } catch {}
+      } catch (caught) {
+        if ((caught as CodedError).code !== "ENOENT") throw caught;
+      }
     }
     if (existing.length) {
       conflicts.push({

@@ -69,8 +69,9 @@ jobs:
           pnpm run rescope-vendor:check
           pnpm run verify-package-dependencies
           pnpm run verify-no-unknown-casts
+          # Bound the aggregate pool on the shared runner; keep the lane's test deadlines.
           # The aggregate product run below owns product/experts/skills behavior tests.
-          pnpm exec vitest run \
+          pnpm exec vitest run --maxWorkers=4 \
             packages/deepseek-harness-product \
             packages/extensions/ui-deepseek-harness-product \
             packages/skill/skill/tests \
