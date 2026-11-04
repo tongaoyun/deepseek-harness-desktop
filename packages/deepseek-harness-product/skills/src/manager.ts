@@ -62,8 +62,9 @@ export class SkillsManager extends TypertRemoteService {
           name: { type: 'string', description: 'Skill name; it will be normalized to kebab-case.' },
           description: { type: 'string', description: 'A concise routing description for when to use the skill.' },
           body: { type: 'string', description: 'Markdown instructions that form the skill body.' },
+          category: { type: 'string', minLength: 1, maxLength: 24, description: 'A short, reusable category in the user\'s language, for example 文档办公, 数据分析 or 研发开发. Classify by purpose; reuse an existing category when known.' },
         },
-        required: ['name', 'description', 'body'],
+        required: ['name', 'description', 'body', 'category'],
         additionalProperties: false,
       },
       output: {
@@ -314,7 +315,7 @@ export class SkillsManager extends TypertRemoteService {
    * @returns The committed result or a typed operation failure.
    */
   @Remote
-  createSkill(request: ManagerCreate, signal: AbortSignal): Promise<SkillManagerResults['createSkill']> { return this.perform(async active => createSkill({ name: request.name, description: request.description, body: request.body }, this.log, { root: await this.root(request, active) }), signal, { mutation: true, notify: true }) }
+  createSkill(request: ManagerCreate, signal: AbortSignal): Promise<SkillManagerResults['createSkill']> { return this.perform(async active => createSkill({ name: request.name, description: request.description, body: request.body, category: request.category }, this.log, { root: await this.root(request, active) }), signal, { mutation: true, notify: true }) }
 
   /** Import a bounded file or ZIP upload.
    * @param request Explicit operation input.

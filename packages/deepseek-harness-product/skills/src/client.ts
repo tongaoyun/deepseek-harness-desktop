@@ -40,6 +40,9 @@ function createSkillsPage(localeService: ClientContext["locale"]) {
 .dssm-read-loading{display:flex;align-items:center;min-height:40px;color:var(--dsw-alias-label-tertiary)}
 .dssm-stat strong{display:inline-block;min-width:2ch;font-variant-numeric:tabular-nums}
 .dssm-market-source{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--dsw-alias-label-secondary)}
+.dssm-category-filters{display:flex;flex-wrap:wrap;gap:8px;margin-block:4px 20px}
+.dssm-category-filters button[aria-pressed=true]{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary);font-weight:600}
+.dssm-skill-category{display:block;margin-top:6px;color:var(--dsw-alias-label-secondary);font-size:12px;line-height:18px}
 .dssm-modal{max-height:100%}
 .dssm-modal.dssm-modal-wide{width:min(760px,100%)}
 .dssm-detail-actions{display:flex;justify-content:flex-end;margin:8px 0}
@@ -475,6 +478,10 @@ function createSkillsPage(localeService: ClientContext["locale"]) {
       var roots = scope === "trash" ? [] : scope === "project" ? visibleSkillRoots(selectedDetail?.roots || []) : scopeSkillRoots(allRoots).filter(function (root) { return scope === "market" ? root.key === "company" : root.key !== "company"; });
       var filteredOptionsRoots = roots.filter(function (r) { return r.key === "company" || (r.skills || []).length > 0; });
       var activeSource = scope === "user" && filteredOptionsRoots.some(function (root) { return root.key === source; }) ? source : "";
+      var categoryNames = [...new Set(roots.filter(root => !activeSource || root.key === activeSource).flatMap(root => root.categories.map(category => category.name)))];
+      var categoryFilters = [{ value: '', label: t('category.all') }, ...categoryNames.map(name => ({ value: 'name:' + name, label: name })), { value: 'uncategorized', label: t('category.uncategorized') }];
+      var activeCategory = categoryFilters.some(item => item.value === filters.category) ? filters.category || '' : '';
+      function skillCategoryName(root: RootView, skill: SkillView) { return root.categories.find(category => category.id === skill.categoryId)?.name; }
       function workspacePath(row: SkillOutput<"listWorkspaces">["items"][number]) { return row.registeredPaths[0] || ""; }
       function selectWorkspace(path: string) {
         if (!workspaceRows.some(function (row) { return row.available && workspacePath(row) === path; })) return;
@@ -663,12 +670,13 @@ function createSkillsPage(localeService: ClientContext["locale"]) {
         },
         canDrag ? h("div", { className: "dssm-drag-handle", title: t("category.dragTip") }, "⋮⋮") : null,
         h("div", { className: "dssm-skill-copy" }, h("div", { className: "dssm-name" }, skillName), h("div", { className: "dssm-skill-desc", title: skill.description || undefined }, description),
+          h('span', { className: 'dssm-skill-category' }, skillCategoryName(root, skill) || t('category.uncategorized')),
           skill.shadowedBy ? h("div", { className: "dssm-note" }, statusTitle) : null,
           skill.loadable === false ? h("div", { className: "dssm-note" }, t("skill.unavailable")) : null,
           renderLinkedNote(skill), renderFallback(skill)), h("div", { className: "dssm-skill-actions" }, skillActions));
       }
       var rows = roots.flatMap(function (root) { return (root.skills || []).map(function (skill) { return { root: root, skill: skill }; }); });
-      var filteredRows = rows.filter(function (row) { return (!activeSource || row.root.key === activeSource) && (!filters.status || isSkillEnabled(row.skill) === (filters.status === "enabled")) && matchSkillQuery(Object.assign({}, row.skill, { rootLabel: rootDisplayName(t, row.root) }), query); });
+      var filteredRows = rows.filter(function (row) { return (!activeSource || row.root.key === activeSource) && (!activeCategory || (skillCategoryName(row.root, row.skill) ? 'name:' + skillCategoryName(row.root, row.skill) : 'uncategorized') === activeCategory) && (!filters.status || isSkillEnabled(row.skill) === (filters.status === "enabled")) && matchSkillQuery(Object.assign({}, row.skill, { rootLabel: rootDisplayName(t, row.root) }), query); });
       var summary = countSkillEnablement(rows);
       function sourceExtra(root: RootView, workspacePath: string | undefined, displayName: string) {
         var scoped = workspacePath ? { root: root.key, workspace: workspacePath } : { root: root.key };
@@ -686,7 +694,8 @@ function createSkillsPage(localeService: ClientContext["locale"]) {
       }
       function renderCategory(root: RootView, bucket: { id: string; name: string; locked: boolean; skills: { root: RootView; skill: SkillView }[]; scope?: { root: RootView; skill: SkillView }[] }, workspacePath?: string, keyPrefix?: string, allRootRows?: { root: RootView; skill: SkillView }[]) {
         var expansionKey = JSON.stringify(["category", keyPrefix || "", root.key, bucket.id || "none"]);
-        var open = expanded[expansionKey] === undefined ? !!(query || filters.status) : expanded[expansionKey];
+        expansionKey += '|' + activeCategory;
+        var open = expanded[expansionKey] === undefined ? !!(query || filters.status || activeCategory) : expanded[expansionKey];
         var counted = bucket.scope || bucket.skills;
         var usable = counted.filter(function (row) { return row.skill.loadable !== false; });
         var enabledCount = usable.filter(function (row) { return isSkillEnabled(row.skill); }).length;
@@ -775,16 +784,16 @@ function createSkillsPage(localeService: ClientContext["locale"]) {
         };
         var buckets = categories.map(function (item) { return { id: item.id, name: item.name, locked: false, skills: inCategory(filtered, item.id), scope: inCategory(allRows, item.id) }; });
         buckets.push({ id: "", name: t("category.uncategorized"), locked: true, skills: inCategory(filtered, ""), scope: inCategory(allRows, "") });
-        var searching = !!(query || filters.status);
+        var searching = !!(query || filters.status || activeCategory);
         return h("div", null, h("p", { className: "dssm-note dssm-cat-note" }, t("category.note")), buckets.filter(function (bucket) { return !searching || bucket.skills.length; }).map(function (bucket) { return renderCategory(root, bucket, workspacePath, keyPrefix, allRows); }));
       }
       function renderRoot(root: RootView, workspacePath?: string, rowsForRoot?: { root: RootView; skill: SkillView }[], keyPrefix?: string) {
         var scopeRows = (rowsForRoot || rows).filter(function (row) { return row.root.key === root.key; });
         var filtered = (rowsForRoot || filteredRows).filter(function (row) { return row.root.key === root.key; });
-        if (activeSource && root.key !== activeSource || (query || filters.status) && !filtered.length) return null;
-        var expansionKey = JSON.stringify([filterKey, keyPrefix || "", root.key, query, activeSource, filters.status]);
+        if (activeSource && root.key !== activeSource || (query || filters.status || activeCategory) && !filtered.length) return null;
+        var expansionKey = JSON.stringify([filterKey, keyPrefix || "", root.key, query, activeSource, filters.status, activeCategory]);
         // 选中工作区的来源默认展开，直接显示技能；全局来源默认行为保持不变。
-        var open = expanded[expansionKey] === undefined ? (workspacePath ? true : !!(query || activeSource || filters.status)) : expanded[expansionKey];
+        var open = expanded[expansionKey] === undefined ? (workspacePath ? true : !!(query || activeSource || filters.status || activeCategory)) : expanded[expansionKey];
         var displayName = workspacePath ? rootDisplayName(t, Object.assign({}, root, { projectName: undefined })) : rootDisplayName(t, root);
         return h("section", { key: (keyPrefix || "") + root.key, className: "dssm-source", "data-source-key": root.key },
           h("div", { className: "dssm-source-head" },
@@ -795,10 +804,10 @@ function createSkillsPage(localeService: ClientContext["locale"]) {
       function renderList() {
         if (scope === "market") return h("div", { key: "market-skills", className: filteredRows.length ? "dssm-skill-list" : "dssm-empty" }, filteredRows.length
           ? filteredRows.map(function (row) { return renderSkill(row.root, row.skill); })
-          : t(query || filters.status ? "empty.search" : "empty.company"));
+          : t(query || filters.status || activeCategory ? "empty.search" : "empty.company"));
         var project = scope === "project", path = project ? selectedWorkspace : undefined;
         var groups = roots.map(function (root) { return renderRoot(root, path, undefined, path ? path + "|" : undefined); }).filter(Boolean);
-        var body: React.ReactNode = groups.length ? groups : h("div", { className: "dssm-empty" }, t(query || filters.status ? "empty.search" : "empty.source"));
+        var body: React.ReactNode = groups.length ? groups : h("div", { className: "dssm-empty" }, t(query || filters.status || activeCategory ? "empty.search" : "empty.source"));
         if (project) {
           if (workspaceList.error) body = h("div", { className: "dssm-feedback dssm-error", role: "alert" }, t("workspace.listFailed", { error: workspaceList.error }));
           else if (workspaceList.loading && !workspaceList.loaded || selectedWorkspace && (!selectedDetail || selectedDetail.loading && !selectedDetail.loaded)) body = readLoading(t("workspace.loading"));
@@ -846,7 +855,7 @@ function createSkillsPage(localeService: ClientContext["locale"]) {
           iconButton(t("btn.refresh"), h(IconRefreshOutlineRegular, { size: 16 }), function () { refresh(false, true); if (scope === "project") refreshWorkspaceDetails(); }, false, busy || snapshot.loading),
           scope === "market" ? null : h(PrimitiveButton, { variant: "outline", size: "sm", icon: h("svg", { viewBox: "0 0 16 16", width: 16, height: 16, "aria-hidden": true, focusable: "false" }, h("path", { d: "M2.5 10.5v2a1 1 0 001 1h9a1 1 0 001-1v-2M8 2.5v7M5 5.5l3-3 3 3", fill: "none", stroke: "currentColor", strokeWidth: 1.5, strokeLinecap: "round", strokeLinejoin: "round" })), onClick: openImport, disabled: busy }, t("import.global")),
           h(PrimitiveButton, { variant: "primary", size: "sm", icon: h(IconPlusOutlineRegular, { size: 16 }), onClick: openCreate, disabled: busy }, t("btn.create"))
-        ) : null)];
+        ) : null), h('div', { key: 'categories', className: 'dssm-category-filters', role: 'group', 'aria-label': t('category.filter') }, categoryFilters.map(item => h(PrimitiveButton, { key: item.value, size: 'sm', variant: 'ghost', 'aria-pressed': activeCategory === item.value, onClick: () => updateFilter('category', item.value) }, item.label)))];
       var bodyContent: React.ReactNode[] = ([h("style", { key: "css" }, CSS), h("div", { key: "head", className: "dssm-head" }, h("div", { className: "dssm-title-block" }, h("div", { className: "dssm-title-row" }, h("h2", { className: "dssm-title" }, t("title"))), h("p", { className: "dssm-desc" }, t("desc"))))] as React.ReactNode[]).concat(scope === "trash" || scope === "repositories" ? [] : skillControls, [result && modal !== "import" ? h("div", { key: "result", className: "dssm-feedback" + (result.warning ? " dssm-warning" : result.ok ? "" : " dssm-error") }, result.text) : null], (data.warnings || []).map(function (warning, index) { return h("div", { key: "warning-" + index, className: "dssm-feedback dssm-warning", role: "alert" }, translateError(t, warning)); }), [snapshot.error ? h("div", { key: "error", className: "dssm-feedback dssm-error" }, snapshot.error) : null, !snapshot.data ? (snapshot.error ? null : readLoading(t("loading"))) : scope === "repositories" ? repositoryUI.content : scope === "trash" ? renderTrash() : renderList()]);
       var market = scope === "market";
       var primaryTabs = h(SegmentedTabs, { key: "catalog-tabs", className: "dssm-catalog-tabs", label: t("scope.catalog"), value: market ? "market" : "mine", onChange: function (next: string) { setScope(next === "market" ? "market" : "user"); }, items: [

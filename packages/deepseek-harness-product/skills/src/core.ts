@@ -19,7 +19,7 @@ import { writeFileAtomic } from "@deepseek-ai/dsh-atomic-write";
 import { canonicalizeWatchPath, resolveDshHome, resolveAgentsHome } from '@deepseek-ai/dsh-home-paths';
 import { isSkillName, type SkillProviderObservation } from '@deepseek-ai/dsh-skill';
 import { parseSkillInvocationPolicy } from '@deepseek-ai/dsh-skill-filesystem/document';
-import { parseSkillDoc } from './skill-document.ts';
+import { parseSkillDoc, skillCategory, withSkillCategory } from './skill-document.ts';
 export { parseSkillDoc };
 export { resolveDshHome, resolveAgentsHome };
 import { randomBytes } from "node:crypto";
@@ -1035,6 +1035,7 @@ function entryOf(name: string, kind: string, docPath: string, doc: Pick<ParsedSk
     kind,
     docPath,
     description,
+    category: skillCategory(doc.data),
     modelInvocable: invocation.modelInvocable,
     userInvocable: invocation.userInvocable,
     invocationPolicyValid,
@@ -1374,7 +1375,7 @@ function normalizeCategoryMembers(value: ManagerState["categoryMembers"] | undef
     const ids = new Set((categories[key] || []).map((item) => item.id));
     members[key] = Object.create(null);
     for (const [name, id] of Object.entries(record)) {
-      if (validStateSkillName(name) && typeof id === "string" && ids.has(id)) members[key][name] = id;
+      if (validStateSkillName(name) && typeof id === "string" && (id === "" || ids.has(id))) members[key][name] = id;
     }
   }
   return members;
@@ -1646,12 +1647,29 @@ async function resolvedCategoryRoot(key: string, options: ScopeOptions = {}) {
 async function writableCategoryState(key: string, options: ScopeOptions = {}) {
   const root = await resolvedCategoryRoot(key, options);
   if (!root) return categoryError("error.category.root", `技能来源不存在: ${key}`, { root: key });
+  if (root.key === 'company') return readonlyError('category');
   const current = await readManagerState();
   if (current.writable === false) return invalidManagerStateWrite();
   if (!current.state.categories[root.key]) current.state.categories[root.key] = [];
   if (!current.state.categoryMembers[root.key]) current.state.categoryMembers[root.key] = Object.create(null);
   if (!current.state.categoryOrder[root.key]) current.state.categoryOrder[root.key] = Object.create(null);
+  projectSkillCategories(current.state, root.key, (await scanEntries(root)).entries);
   return { rootKey: root.key, root, state: current.state };
+}
+
+/** Package categories supply defaults; an explicit local assignment, including unclassified, takes precedence. */
+function projectSkillCategories(state: ManagerState, key: string, entries: SkillEntry[]) {
+  const categories = state.categories[key] ??= [];
+  const members = state.categoryMembers[key] ??= Object.create(null);
+  for (const entry of entries) {
+    if (Object.hasOwn(members, entry.name) || !entry.category) continue;
+    let category = categories.find(item => item.name === entry.category);
+    if (!category) {
+      category = { id: createHash('sha256').update(entry.category).digest('hex').slice(0, 32), name: entry.category };
+      categories.push(category);
+    }
+    members[entry.name] = category.id;
+  }
 }
 
 export async function createCategory(key: string, name: string, log?: Log, options: ScopeOptions = {}) {
@@ -1695,7 +1713,7 @@ export async function deleteCategory(key: string, id: string, log?: Log, options
   ready.state.categories[ready.rootKey] = list.filter((item) => item.id !== id);
   delete ready.state.categoryOrder[ready.rootKey][id];
   for (const [skillName, categoryId] of Object.entries(ready.state.categoryMembers[ready.rootKey])) {
-    if (categoryId === id) delete ready.state.categoryMembers[ready.rootKey][skillName];
+    if (categoryId === id) ready.state.categoryMembers[ready.rootKey][skillName] = '';
   }
   await writeManagerState(ready.state);
   if (log) log("category-delete", `删除 ${ready.rootKey} 分类 ${id}，技能留在未分类`);
@@ -1729,7 +1747,7 @@ export async function assignSkillCategory(key: string, skillName: string, catego
       if (!looseOrder.includes(skillName)) looseOrder.push(skillName);
       ready.state.categoryOrder[ready.rootKey][""] = looseOrder;
     }
-    delete ready.state.categoryMembers[ready.rootKey][skillName];
+    ready.state.categoryMembers[ready.rootKey][skillName] = '';
   }
   await writeManagerState(ready.state);
   if (log) log("category-assign", `${ready.rootKey}/${skillName} 归入 ${categoryId || "未分类"}`);
@@ -1774,7 +1792,7 @@ export async function moveSkillInCategory(key: string, skillName: string, catego
   if (previousId !== categoryId) orders[previousId] = sourceOrder;
   orders[categoryId] = targetOrder;
   if (categoryId) members[skillName] = categoryId;
-  else delete members[skillName];
+  else members[skillName] = '';
   await writeManagerState(ready.state);
   if (log) log("category-order", `${ready.rootKey}/${skillName} 移至 ${categoryId || "未分类"} ${position} ${targetName || "末尾"}`);
   return { root: ready.rootKey, name: skillName, categoryId: categoryId || null, order: targetOrder };
@@ -2123,7 +2141,7 @@ async function forgetCategoryMember(metadata: TrashMetadata, options: MutationOp
   if (current.writable === false) return;
   const members = current.state.categoryMembers[key];
   const orders = current.state.categoryOrder[key];
-  const hasMember = !!(members && members[metadata.name]);
+  const hasMember = !!members && Object.hasOwn(members, metadata.name);
   const hasOrder = !!(orders && Object.values(orders).some((names) => names.includes(metadata.name)));
   if (!hasMember && !hasOrder) return;
   const definition = await restoreRootDefinition(metadata, options);
@@ -2925,6 +2943,9 @@ export async function createSkill(input: CreateInput, log?: Log, options: Mutati
     };
   if (description.length > 500 || body.length > 1 << 18)
     return { ok: false, error: "技能内容过长", code: "error.create.tooLarge" };
+  const category = input.category?.trim();
+  if (input.category !== undefined && (!category || category.length > CATEGORY_NAME_MAX || /[\u0000-\u001f\u007f]/u.test(category)))
+    return categoryError('error.category.name', '分类名称不能为空，且不能超过 24 个字符');
   if (
     await safeExistingEntryPaths(root, name).then((items) => items.length > 0)
   )
@@ -2939,7 +2960,7 @@ export async function createSkill(input: CreateInput, log?: Log, options: Mutati
   const stage = temporaryPath(target, "create");
   try {
     await fs.mkdir(stage);
-    const content = `---\nname: ${name}\ndescription: ${yamlString(description)}\n---\n\n${body}\n`;
+    const content = `---\nname: ${name}\ndescription: ${yamlString(description)}\n${category ? `metadata:\n  category: ${yamlString(category)}\n` : ''}---\n\n${body}\n`;
     await fs.writeFile(join(stage, "SKILL.md"), content, "utf8");
     await fs.rename(stage, target);
   } catch (caught) { const error = caught as CodedError;
@@ -3361,6 +3382,11 @@ export async function state(options: ScopeOptions = {}) {
         error: `技能扫描达到遍历上限，部分技能未显示: ${root.path}`,
       });
     const skills: SkillView[] = [];
+    if (root.key === 'company') {
+      policyResult.state.categories[root.key] = [];
+      policyResult.state.categoryMembers[root.key] = Object.create(null);
+    }
+    projectSkillCategories(policyResult.state, root.key, entries);
     for (const e of entries) {
       const policy = effectiveSkillPolicy(policyResult, root, e);
       const managerEnabled =
@@ -3484,6 +3510,9 @@ export async function exportSkill(key: string, name: string, options: ScopeOptio
   const detail = await skillDetail(key, name, options);
   signal?.throwIfAborted();
   if ('ok' in detail || !detail.loadable || !KEBAB_RE.test(detail.declaredName)) throw new Error('请先修正技能名称和 SKILL.md');
+  const policy = await readManagerState();
+  if (!policy.writable) throw new Error('技能分类状态不可读，请修复后重试');
+  const categoryId = policy.state.categoryMembers[key]?.[name];
   const files: Record<string, string> = {};
   let bytes = 0;
   const add = async (file: string, path: string) => {
@@ -3494,7 +3523,10 @@ export async function exportSkill(key: string, name: string, options: ScopeOptio
       const info = await handle.stat();
       signal?.throwIfAborted();
       if (!info.isFile() || info.size + bytes > 32 * 1024 * 1024 || Object.keys(files).length >= 2048) throw new Error('技能文件超出发布限制');
-      const data = await handle.readFile({ signal });
+      const original = await handle.readFile({ signal });
+      const data = path === 'SKILL.md' && categoryId !== undefined
+        ? Buffer.from(withSkillCategory(original.toString('utf8'), policy.state.categories[key]?.find(item => item.id === categoryId)?.name))
+        : original;
       signal?.throwIfAborted();
       bytes += data.byteLength;
       if (bytes > 32 * 1024 * 1024) throw new Error('技能文件超出发布限制');

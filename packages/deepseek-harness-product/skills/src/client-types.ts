@@ -38,6 +38,7 @@ export interface Filters {
     query: string;
     source: string;
     status: string;
+    category?: string;
 }
 export interface ViewProps extends SectionProps {
     sessionId?: string;

@@ -59,6 +59,8 @@ export interface SkillEntry extends DiscoveredEntry {
     name: string;
     declaredName: string;
     description: string;
+    /** Portable default from SKILL.md metadata.category. */
+    category?: string;
     modelInvocable: boolean;
     userInvocable: boolean;
     invocationPolicyValid: boolean;
@@ -331,6 +333,8 @@ export interface CreateInput {
     name?: string;
     description?: string;
     body?: string;
+    /** Short display name persisted as standard skill metadata. */
+    category?: string;
 }
 /** Local source resolved to a normalized skill name. */
 export interface ImportCandidate {
