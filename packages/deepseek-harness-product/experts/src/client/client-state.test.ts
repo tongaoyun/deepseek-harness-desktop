@@ -13,7 +13,8 @@ function fixture() {
   const getTeams = vi.fn<AgencyTeamsRemote['getTeams']>().mockResolvedValue({ ok: true, value: teams })
   const unused = (): Promise<never> => Promise.reject(new Error('Unexpected mutation'))
   const remote: AgencyCatalogRemote & Pick<AgencyTeamsRemote, 'getTeams'> = {
-    getCatalog, getTeams, getCustomExpert: unused, saveCustomExpert: unused, deleteCustomExpert: unused,
+    getCatalog, getTeams, importExpert: unused, exportExpert: unused,
+    getCustomExpert: unused, saveCustomExpert: unused, deleteCustomExpert: unused,
   }
   return { remote, getCatalog, getTeams, ...createExpertClientState(remote) }
 }

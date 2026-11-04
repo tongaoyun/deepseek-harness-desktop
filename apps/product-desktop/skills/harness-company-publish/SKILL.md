@@ -1,6 +1,6 @@
 ---
 name: harness-company-publish
-description: 创建、修改、校验并发布公司 DeepSeek Harness 专家、专家团和技能，让全公司桌面同步使用。适用于要求将原生专家、完整专家团或 SKILL.md 发布到公司的任务；不负责发布桌面软件、插件代码、连接器或知识库。
+description: 创建、修改、校验并发布公司 DeepSeek Harness 专家、专家团和技能，让全公司桌面同步使用。适用于要求将AgentSpec 专家、固定版本专家团或 SKILL.md 发布到公司的任务；不负责发布桌面软件、插件代码、连接器或知识库。
 ---
 
 # 公司专家与技能发布
@@ -22,13 +22,18 @@ description: 创建、修改、校验并发布公司 DeepSeek Harness 专家、�
 每次只处理一个技能、专家或专家团，使用原生目录，不需要自定义版本清单：
 
 ```text
-experts/orders/orders.md       # 专家；或下面的单项技能
+experts/orders/manifest.json
+experts/orders/config/SOUL.md
+experts/orders/config/AGENTS.md
+experts/orders/references/policy.md
 skills/orders/SKILL.md
 skills/orders/references/policy.md
-teams/order-diagnosis.json     # 或一个完整专家团（包含全部成员说明）
+teams/order-diagnosis.json     # 专家团引用已发布专家的固定版本
 ```
 
-专家 Markdown 与 SKILL.md 使用 `---` frontmatter，`name`、`description` 为非空单行字符串，正文非空。技能 name 与目录名一致；专家按文件名识别身份，分类不参与身份。优先使用桌面的跨境 ERP 场景分类，如订单 `orders`、商品 `catalog`、采购 `supply-chain`、仓储 `warehouse`、物流 `logistics`、财务 `finance`；完整目录见仓库的 `apps/product-desktop/docs/company-content.md`。技能必须带齐资源，更新完整替换该技能目录，省略的旧资源会删除并出现在差异里，其他资源不变。每项最多 2048 文件、32 MiB，入口 Markdown 最多 128 KiB；不接受链接、非法路径、目录大小写冲突。
+专家采用 AgentSpec：`manifest.json` 的 `worker.suggested_name` 与专家目录一致，`description` 为简介，`config/SOUL.md` 必填且非空；`AGENTS.md`、资料和模板可选，完整保留包内文件。展示名称、分类和头像写在本地 `.publication.json` 的 `catalog` 中（`name`、`division`、`avatar`），不扩展 AgentSpec 字段。只分发内容，不启动 Worker，不执行安装或定时任务。
+
+技能保留标准 `SKILL.md` 与资源目录，frontmatter 的 `name`、`description` 非空，name 与目录一致。更新完整替换该资源目录，省略的旧文件会移除，其他资源不变。每项最多 2048 文件、32 MiB，入口说明最多 128 KiB；不接受链接、非法路径、大小写别名。
 
 修改已有资源先查询、导出：
 
@@ -38,7 +43,7 @@ node TOOL export skills/orders --out /private/work/new-edit-directory
 node TOOL export experts/orders --out /private/work/new-expert-directory
 ```
 
-导出到尚不存在的目录，包含原生文件及 `.publication.json` 的资源基线摘要。保留这个编辑来源，不手工修改或移除摘要来绕过冲突；它不属于发布内容。专家移动分类时直接移动 Markdown 文件，无需删除旧分类。编辑期间同资源发生变化报 EDIT_CONFLICT；其他资源发布不影响本次编辑。新增资源无需来源文件；已有同名资源必须先导出再修改，不能隐式覆盖。
+导出到尚不存在的目录，包含原生文件及 `.publication.json` 的资源基线摘要。保留这个编辑来源，不手工修改或移除摘要来绕过冲突；它不属于发布内容。专家调整分类时修改 `.publication.json` 的 `catalog.division`，包标识和文件路径不变。编辑期间同资源发生变化报 EDIT_CONFLICT；其他资源发布不影响本次编辑。新增资源无需来源文件；已有同名资源必须先导出再修改，不能隐式覆盖。
 
 ## 校验、预览和发布
 
@@ -49,7 +54,7 @@ node TOOL plan /private/work/content --out /private/work/new-plan.json
 
 `plan` 只读取服务端，输出目标资源的新增、修改、移除差异、预期摘要及 confirmation。计划只包含该项资源，保存在私有目录，不提交 Git 或贴到对话。核对技能旧资源移除项，不能把发布一个资源扩大为修改其他资源。
 
-明确删除时对空目录生成计划，追加 `--remove skills/orders` 、`--remove experts/orders` 或 `--remove teams/order-diagnosis`。每次只删除一个完整资源，不支持通配符或单独删除 SKILL.md；空目录不会清空公司目录。删除使用资源摘要检查，历史分发快照保留。
+明确删除时对空目录生成计划，追加 `--remove skills/orders` 、`--remove experts/orders` 或 `--remove teams/order-diagnosis`。每次只删除一个完整资源，不支持通配符或单独删除 SKILL.md；空目录不会清空公司目录。删除使用资源摘要检查，已发布资源的固定版本保留。
 
 已有发布授权且差异与请求一致后，使用这次 plan 输出的完整摘要：
 
@@ -57,13 +62,13 @@ node TOOL plan /private/work/content --out /private/work/new-plan.json
 node TOOL publish /private/work/new-plan.json --confirm <confirmation>
 ```
 
-发布前再次比对目标资源摘要，以 expectedSha256 条件写入；摘要校验阻止计划被替换。发布后重新读取并核对该资源，其他资源同期发布不影响结果。任务结束清理本次临时导出与计划，不删除用户的源码。
+发布前再次比对目标资源修订摘要，以 expectedRevision 条件写入；摘要校验阻止计划被替换。发布后重新读取并核对该资源，其他资源同期发布不影响结果。任务结束清理本次临时导出与计划，不删除用户的源码。
 
 ## 冲突与结果
 
 - PUBLICATION_CONFLICT：别人先发布了内容，没有覆盖。重新生成计划、检查新增差异；涉及同一资源时重新导出并合并。最多自动重新规划一次，再次冲突则停止并说明，不能循环发布。
 - EDIT_CONFLICT：本次编辑基于的资源已变化，保留编辑文件；重新导出比较后合并，不能直接换摘要。
-- REQUEST_UNCONFIRMED：写入可能已成功，工具只读取核实、不重试写入。使用 current 查询；目标资源摘要等于计划才算已生效，其他结果不能宣称失败回滚或重新发布。
+- REQUEST_UNCONFIRMED：写入可能已成功，工具只读取核实、不重试写入。使用 current 查询；目标资源修订摘要等于计划才算已生效，其他结果不能宣称失败回滚或重新发布。
 - VERSION_NOT_CURRENT：回执不能证明该项资源仍生效，查询并说明实际内容；不重新激活旧版本。
 - PUBLICATION_DENIED：停止需要此权限的操作，报告配置或权限问题，不借用员工令牌、其他服务凭据或浏览器会话。
 
@@ -71,4 +76,4 @@ node TOOL publish /private/work/new-plan.json --confirm <confirmation>
 
 ### 专家团
 
-`teams/<稳定标识>.json` 包含 `team` 和 `experts`，不带本机团队 ID。`team` 的 `members[].expertSlug` 使用包内键 `member-1`～`member-8`；`experts` 每项包含 `key`、`name`、`description`、`division`、`emoji`、`prompt`。必须包含 2～8 位不同成员及其完整说明，禁止只引用发布者本机专家。主理人字段与桌面团队编辑器一致；模板版本固定为 1，使用自定义模式时须提供主理人正文。完整示例从控制中心“专家套件 → 专家团 → 下载示例”获取。文件上限 2 MiB，更新与删除整个团队原子进行，保留旧会话的固定内容。
+`teams/<稳定标识>.json` 根字段为 `schemaVersion: 1`、`id` 和 `team`。团队包含名称、简介、目标、约束、交付要求、主理人规则、任务示例及 2～8 位不同成员分工。成员引用 `expertSlug`、`expertVersion`、`expertSha256`，并提供 `duty` 和 `instructions`，不内嵌专家正文。版本号是 `0.0.0-` 加 SHA-256 前 56 位；完整摘要另行校验。公司成员必须已经发布，精确版本须存在；依赖缺失不会发布。专家更新后需编辑并重新发布团队才能升级成员版本。文件上限 2 MiB；控制中心提供格式示例。

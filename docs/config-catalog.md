@@ -4836,12 +4836,12 @@ export interface Config {
 
 - `inject`: `tools` · `subagents` · `systemPrompt` · `settings` · `webServer`
 - `refs`: `Volatile` (`@deepseek-ai/cordis`)
-- `source`: [`packages/deepseek-harness-product/experts/src/index.ts:187`](../packages/deepseek-harness-product/experts/src/index.ts)
+- `source`: [`packages/deepseek-harness-product/experts/src/index.ts:191`](../packages/deepseek-harness-product/experts/src/index.ts)
 
 ```ts config-catalog
 /** Plugin config: the persona root, the subagent provider, and the divisions to scan. */
 export interface Config {
-  /** Directory holding the `division/*.md` persona files. */
+  /** Directory holding AgentSpec package directories. */
   root: string
   /** `ctx.subagents` provider name (default `spawn`). */
   provider: string
@@ -4851,12 +4851,16 @@ export interface Config {
   maxDepth?: number
   /** 官方实时配置引用，保存个人专家选择。 */
   enabled?: Volatile<string[]>
-  /** 个人专家正文及元数据。 */
+  /** 个人专家文件引用及展示元数据。 */
   customExperts?: Volatile<unknown[]>
   /** 个人专家团编排。 */
   customTeams?: Volatile<unknown[]>
   /** 已启用的个人专家团标识。 */
   enabledTeams?: Volatile<string[]>
+  /** 按员工隔离的个人内容设置。 */
+  personalLibraries?: Volatile<Record<string, unknown>>
+  /** 未分员工的个人内容是否已经认领。 */
+  personalContentClaimed?: Volatile<boolean>
 }
 ```
 <!-- END GENERATED config-catalog:@deepseek-harness/product-experts -->

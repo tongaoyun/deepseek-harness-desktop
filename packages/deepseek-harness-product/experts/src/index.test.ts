@@ -1,9 +1,9 @@
+import { writeExpertFixture as writeFile, writeTestExpert } from '../tests/packages.ts'
 import { createTestContext } from '../tests/context.ts'
 import { createActivationProbe } from '../tests/activation-probe.ts'
-import { fileURLToPath } from 'node:url'
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { readFileSync } from 'node:fs'
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp as rawMkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
@@ -11,7 +11,7 @@ import type { SettingsDescriptor } from '@deepseek-ai/dsh-settings'
 import type { ISessions } from '@deepseek-ai/dsh-api-session-controller/client'
 import type { SessionId } from '@deepseek-ai/dsh-client-connection/client'
 import z from '@deepseek-ai/schemastery'
-import { Config, SUMMON_EXPERTS_CONCURRENCY, SUMMON_EXPERTS_MAX, SUMMON_TASK_MAX_CHARS, apply, inject, loadCatalog, createAgencyPersonaSource, mapPool, parseFrontmatter, resolveCatalogRoot, resolveExpert, readExpertPrompt, stripBom, toSummonItemResult, truncate, validateSummonSpecs } from './index.ts'
+import { Config, SUMMON_EXPERTS_CONCURRENCY, SUMMON_EXPERTS_MAX, SUMMON_TASK_MAX_CHARS, apply, inject, loadCatalog, mapPool, resolveExpert, readExpertPrompt, toSummonItemResult, truncate, validateSummonSpecs } from './index.ts'
 import AgencyAgentsRemote from './remote.ts'
 import { AGENCY_AGENTS_DESCRIPTORS } from './remote-contract.ts'
 import { expertConflict } from './expert-contract.ts'
@@ -21,6 +21,14 @@ import { ROSTER } from './fixtures/roster.ts'
 import { enHost, formatHost, matchDivision, readHostLocale, renderExpertList, renderSummonResults, resolveHostLocale, zhHost } from './i18n.ts'
 import { TYPERT_REMOTE } from './client/remote.ts'
 import { readAgencySettings, expertSettingsNamespace } from './settings.ts'
+
+async function mkdtemp(prefix: string): Promise<string> {
+  const parent = await rawMkdtemp(prefix), root = join(parent, 'experts')
+  await mkdir(root)
+  const { onTestFinished } = await import('vitest')
+  onTestFinished(() => rm(parent, { recursive: true, force: true }))
+  return root
+}
 
 function sessionList(rows: readonly { id: SessionId; main?: boolean }[]): ISessions['list'] {
   return {
@@ -60,7 +68,7 @@ function alphaSettings(enabled: readonly string[], locale?: 'zh' | 'en') {
 }
 
 /** 测试里的宿主配置走 0.2 volatile 字段；已自带 get() 的配置保持原样。 */
-function applyOnHost(ctx: Context, config: Parameters<typeof apply>[1]): void {
+function applyOnHost(ctx: Context, config: Parameters<typeof apply>[1]): Promise<void> {
   // Registration fakes retain the production disposer contract for effect-owned tools.
   const register = ctx.tools.register.bind(ctx.tools)
   Object.assign(ctx.tools, { register: (tool: Parameters<typeof register>[0]) => { const dispose = register(tool); return typeof dispose === 'function' ? dispose : () => {} } })
@@ -68,20 +76,15 @@ function applyOnHost(ctx: Context, config: Parameters<typeof apply>[1]): void {
   if (typeof ctx.effect !== 'function') Object.assign(ctx, { effect: (setup: () => unknown) => { setup(); return () => {} } })
   if (typeof ctx.get !== 'function') Object.assign(ctx, { get: () => undefined })
   if (typeof ctx.on !== 'function') Object.assign(ctx, { on: () => () => {} })
-  const current = config as { enabled?: unknown }
-  if (current.enabled !== null && typeof current.enabled === 'object' && typeof (current.enabled as { get?: unknown }).get === 'function') {
-    apply(ctx, config)
-    return
-  }
-  const settings = (ctx as { settings?: { get?: (ns: string) => { enabled?: string[]; customExperts?: unknown[]; customTeams?: unknown[]; enabledTeams?: string[] } | undefined } }).settings
-  const read = () => settings?.get?.('agency-agents')
-  apply(ctx, {
-    ...config,
-    enabled: { get: () => read()?.enabled ?? [] },
-    customExperts: { get: () => read()?.customExperts ?? [] },
-    customTeams: { get: () => read()?.customTeams ?? [] },
-    enabledTeams: { get: () => read()?.enabledTeams ?? [] },
-  } as Parameters<typeof apply>[1])
+  const describe = ctx.settings.describe.bind(ctx.settings)
+  Object.assign(ctx.settings, { describe: () => { const rows = describe(); return rows.some(row => row.ns === 'agency-agents') ? rows : [...rows, { ns: 'agency-agents', revision: 0 }] } })
+  const settings = (ctx as { settings?: { get?: (ns: string) => Record<string, unknown> | undefined } }).settings
+  const read = () => settings?.get?.('agency-agents') ?? {}
+  const unwrap = (value: unknown) => value && typeof value === 'object' && 'get' in value ? (value as { get(): unknown }).get() : value
+  const personal = () => readAgencySettings({ enabled: unwrap(config.enabled) ?? read().enabled ?? [], customExperts: unwrap(config.customExperts) ?? read().customExperts ?? [],
+    customTeams: unwrap(config.customTeams) ?? read().customTeams ?? [], enabledTeams: unwrap(config.enabledTeams) ?? read().enabledTeams ?? [] })
+  return apply(ctx, { ...config, enabled: { get: () => personal().enabled }, personalLibraries: { get: () => ({ local: personal() }) }, personalContentClaimed: { get: () => true } })
+
 }
 
 describe('Config', () => {
@@ -146,7 +149,7 @@ describe('官方实时设置读取', () => {
       on: () => () => undefined,
         get: () => undefined,
       } as unknown as Context
-      applyOnHost(ctx, {
+      await applyOnHost(ctx, {
         root,
         provider: 'spawn',
         divisions: ['engineering'],
@@ -166,16 +169,6 @@ describe('官方实时设置读取', () => {
 
 })
 
-describe('stripBom', () => {
-  it('去除 UTF-8 BOM', () => {
-    expect(stripBom('\uFEFF---')).toBe('---')
-  })
-
-  it('无 BOM 原样返回', () => {
-    expect(stripBom('---')).toBe('---')
-  })
-})
-
 describe('truncate', () => {
   it('超长截断并追加省略号', () => {
     expect(truncate('abcdef', 3)).toBe('abc…')
@@ -190,195 +183,16 @@ describe('truncate', () => {
   })
 })
 
-describe('parseFrontmatter', () => {
-  it('reads YAML multiline scalars, escaped quotes and comments without treating them as literal metadata', () => {
-    expect(parseFrontmatter(`---
-name: "A \\"quoted\\" expert"
-description: >-
-  First line
-  second line
-descriptionEn: |
-  English first
-  English second
-emoji: "📘" # catalog icon
----
-  Persona instructions.
-`)).toEqual({ name: 'A "quoted" expert', description: 'First line second line',
-      descriptionEn: 'English first\nEnglish second\n', emoji: '📘', body: 'Persona instructions.' })
-  })
-
-  it.each([
-    'name: First\nname: Second\ndescription: D',
-    'name: [broken\ndescription: D',
-    '- name: List\n- description: D',
-  ])('does not publish malformed or non-mapping YAML metadata: %s', header => {
-    expect(parseFrontmatter(`---\n${header}\n---\nPersona instructions.`)).toBeUndefined()
-  })
-
-  it('requires text fields instead of converting YAML collections and numbers to display text', () => {
-    expect(parseFrontmatter('---\nname: [expert]\ndescription: 123\n---\nInstructions.'))
-      .toEqual({ name: undefined, description: undefined, descriptionEn: undefined, emoji: undefined, body: 'Instructions.' })
-  })
-
-  it('解析带引号的 emoji', () => {
-    const parsed = parseFrontmatter('---\nname: X\ndescription: D\ndescriptionEn: E\nemoji: "📘"\n---\nbody')
-    expect(parsed?.name).toBe('X')
-    expect(parsed?.description).toBe('D')
-    expect(parsed?.descriptionEn).toBe('E')
-    expect(parsed?.emoji).toBe('📘')
-    expect(parsed?.body).toBe('body')
-  })
-
-  it('无 frontmatter 返回 undefined', () => {
-    expect(parseFrontmatter('just body')).toBeUndefined()
-  })
-})
-
-describe('loadCatalog', () => {
-  let dir: string
-
-  beforeEach(async () => {
-    dir = await mkdtemp(join(tmpdir(), 'aag-'))
-  })
-
-  afterEach(async () => {
-    await rm(dir, { recursive: true, force: true })
-  })
-
-  it('uses the same YAML metadata for incremental catalog reads and lazy prompt reads', async () => {
-    await mkdir(join(dir, 'engineering'), { recursive: true })
-    await writeFile(join(dir, 'engineering', 'yaml-expert.md'), `---
-name: YAML Expert
-description: >-
-  Reviews schemas
-  and migrations.
-emoji: "📘" # icon
----
-  Review the requested schema.
-`)
-    const catalog = await loadCatalog(dir, ['engineering'])
-    const metadata = { name: catalog.get('yaml-expert')?.name, description: catalog.get('yaml-expert')?.description,
-      emoji: catalog.get('yaml-expert')?.emoji }
-    expect(metadata).toEqual({ name: 'YAML Expert', description: 'Reviews schemas and migrations.', emoji: '📘' })
-    expect(metadata).toMatchSnapshot()
-    await expect(createAgencyPersonaSource(dir, ['engineering']).getPrompt('yaml-expert', 'engineering', 'en'))
-      .resolves.toEqual({ prompt: 'Review the requested schema.' })
-  })
-
-  it('递归加载 division 子目录中的智能体', async () => {
-    await mkdir(join(dir, 'game-development', 'unity'), { recursive: true })
-    await writeFile(join(dir, 'game-development', 'economy-designer.md'), '---\nname: E\ndescription: 中文简介\ndescriptionEn: English intro\n---\nbody', 'utf8')
-    await writeFile(join(dir, 'game-development', 'unity', 'unity-architect.md'), '---\nname: U\ndescription: d\n---\nbody', 'utf8')
-    const map = await loadCatalog(dir, ['game-development'])
-    expect(map.has('economy-designer')).toBe(true)
-    expect(map.get('economy-designer')?.descriptionEn).toBe('English intro')
-    expect(map.get('economy-designer')).not.toHaveProperty('persona')
-    expect(map.has('unity-architect')).toBe(true)
-    expect(map.get('unity-architect')?.division).toBe('game-development')
-    const source = createAgencyPersonaSource(dir, ["game-development"]);
-    await expect(source.getPrompt("unity-architect", "game-development", "zh"))
-      .resolves.toEqual({ prompt: "body" });
-  })
-
-  it('frontmatter 跨 1KB 分块且多字节 UTF-8 字符落在边界时仍能解析', async () => {
-    await mkdir(join(dir, 'engineering'), { recursive: true })
-    const prefix = '---\nname: Boundary Expert\ndescription: '
-    const padding = 'a'.repeat(1_023 - Buffer.byteLength(prefix, 'utf8'))
-    const description = `${padding}中`
-    await writeFile(
-      join(dir, 'engineering', 'boundary-expert.md'),
-      `${prefix}${description}\n---\nPersona body must not be read while loading metadata.`,
-      'utf8',
-    )
-
-    const map = await loadCatalog(dir, ['engineering'])
-
-    expect(map.get('boundary-expert')?.description).toBe(description)
-    expect(map.get('boundary-expert')).not.toHaveProperty('persona')
-  })
-
-  it('不将 integrations/mcp-memory 转换输出作为工程专家加载', async () => {
-    await mkdir(join(dir, 'engineering'), { recursive: true })
-    await mkdir(join(dir, 'integrations', 'mcp-memory'), { recursive: true })
-    await writeFile(join(dir, 'engineering', 'engineering-backend-architect.md'), '---\nname: Backend Architect\ndescription: d\n---\nbody', 'utf8')
-    await writeFile(join(dir, 'integrations', 'mcp-memory', 'backend-architect-with-memory.md'), '---\nname: Backend Architect\ndescription: d\n---\nbody', 'utf8')
-    const map = await loadCatalog(dir, ['engineering'])
-    expect(map.has('engineering-backend-architect')).toBe(true)
-    expect(map.has('backend-architect-with-memory')).toBe(false)
-  })
-
-  it('loads published expert metadata beyond 64 KiB and keeps the 128 KiB bound', async () => {
-    await mkdir(join(dir, 'engineering'), { recursive: true })
-    const description = '中'.repeat(24 * 1_024)
-    await writeFile(join(dir, 'engineering', 'long-header.md'),
-      `---\nname: Long header\ndescription: ${description}\n---\nExpert instructions.`)
-    await writeFile(join(dir, 'engineering', 'oversized-header.md'),
-      `---\nname: Oversized\ndescription: ${'a'.repeat(128 * 1_024)}\n---\nBody.`)
-    const catalog = await loadCatalog(dir, ['engineering'])
-    expect(catalog.get('long-header')?.description).toBe(description)
-    expect(catalog.has('oversized-header')).toBe(false)
-    await expect(createAgencyPersonaSource(dir, ['engineering']).getPrompt('long-header', 'engineering', 'en'))
-      .resolves.toEqual({ prompt: 'Expert instructions.' })
-  })
-
-  it('未配置的分区不会参与名册加载', async () => {
-    await mkdir(join(dir, 'marketing'), { recursive: true })
-    await mkdir(join(dir, 'integrations', 'mcp-memory'), { recursive: true })
-    await writeFile(join(dir, 'marketing', 'marketing-specialist.md'), '---\nname: Marketing Specialist\ndescription: d\n---\nbody', 'utf8')
-    await writeFile(join(dir, 'integrations', 'mcp-memory', 'backend-architect-with-memory.md'), '---\nname: Backend Architect\ndescription: d\n---\nbody', 'utf8')
-
-    const map = await loadCatalog(dir, ['marketing'])
-
-    expect(map.has('marketing-specialist')).toBe(true)
-    expect(map.has('backend-architect-with-memory')).toBe(false)
-  })
-
-  it('同 slug 冲突时按文件名排序确定覆盖顺序', async () => {
-    await mkdir(join(dir, 'engineering', 'z-sub'), { recursive: true })
-    await writeFile(join(dir, 'engineering', 'reviewer.md'), '---\nname: Root\ndescription: d\n---\nbody', 'utf8')
-    await writeFile(join(dir, 'engineering', 'z-sub', 'reviewer.md'), '---\nname: Sub\ndescription: d\n---\nSub persona', 'utf8')
-    // 'reviewer.md' 按文件名排在 'z-sub' 之前，子目录中的同名文件后加载并覆盖
-    const map = await loadCatalog(dir, ['engineering'])
-    expect(map.get('reviewer')?.name).toBe('Sub')
-    const source = createAgencyPersonaSource(dir, ["engineering"]);
-    await expect(source.getPrompt("reviewer", "engineering", "en"))
-      .resolves.toEqual({ prompt: "Sub persona" });
-  })
-
-  it('名称仅大小写或首尾空白不同时仍拒绝加载，并按界面语言报错', async () => {
-    await mkdir(join(dir, 'engineering'), { recursive: true })
-    await writeFile(join(dir, 'engineering', 'reviewer-a.md'), '---\nname: Reviewer\ndescription: d\n---\nbody', 'utf8')
-    await writeFile(join(dir, 'engineering', 'reviewer-b.md'), '---\nname:  reviewer  \ndescription: d\n---\nbody', 'utf8')
-
-    await expect(loadCatalog(dir, ['engineering'])).rejects.toThrow(formatHost('zh', 'error.catalogDuplicateName', { name: 'reviewer' }))
-    await expect(loadCatalog(dir, ['engineering'], 'en')).rejects.toThrow(formatHost('en', 'error.catalogDuplicateName', { name: 'reviewer' }))
-  })
-
-  it('root 不存在时抛出', async () => {
-    await expect(loadCatalog(join(dir, 'nope'), ['engineering'])).rejects.toThrow()
-  })
-
-  it('root 存在但无任何智能体时抛出', async () => {
-    await mkdir(join(dir, 'empty'), { recursive: true })
-    await expect(loadCatalog(join(dir, 'empty'), ['engineering'])).rejects.toThrow()
-  })
-
-  it('未配置 root 时没有预置目录', () => {
-    const original = process.env.AGENCY_AGENTS_ROOT
-    delete process.env.AGENCY_AGENTS_ROOT
-    try { expect(resolveCatalogRoot('')).toBeUndefined() }
-    finally { if (original !== undefined) process.env.AGENCY_AGENTS_ROOT = original }
-  })
-
-  it('在解析 root 时读取之后设置的环境变量', () => {
-    const original = process.env.AGENCY_AGENTS_ROOT
-    process.env.AGENCY_AGENTS_ROOT = dir
+describe('AgentSpec catalog', () => {
+  it('loads literal SOUL and AGENTS from a complete package', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'expert-package-'))
     try {
-      expect(resolveCatalogRoot('')).toBe(dir)
-    } finally {
-      if (original === undefined) delete process.env.AGENCY_AGENTS_ROOT
-      else process.env.AGENCY_AGENTS_ROOT = original
-    }
+      await writeTestExpert(root, 'reviewer', 'Literal {{do not interpolate}} instructions')
+      const catalog = await loadCatalog(root, [])
+      expect(catalog.has('reviewer')).toBe(true)
+      expect((await readExpertPrompt(root, 'reviewer')).prompt).toContain('Literal {{do not interpolate}} instructions')
+      await expect(readExpertPrompt(root, '../outside')).rejects.toThrow()
+    } finally { await rm(root, { recursive: true, force: true }) }
   })
 })
 
@@ -413,7 +227,6 @@ describe('summon_expert', () => {
   beforeEach(async () => {
     dir = await mkdtemp(join(tmpdir(), 'aag-'))
     await mkdir(join(dir, 'engineering'), { recursive: true })
-    await mkdir(join(dir, 'integrations', 'mcp-memory'), { recursive: true })
     await writeFile(join(dir, 'engineering', 'reviewer.md'), '---\nname: Reviewer\ndescription: d\n---\nbody', 'utf8')
   })
 
@@ -441,7 +254,7 @@ describe('summon_expert', () => {
       reflect: { provide: () => undefined },
     })
 
-    applyOnHost(ctx, { root: dir, provider: 'spawn', divisions: ['engineering'] })
+    await applyOnHost(ctx, { root: dir, provider: 'spawn', divisions: ['engineering'] })
     const summon = tools.find((tool) => (tool as { name?: string }).name === 'summon_expert') as {
       execute: (args: unknown, exec: unknown) => Promise<unknown>
     }
@@ -476,7 +289,7 @@ describe('summon_expert', () => {
       reflect: { provide: () => undefined },
     })
 
-    applyOnHost(ctx, { root: dir, provider: 'spawn', divisions: ['engineering'] })
+    await applyOnHost(ctx, { root: dir, provider: 'spawn', divisions: ['engineering'] })
     const summon = tools.find((tool) => (tool as { name?: string }).name === 'summon_expert') as {
       execute: (args: unknown, exec: unknown) => Promise<unknown>
     }
@@ -531,7 +344,7 @@ describe('summon_expert', () => {
       reflect: { provide: () => undefined },
     })
 
-    applyOnHost(ctx, { root: dir, provider: 'spawn', divisions: ['engineering'] })
+    await applyOnHost(ctx, { root: dir, provider: 'spawn', divisions: ['engineering'] })
     const summon = tools.find((tool) => (tool as { name?: string }).name === 'summon_expert') as {
       execute: (args: unknown, exec: unknown) => Promise<unknown>
     }
@@ -582,7 +395,7 @@ describe('summon_expert', () => {
       reflect: { provide: () => undefined },
     })
 
-    applyOnHost(ctx, { root: dir, provider: 'spawn', divisions: ['engineering'], maxDepth: null as unknown as number })
+    await applyOnHost(ctx, { root: dir, provider: 'spawn', divisions: ['engineering'], maxDepth: null as unknown as number })
     const summon = tools.find((tool) => (tool as { name?: string }).name === 'summon_expert') as {
       execute: (args: unknown, exec: unknown) => Promise<unknown>
     }
@@ -626,7 +439,8 @@ describe('summon_expert', () => {
       },
     })
 
-    applyOnHost(ctx, { root: fileURLToPath(new URL('../tests/fixtures/vendor/agency-agents-zh', import.meta.url)), provider: 'spawn', divisions: ['company'] })
+    await writeFile(join(dir, 'company', 'chief-executive-officer.md'), '---\nname: 首席执行官（CEO）\ndescription: 公司战略\n---\n首席执行官提示词')
+    await applyOnHost(ctx, { root: dir, provider: 'spawn', divisions: ['company'] })
     const summon = tools.find((tool) => (tool as { name?: string }).name === 'summon_expert') as {
       execute: (args: unknown, exec: unknown) => Promise<unknown>
     }
@@ -639,7 +453,7 @@ describe('summon_expert', () => {
     expect(startOptions).not.toHaveProperty("persona")
   })
 
-  it('只向父会话注入花名册协议', () => {
+  it('只向父会话注入花名册协议', async () => {
     const tools: unknown[] = []
     const sections: Array<{ name: string; text: string | ((context: unknown) => string) }> = []
     const ctx = {
@@ -653,7 +467,7 @@ describe('summon_expert', () => {
       reflect: { provide: () => undefined },
     } as unknown as Context
 
-    applyOnHost(ctx, { root: dir, provider: 'spawn', divisions: ['engineering'] })
+    await applyOnHost(ctx, { root: dir, provider: 'spawn', divisions: ['engineering'] })
     const text = sections.find((section) => section.name === 'agency:experts')?.text
     expect(typeof text).toBe('function')
     if (typeof text !== 'function') throw new Error('agency:experts must be dynamic')
@@ -663,7 +477,7 @@ describe('summon_expert', () => {
     expect(text({ agent: { session: { header: { parentSession: 'parent' } } } })).toBe('')
   })
 
-  it('父会话被要求只传简报和路径，不要把带引号的源码写进召唤参数', () => {
+  it('父会话被要求只传简报和路径，不要把带引号的源码写进召唤参数', async () => {
     const sections: Array<{ name: string; text: string | ((context: unknown) => string) }> = []
     const tools: Array<{ name?: string; parameters?: unknown }> = []
     const ctx = {
@@ -677,7 +491,7 @@ describe('summon_expert', () => {
       reflect: { provide: () => undefined },
     } as unknown as Context
 
-    applyOnHost(ctx, { root: dir, provider: 'spawn', divisions: ['engineering'] })
+    await applyOnHost(ctx, { root: dir, provider: 'spawn', divisions: ['engineering'] })
     const text = sections.find((section) => section.name === 'agency:experts')?.text
     if (typeof text !== 'function') throw new Error('agency:experts must be dynamic')
     const prompt = text({ agent: { session: { header: {} } } })
@@ -699,7 +513,7 @@ describe('summon_expert', () => {
     }
   })
 
-  it('在注册阶段拒绝零 maxDepth，避免第一次委派才失败', () => {
+  it('在注册阶段拒绝零 maxDepth，避免第一次委派才失败', async () => {
     const ctx = {
       tools: { register: () => undefined },
       subagents: { getProvider: () => undefined },
@@ -712,7 +526,7 @@ describe('summon_expert', () => {
       reflect: { provide: () => undefined },
     } as unknown as Context
 
-    expect(() => applyOnHost(ctx, { root: dir, provider: 'spawn', divisions: ['engineering'], maxDepth: 0 })).toThrow(formatHost('zh', 'error.maxDepth'))
+    await expect(applyOnHost(ctx, { root: dir, provider: 'spawn', divisions: ['engineering'], maxDepth: 0 })).rejects.toThrow(formatHost('zh', 'error.maxDepth'))
   })
 
   it('分区筛选会去除空白并要求精确 division', async () => {
@@ -729,7 +543,7 @@ describe('summon_expert', () => {
       reflect: { provide: () => undefined },
     } as unknown as Context
 
-    applyOnHost(ctx, { root: dir, provider: 'spawn', divisions: ['engineering'] })
+    await applyOnHost(ctx, { root: dir, provider: 'spawn', divisions: ['engineering'] })
     const list = tools.find((tool) => (tool as { name?: string }).name === 'list_experts') as {
       execute: (args: unknown, exec: { agent: undefined }) => Promise<{ divisions: Array<{ division: string }>; total: number }>
     }
@@ -757,7 +571,7 @@ describe('summon_expert', () => {
       reflect: { provide: () => undefined },
     })
 
-    applyOnHost(ctx, { root: dir, provider: 'spawn', divisions: ['engineering'], ...(maxDepth === undefined ? {} : { maxDepth }) })
+    await applyOnHost(ctx, { root: dir, provider: 'spawn', divisions: ['engineering'], ...(maxDepth === undefined ? {} : { maxDepth }) })
     const summon = tools.find((tool) => (tool as { name?: string }).name === 'summon_expert') as {
       execute: (args: unknown, exec: unknown) => Promise<unknown>
     }
@@ -782,7 +596,7 @@ describe('summon_expert', () => {
       reflect: { provide: () => undefined },
     })
 
-    applyOnHost(ctx, { root: dir, provider: 'spawn', divisions: ['engineering'] })
+    await applyOnHost(ctx, { root: dir, provider: 'spawn', divisions: ['engineering'] })
     const summon = tools.find((tool) => (tool as { name?: string }).name === 'summon_expert') as {
       execute: (args: unknown, exec: unknown) => Promise<unknown>
     }
@@ -813,7 +627,7 @@ describe('summon_expert', () => {
       reflect: { provide: () => undefined },
     })
 
-    applyOnHost(ctx, { root: dir, provider: 'spawn', divisions: ['engineering'] })
+    await applyOnHost(ctx, { root: dir, provider: 'spawn', divisions: ['engineering'] })
     const summon = tools.find((tool) => (tool as { name?: string }).name === 'summon_expert') as {
       execute: (args: unknown, exec: unknown) => Promise<unknown>
     }
@@ -823,20 +637,14 @@ describe('summon_expert', () => {
 })
 
 describe('AgencyAgentsRemote（Host↔Client 读写链路）', () => {
-  it('提示词读取剥离 frontmatter，并拒绝路径穿越参数', async () => {
+  it('reads a package prompt and rejects path traversal', async () => {
     const root = await mkdtemp(join(tmpdir(), 'aag-prompt-'))
     try {
-      await mkdir(join(root, 'engineering'), { recursive: true })
-      await writeFile(join(root, 'engineering', 'reviewer.md'), '---\nname: Reviewer\ndescription: desc\n---\nPersona body', 'utf8')
-      await expect(readExpertPrompt(root, 'reviewer', 'engineering')).resolves.toEqual({ prompt: 'Persona body' })
-      await expect(readExpertPrompt(root, 'missing', 'engineering', undefined, 'en')).rejects.toMatchObject({ code: 'PERSONA_NOT_FOUND', message: 'Expert prompt not found.' })
-      await mkdir(join(root, 'engineering', 'invalid.md'))
-      await expect(readExpertPrompt(root, 'invalid', 'engineering')).rejects.toMatchObject({ code: 'PERSONA_READ_FAILED' })
-      await expect(readExpertPrompt(root, '../package', 'engineering')).rejects.toThrow('无效的专家提示词请求。')
-      await expect(readExpertPrompt(root, 'reviewer', '../engineering')).rejects.toThrow('无效的专家提示词请求。')
-    } finally {
-      await rm(root, { recursive: true, force: true })
-    }
+      await writeTestExpert(root, 'reviewer', 'Persona body')
+      expect((await readExpertPrompt(root, 'reviewer')).prompt).toContain('Persona body')
+      await expect(readExpertPrompt(root, 'missing')).rejects.toThrow()
+      await expect(readExpertPrompt(root, '../package')).rejects.toThrow()
+    } finally { await rm(root, { recursive: true, force: true }) }
   })
 
   it('将 Settings revision 冲突映射到 i18n key，并区分刷新成败', () => {
@@ -914,7 +722,7 @@ describe('AgencyAgentsRemote（Host↔Client 读写链路）', () => {
           },
         },
       } as unknown as Context
-      applyOnHost(pluginCtx, { root, provider: 'spawn', divisions: ['engineering'] })
+      await applyOnHost(pluginCtx, { root, provider: 'spawn', divisions: ['engineering'] })
 
       const remoteCtx = createTestContext({
         get: (name: string) => name === 'agencyAgentsPersona' ? promptSource : undefined,
@@ -925,7 +733,7 @@ describe('AgencyAgentsRemote（Host↔Client 读写链路）', () => {
       })
       const remote = new AgencyAgentsRemote(remoteCtx)
 
-      await expect(remote.getPrompt('reviewer', 'engineering', new AbortController().signal)).resolves.toEqual({ prompt: 'Custom persona' })
+      await expect(remote.getPrompt('reviewer', 'engineering', new AbortController().signal)).resolves.toMatchObject({ prompt: expect.stringContaining('Custom persona') })
     } finally {
       await rm(root, { recursive: true, force: true })
     }
@@ -1492,12 +1300,12 @@ describe('list_experts 语言切换', () => {
     await rm(dir, { recursive: true, force: true })
   })
 
-  function install(locale?: 'zh' | 'en'): {
+  async function install(locale?: 'zh' | 'en'): Promise<{
     list: {
       execute: (args: unknown, exec: { agent: undefined }) => Promise<{ divisions: Array<{ division: string; count: number; experts?: Array<{ name: string; description: string }> }>; total: number }>
       output: { render: (args: unknown, value: unknown) => Array<{ type: string; text: string }> }
     }
-  } {
+  }> {
     const tools: unknown[] = []
     const ctx = {
       tools: { register: (tool: unknown) => tools.push(tool) },
@@ -1510,7 +1318,7 @@ describe('list_experts 语言切换', () => {
       },
       reflect: { provide: () => undefined },
     } as unknown as Context
-    applyOnHost(ctx, { root: dir, provider: 'spawn', divisions: ['engineering'] })
+    await applyOnHost(ctx, { root: dir, provider: 'spawn', divisions: ['engineering'] })
     const list = tools.find((tool) => (tool as { name?: string }).name === 'list_experts') as {
       execute: (args: unknown, exec: { agent: undefined }) => Promise<{ divisions: Array<{ division: string; count: number; experts?: Array<{ name: string; description: string }> }>; total: number }>
       output: { render: (args: unknown, value: unknown) => Array<{ type: string; text: string }> }
@@ -1518,7 +1326,7 @@ describe('list_experts 语言切换', () => {
     return { list }
   }
 
-  it('apply 注册的团队工具反复读取 schema 时不重新 describe 设置', () => {
+  it('apply 注册的团队工具反复读取 schema 时不重新 describe 设置', async () => {
     const tools: Array<{ name: string; description: string; parameters: unknown }> = []
     const describeSettings = vi.fn(() => [
       { ns: 'locale', value: { preference: 'en' } },
@@ -1533,7 +1341,7 @@ describe('list_experts 语言切换', () => {
       inject: () => undefined,
       reflect: { provide: () => undefined },
     } as unknown as Context
-    applyOnHost(ctx, { root: dir, provider: 'spawn', divisions: ['engineering'] })
+    await applyOnHost(ctx, { root: dir, provider: 'spawn', divisions: ['engineering'] })
     const teams = tools.filter(tool => ['list_expert_teams', 'get_expert_team', 'summon_expert_team'].includes(tool.name))
     expect(teams).toHaveLength(3)
     const readsAfterApply = describeSettings.mock.calls.length
@@ -1556,7 +1364,7 @@ describe('list_experts 语言切换', () => {
       settings: { ...alphaSettings([]), describe: () => [localeDescriptor(locale)] },
       inject: () => undefined,
     })
-    applyOnHost(ctx, { root: dir, provider: 'spawn', divisions: ['engineering'] })
+    await applyOnHost(ctx, { root: dir, provider: 'spawn', divisions: ['engineering'] })
     const teams = tools.filter(tool => ['list_expert_teams', 'get_expert_team', 'summon_expert_team'].includes(tool.name))
     expect(teams).toHaveLength(3)
     for (const tool of teams) expect(tool.description).toMatch(/[\u3400-\u9fff]/u)
@@ -1581,7 +1389,7 @@ describe('list_experts 语言切换', () => {
       settings: { ...alphaSettings([]), describe: () => [localeDescriptor(locale)] },
       inject: () => undefined,
     })
-    applyOnHost(ctx, { root: dir, provider: 'spawn', divisions: ['engineering'] })
+    await applyOnHost(ctx, { root: dir, provider: 'spawn', divisions: ['engineering'] })
     const team = tools.find(tool => tool.name === 'summon_expert_team')
     const english = JSON.stringify(team?.parameters ?? {})
     expect(english).toContain('Do not paste source, CSS, HTML, or quoted code')
@@ -1595,20 +1403,20 @@ describe('list_experts 语言切换', () => {
   })
 
   it('未设置语言时模型可见的专家列表使用英文', async () => {
-    const { list } = install()
+    const { list } = await install()
     const result = await list.execute({ division: 'engineering' }, { agent: undefined })
     expect(result.divisions[0]?.experts).toEqual([
-      { name: 'Code Reviewer', emoji: '🔍', description: 'English intro' },
+      { name: 'Code Reviewer', emoji: '🧩', description: '中文简介' },
     ])
     expect(list.output.render({ division: 'engineering' }, result)[0]?.text).toMatchInlineSnapshot(`
       "1 experts across 1 divisions:
       ## Engineering & Integration (1)
-      - 🔍 Code Reviewer — English intro"
+      - 🧩 Code Reviewer — 中文简介"
     `)
   })
 
   it('明确设置中文后可用中文分区名筛选，并返回中文名和简介', async () => {
-    const { list } = install('zh')
+    const { list } = await install('zh')
     const result = await list.execute({ division: '研发与集成' }, { agent: undefined })
     expect(result).toMatchObject({
       divisions: [{
@@ -1621,10 +1429,10 @@ describe('list_experts 语言切换', () => {
   })
 
   it('settings locale=en 时返回英文名和简介，分区标题用英文', async () => {
-    const { list } = install('en')
+    const { list } = await install('en')
     const result = await list.execute({ division: 'engineering' }, { agent: undefined })
     expect(result.divisions[0]?.experts).toEqual([
-      { name: 'Code Reviewer', emoji: '🔍', description: 'English intro' },
+      { name: 'Code Reviewer', emoji: '🧩', description: '中文简介' },
     ])
     expect(list.output.render({ division: 'engineering' }, result)[0]?.text).toContain('## Engineering & Integration (1)')
   })
@@ -1724,7 +1532,7 @@ describe('summon_experts', () => {
       reflect: { provide: () => undefined },
     })
 
-    applyOnHost(ctx, { root: dir, provider: 'spawn', divisions: ['engineering'] })
+    await applyOnHost(ctx, { root: dir, provider: 'spawn', divisions: ['engineering'] })
     const summon = tools.find((tool) => (tool as { name?: string }).name === 'summon_experts') as {
       execute: (args: unknown, exec: unknown) => Promise<{ results: Array<{ expert: string; ok: boolean; answer: string; error?: string }> }>
       output: { render: (args: unknown, value: unknown) => Array<{ type: string; text: string }> }

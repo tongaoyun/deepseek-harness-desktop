@@ -33,16 +33,30 @@ const { readFile, chmod } = await import('node:fs/promises')
 const { createServer } = await import('node:http')
 const { once } = await import('node:events')
 const { spawn } = await import('node:child_process')
+const { createHash } = await import('node:crypto')
 const SITE = 'http://127.0.0.1:6206/traefik/deepseek-harness'
 const skill = (name, body = 'Use the configured tools.') => `---\nname: ${name}\ndescription: Company ${name}\n---\n${body}`
-const expert = body => `---\nname: 订单专家\ndescription: 处理订单\n---\n${body}`
+const expert = body => ({ 'experts/orders/manifest.json': JSON.stringify({ worker: { suggested_name: 'orders' }, description: '处理订单' }), 'experts/orders/config/SOUL.md': body })
 const release = (version, texts) => {
   const files = Object.fromEntries(Object.entries(texts).map(([path, text]) => [path, Buffer.from(text).toString('base64')]))
   return { version, files, sha256: contentDigest(files) }
 }
 const withBase = (incoming, current, resource) => ({ ...incoming, baseResources: {
-  [resource.startsWith('experts/') ? 'experts/' + resource.split('/').at(-1).replace(/\.md$/u, '') : resource]: contentDigest(Object.fromEntries(Object.entries(current.files).filter(([path]) => path === resource || path.startsWith(`${resource}/`)))),
+  [resource]: contentDigest(Object.fromEntries(Object.entries(current.files).filter(([path]) => path === resource + '.json' || path.startsWith(`${resource}/`)))),
 } })
+function indexOf(current) {
+  if (!current) return null
+  const keys = [...new Set(Object.keys(current.files).map(path => path.startsWith('teams/') ? path.slice(0, -5) : path.split('/').slice(0, 2).join('/')))]
+  const resources = keys.map(resourceKey => {
+    const files = Object.fromEntries(Object.entries(current.files).filter(([path]) => path === resourceKey + '.json' || path.startsWith(resourceKey + '/')))
+    const sha256 = contentDigest(files)
+    return { resourceKey, sha256, version: '0.0.0-' + sha256.slice(0, 56), name: resourceKey.split('/')[1], description: 'Instructions',
+      fileCount: Object.keys(files).length, publishedAt: '2026-11-04T00:00:00Z', catalog: current.catalog ?? {}, dependencies: {} }
+  })
+  const records = [...resources.map(ref => `resource\0${ref.resourceKey}\0${ref.version}\0${ref.sha256}\n`),
+    ...resources.flatMap(ref => Object.entries(ref.catalog).map(([key, value]) => `catalog\0${ref.resourceKey}\0${key}\0${value}\n`))].sort().join('')
+  return { protocolVersion: 2, version: current.version, sha256: createHash('sha256').update(records).digest('hex'), resources, dependencies: [], publishedAt: '2026-11-04T00:00:00Z' }
+}
 async function privateRoot(t) {
   const path = await mkdtemp(join(tmpdir(), 'company-publisher-'))
   t.after(() => rm(path, { recursive: true, force: true }))
@@ -58,26 +72,26 @@ async function materialize(path, value) {
   }
 }
 
-test('expert teams inspect, export and update as one self-contained company resource', async t => {
+test('expert teams inspect, export and update as one version-pinned company resource', async t => {
   const root = await privateRoot(t)
   const json = await readFile(new URL('../../../packages/deepseek-harness-product/experts/tests/fixtures/team.json', import.meta.url), 'utf8')
-  const current = release('1.0.0', { 'teams/order-review.json': json, 'skills/orders/SKILL.md': skill('orders') })
+  const current = release('1.0.0', { 'teams/orders.json': json, 'skills/orders/SKILL.md': skill('orders') })
   const directory = join(root, 'team-edit')
-  await exportCompanyResource(current, 'teams/order-review.json', directory)
+  await exportCompanyResource(current, 'teams/orders.json', directory)
   const content = JSON.parse(json)
   content.team.goal = '检查订单异常并给出处理建议'
-  await writeFile(join(directory, 'teams/order-review.json'), JSON.stringify(content))
+  await writeFile(join(directory, 'teams/orders.json'), JSON.stringify(content))
   const incoming = await inspectCompanyContent(directory)
   const plan = planPublication(current, incoming, SITE)
-  assert.equal(plan.resourceKey, 'teams/order-review')
-  assert.deepEqual(Object.keys(plan.resource.files), ['teams/order-review.json'])
-  assert.deepEqual(plan.changes.modified, ['teams/order-review.json'])
+  assert.equal(plan.resourceKey, 'teams/orders')
+  assert.deepEqual(Object.keys(plan.resource.files), ['teams/orders.json'])
+  assert.deepEqual(plan.changes.modified, ['teams/orders.json'])
   assert.equal(plan.changes.removed.length, 0)
-  const concurrent = release('1.0.1', { 'teams/order-review.json': JSON.stringify({ ...content, team: { ...content.team, goal: '其他员工已更新' } }) })
+  const concurrent = release('1.0.1', { 'teams/orders.json': JSON.stringify({ ...content, team: { ...content.team, goal: '其他员工已更新' } }) })
   assert.throws(() => planPublication(concurrent, incoming, SITE), { code: 'EDIT_CONFLICT' })
-  content.experts.pop()
-  await writeFile(join(directory, 'teams/order-review.json'), JSON.stringify(content))
-  await assert.rejects(inspectCompanyContent(directory), /专家团/u)
+  content.team.members.pop()
+  await writeFile(join(directory, 'teams/orders.json'), JSON.stringify(content))
+  await assert.rejects(inspectCompanyContent(directory))
 })
 async function command(script, args, cwd, extraEnv = {}) {
   const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !/TOKEN|SECRET|PASSWORD|KEY|COMPANY_CONTENT/u.test(key)))
@@ -99,13 +113,13 @@ test('merges an updated skill as a complete directory while retaining other comp
     'skills/orders/SKILL.md': skill('orders', 'Old instructions'),
     'skills/orders/references/stale.txt': 'obsolete',
     'skills/finance/SKILL.md': skill('finance'),
-    'experts/operations/orders.md': expert('Existing expert'),
+    ...expert('Existing expert'),
   })
   const incoming = withBase(release('1.0.1', { 'skills/orders/SKILL.md': skill('orders', 'New instructions') }), current, 'skills/orders')
   const plan = planPublication(current, incoming, SITE)
   assert.deepEqual(Object.keys(plan.resource.files), ['skills/orders/SKILL.md'])
   assert.deepEqual(plan.changes, { added: [], modified: ['skills/orders/SKILL.md'], removed: ['skills/orders/references/stale.txt'], unchanged: 0 })
-  assert.match(plan.expectedSha256, /^[a-f0-9]{64}$/u)
+  assert.match(plan.expectedRevision, /^[a-f0-9]{64}$/u)
 })
 
 test('standalone publication rejects YAML the native provider cannot load without changing files', async t => {
@@ -158,9 +172,9 @@ test('deletion requires a complete named resource and cannot expand from an empt
 })
 
 test('resource hashes replace manual global versions; cross-category expert collisions and file-directory collisions are rejected', () => {
-  const current = release('1.0.0', { 'experts/operations/orders.md': expert('Old') })
+  const current = release('1.0.0', { ...expert('Old') })
   assert.equal(planPublication(current, release('1.0.0', { 'skills/orders/SKILL.md': skill('orders') }), SITE).resourceKey, 'skills/orders')
-  assert.throws(() => planPublication(current, release('1.0.1', { 'experts/finance/orders.md': expert('New') }), SITE))
+  assert.throws(() => planPublication(current, release('1.0.1', { ...expert('New') }), SITE))
   assert.throws(() => planPublication(null, release('1.0.1', { 'skills/orders/SKILL.md': skill('orders'), 'skills/orders/path': 'file', 'skills/orders/path/child': 'child' }), SITE), /文件与目录路径冲突/u)
   assert.throws(() => planPublication(null, release('1.0.1', { 'skills/orders/SKILL.md': skill('orders'),
     'skills/orders/Assets/one.txt': 'one', 'skills/orders/assets/two.txt': 'two' }), SITE), /目录大小写冲突/u)
@@ -187,7 +201,7 @@ function publishedSnapshot(resource, current = null) {
 test('resource conflicts or a different configured server send no write', async () => {
   const plan = planPublication(null, release('1.0.0', { 'skills/orders/SKILL.md': skill('orders') }), SITE)
   let writes = 0
-  const client = { url: SITE, current: async () => release('1.0.0', { 'skills/orders/SKILL.md': skill('orders', 'Other edit') }), publish: async () => { writes++ } }
+  const client = { url: SITE, current: async () => indexOf(release('1.0.0', { 'skills/orders/SKILL.md': skill('orders', 'Other edit') })), publish: async () => { writes++ } }
   await assert.rejects(publishPlan({ ...client, url: 'https://other.invalid' }, plan), { code: 'SERVER_MISMATCH' })
   await assert.rejects(publishPlan(client, plan), { code: 'PUBLICATION_CONFLICT' })
   assert.equal(writes, 0)
@@ -195,7 +209,7 @@ test('resource conflicts or a different configured server send no write', async 
 test('unrelated publications do not block a resource plan and repeated plans send no write', async () => {
   const plan = planPublication(null, release('1.0.0', { 'skills/orders/SKILL.md': skill('orders') }), SITE)
   let current = release('2.0.0', { 'skills/finance/SKILL.md': skill('finance') }), writes = 0
-  const client = { url: SITE, current: async () => current, publish: async (candidate, expected) => { assert.equal(expected, ''); writes++; current = publishedSnapshot(candidate, current); return candidate } }
+  const client = { url: SITE, current: async () => indexOf(current), publish: async (candidate, expected) => { assert.equal(expected, ''); writes++; current = publishedSnapshot(candidate, current); return candidate } }
   assert.equal((await publishPlan(client, plan)).published, true)
   assert.equal((await publishPlan(client, plan)).alreadyCurrent, true)
   assert.equal(writes, 1)
@@ -204,7 +218,7 @@ test('unrelated publications do not block a resource plan and repeated plans sen
 test('a committed write with a lost reply is verified without another POST', async () => {
   const plan = planPublication(null, release('1.0.0', { 'skills/orders/SKILL.md': skill('orders') }), SITE)
   let current = null, writes = 0
-  const client = { url: SITE, current: async () => current, publish: async candidate => { writes++; current = publishedSnapshot(candidate); throw new PublicationError('REQUEST_UNCONFIRMED', 'timeout') } }
+  const client = { url: SITE, current: async () => indexOf(current), publish: async candidate => { writes++; current = publishedSnapshot(candidate); throw new PublicationError('REQUEST_UNCONFIRMED', 'timeout') } }
   assert.equal((await publishPlan(client, plan)).recovered, true)
   assert.equal(writes, 1)
   current = null
@@ -215,7 +229,7 @@ test('a committed write with a lost reply is verified without another POST', asy
 test('an outdated resource receipt is not reported as current', async () => {
   const plan = planPublication(null, release('1.0.0', { 'skills/orders/SKILL.md': skill('orders') }), SITE)
   let reads = 0
-  const client = { url: SITE, current: async () => ++reads === 1 ? null : release('2.0.0', {}), publish: async () => plan.resource }
+  const client = { url: SITE, current: async () => ++reads === 1 ? null : indexOf(release('2.0.0', {})), publish: async () => plan.resource }
   await assert.rejects(publishPlan(client, plan), { code: 'VERSION_NOT_CURRENT' })
 })
 
@@ -273,13 +287,14 @@ test('standalone skill runs outside the workspace, publishes through real HTTP a
   const server = createServer(async (req, res) => {
     if (req.headers['x-deepseek-harness-company-publisher-token'] !== token) { res.writeHead(401).end(); return }
     const payload = data => { res.setHeader('content-type', 'application/json'); res.end(JSON.stringify({ success: true, data })) }
-    if (req.method === 'GET' && req.url === '/api/v1/company-content') { payload(current); return }
+    if (req.method === 'GET' && req.url === '/api/v1/company-content') { assert.equal(req.headers['x-harness-content-protocol'], '2'); payload(indexOf(current)); return }
+    if (req.method === 'GET' && req.url.startsWith('/api/v1/company-content/resource-versions?')) { const ref = indexOf(current).resources[0]; payload({ ...ref, files: current.files }); return }
     if (req.method !== 'POST' || req.url !== '/api/v1/admin/company-content/releases') { res.writeHead(404).end(); return }
     let body = ''
     for await (const chunk of req) body += chunk
     const candidate = JSON.parse(body)
     writes++
-    if (candidate.expectedSha256 !== '') { res.writeHead(409).end(); return }
+    if (candidate.expectedRevision !== '') { res.writeHead(409).end(); return }
     current = publishedSnapshot(candidate, current)
     payload(candidate)
   })
@@ -320,8 +335,8 @@ test('delete plans use a resource hash and verify its removal independently', as
   let current = release('1.0.0', { 'skills/orders/SKILL.md': skill('orders'), 'skills/finance/SKILL.md': skill('finance') })
   const plan = planPublication(current, release('1.0.0', {}), SITE, ['skills/orders'])
   let writes = 0
-  const client = { url: SITE, current: async () => current, remove: async (key, hash) => {
-    assert.equal(key, 'skills/orders'); assert.equal(hash, plan.expectedSha256); writes++
+  const client = { url: SITE, current: async () => indexOf(current), remove: async (key, hash) => {
+    assert.equal(key, 'skills/orders'); assert.equal(hash, plan.expectedRevision); writes++
     current = release('2.0.0', { 'skills/finance/SKILL.md': skill('finance') })
   } }
   assert.equal((await publishPlan(client, plan)).published, true)
@@ -329,15 +344,21 @@ test('delete plans use a resource hash and verify its removal independently', as
   assert.equal(writes, 1)
 })
 
-test('reclassifying an exported expert retains its identity and preserves its edit baseline', async t => {
+test('expert export preserves complete resources and product catalog changes use the resource revision', async t => {
   const root = await privateRoot(t)
-  const current = release('1.0.0', { 'experts/operations/orders.md': expert('Original') })
-  const incoming = withBase(release('1.0.1', { 'experts/finance/orders.md': expert('Moved') }), current, 'experts/operations/orders.md')
-  await materialize(join(root, 'source'), incoming)
-  const inspected = await inspectCompanyContent(join(root, 'source'))
+  const current = { ...release('1.0.0', { ...expert('Original'), 'experts/orders/assets/订单模板.bin': '\0binary' }), catalog: { name: '订单专家', division: 'operations', avatar: '0' } }
+  const directory = join(root, 'source')
+  await exportCompanyResource(current, 'experts/orders', directory)
+  const metadata = JSON.parse(await readFile(join(directory, '.publication.json'), 'utf8'))
+  metadata.catalog.division = 'finance'
+  await writeFile(join(directory, '.publication.json'), JSON.stringify(metadata))
+  const inspected = await inspectCompanyContent(directory)
   const plan = planPublication(current, inspected, SITE)
-  assert.deepEqual(Object.keys(plan.resource.files), ['experts/finance/orders.md'])
-  const concurrent = release('1.0.2', { 'experts/operations/orders.md': expert('Another edit') })
+  assert.equal(plan.resource.catalog.division, 'finance')
+  assert.equal(plan.resource.sha256, current.sha256)
+  assert.notEqual(plan.expectedRevision, current.sha256)
+  assert.deepEqual(plan.changes, { added: [], modified: [], removed: [], unchanged: 3 })
+  const concurrent = { ...current, catalog: { ...current.catalog, name: '另一个名称' } }
   assert.throws(() => planPublication(concurrent, inspected, SITE), { code: 'EDIT_CONFLICT' })
 })
 
@@ -357,7 +378,7 @@ test('HTTP 502 after commit is verified by reading and never retried as a write'
   let current = null, writes = 0
   const client = publisherClient({ url: SITE, token: 'dummy' }, async (_url, options) => {
     if (options.method === 'POST') { writes++; current = publishedSnapshot(plan.resource); return new Response('upstream unavailable', { status: 502 }) }
-    return Response.json({ success: true, data: current })
+    return Response.json({ success: true, data: indexOf(current) })
   })
   assert.equal((await publishPlan(client, plan)).recovered, true)
   assert.equal(writes, 1)

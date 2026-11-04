@@ -1,128 +1,82 @@
-# 专家与技能共享
+# 专家、技能与专家团
 
-专家套件和技能从左侧“扩展能力”进入，随桌面软件统一更新，无需单独安装。个人内容在“我的”管理，公司审核内容在“市场”使用。
+个人内容在桌面“扩展能力 → 我的”管理，公司审核内容在“市场”使用。技能、专家和专家团分别使用标准 Skill 包、AgentSpec 包和 Team JSON；执行复用 Harness 原生 Skill Provider、Subagent、Agent Team、MCP 与审批。
 
-个人专家和专家团由本人创建或导入，默认没有社区预置内容。专家配置使用官方 Settings，技能发现和专家委派使用 Harness 原生能力；Session 按固定公司内容版本执行。
-
-## 专家套件分类
-
-按员工处理的业务场景分类，同一套顺序用于目录筛选、个人专家编辑及专家团选人。分类为空也保留选项；发布目录名作为分类键，移动分类不改变专家身份。
-
-| 分类 | 发布目录 | 典型任务 |
-| --- | --- | --- |
-| 订单与售后 | `orders` | 订单核验、异常处理、退款与退货 |
-| 商品与刊登 | `catalog` | SKU、变体、商品资料、刊登检查 |
-| 采购与供应链 | `supply-chain` | 补货、采购、供应商与交期 |
-| 库存与仓储 | `warehouse` | 库存核对、调拨、盘点、仓库作业 |
-| 物流与履约 | `logistics` | 发货、运费、轨迹与履约异常 |
-| 财务与对账 | `finance` | 账单核对、平台结算、成本与利润 |
-| 平台与店铺 | `marketplace` | 平台规则、店铺配置、授权与接口接入 |
-| 运营与增长 | `marketing` | 销售运营、活动、广告与增长分析 |
-| 数据与经营分析 | `analytics` | 指标口径、报表、经营诊断 |
-| 产品与设计 | `product` | ERP 需求、交互设计、产品文档 |
-| 研发与集成 | `engineering` | 代码开发、评审、API 与系统集成 |
-| 测试与运维 | `testing` | 测试、发布、监控与故障排查 |
-| 实施与客户支持 | `support` | 客户上线、配置指导、问题排查 |
-| 企业协作 | `company` | 项目协作、制度、行政与内部流程 |
-| 其他 | `specialized` | 不属于上述场景的专家 |
-
-例如订单专家使用 `experts/orders/order-review.md`。同一专家只选一个主要场景；可在简介中描述适用平台，不按 Amazon、TikTok Shop 等平台重复建顶层分类。目录可携带自定义分类，原有文件和会话不因分类菜单调整而重写。
-
-## 员工在桌面提交
-
-员工自行编写或导入技能后，在技能条目点击“提交发布”；自定义专家在卡片点击同名操作。桌面读取当前内容及资源文件，确认后使用员工登录态提交，凭据留在主进程。提交、拒绝均不影响本地使用；重新打开同一内容的提交弹窗可查看待审核、已通过或拒绝原因。修改后提交新摘要，不覆盖已有提交记录。
-
-提交只使用当前 Host 的认证 Cookie。同一员工续期保留弹窗和在途请求；退出或切换账号取消旧提交，迟到结果不能影响新员工。状态及回执只返回摘要，完整文件通过详情读取。
-
-管理员进入控制中心“专家套件／技能 → 员工提交”，查看正文、资源文件和提交人，通过后合并到市场；拒绝须填写原因。公司同名资源受归属及摘要检查保护，其他员工不能覆盖，并发冲突须重新确认。完整专家团的操作见[发布专家团](#发布专家团)。
-
-## 管理员直接发布
-
-公司内容维护在私有目录中，不提交桌面仓库。管理员可在控制中心上传单个技能目录／ZIP、专家 Markdown／ZIP 或完整专家团 JSON，预览后确认发布。每次只修改一个资源，其他资源保留；AI 发布使用相同接口和冲突规则。
+## 技能包
 
 ```text
-experts/orders/orders.md
-skills/orders/SKILL.md
-skills/orders/references/policy.md
+skills/orders/
+├── SKILL.md
+├── scripts/
+├── references/
+└── assets/
 ```
 
-专家 Markdown 和 `SKILL.md` 使用 `---` 分隔的 frontmatter，`name`、`description` 必须为非空单行字符串，正文不能为空。技能 `name` 与目录名一致。专家与技能保留原名，不要求公司前缀；公司来源由加载配置标识。专家文件名在所有分类中唯一。专家分类来自实际目录，不受社区内置分类限制。资源只能是普通文件，不接受符号链接、路径穿越及跨平台冲突名称。每包最多 2,048 个文件、32 MiB 解码内容；入口说明最多 128 KiB。公司内容只包含说明及技能资源，不包含插件代码、员工令牌或连接器私密配置。
+`SKILL.md` 的 frontmatter 包含非空 `name`、`description`，名称与目录一致，正文非空。脚本、资料和二进制模板随包保留，加载及调用规则由原生 Skill Provider 决定。公司技能发布到 Nacos Skill Registry。
+
+## 专家包
+
+```text
+experts/order-expert/
+├── manifest.json
+├── config/
+│   ├── SOUL.md
+│   └── AGENTS.md
+├── references/
+└── assets/
+```
+
+最小 `manifest.json`：
+
+```json
+{
+  "worker": { "suggested_name": "order-expert" },
+  "description": "核对订单异常并提供处理建议"
+}
+```
+
+包标识取自 `worker.suggested_name`，使用小写字母、数字和连字符，最多 80 字符。产品创建的包必须包含非空 `config/SOUL.md`；`config/AGENTS.md`、参考资料和模板可选。AgentSpec 的其他字段原样保留。展示名称、分类和头像由产品目录元数据管理，不写入 AgentSpec 私有字段。
+
+编辑器支持目录或 ZIP 导入、完整 ZIP 导出、两份说明编辑与附件增删。专家说明作为字面量提示词传入原生子代理，提示词提供固定版本的资源根目录；模型通过原生文件工具按需阅读资料。包内 Dockerfile、安装声明和定时任务不会被执行，也不启动 HiClaw Worker。说明可以指导模型使用技能、MCP 和知识库，实际权限与写操作审批仍由宿主决定。
+
+## 专家团
+
+个人和公司团队使用同一份版本化文档，根字段为 `schemaVersion: 1`、`id`、`team`。`team` 包含名称、简介、标签、目标、约束、交付要求、主理人规则、任务示例和 2～8 位不同专家的分工。每个成员包含 `expertSlug`、`expertVersion`、`expertSha256`、`duty` 和 `instructions`；不嵌入专家正文。
+
+保存团队时固定成员版本。专家更新后，编辑并重新保存或发布团队才能升级成员。发布公司团队前，成员必须是已发布的公司专家，且精确版本可读取；依赖缺失时拒绝发布。团队文件为 `teams/<id>.json`，最多 2 MiB，控制中心提供格式示例。执行沿用当前会话可用的原生 Agent Team 或子代理，不新增调度引擎。
+
+## 个人内容
+
+专家文件保存在按员工隔离、按摘要寻址的本地不可变目录。官方 Settings 保存资源引用、展示信息、启用状态和团队文档。保存先完整写入文件，再以原生修订号原子更新引用；并发冲突保留编辑草稿，不覆盖其他窗口的修改。
+
+首次读取个人内容时转换已有专家和团队。个人专家正文转成 AgentSpec 文件，公司成员引用失效时显示需要重新选择，不自动替换。切换员工使用独立目录和 Settings 投影。升级操作见[内容协议升级说明](../../../docs/upgrade-guide/v0.2.2-alpha.3/company-content-agentspec/guide.zh.md)。
+
+## 提交与审核
+
+员工在技能、个人专家或团队条目点击“提交发布”，使用当前员工认证提交完整资源。提交、拒绝不改变本地内容；修改后可提交新的内容版本。管理员在控制中心“技能／专家套件 → 员工提交”查看说明、附件和团队固定成员引用，通过后发布到市场；拒绝须填写原因。
+
+管理员也可直接导入单项资源，检查预览及差异后发布。每次只更新或下架一个完整资源，其他资源保留。包最多 2,048 文件、32 MiB，入口说明最多 128 KiB；不接受链接、路径穿越、文件与目录冲突或大小写别名。员工令牌、Nacos 凭据与连接器私密配置不属于内容包。
+
+## 同步与存储
+
+Nacos 专用命名空间为 `deepseek-harness-content`：Skill Registry 存技能，AgentSpec 存专家，Config 的 `DEEPSEEK_HARNESS_CONTENT` Group 存不可变团队文档。PostgreSQL 保存审核草稿、归属、目录投影、版本引用与发布索引。既有 MCP 注册和发现链路独立运行。
+
+发布先完成 Nacos 写入和读回校验，再用短数据库事务检查目标资源基线并切换索引。网络失败、依赖缺失或并发冲突不会更新正式目录；超时只读核实实际结果，不盲目重复发布。
+
+桌面读取协议版本 2 的资源索引，只下载变化的精确版本，校验完整后原子激活。取消同步、文件损坏或员工切换不能安装部分版本。新会话固定发布索引和资源摘要，子会话继承；已开始的会话不随同步切换版本。旧协议桌面须更新，历史会话仍可查看。
 
 <a id="ai-publishing"></a>
-### Codex／Claude 发布
+## AI 发布工具
 
-安装共用的[公司内容发布技能](../skills/harness-company-publish/SKILL.md)后，可直接要求 AI：“将这个专家套件发布到公司”或“修改公司订单技能后发布”。普通使用人员无需安装发布技能或取得发布权限。安装后的技能只依赖 Node.js 22.19+，不依赖桌面源码及构建工具；内容只发布到服务端，无需提交桌面仓库或重新打包软件。
-
-完整技能及安装器随 `deepseek-harness-desktop` 仓库维护，不需要手工分发 ZIP。给同事仓库地址，让其使用的 Codex 或 Claude 执行：
-
-> 从 http://192.168.2.67:30330/instudio/deepseek-harness-desktop 安装公司内容发布技能，按 apps/product-desktop/docs/company-content.md 的“仓库安装与更新”操作，安装到我当前使用的工具。
-
-#### 仓库安装与更新
-
-前提是可以读取公司 Gitea 仓库，并已安装 Node.js 22.19+。全新检出即可安装，不需要 pnpm、桌面依赖或构建产物。AI 可使用浅层稀疏检出，只下载发布工具及文档：
+[公司内容发布技能](../skills/harness-company-publish/SKILL.md)随仓库维护，安装后只需要 Node.js 22.19+，不需要桌面源码或重新打包客户端。
 
 ```sh
-git clone --depth 1 --filter=blob:none --sparse http://192.168.2.67:30330/instudio/deepseek-harness-desktop.git harness-company-tools
-cd harness-company-tools
-git sparse-checkout set apps/product-desktop/scripts apps/product-desktop/skills apps/product-desktop/docs
 node apps/product-desktop/scripts/install-company-content-skill.mjs --client codex
+node apps/product-desktop/scripts/install-company-content-skill.mjs --client claude
 ```
 
-Claude Code 使用 `--client claude`，两者都用则为 `--client both`。安装到当前用户的技能目录；已有 Codex 自定义 `CODEX_HOME` 时沿用该配置。Windows 同样执行 Node 命令，无需 WSL。安装完成后在工具的新对话中使用该技能。
+更新时追加 `--replace`。本机私有配置为 `~/.config/deepseek-harness/company-content-publisher.json`，字段是 `COMPANY_CONTENT_SERVER_URL` 和 `COMPANY_CONTENT_PUBLISHER_TOKEN`，也可使用成对环境变量或显式 `--config` 文件。POSIX 文件权限为 600；凭据不得进入内容包、Git 或对话。
 
-更新时告诉 AI“从桌面仓库更新公司发布技能”。它在干净的工具检出中拉取 `main` 并重新安装；检出或本地技能存在自行修改时先保留并核对，不直接覆盖：
+发布流程为 `check → plan → publish`；修改现有资源先 `current`、`export`，保留导出的 `.publication.json` 基线和目录元数据。工具只读取目标资源版本，按 `expectedRevision` 检查内容与展示信息，发布后读回索引核实。完整命令和异常处理见技能说明。
 
-```sh
-git pull --ff-only origin main
-node apps/product-desktop/scripts/install-company-content-skill.mjs --client codex --replace
-```
-
-技能源码和依赖完整位于 `apps/product-desktop/skills/harness-company-publish/`，支持直接按该路径从仓库安装。维护者修改后通过正常 PR 和 CI 合并到 `main`，同事从同一仓库更新；不向安装包或技能目录写入公司正文、用户数据或凭据。普通桌面使用人员无需安装此发布工具。
-
-发布人员的受控配置位于 `~/.config/deepseek-harness/company-content-publisher.json`，字段为 `COMPANY_CONTENT_SERVER_URL`（包括产品入口前缀）和 `COMPANY_CONTENT_PUBLISHER_TOKEN`。可使用成对同名环境变量或显式 `--config` 文件，不混用不同来源的地址与凭据。POSIX 配置归当前用户且权限为 600，Windows 由用户 ACL 保护；令牌不进入模型上下文、命令参数、内容、计划或日志。服务端配置独立的 `deepseek-harness.company-content.publisher-token`，默认关闭机器发布；只开放公司内容读取和发布，不授予员工或其他管理接口权限。
-
-源码及安装后的工具均位于技能的 `scripts/publish-company-content.mjs`。完整操作示例见技能；在仓库中校验私有目录：
-
-```sh
-node apps/product-desktop/skills/harness-company-publish/scripts/publish-company-content.mjs check /path/to/private-content
-```
-
-`current` 查询版本和路径，不输出全文；`export <资源路径> --out <新目录>` 导出已有专家或技能供编辑，并在 `.publication.json` 保存目标资源的来源摘要。修改时保留摘要，同一资源在编辑期间变化会拒绝覆盖。新增资源遇到公司重名也要求先导出确认，不能直接覆盖。原生专家、SKILL.md 和资源文件无需增加产品元数据。
-
-`plan <目录> --out <新计划文件>` 一次准备一个资源，保留其他专家与技能。传入的技能按完整目录替换；下架资源使用空目录并明确 `--remove skills/name` 或 `--remove experts/name`。空目录不会隐式清空公司目录。计划保存服务地址、目标资源基线摘要、候选内容及差异，权限为 600，必须放私有目录并在完成后清理。
-
-`publish <计划文件> --confirm <plan 输出的摘要>` 每次只发布或删除一个技能、专家或专家团，使用目标资源的 `expectedSha256` 条件写入并读回核实。版本由内容摘要确定。计划被改动、同一资源已变化时停止；其他资源发布不引发冲突。写入超时只读核实，精确重复已生效计划不再写入。专家调整分类仍是同一资源，旧任务保留固定内容；发布不包含插件代码。
-
-### 控制中心
-
-控制中心分设“专家套件”和“技能”入口；专家套件内可切换“专家／专家团”，分别管理市场目录与员工提交。管理员上传单个原生资源，预览后确认发布；可以查看或删除单项内容。网页与 AI 工具采用相同的资源摘要检查，服务端合并生成不可变分发快照。连接器在同一入口内分为服务目录和发布审核。
-
-## 员工使用
-
-钉钉登录后先从主进程读取已校验的本地目录，后台检查服务端公司内容。打开专家套件或技能页时先展示本地内容，再自动检查并更新；两页共用一次在途请求，成功检查后默认 60 秒内不重复请求。主进程 `product.json` 的 `companyContentRefreshIntervalMs` 可配置检查间隔，范围为 1 秒至 1 小时；不进行常驻定时轮询。每次检查读取完整发布包，校验 SHA-256 后原子更新本地目录指针。员工无需安装这两个插件；专家、技能和连接器统一通过“市场／我的”浏览公司已发布内容和管理个人内容；技能的本机、项目、发现技能和回收站入口收在“我的”。专家仍按原生插件的启用、选择和委派方式使用，技能仍由原生 Skill Provider 发现和读取，连接器继续通过产品 MCP 接入。
-
-同步成功后目录和新会话使用新版本，无需重启桌面。每个 Agent 在创建时将公司内容版本与哈希绑定到官方 Session；子会话继承父会话，已有会话继续使用原内容。绑定按员工保存在私有缓存的 `sessions` 目录中，版本和哈希也进入官方上下文快照及会话日志。旧目录保留，防止覆盖被会话引用的文件。
-
-同步失败保留最近校验的目录，页面显示原因并支持重试，不阻塞工作区启动；从未成功同步的设备不能在未知公司目录状态下创建执行会话。取消单页等待不打断其他页面的共享同步；关闭桌面或切换员工会取消并等待该员工的同步。已有会话缺失或损坏绑定、固定内容丢失时明确阻止该会话执行，不替换成最新内容；历史仍保留，可新建对话。
-
-恢复以受控并行单次扫描读取并校验每个文件，完成后不缓存校验结果；同一会话的绑定操作串行，不同会话互不等待。扫描按内容文件数量与路径长度限制，子目录不占用文件额度；未知目录及篡改内容拒绝加载。员工令牌仅用于主进程访问产品服务端，不进入 Host 环境或内容目录。
-
-## 发布专家团
-
-桌面进入“专家套件 → 我的 → 专家团”，在已保存团队的更多菜单选择“提交发布”。桌面将主理人规则、成员分工和所有成员的固定说明一起打包，不要求先单独发布成员。成员已删除、冲突或配置在提交期间发生变化时拒绝打包，保留原编辑内容。
-
-管理员在控制中心“专家套件 → 专家团 → 员工提交”查看全部成员说明，再通过或拒绝。通过后，其他员工打开“专家套件 → 市场 → 专家团”即可同步、查看、启用和选择。市场原件只读，可复制到“我的”修改；修改后的个人团队重新提交审核。启用团队时一并启用其成员，停用团队不删除历史。
-
-专家团资源为一个 `teams/<稳定标识>.json` 文件，格式包含 `team` 和 `experts`。`team` 沿用个人专家团字段但不包含本机 ID；`members[].expertSlug` 引用 `experts[].key`（`member-1` 至 `member-8`），成员说明必须完整且一一对应。`experts` 每项包含 `key`、`name`、`description`、`division`、`emoji`、`prompt`。2～8 位成员，文件最多 2 MiB；控制中心可下载完整示例。AI 发布工具沿用 `check → plan → publish`，支持导出和删除单个 `teams/<标识>` 资源。
-
-团队与成员随同一分发快照固定到 Session。发布新版本或下架不会替换已开始会话的规则及成员说明；新会话使用同步后的版本。专家团继续使用 Harness 的子代理／Agent Team 执行能力，不产生执行 Preset，不改变官方执行循环。
-
-专家团目录和详情以折叠说明展示默认执行方式及原因。Agent Team 未开启、工具未就绪或配置深度限制时使用普通子代理；已开启不等于每次都采用原生团队。实际执行前按当前会话再次检查，结果中的 `engine` 记录本次方式。单个专家固定使用官方子代理。
-
-## 维护与验证
-
-发布检查资源格式、归属、摘要及实际共享目录内的重名。独立专家与专家团成员不能使用相同 ID，完整分发快照在服务端发布和桌面安装前均检查；不预留未被实际成员使用的名称。目录中的显示名称冲突只标记相关专家不可调用，其余专家和技能继续加载，不自动调用另一份同名说明。
-
-模块职责见[专家](../../../packages/deepseek-harness-product/experts/README.md)与[技能](../../../packages/deepseek-harness-product/skills/README.md)。服务端须先提供桌面依赖的公司内容接口；尚未发布时返回空目录，个人内容不受影响。按改动选择[验收入口](acceptance.md)。
-
-发布技能的独立校验模块由产品包公开出口生成，CI 在产品构建后检查两者一致，不能手工修改生成文件。产品内容校验规则变化后运行 `node apps/product-desktop/scripts/sync-company-content-skill.mjs --write`，提交生成结果。安装器只复制仓库中的完整技能，不要求使用者执行该生成步骤。
+开发与验收见[专家模块](../../../packages/deepseek-harness-product/experts/README.md)、[技能模块](../../../packages/deepseek-harness-product/skills/README.md)和[验收入口](acceptance.md)。

@@ -129,6 +129,13 @@ function cleanRegex(source) {
 	const end = source.endsWith("$") ? source.length - 1 : source.length;
 	return source.slice(start, end);
 }
+function floatSafeRemainder(val, step) {
+	const ratio = val / step;
+	const roundedRatio = Math.round(ratio);
+	const tolerance = Number.EPSILON * Math.max(Math.abs(ratio), 1);
+	if (Math.abs(ratio - roundedRatio) < tolerance) return 0;
+	return ratio - roundedRatio;
+}
 const EVALUATING = /* @__PURE__*/ Symbol("evaluating");
 function defineLazy(object, key, getter) {
 	let value = void 0;
@@ -230,7 +237,13 @@ function optionalKeys(shape) {
 		return shape[k]._zod.optin === "optional" && shape[k]._zod.optout === "optional";
 	});
 }
-Number.MIN_SAFE_INTEGER, Number.MAX_SAFE_INTEGER, -Number.MAX_VALUE, Number.MAX_VALUE;
+const NUMBER_FORMAT_RANGES = {
+	safeint: [Number.MIN_SAFE_INTEGER, Number.MAX_SAFE_INTEGER],
+	int32: [-2147483648, 2147483647],
+	uint32: [0, 4294967295],
+	float32: [-34028234663852886e22, 34028234663852886e22],
+	float64: [-Number.MAX_VALUE, Number.MAX_VALUE]
+};
 function pick(schema, mask) {
 	const currDef = schema._zod.def;
 	const checks = currDef.checks;
@@ -633,6 +646,8 @@ const string$1 = (params) => {
 	const regex = params ? `[\\s\\S]{${params?.minimum ?? 0},${params?.maximum ?? ""}}` : `[\\s\\S]*`;
 	return new RegExp(`^${regex}$`);
 };
+const integer = /^-?\d+$/;
+const number$1 = /^-?\d+(?:\.\d+)?$/;
 const lowercase = /^[^A-Z]*$/;
 const uppercase = /^[^a-z]*$/;
 //#endregion
@@ -642,6 +657,145 @@ const $ZodCheck = /*@__PURE__*/ $constructor("$ZodCheck", (inst, def) => {
 	inst._zod ?? (inst._zod = {});
 	inst._zod.def = def;
 	(_a = inst._zod).onattach ?? (_a.onattach = []);
+});
+const numericOriginMap = {
+	number: "number",
+	bigint: "bigint",
+	object: "date"
+};
+const $ZodCheckLessThan = /*@__PURE__*/ $constructor("$ZodCheckLessThan", (inst, def) => {
+	$ZodCheck.init(inst, def);
+	const origin = numericOriginMap[typeof def.value];
+	inst._zod.onattach.push((inst) => {
+		const bag = inst._zod.bag;
+		const curr = (def.inclusive ? bag.maximum : bag.exclusiveMaximum) ?? Number.POSITIVE_INFINITY;
+		if (def.value < curr) if (def.inclusive) bag.maximum = def.value;
+		else bag.exclusiveMaximum = def.value;
+	});
+	inst._zod.check = (payload) => {
+		if (def.inclusive ? payload.value <= def.value : payload.value < def.value) return;
+		payload.issues.push({
+			origin,
+			code: "too_big",
+			maximum: typeof def.value === "object" ? def.value.getTime() : def.value,
+			input: payload.value,
+			inclusive: def.inclusive,
+			inst,
+			continue: !def.abort
+		});
+	};
+});
+const $ZodCheckGreaterThan = /*@__PURE__*/ $constructor("$ZodCheckGreaterThan", (inst, def) => {
+	$ZodCheck.init(inst, def);
+	const origin = numericOriginMap[typeof def.value];
+	inst._zod.onattach.push((inst) => {
+		const bag = inst._zod.bag;
+		const curr = (def.inclusive ? bag.minimum : bag.exclusiveMinimum) ?? Number.NEGATIVE_INFINITY;
+		if (def.value > curr) if (def.inclusive) bag.minimum = def.value;
+		else bag.exclusiveMinimum = def.value;
+	});
+	inst._zod.check = (payload) => {
+		if (def.inclusive ? payload.value >= def.value : payload.value > def.value) return;
+		payload.issues.push({
+			origin,
+			code: "too_small",
+			minimum: typeof def.value === "object" ? def.value.getTime() : def.value,
+			input: payload.value,
+			inclusive: def.inclusive,
+			inst,
+			continue: !def.abort
+		});
+	};
+});
+const $ZodCheckMultipleOf = /*@__PURE__*/ $constructor("$ZodCheckMultipleOf", (inst, def) => {
+	$ZodCheck.init(inst, def);
+	inst._zod.onattach.push((inst) => {
+		var _a;
+		(_a = inst._zod.bag).multipleOf ?? (_a.multipleOf = def.value);
+	});
+	inst._zod.check = (payload) => {
+		if (typeof payload.value !== typeof def.value) throw new Error("Cannot mix number and bigint in multiple_of check.");
+		if (typeof payload.value === "bigint" ? payload.value % def.value === BigInt(0) : floatSafeRemainder(payload.value, def.value) === 0) return;
+		payload.issues.push({
+			origin: typeof payload.value,
+			code: "not_multiple_of",
+			divisor: def.value,
+			input: payload.value,
+			inst,
+			continue: !def.abort
+		});
+	};
+});
+const $ZodCheckNumberFormat = /*@__PURE__*/ $constructor("$ZodCheckNumberFormat", (inst, def) => {
+	$ZodCheck.init(inst, def);
+	def.format = def.format || "float64";
+	const isInt = def.format?.includes("int");
+	const origin = isInt ? "int" : "number";
+	const [minimum, maximum] = NUMBER_FORMAT_RANGES[def.format];
+	inst._zod.onattach.push((inst) => {
+		const bag = inst._zod.bag;
+		bag.format = def.format;
+		bag.minimum = minimum;
+		bag.maximum = maximum;
+		if (isInt) bag.pattern = integer;
+	});
+	inst._zod.check = (payload) => {
+		const input = payload.value;
+		if (isInt) {
+			if (!Number.isInteger(input)) {
+				payload.issues.push({
+					expected: origin,
+					format: def.format,
+					code: "invalid_type",
+					continue: false,
+					input,
+					inst
+				});
+				return;
+			}
+			if (!Number.isSafeInteger(input)) {
+				if (input > 0) payload.issues.push({
+					input,
+					code: "too_big",
+					maximum: Number.MAX_SAFE_INTEGER,
+					note: "Integers must be within the safe integer range.",
+					inst,
+					origin,
+					inclusive: true,
+					continue: !def.abort
+				});
+				else payload.issues.push({
+					input,
+					code: "too_small",
+					minimum: Number.MIN_SAFE_INTEGER,
+					note: "Integers must be within the safe integer range.",
+					inst,
+					origin,
+					inclusive: true,
+					continue: !def.abort
+				});
+				return;
+			}
+		}
+		if (input < minimum) payload.issues.push({
+			origin: "number",
+			input,
+			code: "too_small",
+			minimum,
+			inclusive: true,
+			inst,
+			continue: !def.abort
+		});
+		if (input > maximum) payload.issues.push({
+			origin: "number",
+			input,
+			code: "too_big",
+			maximum,
+			inclusive: true,
+			inst,
+			continue: !def.abort
+		});
+	};
 });
 const $ZodCheckMaxLength = /*@__PURE__*/ $constructor("$ZodCheckMaxLength", (inst, def) => {
 	var _a;
@@ -1264,6 +1418,30 @@ const $ZodJWT = /*@__PURE__*/ $constructor("$ZodJWT", (inst, def) => {
 		});
 	};
 });
+const $ZodNumber = /*@__PURE__*/ $constructor("$ZodNumber", (inst, def) => {
+	$ZodType.init(inst, def);
+	inst._zod.pattern = inst._zod.bag.pattern ?? number$1;
+	inst._zod.parse = (payload, _ctx) => {
+		if (def.coerce) try {
+			payload.value = Number(payload.value);
+		} catch (_) {}
+		const input = payload.value;
+		if (typeof input === "number" && !Number.isNaN(input) && Number.isFinite(input)) return payload;
+		const received = typeof input === "number" ? Number.isNaN(input) ? "NaN" : !Number.isFinite(input) ? "Infinity" : void 0 : void 0;
+		payload.issues.push({
+			expected: "number",
+			code: "invalid_type",
+			input,
+			inst,
+			...received ? { received } : {}
+		});
+		return payload;
+	};
+});
+const $ZodNumberFormat = /*@__PURE__*/ $constructor("$ZodNumberFormat", (inst, def) => {
+	$ZodCheckNumberFormat.init(inst, def);
+	$ZodNumber.init(inst, def);
+});
 const $ZodUnknown = /*@__PURE__*/ $constructor("$ZodUnknown", (inst, def) => {
 	$ZodType.init(inst, def);
 	inst._zod.parse = (payload) => payload;
@@ -1707,6 +1885,115 @@ function handleIntersectionResults(result, left, right) {
 	result.value = merged.data;
 	return result;
 }
+const $ZodRecord = /*@__PURE__*/ $constructor("$ZodRecord", (inst, def) => {
+	$ZodType.init(inst, def);
+	inst._zod.parse = (payload, ctx) => {
+		const input = payload.value;
+		if (!isPlainObject(input)) {
+			payload.issues.push({
+				expected: "record",
+				code: "invalid_type",
+				input,
+				inst
+			});
+			return payload;
+		}
+		const proms = [];
+		const values = def.keyType._zod.values;
+		if (values) {
+			payload.value = {};
+			const recordKeys = /* @__PURE__ */ new Set();
+			for (const key of values) if (typeof key === "string" || typeof key === "number" || typeof key === "symbol") {
+				recordKeys.add(typeof key === "number" ? key.toString() : key);
+				const keyResult = def.keyType._zod.run({
+					value: key,
+					issues: []
+				}, ctx);
+				if (keyResult instanceof Promise) throw new Error("Async schemas not supported in object keys currently");
+				if (keyResult.issues.length) {
+					payload.issues.push({
+						code: "invalid_key",
+						origin: "record",
+						issues: keyResult.issues.map((iss) => finalizeIssue(iss, ctx, config())),
+						input: key,
+						path: [key],
+						inst
+					});
+					continue;
+				}
+				const outKey = keyResult.value;
+				const result = def.valueType._zod.run({
+					value: input[key],
+					issues: []
+				}, ctx);
+				if (result instanceof Promise) proms.push(result.then((result) => {
+					if (result.issues.length) payload.issues.push(...prefixIssues(key, result.issues));
+					payload.value[outKey] = result.value;
+				}));
+				else {
+					if (result.issues.length) payload.issues.push(...prefixIssues(key, result.issues));
+					payload.value[outKey] = result.value;
+				}
+			}
+			let unrecognized;
+			for (const key in input) if (!recordKeys.has(key)) {
+				unrecognized = unrecognized ?? [];
+				unrecognized.push(key);
+			}
+			if (unrecognized && unrecognized.length > 0) payload.issues.push({
+				code: "unrecognized_keys",
+				input,
+				inst,
+				keys: unrecognized
+			});
+		} else {
+			payload.value = {};
+			for (const key of Reflect.ownKeys(input)) {
+				if (key === "__proto__") continue;
+				if (!Object.prototype.propertyIsEnumerable.call(input, key)) continue;
+				let keyResult = def.keyType._zod.run({
+					value: key,
+					issues: []
+				}, ctx);
+				if (keyResult instanceof Promise) throw new Error("Async schemas not supported in object keys currently");
+				if (typeof key === "string" && number$1.test(key) && keyResult.issues.length) {
+					const retryResult = def.keyType._zod.run({
+						value: Number(key),
+						issues: []
+					}, ctx);
+					if (retryResult instanceof Promise) throw new Error("Async schemas not supported in object keys currently");
+					if (retryResult.issues.length === 0) keyResult = retryResult;
+				}
+				if (keyResult.issues.length) {
+					if (def.mode === "loose") payload.value[key] = input[key];
+					else payload.issues.push({
+						code: "invalid_key",
+						origin: "record",
+						issues: keyResult.issues.map((iss) => finalizeIssue(iss, ctx, config())),
+						input: key,
+						path: [key],
+						inst
+					});
+					continue;
+				}
+				const result = def.valueType._zod.run({
+					value: input[key],
+					issues: []
+				}, ctx);
+				if (result instanceof Promise) proms.push(result.then((result) => {
+					if (result.issues.length) payload.issues.push(...prefixIssues(key, result.issues));
+					payload.value[keyResult.value] = result.value;
+				}));
+				else {
+					if (result.issues.length) payload.issues.push(...prefixIssues(key, result.issues));
+					payload.value[keyResult.value] = result.value;
+				}
+			}
+		}
+		if (proms.length) return Promise.all(proms).then(() => payload);
+		return payload;
+	};
+});
 const $ZodEnum = /*@__PURE__*/ $constructor("$ZodEnum", (inst, def) => {
 	$ZodType.init(inst, def);
 	const values = getEnumValues(def.entries);
@@ -2296,6 +2583,24 @@ function _isoDuration(Class, params) {
 	});
 }
 // @__NO_SIDE_EFFECTS__
+function _number(Class, params) {
+	return new Class({
+		type: "number",
+		checks: [],
+		...normalizeParams(params)
+	});
+}
+// @__NO_SIDE_EFFECTS__
+function _int(Class, params) {
+	return new Class({
+		type: "number",
+		check: "number_format",
+		abort: false,
+		format: "safeint",
+		...normalizeParams(params)
+	});
+}
+// @__NO_SIDE_EFFECTS__
 function _unknown(Class) {
 	return new Class({ type: "unknown" });
 }
@@ -2304,6 +2609,50 @@ function _never(Class, params) {
 	return new Class({
 		type: "never",
 		...normalizeParams(params)
+	});
+}
+// @__NO_SIDE_EFFECTS__
+function _lt(value, params) {
+	return new $ZodCheckLessThan({
+		check: "less_than",
+		...normalizeParams(params),
+		value,
+		inclusive: false
+	});
+}
+// @__NO_SIDE_EFFECTS__
+function _lte(value, params) {
+	return new $ZodCheckLessThan({
+		check: "less_than",
+		...normalizeParams(params),
+		value,
+		inclusive: true
+	});
+}
+// @__NO_SIDE_EFFECTS__
+function _gt(value, params) {
+	return new $ZodCheckGreaterThan({
+		check: "greater_than",
+		...normalizeParams(params),
+		value,
+		inclusive: false
+	});
+}
+// @__NO_SIDE_EFFECTS__
+function _gte(value, params) {
+	return new $ZodCheckGreaterThan({
+		check: "greater_than",
+		...normalizeParams(params),
+		value,
+		inclusive: true
+	});
+}
+// @__NO_SIDE_EFFECTS__
+function _multipleOf(value, params) {
+	return new $ZodCheckMultipleOf({
+		check: "multiple_of",
+		...normalizeParams(params),
+		value
 	});
 }
 // @__NO_SIDE_EFFECTS__
@@ -2777,6 +3126,26 @@ const stringProcessor = (schema, ctx, _json, _params) => {
 		}))];
 	}
 };
+const numberProcessor = (schema, ctx, _json, _params) => {
+	const json = _json;
+	const { minimum, maximum, format, multipleOf, exclusiveMaximum, exclusiveMinimum } = schema._zod.bag;
+	if (typeof format === "string" && format.includes("int")) json.type = "integer";
+	else json.type = "number";
+	const exMin = typeof exclusiveMinimum === "number" && exclusiveMinimum >= (minimum ?? Number.NEGATIVE_INFINITY);
+	const exMax = typeof exclusiveMaximum === "number" && exclusiveMaximum <= (maximum ?? Number.POSITIVE_INFINITY);
+	const legacy = ctx.target === "draft-04" || ctx.target === "openapi-3.0";
+	if (exMin) if (legacy) {
+		json.minimum = exclusiveMinimum;
+		json.exclusiveMinimum = true;
+	} else json.exclusiveMinimum = exclusiveMinimum;
+	else if (typeof minimum === "number") json.minimum = minimum;
+	if (exMax) if (legacy) {
+		json.maximum = exclusiveMaximum;
+		json.exclusiveMaximum = true;
+	} else json.exclusiveMaximum = exclusiveMaximum;
+	else if (typeof maximum === "number") json.maximum = maximum;
+	if (typeof multipleOf === "number") json.multipleOf = multipleOf;
+};
 const neverProcessor = (_schema, _ctx, json, _params) => {
 	json.not = {};
 };
@@ -2889,6 +3258,39 @@ const intersectionProcessor = (schema, ctx, json, params) => {
 	});
 	const isSimpleIntersection = (val) => "allOf" in val && Object.keys(val).length === 1;
 	json.allOf = [...isSimpleIntersection(a) ? a.allOf : [a], ...isSimpleIntersection(b) ? b.allOf : [b]];
+};
+const recordProcessor = (schema, ctx, _json, params) => {
+	const json = _json;
+	const def = schema._zod.def;
+	json.type = "object";
+	const keyType = def.keyType;
+	const patterns = keyType._zod.bag?.patterns;
+	if (def.mode === "loose" && patterns && patterns.size > 0) {
+		const valueSchema = process(def.valueType, ctx, {
+			...params,
+			path: [
+				...params.path,
+				"patternProperties",
+				"*"
+			]
+		});
+		json.patternProperties = {};
+		for (const pattern of patterns) json.patternProperties[pattern.source] = valueSchema;
+	} else {
+		if (ctx.target === "draft-07" || ctx.target === "draft-2020-12") json.propertyNames = process(def.keyType, ctx, {
+			...params,
+			path: [...params.path, "propertyNames"]
+		});
+		json.additionalProperties = process(def.valueType, ctx, {
+			...params,
+			path: [...params.path, "additionalProperties"]
+		});
+	}
+	const keyValues = keyType._zod.values;
+	if (keyValues) {
+		const validKeyValues = [...keyValues].filter((v) => typeof v === "string" || typeof v === "number");
+		if (validKeyValues.length > 0) json.required = validKeyValues;
+	}
 };
 const nullableProcessor = (schema, ctx, json, params) => {
 	const def = schema._zod.def;
@@ -3358,6 +3760,74 @@ const ZodJWT = /*@__PURE__*/ $constructor("ZodJWT", (inst, def) => {
 	$ZodJWT.init(inst, def);
 	ZodStringFormat.init(inst, def);
 });
+const ZodNumber = /*@__PURE__*/ $constructor("ZodNumber", (inst, def) => {
+	$ZodNumber.init(inst, def);
+	ZodType.init(inst, def);
+	inst._zod.processJSONSchema = (ctx, json, params) => numberProcessor(inst, ctx, json, params);
+	_installLazyMethods(inst, "ZodNumber", {
+		gt(value, params) {
+			return this.check(/* @__PURE__ */ _gt(value, params));
+		},
+		gte(value, params) {
+			return this.check(/* @__PURE__ */ _gte(value, params));
+		},
+		min(value, params) {
+			return this.check(/* @__PURE__ */ _gte(value, params));
+		},
+		lt(value, params) {
+			return this.check(/* @__PURE__ */ _lt(value, params));
+		},
+		lte(value, params) {
+			return this.check(/* @__PURE__ */ _lte(value, params));
+		},
+		max(value, params) {
+			return this.check(/* @__PURE__ */ _lte(value, params));
+		},
+		int(params) {
+			return this.check(int(params));
+		},
+		safe(params) {
+			return this.check(int(params));
+		},
+		positive(params) {
+			return this.check(/* @__PURE__ */ _gt(0, params));
+		},
+		nonnegative(params) {
+			return this.check(/* @__PURE__ */ _gte(0, params));
+		},
+		negative(params) {
+			return this.check(/* @__PURE__ */ _lt(0, params));
+		},
+		nonpositive(params) {
+			return this.check(/* @__PURE__ */ _lte(0, params));
+		},
+		multipleOf(value, params) {
+			return this.check(/* @__PURE__ */ _multipleOf(value, params));
+		},
+		step(value, params) {
+			return this.check(/* @__PURE__ */ _multipleOf(value, params));
+		},
+		finite() {
+			return this;
+		}
+	});
+	const bag = inst._zod.bag;
+	inst.minValue = Math.max(bag.minimum ?? Number.NEGATIVE_INFINITY, bag.exclusiveMinimum ?? Number.NEGATIVE_INFINITY) ?? null;
+	inst.maxValue = Math.min(bag.maximum ?? Number.POSITIVE_INFINITY, bag.exclusiveMaximum ?? Number.POSITIVE_INFINITY) ?? null;
+	inst.isInt = (bag.format ?? "").includes("int") || Number.isSafeInteger(bag.multipleOf ?? .5);
+	inst.isFinite = true;
+	inst.format = bag.format ?? null;
+});
+function number(params) {
+	return /* @__PURE__ */ _number(ZodNumber, params);
+}
+const ZodNumberFormat = /*@__PURE__*/ $constructor("ZodNumberFormat", (inst, def) => {
+	$ZodNumberFormat.init(inst, def);
+	ZodNumber.init(inst, def);
+});
+function int(params) {
+	return /* @__PURE__ */ _int(ZodNumberFormat, params);
+}
 const ZodUnknown = /*@__PURE__*/ $constructor("ZodUnknown", (inst, def) => {
 	$ZodUnknown.init(inst, def);
 	ZodType.init(inst, def);
@@ -3471,6 +3941,14 @@ function object(shape, params) {
 		...normalizeParams(params)
 	});
 }
+function looseObject(shape, params) {
+	return new ZodObject({
+		type: "object",
+		shape,
+		catchall: unknown(),
+		...normalizeParams(params)
+	});
+}
 const ZodUnion = /*@__PURE__*/ $constructor("ZodUnion", (inst, def) => {
 	$ZodUnion.init(inst, def);
 	ZodType.init(inst, def);
@@ -3494,6 +3972,27 @@ function intersection(left, right) {
 		type: "intersection",
 		left,
 		right
+	});
+}
+const ZodRecord = /*@__PURE__*/ $constructor("ZodRecord", (inst, def) => {
+	$ZodRecord.init(inst, def);
+	ZodType.init(inst, def);
+	inst._zod.processJSONSchema = (ctx, json, params) => recordProcessor(inst, ctx, json, params);
+	inst.keyType = def.keyType;
+	inst.valueType = def.valueType;
+});
+function record(keyType, valueType, params) {
+	if (!valueType || !valueType._zod) return new ZodRecord({
+		type: "record",
+		keyType: string(),
+		valueType: keyType,
+		...normalizeParams(valueType)
+	});
+	return new ZodRecord({
+		type: "record",
+		keyType,
+		valueType,
+		...normalizeParams(params)
 	});
 }
 const ZodEnum = /*@__PURE__*/ $constructor("ZodEnum", (inst, def) => {
@@ -3716,6 +4215,37 @@ function superRefine(fn, params) {
 	return /* @__PURE__ */ _superRefine(fn, params);
 }
 //#endregion
+//#region lib/types/agent-spec.js
+/** AgentSpec content packages consumed by the product's native expert adapter. */
+/** AgentSpec metadata; additional upstream fields remain intact during round trips. */
+const agentSpecManifestSchema = looseObject({
+	worker: looseObject({ suggested_name: string().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/u).max(80) }),
+	description: string().trim().min(1).max(2e3),
+	tags: array(string().trim().min(1).max(128)).max(64).optional()
+});
+/** Decode a bounded manifest without interpreting runtime installation declarations.
+* @param text - UTF-8 manifest.json contents.
+* @returns Validated upstream metadata.
+*/
+function agentSpecManifest(text) {
+	if (Buffer.byteLength(text, "utf8") > 128 * 1024 || text.includes("\0")) throw new Error("AgentSpec manifest.json 无效");
+	return agentSpecManifestSchema.parse(JSON.parse(text));
+}
+/** Compose literal expert instructions and the immutable resource location.
+* @param soul - Expert identity and responsibilities.
+* @param agents - Optional working rules.
+* @param resourceRoot - Host-local package directory used by native file tools.
+* @returns Instructions for the native subagent or teammate.
+*/
+function agentSpecPrompt(soul, agents, resourceRoot) {
+	if (!soul.trim() || [soul, agents].some((value) => value.includes("\0") || Buffer.byteLength(value, "utf8") > 128 * 1024)) throw new Error("专家说明无效，config/SOUL.md 不能为空");
+	return [
+		soul,
+		agents,
+		`Expert package resource directory: ${resourceRoot}\nResolve package-relative references against this directory. Read resources with the native file tools when needed. Package metadata does not grant permissions or change the selected knowledge scope.`
+	].filter(Boolean).join("\n\n");
+}
+//#endregion
 //#region lib/types/company-team.js
 const text = (max) => string().trim().min(1).refine((value) => Array.from(value).length <= max);
 /** UUID-based identifiers accepted for editable personal teams. */
@@ -3724,7 +4254,9 @@ const TEAM_CUSTOM_ID = /^team-custom-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab]
 const teamMemberSchema = object({
 	expertSlug: text(128),
 	duty: text(100),
-	instructions: text(2e3)
+	instructions: text(2e3),
+	expertVersion: string().min(1).max(80).optional(),
+	expertSha256: string().regex(/^[a-f0-9]{64}$/u).optional()
 }).strict();
 /** Validated personal-team settings, including unique members and coordinator selection. */
 const teamInputSchema = object({
@@ -3754,28 +4286,21 @@ teamInputSchema.safeExtend({
 	id: string().regex(/^team-shared-[a-z0-9]+(?:-[a-z0-9]+)*$/u),
 	company: literal(true)
 });
-/** Company release document embeds every referenced member persona. */
+/** A published team references immutable expert packages instead of embedding personas. */
 const publishedTeamSchema = object({
-	team: teamInputSchema.safeExtend({ id: never().optional() }),
-	experts: array(object({
-		key: string().regex(/^member-[1-8]$/u),
-		name: text(40),
-		description: text(160),
-		division: string().regex(/^[a-z][a-z0-9-]{0,63}$/u),
-		emoji: string().max(32),
-		prompt: text(128 * 1024)
-	}).strict()).min(2).max(8)
-}).strict().superRefine((value, ctx) => {
-	const keys = new Set(value.experts.map((expert) => expert.key));
-	if (keys.size !== value.experts.length || keys.size !== value.team.members.length || value.team.members.some((member) => !keys.has(member.expertSlug))) ctx.addIssue({
-		code: "custom",
-		message: "专家团必须包含每位成员的固定说明，不能引用本机私有专家"
-	});
-});
-/**
-* Parse bounded UTF-8 JSON only after release path and digest validation.
-* @param text - Decoded release document.
-* @returns Validated team with its embedded member personas.
+	schemaVersion: literal(1),
+	id: string().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/u).max(80),
+	team: teamInputSchema.safeExtend({
+		id: never().optional(),
+		members: array(teamMemberSchema.required({
+			expertVersion: true,
+			expertSha256: true
+		}).refine((member) => member.expertVersion === "0.0.0-" + member.expertSha256.slice(0, 56))).min(2).max(8).refine((items) => new Set(items.map((item) => item.expertSlug)).size === items.length)
+	})
+}).strict();
+/** Parse a bounded team definition.
+* @param text - UTF-8 team JSON.
+* @returns Team rules and immutable member references.
 */
 function publishedTeamDocument(text) {
 	if (new TextEncoder().encode(text).length > 2 * 1024 * 1024) throw new Error("专家团发布文件最多 2 MiB");
@@ -10412,30 +10937,23 @@ function companyContentRelease(value) {
 		files: {}
 	};
 	if (typeof value !== "object" || Array.isArray(value) || !("version" in value) || typeof value.version !== "string" || value.version.length > 80 || !/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/u.test(value.version) || !("sha256" in value) || typeof value.sha256 !== "string" || !("files" in value) || typeof value.files !== "object" || value.files === null || Array.isArray(value.files)) throw new Error("公司内容格式无效");
-	const expertPath = /^experts\/[a-z][a-z0-9-]*\/[a-z0-9]+(?:-[a-z0-9]+)*\.md$/u;
-	const skillPath = /^skills\/[a-z0-9]+(?:-[a-z0-9]+)*\/[A-Za-z0-9_./-]+$/u;
+	const expertRe = /^(?:experts\/[a-z0-9]+(?:-[a-z0-9]+)*|expert-versions\/[a-z0-9]+(?:-[a-z0-9]+)*\/[a-f0-9]{64})\/[^\\\u0000-\u001f:]+$/u;
+	const skillPath = /^skills\/[a-z0-9]+(?:-[a-z0-9]+)*\/[^\\\u0000-\u001f:]+$/u;
 	const files = {};
 	const paths = /* @__PURE__ */ new Set();
-	const expertIds = /* @__PURE__ */ new Set();
-	const teamMemberIds = /* @__PURE__ */ new Set();
 	let bytes = 0;
 	if (Object.keys(value.files).length > 2048) throw new Error("公司内容文件过多");
 	for (const [path, encoded] of Object.entries(value.files)) {
-		if (typeof encoded !== "string" || encoded.length > Math.ceil(33554432 / 3) * 4 || path.length > 240 || !(expertPath.test(path) || skillPath.test(path) || /^teams\/[a-z0-9]+(?:-[a-z0-9]+)*\.json$/u.test(path)) || path.split("/").some((part) => [
+		if (typeof encoded !== "string" || encoded.length > Math.ceil(33554432 / 3) * 4 || path.length > 240 || !(path === "catalog.json" || expertRe.test(path) || skillPath.test(path) || /^teams\/[a-z0-9]+(?:-[a-z0-9]+)*\.json$/u.test(path)) || path.split("/").some((part) => [
 			"",
 			".",
 			".."
 		].includes(part) || part.endsWith(".") || /^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\..*)?$/iu.test(part)) || paths.has(path.toLowerCase())) throw new Error("公司内容包含非法路径或文件");
 		paths.add(path.toLowerCase());
-		if (path.startsWith("experts/")) {
-			const id = path.slice(path.lastIndexOf("/") + 1);
-			if (expertIds.has(id)) throw new Error("公司专家 ID 重复");
-			expertIds.add(id);
-		}
 		const data = Buffer.from(encoded, "base64");
 		bytes += data.byteLength;
 		if (bytes > 33554432 || data.toString("base64") !== encoded) throw new Error("公司内容大小或编码无效");
-		if (path.endsWith("/SKILL.md") || path.startsWith("experts/")) {
+		if (path.endsWith("/SKILL.md") && path.startsWith("skills/")) {
 			if (data.byteLength > 128 * 1024) throw new Error("公司技能或专家说明过长");
 			const markdown = new TextDecoder("utf-8", { fatal: true }).decode(data).replaceAll("\r\n", "\n");
 			const [, frontmatter, body] = /^---\n([\s\S]*?)\n---\n([\s\S]+)$/u.exec(markdown) ?? [];
@@ -10453,12 +10971,26 @@ function companyContentRelease(value) {
 		if (path.startsWith("teams/")) {
 			const team = publishedTeamDocument(new TextDecoder("utf-8", { fatal: true }).decode(data));
 			const key = path.slice(6, -5);
-			for (const expert of team.experts) teamMemberIds.add(`team-${key}-${expert.key}.md`);
+			if (team.id !== key) throw new Error("专家团标识与文件名不一致");
 		}
 		files[path] = encoded;
 	}
-	if ([...expertIds].some((id) => teamMemberIds.has(id))) throw new Error("公司专家标识与专家团成员冲突");
 	for (const path of Object.keys(files)) if (path.startsWith("skills/") && files[`${path.split("/").slice(0, 2).join("/")}/SKILL.md`] === void 0) throw new Error("公司技能缺少 SKILL.md");
+	const expertRoots = new Set(Object.keys(files).filter((path) => path.startsWith("experts/") || path.startsWith("expert-versions/")).map((path) => path.split("/").slice(0, path.startsWith("experts/") ? 2 : 3).join("/")));
+	for (const root of expertRoots) {
+		const manifest = files[`${root}/manifest.json`];
+		if (manifest === void 0 || files[`${root}/config/SOUL.md`] === void 0) throw new Error("专家包缺少 manifest.json 或 config/SOUL.md");
+		const metadata = agentSpecManifest(new TextDecoder("utf-8", { fatal: true }).decode(Buffer.from(manifest, "base64")));
+		const id = root.split("/")[1];
+		if (metadata.worker.suggested_name !== id) throw new Error("AgentSpec 标识与专家包目录不一致");
+		for (const path of [`${root}/config/SOUL.md`, `${root}/config/AGENTS.md`]) {
+			const encoded = files[path];
+			if (encoded === void 0) continue;
+			const data = Buffer.from(encoded, "base64");
+			const text = new TextDecoder("utf-8", { fatal: true }).decode(data);
+			if (data.length > 128 * 1024 || text.includes("\0") || path.endsWith("/SOUL.md") && !text.trim()) throw new Error("专家说明无效");
+		}
+	}
 	const directories = /* @__PURE__ */ new Map();
 	for (const path of Object.keys(files)) {
 		const parts = path.split("/");
@@ -10499,5 +11031,53 @@ function contentDigest(files) {
 	const canonical = Object.entries(files).sort(([left], [right]) => left < right ? -1 : left > right ? 1 : 0).map(([path, encoded]) => `${path}\0${createHash("sha256").update(Buffer.from(encoded, "base64")).digest("hex")}\n`).join("");
 	return createHash("sha256").update(canonical).digest("hex");
 }
+/** Published resource coordinates and catalog presentation, with no Nacos credentials. */
+const companyResourceVersionSchema = object({
+	resourceKey: string().regex(/^(?:skills|experts|teams)\/[a-z0-9]+(?:-[a-z0-9]+)*$/u),
+	version: string().regex(/^0\.0\.0-[a-f0-9]{56}$/u),
+	sha256: string().regex(/^[a-f0-9]{64}$/u),
+	name: string().min(1).max(1e3),
+	description: string().min(1).max(2e3),
+	fileCount: number().int().min(1).max(COMPANY_CONTENT_MAX_FILES),
+	publishedAt: string(),
+	catalog: object({
+		name: string().trim().min(1).max(80).optional(),
+		division: string().trim().min(1).max(80).optional(),
+		avatar: string().regex(/^(?:[0-9]|[12][0-9]|3[0-5])$/u).optional()
+	}).strict().refine((value) => Object.values(value).every((text) => text === void 0 || !/[\u0000-\u001f\u007f]/u.test(text))),
+	dependencies: record(string().regex(/^experts\/[a-z0-9]+(?:-[a-z0-9]+)*$/u), string().regex(/^[a-f0-9]{64}$/u))
+}).strict().refine((value) => value.version === `0.0.0-${value.sha256.slice(0, 56)}` && Object.keys(value.dependencies).length <= 8);
+const indexSchema = object({
+	protocolVersion: literal(2),
+	version: string().max(80).regex(/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/u),
+	sha256: string().regex(/^[a-f0-9]{64}$/u),
+	resources: array(companyResourceVersionSchema).max(2048),
+	dependencies: array(companyResourceVersionSchema).max(16384),
+	publishedAt: string()
+}).strict();
+/** Validate an index and every pinned team dependency before downloading files.
+* @param value - Employee-authenticated catalog response.
+* @returns An immutable resource index; obsolete protocols require a desktop update.
+*/
+function companyContentIndex(value) {
+	if (value === null) return null;
+	const parsed = indexSchema.safeParse(value);
+	if (!parsed.success) throw new Error("公司内容协议已更新，请更新桌面端后重试。");
+	const index = parsed.data;
+	if (new Set(index.resources.map((item) => item.resourceKey)).size !== index.resources.length || new Set(index.dependencies.map((item) => item.resourceKey + "/" + item.sha256)).size !== index.dependencies.length || index.dependencies.some((item) => !item.resourceKey.startsWith("experts/"))) throw new Error("公司内容版本索引无效");
+	const records = [
+		...index.resources.map((item) => `resource\0${item.resourceKey}\0${item.version}\0${item.sha256}\n`),
+		...index.dependencies.map((item) => `dependency\0${item.resourceKey}\0${item.version}\0${item.sha256}\n`),
+		...index.resources.flatMap((item) => Object.entries(item.catalog).map(([key, value]) => `catalog\0${item.resourceKey}\0${key}\0${value}\n`))
+	].sort().join("");
+	if (createHash("sha256").update(records).digest("hex") !== index.sha256) throw new Error("公司内容版本索引校验失败");
+	const required = /* @__PURE__ */ new Set();
+	for (const item of index.resources) for (const [key, hash] of Object.entries(item.dependencies)) {
+		required.add(key + "/" + hash);
+		if (!index.dependencies.some((ref) => ref.resourceKey === key && ref.sha256 === hash)) throw new Error("专家团固定版本缺失");
+	}
+	if (index.dependencies.some((ref) => !required.has(ref.resourceKey + "/" + ref.sha256))) throw new Error("公司内容存在未引用的依赖");
+	return Object.freeze(index);
+}
 //#endregion
-export { COMPANY_CONTENT_MAX_BYTES, COMPANY_CONTENT_MAX_FILES, COMPANY_CONTENT_MAX_PATH_LENGTH, companyContentRelease, contentDigest };
+export { COMPANY_CONTENT_MAX_BYTES, COMPANY_CONTENT_MAX_FILES, COMPANY_CONTENT_MAX_PATH_LENGTH, agentSpecManifest, agentSpecManifestSchema, agentSpecPrompt, companyContentIndex, companyContentRelease, companyResourceVersionSchema, contentDigest };

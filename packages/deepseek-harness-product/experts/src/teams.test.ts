@@ -23,7 +23,7 @@ const experts: ExpertSummary[] = [
   emoji: '🧩',
   division: 'engineering',
   divisionZh: '工程',
-  custom: false,
+  custom: false, packageVersion: '0.0.0-' + 'a'.repeat(56), packageSha256: 'a'.repeat(64),
 }))
 function setup(seedTeams = false) {
   let state: AgencySettings = { enabled: [], customExperts: [], customTeams: seedTeams ? structuredClone([...TEST_TEAMS]) : [] }
@@ -240,7 +240,7 @@ describe('专家团配置与执行', () => {
       members: experts
         .slice(0, 8)
         .map((e) => ({
-          expertSlug: e.slug,
+          expertSlug: e.slug, expertVersion: e.packageVersion!, expertSha256: e.packageSha256!,
           duty: '分析',
           instructions: '给出依据',
         })),

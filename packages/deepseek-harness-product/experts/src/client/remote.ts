@@ -5,7 +5,7 @@ export { TYPERT_REMOTE, TYPERT_REMOTE as default } from '../remote-contract.ts'
 
 type AgencyAgentsRemote = TypertRemoteNamespaceMap['agencyAgents']
 /** Catalog calls derived from the actual Host Remote methods. */
-export type AgencyCatalogRemote = Pick<AgencyAgentsRemote, 'getCatalog' | 'getCustomExpert' | 'saveCustomExpert' | 'deleteCustomExpert'>
+export type AgencyCatalogRemote = Pick<AgencyAgentsRemote, 'getCatalog' | 'importExpert' | 'exportExpert' | 'getCustomExpert' | 'saveCustomExpert' | 'deleteCustomExpert'>
 /** Team calls derived from the actual Host Remote methods. */
 export type AgencyTeamsRemote = Pick<AgencyAgentsRemote, 'exportTeam' | 'getTeams' | 'saveTeam' | 'setTeamEnabled' | 'deleteTeam'>
 type RemoteValue<Call extends (...args: never[]) => Promise<RemoteResult<unknown>>> =

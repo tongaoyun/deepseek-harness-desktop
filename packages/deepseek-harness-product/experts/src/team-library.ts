@@ -102,6 +102,11 @@ export function createTeamLibrary(
       requireMembers(value, all)
       const team = {
         ...value,
+        members: value.members.map(member => {
+          const expert = all.experts.find(expert => expert.slug === member.expertSlug && !expert.conflict)
+          if (!expert?.packageVersion || !expert.packageSha256) throw new Error(tx('团队成员需要重新选择并保存。'))
+          return { ...member, expertVersion: expert.packageVersion, expertSha256: expert.packageSha256 }
+        }),
         id: value.id ?? `team-custom-${randomUUID()}`,
       }
       await mutateExpertSettings(store,

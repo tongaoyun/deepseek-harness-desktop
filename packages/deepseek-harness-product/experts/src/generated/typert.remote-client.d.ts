@@ -13,11 +13,13 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
     claimCreation: (sessionId: SessionId, proposalId: string, signal?: AbortSignal) => Promise<RemoteResult<CreationEditorData>>
     deleteCustomExpert: (slug: string, expectedRevision: number, signal?: AbortSignal) => Promise<RemoteResult<CatalogSnapshot>>
     deleteTeam: (id: string, expectedRevision: number, signal?: AbortSignal) => Promise<RemoteResult<TeamSnapshot>>
+    exportExpert: (slug: string, signal?: AbortSignal) => Promise<RemoteResult<{ resourceKey: string; files: Record<string, string>; catalog: Record<string, string>; }>>
     exportTeam: (id: string, expectedRevision: number, signal?: AbortSignal) => Promise<RemoteResult<{ resourceKey: string; files: Record<string, string>; }>>
     getCatalog: (refreshCompany: boolean, signal?: AbortSignal) => Promise<RemoteResult<CatalogSnapshot>>
     getCustomExpert: (slug: string, signal?: AbortSignal) => Promise<RemoteResult<CustomExpertInput>>
     getPrompt: (slug: string, division: string, signal?: AbortSignal) => Promise<RemoteResult<{ prompt: string; }>>
     getTeams: (signal?: AbortSignal) => Promise<RemoteResult<TeamSnapshot>>
+    importExpert: (files: Record<string, string>, signal?: AbortSignal) => Promise<RemoteResult<CustomExpertInput>>
     saveCustomExpert: (expert: CustomExpertInput, enabled: boolean, expectedRevision: number, signal?: AbortSignal) => Promise<RemoteResult<CatalogSnapshot>>
     saveTeam: (team: TeamInput, enabled: boolean, expectedRevision: number, signal?: AbortSignal) => Promise<RemoteResult<TeamSnapshot>>
     setEnabled: (enabled: string[], expectedRevision: number, signal?: AbortSignal) => Promise<RemoteResult<{ enabled: string[]; revision: number; }>>
@@ -27,11 +29,13 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
     'agencyAgents/claimCreation': (sessionId: SessionId, proposalId: string, signal?: AbortSignal) => Promise<RemoteResult<CreationEditorData>>
     'agencyAgents/deleteCustomExpert': (slug: string, expectedRevision: number, signal?: AbortSignal) => Promise<RemoteResult<CatalogSnapshot>>
     'agencyAgents/deleteTeam': (id: string, expectedRevision: number, signal?: AbortSignal) => Promise<RemoteResult<TeamSnapshot>>
+    'agencyAgents/exportExpert': (slug: string, signal?: AbortSignal) => Promise<RemoteResult<{ resourceKey: string; files: Record<string, string>; catalog: Record<string, string>; }>>
     'agencyAgents/exportTeam': (id: string, expectedRevision: number, signal?: AbortSignal) => Promise<RemoteResult<{ resourceKey: string; files: Record<string, string>; }>>
     'agencyAgents/getCatalog': (refreshCompany: boolean, signal?: AbortSignal) => Promise<RemoteResult<CatalogSnapshot>>
     'agencyAgents/getCustomExpert': (slug: string, signal?: AbortSignal) => Promise<RemoteResult<CustomExpertInput>>
     'agencyAgents/getPrompt': (slug: string, division: string, signal?: AbortSignal) => Promise<RemoteResult<{ prompt: string; }>>
     'agencyAgents/getTeams': (signal?: AbortSignal) => Promise<RemoteResult<TeamSnapshot>>
+    'agencyAgents/importExpert': (files: Record<string, string>, signal?: AbortSignal) => Promise<RemoteResult<CustomExpertInput>>
     'agencyAgents/saveCustomExpert': (expert: CustomExpertInput, enabled: boolean, expectedRevision: number, signal?: AbortSignal) => Promise<RemoteResult<CatalogSnapshot>>
     'agencyAgents/saveTeam': (team: TeamInput, enabled: boolean, expectedRevision: number, signal?: AbortSignal) => Promise<RemoteResult<TeamSnapshot>>
     'agencyAgents/setEnabled': (enabled: string[], expectedRevision: number, signal?: AbortSignal) => Promise<RemoteResult<{ enabled: string[]; revision: number; }>>
@@ -46,11 +50,13 @@ export declare const TYPERT_REMOTE: TypertRemoteInfo<{
   readonly 'agencyAgents/claimCreation': TypertRemoteMethod<{ readonly 'sessionId': SessionId; readonly 'proposalId': string }, CreationEditorData>
   readonly 'agencyAgents/deleteCustomExpert': TypertRemoteMethod<{ readonly 'slug': string; readonly 'expectedRevision': number }, CatalogSnapshot>
   readonly 'agencyAgents/deleteTeam': TypertRemoteMethod<{ readonly 'id': string; readonly 'expectedRevision': number }, TeamSnapshot>
+  readonly 'agencyAgents/exportExpert': TypertRemoteMethod<{ readonly 'slug': string }, { resourceKey: string; files: Record<string, string>; catalog: Record<string, string>; }>
   readonly 'agencyAgents/exportTeam': TypertRemoteMethod<{ readonly 'id': string; readonly 'expectedRevision': number }, { resourceKey: string; files: Record<string, string>; }>
   readonly 'agencyAgents/getCatalog': TypertRemoteMethod<{ readonly 'refreshCompany': boolean }, CatalogSnapshot>
   readonly 'agencyAgents/getCustomExpert': TypertRemoteMethod<{ readonly 'slug': string }, CustomExpertInput>
   readonly 'agencyAgents/getPrompt': TypertRemoteMethod<{ readonly 'slug': string; readonly 'division': string }, { prompt: string; }>
   readonly 'agencyAgents/getTeams': TypertRemoteMethod<{  }, TeamSnapshot>
+  readonly 'agencyAgents/importExpert': TypertRemoteMethod<{ readonly 'files': Record<string, string> }, CustomExpertInput>
   readonly 'agencyAgents/saveCustomExpert': TypertRemoteMethod<{ readonly 'expert': CustomExpertInput; readonly 'enabled': boolean; readonly 'expectedRevision': number }, CatalogSnapshot>
   readonly 'agencyAgents/saveTeam': TypertRemoteMethod<{ readonly 'team': TeamInput; readonly 'enabled': boolean; readonly 'expectedRevision': number }, TeamSnapshot>
   readonly 'agencyAgents/setEnabled': TypertRemoteMethod<{ readonly 'enabled': string[]; readonly 'expectedRevision': number }, { enabled: string[]; revision: number; }>

@@ -1,3 +1,4 @@
+import { testPackageStore } from './packages.ts'
 /** Expert semantic contracts exercised through the real Loader, Gateway and owner Peer. */
 import { Context } from '@deepseek-ai/cordis'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
@@ -44,7 +45,7 @@ async function boot(base?: Parameters<typeof createExpertLibrary>[0]) {
     revision: () => settings.describe().find(item => item.ns === ns)!.revision,
     mutate: (ops, revision) => settings.mutate(ns, ops, revision),
   } satisfies Parameters<typeof createExpertLibrary>[1]
-  const library = createExpertLibrary(base ?? (() => Promise.resolve([])), store, ['engineering'], () => 'en')
+  const library = createExpertLibrary(base ?? (() => Promise.resolve([])), store, ['engineering'], () => 'en', testPackageStore())
   const teams = createTeamLibrary((_sessionId, signal) => library.catalog(signal), store, () => 'en')
   await ctx.plugin(Loader)
   Object.assign(ctx.loader.builtins, {
@@ -85,20 +86,9 @@ it('keeps native member labels and current execution metadata complete after tea
   expect(removed).toMatchObject({ teams: [], nativeMembers: {}, engine })
 })
 
-it('passes native team export cancellation to persona reads and rejects late content', async () => {
-  const { ctx, invoke, snapshot, team } = await savedTeam()
-  const reading = Promise.withResolvers<{ prompt: string }>()
-  const getPrompt = vi.fn<AgencyPersonaSource['getPrompt']>(() => reading.promise)
-  ctx.provide(AGENCY_PERSONA_SERVICE, { getPrompt } satisfies AgencyPersonaSource)
-  const controller = new AbortController()
-  const pending = invoke('exportTeam', { id: team.id, expectedRevision: snapshot.revision }, controller.signal)
-  const rejected = expect(pending).rejects.toThrow()
-  await vi.waitFor(() => { expect(getPrompt).toHaveBeenCalledTimes(team.members.length) })
-  controller.abort()
-  const signals = getPrompt.mock.calls.map(call => call[4])
-  reading.resolve({ prompt: 'Late persona' })
-  await rejected
-  expect(signals.every(signal => signal?.aborted)).toBe(true)
+it('refuses to publish a team before its personal member experts are published', async () => {
+  const { invoke, snapshot, team } = await savedTeam()
+  await expect(invoke('exportTeam', { id: team.id, expectedRevision: snapshot.revision })).rejects.toThrow('Publish the member experts')
 })
 
 it('cancelling editor preparation leaves the confirmed creation draft available', async () => {
@@ -128,13 +118,13 @@ it('preserves strict parsing, defaults, saved revisions and authorization throug
   expect(saved.revision).toBe(1)
   expect(saved.experts[0]).toMatchObject({ name: 'Reviewer', description: 'Review code', emoji: '🧩', avatar: 0 })
   const slug = saved.experts[0].slug
-  expect(await invoke('getCustomExpert', { slug })).toMatchObject({ prompt: 'Check changes.' })
+  expect(await invoke('getCustomExpert', { slug })).toMatchObject({ prompt: ' Check changes. ' })
   await expect(invoke('deleteCustomExpert', { slug, expectedRevision: 0 })).rejects.toMatchObject({ code: 'experts/conflict' })
   await expect(invoke('saveTeam', { team: TEST_TEAMS[0], enabled: false, expectedRevision: 0 })).rejects.toMatchObject({ code: 'experts/conflict' })
   const invalid = [
     { expert: { ...draft, unexpected: true }, enabled: true, expectedRevision: 1 },
     { expert: { ...draft, name: 'x'.repeat(41) }, enabled: true, expectedRevision: 1 },
-    { expert: { ...draft, prompt: 'x'.repeat(20_001) }, enabled: true, expectedRevision: 1 },
+    { expert: { ...draft, prompt: 'x'.repeat(128 * 1024 + 1) }, enabled: true, expectedRevision: 1 },
     { expert: draft, enabled: true, expectedRevision: -1 },
     { expert: draft, enabled: true, expectedRevision: 1.5 },
   ]
@@ -322,7 +312,7 @@ it('allows a dispatched Settings transaction to finish after its editor closes',
 it.each(['create-expert', 'edit-expert', 'delete-expert', 'save-team', 'enable-team', 'delete-team'] as const)(
   'returns the committed %s receipt when the company source becomes unavailable after persistence', async (operation) => {
     let unavailable = false
-    const { invoke, settings, ns, snapshot, team } = await savedTeam(async () => {
+    const { invoke, settings, ns, snapshot, team, library } = await savedTeam(async () => {
       if (unavailable) throw new Error('Company catalog unavailable after commit')
       return []
     })
@@ -337,7 +327,7 @@ it.each(['create-expert', 'edit-expert', 'delete-expert', 'save-team', 'enable-t
       : operation === 'save-team' ? 'saveTeam' : operation === 'enable-team' ? 'setTeamEnabled'
         : operation === 'delete-team' ? 'deleteTeam' : 'saveCustomExpert'
     const args = operation === 'create-expert' ? { expert: { ...draft, name: 'New committed reviewer' }, enabled: true }
-      : operation === 'edit-expert' ? { expert: { ...expert, name: 'Updated committed reviewer' }, enabled: true }
+      : operation === 'edit-expert' ? { expert: { ...await library.getCustom(expert.slug), name: 'Updated committed reviewer' }, enabled: true }
         : operation === 'delete-expert' ? { slug: expert.slug }
           : operation === 'save-team' ? { team: { ...team, name: 'Updated committed team' }, enabled: true }
             : operation === 'enable-team' ? { id: team.id, enabled: true } : { id: team.id }

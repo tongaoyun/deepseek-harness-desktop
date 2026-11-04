@@ -11,7 +11,8 @@ export const TEAM_CUSTOM_ID =
   /^team-custom-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u
 /** Member identity, duty, and instructions in an editable team. */
 export const teamMemberSchema = z
-  .object({ expertSlug: text(128), duty: text(100), instructions: text(2000) })
+  .object({ expertSlug: text(128), duty: text(100), instructions: text(2000),
+    expertVersion: z.string().min(1).max(80).optional(), expertSha256: z.string().regex(/^[a-f0-9]{64}$/u).optional() })
   .strict()
 /** Validated personal-team settings, including unique members and coordinator selection. */
 export const teamInputSchema = z
@@ -69,28 +70,21 @@ export const sharedTeamSchema = teamInputSchema.safeExtend({
   id: z.string().regex(/^team-shared-[a-z0-9]+(?:-[a-z0-9]+)*$/u),
   company: z.literal(true),
 })
-/** Company release document embeds every referenced member persona. */
+/** A published team references immutable expert packages instead of embedding personas. */
 export const publishedTeamSchema = z.object({
-  team: teamInputSchema.safeExtend({ id: z.never().optional() }),
-  experts: z.array(z.object({
-    key: z.string().regex(/^member-[1-8]$/u),
-    name: text(40), description: text(160),
-    division: z.string().regex(/^[a-z][a-z0-9-]{0,63}$/u),
-    emoji: z.string().max(32), prompt: text(128 * 1024),
-  }).strict()).min(2).max(8),
-}).strict().superRefine((value, ctx) => {
-  const keys = new Set(value.experts.map(expert => expert.key))
-  if (keys.size !== value.experts.length || keys.size !== value.team.members.length
-    || value.team.members.some(member => !keys.has(member.expertSlug))) {
-    ctx.addIssue({ code: 'custom', message: '专家团必须包含每位成员的固定说明，不能引用本机私有专家' })
-  }
-})
-/** Validated company team and its fixed member personas. */
+  schemaVersion: z.literal(1),
+  id: z.string().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/u).max(80),
+  team: teamInputSchema.safeExtend({
+    id: z.never().optional(),
+    members: z.array(teamMemberSchema.required({ expertVersion: true, expertSha256: true }).refine(member => member.expertVersion === '0.0.0-' + member.expertSha256.slice(0, 56))).min(2).max(8)
+      .refine(items => new Set(items.map(item => item.expertSlug)).size === items.length),
+  }),
+}).strict()
+/** Company team definition and exact member references. */
 export type PublishedTeam = z.infer<typeof publishedTeamSchema>
-/**
- * Parse bounded UTF-8 JSON only after release path and digest validation.
- * @param text - Decoded release document.
- * @returns Validated team with its embedded member personas.
+/** Parse a bounded team definition.
+ * @param text - UTF-8 team JSON.
+ * @returns Team rules and immutable member references.
  */
 export function publishedTeamDocument(text: string): PublishedTeam {
   if (new TextEncoder().encode(text).length > 2 * 1024 * 1024) throw new Error('专家团发布文件最多 2 MiB')

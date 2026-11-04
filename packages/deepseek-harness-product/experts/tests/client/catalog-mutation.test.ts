@@ -13,7 +13,7 @@ const updated: CatalogSnapshot = { ...receipt, experts: [{ ...company, name: 'Up
 function fixture() {
   const getCatalog = vi.fn<AgencyCatalogRemote['getCatalog']>().mockResolvedValue({ ok: true, value: updated })
   const unused = (): Promise<never> => Promise.reject(new Error('Unexpected mutation'))
-  const catalog = new ExpertCatalog({ getCatalog, getCustomExpert: unused, saveCustomExpert: unused, deleteCustomExpert: unused })
+  const catalog = new ExpertCatalog({ getCatalog, importExpert: async () => { throw new Error('Unexpected package import') }, exportExpert: async () => { throw new Error('Unexpected package export') }, getCustomExpert: unused, saveCustomExpert: unused, deleteCustomExpert: unused })
   onTestFinished(() => { catalog.dispose() })
   const started = catalog.accept(original)
   return { catalog, getCatalog, started }

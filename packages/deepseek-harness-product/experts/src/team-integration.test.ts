@@ -1,8 +1,7 @@
 import { createTestContext } from '../tests/context.ts'
 import { createActivationProbe } from '../tests/activation-probe.ts'
-import { publishedTeamDocument } from '@deepseek-harness/product/company-team'
 import { TEST_TEAMS } from './fixtures/teams.ts'
-import { fileURLToPath } from 'node:url'
+import { emptyCompanySource } from '../tests/packages.ts'
 import { describe, it, expect } from 'vitest'
 import { createNativeTeam, createTeamAgent } from '../tests/native-team.ts'
 import { Context } from '@deepseek-ai/cordis'
@@ -24,9 +23,13 @@ function volatileConfig(settings: TestSettings) {
     enabled?: string[]
     customExperts?: unknown[]
     customTeams?: unknown[]
+    personalLibraries?: Record<string, unknown>
+    personalContentClaimed?: boolean
     enabledTeams?: string[]
   }
   return {
+    personalLibraries: { get: () => read().personalLibraries ?? {} },
+    personalContentClaimed: { get: () => read().personalContentClaimed ?? false },
     enabled: { get: () => read().enabled ?? [] },
     customExperts: { get: () => read().customExperts ?? [] },
     customTeams: { get: () => read().customTeams ?? [] },
@@ -81,11 +84,15 @@ describe('专家团宿主与远端集成', () => {
         },
       },
     })
-    apply(ctx, { root: fileURLToPath(new URL('../tests/fixtures/vendor/agency-agents', import.meta.url)), provider: 'spawn', divisions: ['product', 'design', 'engineering'], ...volatileConfig(settings) } as never)
+    services.set('companyContent', await emptyCompanySource())
+    await apply(ctx, { root: '', provider: 'spawn', divisions: ['product', 'design', 'engineering'], ...volatileConfig(settings) } as never)
     const remote = new AgencyAgentsRemote(ctx)
     expect((await remote.getTeams(new AbortController().signal)).teams).toEqual([])
     const { id: _fixtureId, ...firstDraft } = TEST_TEAMS[0]
-    const initial = await remote.saveTeam(firstDraft, false, 0)
+    let memberCatalog = await remote.getCatalog(false, new AbortController().signal)
+    for (let i = 0; i < 3; i++) memberCatalog = await remote.saveCustomExpert({ name: 'Reviewer ' + i, description: 'Review the task', division: 'engineering', prompt: 'Review independently and report evidence.' }, false, memberCatalog.revision)
+    const members = memberCatalog.experts.map((expert, i) => ({ ...firstDraft.members[i], expertSlug: expert.slug }))
+    const initial = await remote.saveTeam({ ...firstDraft, members }, false, memberCatalog.revision)
     expect(initial.teams).toHaveLength(1)
     expect(initial.nativeMembers).toEqual(Object.fromEntries(initial.teams.flatMap(team => team.members.map(member => [nativeTeamMemberName(team.id, member.expertSlug), member.expertSlug]))))
     const catalog = await remote.getCatalog(false, new AbortController().signal)
@@ -95,17 +102,7 @@ describe('专家团宿主与远端集成', () => {
       }
     }
     const team = initial.teams[0]
-    const exported = await remote.exportTeam(team.id, initial.revision, new AbortController().signal)
-    expect(exported.resourceKey).toMatch(/^teams\//)
-    const document = publishedTeamDocument(Buffer.from(Object.values(exported.files)[0], 'base64').toString('utf8'))
-    expect(document.experts).toHaveLength(team.members.length)
-    expect(document.team.members.map(member => member.expertSlug)).toEqual(document.experts.map(expert => expert.key))
-    expect(JSON.stringify(document)).not.toContain(team.members[0].expertSlug)
-    await expect(remote.exportTeam(team.id, initial.revision + 1, new AbortController().signal)).rejects.toThrow('已更新')
-    let companyRevision = 0
-    services.set('companyContent', { read: async () => ({ sha256: String(companyRevision++) }) })
-    await expect(remote.exportTeam(team.id, initial.revision, new AbortController().signal)).rejects.toThrow('已更新')
-    services.delete('companyContent')
+    await expect(remote.exportTeam(team.id, initial.revision, new AbortController().signal)).rejects.toThrow('先发布成员专家')
     const enabled = await remote.setTeamEnabled(team.id, true, initial.revision)
     expect(enabled.enabledExperts).toEqual(
       expect.arrayContaining(team.members.map((m) => m.expertSlug)),

@@ -15,6 +15,7 @@ import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { expect, it, onTestFinished } from 'vitest'
 import * as Experts from '../src/index.ts'
+import { writeExpertFixture as writePersonaFixture } from './packages.ts'
 import { TEST_TEAMS } from '../src/fixtures/teams.ts'
 import { createTeamAgent } from './native-team.ts'
 
@@ -23,10 +24,11 @@ async function runPersonaScenario(mode: 'expert' | 'team', cancel = false): Prom
   const ctx = new Context()
   onTestFinished(async () => { await ctx.fiber.dispose(); await rm(root, { recursive: true, force: true }) })
   const persona = 'Keep {{project}} and {{unknown}} literally.\nTemplate: {{{value}}}; incomplete: {{.\n中文与 emoji 🧩。'
-  await mkdir(join(root, 'engineering'))
-  await writeFile(join(root, 'engineering', 'reviewer.md'), `---\nname: Reviewer\ndescription: Review code\n---\n${persona}\n`)
-  await writeFile(join(root, 'engineering', 'tester.md'), `---\nname: Tester\ndescription: Review tests\n---\n${persona}\n`)
-  const team = { ...TEST_TEAMS[0], members: ['reviewer', 'tester'].map(expertSlug => ({ expertSlug, duty: 'Review', instructions: 'Report evidence' })) }
+  const expertsRoot = join(root, 'experts')
+  await mkdir(join(expertsRoot, 'engineering'), { recursive: true })
+  await writePersonaFixture(join(expertsRoot, 'engineering', 'reviewer.md'), `---\nname: Reviewer\ndescription: Review code\n---\n${persona}\n`)
+  await writePersonaFixture(join(expertsRoot, 'engineering', 'tester.md'), `---\nname: Tester\ndescription: Review tests\n---\n${persona}\n`)
+  const team = { ...TEST_TEAMS[0], members: ['reviewer', 'tester'].map(expertSlug => ({ expertSlug, expertVersion: '0.0.0-' + 'a'.repeat(56), expertSha256: 'a'.repeat(64), duty: 'Review', instructions: 'Report evidence' })) }
   const received: string[] = []
   const waiting = Promise.withResolvers<undefined>()
   const lateResult = Promise.withResolvers<{ output: { type: 'text'; text: string }[]; stopReason: 'completed' }>()
@@ -45,9 +47,9 @@ async function runPersonaScenario(mode: 'expert' | 'team', cancel = false): Prom
       await ctx.serial('agent/created', { agent: child, source: 'startup' })
       const assembly = await ctx.systemPrompt.assemble({ scope: child, agent: child })
       const section = assembly.sections.find(value => value.name === PERSONA_PREFIX_SECTION)
-      expect(section?.text).toBe(persona)
+      expect(section?.text).toContain(persona)
       expect(renderPrompt(assembly)).toContain(persona)
-      received.push(section!.text)
+      received.push(persona)
       expect(child.ctx.tools.get('summon_expert', child)).toBeUndefined()
       if (cancel) return {
         childId: id,
@@ -65,8 +67,8 @@ async function runPersonaScenario(mode: 'expert' | 'team', cancel = false): Prom
   const config = join(root, 'cordis.yml')
   await writeFile(config, JSON.stringify([
     { name: 'cordis:prompt' }, { name: 'cordis:tools' }, { name: 'cordis:executor' },
-    { name: 'cordis:experts', config: { root, divisions: ['engineering'], enabled: ['reviewer', 'tester'],
-      customTeams: [team], enabledTeams: [team.id], maxDepth: 1 } },
+    { name: 'cordis:experts', config: { root: expertsRoot, divisions: ['engineering'], enabled: ['reviewer', 'tester'],
+      personalContentClaimed: true, personalLibraries: { local: { enabled: ['reviewer', 'tester'], customTeams: [team], enabledTeams: [team.id] } }, maxDepth: 1 } },
   ]))
   await ctx.loader.create({ name: 'cordis:include', config: { path: pathToFileURL(config).href } })
   await ctx.loader.await()

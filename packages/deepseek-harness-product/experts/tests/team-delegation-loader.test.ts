@@ -29,6 +29,7 @@ import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { describe, expect, it, onTestFinished } from 'vitest'
 import * as Experts from '../src/index.ts'
+import { writeExpertFixture as writePersonaFixture } from './packages.ts'
 import { TEST_TEAMS } from '../src/fixtures/teams.ts'
 
 class DelegatingAdapter extends LlmAdapter {
@@ -38,7 +39,7 @@ class DelegatingAdapter extends LlmAdapter {
   constructor(private readonly ctx: Context, private readonly tool: string, private readonly attempts: number) { super() }
 
   async *stream(options: GenerateOptions): AsyncIterable<StreamChunk> {
-    const session = options.sessionId === undefined ? undefined : this.ctx.sessions.get(options.sessionId)
+    const session = options.sessionId === undefined ? undefined : this.ctx.agents.get(options.sessionId)?.session
     const attempted = session === undefined ? 0 : this.attempted.get(session.id) ?? 0
     if (session?.header.delegationDepth === 1 && attempted < this.attempts) {
       this.attempted.set(session.id, attempted + 1)
@@ -97,9 +98,9 @@ describe.each(['global', 'preset', 'shadow'] as const)('%s native tool registrat
     const expertsRoot = join(root, 'experts')
     await mkdir(join(expertsRoot, 'engineering'), { recursive: true })
     for (const name of ['reviewer', 'tester']) {
-      await writeFile(join(expertsRoot, 'engineering', `${name}.md`), `---\nname: ${name}\ndescription: Review code\n---\nReview the assigned task.\n`)
+      await writePersonaFixture(join(expertsRoot, 'engineering', `${name}.md`), `---\nname: ${name}\ndescription: Review code\n---\nReview the assigned task.\n`)
     }
-    const team = { ...TEST_TEAMS[0], members: ['reviewer', 'tester'].map(expertSlug => ({ expertSlug, duty: 'Review', instructions: 'Report evidence' })) }
+    const team = { ...TEST_TEAMS[0], members: ['reviewer', 'tester'].map(expertSlug => ({ expertSlug, expertVersion: '0.0.0-' + 'a'.repeat(56), expertSha256: 'a'.repeat(64), duty: 'Review', instructions: 'Report evidence' })) }
     ctx.provide('settings', { configure: () => () => {}, describe: () => [{ ns: 'agency-agents', revision: 0 }] })
     ctx.provide('webServer', {})
     await ctx.plugin(Loader)
@@ -136,7 +137,7 @@ describe.each(['global', 'preset', 'shadow'] as const)('%s native tool registrat
         { name: 'cordis:preset', config: { id: 'standard', plugins: delegationPlugins } },
       ]),
       { name: 'cordis:experts', config: { root: expertsRoot, divisions: ['engineering'],
-        enabled: ['reviewer', 'tester'], customTeams: [team], enabledTeams: [team.id], maxDepth: 2 } },
+        enabled: ['reviewer', 'tester'], personalContentClaimed: true, personalLibraries: { local: { enabled: ['reviewer', 'tester'], customTeams: [team], enabledTeams: [team.id] } }, maxDepth: 2 } },
     ]))
     await ctx.loader.create({ name: 'cordis:include', config: { path: pathToFileURL(config).href } })
     await ctx.loader.await()

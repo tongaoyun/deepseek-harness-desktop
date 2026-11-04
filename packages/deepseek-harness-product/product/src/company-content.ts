@@ -1,5 +1,8 @@
+export { agentSpecManifest, agentSpecManifestSchema, agentSpecPrompt, type AgentSpecManifest } from './agent-spec.ts'
+import { agentSpecManifest } from './agent-spec.ts'
 /** Company releases contain data for native plugins, never plugin executables or credentials. */
 import { publishedTeamDocument } from './company-team.ts'
+import { z } from 'zod'
 import { createHash } from 'node:crypto'
 import { isCollection, parseDocument, visit } from 'yaml'
 
@@ -30,31 +33,24 @@ export function companyContentRelease(value: unknown): CompanyContentRelease {
     || !('files' in value) || typeof value.files !== 'object' || value.files === null || Array.isArray(value.files)) {
     throw new Error('公司内容格式无效')
   }
-  const expertPath = /^experts\/[a-z][a-z0-9-]*\/[a-z0-9]+(?:-[a-z0-9]+)*\.md$/u
-  const skillPath = /^skills\/[a-z0-9]+(?:-[a-z0-9]+)*\/[A-Za-z0-9_./-]+$/u
+  const expertRe = /^(?:experts\/[a-z0-9]+(?:-[a-z0-9]+)*|expert-versions\/[a-z0-9]+(?:-[a-z0-9]+)*\/[a-f0-9]{64})\/[^\\\u0000-\u001f:]+$/u
+  const skillPath = /^skills\/[a-z0-9]+(?:-[a-z0-9]+)*\/[^\\\u0000-\u001f:]+$/u
   const files: Record<string, string> = {}
   const paths = new Set<string>()
-  const expertIds = new Set<string>()
-  const teamMemberIds = new Set<string>()
   let bytes = 0
   if (Object.keys(value.files).length > COMPANY_CONTENT_MAX_FILES) throw new Error('公司内容文件过多')
   for (const [path, encoded] of Object.entries(value.files)) {
     if (typeof encoded !== 'string' || encoded.length > Math.ceil(COMPANY_CONTENT_MAX_BYTES / 3) * 4
       || path.length > COMPANY_CONTENT_MAX_PATH_LENGTH
-      || !(expertPath.test(path) || skillPath.test(path) || /^teams\/[a-z0-9]+(?:-[a-z0-9]+)*\.json$/u.test(path))
+      || !(path === 'catalog.json' || expertRe.test(path) || skillPath.test(path) || /^teams\/[a-z0-9]+(?:-[a-z0-9]+)*\.json$/u.test(path))
       || path.split('/').some(part => ['', '.', '..'].includes(part) || part.endsWith('.')
         || /^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\..*)?$/iu.test(part))
       || paths.has(path.toLowerCase())) throw new Error('公司内容包含非法路径或文件')
     paths.add(path.toLowerCase())
-    if (path.startsWith('experts/')) {
-      const id = path.slice(path.lastIndexOf('/') + 1)
-      if (expertIds.has(id)) throw new Error('公司专家 ID 重复')
-      expertIds.add(id)
-    }
     const data = Buffer.from(encoded, 'base64')
     bytes += data.byteLength
     if (bytes > COMPANY_CONTENT_MAX_BYTES || data.toString('base64') !== encoded) throw new Error('公司内容大小或编码无效')
-    if (path.endsWith('/SKILL.md') || path.startsWith('experts/')) {
+    if (path.endsWith('/SKILL.md') && path.startsWith('skills/')) {
       if (data.byteLength > 128 * 1024) throw new Error('公司技能或专家说明过长')
       const markdown = new TextDecoder('utf-8', { fatal: true }).decode(data).replaceAll('\r\n', '\n')
       const document = /^---\n([\s\S]*?)\n---\n([\s\S]+)$/u.exec(markdown)
@@ -87,14 +83,29 @@ export function companyContentRelease(value: unknown): CompanyContentRelease {
     if (path.startsWith('teams/')) {
       const team = publishedTeamDocument(new TextDecoder('utf-8', { fatal: true }).decode(data))
       const key = path.slice('teams/'.length, -'.json'.length)
-      for (const expert of team.experts) teamMemberIds.add(`team-${key}-${expert.key}.md`)
+      if (team.id !== key) throw new Error('专家团标识与文件名不一致')
     }
     files[path] = encoded
   }
-  if ([...expertIds].some(id => teamMemberIds.has(id))) throw new Error('公司专家标识与专家团成员冲突')
   for (const path of Object.keys(files)) {
     if (path.startsWith('skills/') && files[`${path.split('/').slice(0, 2).join('/')}/SKILL.md`] === undefined) {
       throw new Error('公司技能缺少 SKILL.md')
+    }
+  }
+  const expertRoots = new Set(Object.keys(files).filter(path => path.startsWith('experts/') || path.startsWith('expert-versions/'))
+    .map(path => path.split('/').slice(0, path.startsWith('experts/') ? 2 : 3).join('/')))
+  for (const root of expertRoots) {
+    const manifest = files[`${root}/manifest.json`], soul = files[`${root}/config/SOUL.md`]
+    if (manifest === undefined || soul === undefined) throw new Error('专家包缺少 manifest.json 或 config/SOUL.md')
+    const metadata = agentSpecManifest(new TextDecoder('utf-8', { fatal: true }).decode(Buffer.from(manifest, 'base64')))
+    const id = root.split('/')[1]
+    if (metadata.worker.suggested_name !== id) throw new Error('AgentSpec 标识与专家包目录不一致')
+    for (const path of [`${root}/config/SOUL.md`, `${root}/config/AGENTS.md`]) {
+      const encoded = files[path]
+      if (encoded === undefined) continue
+      const data = Buffer.from(encoded, 'base64')
+      const text = new TextDecoder('utf-8', { fatal: true }).decode(data)
+      if (data.length > 128 * 1024 || text.includes('\0') || path.endsWith('/SOUL.md') && !text.trim()) throw new Error('专家说明无效')
     }
   }
   const directories = new Map<string, string>()
@@ -134,4 +145,56 @@ export function contentDigest(files: Readonly<Record<string, string>>): string {
   const canonical = Object.entries(files).sort(([left], [right]) => left < right ? -1 : left > right ? 1 : 0)
     .map(([path, encoded]) => `${path}\0${createHash('sha256').update(Buffer.from(encoded, 'base64')).digest('hex')}\n`).join('')
   return createHash('sha256').update(canonical).digest('hex')
+}
+
+/** Published resource coordinates and catalog presentation, with no Nacos credentials. */
+export const companyResourceVersionSchema = z.object({
+  resourceKey: z.string().regex(/^(?:skills|experts|teams)\/[a-z0-9]+(?:-[a-z0-9]+)*$/u),
+  version: z.string().regex(/^0\.0\.0-[a-f0-9]{56}$/u), sha256: z.string().regex(/^[a-f0-9]{64}$/u),
+  name: z.string().min(1).max(1000), description: z.string().min(1).max(2000),
+  fileCount: z.number().int().min(1).max(COMPANY_CONTENT_MAX_FILES), publishedAt: z.string(),
+  catalog: z.object({ name: z.string().trim().min(1).max(80).optional(), division: z.string().trim().min(1).max(80).optional(),
+    avatar: z.string().regex(/^(?:[0-9]|[12][0-9]|3[0-5])$/u).optional() }).strict()
+    .refine(value => Object.values(value).every(text => text === undefined || !/[\u0000-\u001f\u007f]/u.test(text))),
+  dependencies: z.record(z.string().regex(/^experts\/[a-z0-9]+(?:-[a-z0-9]+)*$/u), z.string().regex(/^[a-f0-9]{64}$/u)),
+}).strict().refine(value => value.version === `0.0.0-${value.sha256.slice(0, 56)}` && Object.keys(value.dependencies).length <= 8)
+/** Exact server-owned resource version. */
+export type CompanyResourceVersion = z.infer<typeof companyResourceVersionSchema>
+/** Version index returned by the company catalog endpoint. */
+export interface CompanyContentIndex {
+  readonly protocolVersion: 2
+  readonly version: string
+  readonly sha256: string
+  readonly resources: readonly CompanyResourceVersion[]
+  readonly dependencies: readonly CompanyResourceVersion[]
+}
+const indexSchema = z.object({ protocolVersion: z.literal(2), version: z.string().max(80).regex(/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/u),
+  sha256: z.string().regex(/^[a-f0-9]{64}$/u), resources: z.array(companyResourceVersionSchema).max(2048),
+  dependencies: z.array(companyResourceVersionSchema).max(16384), publishedAt: z.string(),
+}).strict()
+/** Validate an index and every pinned team dependency before downloading files.
+ * @param value - Employee-authenticated catalog response.
+ * @returns An immutable resource index; obsolete protocols require a desktop update.
+ */
+export function companyContentIndex(value: unknown): CompanyContentIndex | null {
+  if (value === null) return null
+  const parsed = indexSchema.safeParse(value)
+  if (!parsed.success) throw new Error('公司内容协议已更新，请更新桌面端后重试。')
+  const index = parsed.data
+  if (new Set(index.resources.map(item => item.resourceKey)).size !== index.resources.length
+    || new Set(index.dependencies.map(item => item.resourceKey + '/' + item.sha256)).size !== index.dependencies.length
+    || index.dependencies.some(item => !item.resourceKey.startsWith('experts/'))) throw new Error('公司内容版本索引无效')
+  const records = [
+    ...index.resources.map(item => `resource\0${item.resourceKey}\0${item.version}\0${item.sha256}\n`),
+    ...index.dependencies.map(item => `dependency\0${item.resourceKey}\0${item.version}\0${item.sha256}\n`),
+    ...index.resources.flatMap(item => Object.entries(item.catalog).map(([key, value]) => `catalog\0${item.resourceKey}\0${key}\0${value}\n`)),
+  ].sort().join('')
+  if (createHash('sha256').update(records).digest('hex') !== index.sha256) throw new Error('公司内容版本索引校验失败')
+  const required = new Set<string>()
+  for (const item of index.resources) for (const [key, hash] of Object.entries(item.dependencies)) {
+    required.add(key + '/' + hash)
+    if (!index.dependencies.some(ref => ref.resourceKey === key && ref.sha256 === hash)) throw new Error('专家团固定版本缺失')
+  }
+  if (index.dependencies.some(ref => !required.has(ref.resourceKey + '/' + ref.sha256))) throw new Error('公司内容存在未引用的依赖')
+  return Object.freeze(index)
 }

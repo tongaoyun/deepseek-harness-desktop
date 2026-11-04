@@ -1,3 +1,5 @@
+import { PackageTransferError, importPackageFiles, draftPackageFiles, downloadPackage } from './package-files.ts'
+import { bytesToBase64 } from '@deepseek-ai/dsh-util-crypto'
 import { LibraryConfirm, LibraryEditorFooter } from './library-ui.tsx'
 import { Button, Input, Modal } from './plugin-ui.ts'
 import React from 'react'
@@ -29,10 +31,17 @@ export interface CustomEditorProps {
 
 /** 原生模态窗口承载表单，未保存修改由独立确认层保护。 */
 export function CustomExpertEditor(props: CustomEditorProps): React.ReactElement {
+  const lifecycle = React.useRef(new AbortController())
+  React.useEffect(() => {
+    if (lifecycle.current.signal.aborted) lifecycle.current = new AbortController()
+    const owner = lifecycle.current
+    return () => owner.abort()
+  }, [])
+  const readSignal = () => props.signal ? AbortSignal.any([props.signal, lifecycle.current.signal]) : lifecycle.current.signal
   const [initial, setInitial] = React.useState(() => ({
     ...props.expert,
     name: props.expert?.name ?? '', description: props.expert?.description ?? '',
-    division: props.expert?.division ?? 'specialized', prompt: props.expert?.prompt ?? '',
+    division: props.expert?.division ?? 'specialized', prompt: props.expert?.prompt ?? '', agents: props.expert?.agents ?? '', resources: props.expert?.resources ?? {},
     emoji: props.expert?.emoji || DEFAULT_EXPERT_EMOJI, avatar: props.expert?.avatar ?? 0,
   }))
   const [draft, setDraft] = React.useState(initial)
@@ -50,24 +59,25 @@ export function CustomExpertEditor(props: CustomEditorProps): React.ReactElement
     if (JSON.stringify(draft) !== JSON.stringify(initial)) setDiscard(true)
     else props.onClose()
   }
-  const set = (key: 'name' | 'description' | 'division' | 'prompt', value: string): void => {
+  const set = (key: 'name' | 'description' | 'division' | 'prompt' | 'agents', value: string): void => {
     setDraft(current => ({ ...current, [key]: value }))
     setError(null)
   }
   const refreshReview = (): void => {
+    const signal = readSignal()
     if (saving.current) return;
     saving.current = true;
     setBusy(true);
     setReview(null);
-    void loadEditorReview(props.remote, draft.slug, props.locale, props.signal)
-      .then((value) => { props.signal?.throwIfAborted(); setReview(value) })
-      .catch((cause: unknown) => { if (!props.signal?.aborted) setError(cause instanceof Error ? cause.message : String(cause)) })
-      .finally(() => { saving.current = false; if (!props.signal?.aborted) setBusy(false); });
+    void loadEditorReview(props.remote, draft.slug, props.locale, signal)
+      .then((value) => { signal?.throwIfAborted(); setReview(value) })
+      .catch((cause: unknown) => { if (!signal?.aborted) setError(cause instanceof PackageTransferError ? props.t(cause.key) : cause instanceof Error ? cause.message : String(cause)) })
+      .finally(() => { saving.current = false; if (!signal?.aborted) setBusy(false); });
   };
   const continueReview = (useLatest: boolean): void => {
     if (review === null) return;
     const next = continueEditorReview(review, draft, useLatest);
-    setDraft({ ...next.expert, emoji: next.expert.emoji ?? DEFAULT_EXPERT_EMOJI, avatar: next.expert.avatar ?? 0 });
+    setDraft({ ...next.expert, agents: next.expert.agents ?? '', resources: next.expert.resources ?? {}, emoji: next.expert.emoji ?? DEFAULT_EXPERT_EMOJI, avatar: next.expert.avatar ?? 0 });
     if (review.expert !== undefined) setInitial(customExpertInputSchema.parse(review.expert));
     setRevision(next.revision);
     setEnabled(next.enabled);
@@ -75,7 +85,42 @@ export function CustomExpertEditor(props: CustomEditorProps): React.ReactElement
     setNeedsReview(false);
     setError(null);
   };
+  const importFiles = (selection: FileList): void => {
+    const signal = readSignal()
+    if (saving.current) return
+    saving.current = true
+    setBusy(true)
+    void importPackageFiles(selection).then(async files => {
+      signal?.throwIfAborted()
+      const result = await props.remote.importExpert(files, signal)
+      signal?.throwIfAborted()
+      if (!result.ok) throw result.error
+      const manifest = result.value.manifest ? JSON.parse(result.value.manifest) as Record<string, unknown> : {}
+      if (draft.slug) manifest.worker = { ...(typeof manifest.worker === 'object' && manifest.worker !== null ? manifest.worker : {}), suggested_name: draft.slug }
+      setDraft({ ...result.value, manifest: JSON.stringify(manifest), slug: draft.slug, agents: result.value.agents ?? '', resources: result.value.resources ?? {}, emoji: result.value.emoji ?? DEFAULT_EXPERT_EMOJI, avatar: result.value.avatar ?? 0 })
+    }).catch((cause: unknown) => { if (!signal?.aborted) setError(cause instanceof PackageTransferError ? props.t(cause.key) : cause instanceof Error ? cause.message : String(cause)) })
+      .finally(() => { saving.current = false; if (!signal.aborted) setBusy(false) })
+  }
+  const attachments = async (selection: FileList): Promise<void> => {
+    if (saving.current) return
+    const signal = readSignal()
+    saving.current = true; setBusy(true)
+    try {
+      let bytes = Object.values(draft.resources).reduce((size, value) => size + value.length * 3 / 4, 0)
+      const resources = { ...draft.resources }
+      for (const file of Array.from(selection)) {
+        signal.throwIfAborted()
+        const path = file.webkitRelativePath || 'assets/' + file.name
+        if ((bytes += file.size) > 32 * 1024 * 1024 || Object.keys(resources).length >= 2045) throw new Error(props.t('custom.packageTooLarge'))
+        resources[path] = bytesToBase64(new Uint8Array(await file.arrayBuffer()))
+      }
+      signal.throwIfAborted()
+      setDraft(current => ({ ...current, resources }))
+    } catch (cause) { if (!signal.aborted) setError(cause instanceof PackageTransferError ? props.t(cause.key) : cause instanceof Error ? cause.message : String(cause)) }
+    finally { saving.current = false; if (!signal.aborted) setBusy(false) }
+  }
   const submit = (enabled: boolean): void => {
+    const signal = readSignal()
     if (saving.current || needsReview || form.current?.reportValidity() !== true) return
     const parsed = customExpertInputSchema.safeParse(draft)
     if (!parsed.success) { setError(props.t('custom.invalid')); return }
@@ -83,20 +128,20 @@ export function CustomExpertEditor(props: CustomEditorProps): React.ReactElement
     saving.current = true
     setBusy(true)
     setError(null)
-    props.signal?.throwIfAborted()
+    signal?.throwIfAborted()
     const saved = props.prepareSave()
-    void props.remote.saveCustomExpert(parsed.data, enabled, revision, props.signal).then(result => {
-      props.signal?.throwIfAborted()
+    void props.remote.saveCustomExpert(parsed.data, enabled, revision, signal).then(result => {
+      signal?.throwIfAborted()
       if (!result.ok) throw result.error
       saved(result.value)
     }).catch((cause: unknown) => {
-      if (props.signal?.aborted) return
-      const message = cause instanceof Error ? cause.message : String(cause)
+      if (signal?.aborted) return
+      const message = cause instanceof PackageTransferError ? props.t(cause.key) : cause instanceof Error ? cause.message : String(cause)
       const conflict = isExpertConflict(cause);
       setNeedsReview(conflict);
       if (conflict) setReview(null);
       setError(conflict ? props.t("custom.conflict") : message);
-    }).finally(() => { saving.current = false; if (!props.signal?.aborted) setBusy(false) })
+    }).finally(() => { saving.current = false; if (!signal?.aborted) setBusy(false) })
   }
   const label = (text: string, control: React.ReactNode, required = false): React.ReactElement => h('label', { className: 'aag-custom-field' },
     h('span', null, text, required ? h('small', null, props.t('custom.required')) : null), control)
@@ -121,6 +166,9 @@ export function CustomExpertEditor(props: CustomEditorProps): React.ReactElement
   },
   h('form', { ref: form, className: 'aag-custom-body', onSubmit: (event: React.FormEvent) => event.preventDefault(), inert: discard ? '' : undefined },
     h('p', { className: 'aag-editor-intro' }, props.t('custom.intro')),
+    label(props.t('custom.importZip'), h('input', { type: 'file', accept: '.zip', disabled: busy, onChange: (event: React.ChangeEvent<HTMLInputElement>) => { if (event.currentTarget.files?.length) importFiles(event.currentTarget.files) } })),
+    label(props.t('custom.importDirectory'), h('input', { type: 'file', multiple: true, webkitdirectory: '', disabled: busy, onChange: (event: React.ChangeEvent<HTMLInputElement>) => { if (event.currentTarget.files?.length) importFiles(event.currentTarget.files) } })),
+    h(Button, { disabled: busy || !draft.prompt.trim(), onClick: () => { try { downloadPackage(draftPackageFiles(draft)) } catch (cause) { setError(cause instanceof PackageTransferError ? props.t(cause.key) : cause instanceof Error ? cause.message : String(cause)) } } }, props.t('custom.exportZip')),
     h('fieldset', { className: 'aag-custom-avatars', disabled: busy }, h('legend', null, props.t('custom.avatar')),
       EXPERT_AVATAR_URLS.map((url, index) => h('button', {
         key: url, type: 'button', 'aria-label': `${props.t('custom.avatar')} ${index + 1}`,
@@ -143,10 +191,17 @@ export function CustomExpertEditor(props: CustomEditorProps): React.ReactElement
     h('div', { className: 'aag-custom-prompt-head' }, h('label', { htmlFor: 'aag-custom-prompt' }, props.t('custom.prompt')),
       draft.prompt === '' ? h(Button, { disabled: busy, onClick: () => set('prompt', props.t('custom.templateText')) }, props.t('custom.template')) : null),
     h(Input.TextArea, {
-      id: 'aag-custom-prompt', className: 'aag-custom-prompt', value: draft.prompt, rows: 8, required: true, maxLength: 20_000, disabled: busy,
+      id: 'aag-custom-prompt', className: 'aag-custom-prompt', value: draft.prompt, rows: 8, required: true, maxLength: 128 * 1024, disabled: busy,
       'aria-label': props.t('custom.prompt'), placeholder: props.t('custom.promptPlaceholder'),
       onChange: (event: React.ChangeEvent<HTMLTextAreaElement>) => set('prompt', event.currentTarget.value),
-    }), error === null ? null : h('div', { className: 'aag-error', role: 'alert' }, error),
+    }),
+    label(props.t('custom.agents'), h(Input.TextArea, { value: draft.agents, rows: 5, maxLength: 128 * 1024, disabled: busy, onChange: (event: React.ChangeEvent<HTMLTextAreaElement>) => set('agents', event.currentTarget.value) })),
+    label(props.t('custom.attachments'), h('input', { type: 'file', multiple: true, disabled: busy, onChange: (event: React.ChangeEvent<HTMLInputElement>) => {
+      const files = event.currentTarget.files
+      if (files?.length) void attachments(files).catch((cause: unknown) => setError(cause instanceof PackageTransferError ? props.t(cause.key) : cause instanceof Error ? cause.message : String(cause)))
+    } })),
+    h('ul', null, Object.keys(draft.resources).sort().map(path => h('li', { key: path }, path, ' ', h(Button, { disabled: busy, onClick: () => setDraft(current => ({ ...current, resources: Object.fromEntries(Object.entries(current.resources).filter(([name]) => name !== path)) })) }, props.t('custom.removeAttachment'))))),
+    error === null ? null : h('div', { className: 'aag-error', role: 'alert' }, error),
       needsReview ? h("section", { className: "aag-custom-review" },
         h(Button, { disabled: busy, onClick: refreshReview }, props.t("custom.reviewLatest")),
         review === null ? null : h(React.Fragment, null,

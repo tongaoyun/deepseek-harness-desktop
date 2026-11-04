@@ -18,6 +18,9 @@ const _deepseek_harness_product_experts_agencyAgents_claimCreation_result$schema
   'emoji': z.string(),
   'avatar': z.number(),
   'prompt': z.string(),
+  'agents': z.string(),
+  'resources': z.record(z.string(), z.string()),
+  'manifest': z.union([z.undefined(), z.string()]).optional(),
 }),
 }), z.object({
   'kind': z.literal("team"),
@@ -32,6 +35,8 @@ const _deepseek_harness_product_experts_agencyAgents_claimCreation_result$schema
   'expertSlug': z.string(),
   'duty': z.string(),
   'instructions': z.string(),
+  'expertVersion': z.union([z.undefined(), z.string()]).optional(),
+  'expertSha256': z.union([z.undefined(), z.string()]).optional(),
 })),
   'examples': z.array(z.string()),
   'coordinatorMode': z.union([z.literal("custom"), z.literal("template")]),
@@ -52,6 +57,8 @@ const _deepseek_harness_product_experts_agencyAgents_claimCreation_result$schema
   'division': z.string(),
   'divisionZh': z.string(),
   'custom': z.boolean(),
+  'packageVersion': z.union([z.undefined(), z.string()]).optional(),
+  'packageSha256': z.union([z.undefined(), z.string()]).optional(),
   'company': z.union([z.undefined(), z.literal(false), z.literal(true)]).optional(),
   'teamMember': z.union([z.undefined(), z.literal(false), z.literal(true)]).optional(),
   'conflict': z.union([z.undefined(), z.literal(false), z.literal(true)]).optional(),
@@ -72,6 +79,8 @@ const _deepseek_harness_product_experts_agencyAgents_claimCreation_result$schema
   'expertSlug': z.string(),
   'duty': z.string(),
   'instructions': z.string(),
+  'expertVersion': z.union([z.undefined(), z.string()]).optional(),
+  'expertSha256': z.union([z.undefined(), z.string()]).optional(),
 })),
   'examples': z.array(z.string()),
   'coordinatorMode': z.union([z.literal("custom"), z.literal("template")]),
@@ -109,6 +118,8 @@ const _deepseek_harness_product_experts_agencyAgents_deleteCustomExpert_result$s
   'division': z.string(),
   'divisionZh': z.string(),
   'custom': z.boolean(),
+  'packageVersion': z.union([z.undefined(), z.string()]).optional(),
+  'packageSha256': z.union([z.undefined(), z.string()]).optional(),
   'company': z.union([z.undefined(), z.literal(false), z.literal(true)]).optional(),
   'teamMember': z.union([z.undefined(), z.literal(false), z.literal(true)]).optional(),
   'conflict': z.union([z.undefined(), z.literal(false), z.literal(true)]).optional(),
@@ -134,6 +145,8 @@ const _deepseek_harness_product_experts_agencyAgents_deleteTeam_result$schema = 
   'expertSlug': z.string(),
   'duty': z.string(),
   'instructions': z.string(),
+  'expertVersion': z.union([z.undefined(), z.string()]).optional(),
+  'expertSha256': z.union([z.undefined(), z.string()]).optional(),
 })),
   'examples': z.array(z.string()),
   'coordinatorMode': z.union([z.literal("custom"), z.literal("template")]),
@@ -153,6 +166,14 @@ const _deepseek_harness_product_experts_agencyAgents_deleteTeam_result$schema = 
   'recommendation': z.string(),
 })]).optional(),
   'nativeMembers': z.union([z.undefined(), z.record(z.string(), z.string())]).optional(),
+}))
+let _deepseek_harness_product_experts_agencyAgents_exportExpert_parameter_0$schema$value
+const _deepseek_harness_product_experts_agencyAgents_exportExpert_parameter_0$schema = () => (_deepseek_harness_product_experts_agencyAgents_exportExpert_parameter_0$schema$value ??= z.string())
+let _deepseek_harness_product_experts_agencyAgents_exportExpert_result$schema$value
+const _deepseek_harness_product_experts_agencyAgents_exportExpert_result$schema = () => (_deepseek_harness_product_experts_agencyAgents_exportExpert_result$schema$value ??= z.object({
+  'resourceKey': z.string(),
+  'files': z.record(z.string(), z.string()),
+  'catalog': z.record(z.string(), z.string()),
 }))
 let _deepseek_harness_product_experts_agencyAgents_exportTeam_parameter_0$schema$value
 const _deepseek_harness_product_experts_agencyAgents_exportTeam_parameter_0$schema = () => (_deepseek_harness_product_experts_agencyAgents_exportTeam_parameter_0$schema$value ??= z.string())
@@ -177,6 +198,8 @@ const _deepseek_harness_product_experts_agencyAgents_getCatalog_result$schema = 
   'division': z.string(),
   'divisionZh': z.string(),
   'custom': z.boolean(),
+  'packageVersion': z.union([z.undefined(), z.string()]).optional(),
+  'packageSha256': z.union([z.undefined(), z.string()]).optional(),
   'company': z.union([z.undefined(), z.literal(false), z.literal(true)]).optional(),
   'teamMember': z.union([z.undefined(), z.literal(false), z.literal(true)]).optional(),
   'conflict': z.union([z.undefined(), z.literal(false), z.literal(true)]).optional(),
@@ -196,6 +219,9 @@ const _deepseek_harness_product_experts_agencyAgents_getCustomExpert_result$sche
   'slug': z.union([z.undefined(), z.string()]).optional(),
   'emoji': z.union([z.undefined(), z.string()]).optional(),
   'avatar': z.union([z.undefined(), z.number()]).optional(),
+  'agents': z.union([z.undefined(), z.string()]).optional(),
+  'manifest': z.union([z.undefined(), z.string()]).optional(),
+  'resources': z.union([z.undefined(), z.record(z.string(), z.string())]).optional(),
 }))
 let _deepseek_harness_product_experts_agencyAgents_getPrompt_parameter_0$schema$value
 const _deepseek_harness_product_experts_agencyAgents_getPrompt_parameter_0$schema = () => (_deepseek_harness_product_experts_agencyAgents_getPrompt_parameter_0$schema$value ??= z.string())
@@ -218,6 +244,8 @@ const _deepseek_harness_product_experts_agencyAgents_getTeams_result$schema = ()
   'expertSlug': z.string(),
   'duty': z.string(),
   'instructions': z.string(),
+  'expertVersion': z.union([z.undefined(), z.string()]).optional(),
+  'expertSha256': z.union([z.undefined(), z.string()]).optional(),
 })),
   'examples': z.array(z.string()),
   'coordinatorMode': z.union([z.literal("custom"), z.literal("template")]),
@@ -238,6 +266,21 @@ const _deepseek_harness_product_experts_agencyAgents_getTeams_result$schema = ()
 })]).optional(),
   'nativeMembers': z.union([z.undefined(), z.record(z.string(), z.string())]).optional(),
 }))
+let _deepseek_harness_product_experts_agencyAgents_importExpert_parameter_0$schema$value
+const _deepseek_harness_product_experts_agencyAgents_importExpert_parameter_0$schema = () => (_deepseek_harness_product_experts_agencyAgents_importExpert_parameter_0$schema$value ??= z.record(z.string(), z.string()))
+let _deepseek_harness_product_experts_agencyAgents_importExpert_result$schema$value
+const _deepseek_harness_product_experts_agencyAgents_importExpert_result$schema = () => (_deepseek_harness_product_experts_agencyAgents_importExpert_result$schema$value ??= z.object({
+  'name': z.string(),
+  'description': z.string(),
+  'division': z.string(),
+  'prompt': z.string(),
+  'slug': z.union([z.undefined(), z.string()]).optional(),
+  'emoji': z.union([z.undefined(), z.string()]).optional(),
+  'avatar': z.union([z.undefined(), z.number()]).optional(),
+  'agents': z.union([z.undefined(), z.string()]).optional(),
+  'manifest': z.union([z.undefined(), z.string()]).optional(),
+  'resources': z.union([z.undefined(), z.record(z.string(), z.string())]).optional(),
+}))
 let _deepseek_harness_product_experts_agencyAgents_saveCustomExpert_parameter_0$schema$value
 const _deepseek_harness_product_experts_agencyAgents_saveCustomExpert_parameter_0$schema = () => (_deepseek_harness_product_experts_agencyAgents_saveCustomExpert_parameter_0$schema$value ??= z.object({
   'name': z.string(),
@@ -247,6 +290,9 @@ const _deepseek_harness_product_experts_agencyAgents_saveCustomExpert_parameter_
   'slug': z.union([z.undefined(), z.string()]).optional(),
   'emoji': z.union([z.undefined(), z.string()]).optional(),
   'avatar': z.union([z.undefined(), z.number()]).optional(),
+  'agents': z.union([z.undefined(), z.string()]).optional(),
+  'manifest': z.union([z.undefined(), z.string()]).optional(),
+  'resources': z.union([z.undefined(), z.record(z.string(), z.string())]).optional(),
 }))
 let _deepseek_harness_product_experts_agencyAgents_saveCustomExpert_parameter_1$schema$value
 const _deepseek_harness_product_experts_agencyAgents_saveCustomExpert_parameter_1$schema = () => (_deepseek_harness_product_experts_agencyAgents_saveCustomExpert_parameter_1$schema$value ??= z.boolean())
@@ -264,6 +310,8 @@ const _deepseek_harness_product_experts_agencyAgents_saveCustomExpert_result$sch
   'division': z.string(),
   'divisionZh': z.string(),
   'custom': z.boolean(),
+  'packageVersion': z.union([z.undefined(), z.string()]).optional(),
+  'packageSha256': z.union([z.undefined(), z.string()]).optional(),
   'company': z.union([z.undefined(), z.literal(false), z.literal(true)]).optional(),
   'teamMember': z.union([z.undefined(), z.literal(false), z.literal(true)]).optional(),
   'conflict': z.union([z.undefined(), z.literal(false), z.literal(true)]).optional(),
@@ -284,6 +332,8 @@ const _deepseek_harness_product_experts_agencyAgents_saveTeam_parameter_0$schema
   'expertSlug': z.string(),
   'duty': z.string(),
   'instructions': z.string(),
+  'expertVersion': z.union([z.undefined(), z.string()]).optional(),
+  'expertSha256': z.union([z.undefined(), z.string()]).optional(),
 })),
   'examples': z.array(z.string()),
   'coordinatorMode': z.union([z.literal("custom"), z.literal("template")]),
@@ -309,6 +359,8 @@ const _deepseek_harness_product_experts_agencyAgents_saveTeam_result$schema = ()
   'expertSlug': z.string(),
   'duty': z.string(),
   'instructions': z.string(),
+  'expertVersion': z.union([z.undefined(), z.string()]).optional(),
+  'expertSha256': z.union([z.undefined(), z.string()]).optional(),
 })),
   'examples': z.array(z.string()),
   'coordinatorMode': z.union([z.literal("custom"), z.literal("template")]),
@@ -357,6 +409,8 @@ const _deepseek_harness_product_experts_agencyAgents_setTeamEnabled_result$schem
   'expertSlug': z.string(),
   'duty': z.string(),
   'instructions': z.string(),
+  'expertVersion': z.union([z.undefined(), z.string()]).optional(),
+  'expertSha256': z.union([z.undefined(), z.string()]).optional(),
 })),
   'examples': z.array(z.string()),
   'coordinatorMode': z.union([z.literal("custom"), z.literal("template")]),
@@ -389,6 +443,8 @@ let _deepseek_harness_product_experts_agencyAgents_deleteTeam_parameter_0_strict
 const _deepseek_harness_product_experts_agencyAgents_deleteTeam_parameter_0_strict$schema = () => (_deepseek_harness_product_experts_agencyAgents_deleteTeam_parameter_0_strict$schema$value ??= z.string())
 let _deepseek_harness_product_experts_agencyAgents_deleteTeam_parameter_1_strict$schema$value
 const _deepseek_harness_product_experts_agencyAgents_deleteTeam_parameter_1_strict$schema = () => (_deepseek_harness_product_experts_agencyAgents_deleteTeam_parameter_1_strict$schema$value ??= z.number())
+let _deepseek_harness_product_experts_agencyAgents_exportExpert_parameter_0_strict$schema$value
+const _deepseek_harness_product_experts_agencyAgents_exportExpert_parameter_0_strict$schema = () => (_deepseek_harness_product_experts_agencyAgents_exportExpert_parameter_0_strict$schema$value ??= z.string())
 let _deepseek_harness_product_experts_agencyAgents_exportTeam_parameter_0_strict$schema$value
 const _deepseek_harness_product_experts_agencyAgents_exportTeam_parameter_0_strict$schema = () => (_deepseek_harness_product_experts_agencyAgents_exportTeam_parameter_0_strict$schema$value ??= z.string())
 let _deepseek_harness_product_experts_agencyAgents_exportTeam_parameter_1_strict$schema$value
@@ -401,6 +457,8 @@ let _deepseek_harness_product_experts_agencyAgents_getPrompt_parameter_0_strict$
 const _deepseek_harness_product_experts_agencyAgents_getPrompt_parameter_0_strict$schema = () => (_deepseek_harness_product_experts_agencyAgents_getPrompt_parameter_0_strict$schema$value ??= z.string())
 let _deepseek_harness_product_experts_agencyAgents_getPrompt_parameter_1_strict$schema$value
 const _deepseek_harness_product_experts_agencyAgents_getPrompt_parameter_1_strict$schema = () => (_deepseek_harness_product_experts_agencyAgents_getPrompt_parameter_1_strict$schema$value ??= z.string())
+let _deepseek_harness_product_experts_agencyAgents_importExpert_parameter_0_strict$schema$value
+const _deepseek_harness_product_experts_agencyAgents_importExpert_parameter_0_strict$schema = () => (_deepseek_harness_product_experts_agencyAgents_importExpert_parameter_0_strict$schema$value ??= z.record(z.string(), z.string()))
 let _deepseek_harness_product_experts_agencyAgents_saveCustomExpert_parameter_0_strict$schema$value
 const _deepseek_harness_product_experts_agencyAgents_saveCustomExpert_parameter_0_strict$schema = () => (_deepseek_harness_product_experts_agencyAgents_saveCustomExpert_parameter_0_strict$schema$value ??= z.strictObject({
   'name': z.string(),
@@ -410,6 +468,9 @@ const _deepseek_harness_product_experts_agencyAgents_saveCustomExpert_parameter_
   'slug': z.union([z.undefined(), z.string()]).optional(),
   'emoji': z.union([z.undefined(), z.string()]).optional(),
   'avatar': z.union([z.undefined(), z.number()]).optional(),
+  'agents': z.union([z.undefined(), z.string()]).optional(),
+  'manifest': z.union([z.undefined(), z.string()]).optional(),
+  'resources': z.union([z.undefined(), z.record(z.string(), z.string())]).optional(),
 }))
 let _deepseek_harness_product_experts_agencyAgents_saveCustomExpert_parameter_1_strict$schema$value
 const _deepseek_harness_product_experts_agencyAgents_saveCustomExpert_parameter_1_strict$schema = () => (_deepseek_harness_product_experts_agencyAgents_saveCustomExpert_parameter_1_strict$schema$value ??= z.boolean())
@@ -427,6 +488,8 @@ const _deepseek_harness_product_experts_agencyAgents_saveTeam_parameter_0_strict
   'expertSlug': z.string(),
   'duty': z.string(),
   'instructions': z.string(),
+  'expertVersion': z.union([z.undefined(), z.string()]).optional(),
+  'expertSha256': z.union([z.undefined(), z.string()]).optional(),
 })),
   'examples': z.array(z.string()),
   'coordinatorMode': z.union([z.literal("custom"), z.literal("template")]),
@@ -499,9 +562,9 @@ export const TYPERT_REMOTE = createTypertRemoteInfo({
         typeSymbol: '@deepseek-harness/product-experts/types#CreationEditorData',
         create: _deepseek_harness_product_experts_agencyAgents_claimCreation_result$schema,
         description: 'Draft and current revision-checked editing inputs; rejects if unavailable.',
-        jsonSchemaError: 'typert tool schema: unsupported undefined value',
+        jsonSchemaError: 'typert tool schema: selected dictionaries require string keys and unconstrained JSON values',
       },
-      sourceLocation: {"file":"packages/deepseek-harness-product/experts/src/remote.ts","line":54,"column":9},
+      sourceLocation: {"file":"packages/deepseek-harness-product/experts/src/remote.ts","line":55,"column":9},
     },
     'agencyAgents/deleteCustomExpert': {
       service: 'agencyAgents',
@@ -549,9 +612,9 @@ export const TYPERT_REMOTE = createTypertRemoteInfo({
         typeSymbol: '@deepseek-harness/product-experts/types#CatalogSnapshot',
         create: _deepseek_harness_product_experts_agencyAgents_deleteCustomExpert_result$schema,
         description: '删除完成后的最新目录。',
-        jsonSchema: {"type":"object","properties":{"experts":{"type":"array","items":{"type":"object","properties":{"slug":{"type":"string"},"name":{"type":"string"},"nameEn":{"type":"string"},"description":{"type":"string"},"descriptionEn":{"type":"string"},"emoji":{"type":"string"},"division":{"type":"string"},"divisionZh":{"type":"string"},"custom":{"type":"boolean"},"company":{"type":"boolean","enum":[false,true]},"teamMember":{"type":"boolean","enum":[false,true]},"conflict":{"type":"boolean","enum":[false,true]},"avatar":{"type":"number"}},"required":["slug","name","nameEn","description","descriptionEn","emoji","division","divisionZh","custom"],"additionalProperties":true}},"enabled":{"type":"array","items":{"type":"string"}},"revision":{"type":"number"}},"required":["experts","enabled","revision"],"additionalProperties":true},
+        jsonSchema: {"type":"object","properties":{"experts":{"type":"array","items":{"type":"object","properties":{"slug":{"type":"string"},"name":{"type":"string"},"nameEn":{"type":"string"},"description":{"type":"string"},"descriptionEn":{"type":"string"},"emoji":{"type":"string"},"division":{"type":"string"},"divisionZh":{"type":"string"},"custom":{"type":"boolean"},"packageVersion":{"type":"string"},"packageSha256":{"type":"string"},"company":{"type":"boolean","enum":[false,true]},"teamMember":{"type":"boolean","enum":[false,true]},"conflict":{"type":"boolean","enum":[false,true]},"avatar":{"type":"number"}},"required":["slug","name","nameEn","description","descriptionEn","emoji","division","divisionZh","custom"],"additionalProperties":true}},"enabled":{"type":"array","items":{"type":"string"}},"revision":{"type":"number"}},"required":["experts","enabled","revision"],"additionalProperties":true},
       },
-      sourceLocation: {"file":"packages/deepseek-harness-product/experts/src/remote.ts","line":237,"column":9},
+      sourceLocation: {"file":"packages/deepseek-harness-product/experts/src/remote.ts","line":260,"column":9},
     },
     'agencyAgents/deleteTeam': {
       service: 'agencyAgents',
@@ -601,11 +664,44 @@ export const TYPERT_REMOTE = createTypertRemoteInfo({
         description: '删除后的专家团快照。',
         jsonSchemaError: 'typert tool schema: selected dictionaries require string keys and unconstrained JSON values',
       },
-      sourceLocation: {"file":"packages/deepseek-harness-product/experts/src/remote.ts","line":164,"column":9},
+      sourceLocation: {"file":"packages/deepseek-harness-product/experts/src/remote.ts","line":187,"column":9},
+    },
+    'agencyAgents/exportExpert': {
+      service: 'agencyAgents',
+      description: 'Export the complete selected package, including binary resources.',
+      invocation: { kind: 'direct' },
+      parameters: [
+        {
+          name: 'slug',
+          description: 'Selected expert identifier.',
+          source: 'json',
+          codec: {
+            mode: 'strict',
+            typeSymbol: '@deepseek-harness/product-experts#agencyAgents/exportExpert:slug',
+            create: _deepseek_harness_product_experts_agencyAgents_exportExpert_parameter_0$schema,
+            jsonSchema: {"type":"string"},
+          },
+          strictCodec: {
+            mode: 'strict',
+            typeSymbol: '@deepseek-harness/product-experts#agencyAgents/exportExpert:slug',
+            create: _deepseek_harness_product_experts_agencyAgents_exportExpert_parameter_0_strict$schema,
+            jsonSchema: {"type":"string"},
+          },
+        },
+      ],
+      cancellation: { parameter: 'signal' },
+      result: {
+        mode: 'strict',
+        typeSymbol: '@deepseek-harness/product-experts#agencyAgents/exportExpert:result',
+        create: _deepseek_harness_product_experts_agencyAgents_exportExpert_result$schema,
+        description: 'Complete package and catalog metadata.',
+        jsonSchemaError: 'typert tool schema: selected dictionaries require string keys and unconstrained JSON values',
+      },
+      sourceLocation: {"file":"packages/deepseek-harness-product/experts/src/remote.ts","line":84,"column":9},
     },
     'agencyAgents/exportTeam': {
       service: 'agencyAgents',
-      description: 'Export one saved personal team with concrete member personas; no private slug escapes.',
+      description: 'Export one saved team with immutable references to published company experts.',
       invocation: { kind: 'direct' },
       parameters: [
         {
@@ -651,7 +747,7 @@ export const TYPERT_REMOTE = createTypertRemoteInfo({
         description: 'Resource key and Base64-encoded files for company review.',
         jsonSchemaError: 'typert tool schema: selected dictionaries require string keys and unconstrained JSON values',
       },
-      sourceLocation: {"file":"packages/deepseek-harness-product/experts/src/remote.ts","line":93,"column":9},
+      sourceLocation: {"file":"packages/deepseek-harness-product/experts/src/remote.ts","line":120,"column":9},
     },
     'agencyAgents/getCatalog': {
       service: 'agencyAgents',
@@ -682,9 +778,9 @@ export const TYPERT_REMOTE = createTypertRemoteInfo({
         typeSymbol: '@deepseek-harness/product-experts/types#CatalogSnapshot',
         create: _deepseek_harness_product_experts_agencyAgents_getCatalog_result$schema,
         description: '当前个人和团队专家目录。',
-        jsonSchema: {"type":"object","properties":{"experts":{"type":"array","items":{"type":"object","properties":{"slug":{"type":"string"},"name":{"type":"string"},"nameEn":{"type":"string"},"description":{"type":"string"},"descriptionEn":{"type":"string"},"emoji":{"type":"string"},"division":{"type":"string"},"divisionZh":{"type":"string"},"custom":{"type":"boolean"},"company":{"type":"boolean","enum":[false,true]},"teamMember":{"type":"boolean","enum":[false,true]},"conflict":{"type":"boolean","enum":[false,true]},"avatar":{"type":"number"}},"required":["slug","name","nameEn","description","descriptionEn","emoji","division","divisionZh","custom"],"additionalProperties":true}},"enabled":{"type":"array","items":{"type":"string"}},"revision":{"type":"number"}},"required":["experts","enabled","revision"],"additionalProperties":true},
+        jsonSchema: {"type":"object","properties":{"experts":{"type":"array","items":{"type":"object","properties":{"slug":{"type":"string"},"name":{"type":"string"},"nameEn":{"type":"string"},"description":{"type":"string"},"descriptionEn":{"type":"string"},"emoji":{"type":"string"},"division":{"type":"string"},"divisionZh":{"type":"string"},"custom":{"type":"boolean"},"packageVersion":{"type":"string"},"packageSha256":{"type":"string"},"company":{"type":"boolean","enum":[false,true]},"teamMember":{"type":"boolean","enum":[false,true]},"conflict":{"type":"boolean","enum":[false,true]},"avatar":{"type":"number"}},"required":["slug","name","nameEn","description","descriptionEn","emoji","division","divisionZh","custom"],"additionalProperties":true}},"enabled":{"type":"array","items":{"type":"string"}},"revision":{"type":"number"}},"required":["experts","enabled","revision"],"additionalProperties":true},
       },
-      sourceLocation: {"file":"packages/deepseek-harness-product/experts/src/remote.ts","line":190,"column":9},
+      sourceLocation: {"file":"packages/deepseek-harness-product/experts/src/remote.ts","line":213,"column":9},
     },
     'agencyAgents/getCustomExpert': {
       service: 'agencyAgents',
@@ -715,9 +811,9 @@ export const TYPERT_REMOTE = createTypertRemoteInfo({
         typeSymbol: '@deepseek-harness/product-experts/types#CustomExpertInput',
         create: _deepseek_harness_product_experts_agencyAgents_getCustomExpert_result$schema,
         description: '可编辑的个人专家正文和元数据。',
-        jsonSchema: {"type":"object","properties":{"name":{"type":"string"},"description":{"type":"string"},"division":{"type":"string"},"prompt":{"type":"string"},"slug":{"type":"string"},"emoji":{"type":"string"},"avatar":{"type":"number"}},"required":["name","description","division","prompt"],"additionalProperties":true},
+        jsonSchemaError: 'typert tool schema: selected dictionaries require string keys and unconstrained JSON values',
       },
-      sourceLocation: {"file":"packages/deepseek-harness-product/experts/src/remote.ts","line":206,"column":9},
+      sourceLocation: {"file":"packages/deepseek-harness-product/experts/src/remote.ts","line":229,"column":9},
     },
     'agencyAgents/getPrompt': {
       service: 'agencyAgents',
@@ -767,7 +863,7 @@ export const TYPERT_REMOTE = createTypertRemoteInfo({
         description: '经当前访问检查读取的专家正文。',
         jsonSchema: {"type":"object","properties":{"prompt":{"type":"string"}},"required":["prompt"],"additionalProperties":true},
       },
-      sourceLocation: {"file":"packages/deepseek-harness-product/experts/src/remote.ts","line":267,"column":9},
+      sourceLocation: {"file":"packages/deepseek-harness-product/experts/src/remote.ts","line":290,"column":9},
     },
     'agencyAgents/getTeams': {
       service: 'agencyAgents',
@@ -783,7 +879,40 @@ export const TYPERT_REMOTE = createTypertRemoteInfo({
         description: '个人专家团和成员目录。',
         jsonSchemaError: 'typert tool schema: selected dictionaries require string keys and unconstrained JSON values',
       },
-      sourceLocation: {"file":"packages/deepseek-harness-product/experts/src/remote.ts","line":78,"column":9},
+      sourceLocation: {"file":"packages/deepseek-harness-product/experts/src/remote.ts","line":105,"column":9},
+    },
+    'agencyAgents/importExpert': {
+      service: 'agencyAgents',
+      description: 'Import complete package bytes into a personal draft; saving remains explicit.',
+      invocation: { kind: 'direct' },
+      parameters: [
+        {
+          name: 'files',
+          description: 'Complete base64-encoded package files.',
+          source: 'json',
+          codec: {
+            mode: 'strict',
+            typeSymbol: '@deepseek-harness/product-experts#agencyAgents/importExpert:files',
+            create: _deepseek_harness_product_experts_agencyAgents_importExpert_parameter_0$schema,
+            jsonSchemaError: 'typert tool schema: selected dictionaries require string keys and unconstrained JSON values',
+          },
+          strictCodec: {
+            mode: 'strict',
+            typeSymbol: '@deepseek-harness/product-experts#agencyAgents/importExpert:files',
+            create: _deepseek_harness_product_experts_agencyAgents_importExpert_parameter_0_strict$schema,
+            jsonSchemaError: 'typert tool schema: selected dictionaries require string keys and unconstrained JSON values',
+          },
+        },
+      ],
+      cancellation: { parameter: 'signal' },
+      result: {
+        mode: 'strict',
+        typeSymbol: '@deepseek-harness/product-experts/types#CustomExpertInput',
+        create: _deepseek_harness_product_experts_agencyAgents_importExpert_result$schema,
+        description: 'Editable package draft.',
+        jsonSchemaError: 'typert tool schema: selected dictionaries require string keys and unconstrained JSON values',
+      },
+      sourceLocation: {"file":"packages/deepseek-harness-product/experts/src/remote.ts","line":73,"column":9},
     },
     'agencyAgents/saveCustomExpert': {
       service: 'agencyAgents',
@@ -798,13 +927,13 @@ export const TYPERT_REMOTE = createTypertRemoteInfo({
             mode: 'strict',
             typeSymbol: '@deepseek-harness/product-experts/types#CustomExpertInput',
             create: _deepseek_harness_product_experts_agencyAgents_saveCustomExpert_parameter_0$schema,
-            jsonSchema: {"type":"object","properties":{"name":{"type":"string"},"description":{"type":"string"},"division":{"type":"string"},"prompt":{"type":"string"},"slug":{"type":"string"},"emoji":{"type":"string"},"avatar":{"type":"number"}},"required":["name","description","division","prompt"],"additionalProperties":true},
+            jsonSchemaError: 'typert tool schema: selected dictionaries require string keys and unconstrained JSON values',
           },
           strictCodec: {
             mode: 'strict',
             typeSymbol: '@deepseek-harness/product-experts/types#CustomExpertInput',
             create: _deepseek_harness_product_experts_agencyAgents_saveCustomExpert_parameter_0_strict$schema,
-            jsonSchema: {"type":"object","properties":{"name":{"type":"string"},"description":{"type":"string"},"division":{"type":"string"},"prompt":{"type":"string"},"slug":{"type":"string"},"emoji":{"type":"string"},"avatar":{"type":"number"}},"required":["name","description","division","prompt"],"additionalProperties":false},
+            jsonSchemaError: 'typert tool schema: selected dictionaries require string keys and unconstrained JSON values',
           },
         },
         {
@@ -848,9 +977,9 @@ export const TYPERT_REMOTE = createTypertRemoteInfo({
         typeSymbol: '@deepseek-harness/product-experts/types#CatalogSnapshot',
         create: _deepseek_harness_product_experts_agencyAgents_saveCustomExpert_result$schema,
         description: '成功提交后的最新目录。',
-        jsonSchema: {"type":"object","properties":{"experts":{"type":"array","items":{"type":"object","properties":{"slug":{"type":"string"},"name":{"type":"string"},"nameEn":{"type":"string"},"description":{"type":"string"},"descriptionEn":{"type":"string"},"emoji":{"type":"string"},"division":{"type":"string"},"divisionZh":{"type":"string"},"custom":{"type":"boolean"},"company":{"type":"boolean","enum":[false,true]},"teamMember":{"type":"boolean","enum":[false,true]},"conflict":{"type":"boolean","enum":[false,true]},"avatar":{"type":"number"}},"required":["slug","name","nameEn","description","descriptionEn","emoji","division","divisionZh","custom"],"additionalProperties":true}},"enabled":{"type":"array","items":{"type":"string"}},"revision":{"type":"number"}},"required":["experts","enabled","revision"],"additionalProperties":true},
+        jsonSchema: {"type":"object","properties":{"experts":{"type":"array","items":{"type":"object","properties":{"slug":{"type":"string"},"name":{"type":"string"},"nameEn":{"type":"string"},"description":{"type":"string"},"descriptionEn":{"type":"string"},"emoji":{"type":"string"},"division":{"type":"string"},"divisionZh":{"type":"string"},"custom":{"type":"boolean"},"packageVersion":{"type":"string"},"packageSha256":{"type":"string"},"company":{"type":"boolean","enum":[false,true]},"teamMember":{"type":"boolean","enum":[false,true]},"conflict":{"type":"boolean","enum":[false,true]},"avatar":{"type":"number"}},"required":["slug","name","nameEn","description","descriptionEn","emoji","division","divisionZh","custom"],"additionalProperties":true}},"enabled":{"type":"array","items":{"type":"string"}},"revision":{"type":"number"}},"required":["experts","enabled","revision"],"additionalProperties":true},
       },
-      sourceLocation: {"file":"packages/deepseek-harness-product/experts/src/remote.ts","line":222,"column":9},
+      sourceLocation: {"file":"packages/deepseek-harness-product/experts/src/remote.ts","line":245,"column":9},
     },
     'agencyAgents/saveTeam': {
       service: 'agencyAgents',
@@ -865,13 +994,13 @@ export const TYPERT_REMOTE = createTypertRemoteInfo({
             mode: 'strict',
             typeSymbol: '@deepseek-harness/product/company-team#TeamInput',
             create: _deepseek_harness_product_experts_agencyAgents_saveTeam_parameter_0$schema,
-            jsonSchema: {"type":"object","properties":{"name":{"type":"string"},"description":{"type":"string"},"tags":{"type":"array","items":{"type":"string"}},"goal":{"type":"string"},"constraints":{"type":"string"},"deliveryRequirements":{"type":"string"},"members":{"type":"array","items":{"type":"object","properties":{"expertSlug":{"type":"string"},"duty":{"type":"string"},"instructions":{"type":"string"}},"required":["expertSlug","duty","instructions"],"additionalProperties":true}},"examples":{"type":"array","items":{"type":"string"}},"coordinatorMode":{"type":"string","enum":["custom","template"]},"coordinatorTemplateId":{"type":"string","enum":["data","general","product","technical","content","research"]},"coordinatorTemplateVersion":{"type":"number","const":1},"coordinatorPrompt":{"type":"string"},"id":{"type":"string"}},"required":["name","description","tags","goal","constraints","deliveryRequirements","members","examples","coordinatorMode","coordinatorTemplateId","coordinatorTemplateVersion","coordinatorPrompt"],"additionalProperties":true},
+            jsonSchema: {"type":"object","properties":{"name":{"type":"string"},"description":{"type":"string"},"tags":{"type":"array","items":{"type":"string"}},"goal":{"type":"string"},"constraints":{"type":"string"},"deliveryRequirements":{"type":"string"},"members":{"type":"array","items":{"type":"object","properties":{"expertSlug":{"type":"string"},"duty":{"type":"string"},"instructions":{"type":"string"},"expertVersion":{"type":"string"},"expertSha256":{"type":"string"}},"required":["expertSlug","duty","instructions"],"additionalProperties":true}},"examples":{"type":"array","items":{"type":"string"}},"coordinatorMode":{"type":"string","enum":["custom","template"]},"coordinatorTemplateId":{"type":"string","enum":["data","general","product","technical","content","research"]},"coordinatorTemplateVersion":{"type":"number","const":1},"coordinatorPrompt":{"type":"string"},"id":{"type":"string"}},"required":["name","description","tags","goal","constraints","deliveryRequirements","members","examples","coordinatorMode","coordinatorTemplateId","coordinatorTemplateVersion","coordinatorPrompt"],"additionalProperties":true},
           },
           strictCodec: {
             mode: 'strict',
             typeSymbol: '@deepseek-harness/product/company-team#TeamInput',
             create: _deepseek_harness_product_experts_agencyAgents_saveTeam_parameter_0_strict$schema,
-            jsonSchema: {"type":"object","properties":{"name":{"type":"string"},"description":{"type":"string"},"tags":{"type":"array","items":{"type":"string"}},"goal":{"type":"string"},"constraints":{"type":"string"},"deliveryRequirements":{"type":"string"},"members":{"type":"array","items":{"type":"object","properties":{"expertSlug":{"type":"string"},"duty":{"type":"string"},"instructions":{"type":"string"}},"required":["expertSlug","duty","instructions"],"additionalProperties":false}},"examples":{"type":"array","items":{"type":"string"}},"coordinatorMode":{"type":"string","enum":["custom","template"]},"coordinatorTemplateId":{"type":"string","enum":["data","general","product","technical","content","research"]},"coordinatorTemplateVersion":{"type":"number","const":1},"coordinatorPrompt":{"type":"string"},"id":{"type":"string"}},"required":["name","description","tags","goal","constraints","deliveryRequirements","members","examples","coordinatorMode","coordinatorTemplateId","coordinatorTemplateVersion","coordinatorPrompt"],"additionalProperties":false},
+            jsonSchema: {"type":"object","properties":{"name":{"type":"string"},"description":{"type":"string"},"tags":{"type":"array","items":{"type":"string"}},"goal":{"type":"string"},"constraints":{"type":"string"},"deliveryRequirements":{"type":"string"},"members":{"type":"array","items":{"type":"object","properties":{"expertSlug":{"type":"string"},"duty":{"type":"string"},"instructions":{"type":"string"},"expertVersion":{"type":"string"},"expertSha256":{"type":"string"}},"required":["expertSlug","duty","instructions"],"additionalProperties":false}},"examples":{"type":"array","items":{"type":"string"}},"coordinatorMode":{"type":"string","enum":["custom","template"]},"coordinatorTemplateId":{"type":"string","enum":["data","general","product","technical","content","research"]},"coordinatorTemplateVersion":{"type":"number","const":1},"coordinatorPrompt":{"type":"string"},"id":{"type":"string"}},"required":["name","description","tags","goal","constraints","deliveryRequirements","members","examples","coordinatorMode","coordinatorTemplateId","coordinatorTemplateVersion","coordinatorPrompt"],"additionalProperties":false},
           },
         },
         {
@@ -917,7 +1046,7 @@ export const TYPERT_REMOTE = createTypertRemoteInfo({
         description: '保存后的专家团快照。',
         jsonSchemaError: 'typert tool schema: selected dictionaries require string keys and unconstrained JSON values',
       },
-      sourceLocation: {"file":"packages/deepseek-harness-product/experts/src/remote.ts","line":133,"column":9},
+      sourceLocation: {"file":"packages/deepseek-harness-product/experts/src/remote.ts","line":156,"column":9},
     },
     'agencyAgents/setEnabled': {
       service: 'agencyAgents',
@@ -967,7 +1096,7 @@ export const TYPERT_REMOTE = createTypertRemoteInfo({
         description: '已提交的启用选择及修订号。',
         jsonSchema: {"type":"object","properties":{"enabled":{"type":"array","items":{"type":"string"}},"revision":{"type":"number"}},"required":["enabled","revision"],"additionalProperties":true},
       },
-      sourceLocation: {"file":"packages/deepseek-harness-product/experts/src/remote.ts","line":252,"column":9},
+      sourceLocation: {"file":"packages/deepseek-harness-product/experts/src/remote.ts","line":275,"column":9},
     },
     'agencyAgents/setTeamEnabled': {
       service: 'agencyAgents',
@@ -1034,7 +1163,7 @@ export const TYPERT_REMOTE = createTypertRemoteInfo({
         description: '修改后的专家团快照。',
         jsonSchemaError: 'typert tool schema: selected dictionaries require string keys and unconstrained JSON values',
       },
-      sourceLocation: {"file":"packages/deepseek-harness-product/experts/src/remote.ts","line":149,"column":9},
+      sourceLocation: {"file":"packages/deepseek-harness-product/experts/src/remote.ts","line":172,"column":9},
     },
   },
 }, z)

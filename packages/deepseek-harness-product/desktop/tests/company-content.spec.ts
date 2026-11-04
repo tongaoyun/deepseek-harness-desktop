@@ -1,3 +1,4 @@
+import { teamFixture } from '../../product/tests/content-fixtures.ts'
 import { mkdtemp, readFile, rm, readdir, rename, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -48,22 +49,6 @@ it('rejects directory case aliases before creating employee content on disk', as
   await expect(installCompanyContent(root, 'employee-a', { version: '1.0.0', sha256: contentDigest(files), files },
     new AbortController().signal)).rejects.toThrow('目录大小写冲突')
   expect(await readdir(root)).toEqual([])
-})
-
-it('rejects expert IDs that collide with embedded team members before installing content', async () => {
-  const root = await fixture(), signal = new AbortController().signal
-  const document = await readFile(new URL('../../experts/tests/fixtures/team.json', import.meta.url), 'utf8')
-  const team = { 'teams/orders.json': Buffer.from(document).toString('base64') }
-  const expert = Buffer.from('---\nname: Standalone advisor\ndescription: Review orders\n---\nStandalone instructions.').toString('base64')
-  for (const member of ['member-1', 'member-2']) {
-    const files = { ...team, [`experts/operations/team-orders-${member}.md`]: expert }
-    await expect(installCompanyContent(root, 'employee', { version: '1.0.0', sha256: contentDigest(files), files }, signal))
-      .rejects.toThrow('公司专家标识与专家团成员冲突')
-    expect(await readdir(root)).toEqual([])
-  }
-  const files = { ...team, 'experts/operations/team-orders-member-8.md': expert, 'experts/operations/team-other-member-1.md': expert }
-  const installed = await installCompanyContent(root, 'employee', { version: '1.0.0', sha256: contentDigest(files), files }, signal)
-  expect(await readFile(join(installed.expertsRoot, 'operations/team-orders-member-8.md'), 'utf8')).toContain('Standalone instructions.')
 })
 
 it('rejects symlink cache roots', async () => {
@@ -118,23 +103,19 @@ it('reads each cache file once per check and still detects later changes', async
   await expect(restoreCompanyContent(root, 'a', value.version, value.sha256, signal)).rejects.toThrow('损坏')
 })
 
-it('reuses identical content under a new version without rewriting the immutable cache', async () => {
-  const root = await fixture(), signal = new AbortController().signal
-  const value = release()
+it('refuses to reuse a file cache under a different version coordinate', async () => {
+  const root = await fixture(), signal = new AbortController().signal, value = release()
   const first = await installCompanyContent(root, 'a', value, signal)
-  const next = await installCompanyContent(root, 'a', { ...value, version: '2.0.0' }, signal)
-  expect(next).toEqual({ ...first, version: '2.0.0' })
-  expect(await restoreCompanyContent(root, 'a', next.version, next.sha256, signal)).toEqual(next)
+  await expect(installCompanyContent(root, 'a', { ...value, version: '2.0.0' }, signal)).rejects.toThrow('损坏')
+  expect(await restoreCompanyContent(root, 'a', first.version, first.sha256, signal)).toEqual(first)
 })
 
 it('restores the entire team file from its immutable release without replacing old content', async () => {
   const root = await fixture(), signal = new AbortController().signal
-  const document = await readFile(new URL('../../experts/tests/fixtures/team.json', import.meta.url), 'utf8')
-  const files = { 'teams/orders.json': Buffer.from(document).toString('base64') }
-  const first = await installCompanyContent(root, 'alice', { version: '1.0.0', sha256: contentDigest(files), files }, signal)
-  const updated = { 'teams/orders.json': Buffer.from(document.replaceAll('固定成员说明', '新版成员说明')).toString('base64') }
-  const latest = await installCompanyContent(root, 'alice', { version: '2.0.0', sha256: contentDigest(updated), files: updated }, signal)
+  const original = await teamFixture(), updated = await teamFixture('2.0.0', '新版成员说明')
+  const first = await installCompanyContent(root, 'alice', { version: '1.0.0', files: original.files, sha256: contentDigest(original.files) }, signal)
+  const latest = await installCompanyContent(root, 'alice', { version: '2.0.0', files: updated.files, sha256: contentDigest(updated.files) }, signal)
   expect(first.expertsRoot).not.toBe(latest.expertsRoot)
   expect(await restoreCompanyContent(root, 'alice', first.version, first.sha256, signal)).toEqual(first)
-  expect(await readFile(join(first.expertsRoot, '..', 'teams/orders.json'), 'utf8')).toBe(document)
+  expect(await readFile(join(first.expertsRoot, '..', 'teams/orders.json'), 'utf8')).toBe(Buffer.from(original.files['teams/orders.json']!, 'base64').toString('utf8'))
 })

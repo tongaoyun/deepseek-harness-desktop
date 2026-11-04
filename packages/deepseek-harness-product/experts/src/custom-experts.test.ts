@@ -1,3 +1,4 @@
+import { emptyCompanySource, testPackageStore } from '../tests/packages.ts'
 import { createTestContext } from '../tests/context.ts'
 import { createActivationProbe } from '../tests/activation-probe.ts'
 import { LibraryEditorFooter } from './client/library-ui.tsx'
@@ -50,9 +51,11 @@ function volatileConfig(settings: TestSettings) {
     enabled?: string[];
     customExperts?: unknown[];
     customTeams?: unknown[];
-    enabledTeams?: string[];
+    enabledTeams?: string[]; personalLibraries?: Record<string, unknown>; personalContentClaimed?: boolean;
   };
   return {
+    personalLibraries: { get: () => read().personalLibraries ?? {} },
+    personalContentClaimed: { get: () => read().personalContentClaimed ?? false },
     enabled: { get: () => read().enabled ?? [] },
     customExperts: { get: () => read().customExperts ?? [] },
     customTeams: { get: () => read().customTeams ?? [] },
@@ -100,6 +103,7 @@ function setup(
     },
     DEFAULT_DIVISIONS,
     () => "zh",
+    testPackageStore(),
   );
   return { settings, library };
 }
@@ -189,7 +193,7 @@ describe("自定义专家 Host 存储", () => {
       ),
     ).rejects.toThrow("不存在");
     await expect(library.deleteCustom(builtin.slug, revision)).rejects.toThrow(
-      "不可直接编辑",
+      "不存在",
     );
   });
 
@@ -317,7 +321,8 @@ describe("真实 Host 与 Remote 集成", () => {
         },
       },
     });
-    apply(ctx, { root: "", provider: "spawn", divisions: ["engineering"], ...volatileConfig(settings) } as never);
+    services.set('companyContent', await emptyCompanySource());
+    await apply(ctx, { root: "", provider: "spawn", divisions: ["engineering"], ...volatileConfig(settings) } as never);
     const remote = new AgencyAgentsRemote(ctx);
     const initial = await remote.getCatalog(false, new AbortController().signal);
     await expect(remote.setEnabled(['missing-expert'], initial.revision)).rejects.toThrow();
@@ -325,7 +330,7 @@ describe("真实 Host 与 Remote 集成", () => {
     const saved = await remote.saveCustomExpert(input, true, initial.revision);
     const slug = saved.experts.find((expert) => expert.custom)!.slug;
     expect(await remote.getPrompt(slug, input.division, new AbortController().signal)).toEqual({
-      prompt: input.prompt,
+      prompt: expect.stringContaining(input.prompt),
     });
     expect(
       await tools.get("list_experts")!.execute({ division: input.division }, { agent: undefined }),
@@ -339,7 +344,7 @@ describe("真实 Host 与 Remote 集成", () => {
     expect(starts[0]).toMatchObject({
       label: input.name,
     });
-    expect(probe.sections[0]?.text).toBe(input.prompt);
+    expect(probe.sections[0]?.text).toContain(input.prompt);
     expect(probe.restrictions).toEqual([{ deny: ["summon_expert", "summon_experts", "list_experts", "list_expert_teams", "get_expert_team", "summon_expert_team"] }]);
     expect(probe.listening).toBe(0);
     const disabled = await remote.setEnabled([], saved.revision);
@@ -369,7 +374,7 @@ describe("动态名册异步一致性", () => {
         new Promise<RemoteResult<CatalogSnapshot>>((done) => {
           resolve = done;
         }),
-      getCustomExpert: unused,
+      importExpert: async () => { throw new Error('Unexpected package import') }, exportExpert: async () => { throw new Error('Unexpected package export') }, getCustomExpert: unused,
       saveCustomExpert: unused,
       deleteCustomExpert: unused,
     };
@@ -429,7 +434,8 @@ describe("审查回归", () => {
     expect(snapshot.experts.some(e => e.conflict)).toBe(false);
   });
   it("满额删除释放配额；失败不丢数据", async () => {
-    const records = Array.from({ length: 200 }, (_, i) => ({ ...input, name: `专家${i}`, slug: `custom-00000000-0000-4000-8000-${String(i).padStart(12, '0')}` }));
+    const { prompt: _prompt, ...metadata } = input;
+    const records = Array.from({ length: 200 }, (_, i) => ({ ...metadata, packageVersion: '0.0.0-' + 'a'.repeat(56), packageSha256: 'a'.repeat(64), name: `专家${i}`, slug: `custom-00000000-0000-4000-8000-${String(i).padStart(12, '0')}` }));
     const { library, settings } = setup({ 'agency-agents': { enabled: [records[0]!.slug], customExperts: records } });
     await expect(library.saveCustom(input, true, 0)).rejects.toThrow();
     settings.fail = true;
@@ -465,9 +471,10 @@ describe("审查回归", () => {
 
 describe("兼容与恢复入口", () => {
   it("中文和英文校验保持对应语言，严格拒绝伪 UUID", () => {
-    const record = { ...input, slug: 'custom-00000000-0000-4000-8000-000000000001' };
+    const { prompt: _prompt, ...metadata } = input;
+    const record = { ...metadata, packageVersion: '0.0.0-' + 'a'.repeat(56), packageSha256: 'a'.repeat(64), slug: 'custom-00000000-0000-4000-8000-000000000001' };
     expect(() => validateAgencySettings({ enabled: [], customExperts: [record, { ...record, slug: 'custom-00000000-0000-4000-8000-000000000002' }] }, 'en')).toThrow('already in use');
-    expect(customExpertInputSchema.safeParse({ ...input, slug: 'custom-' + 'f'.repeat(36) }).success).toBe(false);
+    expect(customExpertInputSchema.safeParse({ ...input, slug: '../invalid' }).success).toBe(false);
   });
   it("自定义搜索不匹配内部 custom slug，名称仍可搜索", () => {
     const expert = { ...builtin, slug: 'custom-00000000-0000-4000-8000-000000000001', divisionEn: 'Engineering' };
@@ -514,14 +521,15 @@ describe("名册写入回执顺序", () => {
 
 
 describe("编辑冲突核对", () => {
+  const unused = (): Promise<never> => Promise.reject(new Error('Unexpected mutation'));
   const slug = "custom-00000000-0000-4000-8000-000000000095";
   const latest = { ...input, slug, prompt: "其他窗口的修改" };
   const snapshot: CatalogSnapshot = { experts: [{ ...builtin, slug, custom: true }], enabled: [], revision: 2 };
   it("读取最新内容后，保留草稿并采用最新启停状态，直到用户另行保存", async () => {
-    const remote = {
+    const remote: AgencyCatalogRemote = {
       getCatalog: async () => ({ ok: true as const, value: snapshot }),
-      getCustomExpert: async () => ({ ok: true as const, value: latest }),
-    } as unknown as AgencyCatalogRemote;
+      importExpert: unused, exportExpert: unused, saveCustomExpert: unused, deleteCustomExpert: unused, getCustomExpert: async () => ({ ok: true as const, value: latest }),
+    };
     const review = await loadEditorReview(remote, slug, "zh");
     const draft = { ...latest, prompt: "我的未保存输入" };
     expect(continueEditorReview(review, draft, false)).toEqual({ expert: draft, enabled: false, revision: 2 });
@@ -530,10 +538,10 @@ describe("编辑冲突核对", () => {
   });
   it("正文读取期间再次写入时，拒绝使用混合版本", async () => {
     let reads = 0;
-    const remote = {
+    const remote: AgencyCatalogRemote = {
       getCatalog: async () => ({ ok: true as const, value: { ...snapshot, revision: ++reads } }),
-      getCustomExpert: async () => ({ ok: true as const, value: latest }),
-    } as unknown as AgencyCatalogRemote;
+      importExpert: unused, exportExpert: unused, saveCustomExpert: unused, deleteCustomExpert: unused, getCustomExpert: async () => ({ ok: true as const, value: latest }),
+    };
     await expect(loadEditorReview(remote, slug, "zh")).rejects.toThrow("其他窗口");
   });
   it("专家已删除时保留内容但不恢复旧标识，只能显式作为新专家继续", async () => {

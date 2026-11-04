@@ -8304,6 +8304,9 @@ importers:
       '@deepseek-harness/product':
         specifier: workspace:*
         version: link:../product
+      fflate:
+        specifier: ^0.8.3
+        version: 0.8.3
       yaml:
         specifier: ^2.8.3
         version: 2.9.0

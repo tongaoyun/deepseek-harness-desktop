@@ -35,7 +35,9 @@ export async function executeTeam(args: {
         const expert = experts.find((e) => e.slug === member.expertSlug && !e.conflict);
         if (!expert || !args.enabled.includes(expert.slug))
             throw new Error(tx("团队成员不存在、冲突或已停用，请修复后重新召唤。"));
-        return { member, expert };
+        if (!member.expertVersion || !member.expertSha256 || member.expertVersion === 'reselect-required')
+            throw new Error(tx("团队成员需要重新选择并保存。"));
+        return { member, expert: { ...expert, packageVersion: member.expertVersion, packageSha256: member.expertSha256 } };
     });
     const collaboration = teamCollaboration(team, args.locale);
     const results: {

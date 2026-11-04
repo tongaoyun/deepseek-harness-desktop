@@ -461,12 +461,12 @@
         {
           "path": "docs/config-catalog.md",
           "before": "bbe0b78a15b3e94a62637f1d4b900aa3bc6cfc11cc065b238197500122333938",
-          "after": "7c23506bf969705c6c5c0c1436d49d5fe9444e2440d865ec768dd82a96fb6535"
+          "after": "97de555e6cdf979db7666718a37d606d45eaf78c3e91d96c08c8db29f134117c"
         },
         {
           "path": "docs/config-catalog.zh.md",
           "before": "437bea12caa4ffc221c9f61db4ecaca058dd2a9e5f34bd79568697b1341ad4af",
-          "after": "66de38d1c9cc9b344a816b0c01e3b176632aadd71346d65140ec3b9aa12ee154"
+          "after": "e7409d859e8b46affb9797eae427c542fb8df88d6d69c7fd50afa46eb842ac06"
         },
         {
           "path": "docs/development.i18n.yaml",
@@ -612,6 +612,21 @@
           "path": "docs/upgrade-guide/v0.2.2-alpha.2/reasoning-body-props/guide.zh.md",
           "before": null,
           "after": "bc0d2090485ba02f53f553399e6b89688315f8a117e00c4fe2841ec97bed2580"
+        },
+        {
+          "path": "docs/upgrade-guide/v0.2.2-alpha.3/company-content-agentspec/guide.i18n.yaml",
+          "before": null,
+          "after": "5cfaf8f2007236d7b8564e01de07b97d11ae474ea84a93633ea81d7e0ba48b8c"
+        },
+        {
+          "path": "docs/upgrade-guide/v0.2.2-alpha.3/company-content-agentspec/guide.md",
+          "before": null,
+          "after": "60c1fa264fa0022b06a38253f66f8313136ac92ecb6262b08e9ce2c66009c89e"
+        },
+        {
+          "path": "docs/upgrade-guide/v0.2.2-alpha.3/company-content-agentspec/guide.zh.md",
+          "before": null,
+          "after": "eeed921f183e69c7585d7b0bb4998dd04f1b7443d4ecd9f540e0a3ca68407095"
         },
         {
           "path": "package.json",
@@ -1546,7 +1561,7 @@
         {
           "path": "pnpm-lock.yaml",
           "before": "aa1293f2e8d3ee82cb3cfcb0e65ba8a0ef73ab80fad4c35d7ed2f7c67b95a625",
-          "after": "baca23f377234ae98fbd851d5be9aa123938fd633c3d4a282c714faaeacbb453"
+          "after": "1d8fb203ec3e41cfa11605635b7ef223ec8b6493bce98645e483bc5c71e4c98c"
         },
         {
           "path": "scripts/build.spec.ts",

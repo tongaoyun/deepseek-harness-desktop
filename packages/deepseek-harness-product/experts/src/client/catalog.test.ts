@@ -7,7 +7,7 @@ import { ExpertCatalog } from './catalog.ts'
 function fixture() {
   const getCatalog = vi.fn<AgencyCatalogRemote['getCatalog']>()
   const unused = async (): Promise<never> => { throw new Error('Unexpected catalog mutation') }
-  const remote: AgencyCatalogRemote = { getCatalog, getCustomExpert: unused,
+  const remote: AgencyCatalogRemote = { getCatalog, importExpert: async () => { throw new Error('Unexpected package import') }, exportExpert: async () => { throw new Error('Unexpected package export') }, getCustomExpert: unused,
     saveCustomExpert: unused, deleteCustomExpert: unused }
   return { remote, getCatalog, catalog: new ExpertCatalog(remote) }
 }

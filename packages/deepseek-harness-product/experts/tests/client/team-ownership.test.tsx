@@ -25,7 +25,7 @@ function fixture() {
     nameEn: member.expertSlug, description: 'Review', descriptionEn: 'Review', division: 'engineering',
     divisionZh: '研发', emoji: '🔎', custom: false })), enabled: original.enabledExperts, revision: 1 }
   const getCatalog = vi.fn<TeamRemote['getCatalog']>().mockResolvedValue({ ok: true, value: catalog })
-  const remote: TeamRemote = { getTeams, setTeamEnabled, getCatalog, getCustomExpert: unused,
+  const remote: TeamRemote = { getTeams, setTeamEnabled, getCatalog, importExpert: async () => { throw new Error('Unexpected package import') }, exportExpert: async () => { throw new Error('Unexpected package export') }, getCustomExpert: unused,
     saveCustomExpert: unused, deleteCustomExpert: unused, exportTeam: unused, saveTeam: unused, deleteTeam: unused }
   const cache = createExpertClientState(remote)
   cache.catalog.accept(catalog)

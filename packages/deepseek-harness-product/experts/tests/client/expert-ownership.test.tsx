@@ -25,7 +25,7 @@ async function fixture() {
   const save = vi.fn<React.ComponentProps<typeof AgencySettingsPanel>['remote']['saveCustomExpert']>()
     .mockResolvedValue({ ok: true, value: { ...original, revision: 2 } })
   const remote: React.ComponentProps<typeof AgencySettingsPanel>['remote'] = { getCatalog, deleteCustomExpert: remove, saveCustomExpert: save,
-    getCustomExpert: async () => ({ ok: true, value: { slug: expert.slug, name: expert.name, description: expert.description,
+    importExpert: async () => { throw new Error('Unexpected package import') }, exportExpert: async () => { throw new Error('Unexpected package export') }, getCustomExpert: async () => ({ ok: true, value: { slug: expert.slug, name: expert.name, description: expert.description,
       emoji: expert.emoji, avatar: expert.avatar, division: expert.division, prompt: 'Review with evidence.' } }),
     getTeams: async () => ({ ok: true, value: { teams: [], enabledTeams: [], enabledExperts: [], revision: 1 } }),
     setEnabled: unused, getPrompt: unused }
