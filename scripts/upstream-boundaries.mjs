@@ -21,6 +21,7 @@ const owned = new Set(['UPSTREAM_COMMIT', 'UPSTREAM_TAG', 'UPSTREAM_REPOSITORY',
 
 export function productOwned(path) {
   return productRoots.some(root => path.startsWith(root)) || owned.has(path) || path.startsWith('.gitea/')
+    || path.startsWith('snapshots/session/product-expert-team-delegation/')
     || path.startsWith('apps/web/tests/expected/deepseek-harness-catalog/')
     || path.startsWith('docs/upgrade-guide/v0.2.0-rc.2/product-task-capabilities/')
     || path.startsWith('docs/upgrade-guide/v0.2.0-rc.2/personal-extensions/')

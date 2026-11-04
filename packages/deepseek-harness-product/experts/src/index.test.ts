@@ -64,6 +64,7 @@ function applyOnHost(ctx: Context, config: Parameters<typeof apply>[1]): void {
   // Registration fakes retain the production disposer contract for effect-owned tools.
   const register = ctx.tools.register.bind(ctx.tools)
   Object.assign(ctx.tools, { register: (tool: Parameters<typeof register>[0]) => { const dispose = register(tool); return typeof dispose === 'function' ? dispose : () => {} } })
+  Object.assign(ctx.tools, { guard: () => () => {} })
   if (typeof ctx.effect !== 'function') Object.assign(ctx, { effect: (setup: () => unknown) => { setup(); return () => {} } })
   if (typeof ctx.get !== 'function') Object.assign(ctx, { get: () => undefined })
   if (typeof ctx.on !== 'function') Object.assign(ctx, { on: () => () => {} })

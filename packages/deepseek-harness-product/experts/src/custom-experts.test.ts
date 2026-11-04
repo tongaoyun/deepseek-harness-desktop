@@ -292,6 +292,7 @@ describe("真实 Host 与 Remote 集成", () => {
       get: (key: string) => services.get(key),
       typert: { register: () => {} },
       tools: {
+        guard: () => () => {},
         register: (tool: {
           name: string;
           execute(args: unknown, exec?: unknown): Promise<unknown>;

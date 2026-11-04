@@ -22,6 +22,12 @@ it('owns only the product GitHub packaging workflow', () => {
   expect(productOwned('.github/workflows/unregistered.yml')).toBe(false)
 })
 
+it('owns the product expert-team snapshot without exempting native or adjacent scenarios', () => {
+  expect(productOwned('snapshots/session/product-expert-team-delegation/session.v4.jsonl')).toBe(true)
+  expect(productOwned('snapshots/session/team-targets/session.v4.jsonl')).toBe(false)
+  expect(productOwned('snapshots/session/product-expert-team-delegation-other/session.v4.jsonl')).toBe(false)
+})
+
 function fixture() {
   const root = mkdtempSync(join(tmpdir(), 'harness-upstream-boundary-'))
   onTestFinished(() =>{  rmSync(root, { recursive: true, force: true }) })

@@ -9,7 +9,8 @@ import type { TeamEngineStatus } from './team-contract.ts';
 /** Native methods consumed by expert teams; the optional service remains Host-owned. */
 export type NativeTeamService = Pick<TeamService,
     'tryMembership' | 'listMembers' | 'spawnTeammate' | 'sendMessage' | 'createTask' | 'updateTask' | 'interrupt'>;
-const delegationTools = new Set(['summon_expert', 'summon_experts', 'list_experts', 'list_expert_teams', 'get_expert_team', 'summon_expert_team', 'spawn_teammate', 'subagent', 'subagent_fork']);
+/** Delegation and roster tools denied to expert-team members in either execution mode. */
+export const delegationTools: ReadonlySet<string> = new Set(['summon_expert', 'summon_experts', 'list_experts', 'list_expert_teams', 'get_expert_team', 'summon_expert_team', 'spawn_teammate', 'subagent', 'subagent_fork', 'workflow']);
 /** 原生队友仍遵守本插件不递归扩团的边界，由宿主工具门禁强制执行。 */
 export function blocksNativeDelegation(service: NativeTeamService | undefined, agent: Agent | undefined, tool: string): boolean {
     if (!agent || !delegationTools.has(tool) || service === undefined)

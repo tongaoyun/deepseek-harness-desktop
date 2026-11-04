@@ -56,6 +56,7 @@ describe('专家团宿主与远端集成', () => {
       get: (key: string) => services.get(key),
       typert: { register: () => {} },
       tools: {
+        guard: () => () => {},
         register: (tool: {
           name: string
           execute(args: unknown, exec?: unknown): Promise<unknown>
