@@ -22,23 +22,16 @@ function authorized() {
   } } })
 }
 
-it('continues browser sign-in when a concurrent refresh invalidates an expired stored session', async () => {
+it('continues browser sign-in after the shared refresh rejects a stored session', async () => {
   let refreshes = 0
   const opened = vi.fn(async (_url: string) => {})
   const bridge = new DeepSeekHarnessProductBridge({ serverUrl: 'https://product.test',
     sessionToken: 'expired-token', initialSession: { authenticated: true, employeeId: 'employee-a',
       expiresAt: String(Date.now() / 1000 + 10) },
-    fetch: async (input, init) => {
+    fetch: async (input) => {
       const url = new Request(input).url
       if (url.endsWith('/session/refresh')) {
-        if (++refreshes === 1) {
-          return new Promise<Response>((_resolve, reject) => {
-            init?.signal?.addEventListener('abort', () => {
-              const reason: unknown = init.signal?.reason
-              reject(reason instanceof Error ? reason : new DOMException('Request aborted', 'AbortError'))
-            }, { once: true })
-          })
-        }
+        refreshes++
         return Response.json({ success: false, errCode: 'EMPLOYEE_UNAUTHORIZED', errMessage: 'Expired session' }, { status: 401 })
       }
       if (url.endsWith('/authorization-requests')) return authorization()
@@ -47,7 +40,7 @@ it('continues browser sign-in when a concurrent refresh invalidates an expired s
     } })
   try {
     await expect(ensureDingTalkSession(bridge, opened, { pollMs: 0 })).resolves.toMatchObject({ authenticated: true, employeeId: 'employee-a' })
-    expect(refreshes).toBe(2)
+    expect(refreshes).toBe(1)
     expect(opened).toHaveBeenCalledExactlyOnceWith('https://login.test/dingtalk')
   } finally { await bridge.dispose() }
 })

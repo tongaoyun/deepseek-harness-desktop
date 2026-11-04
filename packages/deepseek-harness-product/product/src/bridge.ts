@@ -218,7 +218,8 @@ export class DeepSeekHarnessProductBridge {
   /** Validate and dispatch one allowlisted product operation.
    * @param method - Candidate operation name.
    * @param payload - Candidate operation payload.
-   * @param signal - Optional cancellation for Host-owned remote work and waiting on a shared session refresh.
+   * @param signal - Optional cancellation for Host-owned work or waiting on refresh;
+   * an issued token rotation still completes for the current employee.
    * @returns The operation result.
    */
   async invoke(method: unknown, payload?: unknown, signal?: AbortSignal): Promise<unknown> {
@@ -268,7 +269,12 @@ export class DeepSeekHarnessProductBridge {
         session: this.session.authenticated ? this.getSession() : null }
     }
     if (method === 'auth.refresh') {
-      await this.refreshEmployeeSession(signal)
+      const lifetime = AbortSignal.any([this.identityLifecycle.signal, ...signal ? [signal] : []])
+      lifetime.throwIfAborted()
+      const cancelled = Promise.withResolvers<never>()
+      using _listener = addAbortListener(lifetime, () => { cancelled.reject(lifetime.reason) })
+      await Promise.race([this.refreshEmployeeSession(), cancelled.promise])
+      lifetime.throwIfAborted()
       return this.session
     }
     if (method === 'catalog.refresh') {
@@ -449,14 +455,13 @@ export class DeepSeekHarnessProductBridge {
     if (remaining <= SESSION_REFRESH_LEAD_SECONDS) await this.refreshEmployeeSession()
   }
 
-  private refreshEmployeeSession(signal?: AbortSignal): Promise<void> {
-    signal?.throwIfAborted()
-    if (signal === undefined && this.sessionRefresh !== undefined) return this.sessionRefresh
+  private refreshEmployeeSession(): Promise<void> {
+    if (this.sessionRefresh !== undefined) return this.sessionRefresh
     if (this.api === undefined || !this.session.authenticated || this.sessionToken === undefined) {
       this.clearSession()
       return Promise.reject(new DeepSeekHarnessApiError(401, 'EMPLOYEE_UNAUTHORIZED', 'Employee authentication is required'))
     }
-    const refreshLifetime = AbortSignal.any([this.identityLifecycle.signal, ...signal ? [signal] : []])
+    const refreshLifetime = this.identityLifecycle.signal
     const tokenBeforeRefresh = this.sessionToken
     const refresh = this.api.refreshSession<unknown>(refreshLifetime).then((result) => {
       refreshLifetime.throwIfAborted()
@@ -486,7 +491,7 @@ export class DeepSeekHarnessProductBridge {
       if (this.sessionRefresh === refresh) this.sessionRefresh = undefined
       this.refreshOperations.delete(refresh)
     })
-    if (signal === undefined) this.sessionRefresh = refresh
+    this.sessionRefresh = refresh
     this.refreshOperations.add(refresh)
     return refresh
   }
