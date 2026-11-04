@@ -7,6 +7,11 @@ import { expertDescriptionSummary } from './package-manifest.ts'
 
 /** Product package access, including complete reference and template files. */
 export interface ExpertPackageSource {
+  /** Read the selected source without mixing published versions or personal package digests.
+   * @param slug - Selected expert identifier.
+   * @param signal - Native request cancellation.
+   * @returns Complete package files and catalog display metadata.
+   */
   read(slug: string, signal: AbortSignal): Promise<{ resourceKey: string; files: Record<string, string>; catalog: Record<string, string> }>
 }
 /** Host-owned package source service. */

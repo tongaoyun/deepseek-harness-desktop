@@ -4838,7 +4838,7 @@ export interface Config {
 
 - `inject`: `tools` · `subagents` · `systemPrompt` · `settings` · `webServer`
 - `refs`: `Volatile` (`@deepseek-ai/cordis`)
-- `source`: [`packages/deepseek-harness-product/experts/src/index.ts:190`](../packages/deepseek-harness-product/experts/src/index.ts)
+- `source`: [`packages/deepseek-harness-product/experts/src/index.ts:189`](../packages/deepseek-harness-product/experts/src/index.ts)
 
 ```ts config-catalog
 /** Plugin config: the persona root, the subagent provider, and the divisions to scan. */
