@@ -616,17 +616,17 @@
         {
           "path": "docs/upgrade-guide/v0.2.2-alpha.3/company-content-agentspec/guide.i18n.yaml",
           "before": null,
-          "after": "5cfaf8f2007236d7b8564e01de07b97d11ae474ea84a93633ea81d7e0ba48b8c"
+          "after": "6c78d340c20cfb9f49ab882de740ac7c599b819ae64a2a9eb28c80ac0cccb79e"
         },
         {
           "path": "docs/upgrade-guide/v0.2.2-alpha.3/company-content-agentspec/guide.md",
           "before": null,
-          "after": "60c1fa264fa0022b06a38253f66f8313136ac92ecb6262b08e9ce2c66009c89e"
+          "after": "d48b48149fad53da254ce482c005a1bc14b1b0a86a4128f24f784e201c0289b4"
         },
         {
           "path": "docs/upgrade-guide/v0.2.2-alpha.3/company-content-agentspec/guide.zh.md",
           "before": null,
-          "after": "eeed921f183e69c7585d7b0bb4998dd04f1b7443d4ecd9f540e0a3ca68407095"
+          "after": "3218f8810dd557967df697be70b6724067722ee161a7fae7e86a17c695b204c5"
         },
         {
           "path": "package.json",

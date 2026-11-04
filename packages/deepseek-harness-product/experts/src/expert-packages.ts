@@ -4,6 +4,7 @@ import { join, dirname } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { agentSpecManifest, agentSpecPrompt, companyContentRelease, contentDigest } from '@deepseek-harness/product/company-content'
 import { customExpertInputSchema, type CustomExpert, type CustomExpertInput } from './expert-contract.ts'
+import { expertPackageManifest } from './package-manifest.ts'
 
 /** Encode an editable AgentSpec package without dropping resource files.
  * @param slug - Immutable package identifier.
@@ -12,13 +13,11 @@ import { customExpertInputSchema, type CustomExpert, type CustomExpertInput } fr
  */
 export function expertPackageFiles(slug: string, input: CustomExpertInput): Record<string, string> {
   const value = customExpertInputSchema.parse(input)
-  const document = value.manifest ? JSON.parse(value.manifest) : { worker: { suggested_name: slug } }
-  const manifest = value.manifest && document.description === value.description ? value.manifest
-    : JSON.stringify({ ...document, description: value.description }, null, 2)
+  const manifest = expertPackageManifest(slug, value.description, value.manifest)
   if (agentSpecManifest(manifest).worker.suggested_name !== slug) throw new Error('AgentSpec 标识与专家不一致')
   const files: Record<string, string> = { [`experts/${slug}/manifest.json`]: Buffer.from(manifest).toString('base64'),
     [`experts/${slug}/config/SOUL.md`]: Buffer.from(value.prompt).toString('base64') }
-  if (value.agents) files[`experts/${slug}/config/AGENTS.md`] = Buffer.from(value.agents).toString('base64')
+  if (value.agents !== undefined) files[`experts/${slug}/config/AGENTS.md`] = Buffer.from(value.agents).toString('base64')
   for (const [path, encoded] of Object.entries(value.resources)) {
     if (['manifest.json', 'config/SOUL.md', 'config/AGENTS.md', '.package-index.json'].includes(path)) throw new Error('附件路径与专家说明冲突')
     files[`experts/${slug}/${path}`] = encoded
@@ -75,7 +74,9 @@ export class ExpertPackageStore {
     const text = (path: string) => new TextDecoder('utf-8', { fatal: true }).decode(Buffer.from(files[prefix + path] ?? '', 'base64'))
     const { packageVersion: _version, packageSha256: _hash, ...metadata } = expert
     const resources = Object.fromEntries(Object.entries(files).filter(([path]) => !['manifest.json', 'config/SOUL.md', 'config/AGENTS.md'].includes(path.slice(prefix.length))).map(([path, value]) => [path.slice(prefix.length), value]))
-    return { ...metadata, prompt: text('config/SOUL.md'), agents: text('config/AGENTS.md'), manifest: text('manifest.json'), resources }
+    return { ...metadata, prompt: text('config/SOUL.md'),
+      ...Object.hasOwn(files, prefix + 'config/AGENTS.md') ? { agents: text('config/AGENTS.md') } : {},
+      manifest: text('manifest.json'), resources }
   }
   /** Compose literal instructions with the resource root.
    * @param expert - Exact expert reference.

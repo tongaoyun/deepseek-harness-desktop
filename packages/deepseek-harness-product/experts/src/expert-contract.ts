@@ -25,7 +25,7 @@ export const customExpertInputSchema = z.object({
   }),
   avatar: z.number().int().min(0).max(35).default(0),
   prompt: z.string().min(1).max(128 * 1024).refine(value => value.trim().length > 0),
-  agents: z.string().max(128 * 1024).default(''),
+  agents: z.string().max(128 * 1024).optional(),
   manifest: z.string().max(128 * 1024).optional(),
   resources: z.record(z.string(), z.string()).default({}),
 }).strict()
@@ -61,7 +61,7 @@ export const expertEditSchema = customExpertInputSchema.extend({ slug: z.string(
 
 const messages = {
   invalid: ['请检查名称、简介、分类和提示词。', 'Check the name, description, category and prompt.'],
-  duplicate: ['专家名称已被使用，请换一个名称。', 'This expert name is already in use. Choose another name.'],
+  duplicate: ['专家名称或标识已被使用，请编辑已有专家，或更换名称和包标识。', 'This expert name or identifier is already in use. Edit the existing expert or choose a different name and package identifier.'],
   unavailable: ['所选专家不存在、已删除或名称冲突，请刷新后重新选择。', 'An expert is missing, deleted or has a name conflict. Refresh and choose again.'],
   missing: ['自定义专家不存在或已删除，请刷新后重试。', 'The custom expert is missing or deleted. Refresh and try again.'],
   readonly: ['共享专家不可直接编辑，请复制到我的专家后修改。', 'Shared experts are read-only. Copy to Mine to edit.'],

@@ -3,6 +3,7 @@ import { lstat, readdir, readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { agentSpecManifest, companyContentRelease, contentDigest } from '@deepseek-harness/product/company-content'
 import { customExpertInputSchema, type CustomExpertInput } from './expert-contract.ts'
+import { expertDescriptionSummary } from './package-manifest.ts'
 
 /** Product package access, including complete reference and template files. */
 export interface ExpertPackageSource {
@@ -24,8 +25,10 @@ export function importExpertPackage(files: Record<string, string>): CustomExpert
   const text = (path: string) => new TextDecoder('utf-8', { fatal: true }).decode(Buffer.from(validated[prefix + path] ?? '', 'base64'))
   const manifest = agentSpecManifest(text('manifest.json'))
   const resources = Object.fromEntries(Object.entries(validated).filter(([path]) => !['manifest.json', 'config/SOUL.md', 'config/AGENTS.md'].includes(path.slice(prefix.length))).map(([path, encoded]) => [path.slice(prefix.length), encoded]))
-  return customExpertInputSchema.parse({ name: manifest.worker.suggested_name.slice(0, 40), description: manifest.description.slice(0, 160),
-    division: 'specialized', prompt: text('config/SOUL.md'), agents: text('config/AGENTS.md'), manifest: text('manifest.json'), resources })
+  return customExpertInputSchema.parse({ name: manifest.worker.suggested_name.slice(0, 40), description: expertDescriptionSummary(manifest.description),
+    division: 'specialized', prompt: text('config/SOUL.md'),
+    ...Object.hasOwn(validated, prefix + 'config/AGENTS.md') ? { agents: text('config/AGENTS.md') } : {},
+    manifest: text('manifest.json'), resources })
 }
 
 /** Read a complete immutable company package without following symbolic links.

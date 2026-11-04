@@ -41,7 +41,7 @@ export function CustomExpertEditor(props: CustomEditorProps): React.ReactElement
   const [initial, setInitial] = React.useState(() => ({
     ...props.expert,
     name: props.expert?.name ?? '', description: props.expert?.description ?? '',
-    division: props.expert?.division ?? 'specialized', prompt: props.expert?.prompt ?? '', agents: props.expert?.agents ?? '', resources: props.expert?.resources ?? {},
+    division: props.expert?.division ?? 'specialized', prompt: props.expert?.prompt ?? '', resources: props.expert?.resources ?? {},
     emoji: props.expert?.emoji || DEFAULT_EXPERT_EMOJI, avatar: props.expert?.avatar ?? 0,
   }))
   const [draft, setDraft] = React.useState(initial)
@@ -86,7 +86,7 @@ export function CustomExpertEditor(props: CustomEditorProps): React.ReactElement
   const continueReview = (useLatest: boolean): void => {
     if (review === null) return;
     const next = continueEditorReview(review, draft, useLatest);
-    setDraft({ ...next.expert, agents: next.expert.agents ?? '', resources: next.expert.resources ?? {}, emoji: next.expert.emoji ?? DEFAULT_EXPERT_EMOJI, avatar: next.expert.avatar ?? 0 });
+    setDraft({ ...next.expert, resources: next.expert.resources ?? {}, emoji: next.expert.emoji ?? DEFAULT_EXPERT_EMOJI, avatar: next.expert.avatar ?? 0 });
     if (review.expert !== undefined) setInitial(customExpertInputSchema.parse(review.expert));
     setRevision(next.revision);
     setEnabled(next.enabled);
@@ -105,9 +105,13 @@ export function CustomExpertEditor(props: CustomEditorProps): React.ReactElement
       const result = await props.remote.importExpert(files, signal)
       signal?.throwIfAborted()
       if (!result.ok) throw result.error
-      const manifest = result.value.manifest ? JSON.parse(result.value.manifest) as Record<string, unknown> : {}
-      if (draft.slug) manifest.worker = { ...(typeof manifest.worker === 'object' && manifest.worker !== null ? manifest.worker : {}), suggested_name: draft.slug }
-      setDraft({ ...result.value, manifest: JSON.stringify(manifest), slug: draft.slug, agents: result.value.agents ?? '', resources: result.value.resources ?? {}, emoji: result.value.emoji ?? DEFAULT_EXPERT_EMOJI, avatar: result.value.avatar ?? 0 })
+      let manifest = result.value.manifest
+      if (draft.slug && manifest) {
+        const document: Record<string, unknown> = JSON.parse(manifest)
+        const worker = typeof document.worker === 'object' && document.worker !== null ? document.worker : {}
+        if (!('suggested_name' in worker) || worker.suggested_name !== draft.slug) manifest = JSON.stringify({ ...document, worker: { ...worker, suggested_name: draft.slug } })
+      }
+      setDraft({ ...result.value, manifest, slug: draft.slug, resources: result.value.resources ?? {}, emoji: result.value.emoji ?? DEFAULT_EXPERT_EMOJI, avatar: result.value.avatar ?? 0 })
     }).catch((cause: unknown) => { if (!signal?.aborted) setError(cause instanceof PackageTransferError ? props.t(cause.key) : cause instanceof Error ? cause.message : String(cause)) })
       .finally(() => { saving.current = false; if (!signal.aborted) setBusy(false) })
   }
@@ -206,7 +210,7 @@ export function CustomExpertEditor(props: CustomEditorProps): React.ReactElement
       'aria-label': props.t('custom.prompt'), placeholder: props.t('custom.promptPlaceholder'),
       onChange: (event: React.ChangeEvent<HTMLTextAreaElement>) => set('prompt', event.currentTarget.value),
     }),
-    label(props.t('custom.agents'), h(Input.TextArea, { value: draft.agents, rows: 5, maxLength: 128 * 1024, disabled: busy, onChange: (event: React.ChangeEvent<HTMLTextAreaElement>) => set('agents', event.currentTarget.value) })),
+    label(props.t('custom.agents'), h(Input.TextArea, { value: draft.agents ?? '', rows: 5, maxLength: 128 * 1024, disabled: busy, onChange: (event: React.ChangeEvent<HTMLTextAreaElement>) => set('agents', event.currentTarget.value) })),
     h('section', { className: 'aag-custom-resources', 'aria-label': props.t('custom.resources') },
       h('div', { className: 'aag-custom-resource-head' },
         h('h3', null, props.t('custom.resources')),

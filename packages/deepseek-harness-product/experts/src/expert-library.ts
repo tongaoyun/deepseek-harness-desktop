@@ -182,6 +182,7 @@ export function createExpertLibrary(
       if (value.slug !== undefined && !state.customExperts.some(item => item.slug === value.slug)) throw customError('missing', locale())
       if (value.slug === undefined && state.customExperts.length >= CUSTOM_EXPERT_LIMIT) throw customError('limit', locale())
       const slug = value.slug ?? (value.manifest ? agentSpecManifest(value.manifest).worker.suggested_name : `custom-${randomUUID()}`)
+      if (value.slug === undefined && state.customExperts.some(item => item.slug === slug)) throw customError('duplicate', locale())
       const { prompt: _prompt, agents: _agents, manifest: _manifest, resources: _resources, ...metadata } = value
       if (!packages) throw new Error('Personal expert package storage is unavailable')
       const packageRef = await packages.save(slug, value)

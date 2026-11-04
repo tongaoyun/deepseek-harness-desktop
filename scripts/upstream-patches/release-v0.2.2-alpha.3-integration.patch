@@ -5090,7 +5090,7 @@ index 0000000000000000000000000000000000000000..9ebc9146c956d184429a3fd6a8ee3d76
 +3. 重新构建扩展，使用每种支持的模型格式验证流式与完成后的渲染、翻译和未翻译视图。
 diff --git a/docs/upgrade-guide/v0.2.2-alpha.3/company-content-agentspec/guide.i18n.yaml b/docs/upgrade-guide/v0.2.2-alpha.3/company-content-agentspec/guide.i18n.yaml
 new file mode 100644
-index 0000000000000000000000000000000000000000..05e042b24e7627dc816b019ec74c1fdb467073de
+index 0000000000000000000000000000000000000000..4cdcc60e83b301665793ea3bfd9c5af7342608fa
 --- /dev/null
 +++ b/docs/upgrade-guide/v0.2.2-alpha.3/company-content-agentspec/guide.i18n.yaml
 @@ -0,0 +1,16 @@
@@ -5105,17 +5105,17 @@ index 0000000000000000000000000000000000000000..05e042b24e7627dc816b019ec74c1fdb
 +  en: 0da208849f37fc2a
 +  zh: 738fe4fabc933167
 +/company-content-and-agentspec-packages/change:
-+  en: 7fb5c8af3f658605
-+  zh: 62cc37b700e683e5
++  en: 851cb6f403b8acfb
++  zh: 8eff742dd07d9968
 +/company-content-and-agentspec-packages/migration:
-+  en: 67a334ca8f791df0
-+  zh: fc1e2665ca758281
++  en: 8334193ec28d938a
++  zh: 8d96b7e5bf1f3d86
 diff --git a/docs/upgrade-guide/v0.2.2-alpha.3/company-content-agentspec/guide.md b/docs/upgrade-guide/v0.2.2-alpha.3/company-content-agentspec/guide.md
 new file mode 100644
-index 0000000000000000000000000000000000000000..db0659dc43fd5b8b85638a9fc7e13f3deca352fa
+index 0000000000000000000000000000000000000000..2276158e2097d187f1ddde40f66017cbc74581a9
 --- /dev/null
 +++ b/docs/upgrade-guide/v0.2.2-alpha.3/company-content-agentspec/guide.md
-@@ -0,0 +1,24 @@
+@@ -0,0 +1,27 @@
 +---
 +kind: upgrade-guide
 +description: Company content uses version indexes and AgentSpec packages, requiring a paired desktop and control-plane upgrade.
@@ -5131,6 +5131,8 @@ index 0000000000000000000000000000000000000000..db0659dc43fd5b8b85638a9fc7e13f3d
 +
 +Personal experts become immutable local packages scoped to the authenticated employee. Native Settings stores their references and display metadata. Personal teams pin member versions; references to removed company experts require a new selection.
 +
++Company team members use a fixed-length digest of the team and expert identifiers. Existing member enablement and personal-team references to those members require a new selection.
++
 +## Migration
 +
 +1. Deploy the matching control plane and upgrade the product desktop together. Earlier desktops receive an explicit update requirement when reading company content.
@@ -5138,14 +5140,15 @@ index 0000000000000000000000000000000000000000..db0659dc43fd5b8b85638a9fc7e13f3d
 +3. Open personal experts and teams, verify their instructions and attachments, and reselect any unavailable company members before saving a team.
 +4. Publish company skills as standard `SKILL.md` packages, experts as AgentSpec packages, then teams whose members are already published. The formal company directory starts empty.
 +5. Start a new conversation to execute company content. Existing conversation history remains readable; conversations bound to the previous company protocol cannot resume execution.
++6. Disable and re-enable previously enabled company teams. If a personal team references a company-team member, select that member again and save. Confirm that all selected members are enabled before summoning the team.
 +
 +See the [company content guide](../../../../apps/product-desktop/docs/company-content.md) for the package formats and publishing operations.
 diff --git a/docs/upgrade-guide/v0.2.2-alpha.3/company-content-agentspec/guide.zh.md b/docs/upgrade-guide/v0.2.2-alpha.3/company-content-agentspec/guide.zh.md
 new file mode 100644
-index 0000000000000000000000000000000000000000..9f24336c407d28f765c591aad9fb84a3420155a1
+index 0000000000000000000000000000000000000000..dd967b3761cc6b173a58d48e0ccf62e53a0e16e6
 --- /dev/null
 +++ b/docs/upgrade-guide/v0.2.2-alpha.3/company-content-agentspec/guide.zh.md
-@@ -0,0 +1,24 @@
+@@ -0,0 +1,27 @@
 +---
 +kind: upgrade-guide
 +description: 公司内容使用版本索引和 AgentSpec 包，要求桌面端与控制中心配套升级。
@@ -5161,6 +5164,8 @@ index 0000000000000000000000000000000000000000..9f24336c407d28f765c591aad9fb84a3
 +
 +个人专家转换为按登录员工隔离的本地不可变包，原生 Settings 保存资源引用及展示信息。个人专家团固定成员版本；已删除公司专家的引用需要重新选择。
 +
++公司专家团成员使用团队与专家标识的固定长度摘要作为内部标识。已有成员启用状态及个人团队对这些成员的引用需要重新选择。
++
 +## 迁移
 +
 +1. 配套部署控制中心并升级产品桌面端。旧桌面端读取公司内容时会收到明确的更新提示。
@@ -5168,6 +5173,7 @@ index 0000000000000000000000000000000000000000..9f24336c407d28f765c591aad9fb84a3
 +3. 打开个人专家和专家团，核对说明与附件；保存团队前重新选择已失效的公司成员。
 +4. 以标准 `SKILL.md` 包发布公司技能，以 AgentSpec 包发布专家，再发布成员均已发布的专家团。正式公司目录初始为空。
 +5. 新建会话执行公司内容。已有会话历史可读取，绑定旧公司协议的会话无法继续执行。
++6. 将已启用的公司专家团关闭后重新开启。个人团队若引用了公司团队成员，重新选择该成员并保存。召唤团队前确认所选成员均已启用。
 +
 +包格式及发布操作见[公司内容说明](../../../../apps/product-desktop/docs/company-content.md)。
 diff --git a/package.json b/package.json

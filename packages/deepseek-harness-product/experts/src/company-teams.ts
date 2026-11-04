@@ -1,4 +1,5 @@
 import { readFile, readdir } from 'node:fs/promises'
+import { createHash } from 'node:crypto'
 import { join } from 'node:path'
 import { publishedTeamDocument } from '@deepseek-harness/product/company-team'
 import type { ExpertTeam } from './team-contract.ts'
@@ -18,7 +19,7 @@ export async function readCompanyTeams(expertsRoot: string): Promise<{
   for (const name of names.sort()) {
     if (!/^[a-z0-9]+(?:-[a-z0-9]+)*\.json$/u.test(name)) throw new Error('专家团文件名无效')
     const key = name.slice(0, -5), value = publishedTeamDocument(await readFile(join(root, name), 'utf8'))
-    const slug = (member: string) => `team-${key}-${member}`
+    const slug = (member: string) => `team-member-${createHash('sha256').update(JSON.stringify([key, member])).digest('hex')}`
     teams.push({ ...value.team, id: `team-shared-${key}`, company: true,
       members: value.team.members.map(member => ({ ...member, expertSlug: slug(member.expertSlug) })) })
     for (const member of value.team.members) {

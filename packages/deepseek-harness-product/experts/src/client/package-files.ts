@@ -2,6 +2,7 @@
 import { unzipSync, zipSync } from 'fflate/browser'
 import { bytesToBase64 } from '@deepseek-ai/dsh-util-crypto'
 import type { CustomExpertInput } from '../expert-contract.ts'
+import { expertPackageManifest } from '../package-manifest.ts'
 
 /** Localized package validation failure displayed by the editor. */
 export class PackageTransferError extends Error {
@@ -65,15 +66,15 @@ export async function importPackageFiles(selection: readonly File[]): Promise<Re
  * @returns Complete base64-encoded package files.
  */
 export function draftPackageFiles(draft: CustomExpertInput): Record<string, string> {
-  const manifest: Record<string, unknown> = draft.manifest ? JSON.parse(draft.manifest) as Record<string, unknown>
-    : { worker: { suggested_name: draft.slug ?? `custom-${crypto.randomUUID()}` }, description: draft.description }
+  const text = expertPackageManifest(draft.slug ?? `custom-${crypto.randomUUID()}`, draft.description, draft.manifest)
+  const manifest: Record<string, unknown> = JSON.parse(text)
   const worker = manifest.worker
   if (typeof worker !== 'object' || worker === null || !('suggested_name' in worker) || typeof worker.suggested_name !== 'string') throw new PackageTransferError('custom.packageInvalid')
   const root = 'experts/' + worker.suggested_name + '/'
   const encode = (text: string) => bytesToBase64(new TextEncoder().encode(text))
   const files = Object.fromEntries(Object.entries(draft.resources ?? {}).map(([path, value]) => [root + path, value]))
-  return { ...files, [root + 'manifest.json']: encode(draft.manifest && manifest.description === draft.description ? draft.manifest : JSON.stringify({ ...manifest, description: draft.description }, null, 2)), [root + 'config/SOUL.md']: encode(draft.prompt),
-    ...draft.agents ? { [root + 'config/AGENTS.md']: encode(draft.agents) } : {} }
+  return { ...files, [root + 'manifest.json']: encode(text), [root + 'config/SOUL.md']: encode(draft.prompt),
+    ...draft.agents !== undefined ? { [root + 'config/AGENTS.md']: encode(draft.agents) } : {} }
 }
 /** Merge attachments atomically, counting replacement bytes and the complete package.
  * @param draft - Current expert fields and resources.

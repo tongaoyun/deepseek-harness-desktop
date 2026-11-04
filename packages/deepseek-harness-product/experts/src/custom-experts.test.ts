@@ -1,6 +1,8 @@
 import { emptyCompanySource, testPackageStore } from '../tests/packages.ts'
 import { createTestContext } from '../tests/context.ts'
 import { createActivationProbe } from '../tests/activation-probe.ts'
+import { expertPackageFiles } from './expert-packages.ts'
+import { importExpertPackage } from './package-transfer.ts'
 import { LibraryEditorFooter } from './client/library-ui.tsx'
 import { loadEditorReview, continueEditorReview } from "./client/editor-review.ts";
 import { describe, expect, it, vi } from "vitest";
@@ -109,6 +111,23 @@ function setup(
 }
 
 describe("自定义专家 Host 存储", () => {
+  it("导入同标识专家不能覆盖已有个人包，显式编辑仍可更新", async () => {
+    const { library } = setup();
+    const imported = importExpertPackage(expertPackageFiles('order-expert', {
+      ...input, manifest: JSON.stringify({ worker: { suggested_name: 'order-expert' }, description: input.description }),
+      resources: { 'references/说明.md': Buffer.from('原始资料').toString('base64') },
+    }));
+    const created = await library.saveCustom(imported, true, (await library.catalog()).revision);
+    const original = await library.getCustom('order-expert');
+    await expect(library.saveCustom({ ...imported, name: '新导入专家', prompt: '新的专家说明' }, false, created.revision))
+      .rejects.toThrow('专家名称或标识已被使用');
+    expect(await library.catalog()).toEqual(created);
+    expect(await library.getCustom('order-expert')).toEqual(original);
+    const edited = await library.saveCustom({ ...original, prompt: '明确编辑已有专家' }, true, created.revision);
+    expect(edited.enabled).toContain('order-expert');
+    expect((await library.getCustom('order-expert')).prompt).toBe('明确编辑已有专家');
+  });
+
   it("公司自定义分类 constructor 保存后仍按原名展示", async () => {
     const { library } = setup(undefined, async () => [{ ...builtin, division: "constructor", divisionZh: "constructor" }]);
     const before = await library.catalog();
