@@ -33,6 +33,21 @@ function fixture() {
   return { remote, cache, getTeams, getCatalog, setTeamEnabled }
 }
 
+it('enables a team without resolving a chat insertion target', async () => {
+  const value = fixture()
+  onTestFinished(() => { value.cache.catalog.dispose(); value.cache.teams.dispose() })
+  const disabled = { ...original, enabledTeams: [], enabledExperts: [] }
+  value.cache.teams.accept(disabled)
+  value.getTeams.mockResolvedValue({ ok: true, value: disabled })
+  const prepareSelect = vi.fn(() => { throw new Error('Chat input is not mounted') })
+  await act(async () => { render(<TeamsPanel {...value} prepareSelect={prepareSelect} />) })
+  fireEvent.click(screen.getByRole('switch'))
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: '启用团队及所需成员' })) })
+  expect(value.setTeamEnabled).toHaveBeenCalledWith(team.id, true, original.revision, expect.any(AbortSignal))
+  expect(prepareSelect).not.toHaveBeenCalled()
+  expect(screen.queryByRole('dialog')).toBeNull()
+})
+
 it.each(['initial', 'retry'] as const)('refreshes initialized member data during the %s team-menu read', async (phase) => {
   const value = fixture()
   onTestFinished(() => { value.cache.catalog.dispose(); value.cache.teams.dispose() })

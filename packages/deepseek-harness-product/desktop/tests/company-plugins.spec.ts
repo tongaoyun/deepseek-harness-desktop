@@ -47,7 +47,7 @@ declare module '@deepseek-ai/cordis' {
   interface Context { agencyAgentsLibrary: AgencyExpertLibrary; agencyAgentsPersona: Agency.AgencyPersonaSource }
 }
 
-it.each([{ published: false, refresh: false, collision: false }, { published: true, refresh: false, collision: false }, { published: true, refresh: true, collision: false }, { published: true, refresh: false, collision: true }])('loads native company catalogs and isolates refreshed content (%j)', async ({ published, refresh, collision }) => {
+it.each([{ published: false, refresh: false, collision: false }, { published: true, refresh: false, collision: false }, { published: true, refresh: true, collision: false }, { published: true, refresh: false, collision: true }, { published: true, refresh: true, collision: false, lateCompany: true }])('loads native company catalogs and isolates refreshed content (%j)', async ({ published, refresh, collision, lateCompany }) => {
   const home = mkdtempSync(join(tmpdir(), 'company-profile-'))
   onTestFinished(() =>{  rmSync(home, { recursive: true, force: true }) })
   vi.stubEnv('DSH_HOME', home)
@@ -94,7 +94,7 @@ it.each([{ published: false, refresh: false, collision: false }, { published: tr
     { id: 'projections', name: 'cordis:projections' }, { id: 'fs', name: 'cordis:fs' },
     { id: 'directory', name: 'cordis:directory' }, { id: 'llm', name: 'cordis:llm' },
     { id: 'agents', name: 'cordis:agents' }, { id: 'loop', name: 'cordis:loop', config: { agents: [] } },
-    { id: 'company', name: 'cordis:company' },
+    ...lateCompany ? [] : [{ id: 'company', name: 'cordis:company' }],
     { id: 'typert', name: 'cordis:typert' }, { id: 'access', name: 'cordis:access' }, { id: 'gateway', name: 'cordis:gateway' },
     { id: 'web', name: 'cordis:web', config: { host: '127.0.0.1', port: 0 } },
   ]
@@ -141,6 +141,7 @@ it.each([{ published: false, refresh: false, collision: false }, { published: tr
       } } })
   })
   onTestFinished(() => ctx.fiber.dispose())
+  if (lateCompany) await ctx.plugin(ctx.loader.builtins.company)
   const peer = new Peer(ctx, { principal: { kind: 'owner' } })
   const invoke = (method: string, args: Record<string, unknown>) => ctx.typertGateway.invoke({
     namespace: 'skillsManager', method, args, peer, signal: AbortSignal.timeout(5_000),

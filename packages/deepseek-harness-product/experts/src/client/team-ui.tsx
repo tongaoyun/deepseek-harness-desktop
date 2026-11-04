@@ -184,11 +184,11 @@ export function TeamsPanel(props: {
             setError('');
             return;
         }
-        const insert = props.prepareSelect?.() ?? props.onSelect;
         const started = props.cache.teams.getSnapshot();
         setBusy(true);
         setError('');
         try {
+            const insert = action === 'select' ? props.prepareSelect?.() ?? props.onSelect : undefined;
             if (action === 'delete') {
                 const next = await unwrap(props.remote.deleteTeam(team.id, revision, signal));
                 if (signal.aborted) return;

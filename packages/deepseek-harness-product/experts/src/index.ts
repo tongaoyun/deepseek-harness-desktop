@@ -367,7 +367,6 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
   const activeLocale = createHostLocaleReader(ctx)
   const teamTx = (key: string, values?: readonly unknown[]) => teamText(activeLocale(), key, values)
   const catalogRoot = resolveCatalogRoot(config.root)
-  const companySource = ctx.get('companyContent') as CompanyContentSource | undefined
   const basePersonaSource = catalogRoot === undefined ? undefined : createAgencyPersonaSource(catalogRoot, config.divisions)
   let experts = new Map<string, Expert>()
   const companyCatalogs = new Map<string, Promise<{ experts: Map<string, Expert>; divisions: string[]; teams: Awaited<ReturnType<typeof readCompanyTeams>> }>>()
@@ -407,9 +406,12 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
     }
     return pending
   }
-  const companyRoot = async (sessionId?: string, signal?: AbortSignal): Promise<string | undefined> => companySource
-    ? (await (sessionId === undefined ? companySource.read(signal) : companySource.forSession(sessionId, signal))).expertsRoot
-    : process.env.DSH_COMPANY_EXPERTS_ROOT
+  const companyRoot = async (sessionId?: string, signal?: AbortSignal): Promise<string | undefined> => {
+    const source = ctx.get('companyContent') as CompanyContentSource | undefined
+    return source
+      ? (await (sessionId === undefined ? source.read(signal) : source.forSession(sessionId, signal))).expertsRoot
+      : process.env.DSH_COMPANY_EXPERTS_ROOT
+  }
   const summaries = new Map<string, Array<Expert & { custom: false }>>()
   const readRootSummaries = async (root: string | undefined) => {
     await ensureReady()
