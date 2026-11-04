@@ -26,8 +26,9 @@ describe('专家团运行引擎能力分流', () => {
     const agent = createTeamAgent()
     expect(blocksNativeDelegation(service, agent, 'subagent')).toBe(false)
     service.tryMembership.mockReturnValue({ root: agent, id: TeamId(agent.id), role: 'teammate', name: `agency-reviewer-${'a'.repeat(10)}` })
-    expect(blocksNativeDelegation(service, agent, 'summon_expert')).toBe(true)
-    expect(blocksNativeDelegation(service, agent, 'subagent_fork')).toBe(true)
+    for (const tool of ['summon_expert', 'subagent', 'subagent_fork', 'spawn_teammate', 'workflow']) {
+      expect(blocksNativeDelegation(service, agent, tool)).toBe(true)
+    }
     expect(blocksNativeDelegation(service, agent, 'send_message')).toBe(false)
   })
   it('按当前智能体作用域检测工具，不能误读全局工具表', () => {

@@ -1546,7 +1546,7 @@
         {
           "path": "pnpm-lock.yaml",
           "before": "aa1293f2e8d3ee82cb3cfcb0e65ba8a0ef73ab80fad4c35d7ed2f7c67b95a625",
-          "after": "f53f9647ba0b99b764bf8ccebcd2045db9d37ab380fb1cbcc04af88590b92e50"
+          "after": "baca23f377234ae98fbd851d5be9aa123938fd633c3d4a282c714faaeacbb453"
         },
         {
           "path": "scripts/build.spec.ts",

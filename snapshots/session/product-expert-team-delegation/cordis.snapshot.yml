@@ -1,0 +1,137 @@
+# Replay patch shared by the ordinary headless snapshot composition. The model
+# script comes from the scenario's committed session JSONL.
+
+- id: llm-deepseek
+  name: '@deepseek-ai/dsh-llm-deepseek-api-key'
+  disabled: true
+
+- id: plugin-package-inventory-deepseek
+  disabled: true
+
+- id: session-title-llm
+  disabled: true
+
+- id: session-persistence-jsonl
+  name: '@deepseek-ai/dsh-session-persistence-jsonl'
+  config:
+    root: !!js dshHomePath('sessions')
+    compression: none
+
+- id: sandbox
+  name: '@deepseek-ai/dsh-sandbox-local'
+  config:
+    runnerCommand:
+      - bash
+      - -c
+      - while [ "$1" != "--" ]; do shift; done; shift; exec "$@"
+      - passthrough-runner
+    runnerFailureSignatures:
+      - 'passthrough-runner: profile rejected'
+
+- insert:
+    - id: llm-replay
+      name: '@deepseek-ai/dsh-llm-replay'
+      config:
+        providers:
+          - id: deepseek-official
+            name: DeepSeek
+            models:
+              - id: deepseek-v4-flash
+              - id: deepseek-v4-pro
+          - id: deepseek-messages
+            name: DeepSeek Messages
+            models:
+              - id: deepseek-v4-flash
+              - id: deepseek-v4-pro
+
+# Product expert teams use the shipped headless runtime and native services.
+# Delegation tools live in native Agent presets, as in the Web composition.
+# Depth 2 deliberately permits nested native delegation absent the team guard.
+- id: subagent
+  config:
+    maxDepth: 2
+
+- id: tool-subagent
+  disabled: true
+
+- id: tool-subagent-fork
+  disabled: true
+
+- id: tool-subagent-control
+  disabled: true
+
+- id: workflow-ptc
+  disabled: true
+
+- id: tool-workflow
+  disabled: true
+
+- insert:
+    - id: agent-preset-registry
+      name: '@deepseek-ai/dsh-agent-preset-registry'
+      config:
+        default: parent
+
+    - id: preset-parent
+      name: '@deepseek-ai/dsh-agent-preset'
+      config:
+        id: parent
+        plugins:
+          - name: cordis:group
+            group: true
+            isolate:
+              workflowEngine: true
+            config:
+              - name: '@deepseek-ai/dsh-tool-subagent'
+                config:
+                  provider: spawn
+                  toolName: subagent
+                  maxDepth: 2
+              - name: '@deepseek-ai/dsh-tool-subagent'
+                config:
+                  provider: fork
+                  toolName: subagent_fork
+                  maxDepth: 2
+              - name: '@deepseek-ai/dsh-workflow-ptc'
+                config:
+                  provider: spawn
+              - name: '@deepseek-ai/dsh-tool-workflow'
+
+    - id: parent-agent-preset
+      name: '../../../packages/test-support/session-snapshot/tests/fixtures/parent-agent-preset.ts'
+
+    - id: product-snapshot-webserver
+      name: '@deepseek-ai/dsh-host-webserver'
+      config:
+        host: 127.0.0.1
+        port: 0
+
+    - id: agency-agents
+      name: '../../../packages/deepseek-harness-product/experts/src/index.ts'
+      config:
+        root: !!js process.cwd() + '/experts'
+        provider: spawn
+        divisions: [engineering]
+        maxDepth: 2
+        enabled: [reviewer, tester]
+        enabledTeams: [team-custom-11111111-1111-4111-8111-111111111111]
+        customTeams:
+          - id: team-custom-11111111-1111-4111-8111-111111111111
+            name: Delegation review
+            description: Review ordinary expert-team delegation boundaries
+            tags: [review]
+            goal: Verify that members complete their own work without delegating again.
+            constraints: Do not create additional members.
+            deliveryRequirements: Return each member conclusion and the delegation result.
+            members:
+              - expertSlug: reviewer
+                duty: Review native delegation boundaries
+                instructions: Attempt subagent, subagent_fork and workflow once each, report the rejections, then finish directly.
+              - expertSlug: tester
+                duty: Review native delegation boundaries
+                instructions: Attempt subagent, subagent_fork and workflow once each, report the rejections, then finish directly.
+            examples: [Review delegation boundaries]
+            coordinatorMode: custom
+            coordinatorTemplateId: general
+            coordinatorTemplateVersion: 1
+            coordinatorPrompt: Delegate to the configured members and summarize their returned evidence.

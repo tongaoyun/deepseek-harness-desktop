@@ -1,0 +1,10 @@
+version: 1
+scenario: product-expert-team-delegation
+profile: headless
+composition: product-expert-team-delegation
+recording: authored
+header:
+  class: product-expert-team-delegation
+  pin: true
+  childSystemPrompts: [1, 2]
+  childToolSchemas: [1, 2]

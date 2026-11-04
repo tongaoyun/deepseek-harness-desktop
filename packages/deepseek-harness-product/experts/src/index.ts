@@ -30,10 +30,10 @@ import { executeTeam, TEAM_TASK_MAX_CHARS, type TeamMemberRun } from './team-run
 
 import type { Context, Volatile } from '@deepseek-ai/cordis'
 import type { CompanyContentSource } from '@deepseek-harness/product/protocol'
-import { resolveTeamEngine, dispatchNativeTeam, blocksNativeDelegation } from './team-engine.ts'
+import { resolveTeamEngine, dispatchNativeTeam, blocksNativeDelegation, delegationTools } from './team-engine.ts'
 import z from '@deepseek-ai/schemastery'
 import { defineTool } from '@deepseek-ai/dsh-tools'
-import type { ToolRunContext } from '@deepseek-ai/dsh-tools'
+import type { ToolGuard, ToolRunContext } from '@deepseek-ai/dsh-tools'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 import type { SubagentRun, SubagentStartRequest } from '@deepseek-ai/dsh-subagent'
 import { SessionId } from '@deepseek-ai/dsh-session'
@@ -609,10 +609,10 @@ export function apply(ctx: Context, config: Config): void {
   ctx.systemPrompt.section({ name: 'agency:creation', order: 119, text: 'Creation requests do not invoke summon tools. When the user wants to create or customize an expert or expert team, design a personal draft with propose_custom_expert or propose_expert_team. Use list_creation_experts for available categories and members, including disabled experts. Present the complete preview, invite changes and revise through the proposal tool. Call the matching open editor tool with the exact proposalId only after explicit user confirmation. The native confirmation makes a prefilled editor available; the user must click Save. Never save silently, publish company content, or create files as a substitute.' })
   ctx.reflect.provide(AGENCY_TEAM_SERVICE, teamLibrary)
   ctx.reflect.provide('agencyAgentsTeamEngine', () => resolveTeamEngine(ctx, undefined, maxDepth).status)
-  ctx.on('tools/pre-execute', async (exec, next) => {
-    if (blocksNativeDelegation(ctx.get('agentTeams'), exec.agent, exec.name)) return { kind: 'deny', reason: teamTx('专家团成员不能继续创建子代理或扩展专家团，请将缺口交给主理人。') }
-    return next()
-  })
+  const teamDelegationGuard: ToolGuard = exec => delegationTools.has(exec.name)
+    ? teamTx('专家团成员不能继续创建子代理或扩展专家团，请将缺口交给主理人。') : undefined
+  ctx.tools.guard(exec => blocksNativeDelegation(ctx.get('agentTeams'), exec.agent, exec.name)
+    ? teamDelegationGuard(exec) : undefined)
   if (!isLiveValue((config as { enabled?: unknown }).enabled)) {
     throw new Error(formatHost(activeLocale(), 'error.settingsLiveUnsupported'))
   }
@@ -739,10 +739,12 @@ export function apply(ctx: Context, config: Config): void {
     maxDepth?: number
     persona: string
     toolFilter: { deny: string[] }
+    /** Additional child execution denial; absent for manually summoned experts. */
+    toolGuard?: ToolGuard
   }
 
   async function startSubagentRun(providerName: string, options: ExpertSubagentStart): Promise<SubagentRunHandle> {
-    const { persona, toolFilter, label, signal, prompt, parent, maxDepth } = options
+    const { persona, toolFilter, toolGuard, label, signal, prompt, parent, maxDepth } = options
     const runSignal = signal ?? new AbortController().signal
     const childId = SessionId(randomUUID())
     const stopCreated = ctx.on('agent/created', (event: { agent: { id: string; ctx: Context } }) => {
@@ -755,6 +757,7 @@ export function apply(ctx: Context, config: Config): void {
         interpolate: false,
       })
       childCtx.tools.restrict(toolFilter)
+      if (toolGuard !== undefined) childCtx.tools.guard(toolGuard)
       return undefined
     })
     try {
@@ -917,6 +920,7 @@ ctx.tools.register(localizeTeamTool(defineTool({ name: 'summon_expert_team', des
                 const run = await startSubagentRun(config.provider, { label: member.name, parent: exec.agent!,
                     prompt: [{ type: 'text', text: member.prompt }], persona: member.persona,
                     toolFilter: { deny: ['summon_expert', 'summon_experts', 'list_experts', 'list_expert_teams', 'get_expert_team', 'summon_expert_team'] },
+                    toolGuard: teamDelegationGuard,
                     ...(maxDepth === undefined ? {} : { maxDepth }), signal: exec.signal });
                 const value = await awaitSubagentRun(run, exec.signal);
                 if (value.stopReason !== 'completed')
