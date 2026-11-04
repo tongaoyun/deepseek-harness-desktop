@@ -73,6 +73,21 @@ it('imports a complete ZIP and selected directory with identical Chinese names a
   expect(await importPackageFiles(list(directory))).toEqual(files)
 })
 
+it.each([undefined, ''])('preserves absent and empty AGENTS.md separately across a saved package round trip: %s', async (agents) => {
+  const { packages } = await fixture()
+  const files = expertPackageFiles('order-expert', draft)
+  if (agents === undefined) delete files['experts/order-expert/config/AGENTS.md']
+  else files['experts/order-expert/config/AGENTS.md'] = ''
+  const imported = importExpertPackage(files)
+  const ref = await packages.save('order-expert', imported)
+  const read = await packages.read({ slug: draft.slug, name: draft.name, description: draft.description,
+    division: draft.division, emoji: '🧩', avatar: 0, ...ref })
+  expect(read.agents).toBe(agents)
+  expect(expertPackageFiles('order-expert', read)).toEqual(files)
+  expect(draftPackageFiles(read)).toEqual(files)
+  expect(ref.packageSha256).toBe(contentDigest(files))
+})
+
 it('rejects symbolic links while reading a fixed personal resource version', async () => {
   const { root, packages } = await fixture()
   const ref = await packages.save('order-expert', draft)

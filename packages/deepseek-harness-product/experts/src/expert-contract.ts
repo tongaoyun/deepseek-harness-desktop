@@ -25,7 +25,7 @@ export const customExpertInputSchema = z.object({
   }),
   avatar: z.number().int().min(0).max(35).default(0),
   prompt: z.string().min(1).max(128 * 1024).refine(value => value.trim().length > 0),
-  agents: z.string().max(128 * 1024).default(''),
+  agents: z.string().max(128 * 1024).optional(),
   manifest: z.string().max(128 * 1024).optional(),
   resources: z.record(z.string(), z.string()).default({}),
 }).strict()

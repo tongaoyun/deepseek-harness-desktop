@@ -13,6 +13,8 @@ import { PromptDialog } from '../../src/client/prompt-dialog.ts'
 import { TEST_TEAMS } from '../../src/fixtures/teams.ts'
 import { TeamEditor } from '../../src/client/team-editor.tsx'
 import { TeamDialog } from '../../src/client/team-shared.tsx'
+import { importExpertPackage } from '../../src/package-transfer.ts'
+import { expertPackageFiles } from '../../src/expert-packages.ts'
 
 beforeEach(() => { vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true) })
 afterEach(() => { cleanup(); document.body.replaceChildren(); vi.unstubAllGlobals() })
@@ -215,6 +217,35 @@ it('offers team conflict review by code without relying on Chinese or English ke
   expect(save).toHaveBeenCalledOnce()
 })
 
+
+it.each([
+  { name: 'new expert, absent instructions', agents: undefined, slug: undefined },
+  { name: 'new expert, empty instructions', agents: '', slug: undefined },
+  { name: 'existing expert, absent instructions', agents: undefined, slug: 'order-expert' },
+  { name: 'existing expert, empty instructions', agents: '', slug: 'order-expert' },
+])('imports and saves an untouched AgentSpec ZIP without changing its manifest or optional file presence: $name', async ({ agents, slug }) => {
+  const manifest = JSON.stringify({ worker: { suggested_name: 'order-expert' }, description: 'Review orders' }, null, 2) + '\n'
+  const files = expertPackageFiles('order-expert', { name: 'Order expert', description: 'Review orders', division: 'specialized',
+    prompt: 'Review the supplied evidence.', manifest, agents: 'Working rules' })
+  if (agents === undefined) delete files['experts/order-expert/config/AGENTS.md']
+  else files['experts/order-expert/config/AGENTS.md'] = ''
+  const imported = importExpertPackage(files)
+  const unused = (): Promise<never> => Promise.reject(new Error('Unexpected remote call'))
+  const save = vi.fn<AgencyCatalogRemote['saveCustomExpert']>().mockResolvedValue({ ok: true, value: { experts: [], enabled: [], revision: 2 } })
+  const dictionary: Readonly<Record<string, string>> = en
+  render(<CustomExpertEditor expert={slug ? { ...imported, slug, prompt: 'Original instructions' } : undefined} enabled={false} revision={1} divisions={['specialized']} locale="en" t={key => dictionary[key] ?? key}
+    remote={{ getCatalog: unused, importExpert: async () => ({ ok: true, value: imported }), exportExpert: unused,
+      getCustomExpert: unused, saveCustomExpert: save, deleteCustomExpert: unused }} prepareSave={() => vi.fn()} onClose={vi.fn()} />)
+  const bytes = new Uint8Array(zipSync(Object.fromEntries(Object.entries(files).map(([path, content]) => [path.slice('experts/'.length), new Uint8Array(Buffer.from(content, 'base64'))]))))
+  const zip = new File([], 'order-expert.zip')
+  Object.defineProperty(zip, 'arrayBuffer', { value: async () => bytes.buffer })
+  fireEvent.change(screen.getByLabelText(en['custom.importZip']), { target: { files: [zip] } })
+  await waitFor(() => { expect(screen.getByRole('textbox', { name: en['custom.prompt'] })).toHaveProperty('value', imported.prompt) })
+  fireEvent.click(screen.getByRole('button', { name: en[slug ? 'custom.saveChanges' : 'custom.save'] }))
+  await waitFor(() => { expect(save).toHaveBeenCalledOnce() })
+  expect(save.mock.calls[0][0].manifest).toBe(manifest)
+  expect(expertPackageFiles('order-expert', save.mock.calls[0][0])).toEqual(files)
+})
 
 it('imports the same selected ZIP again, clears old errors and uses buttons for all file pickers', async () => {
   const expert = { name: 'Imported', description: 'Imported expert', division: 'specialized', prompt: 'Imported instructions' }

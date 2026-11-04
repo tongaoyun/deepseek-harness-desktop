@@ -17,7 +17,7 @@ export function expertPackageFiles(slug: string, input: CustomExpertInput): Reco
   if (agentSpecManifest(manifest).worker.suggested_name !== slug) throw new Error('AgentSpec 标识与专家不一致')
   const files: Record<string, string> = { [`experts/${slug}/manifest.json`]: Buffer.from(manifest).toString('base64'),
     [`experts/${slug}/config/SOUL.md`]: Buffer.from(value.prompt).toString('base64') }
-  if (value.agents) files[`experts/${slug}/config/AGENTS.md`] = Buffer.from(value.agents).toString('base64')
+  if (value.agents !== undefined) files[`experts/${slug}/config/AGENTS.md`] = Buffer.from(value.agents).toString('base64')
   for (const [path, encoded] of Object.entries(value.resources)) {
     if (['manifest.json', 'config/SOUL.md', 'config/AGENTS.md', '.package-index.json'].includes(path)) throw new Error('附件路径与专家说明冲突')
     files[`experts/${slug}/${path}`] = encoded
@@ -74,7 +74,9 @@ export class ExpertPackageStore {
     const text = (path: string) => new TextDecoder('utf-8', { fatal: true }).decode(Buffer.from(files[prefix + path] ?? '', 'base64'))
     const { packageVersion: _version, packageSha256: _hash, ...metadata } = expert
     const resources = Object.fromEntries(Object.entries(files).filter(([path]) => !['manifest.json', 'config/SOUL.md', 'config/AGENTS.md'].includes(path.slice(prefix.length))).map(([path, value]) => [path.slice(prefix.length), value]))
-    return { ...metadata, prompt: text('config/SOUL.md'), agents: text('config/AGENTS.md'), manifest: text('manifest.json'), resources }
+    return { ...metadata, prompt: text('config/SOUL.md'),
+      ...Object.hasOwn(files, prefix + 'config/AGENTS.md') ? { agents: text('config/AGENTS.md') } : {},
+      manifest: text('manifest.json'), resources }
   }
   /** Compose literal instructions with the resource root.
    * @param expert - Exact expert reference.

@@ -74,7 +74,7 @@ export function draftPackageFiles(draft: CustomExpertInput): Record<string, stri
   const encode = (text: string) => bytesToBase64(new TextEncoder().encode(text))
   const files = Object.fromEntries(Object.entries(draft.resources ?? {}).map(([path, value]) => [root + path, value]))
   return { ...files, [root + 'manifest.json']: encode(text), [root + 'config/SOUL.md']: encode(draft.prompt),
-    ...draft.agents ? { [root + 'config/AGENTS.md']: encode(draft.agents) } : {} }
+    ...draft.agents !== undefined ? { [root + 'config/AGENTS.md']: encode(draft.agents) } : {} }
 }
 /** Merge attachments atomically, counting replacement bytes and the complete package.
  * @param draft - Current expert fields and resources.
