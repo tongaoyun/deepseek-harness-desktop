@@ -96,6 +96,8 @@ function filteredKnowledgeDocuments(baseId: string, query = '', folderId?: strin
 }
 
 async function openKnowledgeNavigation(page: Page) {
+  const directory = page.locator('[data-knowledge-directory]')
+  if (await directory.isVisible()) await directory.locator('[data-knowledge-base][data-scope="PERSONAL"]').first().click()
   const navigation = page.locator('[data-knowledge-navigation]')
   await navigation.waitFor({ state: 'attached' })
   if (!await navigation.isVisible()) await page.getByRole('button', { name: /^(Browse materials|浏览资料)$/, exact: true }).click()
@@ -652,12 +654,31 @@ it('keeps native themes and responsive catalogs while using official details and
       }
       await revealNavigationDrawer(page, 'en')
       await page.getByRole('button', { name: 'Knowledge bases', exact: true }).click()
+      const directory = page.locator('[data-knowledge-directory]')
+      await directory.getByRole('heading', { name: 'Knowledge bases', exact: true }).waitFor()
+      expect(await directory.evaluate(region => region.scrollWidth > region.clientWidth)).toBe(false)
+      const tabWidths = await directory.getByRole('tab').evaluateAll(tabs => tabs.map(tab => tab.getBoundingClientRect().width))
+      expect(Math.max(...tabWidths) - Math.min(...tabWidths)).toBeLessThan(1)
+      await page.screenshot({ path: join(screenshots, `knowledge-directory-${theme}-${viewport.width}.png`), animations: 'disabled' })
+      if (theme === 'light' && viewport.width === 1440) await snapshot('knowledge-directory', '[data-knowledge-directory]')
       const knowledgeList = await openKnowledgeNavigation(page)
       await knowledgeList.getByRole('button', { name: 'Sales procedures', exact: true }).waitFor()
       await knowledgeList.getByRole('heading', { name: 'Sales (21)', exact: true }).waitFor()
       await knowledgeList.getByRole('heading', { name: 'Sales (22)', exact: true }).waitFor()
       await knowledgeList.getByRole('button', { name: 'Policies', exact: true }).waitFor()
       await expectKnowledgeNavigationFits(knowledgeList)
+      if (viewport.width === 390) {
+        await page.screenshot({ path: join(screenshots, `knowledge-navigation-${theme}-390.png`), animations: 'disabled' })
+        await page.getByRole('button', { name: 'Browse materials', exact: true }).click()
+      }
+      const materialStatus = page.locator('[data-knowledge-content] td:nth-child(2) > span').first()
+      await materialStatus.waitFor()
+      if (viewport.width === 390) {
+        const firstFile = await page.getByRole('button', { name: 'Order review.md', exact: true }).boundingBox()
+        expect(firstFile?.y).toBeLessThan(530)
+      }
+      expect(await materialStatus.evaluate(status =>
+        status.getBoundingClientRect().right <= status.parentElement!.getBoundingClientRect().right)).toBe(true)
       expect(await page.locator('[data-knowledge-workspace]').evaluate(region => region.scrollWidth > region.clientWidth)).toBe(false)
       await page.screenshot({ path: join(screenshots, `knowledge-${theme}-${viewport.width}.png`) })
       if (theme === 'light' && viewport.width === 1440) await snapshot('knowledge', '[data-knowledge-navigation]')

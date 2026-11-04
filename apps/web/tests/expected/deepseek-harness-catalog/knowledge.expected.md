@@ -1,5 +1,5 @@
 - complementary:
-  - heading "Knowledge bases" [level=1]
+  - button "Knowledge bases"
   - button "Refresh"
   - navigation "Knowledge bases":
     - region "Personal":

@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
-import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, expect, it, vi } from 'vitest'
 import { KnowledgeWorkspace } from '../src/client/KnowledgeWorkspace.tsx'
+import { renderKnowledgeWorkspace } from './knowledge-workspace-fixture.client.tsx'
 import { items } from '../src/client/catalog-shared.tsx'
 import { zh, type DeepSeekHarnessProductKey } from '../src/locales.ts'
 
@@ -46,7 +47,7 @@ it('cancels a previous location read and ignores its late response after selecti
   const delayed = new Promise<unknown>((complete) => { resolve = complete })
   const cancel = vi.fn()
   const invoke = transport(false, async id => id === 'folder-1' ? delayed : roots.find(folder => folder.id === id), cancel)
-  const view = render(<KnowledgeWorkspace {...props} />)
+  const view = renderKnowledgeWorkspace(<KnowledgeWorkspace {...props} />)
   const navigation = within(view.container.querySelector<HTMLElement>('[data-knowledge-navigation]')!)
   fireEvent.click(await navigation.findByRole('button', { name: '目录1' }))
   await waitFor(() => { expect(invoke.mock.calls.some(call => call[1] === 'knowledge.folders.get' && call[2].folderId === 'folder-1')).toBe(true) })
@@ -62,7 +63,7 @@ it('cancels a previous location read and ignores its late response after selecti
 
 it('moves to another page and an unexpanded nested destination without preloading the sidebar', async () => {
   const invoke = transport()
-  const view = render(<KnowledgeWorkspace {...props} />)
+  const view = renderKnowledgeWorkspace(<KnowledgeWorkspace {...props} />)
   const navigation = within(view.container.querySelector<HTMLElement>('[data-knowledge-navigation]')!)
   await navigation.findByRole('button', { name: '目录1' })
   fireEvent.click(screen.getByRole('tab', { name: zh.knowledgeAllMaterials }))
@@ -88,7 +89,7 @@ it('moves to another page and an unexpanded nested destination without preloadin
 it('retries a lost move receipt with the original destination and operation identity', async () => {
   const move = vi.fn().mockRejectedValueOnce(new TypeError('response lost')).mockResolvedValue({ ok: true, result: { documentId: document.id, folderId: 'folder-1', moved: true } })
   const invoke = transport(false, undefined, vi.fn(), move)
-  render(<KnowledgeWorkspace {...props} />)
+  renderKnowledgeWorkspace(<KnowledgeWorkspace {...props} />)
   fireEvent.click(screen.getByRole('tab', { name: zh.knowledgeAllMaterials }))
   await screen.findByRole('button', { name: document.filename })
   fireEvent.click(screen.getByRole('button', { name: zh.knowledgeDocumentActions.replace('{name}', document.filename) }))
@@ -111,7 +112,7 @@ it('retries a lost move receipt with the original destination and operation iden
 
 it('retains the selected path and create location after the sidebar changes pages', async () => {
   const invoke = transport()
-  const view = render(<KnowledgeWorkspace {...props} />)
+  const view = renderKnowledgeWorkspace(<KnowledgeWorkspace {...props} />)
   const navigation = within(view.container.querySelector<HTMLElement>('[data-knowledge-navigation]')!)
   fireEvent.click(await navigation.findByRole('button', { name: '目录1' }))
   const breadcrumb = within(view.container.querySelector<HTMLElement>('nav[aria-label="当前位置"]')!)
@@ -132,7 +133,7 @@ it('retains the selected path and create location after the sidebar changes page
 
 it('loads title and content from the same document revision before saving', async () => {
   const invoke = transport()
-  render(<KnowledgeWorkspace {...props} />)
+  renderKnowledgeWorkspace(<KnowledgeWorkspace {...props} />)
   fireEvent.click(screen.getByRole('tab', { name: zh.knowledgeAllMaterials }))
   await screen.findByRole('button', { name: document.filename })
   fireEvent.click(screen.getByRole('button', { name: zh.knowledgeDocumentActions.replace('{name}', document.filename) }))
@@ -147,7 +148,7 @@ it('loads title and content from the same document revision before saving', asyn
 
 it('paginates folders and documents together without following navigation pagination', async () => {
   const invoke = transport()
-  const view = render(<KnowledgeWorkspace {...props} />)
+  const view = renderKnowledgeWorkspace(<KnowledgeWorkspace {...props} />)
   const navigation = within(view.container.querySelector<HTMLElement>('[data-knowledge-navigation]')!)
   const content = within(view.container.querySelector<HTMLElement>('[data-knowledge-content]')!)
   await content.findByRole('button', { name: '目录1' })
@@ -166,7 +167,7 @@ it('paginates folders and documents together without following navigation pagina
 
 it('blocks creation in a missing folder and preserves the entered name without submitting to root', async () => {
   const invoke = transport(true)
-  const view = render(<KnowledgeWorkspace {...props} />)
+  const view = renderKnowledgeWorkspace(<KnowledgeWorkspace {...props} />)
   const navigation = within(view.container.querySelector<HTMLElement>('[data-knowledge-navigation]')!)
   await navigation.findByRole('button', { name: '目录1' })
   fireEvent.click(navigation.getByRole('button', { name: zh.knowledgeFolderActions.replace('{name}', '目录1') }))
@@ -184,7 +185,7 @@ it('keeps the move destination and confirmation when a success receipt names ano
   let valid = false
   const move = vi.fn(async () => ({ ok: true, result: { documentId: valid ? document.id : 'another-document', folderId: 'folder-1', moved: true } }))
   const invoke = transport(false, undefined, vi.fn(), move)
-  render(<KnowledgeWorkspace {...props} />)
+  renderKnowledgeWorkspace(<KnowledgeWorkspace {...props} />)
   fireEvent.click(screen.getByRole('tab', { name: zh.knowledgeAllMaterials }))
   fireEvent.click(await screen.findByRole('button', { name: zh.knowledgeDocumentActions.replace('{name}', document.filename) }))
   fireEvent.click(screen.getByRole('menuitem', { name: zh.knowledgeMoveDocument }))

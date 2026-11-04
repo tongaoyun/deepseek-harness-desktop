@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, expect, it, vi } from 'vitest'
 import { KnowledgeWorkspace } from '../src/client/KnowledgeWorkspace.tsx'
+import { renderKnowledgeWorkspace } from './knowledge-workspace-fixture.client.tsx'
 import { items } from '../src/client/catalog-shared.tsx'
 import { zh, type DeepSeekHarnessProductKey } from '../src/locales.ts'
 
@@ -40,7 +41,7 @@ afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.clearAllMocks() })
 
 it('uses the library as home and places browsing modes outside the real folder tree', async () => {
   const invoke = transport()
-  const { container } = render(<KnowledgeWorkspace {...props} />)
+  const { container } = renderKnowledgeWorkspace(<KnowledgeWorkspace {...props} />)
   const { navigation, content } = regions(container)
   await content.findByRole('button', { name: '项目 1' })
   expect(navigation.queryByRole('button', { name: zh.knowledgeRootFolder })).toBeNull()
@@ -63,7 +64,7 @@ it('uses the library as home and places browsing modes outside the real folder t
 
 it('finds a file across folders and locates an unvisited nested destination by its stable ID', async () => {
   const invoke = transport(true)
-  const { container } = render(<KnowledgeWorkspace {...props} />)
+  const { container } = renderKnowledgeWorkspace(<KnowledgeWorkspace {...props} />)
   const { navigation, content } = regions(container)
   fireEvent.click(content.getByRole('tab', { name: zh.knowledgeAllMaterials }))
   await content.findByRole('button', { name: document.filename })
@@ -88,7 +89,7 @@ it('finds a file across folders and locates an unvisited nested destination by i
 
 it('clears an empty search and format filter without changing the library-wide scope', async () => {
   const invoke = transport()
-  const { container } = render(<KnowledgeWorkspace {...props} />)
+  const { container } = renderKnowledgeWorkspace(<KnowledgeWorkspace {...props} />)
   const { content } = regions(container)
   fireEvent.click(content.getByRole('tab', { name: zh.knowledgeAllMaterials }))
   await content.findByRole('button', { name: document.filename })

@@ -1,0 +1,34 @@
+- main:
+  - heading "Knowledge bases" [level=1]
+  - paragraph: Organize work materials and reference them in conversations.
+  - button "New personal knowledge base"
+  - tablist "Library scope":
+    - tab "All" [selected]
+    - tab "Personal"
+    - tab "Department"
+    - tab "Company"
+  - text: Search knowledge bases…
+  - searchbox "Search knowledge bases…"
+  - button "Refresh"
+  - tabpanel "All":
+    - article:
+      - button "Personal notes":
+        - heading "Personal notes" [level=2]
+        - paragraph: Open this library to browse and manage work materials.
+      - text: Personal · Fixture user
+      - button "Actions for “Personal notes”"
+    - article:
+      - button "Sales procedures":
+        - heading "Sales procedures" [level=2]
+        - paragraph: Open this library to browse and manage work materials.
+      - text: Department · Sales
+    - article:
+      - button "Sales playbook":
+        - heading "Sales playbook" [level=2]
+        - paragraph: Open this library to browse and manage work materials.
+      - text: Department · Sales
+    - article:
+      - button "Operations playbook":
+        - heading "Operations playbook" [level=2]
+        - paragraph: Open this library to browse and manage work materials.
+      - text: Company · Fixture company

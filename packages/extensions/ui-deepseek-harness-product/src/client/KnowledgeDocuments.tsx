@@ -357,8 +357,15 @@ function KnowledgeDocumentsScope({ product, renderNavigation, onNavigate, refres
     <label className={css.searchField}><IconSearchOutlineRegular size={16} /><span className={css.visuallyHidden}>{t('knowledgeFindFiles')}</span>
       <input type="search" value={query} maxLength={120} placeholder={t(folderId === undefined ? 'knowledgeSearchLibrary' : 'knowledgeSearchFolder')}
         onChange={(event) => { setQuery(event.currentTarget.value) }} /></label>
-    <Tooltip label={t('search')}><button className={css.iconButton} type="submit" aria-label={t('search')}><IconSearchOutlineRegular size={16} /></button></Tooltip>
+    <Button variant="outline" size="sm" type="submit">{t('search')}</Button>
   </form>
+  const addActions = canManage && <div className={css.knowledgeAddActions}>
+    <KnowledgeUploadMenu disabled={pending || !uploadRecoveryReady || uploads.length > 0}
+      onSelect={(mode) => { void upload(mode) }} t={t} />
+    <KnowledgeAddMenu disabled={pending} onSelect={(kind) => {
+      beginMutation(); setEditor(kind === 'folder' ? { kind, parentId: folderId ?? null } : { kind, folderId: folderId ?? null })
+    }} t={t} />
+  </div>
   const toolbar = <>
     <div className={css.knowledgeBrowseToolbar}>
       <SegmentedControl id={browseId} value={folderId === undefined ? 'all' : 'folders'}
@@ -370,34 +377,28 @@ function KnowledgeDocumentsScope({ product, renderNavigation, onNavigate, refres
       <IconChevronLeftOutlineRegular size={14} />{t('knowledgeRootFolder')}</Button>}
     <div className={css.knowledgeMaterialsToolbar}>
       {materialSearch}
-      {canManage && <div className={css.knowledgeAddActions}>
-        <KnowledgeUploadMenu disabled={pending || !uploadRecoveryReady || uploads.length > 0}
-          onSelect={(mode) => { void upload(mode) }} t={t} />
-        <KnowledgeAddMenu disabled={pending} onSelect={(kind) => {
-          beginMutation(); setEditor(kind === 'folder' ? { kind, parentId: folderId ?? null } : { kind, folderId: folderId ?? null })
-        }} t={t} />
-      </div>}
-    </div>
-    <div className={css.knowledgeFilters}>
-      <label><span className={css.visuallyHidden}>{t('knowledgeFormat')}</span><select aria-label={t('knowledgeFormat')} value={format}
-        onChange={(event) => { setFormat(event.currentTarget.value); setPage(1); setData(undefined) }}>
-        <option value="">{t('knowledgeAllFormats')}</option><option value="manual">{t('knowledgeOnlineDocument')}</option>
-        <option value="url">{t('knowledgeWebsite')}</option>{['pdf', 'docx', 'xlsx', 'md', 'txt'].map(value => <option key={value} value={value}>{value.toUpperCase()}</option>)}
-      </select></label>
-      {(search || format || status) && <Button variant="ghost" size="sm" onClick={clearFilters}>{t('knowledgeClearFilters')}</Button>}
-      <label><span className={css.visuallyHidden}>{t('status')}</span><select aria-label={t('status')} value={status}
-        onChange={(event) => { setStatus(event.currentTarget.value); setPage(1); setData(undefined) }}>
-        <option value="">{t('knowledgeAllStatuses')}</option>{['READY', 'QUEUED', 'PROCESSING', 'FINALIZING', 'FAILED', 'CANCELLED', 'DELETING']
-          .map(value => <option key={value} value={value}>{knowledgeStatus(value, t)}</option>)}
-      </select></label>
-      <Tooltip label={t('refresh')}><button type="button" className={css.iconButton} disabled={loading || pending}
-        aria-label={t('refresh')} onClick={() => {
-          accessOperation.current.abort(); accessOperation.current = new AbortController()
-          setAccessDenied(false); setRevision(value => value + 1)
-          setFolderRevision(value => value + 1)
-          setUploadRecoveryRevision(value => value + 1)
-        }}><IconRefreshOutlineRegular size={16} /></button></Tooltip>
-    </div>
+      {!renderNavigation && addActions}
+      <div className={css.knowledgeFilters}>
+        <label><span className={css.visuallyHidden}>{t('knowledgeFormat')}</span><select aria-label={t('knowledgeFormat')} value={format}
+          onChange={(event) => { setFormat(event.currentTarget.value); setPage(1); setData(undefined) }}>
+          <option value="">{t('knowledgeAllFormats')}</option><option value="manual">{t('knowledgeOnlineDocument')}</option>
+          <option value="url">{t('knowledgeWebsite')}</option>{['pdf', 'docx', 'xlsx', 'md', 'txt'].map(value => <option key={value} value={value}>{value.toUpperCase()}</option>)}
+        </select></label>
+        <label><span className={css.visuallyHidden}>{t('status')}</span><select aria-label={t('status')} value={status}
+          onChange={(event) => { setStatus(event.currentTarget.value); setPage(1); setData(undefined) }}>
+          <option value="">{t('knowledgeAllStatuses')}</option>{['READY', 'QUEUED', 'PROCESSING', 'FINALIZING', 'FAILED', 'CANCELLED', 'DELETING']
+            .map(value => <option key={value} value={value}>{knowledgeStatus(value, t)}</option>)}
+        </select></label>
+        <Tooltip label={t('refresh')}><button type="button" className={css.iconButton} disabled={loading || pending}
+          aria-label={t('refresh')} onClick={() => {
+            accessOperation.current.abort(); accessOperation.current = new AbortController()
+            setAccessDenied(false); setRevision(value => value + 1)
+            setFolderRevision(value => value + 1)
+            setUploadRecoveryRevision(value => value + 1)
+          }}><IconRefreshOutlineRegular size={16} /></button></Tooltip>
+        {(search || format || status) && <Button variant="ghost" size="sm" className={css.knowledgeClearFilters}
+          onClick={clearFilters}>{t('knowledgeClearFilters')}</Button>}
+      </div></div>
     {canManage && selectedDocuments.length > 0 && <div className={css.knowledgeBatchToolbar} role="group" aria-label={t('knowledgeBatchActions')}>
       <span role="status">{t('knowledgeSelectedCount').replace('{count}', String(selectedDocuments.length))}</span>
       <Button variant="ghost" size="sm" disabled={pending || loading} onClick={() => { beginBatch('move') }}>{t('knowledgeBatchMove')}</Button>
@@ -489,7 +490,8 @@ function KnowledgeDocumentsScope({ product, renderNavigation, onNavigate, refres
     {renderNavigation ? <div className={css.knowledgeWorkspace} data-knowledge-workspace-content>
       <aside className={css.knowledgeWorkspaceNavigation} id="knowledge-workspace-navigation" data-knowledge-navigation>{renderNavigation(tree, () => { selectFolder(null) })}</aside>
       <main className={css.knowledgeWorkspaceMain} data-knowledge-content>
-        <header className={css.knowledgeWorkspaceDocumentHeader}>
+        <header className={css.knowledgeWorkspaceDocumentHeader}
+          data-library-home={!reader && folderId === null && !location.loading && location.failure === undefined}>
           <nav className={css.knowledgeWorkspaceBreadcrumb} aria-label={t('knowledgeLocation')}>
             <button type="button" onClick={() => { selectFolder(null) }}>{product.name}</button>
             {breadcrumbFolderId === undefined && <><IconChevronRightOutlineRegular size={14} /><span aria-current={reader ? undefined : 'page'}>{t('knowledgeAllMaterials')}</span></>}
@@ -509,6 +511,10 @@ function KnowledgeDocumentsScope({ product, renderNavigation, onNavigate, refres
             onSelect={(id) => { folderAction(id, currentFolder) }} t={t} />}
         </header>
         <div className={css.knowledgeWorkspaceBody}>
+          {!reader && <div className={css.knowledgeMaterialsHeading}>
+            <div><h1 tabIndex={-1} data-knowledge-materials-heading>{currentFolder?.name ?? product.name}</h1>
+              {!currentFolder && product.summary && <p>{product.summary}</p>}</div>{addActions}
+          </div>}
           {reader ? <>{(folderError || error || mutationError) && <p role="alert" className={css.catalogError}>{folderError || error || mutationError}</p>}
             <div className={css.knowledgeReaderProcessing} role="status">
               <KnowledgeDocumentStatus status={reader.status} sourceType={reader.sourceType} t={t} />
@@ -605,7 +611,7 @@ function KnowledgeUploadMenu({ disabled, onSelect, t }: {
     { id: 'STANDARD', label: t('knowledgeUploadStandard'), icon: <IconDownloadOutlineRegular size={16} /> },
     { id: 'TEXT', label: t('knowledgeUploadTextPdf'), icon: <FileTypeIcon path="document.pdf" size={16} /> },
   ]} onSelect={(id) => { setOpen(false); if (id === 'STANDARD' || id === 'TEXT') onSelect(id) }}
-  anchor={<Button variant="outline" size="sm" disabled={disabled} aria-haspopup="menu" aria-expanded={open}
+  anchor={<Button variant="primary" size="sm" disabled={disabled} aria-haspopup="menu" aria-expanded={open}
     onClick={() => { setOpen(!open) }}><IconDownloadOutlineRegular size={14} />{t('knowledgeUpload')}</Button>} />
 }
 

@@ -5,6 +5,7 @@ import { ProductError } from '@deepseek-harness/product/errors'
 import { KnowledgeBatchDialog, type KnowledgeBatchAction } from '../src/client/KnowledgeBatchDialog.tsx'
 import type { KnowledgeDocument } from '../src/client/knowledge-data.ts'
 import { KnowledgeWorkspace } from '../src/client/KnowledgeWorkspace.tsx'
+import { renderKnowledgeWorkspace } from './knowledge-workspace-fixture.client.tsx'
 import { items } from '../src/client/catalog-shared.tsx'
 import { zh, type DeepSeekHarnessProductKey } from '../src/locales.ts'
 
@@ -40,7 +41,7 @@ it('selects only manageable files on this page and clears selection on paginatio
   const api = transport(async (_method, payload) => page(payload.page === 2 ? [{ ...files[0], id: 'next-file', filename: '第二页.md' }] : [
     ...files, { ...files[0], id: 'deleting', filename: '删除中.md', status: 'DELETING' },
   ], 26, Number(payload.page)))
-  const { container } = render(<KnowledgeWorkspace {...props} />)
+  const { container } = renderKnowledgeWorkspace(<KnowledgeWorkspace {...props} />)
   const content = within(container.querySelector<HTMLElement>('[data-knowledge-content]')!)
   await content.findByRole('button', { name: files[0]!.filename })
   fireEvent.click(content.getByRole('checkbox', { name: t('knowledgeSelectPage') }))
@@ -63,7 +64,7 @@ it('selects only manageable files on this page and clears selection on paginatio
 
 it('shows mixed selection and prevents reprocessing a selection that includes active files', async () => {
   transport(async () => page([files[0], { ...files[1], status: 'PROCESSING' }]))
-  const { container } = render(<KnowledgeWorkspace {...props} />)
+  const { container } = renderKnowledgeWorkspace(<KnowledgeWorkspace {...props} />)
   const content = within(container.querySelector<HTMLElement>('[data-knowledge-content]')!)
   await content.findByRole('button', { name: files[0]!.filename })
   fireEvent.click(content.getByRole('checkbox', { name: zh.knowledgeSelectDocument.replace('{name}', files[0]!.filename) }))
@@ -80,7 +81,7 @@ it('keeps files unchanged before confirmation and refreshes the list after a sub
     if (method === 'knowledge.documents.delete') { deleted.add(String(payload.documentId)); return { documentId: payload.documentId, taskId: `delete-${payload.documentId}`, status: 'DELETING' } }
     return page(files.filter(file => !deleted.has(file.id)))
   })
-  const { container } = render(<KnowledgeWorkspace {...props} />)
+  const { container } = renderKnowledgeWorkspace(<KnowledgeWorkspace {...props} />)
   const content = within(container.querySelector<HTMLElement>('[data-knowledge-content]')!)
   await content.findByRole('button', { name: files[0]!.filename })
   fireEvent.click(content.getByRole('checkbox', { name: zh.knowledgeSelectPage }))
