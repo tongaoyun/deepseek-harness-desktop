@@ -1025,27 +1025,12 @@ describe('专家库目标稿样式契约', () => {
     expect(CARD_SETTINGS_CSS).toContain('.aag-section{container-type:inline-size}')
   })
 
-  it('专家卡片固定高度，单行标题紧凑排版', () => {
-    expect(CARD_SETTINGS_CSS).toContain('.aag-expert-card{display:grid')
-    expect(CARD_SETTINGS_CSS).toContain('height:191px;min-height:191px')
-    expect(CARD_SETTINGS_CSS).toContain('.aag-card-name{display:flex')
-    expect(CARD_SETTINGS_CSS).not.toContain('min-height:190px')
-  })
-
-  it('圆形小头像释放正文宽度，简介独占整行并展示三行', () => {
-    expect(CARD_SETTINGS_CSS).toContain('.aag-expert-avatar{display:block;width:44px;height:44px')
-    expect(CARD_SETTINGS_CSS).toContain('border-radius:50%')
-    expect(CARD_SETTINGS_CSS).toContain('.aag-card-description{flex:1;display:-webkit-box')
-    expect(CARD_SETTINGS_CSS).toContain('-webkit-line-clamp:3')
-  })
-
   it('空目录也展示跨境 ERP 分类，业务流程优先且其他收尾', () => {
     const values = expertDivisionFilterValues()
     expect(values).toEqual(['', 'orders', 'catalog', 'supply-chain', 'warehouse', 'logistics', 'finance', 'marketplace', 'marketing', 'analytics', 'product', 'engineering', 'testing', 'support', 'company', 'specialized'])
     expect(new Set(values).size).toBe(values.length)
     expect(CARD_SETTINGS_CSS).toContain('.aag-expert-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr))')
     expect(CARD_SETTINGS_CSS).not.toContain('width:80px;height:107px')
-    expect(CARD_SETTINGS_CSS).toContain('min-height:32px')
   })
 
   it('筛选按内容宽度排列，搜索吃掉剩余空间', () => {

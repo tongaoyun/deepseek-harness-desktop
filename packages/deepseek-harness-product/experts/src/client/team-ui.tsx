@@ -278,14 +278,8 @@ export function TeamsPanel(props: {
             <Input id="aag-team-search" className="aag-search" aria-label={tx("搜索专家团")} placeholder={tx("搜索团队、用途或成员")} value={query} autoComplete="off" spellCheck={false} icon={<IconSearch size={16}/>} onChange={(event) => setQuery(event.target.value)}/>
           </div>
         </div>
-        {props.source !== 'company' && <div className="aag-filter-actions">
-          <>{props.startCreation && <Button disabled={busy} onClick={props.startCreation}>{tx('通过对话创建专家团')}</Button>}<Button
-            variant="primary"
-            size="sm"
-            disabled={!snapshot || busy}
-            icon={<IconPlus size={16} aria-hidden="true" />}
-            onClick={() => setEditor({ enabled: false, revision: snapshot!.revision })}
-          >{tx("新建专家团")}</Button></>
+        {props.startCreation && <div className="aag-filter-actions">
+          <Button variant="primary" size="sm" disabled={busy} icon={<IconPlus size={16} aria-hidden="true" />} onClick={props.startCreation}>{tx('通过对话创建专家团')}</Button>
         </div>}
       </div>
       {error && (<div className="aag-error" role="alert">

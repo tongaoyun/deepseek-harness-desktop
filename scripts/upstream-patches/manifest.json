@@ -461,12 +461,12 @@
         {
           "path": "docs/config-catalog.md",
           "before": "bbe0b78a15b3e94a62637f1d4b900aa3bc6cfc11cc065b238197500122333938",
-          "after": "97de555e6cdf979db7666718a37d606d45eaf78c3e91d96c08c8db29f134117c"
+          "after": "27c6479df12ff18478f871fc8d4bffd52627a39007cc7e8405a080bc2e38598a"
         },
         {
           "path": "docs/config-catalog.zh.md",
           "before": "437bea12caa4ffc221c9f61db4ecaca058dd2a9e5f34bd79568697b1341ad4af",
-          "after": "e7409d859e8b46affb9797eae427c542fb8df88d6d69c7fd50afa46eb842ac06"
+          "after": "27e4472dd2d7c4e9c646ef812a741a8d3856d630263bae9af017d847ecae8f90"
         },
         {
           "path": "docs/development.i18n.yaml",
@@ -1321,7 +1321,7 @@
         {
           "path": "packages/extensions/cordis-client-runner/src/client/slot-catalog.ts",
           "before": "8f810e8bfb6e270d89543b6ff3c70b027da12f16f7f3406ad4ee872d0ca9cd32",
-          "after": "1b9dfb09f75296fdbea1477af27750df47f4337f8f4b05eaa850df2760b816c9"
+          "after": "1d2a29a9b8eb4fae77fb734b900d8d7ecc06c0efe5f0d62996de19cab5e0f774"
         },
         {
           "path": "packages/extensions/cordis-client-runner/tests/api-catalog.client.spec.ts",
@@ -1561,7 +1561,7 @@
         {
           "path": "pnpm-lock.yaml",
           "before": "aa1293f2e8d3ee82cb3cfcb0e65ba8a0ef73ab80fad4c35d7ed2f7c67b95a625",
-          "after": "4f59926e3250dbdb4a937320068df683a53024fc975b55c6c978bcf240f8e33c"
+          "after": "a3a4c04ff2b1317cb3159d3371dcc39091dfedbf1c5a6fa93ae8ae7f14796376"
         },
         {
           "path": "scripts/build.spec.ts",

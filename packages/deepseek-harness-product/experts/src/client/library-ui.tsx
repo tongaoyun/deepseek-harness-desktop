@@ -63,46 +63,36 @@ export function LibraryCard(props: {
         <div className="aag-card-header">
           {props.avatar}
           <div className="aag-card-identity">
-            <div className="aag-card-name" title={props.name}>
-              <span className="aag-card-name-text">{props.name}</span>
-              <div className="aag-card-division">{props.metadata}</div>
-            </div>
-          </div>
-          <div className="aag-switch" onClick={(event) => {
-            if (event && typeof event.stopPropagation === 'function') event.stopPropagation()
-          }}>
-            <PrimitiveSwitch
-              checked={props.enabled}
-              disabled={props.disabled}
-              label={`${props.name}：${props.enabled ? props.enabledLabel : props.disabledLabel}`}
-              title={props.enabled ? props.enabledLabel : props.disabledLabel}
-              onChange={() => props.toggle()}
-            />
-            <span className="aag-switch-state">
-              {props.enabled ? props.enabledLabel : props.disabledLabel}
-            </span>
+            <div className="aag-card-name" title={props.name}>{props.name}</div>
+            <div className="aag-card-description" title={props.description}>{props.description}</div>
           </div>
         </div>
-        <div className="aag-card-description" title={props.description}>
-          {props.description}
-        </div>
+        <div className="aag-card-division">{props.metadata}</div>
       </div>
       <div className="aag-card-actions">
         {props.actions}
         {props.moreItems.map((item) => (
-          <button
-            key={item.id}
-            type="button"
+          <button key={item.id} type="button"
             className={item.danger ? 'aag-card-action aag-card-action-danger' : 'aag-card-action'}
-            disabled={item.disabled}
-            title={item.label}
-            aria-label={item.label}
-            onClick={() => item.onSelect()}
-          >
-            {item.icon}
-            <span className="aag-card-action-text">{item.label}</span>
+            disabled={item.disabled} title={item.label} aria-label={item.label}
+            onClick={() => item.onSelect()}>
+            {item.icon}<span className="aag-card-action-text">{item.label}</span>
           </button>
         ))}
+        <div className="aag-switch" onClick={(event) => {
+          if (event && typeof event.stopPropagation === 'function') event.stopPropagation()
+        }}>
+          <PrimitiveSwitch
+            checked={props.enabled}
+            disabled={props.disabled}
+            label={`${props.name}：${props.enabled ? props.enabledLabel : props.disabledLabel}`}
+            title={props.enabled ? props.enabledLabel : props.disabledLabel}
+            onChange={() => props.toggle()}
+          />
+          <span className="aag-switch-state">
+            {props.enabled ? props.enabledLabel : props.disabledLabel}
+          </span>
+        </div>
       </div>
     </article>
   )

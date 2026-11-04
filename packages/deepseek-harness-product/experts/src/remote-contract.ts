@@ -2,7 +2,6 @@ import { createTypertRemoteInfo } from '@deepseek-ai/dsh-typert-protocol/remote-
 import type { TypertRemoteCodecSpec, TypertRemoteMethodSpec } from '@deepseek-ai/dsh-typert-protocol'
 import { z } from 'zod'
 import { TYPERT_REMOTE as generated } from './generated/typert.remote-client.js'
-import { creationDraftSchema } from './creation-contract.ts'
 import { teamInputSchema, teamSnapshotSchema } from './team-contract.ts'
 import { CUSTOM_EXPERT_SLUG, catalogSnapshotSchema, customExpertInputSchema, expertEditSchema } from './expert-contract.ts'
 
@@ -11,11 +10,6 @@ const revisionSchema = z.number().int().min(0)
 const enabledStateSchema = z.object({ enabled: enabledArraySchema, revision: revisionSchema })
 const customSlugSchema = z.string().regex(CUSTOM_EXPERT_SLUG)
 const teamIdSchema = z.string().min(1).max(128)
-
-/** Confirmed editor data is validated on both sides of the Remote. */
-export const creationEditorSchema = z.object({ draft: creationDraftSchema, catalog: catalogSnapshotSchema, teams: teamSnapshotSchema })
-/** Current editing inputs delivered with a single confirmed draft claim. */
-export type CreationEditorData = z.infer<typeof creationEditorSchema>
 
 type Methods = typeof generated.methods
 type ValidationRule = { parameters: Readonly<Partial<Record<string, z.ZodType>>>; result: z.ZodType }
@@ -29,7 +23,6 @@ type ValidationRules = {
 // Product semantics complement compiler-owned wire facts: TS cannot describe bounds,
 // UUIDs, defaults, transformations or exact-object checks. Missing/new parameters fail closed.
 const validationRules = {
-  'agencyAgents/claimCreation': { parameters: { sessionId: z.string().min(1).max(128), proposalId: z.uuid() }, result: creationEditorSchema },
   'agencyAgents/importExpert': { parameters: { files: z.record(z.string(), z.string()).refine(files => Object.keys(files).length <= 2048 && Object.values(files).reduce((sum, value) => sum + value.length, 0) <= 44_744_704) }, result: customExpertInputSchema },
   'agencyAgents/exportExpert': { parameters: { slug: z.string().regex(CUSTOM_EXPERT_SLUG) }, result: z.object({ resourceKey: z.string(), files: z.record(z.string(), z.string()), catalog: z.record(z.string(), z.string()) }).strict() },
   'agencyAgents/getTeams': { parameters: {}, result: teamSnapshotSchema },

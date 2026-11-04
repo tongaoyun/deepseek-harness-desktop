@@ -1,4 +1,4 @@
-/** Creation tools exercised through cordis.yml, the real Loader, ToolRuntime and native question service. */
+/** Creation tools exercised through cordis.yml, the real Loader, ToolRuntime and native approval service. */
 import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -15,9 +15,12 @@ import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import * as NativeExecutor from '@deepseek-ai/dsh-tool-executor-native'
 import ToolRuntime from '@deepseek-ai/dsh-tools'
 import { ToolCallId } from '@deepseek-ai/dsh-llm'
-import UserQuestions from '@deepseek-ai/dsh-user-questions'
+import UserApproval from '@deepseek-ai/dsh-user-approval'
 import type { ExpertSummary } from './expert-contract.ts'
-import { createDrafts } from './creation.ts'
+import { createTeamLibrary } from './team-library.ts'
+import { ExpertPackageStore } from './expert-packages.ts'
+import { MemorySettings } from './settings-memory.ts'
+import { agencySettingsSchema } from './expert-library.ts'
 import { createExpertLibrary, type AgencySettings } from './expert-library.ts'
 import { registerCreationTools } from './creation-tools.ts'
 import { z } from 'zod'
@@ -30,32 +33,38 @@ afterEach(async () => {
   ctx = undefined
   directory = undefined
 })
-const resultSchema = z.object({ proposalId: z.uuid(), ready: z.boolean(), markdown: z.string() })
+const resultSchema = z.object({ id: z.string(), name: z.string(), markdown: z.string() })
 const expert = { name: 'Reviewer', description: 'Review changes', division: 'engineering', prompt: 'Review the task and report findings with evidence.' }
 const team = { name: 'Review team', description: 'Review code and tests', goal: 'Find actionable defects', constraints: 'Preserve existing work', deliveryRequirements: 'Findings with evidence', tags: ['review'], examples: ['Review this change'], coordinatorTemplateId: 'technical' as const, members: [
   { expertSlug: '代码审查员', duty: 'Code', instructions: 'Check production code' },
   { expertSlug: 'Test Reviewer', duty: 'Tests', instructions: 'Check test coverage' },
 ] }
 async function boot(loadCatalog?: (signal?: AbortSignal) => Promise<readonly ExpertSummary[]>) {
-  directory = await mkdtemp(join(tmpdir(), 'harness-creation-'))
-  const config = join(directory, 'cordis.yml')
-  await writeFile(config, ['projections', 'agents', 'prompt', 'tools', 'executor', 'questions', 'creation'].map(name => `- name: 'cordis:${name}'`).join('\n') + '\n')
+  const root = await mkdtemp(join(tmpdir(), 'harness-creation-'))
+  directory = root
+  const config = join(root, 'cordis.yml')
+  await writeFile(config, ['projections', 'agents', 'prompt', 'tools', 'executor', 'approval', 'creation'].map(name => `- name: 'cordis:${name}'`).join('\n') + '\n')
   const context = new Context()
   ctx = context
   await context.plugin(Loader)
   Object.assign(context.loader.builtins, {
     include: Include, projections: SessionProjections, agents: AgentRegistry, prompt: SystemPrompt,
-    tools: ToolRuntime, questions: UserQuestions,
+    tools: ToolRuntime, approval: UserApproval,
   })
-  const drafts = createDrafts()
-  const saved: AgencySettings = { enabled: [] }
-  const members: ExpertSummary[] = [{ slug: 'engineering-reviewer', name: '代码审查员', nameEn: 'Code Reviewer', description: 'Review code', descriptionEn: '', division: 'engineering', divisionZh: '工程', emoji: '🧩', custom: false }, { slug: 'testing-reviewer', name: '测试审查员', nameEn: 'Test Reviewer', description: 'Review tests', descriptionEn: '', division: 'engineering', divisionZh: '工程', emoji: '🧩', custom: false }]
-  const library = createExpertLibrary(loadCatalog ?? (() => Promise.resolve(members)), {
-    read: () => saved, revision: () => 0,
-    mutate: () => Promise.reject(new Error('Creation tools must never persist content')),
-  }, ['engineering'], () => 'en')
+  const settings = new MemorySettings()
+  settings.register('personal', agencySettingsSchema)
+  const store = { read: () => settings.get('personal') as AgencySettings, revision: () => {
+    const section = settings.describe().find(item => item.ns === 'personal')
+    if (!section) throw new Error('Personal settings are missing')
+    return section.revision
+  },
+  mutate: (ops, revision) => settings.mutate('personal', ops, revision),
+  } satisfies Parameters<typeof createExpertLibrary>[1]
+  const members: ExpertSummary[] = [{ slug: 'engineering-reviewer', name: '代码审查员', nameEn: 'Code Reviewer', description: 'Review code', descriptionEn: '', division: 'engineering', divisionZh: '工程', emoji: '🧩', custom: false, packageVersion: '1.0.0', packageSha256: 'a'.repeat(64) }, { slug: 'testing-reviewer', name: '测试审查员', nameEn: 'Test Reviewer', description: 'Review tests', descriptionEn: '', division: 'engineering', divisionZh: '工程', emoji: '🧩', custom: false, packageVersion: '1.0.0', packageSha256: 'b'.repeat(64) }]
+  const library = createExpertLibrary(loadCatalog ?? (() => Promise.resolve(members)), store, ['engineering'], () => 'en', new ExpertPackageStore(async () => join(root, 'packages')))
+  const teams = createTeamLibrary((_session, signal) => library.catalog(signal), store, () => 'en')
   context.loader.builtins.executor = NativeExecutor
-  context.loader.builtins.creation = { name: 'creation-test', inject: ['tools', 'userQuestions'], apply: (scope: Context) => { registerCreationTools(scope, drafts, library, () => 'en') } }
+  context.loader.builtins.creation = { name: 'creation-test', inject: ['tools', 'approval'], apply: (scope: Context) => { registerCreationTools(scope, library, teams, () => 'en') } }
   await context.loader.create({ name: 'cordis:include', config: { path: pathToFileURL(config).href } })
   await context.loader.await()
   for (const entry of context.loader.entries()) await entry.fiber?.await()
@@ -69,6 +78,7 @@ async function boot(loadCatalog?: (signal?: AbortSignal) => Promise<readonly Exp
     send() {}, followup() {}, steer() {}, inject() {}, cancel() {},
     runMaintenance: task => task(new AbortController().signal), whenIdle: () => Promise.resolve(),
   }
+  owner.session.append('turn/start', { turn: 1 })
   await context.agents.register(owner)
   let call = 0
   const run = async (name: string, args: object, signal = new AbortController().signal) => {
@@ -76,94 +86,76 @@ async function boot(loadCatalog?: (signal?: AbortSignal) => Promise<readonly Exp
     const outcome = batch.results[0]
     return outcome.result
   }
-  return { context, drafts, owner, saved, run }
+  return { context, owner, library, teams, store, run }
 }
-it('keeps previews unsaved, requires native approval, and confirms only the reviewed proposal', async () => {
-  const { context, drafts, owner, saved, run } = await boot()
-  const preview = await run('propose_custom_expert', expert)
-  expect(preview.isError).toBe(false)
-  if (preview.isError) throw new Error(JSON.stringify(preview.content))
-  const proposed = resultSchema.parse(preview.value)
-  expect(proposed.ready).toBe(false)
-  expect(drafts.claim(owner.session.id, proposed.proposalId)).toBeUndefined()
-  const unavailable = await run('open_custom_expert_editor', { proposalId: proposed.proposalId })
-  expect(unavailable.isError).toBe(true)
+it('saves a complete AgentSpec after native approval, rejects without approval, and unloads its tools', async () => {
+  const { context, library, owner, run } = await boot()
+  expect((await run('create_custom_expert', expert)).isError).toBe(true)
+  expect((await library.catalog()).experts.filter(item => item.custom)).toEqual([])
   let approve = false
-  const disposeAnswer = context.on('user-questions/request', request => Promise.resolve({
-    answers: [{ id: request.questions[0].id, selected: [request.questions[0].options?.[approve ? 0 : 1]?.label ?? ''] }],
-  }))
-  const declined = await run('open_custom_expert_editor', { proposalId: proposed.proposalId })
-  expect(declined.isError).toBe(false)
-  if (!declined.isError) expect(resultSchema.parse(declined.value).ready).toBe(false)
-  expect(drafts.claim(owner.session.id, proposed.proposalId)).toBeUndefined()
+  const answer = context.on('approval/request', () => Promise.resolve(approve ? 'allowed-once' : 'rejected'))
+  expect((await run('create_custom_expert', expert)).isError).toBe(true)
+  expect((await library.catalog()).experts.filter(item => item.custom)).toEqual([])
   approve = true
-  const confirmed = await run('open_custom_expert_editor', { proposalId: proposed.proposalId })
-  expect(confirmed.isError).toBe(false)
-  if (!confirmed.isError) expect(confirmed.meta).toEqual({ ready: true, proposalId: proposed.proposalId })
-  expect(drafts.claim(owner.session.id, proposed.proposalId)?.data.name).toBe(expert.name)
-  expect(saved).toEqual({ enabled: [] })
-  expect(proposed.markdown).toMatchSnapshot()
-  disposeAnswer()
-  const entry = [...context.loader.entries()].find(item => item.options.name === 'cordis:creation')
-  await entry?.fiber?.dispose()
-  expect(context.tools.schemas().some(tool => tool.name === 'propose_custom_expert')).toBe(false)
-}, 30000)
-it('does not confirm a replacement draft from an old native question, and honors cancellation', async () => {
-  const { context, drafts, owner, run } = await boot()
-  const preview = await run('propose_custom_expert', expert)
-  if (preview.isError) throw new Error(JSON.stringify(preview.content))
-  const proposalId = resultSchema.parse(preview.value).proposalId
-  context.on('user-questions/request', (request) => {
-    drafts.save(owner.session.id, { kind: 'expert', data: { ...expert, name: 'Replacement' } })
-    return Promise.resolve({ answers: [{ id: request.questions[0].id, selected: [request.questions[0].options?.[0]?.label ?? ''] }] })
-  })
-  const stale = await run('open_custom_expert_editor', { proposalId })
-  expect(stale.isError).toBe(true)
-  expect(drafts.claim(owner.session.id, proposalId)).toBeUndefined()
-  const abort = new AbortController(); abort.abort()
-  expect((await run('propose_custom_expert', expert, abort.signal)).isError).toBe(true)
-}, 30000)
-
-it('creates a team from disabled members by Chinese and English names and rejects ambiguous or duplicate choices', async () => {
-  const { drafts, owner, run } = await boot()
-  const input = team
-  const result = await run('propose_expert_team', input)
+  const result = await run('create_custom_expert', { ...expert, agents: 'Use {{literal}} literally.', files: [{ path: 'references/中文资料.md', content: 'Read {{literal}} unchanged.' }] })
   expect(result.isError).toBe(false)
   if (result.isError) throw new Error(JSON.stringify(result.content))
-  const proposed = resultSchema.parse(result.value)
-  const draft = drafts.get(owner.session.id, proposed.proposalId)
-  expect(draft?.kind).toBe('team')
-  if (draft?.kind !== 'team') throw new Error('Team draft missing')
-  expect(draft.data.members.map(member => member.expertSlug)).toEqual(['engineering-reviewer', 'testing-reviewer'])
-  expect(proposed.markdown).toMatchSnapshot()
-  expect((await run('open_custom_expert_editor', { proposalId: proposed.proposalId })).isError).toBe(true)
-  const ambiguous = await run('propose_expert_team', { ...input, members: [{ ...input.members[0], expertSlug: 'reviewer' }, input.members[1]] })
-  expect(ambiguous.isError).toBe(true)
-  expect(JSON.stringify(ambiguous.content)).toContain('engineering-reviewer')
-  expect(JSON.stringify(ambiguous.content)).toContain('testing-reviewer')
-  expect((await run('propose_expert_team', { ...input, members: [input.members[0], input.members[0]] })).isError).toBe(true)
+  const saved = resultSchema.parse(result.value)
+  const value = await library.getCustom(saved.id)
+  expect(value).toMatchObject({ name: expert.name, prompt: expert.prompt, agents: 'Use {{literal}} literally.' })
+  if (!value.resources || !value.manifest) throw new Error('Saved AgentSpec package is incomplete')
+  expect(Buffer.from(value.resources['references/中文资料.md'], 'base64').toString()).toBe('Read {{literal}} unchanged.')
+  expect(JSON.parse(value.manifest).worker.suggested_name).toBe(saved.id)
+  expect((await library.catalog()).enabled).toContain(saved.id)
+  expect(result.content).toMatchSnapshot()
+  expect(owner.session.snapshotEvents().filter(event => event.type === 'approval/decided').map(event => event.data.outcome)).toEqual(['unavailable', 'rejected', 'allowed-once'])
+  expect((await run('create_custom_expert', expert)).isError).toBe(true)
+  expect((await library.catalog()).experts.filter(item => item.custom)).toHaveLength(1)
+  answer()
+  const entry = [...context.loader.entries()].find(item => item.options.name === 'cordis:creation')
+  await entry?.fiber?.dispose()
+  expect(context.tools.schemas().some(tool => tool.name === 'create_custom_expert')).toBe(false)
 }, 30000)
-
-it.each(['propose_custom_expert', 'list_creation_experts', 'propose_expert_team', 'open_custom_expert_editor', 'open_expert_team_editor'])(
-  'cancels a pending %s catalog read without changing drafts or asking for confirmation', async (name) => {
+it('creates a team without an editor, freezes disabled member versions and rejects ambiguous or missing members', async () => {
+  const { context, teams, run } = await boot()
+  context.on('approval/request', () => Promise.resolve('allowed-once'))
+  const result = await run('create_expert_team', team)
+  expect(result.isError).toBe(false)
+  if (result.isError) throw new Error(JSON.stringify(result.content))
+  const saved = resultSchema.parse(result.value)
+  const snapshot = await teams.snapshot()
+  expect(snapshot.enabledTeams).toContain(saved.id)
+  expect(snapshot.enabledExperts).toEqual(['engineering-reviewer', 'testing-reviewer'])
+  expect(snapshot.teams[0].members.map(member => [member.expertSlug, member.expertVersion, member.expertSha256])).toEqual([
+    ['engineering-reviewer', '1.0.0', 'a'.repeat(64)], ['testing-reviewer', '1.0.0', 'b'.repeat(64)],
+  ])
+  expect(result.content).toMatchSnapshot()
+  expect((await run('create_expert_team', { ...team, name: 'Ambiguous', members: [{ ...team.members[0], expertSlug: 'reviewer' }, team.members[1]] })).isError).toBe(true)
+  expect((await run('create_expert_team', { ...team, name: 'Missing', members: [{ ...team.members[0], expertSlug: 'unknown' }, team.members[1]] })).isError).toBe(true)
+  expect((await run('create_expert_team', { ...team, name: 'Repeated', members: [team.members[0], team.members[0]] })).isError).toBe(true)
+  expect((await teams.snapshot()).teams).toHaveLength(1)
+}, 30000)
+it('rejects unsafe or repeated resource paths before committing a personal expert', async () => {
+  const { context, library, run } = await boot()
+  context.on('approval/request', () => Promise.resolve('allowed-once'))
+  for (const files of [[{ path: 'references/../../outside', content: 'bad' }], [{ path: 'config/SOUL.md', content: 'bad' }], [{ path: 'references/a', content: 'one' }, { path: 'references/a', content: 'two' }]]) {
+    expect((await run('create_custom_expert', { ...expert, files })).isError).toBe(true)
+  }
+  expect((await library.catalog()).experts.filter(item => item.custom)).toEqual([])
+}, 30000)
+it.each(['create_custom_expert', 'list_creation_experts', 'create_expert_team'])(
+  'cancels a pending %s catalog read without committing content', async (name) => {
     const response = Promise.withResolvers<readonly ExpertSummary[]>()
     const entered = Promise.withResolvers<AbortSignal | undefined>()
-    const { context, drafts, owner, saved, run } = await boot(async (signal) => {
+    const { context, store, run } = await boot(async (signal) => {
       using _listener = signal === undefined ? undefined : addAbortListener(signal, () => { response.reject(signal.reason) })
       entered.resolve(signal)
       return await response.promise
     })
-    const proposal = drafts.save(owner.session.id, name === 'open_expert_team_editor'
-      ? { kind: 'team', data: { ...team, coordinatorMode: 'template', coordinatorTemplateVersion: 1, coordinatorPrompt: '' } }
-      : { kind: 'expert', data: expert })
-    const save = vi.spyOn(drafts, 'save')
-    const confirm = vi.spyOn(drafts, 'confirm')
-    const ask = vi.fn(() => Promise.resolve({ answers: [] }))
-    context.on('user-questions/request', ask)
+    context.on('approval/request', () => Promise.resolve('allowed-once'))
+    const mutate = vi.spyOn(store, 'mutate')
     const controller = new AbortController()
-    const args = name.startsWith('open_') ? { proposalId: proposal.id }
-      : name === 'list_creation_experts' ? {} : name === 'propose_expert_team' ? team : expert
-    const pending = run(name, args, controller.signal)
+    const pending = run(name, name === 'list_creation_experts' ? {} : name === 'create_expert_team' ? team : expert, controller.signal)
     try {
       const signal = await entered.promise
       controller.abort(new Error('Creation was cancelled'))
@@ -171,23 +163,17 @@ it.each(['propose_custom_expert', 'list_creation_experts', 'propose_expert_team'
       const result = await pending
       expect(result.isError).toBe(true)
       expect(JSON.stringify(result.content)).toContain('Creation was cancelled')
-      expect(result.content).toMatchInlineSnapshot(`
-        [
-          {
-            "text": "Error: Creation was cancelled",
-            "type": "text",
-          },
-        ]
-      `)
-      expect(save).not.toHaveBeenCalled()
-      expect(confirm).not.toHaveBeenCalled()
-      expect(ask).not.toHaveBeenCalled()
-      expect(drafts.get(owner.session.id, proposal.id)).toEqual(proposal.draft)
-      expect(saved).toEqual({ enabled: [] })
-    } finally {
-      controller.abort()
-      response.resolve([])
-      await pending
-    }
-  },
+      expect(mutate).not.toHaveBeenCalled()
+    } finally { controller.abort(); response.resolve([]); await pending }
+  }, 30000,
 )
+it('reports a concurrent Settings change without committing a second content write', async () => {
+  const { context, store, library, run } = await boot()
+  context.on('approval/request', () => Promise.resolve('allowed-once'))
+  const mutate = vi.spyOn(store, 'mutate').mockRejectedValueOnce(Object.assign(new Error('Concurrent edit'), { code: 'SETTINGS_CONFLICT' }))
+  const result = await run('create_custom_expert', expert)
+  expect(result.isError).toBe(true)
+  expect(JSON.stringify(result.content)).toContain('changed in another window')
+  expect((await library.catalog()).experts.filter(item => item.custom)).toEqual([])
+  expect(mutate).toHaveBeenCalledOnce()
+}, 30000)

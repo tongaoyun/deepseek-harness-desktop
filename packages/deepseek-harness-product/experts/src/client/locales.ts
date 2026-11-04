@@ -8,15 +8,12 @@ import { customDe, customEn, customEs, customFr, customJa, customPt, customRu, c
 
 /** 简体中文词条（key 集真相源）。 */
 export const zh = {
-  'creation.expert': '通过对话创建专家',
-  'creation.team': '通过对话创建专家团',
-  'creation.open': '核对并保存草案',
-  'creation.opened': '草案已在编辑器打开',
-  'creation.confirming': '正在确认草案…',
-  'creation.noSession': '请先打开一个对话，再创建专家或专家团',
-  'creation.failed': '未能填入对话，请重试',
-  'creation.expertPrompt': '我想创建一个个人专家，请先和我确认需求，生成完整草案供我修改，满意后再打开编辑器：',
-  'creation.teamPrompt': '我想组建一个个人专家团，请先了解目标，从现有专家中选择成员，给出分工及主理人规则草案，满意后再打开编辑器：',
+  'custom.importHint': '选择 AgentSpec 目录或 ZIP，导入后核对并保存。创建新专家请使用对话创建。',
+  'custom.importPackage': '导入专家包',
+  'creation.expert': '创建专家',
+  'creation.team': '创建专家团',
+  'creation.expertPrompt': '帮我创建一个「……」专家，擅长「……」。我的行业背景和相关经验是：\n\n请通过对话了解需求，生成专家说明及所需参考资料，确认后直接保存到我的专家。',
+  'creation.teamPrompt': '帮我创建一个专家团，用于「……」。请通过对话了解目标，从现有专家中选择成员并设计分工、交付要求和主理人规则，确认后直接保存到我的专家团。',
   'bulk.enable': '启用当前列表',
   'bulk.disable': '停用当前列表',
   'bulk.title': '批量修改个人启用状态？',
@@ -91,15 +88,12 @@ export type AgencyKey = keyof typeof zh
 
 /** 英文词条，key 完整性由 satisfies 在编译期保证。 */
 export const en = {
-  'creation.expert': 'Create expert in chat',
-  'creation.team': 'Create team in chat',
-  'creation.open': 'Review and save draft',
-  'creation.opened': 'Draft opened in editor',
-  'creation.confirming': 'Confirming draft…',
-  'creation.noSession': 'Open a conversation before creating an expert or team.',
-  'creation.failed': 'Could not fill the conversation. Try again.',
-  'creation.expertPrompt': 'I want to create a personal expert. Clarify my needs, propose a complete draft for revisions, and open the editor after I confirm: ',
-  'creation.teamPrompt': 'I want to create a personal expert team. Clarify the goal, select existing experts, propose duties and coordinator rules, and open the editor after I confirm: ',
+  'custom.importHint': 'Choose an AgentSpec directory or ZIP, then review and save. Use chat to create a new expert.',
+  'custom.importPackage': 'Import expert package',
+  'creation.expert': 'Create expert',
+  'creation.team': 'Create team',
+  'creation.expertPrompt': 'Help me create an expert in […]. My background and experience: […]. Clarify my needs in chat, generate the instructions and reference files, then save to Mine after confirmation.',
+  'creation.teamPrompt': 'Help me create an expert team for […]. Clarify the goal in chat, select existing experts and design duties, deliverables and coordinator rules, then save to Mine after confirmation.',
   'bulk.enable': 'Enable current list',
   'bulk.disable': 'Disable current list',
   'bulk.title': 'Change personal activation in bulk?',

@@ -25,7 +25,7 @@ test('插件样式不认领第三方皮肤作用域', () => {
 
 test('插件各组件全面接入 DSH 官方圆角体系', () => {
   const combinedCss = COMPOSER_CSS + SETTINGS_CSS + CARD_SETTINGS_CSS + TEAM_CSS + DISCOVERY_CSS + CUSTOM_EDITOR_CSS
-  assert.match(CARD_SETTINGS_CSS, /\.aag-expert-card\{[^}]*border-radius:var\(--dsw-radius-md,12px\)/, '专家卡片采用官方 R12 圆角')
+  assert.match(CARD_SETTINGS_CSS, /\.aag-expert-card\{[^}]*border-radius:var\(--dsw-radius-lg,16px\)/, '专家卡片采用官方 R16 圆角')
   assert.match(CARD_SETTINGS_CSS, /\.aag-expert-card\{[^}]*background:var\(--dsw-alias-bg-layer-1\)/, '专家卡片采用 layer-1 避免实心遮挡')
   assert.match(SETTINGS_CSS, /\.aag-empty\{[^}]*border-radius:var\(--dsw-radius-md,12px\)/, '空状态卡片采用官方 R12 圆角')
   assert.match(PLUGIN_UI_CSS, /\.aag-textarea\{[^}]*border-radius:var\(--dsw-radius-sm,8px\)/, '多行文本框采用官方 R8 圆角')

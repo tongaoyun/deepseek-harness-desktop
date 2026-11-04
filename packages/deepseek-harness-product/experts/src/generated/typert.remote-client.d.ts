@@ -4,13 +4,11 @@ import type {
   TypertRemoteInfo,
   TypertRemoteMethod,
 } from '@deepseek-ai/dsh-typert-protocol'
-import type { SessionId } from '@deepseek-ai/dsh-session/types'
-import type { CatalogSnapshot, CreationEditorData, CustomExpertInput, TeamSnapshot } from '@deepseek-harness/product-experts/types'
+import type { CatalogSnapshot, CustomExpertInput, TeamSnapshot } from '@deepseek-harness/product-experts/types'
 import type { TeamInput } from '@deepseek-harness/product/company-team'
 
 declare module '@deepseek-ai/dsh-typert-protocol' {
   interface TypertRemoteNamespace$6167656e63794167656e7473 {
-    claimCreation: (sessionId: SessionId, proposalId: string, signal?: AbortSignal) => Promise<RemoteResult<CreationEditorData>>
     deleteCustomExpert: (slug: string, expectedRevision: number, signal?: AbortSignal) => Promise<RemoteResult<CatalogSnapshot>>
     deleteTeam: (id: string, expectedRevision: number, signal?: AbortSignal) => Promise<RemoteResult<TeamSnapshot>>
     exportExpert: (slug: string, signal?: AbortSignal) => Promise<RemoteResult<{ resourceKey: string; files: Record<string, string>; catalog: Record<string, string>; }>>
@@ -26,7 +24,6 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
     setTeamEnabled: (id: string, enabled: boolean, expectedRevision: number, signal?: AbortSignal) => Promise<RemoteResult<TeamSnapshot>>
   }
   interface TypertRemoteMap {
-    'agencyAgents/claimCreation': (sessionId: SessionId, proposalId: string, signal?: AbortSignal) => Promise<RemoteResult<CreationEditorData>>
     'agencyAgents/deleteCustomExpert': (slug: string, expectedRevision: number, signal?: AbortSignal) => Promise<RemoteResult<CatalogSnapshot>>
     'agencyAgents/deleteTeam': (id: string, expectedRevision: number, signal?: AbortSignal) => Promise<RemoteResult<TeamSnapshot>>
     'agencyAgents/exportExpert': (slug: string, signal?: AbortSignal) => Promise<RemoteResult<{ resourceKey: string; files: Record<string, string>; catalog: Record<string, string>; }>>
@@ -47,7 +44,6 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
 }
 /** Native expert management methods generated from the Host service. */
 export declare const TYPERT_REMOTE: TypertRemoteInfo<{
-  readonly 'agencyAgents/claimCreation': TypertRemoteMethod<{ readonly 'sessionId': SessionId; readonly 'proposalId': string }, CreationEditorData>
   readonly 'agencyAgents/deleteCustomExpert': TypertRemoteMethod<{ readonly 'slug': string; readonly 'expectedRevision': number }, CatalogSnapshot>
   readonly 'agencyAgents/deleteTeam': TypertRemoteMethod<{ readonly 'id': string; readonly 'expectedRevision': number }, TeamSnapshot>
   readonly 'agencyAgents/exportExpert': TypertRemoteMethod<{ readonly 'slug': string }, { resourceKey: string; files: Record<string, string>; catalog: Record<string, string>; }>

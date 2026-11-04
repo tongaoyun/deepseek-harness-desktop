@@ -3773,7 +3773,7 @@ index 47acf9c48c7b391c98e990b24256527d4d509241..6a0d0e99330613f5d0fcd62c46742507
      "tests/creation-recommendations.e2e.ts",
      "tests/plugin-recommendations.e2e.ts",
 diff --git a/docs/config-catalog.md b/docs/config-catalog.md
-index a1423c4bfd113db96867e07fa7e6ceccdd3bb3a1..998d0e1070a4c534a5c32298bc91165215829d44 100644
+index a1423c4bfd113db96867e07fa7e6ceccdd3bb3a1..18dcd4052b57f2d270ee7053e2352dd363124a03 100644
 --- a/docs/config-catalog.md
 +++ b/docs/config-catalog.md
 @@ -158,7 +158,7 @@ export type Config = PresetDefinition
@@ -3832,7 +3832,7 @@ index a1423c4bfd113db96867e07fa7e6ceccdd3bb3a1..998d0e1070a4c534a5c32298bc911652
 +
 +- `inject`: `tools` · `subagents` · `systemPrompt` · `settings` · `webServer`
 +- `refs`: `Volatile` (`@deepseek-ai/cordis`)
-+- `source`: [`packages/deepseek-harness-product/experts/src/index.ts:191`](../packages/deepseek-harness-product/experts/src/index.ts)
++- `source`: [`packages/deepseek-harness-product/experts/src/index.ts:190`](../packages/deepseek-harness-product/experts/src/index.ts)
 +
 +```ts config-catalog
 +/** Plugin config: the persona root, the subagent provider, and the divisions to scan. */
@@ -3908,7 +3908,7 @@ index a1423c4bfd113db96867e07fa7e6ceccdd3bb3a1..998d0e1070a4c534a5c32298bc911652
 +| `@deepseek-harness/product-desktop` | — | [`packages/deepseek-harness-product/desktop/src/index.ts`](../packages/deepseek-harness-product/desktop/src/index.ts) |
  <!-- END GENERATED config-catalog:library -->
 diff --git a/docs/config-catalog.zh.md b/docs/config-catalog.zh.md
-index adf1f1ef02616da25e567133129e844974cea6c5..1a605f92c66fcc844bfcf724f4f91b53284e0945 100644
+index adf1f1ef02616da25e567133129e844974cea6c5..d72a3d99c8ad7766dfda44b7043521d27377a8ad 100644
 --- a/docs/config-catalog.zh.md
 +++ b/docs/config-catalog.zh.md
 @@ -160,7 +160,7 @@ export type Config = PresetDefinition
@@ -3967,7 +3967,7 @@ index adf1f1ef02616da25e567133129e844974cea6c5..1a605f92c66fcc844bfcf724f4f91b53
 +
 +- `inject`: `tools` · `subagents` · `systemPrompt` · `settings` · `webServer`
 +- `refs`: `Volatile` (`@deepseek-ai/cordis`)
-+- `source`: [`packages/deepseek-harness-product/experts/src/index.ts:191`](../packages/deepseek-harness-product/experts/src/index.ts)
++- `source`: [`packages/deepseek-harness-product/experts/src/index.ts:190`](../packages/deepseek-harness-product/experts/src/index.ts)
 +
 +```ts config-catalog
 +/** Plugin config: the persona root, the subagent provider, and the divisions to scan. */
@@ -11313,7 +11313,7 @@ index 8777befdb01422740acd5e878f38d3fec888d50a..2c72c8203fca2d385a2e6e99f3f592df
      name: 'RegisterFactory',
      declaration: 'export interface RegisterFactory {\n    <F extends keyof SlotFactoryMap & string>(options: RegisterFactoryOptions<F>, component: SlotComponent<FactoryComponentPropsOf<F>>): () => void;\n}',
 diff --git a/packages/extensions/cordis-client-runner/src/client/slot-catalog.ts b/packages/extensions/cordis-client-runner/src/client/slot-catalog.ts
-index 11311bce0764f2c1592a4f334fbe9b0c85ac0d5e..ead5ddaeb5afedf46f383f147841e467519558c5 100644
+index 11311bce0764f2c1592a4f334fbe9b0c85ac0d5e..592f4a26afdb32985474ee2ced5d541c2b511756 100644
 --- a/packages/extensions/cordis-client-runner/src/client/slot-catalog.ts
 +++ b/packages/extensions/cordis-client-runner/src/client/slot-catalog.ts
 @@ -851,7 +851,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
@@ -11874,13 +11874,7 @@ index 11311bce0764f2c1592a4f334fbe9b0c85ac0d5e..ead5ddaeb5afedf46f383f147841e467
    },
    {
      key: 'sidebar.workspaces.directoryFlow',
-@@ -5373,11 +5595,13 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
-       'client-ui-tool TodoRow key \'todo_write\'',
-       'client-ui-tool WebRow key \'web_search\'',
-       'client-ui-tool WebRow key \'web_fetch\'',
-+      '@deepseek-harness/product-experts CreationCard',
-       'client-ui-action-cards ProposeRow key \'propose_action\'',
-       'client-ui-cordis CordisDefineRow key \'cordis_define\'',
+@@ -5378,6 +5600,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
        'client-ui-cordis CordisRunRow key \'cordis_run\'',
        'client-ui-cordis CordisActionRow key \'cordis_stop\'',
        'client-ui-cordis CordisActionRow key \'cordis_undefine\'',
@@ -13722,7 +13716,7 @@ index 507c4506b017cd7df22f0fe6f5b699cc282b089c..0bc0db2400eb601183786426dedfe542
        if (options.awaitConnected !== false) {
          await awaitConnected(ctx, mock, options.connectTimeoutMs ?? DEFAULT_CONNECT_TIMEOUT_MS)
 diff --git a/pnpm-lock.yaml b/pnpm-lock.yaml
-index d6ef3e506e9d477291875dd2739f0c863d4f1a38..cc5356bd1ab27957af68402a6f4304be408e148a 100644
+index d6ef3e506e9d477291875dd2739f0c863d4f1a38..643e2d2b76029c7a2adcfb3c9ce5c614a78bc301 100644
 --- a/pnpm-lock.yaml
 +++ b/pnpm-lock.yaml
 @@ -770,6 +770,9 @@ importers:
@@ -13824,7 +13818,7 @@ index d6ef3e506e9d477291875dd2739f0c863d4f1a38..cc5356bd1ab27957af68402a6f4304be
        '@deepseek-ai/dsh-util-values':
          specifier: workspace:*
          version: link:../../util/values
-@@ -7952,137 +8016,826 @@ importers:
+@@ -7952,137 +8016,829 @@ importers:
          version: link:../../util/brand
        '@deepseek-ai/dsh-util-values':
          specifier: workspace:*
@@ -14228,6 +14222,9 @@ index d6ef3e506e9d477291875dd2739f0c863d4f1a38..cc5356bd1ab27957af68402a6f4304be
 +      '@deepseek-ai/dsh-client-ui-tool':
 +        specifier: workspace:*
 +        version: link:../../client/ui-tool
++      '@deepseek-ai/dsh-client-ui-workspace':
++        specifier: workspace:*
++        version: link:../../client/ui-workspace
 +      '@deepseek-ai/dsh-config-editor':
 +        specifier: workspace:*
 +        version: link:../../boot/config-editor
@@ -14300,9 +14297,6 @@ index d6ef3e506e9d477291875dd2739f0c863d4f1a38..cc5356bd1ab27957af68402a6f4304be
 +      '@deepseek-ai/dsh-user-approval':
 +        specifier: workspace:*
 +        version: link:../../interaction/user-approval
-+      '@deepseek-ai/dsh-user-questions':
-+        specifier: workspace:*
-+        version: link:../../interaction/user-questions
 +      '@deepseek-ai/dsh-util-crypto':
 +        specifier: workspace:*
 +        version: link:../../util/crypto
@@ -14589,10 +14583,13 @@ index d6ef3e506e9d477291875dd2739f0c863d4f1a38..cc5356bd1ab27957af68402a6f4304be
 +        specifier: workspace:*
 +        version: link:../../client/ui-session
 +      '@deepseek-ai/dsh-client-ui-slots':
++        specifier: workspace:*
++        version: link:../../client/ui-slots
++      '@deepseek-ai/dsh-client-ui-workspace':
          specifier: workspace:*
 -        version: link:../agent
 -      '@deepseek-ai/dsh-agent-loop-testkit':
-+        version: link:../../client/ui-slots
++        version: link:../../client/ui-workspace
 +      '@deepseek-ai/dsh-commands':
          specifier: workspace:*
 -        version: link:../../test-support/agent-loop-testkit
@@ -14757,7 +14754,7 @@ index d6ef3e506e9d477291875dd2739f0c863d4f1a38..cc5356bd1ab27957af68402a6f4304be
  
    packages/deliverables/deliverable-file-references:
      devDependencies:
-@@ -11954,6 +12707,90 @@ importers:
+@@ -11954,6 +12710,90 @@ importers:
          specifier: ^18.2.0
          version: 18.3.1
  
@@ -14848,7 +14845,7 @@ index d6ef3e506e9d477291875dd2739f0c863d4f1a38..cc5356bd1ab27957af68402a6f4304be
    packages/feedback/command-feedback:
      dependencies:
        zod:
-@@ -20277,10 +21114,18 @@ packages:
+@@ -20277,10 +21117,18 @@ packages:
    '@mixmark-io/domino@2.2.0':
      resolution: {integrity: sha512-Y28PR25bHXUg88kCV7nivXrP2Nj2RueZ3/l/jdx6J9f8J4nsEGcgX0Qe6lt7Pa+J79+kPiJU3LguR6O/6zrLOw==}
  
@@ -14867,7 +14864,7 @@ index d6ef3e506e9d477291875dd2739f0c863d4f1a38..cc5356bd1ab27957af68402a6f4304be
    '@modelcontextprotocol/core@2.2.0':
      resolution: {integrity: sha512-iLhmprRmWI8EcosOA3wVvww22z02NkgqhV4fBH6f/odQBsi7xnJc0HGmi21yWO+/iKw2yzqVE127Zhna5/+JXw==}
      engines: {node: '>=20'}
-@@ -20313,6 +21158,10 @@ packages:
+@@ -20313,6 +21161,10 @@ packages:
      resolution: {integrity: sha512-kKaFkyAh6oipvc9+EAbJ552JafnMnOq5nzmzWkp1jJdBhTAAGpmIpWihUG1+rfNhmEFM98gUZDdCHCDD4v6a7Q==}
      hasBin: true
  
@@ -14878,7 +14875,7 @@ index d6ef3e506e9d477291875dd2739f0c863d4f1a38..cc5356bd1ab27957af68402a6f4304be
    '@modelcontextprotocol/server@2.2.0':
      resolution: {integrity: sha512-qFnltjus6Gk8Lx6J1w2RXmr3YPN22MNT6qD6zjAkaiWIlFIFxWClz0rXHNuJF/KSUyn5YGhkSvXkWDbQHVLFEQ==}
      engines: {node: '>=20'}
-@@ -21321,6 +22170,14 @@ packages:
+@@ -21321,6 +22173,14 @@ packages:
      resolution: {integrity: sha512-4BAffykYOgO+5nzBWYwE3W90sBgLJoUPRWWcL8wlyiM8IB8ipJz3UMJ9KXQd1RKQXpKp8Tutn80HZtWsu2u76w==}
      engines: {node: '>=10'}
  
@@ -14893,7 +14890,7 @@ index d6ef3e506e9d477291875dd2739f0c863d4f1a38..cc5356bd1ab27957af68402a6f4304be
    '@tanstack/react-virtual@3.14.10':
      resolution: {integrity: sha512-SRyoUbdFMRHuYXMijV5H4ZarQWpXkj3iANq8OFre+pybeVap8ZJjZ3Nz9bVjx4d8PfobVUQUdKyyyHYk3E+djw==}
      peerDependencies:
-@@ -27972,6 +28829,16 @@ snapshots:
+@@ -27972,6 +28832,16 @@ snapshots:
  
    '@mixmark-io/domino@2.2.0': {}
  
@@ -14910,7 +14907,7 @@ index d6ef3e506e9d477291875dd2739f0c863d4f1a38..cc5356bd1ab27957af68402a6f4304be
    '@modelcontextprotocol/client@2.2.0':
      dependencies:
        '@modelcontextprotocol/core': 2.2.0
-@@ -27982,10 +28849,21 @@ snapshots:
+@@ -27982,10 +28852,21 @@ snapshots:
        pkce-challenge: 5.0.1
        zod: 4.4.3
  
@@ -14932,7 +14929,7 @@ index d6ef3e506e9d477291875dd2739f0c863d4f1a38..cc5356bd1ab27957af68402a6f4304be
    '@modelcontextprotocol/node@2.0.0(@modelcontextprotocol/server@2.2.0)(hono@4.13.7)':
      dependencies:
        '@hono/node-server': 1.19.17(hono@4.13.7)
-@@ -28037,6 +28915,11 @@ snapshots:
+@@ -28037,6 +28918,11 @@ snapshots:
        - supports-color
        - zod
  
@@ -14944,7 +14941,7 @@ index d6ef3e506e9d477291875dd2739f0c863d4f1a38..cc5356bd1ab27957af68402a6f4304be
    '@modelcontextprotocol/server@2.2.0':
      dependencies:
        '@modelcontextprotocol/core': 2.2.0
-@@ -28744,6 +29627,13 @@ snapshots:
+@@ -28744,6 +29630,13 @@ snapshots:
      dependencies:
        defer-to-connect: 2.0.1
  
