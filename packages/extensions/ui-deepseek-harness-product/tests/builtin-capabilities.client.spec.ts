@@ -21,6 +21,7 @@ it('owns main pages, mention sources and remote mounts across unload and reload'
   ctx.provide('sessions', {} as never)
   ctx.provide('conversation', {} as never)
   ctx.provide('layout', {} as never)
+  ctx.reflect.provide('uiWorkspace', { startSession: vi.fn() })
   const sources = new Set<object>()
   ctx.provide('inputTriggers', { registerSource(source: object) {
     sources.add(source)
