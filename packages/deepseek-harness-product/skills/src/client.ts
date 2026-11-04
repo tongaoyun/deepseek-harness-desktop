@@ -673,7 +673,7 @@ function createSkillsPage(localeService: ClientContext["locale"]) {
           h('span', { className: 'dssm-skill-category' }, skillCategoryName(root, skill) || t('category.uncategorized')),
           skill.shadowedBy ? h("div", { className: "dssm-note" }, statusTitle) : null,
           skill.loadable === false ? h("div", { className: "dssm-note" }, t("skill.unavailable")) : null,
-          renderLinkedNote(skill), renderFallback(skill)), h("div", { className: "dssm-skill-actions" }, skillActions));
+          renderLinkedNote(skill), renderFallback(skill)), h("div", { className: "dssm-skill-actions" }, ...skillActions));
       }
       var rows = roots.flatMap(function (root) { return (root.skills || []).map(function (skill) { return { root: root, skill: skill }; }); });
       var filteredRows = rows.filter(function (row) { return (!activeSource || row.root.key === activeSource) && (!activeCategory || (skillCategoryName(row.root, row.skill) ? 'name:' + skillCategoryName(row.root, row.skill) : 'uncategorized') === activeCategory) && (!filters.status || isSkillEnabled(row.skill) === (filters.status === "enabled")) && matchSkillQuery(Object.assign({}, row.skill, { rootLabel: rootDisplayName(t, row.root) }), query); });
@@ -683,7 +683,7 @@ function createSkillsPage(localeService: ClientContext["locale"]) {
         var actions: React.ReactNode[] = [];
         actions.push(iconButton(t("category.create"), h(IconPlusOutlineRegular, { size: 16 }), function () { setCategoryName(""); setModal({ type: "category-create", root: root.key, workspace: workspacePath }); }, false, busy));
         if (canToggleSource(root)) actions.push(h(Switch, { checked: root.enabled, disabled: busy, label: t("source.toggle") + " " + displayName, onChange: function (enabled) { post("setSourceEnabled", { target: scoped, enabled }).catch(function (_error) { /* post displays the localized failure. */ }); } }));
-        return h("span", { className: "dssm-source-actions", onClick: function (event: React.MouseEvent) { event.stopPropagation(); } }, actions);
+        return h("span", { className: "dssm-source-actions", onClick: function (event: React.MouseEvent) { event.stopPropagation(); } }, ...actions);
       }
       function clearDragHighlights(element: HTMLElement) {
         var section = element.closest(".dssm-section");
@@ -834,7 +834,7 @@ function createSkillsPage(localeService: ClientContext["locale"]) {
       var repositoryUI = useRepositoryUI({ active: scope === "repositories", t: t, getSignal: () => lifetime.current.signal, onInstalled: function () { return Promise.all([refresh(false), refreshWorkspaceDetails()]); } });
       function getTabIcon(value: string) {
         const Icon = value === "user" ? IconGlobeOutlineRegular : value === "project" ? IconFolderCloseRegular : value === "repositories" ? IconBrowseOutlineRegular : IconTrashOutlineRegular;
-        return h(Icon, { size: 14 });
+        return h(Icon, { key: "icon", size: 14 });
       }
       function scopeTab(value: string): SegmentedTab<string> {
         var text = t("scope." + value);
@@ -844,7 +844,7 @@ function createSkillsPage(localeService: ClientContext["locale"]) {
           value: value,
           id: "dssm-tab-" + value,
           panelId: "dssm-scope-panel",
-          label: count > 0 ? [icon, text, h("span", { className: "dssm-trash-count" }, count)] : [icon, text]
+          label: count > 0 ? [icon, text, h("span", { key: "count", className: "dssm-trash-count" }, count)] : [icon, text]
         };
       }
       var tabItems: readonly [SegmentedTab<string>, ...SegmentedTab<string>[]] = [scopeTab("user"), scopeTab("project"), scopeTab("repositories"), scopeTab("trash")];
