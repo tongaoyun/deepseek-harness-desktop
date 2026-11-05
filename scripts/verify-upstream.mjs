@@ -1,6 +1,7 @@
 import { readFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { verifyPatches, verifyDependencies, verifyPinnedBaseline } from './upstream-boundaries.mjs'
+import { releaseFamily } from './release/families.ts'
 
 const root = resolve(import.meta.dirname, '..')
 const upstreamCommit = (await readFile(resolve(root, 'UPSTREAM_COMMIT'), 'utf8')).trim()
@@ -21,4 +22,6 @@ if (desktop.name !== '@deepseek-ai/dsh-desktop') throw new Error('official Elect
 const patches = JSON.parse(await readFile(resolve(root, 'scripts/upstream-patches/manifest.json'), 'utf8'))
 verifyPatches(root, upstreamCommit, patches)
 verifyDependencies(root)
+const family = releaseFamily('dsh')
+family.verifyVersions(family.members(root))
 console.log(`verified DeepSeek Harness ${upstreamTag} (${upstreamCommit})`)

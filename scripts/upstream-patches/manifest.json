@@ -941,7 +941,7 @@
         {
           "path": "packages/client/ui-deepseek-model-label-1017/package.json",
           "before": null,
-          "after": "3534f3b617b13685774b76e84a3e738c1caef87c13cb3e35ed88cf622f727234"
+          "after": "7a9604931377f46c97076e9a53f83e7a83bb5777957e9245516fe6738615fc57"
         },
         {
           "path": "packages/client/ui-deepseek-model-label-1017/src/client/DeepSeekModelLabel.module.css",

@@ -8178,14 +8178,14 @@ index 0000000000000000000000000000000000000000..50388f228c2568336892c3a7db437b76
 +}
 diff --git a/packages/client/ui-deepseek-model-label-1017/package.json b/packages/client/ui-deepseek-model-label-1017/package.json
 new file mode 100644
-index 0000000000000000000000000000000000000000..fd981f0ed6c146f3ef70fd473f41d99c2e37303d
+index 0000000000000000000000000000000000000000..dbfc807db2ee7bbbf642fa19feb88ffa73ef36c8
 --- /dev/null
 +++ b/packages/client/ui-deepseek-model-label-1017/package.json
 @@ -0,0 +1,66 @@
 +{
 +  "name": "@deepseek-ai/dsh-client-ui-deepseek-model-label-1017",
 +  "description": "Temporary 1017 release badge for official DeepSeek Flash model labels",
-+  "version": "0.2.2-alpha.2",
++  "version": "0.2.2-alpha.3",
 +  "publishConfig": {
 +    "access": "public"
 +  },
