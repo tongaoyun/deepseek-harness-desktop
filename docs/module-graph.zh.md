@@ -170,7 +170,6 @@ flowchart TD
     pkg_client_ui_commands["client-ui-commands"]
     pkg_client_ui_context_menu["client-ui-context-menu"]
     pkg_client_ui_conversation["client-ui-conversation"]
-    pkg_client_ui_deepseek_model_label_1017["client-ui-deepseek-model-label-1017"]
     pkg_client_ui_deliverables["client-ui-deliverables"]
     pkg_client_ui_directory_picker_browse["client-ui-directory-picker-browse"]
     pkg_client_ui_directory_picker_native["client-ui-directory-picker-native"]
@@ -1559,7 +1558,6 @@ flowchart TD
 | [`client-ui-commands`](../packages/client/ui-commands) | `client` | — |
 | [`client-ui-context-menu`](../packages/client/ui-context-menu) | `client` | — |
 | [`client-ui-conversation`](../packages/client/ui-conversation) | `client` | — |
-| [`client-ui-deepseek-model-label-1017`](../packages/client/ui-deepseek-model-label-1017) | `client` | — |
 | [`client-ui-deliverables`](../packages/client/ui-deliverables) | `client` | — |
 | [`client-ui-directory-picker-browse`](../packages/client/ui-directory-picker-browse) | `client` | — |
 | [`client-ui-directory-picker-native`](../packages/client/ui-directory-picker-native) | `client` | — |

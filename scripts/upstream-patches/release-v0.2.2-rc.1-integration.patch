@@ -212,57 +212,6 @@ index 3bb982f03257269e63a4282a69d75a13e8fb4da3..c84b599878eb3b081fb703e45bdf0e56
  | `packages/client/ui-primitives` | 与 Task Surface 无关的 `MarkdownText.remoteImages` 策略，包括 `alt-only` 图片分支和 URL 策略测试 |
  | `packages/client/ui-task-surface` | 静态且可操作的 `TaskSurfaceDock`、带 key 的只读 transcript 行、消费 Task Surface 模型并以 `alt-only` 模式使用 `MarkdownText` 的声明式 Web 渲染器、按会话划分的草稿 store，以及提交客户端 |
  | `packages/host/apiproxy` | 类型化的活动 Surface 读取／提交／关闭传输、用户消息来源扩展与传递、队列操作限制，以及认领和终态结果的路由；将校验、待处理协调和接纳委托给 Task Surface 服务 |
-diff --git a/.deepseek-harness/dsh-audit/profiles/sdk/cordis.patch.yml b/.deepseek-harness/dsh-audit/profiles/sdk/cordis.patch.yml
-new file mode 100644
-index 0000000000000000000000000000000000000000..fa39409d4b02fc1fcaae450087c9219d94de57d8
---- /dev/null
-+++ b/.deepseek-harness/dsh-audit/profiles/sdk/cordis.patch.yml
-@@ -0,0 +1,4 @@
-+# Your patch layer for this dsh profile, applied after every bundle layer:
-+# a top-level YAML array of loader patch entries (id-targeted config
-+# overrides, disables, and insert lists; `!!js` expressions allowed).
-+[]
-diff --git a/.deepseek-harness/dsh-audit/profiles/sdk/cordis.yml b/.deepseek-harness/dsh-audit/profiles/sdk/cordis.yml
-new file mode 100644
-index 0000000000000000000000000000000000000000..85a037023111579a8c3f0ec80ef720ba52f5f776
---- /dev/null
-+++ b/.deepseek-harness/dsh-audit/profiles/sdk/cordis.yml
-@@ -0,0 +1,4 @@
-+# dsh profile root — an empty entry list. The tree is composed as patches:
-+# each bundle in package.json's dsh.profile.bundles, then cordis.patch.yml, then any
-+# --patch overlays. Edit cordis.patch.yml, not this file.
-+[]
-diff --git a/.deepseek-harness/dsh-audit/profiles/sdk/package.json b/.deepseek-harness/dsh-audit/profiles/sdk/package.json
-new file mode 100644
-index 0000000000000000000000000000000000000000..e8726247729056082f0757d1823d3d0a11032f8c
---- /dev/null
-+++ b/.deepseek-harness/dsh-audit/profiles/sdk/package.json
-@@ -0,0 +1,14 @@
-+{
-+  "name": "dsh-profile-sdk",
-+  "private": true,
-+  "dependencies": {},
-+  "dsh": {
-+    "profile": {
-+      "bundles": [
-+        "@deepseek-ai/dsh-base",
-+        "@deepseek-ai/dsh-sdk-app"
-+      ],
-+      "patchReload": "startup"
-+    }
-+  }
-+}
-diff --git a/.deepseek-harness/dsh-audit/profiles/sdk/pnpm-workspace.yaml b/.deepseek-harness/dsh-audit/profiles/sdk/pnpm-workspace.yaml
-new file mode 100644
-index 0000000000000000000000000000000000000000..f24c22e192bf57cd927f1b55a5a22888959f2864
---- /dev/null
-+++ b/.deepseek-harness/dsh-audit/profiles/sdk/pnpm-workspace.yaml
-@@ -0,0 +1,5 @@
-+packages:
-+  - .
-+
-+nodeLinker: hoisted
-+autoInstallPeers: false
 diff --git a/.gitattributes b/.gitattributes
 index 2bead994d2340b9b0de423135aca0d8204e7b893..1727ec41e3b3956c25e5c7489baacfad2ee44d00 100644
 --- a/.gitattributes
@@ -3596,156 +3545,6 @@ index 4900a2e08912c1886cb087fc497eb7ecee28c6cb..39af1a87a7b7118a569d9767dc92da6d
      if (!Above(other, installer)) return 2;
      if (!InstallerPresentWelcome(installer)) return 3;
      if (!Above(installer, other)) return 4;
-diff --git a/apps/web/tests/deepseek-model-label-1017.e2e.ts b/apps/web/tests/deepseek-model-label-1017.e2e.ts
-new file mode 100644
-index 0000000000000000000000000000000000000000..f732f2f7a9f85953b30c67b9af1370b0d1c84e9f
---- /dev/null
-+++ b/apps/web/tests/deepseek-model-label-1017.e2e.ts
-@@ -0,0 +1,107 @@
-+/** The shipped browser plugin decorates both DeepSeek routes without changing catalog identity. */
-+import { fileURLToPath } from 'node:url'
-+import { chromium, type Browser, type Page } from 'playwright'
-+import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-+import {
-+  captureStableAria, compareOrRefreshGolden, launchWebScaffold, watchConsole, webSnapshotMode, type WebScaffold,
-+} from './scaffold.ts'
-+import { connectFreshWorkspaceZh, ZH_BROWSER_LOCALE } from './support.ts'
-+
-+const NAME = 'DeepSeek-V4.1-Flash'
-+const FIXTURE = fileURLToPath(new URL('./fixtures/deepseek-model-label-1017/session.v4.jsonl', import.meta.url))
-+const EXPECTED = fileURLToPath(new URL('./expected/deepseek-model-label-1017/models.expected.md', import.meta.url))
-+const MODE = webSnapshotMode()
-+
-+describe.skipIf(MODE === 'record')('web e2e: temporary DeepSeek release badge', () => {
-+  let scaffold: WebScaffold
-+  let browser: Browser
-+  let page: Page
-+  let tripwire: ReturnType<typeof watchConsole>
-+
-+  beforeAll(async () => {
-+    scaffold = await launchWebScaffold({
-+      extraOverlayPath: fileURLToPath(new URL('./fixtures/deepseek-model-label-1017/account.overlay.yml', import.meta.url)),
-+      replayFixture: FIXTURE,
-+      replayProvidersOnly: true,
-+      replayProviders: [
-+        { id: 'deepseek-account', name: 'DeepSeek Account', models: [{ id: 'deepseek-flash', name: NAME }] },
-+        { id: 'deepseek-official', name: 'DeepSeek', models: [
-+          { id: 'deepseek-flash', name: NAME }, { id: 'deepseek-v4-pro', name: 'DeepSeek-V4-Pro' },
-+        ] },
-+        { id: 'external', name: 'External', models: [{ id: 'deepseek-flash', name: NAME }] },
-+      ],
-+    })
-+    browser = await chromium.launch()
-+    page = await browser.newPage({ viewport: { width: 1440, height: 900 }, locale: ZH_BROWSER_LOCALE })
-+    tripwire = watchConsole(page)
-+    await page.goto(scaffold.authenticatedUrl, { waitUntil: 'load' })
-+    await connectFreshWorkspaceZh(page, scaffold.workspaceCwd)
-+  })
-+
-+  afterAll(async () => {
-+    try { await browser?.close() }
-+    finally { await scaffold?.close() }
-+  })
-+
-+  it('shows the same badge in all placements while preserving the chosen provider and model id', async () => {
-+    const trigger = page.getByRole('button', { name: /^选择模型/ })
-+    await trigger.getByText('1017', { exact: true }).waitFor()
-+    expect(await trigger.textContent()).toContain(`${NAME} 1017`)
-+    expect(await trigger.getAttribute('aria-label')).toBe(`选择模型，当前 ${NAME}`)
-+    try {
-+      await trigger.click()
-+      const current = page.getByRole('menuitem', { name: /^模型/ })
-+      expect(await current.getByText('1017', { exact: true }).count()).toBe(1)
-+      await current.click()
-+      const menu = page.getByRole('menu', { name: '模型', exact: true })
-+      await compareOrRefreshGolden(EXPECTED, await captureStableAria(page, '[role="menu"][aria-label="模型"]', scaffold.workspaceCwd), MODE)
-+      expect(await menu.getByText('1017', { exact: true }).count()).toBe(2)
-+      expect(await menu.getByRole('group', { name: 'External', exact: true }).getByText('1017', { exact: true }).count()).toBe(0)
-+      const account = menu.getByRole('group', { name: 'DeepSeek 账号', exact: true })
-+      await account.getByRole('menuitemradio', { name: `${NAME} 1017`, exact: true }).click()
-+      await expect.poll(() => scaffold.ctx.agentDefaultModel.currentSelection()).toEqual({ provider: 'deepseek-account', model: 'deepseek-flash' })
-+      await expect.poll(() => trigger.textContent()).toContain(`${NAME} 1017`)
-+      const catalog = await scaffold.ctx.llm.listModels('deepseek-account')
-+      expect(catalog.map(model => ({ id: model.id, name: model.name }))).toEqual([{ id: 'deepseek-flash', name: NAME }])
-+    } finally {
-+      await page.keyboard.press('Escape')
-+      await page.keyboard.press('Escape')
-+    }
-+  })
-+
-+  it('keeps the release badge inside a 390px model menu and uses both theme palettes', async () => {
-+    try {
-+      await page.setViewportSize({ width: 390, height: 844 })
-+      const trigger = page.getByRole('button', { name: /^选择模型/ })
-+      await trigger.click()
-+      await page.getByRole('menuitem', { name: /^模型/ }).click()
-+      const menu = page.getByRole('menu', { name: '模型', exact: true })
-+      const badge = menu.getByRole('group', { name: 'DeepSeek 账号', exact: true }).getByText('1017', { exact: true })
-+      const box = await badge.boundingBox()
-+      expect(box).not.toBeNull()
-+      expect(box!.x).toBeGreaterThanOrEqual(12)
-+      expect(box!.x + box!.width).toBeLessThanOrEqual(378)
-+      const colors = await badge.evaluate((node) => {
-+        const body = node.ownerDocument.body
-+        const previous = body.getAttribute('data-ds-dark-theme')
-+        try {
-+          return [false, true].map((dark) => {
-+            body.toggleAttribute('data-ds-dark-theme', dark)
-+            const style = getComputedStyle(node)
-+            return { color: style.color, background: style.backgroundColor }
-+          })
-+        } finally {
-+          if (previous === null) body.removeAttribute('data-ds-dark-theme')
-+          else body.setAttribute('data-ds-dark-theme', previous)
-+        }
-+      })
-+      expect(colors[0]).not.toEqual(colors[1])
-+      for (const color of colors) expect(color.color).not.toBe(color.background)
-+    } finally {
-+      await page.keyboard.press('Escape')
-+      await page.keyboard.press('Escape')
-+      await page.setViewportSize({ width: 1440, height: 900 })
-+    }
-+    expect(tripwire.pageErrors).toEqual([])
-+  })
-+})
-diff --git a/apps/web/tests/expected/deepseek-model-label-1017/models.expected.md b/apps/web/tests/expected/deepseek-model-label-1017/models.expected.md
-new file mode 100644
-index 0000000000000000000000000000000000000000..9f86e3832631cfa0b98d989e1c4816950273b59d
---- /dev/null
-+++ b/apps/web/tests/expected/deepseek-model-label-1017/models.expected.md
-@@ -0,0 +1,11 @@
-+- menu "模型":
-+  - group "DeepSeek 账号":
-+    - text: DeepSeek 账号
-+    - menuitemradio "DeepSeek-V4.1-Flash 1017"
-+  - group "DeepSeek":
-+    - text: DeepSeek
-+    - menuitemradio "DeepSeek-V4.1-Flash 1017" [checked]
-+    - menuitemradio "DeepSeek-V4-Pro"
-+  - group "External":
-+    - text: External
-+    - menuitemradio "DeepSeek-V4.1-Flash"
-diff --git a/apps/web/tests/fixtures/deepseek-model-label-1017/account.overlay.yml b/apps/web/tests/fixtures/deepseek-model-label-1017/account.overlay.yml
-new file mode 100644
-index 0000000000000000000000000000000000000000..90c75a4cd726283176c1a2ab978b06ad24fe19d3
---- /dev/null
-+++ b/apps/web/tests/fixtures/deepseek-model-label-1017/account.overlay.yml
-@@ -0,0 +1,7 @@
-+# The replay catalog supplies the account route without account authentication or network I/O.
-+- id: llm-deepseek-account
-+  disabled: true
-+- id: agent-default-model
-+  config:
-+    provider: deepseek-official
-+    model: deepseek-flash
-diff --git a/apps/web/tests/fixtures/deepseek-model-label-1017/session.v4.jsonl b/apps/web/tests/fixtures/deepseek-model-label-1017/session.v4.jsonl
-new file mode 100644
-index 0000000000000000000000000000000000000000..d614cc6727c2b226e39714e389d3c4fd1231cf72
---- /dev/null
-+++ b/apps/web/tests/fixtures/deepseek-model-label-1017/session.v4.jsonl
-@@ -0,0 +1 @@
-+{"type":"session","version":4,"id":"{{session:1}}","createdAt":1785015039278,"cwd":"{{cwd}}","isSeeded":false,"delegationDepth":0,"agentPreset":"standard"}
 diff --git a/apps/web/tests/office-fixture.ts b/apps/web/tests/office-fixture.ts
 index 9d4614b6e0c5ec2dbd98bdbab4bf202e7c3cca74..53357b6487cb445c77b8ed3a20383cdef715a029 100644
 --- a/apps/web/tests/office-fixture.ts
@@ -3760,20 +3559,19 @@ index 9d4614b6e0c5ec2dbd98bdbab4bf202e7c3cca74..53357b6487cb445c77b8ed3a20383cde
 +  })
  }
 diff --git a/apps/web/tsconfig.json b/apps/web/tsconfig.json
-index 47acf9c48c7b391c98e990b24256527d4d509241..6a0d0e99330613f5d0fcd62c46742507981517a4 100644
+index 47acf9c48c7b391c98e990b24256527d4d509241..9839aced104b9eb21e8f831dadb29d05f3b39e41 100644
 --- a/apps/web/tsconfig.json
 +++ b/apps/web/tsconfig.json
-@@ -23,6 +23,8 @@
+@@ -23,6 +23,7 @@
    // this client-registered project must not also hold them (one program
    // cannot see both sides of the cordis Context merges).
    "exclude": [
 +    "tests/deepseek-harness-catalog.e2e.ts",
-+    "tests/deepseek-model-label-1017.e2e.ts",
      "tests/sidebar-drawer.e2e.ts",
      "tests/creation-recommendations.e2e.ts",
      "tests/plugin-recommendations.e2e.ts",
 diff --git a/docs/config-catalog.md b/docs/config-catalog.md
-index a1423c4bfd113db96867e07fa7e6ceccdd3bb3a1..ecaf84d8df18d65d816f50a3613684f2b0e02506 100644
+index a1423c4bfd113db96867e07fa7e6ceccdd3bb3a1..1c723cc83bf29c38a913b07aba30740c2ee1e19b 100644
 --- a/docs/config-catalog.md
 +++ b/docs/config-catalog.md
 @@ -158,7 +158,7 @@ export type Config = PresetDefinition
@@ -3883,15 +3681,7 @@ index a1423c4bfd113db96867e07fa7e6ceccdd3bb3a1..ecaf84d8df18d65d816f50a3613684f2
  ## Loadable plugins with no config
  
  These load from a `cordis.yml` entry with no `config:` block; they declare no configuration API.
-@@ -4858,6 +4913,7 @@ These load from a `cordis.yml` entry with no `config:` block; they declare no co
- | `@deepseek-ai/dsh-client-ui-conversation` | — | [`packages/client/ui-conversation/src/index.ts`](../packages/client/ui-conversation/src/index.ts) |
- | `@deepseek-ai/dsh-client-ui-cordis` | — | [`packages/extensions/ui-cordis/src/index.ts`](../packages/extensions/ui-cordis/src/index.ts) |
- | `@deepseek-ai/dsh-client-ui-creation-recommendations` | — | [`packages/experimental/client-ui-creation-recommendations/src/index.ts`](../packages/experimental/client-ui-creation-recommendations/src/index.ts) |
-+| `@deepseek-ai/dsh-client-ui-deepseek-model-label-1017` | — | [`packages/client/ui-deepseek-model-label-1017/src/index.ts`](../packages/client/ui-deepseek-model-label-1017/src/index.ts) |
- | `@deepseek-ai/dsh-client-ui-deliverables` | `connection` · `sessionQuery` · `sessionController` · `workspaceFiles` · `fs` · `sandboxPolicy` · `workspaceChanges` | [`packages/client/ui-deliverables/src/index.ts`](../packages/client/ui-deliverables/src/index.ts) |
- | `@deepseek-ai/dsh-client-ui-directory-picker-browse` | — | [`packages/client/ui-directory-picker-browse/src/index.ts`](../packages/client/ui-directory-picker-browse/src/index.ts) |
- | `@deepseek-ai/dsh-client-ui-directory-picker-native` | — | [`packages/client/ui-directory-picker-native/src/index.ts`](../packages/client/ui-directory-picker-native/src/index.ts) |
-@@ -4956,6 +5012,8 @@ These load from a `cordis.yml` entry with no `config:` block; they declare no co
+@@ -4956,6 +5011,8 @@ These load from a `cordis.yml` entry with no `config:` block; they declare no co
  | `@deepseek-ai/dsh-user-questions` | — | [`packages/interaction/user-questions/src/index.ts`](../packages/interaction/user-questions/src/index.ts) |
  | `@deepseek-ai/dsh-webhook` | `agents` · `agentDefaultModel` · `agentPresets` · `permissionPresets` · `sessionTitle` · `workspaceRegistry` | [`packages/experimental/webhook/src/index.ts`](../packages/experimental/webhook/src/index.ts) |
  | `@deepseek-ai/dsh-workspace` | `storageDomain` · `sessionPersistence` | [`packages/workspace/workspace/src/index.ts`](../packages/workspace/workspace/src/index.ts) |
@@ -3900,7 +3690,7 @@ index a1423c4bfd113db96867e07fa7e6ceccdd3bb3a1..ecaf84d8df18d65d816f50a3613684f2
  <!-- END GENERATED config-catalog:no-config -->
  
  ## Seam packages (not directly loadable)
-@@ -5066,4 +5124,6 @@ Imported as libraries by other packages; a `cordis.yml` cannot load them.
+@@ -5066,4 +5123,6 @@ Imported as libraries by other packages; a `cordis.yml` cannot load them.
  | `@deepseek-ai/dsh-util-values` | — | [`packages/util/values/src/index.ts`](../packages/util/values/src/index.ts) |
  | `@deepseek-ai/dsh-util-workspace-path` | — | [`packages/util/workspace-path/src/index.ts`](../packages/util/workspace-path/src/index.ts) |
  | `@deepseek-ai/dsh-win32-process` | — | [`packages/subprocess/win32-process/src/index.ts`](../packages/subprocess/win32-process/src/index.ts) |
@@ -3908,7 +3698,7 @@ index a1423c4bfd113db96867e07fa7e6ceccdd3bb3a1..ecaf84d8df18d65d816f50a3613684f2
 +| `@deepseek-harness/product-desktop` | — | [`packages/deepseek-harness-product/desktop/src/index.ts`](../packages/deepseek-harness-product/desktop/src/index.ts) |
  <!-- END GENERATED config-catalog:library -->
 diff --git a/docs/config-catalog.zh.md b/docs/config-catalog.zh.md
-index adf1f1ef02616da25e567133129e844974cea6c5..a3343f5d3fa3690c5793775f38a2e851dcfdbf30 100644
+index adf1f1ef02616da25e567133129e844974cea6c5..a164263c0ef0c2ba54806c7bbb478bb2be7899e6 100644
 --- a/docs/config-catalog.zh.md
 +++ b/docs/config-catalog.zh.md
 @@ -160,7 +160,7 @@ export type Config = PresetDefinition
@@ -4018,15 +3808,7 @@ index adf1f1ef02616da25e567133129e844974cea6c5..a3343f5d3fa3690c5793775f38a2e851
  ## 无配置的可加载插件
  
  这些插件通过 `cordis.yml` 中不含 `config:` 块的条目加载；它们未声明任何配置接口。
-@@ -4860,6 +4915,7 @@ export interface Config {
- | `@deepseek-ai/dsh-client-ui-conversation` | — | [`packages/client/ui-conversation/src/index.ts`](../packages/client/ui-conversation/src/index.ts) |
- | `@deepseek-ai/dsh-client-ui-cordis` | — | [`packages/extensions/ui-cordis/src/index.ts`](../packages/extensions/ui-cordis/src/index.ts) |
- | `@deepseek-ai/dsh-client-ui-creation-recommendations` | — | [`packages/experimental/client-ui-creation-recommendations/src/index.ts`](../packages/experimental/client-ui-creation-recommendations/src/index.ts) |
-+| `@deepseek-ai/dsh-client-ui-deepseek-model-label-1017` | — | [`packages/client/ui-deepseek-model-label-1017/src/index.ts`](../packages/client/ui-deepseek-model-label-1017/src/index.ts) |
- | `@deepseek-ai/dsh-client-ui-deliverables` | `connection` · `sessionQuery` · `sessionController` · `workspaceFiles` · `fs` · `sandboxPolicy` · `workspaceChanges` | [`packages/client/ui-deliverables/src/index.ts`](../packages/client/ui-deliverables/src/index.ts) |
- | `@deepseek-ai/dsh-client-ui-directory-picker-browse` | — | [`packages/client/ui-directory-picker-browse/src/index.ts`](../packages/client/ui-directory-picker-browse/src/index.ts) |
- | `@deepseek-ai/dsh-client-ui-directory-picker-native` | — | [`packages/client/ui-directory-picker-native/src/index.ts`](../packages/client/ui-directory-picker-native/src/index.ts) |
-@@ -4958,6 +5014,8 @@ export interface Config {
+@@ -4958,6 +5013,8 @@ export interface Config {
  | `@deepseek-ai/dsh-user-questions` | — | [`packages/interaction/user-questions/src/index.ts`](../packages/interaction/user-questions/src/index.ts) |
  | `@deepseek-ai/dsh-webhook` | `agents` · `agentDefaultModel` · `agentPresets` · `permissionPresets` · `sessionTitle` · `workspaceRegistry` | [`packages/experimental/webhook/src/index.ts`](../packages/experimental/webhook/src/index.ts) |
  | `@deepseek-ai/dsh-workspace` | `storageDomain` · `sessionPersistence` | [`packages/workspace/workspace/src/index.ts`](../packages/workspace/workspace/src/index.ts) |
@@ -4035,7 +3817,7 @@ index adf1f1ef02616da25e567133129e844974cea6c5..a3343f5d3fa3690c5793775f38a2e851
  <!-- END GENERATED config-catalog:no-config -->
  
  ## Seam 包（不可直接加载）
-@@ -5068,4 +5126,6 @@ export interface Config {
+@@ -5068,4 +5125,6 @@ export interface Config {
  | `@deepseek-ai/dsh-util-values` | — | [`packages/util/values/src/index.ts`](../packages/util/values/src/index.ts) |
  | `@deepseek-ai/dsh-util-workspace-path` | — | [`packages/util/workspace-path/src/index.ts`](../packages/util/workspace-path/src/index.ts) |
  | `@deepseek-ai/dsh-win32-process` | — | [`packages/subprocess/win32-process/src/index.ts`](../packages/subprocess/win32-process/src/index.ts) |
@@ -4225,46 +4007,6 @@ index 8cfc85b875bfad07c9210062ddeb96584f4b6e4f..73db1b3569f456e2e19a5bd01b7893c2
  | `internal/service` | - | `client-ui-forge`, `gateway` |
  | `internal/status` | - | [`agent`](../packages/core/agent), `claude-code-mods`, `inspector`, `translator`, [`web`](../packages/web/web) |
  | `loader/volatile-update` | - | [`llm-deepseek`](../packages/llm/llm-deepseek), [`llm-deepseek-api-key`](../packages/llm/llm-deepseek-api-key), [`llm-pi-ai`](../packages/llm/llm-pi-ai), [`plugin-market`](../packages/boot/plugin-market), `product-analytics`, `speech-to-text` |
-diff --git a/docs/module-graph.md b/docs/module-graph.md
-index e73a0bb594c75d3c0194aa226b59530399159cf5..3b3527a14c85dc811292357b44ed5e6fd62c2add 100644
---- a/docs/module-graph.md
-+++ b/docs/module-graph.md
-@@ -168,6 +168,7 @@ flowchart TD
-     pkg_client_ui_commands["client-ui-commands"]
-     pkg_client_ui_context_menu["client-ui-context-menu"]
-     pkg_client_ui_conversation["client-ui-conversation"]
-+    pkg_client_ui_deepseek_model_label_1017["client-ui-deepseek-model-label-1017"]
-     pkg_client_ui_deliverables["client-ui-deliverables"]
-     pkg_client_ui_directory_picker_browse["client-ui-directory-picker-browse"]
-     pkg_client_ui_directory_picker_native["client-ui-directory-picker-native"]
-@@ -1556,6 +1557,7 @@ flowchart TD
- | [`client-ui-commands`](../packages/client/ui-commands) | `client` | — |
- | [`client-ui-context-menu`](../packages/client/ui-context-menu) | `client` | — |
- | [`client-ui-conversation`](../packages/client/ui-conversation) | `client` | — |
-+| [`client-ui-deepseek-model-label-1017`](../packages/client/ui-deepseek-model-label-1017) | `client` | — |
- | [`client-ui-deliverables`](../packages/client/ui-deliverables) | `client` | — |
- | [`client-ui-directory-picker-browse`](../packages/client/ui-directory-picker-browse) | `client` | — |
- | [`client-ui-directory-picker-native`](../packages/client/ui-directory-picker-native) | `client` | — |
-diff --git a/docs/module-graph.zh.md b/docs/module-graph.zh.md
-index 818130b1fe2d5961c7d363699ebe6bbd83e9afac..568fa67dbdf60c53a15bf9215bd475802a48a897 100644
---- a/docs/module-graph.zh.md
-+++ b/docs/module-graph.zh.md
-@@ -170,6 +170,7 @@ flowchart TD
-     pkg_client_ui_commands["client-ui-commands"]
-     pkg_client_ui_context_menu["client-ui-context-menu"]
-     pkg_client_ui_conversation["client-ui-conversation"]
-+    pkg_client_ui_deepseek_model_label_1017["client-ui-deepseek-model-label-1017"]
-     pkg_client_ui_deliverables["client-ui-deliverables"]
-     pkg_client_ui_directory_picker_browse["client-ui-directory-picker-browse"]
-     pkg_client_ui_directory_picker_native["client-ui-directory-picker-native"]
-@@ -1558,6 +1559,7 @@ flowchart TD
- | [`client-ui-commands`](../packages/client/ui-commands) | `client` | — |
- | [`client-ui-context-menu`](../packages/client/ui-context-menu) | `client` | — |
- | [`client-ui-conversation`](../packages/client/ui-conversation) | `client` | — |
-+| [`client-ui-deepseek-model-label-1017`](../packages/client/ui-deepseek-model-label-1017) | `client` | — |
- | [`client-ui-deliverables`](../packages/client/ui-deliverables) | `client` | — |
- | [`client-ui-directory-picker-browse`](../packages/client/ui-directory-picker-browse) | `client` | — |
- | [`client-ui-directory-picker-native`](../packages/client/ui-directory-picker-native) | `client` | — |
 diff --git a/docs/persistence-catalog.i18n.yaml b/docs/persistence-catalog.i18n.yaml
 index 53c7d45680d84fc7527f76516748b722268bfbba..0cc6ee5ba7ca461a9077f4c0b475fc78a0a9f38f 100644
 --- a/docs/persistence-catalog.i18n.yaml
@@ -5177,7 +4919,7 @@ index 0000000000000000000000000000000000000000..dd967b3761cc6b173a58d48e0ccf62e5
 +
 +包格式及发布操作见[公司内容说明](../../../../apps/product-desktop/docs/company-content.md)。
 diff --git a/package.json b/package.json
-index dcf0f5a6093bd0bde21874429e9ffcaca1436d0e..021017e9794a57698d9ca0a67b1411f7bc8d3ea8 100644
+index c4f130943ddfee2d8d8040c6dd679f5b0e12312a..8f7e393ddcb60606b2ec7dfa361f4f560ad9e855 100644
 --- a/package.json
 +++ b/package.json
 @@ -18,6 +18,9 @@
@@ -5319,7 +5061,7 @@ index 4f9772403d59034df7676c122f64b7642acbc477..e9ad6ab9ae0e4859170e7f35780fdcc4
  <a id="model-experience"></a>
  ## 模型体验
 diff --git a/packages/api/remotes/package.json b/packages/api/remotes/package.json
-index cea0ed794146a0a2ae22b78cf3c39f3764f8b425..18e731b14e7537d53a8b1a9c3eab62b4558d3d4b 100644
+index 8150e81383ac0e7a656638ab414c910141e2391a..39e3504677c0b9df9b6c2b0f1d2a58616b10895e 100644
 --- a/packages/api/remotes/package.json
 +++ b/packages/api/remotes/package.json
 @@ -99,6 +99,7 @@
@@ -7843,666 +7585,6 @@ index 8eb125df031efc57e5c7caa31ffcfa44924d437b..ec70b8e6282854ca95a342f35e71aacb
  
      const cold = mount(sessionSnapshotOf(), [], undefined, { sessionId: undefined })
      expect(cold.slotCalls).toContain('conversation.hero.agentPreset')
-diff --git a/packages/client/ui-deepseek-model-label-1017/README.i18n.yaml b/packages/client/ui-deepseek-model-label-1017/README.i18n.yaml
-new file mode 100644
-index 0000000000000000000000000000000000000000..b9d71b28185c92f18a59144486d6d98aeeec7c5f
---- /dev/null
-+++ b/packages/client/ui-deepseek-model-label-1017/README.i18n.yaml
-@@ -0,0 +1,37 @@
-+# Bilingual-pair consistency record for README.md (docs/i18n/README.md): per heading
-+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
-+# After editing either side, bring the other along and re-record with:
-+#   pnpm run verify-translation-pairing --write packages/client/ui-deepseek-model-label-1017/README.md
-+/:
-+  en: 21f43d0c704c3668
-+  zh: 0497e58bb871e2c4
-+/deepseek-ai-dsh-client-ui-deepseek-model-label-1017:
-+  en: aa0cd60e16297d9f
-+  zh: 882cee782592c56b
-+/deepseek-ai-dsh-client-ui-deepseek-model-label-1017/summary:
-+  en: 708be526d5758c04
-+  zh: 136b968ae71c9657
-+/deepseek-ai-dsh-client-ui-deepseek-model-label-1017/table-of-contents:
-+  en: d152484eb41ac6b4
-+  zh: 09388d293f9be9cb
-+/deepseek-ai-dsh-client-ui-deepseek-model-label-1017/use-this-package:
-+  en: a6d5fcecfa93935b
-+  zh: 8ae2809a06910c52
-+/deepseek-ai-dsh-client-ui-deepseek-model-label-1017/understand-the-implementation:
-+  en: ca1d0c5db1b819a0
-+  zh: 960e8db56fa5987e
-+/deepseek-ai-dsh-client-ui-deepseek-model-label-1017/further-exploration:
-+  en: 2885099078047d38
-+  zh: d7de1db3f1ba0a50
-+/deepseek-ai-dsh-client-ui-deepseek-model-label-1017/model-experience:
-+  en: 16ab1406c87419d7
-+  zh: 01bce720d29ab2e8
-+/deepseek-ai-dsh-client-ui-deepseek-model-label-1017/model-experience/kv-cache-effect:
-+  en: b7599ec8e5b66e58
-+  zh: a21537863b9b6e3a
-+/deepseek-ai-dsh-client-ui-deepseek-model-label-1017/known-limitations-and-deferred-work:
-+  en: bce774c6d8ae9428
-+  zh: b9d7019acc7bbc19
-+/deepseek-ai-dsh-client-ui-deepseek-model-label-1017/known-limitations-and-deferred-work/dev-note:
-+  en: e67f633dc6fe7773
-+  zh: 8ec3e73528ddb1a6
-diff --git a/packages/client/ui-deepseek-model-label-1017/README.md b/packages/client/ui-deepseek-model-label-1017/README.md
-new file mode 100644
-index 0000000000000000000000000000000000000000..51c83c266a03c299d340d0f6cff2dcb03de65c89
---- /dev/null
-+++ b/packages/client/ui-deepseek-model-label-1017/README.md
-@@ -0,0 +1,91 @@
-+---
-+description: "Show a temporary 1017 badge beside DeepSeek Flash in the composer model selector."
-+kind: "package-reference"
-+---
-+
-+# @deepseek-ai/dsh-client-ui-deepseek-model-label-1017
-+
-+English | [中文](README.zh.md)
-+
-+## Summary
-+
-+This package shows `1017` beside `DeepSeek-V4.1-Flash` in the composer model selector. It covers the official API-key and account routes while preserving their catalog names and request IDs. Disable it to restore plain model names.
-+
-+## Table of Contents
-+
-+- [Use this package](#use-this-package)
-+- [Understand the implementation](#understand-the-implementation)
-+- [Further Exploration](#further-exploration)
-+- [Model Experience](#model-experience)
-+- [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
-+- [Dev Note](#dev-note)
-+
-+-----
-+
-+<a id="use-this-package"></a>
-+## Use this package
-+
-+The Web bundle includes this plugin, including when Desktop uses that bundle. It has no configuration fields.
-+
-+The badge appears only when the provider is `deepseek-official` or `deepseek-account`, the model ID is `deepseek-flash`, and the catalog name is exactly `DeepSeek-V4.1-Flash`. Other names and providers keep their catalog text. The input button, current-model menu row, and model options share the badge.
-+
-+Disable the following row through a profile patch to restore the catalog name:
-+
-+```yaml
-+- id: ui-deepseek-model-label-1017
-+  disabled: true
-+```
-+
-+-----
-+
-+<a id="understand-the-implementation"></a>
-+## Understand the implementation
-+
-+<details>
-+<summary>Implementation internals — click to expand</summary>
-+
-+The browser entry contributes to the existing `conversation.input.model.label` slot through `ctx.slots.inject()`. Its component derives the label from owner props and uses the shared `Tag` primitive; it owns no cache, subscription, network request, or model-selection state. Registration and dictionaries leave with the plugin. The Host entry only makes the browser package available to the Loader.
-+
-+</details>
-+
-+-----
-+
-+<a id="further-exploration"></a>
-+## Further Exploration
-+
-+These packages own the selector and its two directory sources.
-+
-+- [Model selection](../ui-model-selection/README.md) — label placement and selection behavior.
-+- [DeepSeek transport](../../llm/llm-deepseek/README.md) — built-in model catalog.
-+- [DeepSeek account](../../llm/llm-deepseek-account/README.md) — account-provided model directory.
-+
-+-----
-+
-+<a id="model-experience"></a>
-+## Model Experience
-+
-+None, as the package only decorates browser labels without changing model requests or Session events.
-+
-+#### KV Cache effect
-+
-+None; provider requests and their cached prefixes are unchanged.
-+
-+## Known Limitations and Deferred Work
-+
-+<a id="known-limitations-and-deferred-work"></a>
-+
-+The fixed release marker has these presentation limits:
-+
-+- The settings editor, `/model` command, trigger accessibility text, and existing tooltip keep the original catalog name.
-+- This package occupies a `single` slot. Another model-label plugin at the same priority conflicts; the two presentations do not compose automatically.
-+- The `1017` marker is fixed client presentation, not a server capability assertion. Remove this package and its bundle row when structured release labels replace it.
-+
-+<a id="dev-note"></a>
-+### Dev Note
-+
-+<details>
-+<summary>Working context for maintainers — click to expand</summary>
-+
-+None.
-+
-+</details>
-diff --git a/packages/client/ui-deepseek-model-label-1017/README.zh.md b/packages/client/ui-deepseek-model-label-1017/README.zh.md
-new file mode 100644
-index 0000000000000000000000000000000000000000..554f99c8e15879b865b6e47d2339b345d375a7c1
---- /dev/null
-+++ b/packages/client/ui-deepseek-model-label-1017/README.zh.md
-@@ -0,0 +1,91 @@
-+---
-+description: "在输入框的模型选择器中为 DeepSeek Flash 显示临时的 1017 角标。"
-+kind: "package-reference"
-+---
-+
-+# @deepseek-ai/dsh-client-ui-deepseek-model-label-1017
-+
-+[English](README.md) | 中文
-+
-+## 概述
-+
-+本包在输入框模型选择器的 `DeepSeek-V4.1-Flash` 旁显示 `1017`。它覆盖官方 API Key 和账号通道，保留目录名称和请求 ID。停用后恢复纯模型名称。
-+
-+## 目录
-+
-+- [使用本包](#use-this-package)
-+- [理解实现](#understand-the-implementation)
-+- [进一步探索](#further-exploration)
-+- [模型体验](#model-experience)
-+- [已知限制与延期工作](#known-limitations-and-deferred-work)
-+- [开发备注](#dev-note)
-+
-+-----
-+
-+<a id="use-this-package"></a>
-+## 使用本包
-+
-+Web bundle 包含本插件，桌面端使用该 bundle 时也会加载。本包没有配置字段。
-+
-+只有提供方为 `deepseek-official` 或 `deepseek-account`、模型 ID 为 `deepseek-flash`，且目录名称恰好为 `DeepSeek-V4.1-Flash` 时才显示角标。其他名称和提供方保留目录文字。输入框按钮、当前模型菜单行和模型选项共用这个角标。
-+
-+通过 profile patch 停用以下条目即可恢复目录名称：
-+
-+```yaml
-+- id: ui-deepseek-model-label-1017
-+  disabled: true
-+```
-+
-+-----
-+
-+<a id="understand-the-implementation"></a>
-+## 理解实现
-+
-+<details>
-+<summary>内部实现 — 点击展开</summary>
-+
-+浏览器入口通过 `ctx.slots.inject()` 向已有的 `conversation.input.model.label` slot 注册组件。组件根据 owner props 派生标签，使用共享 `Tag` 基元，不拥有缓存、订阅、网络请求或模型选择状态。注册和字典随插件卸载。Host 入口仅让 Loader 能加载浏览器包。
-+
-+</details>
-+
-+-----
-+
-+<a id="further-exploration"></a>
-+## 进一步探索
-+
-+以下包分别拥有选择器和两个目录来源。
-+
-+- [模型选择](../ui-model-selection/README.zh.md) — 名称显示位置与选择行为。
-+- [DeepSeek 传输](../../llm/llm-deepseek/README.zh.md) — 内置模型目录。
-+- [DeepSeek 账号](../../llm/llm-deepseek-account/README.zh.md) — 账号提供的模型目录。
-+
-+-----
-+
-+<a id="model-experience"></a>
-+## 模型体验
-+
-+无，本包只装饰浏览器标签，不改变模型请求或 Session 事件。
-+
-+#### KV Cache effect
-+
-+无；提供方请求及其缓存前缀保持不变。
-+
-+## 已知限制与延期工作
-+
-+<a id="known-limitations-and-deferred-work"></a>
-+
-+固定的版本标记有以下显示限制：
-+
-+- 设置编辑器、`/model` 命令、触发按钮的无障碍文字及已有提示保留原始目录名称。
-+- 本包占用 `single` slot。其他模型名称插件若使用相同优先级会冲突，两种展示不会自动组合。
-+- `1017` 是固定的客户端展示，不是服务端能力声明。结构化版本标签替代它时，移除本包及其 bundle 条目。
-+
-+<a id="dev-note"></a>
-+### 开发备注
-+
-+<details>
-+<summary>维护者工作上下文 — 点击展开</summary>
-+
-+无。
-+
-+</details>
-diff --git a/packages/client/ui-deepseek-model-label-1017/locale/de.json b/packages/client/ui-deepseek-model-label-1017/locale/de.json
-new file mode 100644
-index 0000000000000000000000000000000000000000..d9fa117e8dbd10e5a6ba2624730a4fe689954b23
---- /dev/null
-+++ b/packages/client/ui-deepseek-model-label-1017/locale/de.json
-@@ -0,0 +1,6 @@
-+{
-+  "meta": {
-+    "title": "DeepSeek-Modelllabel 1017",
-+    "description": "Zeigt ein vorübergehendes 1017-Badge für das DeepSeek-Flash-Modell an."
-+  }
-+}
-diff --git a/packages/client/ui-deepseek-model-label-1017/locale/en.json b/packages/client/ui-deepseek-model-label-1017/locale/en.json
-new file mode 100644
-index 0000000000000000000000000000000000000000..753ca849b2ff1abeec8d05b8e23bcda166daddaa
---- /dev/null
-+++ b/packages/client/ui-deepseek-model-label-1017/locale/en.json
-@@ -0,0 +1,6 @@
-+{
-+  "meta": {
-+    "title": "DeepSeek model label 1017",
-+    "description": "Temporary 1017 badge for the DeepSeek Flash model."
-+  }
-+}
-diff --git a/packages/client/ui-deepseek-model-label-1017/locale/es.json b/packages/client/ui-deepseek-model-label-1017/locale/es.json
-new file mode 100644
-index 0000000000000000000000000000000000000000..4cb6ecf80330ba77d89a2bafbde4162653408947
---- /dev/null
-+++ b/packages/client/ui-deepseek-model-label-1017/locale/es.json
-@@ -0,0 +1,6 @@
-+{
-+  "meta": {
-+    "title": "Etiqueta de modelo DeepSeek 1017",
-+    "description": "Muestra una insignia temporal 1017 para el modelo DeepSeek Flash."
-+  }
-+}
-diff --git a/packages/client/ui-deepseek-model-label-1017/locale/fr.json b/packages/client/ui-deepseek-model-label-1017/locale/fr.json
-new file mode 100644
-index 0000000000000000000000000000000000000000..f0947a101790dda20824fc5a66f487400380713b
---- /dev/null
-+++ b/packages/client/ui-deepseek-model-label-1017/locale/fr.json
-@@ -0,0 +1,6 @@
-+{
-+  "meta": {
-+    "title": "Libellé de modèle DeepSeek 1017",
-+    "description": "Affiche un badge temporaire 1017 pour le modèle DeepSeek Flash."
-+  }
-+}
-diff --git a/packages/client/ui-deepseek-model-label-1017/locale/ja.json b/packages/client/ui-deepseek-model-label-1017/locale/ja.json
-new file mode 100644
-index 0000000000000000000000000000000000000000..c2f499d6a0d9fd2e823fedeb962b638f28a8b298
---- /dev/null
-+++ b/packages/client/ui-deepseek-model-label-1017/locale/ja.json
-@@ -0,0 +1,6 @@
-+{
-+  "meta": {
-+    "title": "DeepSeek モデルラベル 1017",
-+    "description": "DeepSeek Flash モデルに一時的な 1017 バッジを表示します。"
-+  }
-+}
-diff --git a/packages/client/ui-deepseek-model-label-1017/locale/pt.json b/packages/client/ui-deepseek-model-label-1017/locale/pt.json
-new file mode 100644
-index 0000000000000000000000000000000000000000..f4a36ac879fcd133de3fabcab7544df76017c877
---- /dev/null
-+++ b/packages/client/ui-deepseek-model-label-1017/locale/pt.json
-@@ -0,0 +1,6 @@
-+{
-+  "meta": {
-+    "title": "Rótulo do modelo DeepSeek 1017",
-+    "description": "Exibe um selo temporário 1017 para o modelo DeepSeek Flash."
-+  }
-+}
-diff --git a/packages/client/ui-deepseek-model-label-1017/locale/ru.json b/packages/client/ui-deepseek-model-label-1017/locale/ru.json
-new file mode 100644
-index 0000000000000000000000000000000000000000..ac88128aaef855093f986b7a9522e37733cbfbaf
---- /dev/null
-+++ b/packages/client/ui-deepseek-model-label-1017/locale/ru.json
-@@ -0,0 +1,6 @@
-+{
-+  "meta": {
-+    "title": "Метка модели DeepSeek 1017",
-+    "description": "Показывает временный значок 1017 для модели DeepSeek Flash."
-+  }
-+}
-diff --git a/packages/client/ui-deepseek-model-label-1017/locale/zh.json b/packages/client/ui-deepseek-model-label-1017/locale/zh.json
-new file mode 100644
-index 0000000000000000000000000000000000000000..50388f228c2568336892c3a7db437b762a1cd4fb
---- /dev/null
-+++ b/packages/client/ui-deepseek-model-label-1017/locale/zh.json
-@@ -0,0 +1,6 @@
-+{
-+  "meta": {
-+    "title": "DeepSeek 模型标记 1017",
-+    "description": "为 DeepSeek Flash 模型显示临时 1017 标记。"
-+  }
-+}
-diff --git a/packages/client/ui-deepseek-model-label-1017/package.json b/packages/client/ui-deepseek-model-label-1017/package.json
-new file mode 100644
-index 0000000000000000000000000000000000000000..dbfc807db2ee7bbbf642fa19feb88ffa73ef36c8
---- /dev/null
-+++ b/packages/client/ui-deepseek-model-label-1017/package.json
-@@ -0,0 +1,66 @@
-+{
-+  "name": "@deepseek-ai/dsh-client-ui-deepseek-model-label-1017",
-+  "description": "Temporary 1017 release badge for official DeepSeek Flash model labels",
-+  "version": "0.2.2-alpha.3",
-+  "publishConfig": {
-+    "access": "public"
-+  },
-+  "repository": {
-+    "type": "git",
-+    "url": "git+https://github.com/deepseek-ai/deepseek-harness.git",
-+    "directory": "packages/client/ui-deepseek-model-label-1017"
-+  },
-+  "type": "module",
-+  "main": "lib/index.js",
-+  "types": "lib/types/index.d.ts",
-+  "exports": {
-+    ".": {
-+      "types": "./lib/types/index.d.ts",
-+      "default": "./lib/index.js"
-+    },
-+    "./client": {
-+      "types": "./lib/types/client/index.d.ts",
-+      "default": "./lib/client.js"
-+    },
-+    "./src/*": "./src/*",
-+    "./package.json": "./package.json",
-+    "./locale/*.json": "./locale/*.json"
-+  },
-+  "dsh": {
-+    "client": {
-+      "inject": [
-+        "@deepseek-ai/dsh-client-ui-model-selection",
-+        "@deepseek-ai/dsh-client-ui-renderer",
-+        "@deepseek-ai/dsh-client-locale"
-+      ],
-+      "platform": "web"
-+    }
-+  },
-+  "scripts": {
-+    "bundle": "tsdown",
-+    "watch": "tsdown --watch"
-+  },
-+  "license": "MIT",
-+  "peerDependencies": {
-+    "@deepseek-ai/cordis": "workspace:~"
-+  },
-+  "devDependencies": {
-+    "@deepseek-ai/cordis": "workspace:~",
-+    "@deepseek-ai/dsh-client-locale": "workspace:*",
-+    "@deepseek-ai/dsh-client-ui-model-selection": "workspace:*",
-+    "@deepseek-ai/dsh-client-ui-renderer": "workspace:*",
-+    "@deepseek-ai/dsh-client-ui-primitives": "workspace:*",
-+    "@deepseek-ai/dsh-client-ui-slots": "workspace:*",
-+    "@deepseek-ai/dsh-client-test-runtime": "workspace:*",
-+    "@deepseek-ai/dsh-session": "workspace:*",
-+    "@testing-library/react": "^16.3.3",
-+    "react": "^18.2.0",
-+    "react-dom": "^18.2.0"
-+  },
-+  "files": [
-+    "locale/*.json",
-+    "lib/index.js",
-+    "lib/client.js",
-+    "lib/types/**/*.d.ts"
-+  ]
-+}
-diff --git a/packages/client/ui-deepseek-model-label-1017/src/client/DeepSeekModelLabel.module.css b/packages/client/ui-deepseek-model-label-1017/src/client/DeepSeekModelLabel.module.css
-new file mode 100644
-index 0000000000000000000000000000000000000000..2b24c72d1a9c982c0a7cd92f22c5032dac3fa9d8
---- /dev/null
-+++ b/packages/client/ui-deepseek-model-label-1017/src/client/DeepSeekModelLabel.module.css
-@@ -0,0 +1,7 @@
-+.label {
-+  display: inline-flex;
-+  align-items: center;
-+  gap: 4px;
-+  vertical-align: baseline;
-+  white-space: nowrap;
-+}
-diff --git a/packages/client/ui-deepseek-model-label-1017/src/client/DeepSeekModelLabel.tsx b/packages/client/ui-deepseek-model-label-1017/src/client/DeepSeekModelLabel.tsx
-new file mode 100644
-index 0000000000000000000000000000000000000000..2c876319bd22033d1016ae1fd54418dca830f9e2
---- /dev/null
-+++ b/packages/client/ui-deepseek-model-label-1017/src/client/DeepSeekModelLabel.tsx
-@@ -0,0 +1,22 @@
-+/** Display-only release marking; the catalog and selected route remain unchanged. */
-+import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
-+import type {} from '@deepseek-ai/dsh-client-ui-model-selection/client'
-+import { Tag } from '@deepseek-ai/dsh-client-ui-primitives'
-+import css from './DeepSeekModelLabel.module.css'
-+
-+const MODEL_NAME = 'DeepSeek-V4.1-Flash'
-+
-+/**
-+ * Render the fixed 1017 release label for recognized official Flash entries.
-+ * @param props - Provider and model identity plus the badge dictionary.
-+ * @returns The base name with a badge, or the untouched catalog name.
-+ */
-+export function DeepSeekModelLabel({ provider, model, t }:
-+  PropsRuntime<'conversation.input.model.label'> & PropsLocale<'deepseek-model-label-1017'>,
-+) {
-+  const official = provider.id === 'deepseek-account' || provider.id === 'deepseek-official'
-+  if (!official || model.id !== 'deepseek-flash' || model.name !== MODEL_NAME) return model.name
-+  return <span className={css.label}>
-+    <span>{model.name}</span>{' '}<Tag tone="info">{t('badge.label')}</Tag>
-+  </span>
-+}
-diff --git a/packages/client/ui-deepseek-model-label-1017/src/client/index.ts b/packages/client/ui-deepseek-model-label-1017/src/client/index.ts
-new file mode 100644
-index 0000000000000000000000000000000000000000..8905ab0d31a8f82261df316d47d1831ab2c67a17
---- /dev/null
-+++ b/packages/client/ui-deepseek-model-label-1017/src/client/index.ts
-@@ -0,0 +1,29 @@
-+/** Temporary 1017 badge for the two official DeepSeek model routes. */
-+import type { Context } from '@deepseek-ai/cordis'
-+import type {} from '@deepseek-ai/dsh-client-locale/client'
-+import type {} from '@deepseek-ai/dsh-client-ui-model-selection/client'
-+import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
-+import { DeepSeekModelLabel } from './DeepSeekModelLabel.tsx'
-+import { de, en, es, fr, ja, pt, ru, zh, type LabelKey } from './locales.ts'
-+
-+declare module '@deepseek-ai/dsh-client-ui-slots' {
-+  interface LocaleNamespaceMap {
-+    /** The temporary model release badge. */
-+    'deepseek-model-label-1017': LabelKey
-+  }
-+}
-+
-+/** Required services: model-label registration and localized badge text. */
-+export const inject = ['slots', 'locale']
-+
-+/**
-+ * Decorate existing model labels while their declaring slot is mounted.
-+ * @param ctx - Client plugin context owning the dictionaries and registration.
-+ */
-+export function apply(ctx: Context): void {
-+  const namespace = 'deepseek-model-label-1017'
-+  ctx.effect(() => ctx.locale.register(namespace, { zh, en, ja, es, fr, de, ru, pt }), 'deepseek-model-label-1017: dictionaries')
-+  ctx.slots.inject('conversation.input.model.label', () => ctx.slots.register({
-+    name: 'conversation.input.model.label', locale: namespace,
-+  }, DeepSeekModelLabel))
-+}
-diff --git a/packages/client/ui-deepseek-model-label-1017/src/client/locales.ts b/packages/client/ui-deepseek-model-label-1017/src/client/locales.ts
-new file mode 100644
-index 0000000000000000000000000000000000000000..d608e6d7b8fecdbee35df29cd22d9dc23338f230
---- /dev/null
-+++ b/packages/client/ui-deepseek-model-label-1017/src/client/locales.ts
-@@ -0,0 +1,28 @@
-+/** Localized label of the fixed release marker. */
-+
-+/** Simplified Chinese badge copy. */
-+export const zh = { 'badge.label': '1017' }
-+
-+/** Keys owned by the release-label namespace. */
-+export type LabelKey = keyof typeof zh
-+
-+/** English badge copy. */
-+export const en: Record<LabelKey, string> = { 'badge.label': '1017' }
-+
-+/** Japanese badge copy. */
-+export const ja: Record<LabelKey, string> = { 'badge.label': '1017' }
-+
-+/** Spanish badge copy. */
-+export const es: Record<LabelKey, string> = { 'badge.label': '1017' }
-+
-+/** French badge copy. */
-+export const fr: Record<LabelKey, string> = { 'badge.label': '1017' }
-+
-+/** German badge copy. */
-+export const de: Record<LabelKey, string> = { 'badge.label': '1017' }
-+
-+/** Russian badge copy. */
-+export const ru: Record<LabelKey, string> = { 'badge.label': '1017' }
-+
-+/** Portuguese badge copy. */
-+export const pt: Record<LabelKey, string> = { 'badge.label': '1017' }
-diff --git a/packages/client/ui-deepseek-model-label-1017/src/css-modules.d.ts b/packages/client/ui-deepseek-model-label-1017/src/css-modules.d.ts
-new file mode 100644
-index 0000000000000000000000000000000000000000..8811db126498ec8fac4acff5c3f137ffb839fec5
---- /dev/null
-+++ b/packages/client/ui-deepseek-model-label-1017/src/css-modules.d.ts
-@@ -0,0 +1,4 @@
-+declare module '*.module.css' {
-+  const classes: Record<string, string>
-+  export default classes
-+}
-diff --git a/packages/client/ui-deepseek-model-label-1017/src/index.ts b/packages/client/ui-deepseek-model-label-1017/src/index.ts
-new file mode 100644
-index 0000000000000000000000000000000000000000..f655b9c3b066463ffb35597afc65b1549a0493d4
---- /dev/null
-+++ b/packages/client/ui-deepseek-model-label-1017/src/index.ts
-@@ -0,0 +1,4 @@
-+/** Loader entry for the temporary DeepSeek model-label presentation. */
-+
-+/** Mount the browser entry through the package's client declaration. */
-+export function apply(): void {}
-diff --git a/packages/client/ui-deepseek-model-label-1017/tests/label.client.spec.tsx b/packages/client/ui-deepseek-model-label-1017/tests/label.client.spec.tsx
-new file mode 100644
-index 0000000000000000000000000000000000000000..15e6d099eb516717d22cbf5c4da7632f619b486d
---- /dev/null
-+++ b/packages/client/ui-deepseek-model-label-1017/tests/label.client.spec.tsx
-@@ -0,0 +1,74 @@
-+// @vitest-environment jsdom
-+import { expect, it, onTestFinished } from 'vitest'
-+import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
-+import { SlotTestRuntime } from '@deepseek-ai/dsh-client-test-runtime'
-+import { SessionId } from '@deepseek-ai/dsh-session/types'
-+import type { ModelLabelOwner } from '@deepseek-ai/dsh-client-ui-model-selection/client'
-+import * as HostPlugin from '../src/index.ts'
-+import * as LabelPlugin from '../src/client/index.ts'
-+
-+const SLOT = 'conversation.input.model.label'
-+const NAME = 'DeepSeek-V4.1-Flash'
-+
-+function owner(provider: string, name = NAME, id = 'deepseek-flash', placement: ModelLabelOwner['placement'] = 'option'): ModelLabelOwner {
-+  return { provider: { id: provider, name: provider }, model: { id, name }, placement, selected: true }
-+}
-+
-+async function runtime() {
-+  const host = await SlotTestRuntime.create()
-+  onTestFinished(() => host.dispose())
-+  const locale = new LocaleRuntime(host.ctx)
-+  host.ctx.provide('locale', locale)
-+  host.slots.installLocale(locale)
-+  await host.mount(HostPlugin)
-+  await host.sessions.add({ id: SessionId('release-badge') })
-+  const session = host.sessions.retainFor(host.ctx, SessionId('release-badge'))
-+  return { host, session }
-+}
-+
-+const placements = ['trigger', 'menu', 'option'] as const
-+const targets = ['deepseek-official', 'deepseek-account'].flatMap(provider => placements.map(placement => ({ provider, placement })))
-+it.each(targets)('shows the badge for $provider at $placement without rewriting its catalog entry', async ({ provider, placement }) => {
-+  const { host, session } = await runtime()
-+  await host.declare({ [SLOT]: { kind: 'single', scope: 'session', inline: true } })
-+  await host.mount(LabelPlugin)
-+  const input = owner(provider, NAME, 'deepseek-flash', placement)
-+  const view = host.renderSlot(SLOT, input, { session, fallback: input.model.name })
-+  expect(view.container.textContent).toBe(`${NAME} 1017`)
-+  expect(view.view.getByText('1017').tagName).toBe('SPAN')
-+  expect(input.model).toEqual({ id: 'deepseek-flash', name: NAME })
-+})
-+
-+it.each([
-+  { label: 'another provider', value: owner('external') },
-+  { label: 'another model id', value: owner('deepseek-official', NAME, 'other-model') },
-+  { label: 'a custom name', value: owner('deepseek-account', 'My Flash') },
-+  { label: 'a dated name', value: owner('deepseek-account', `${NAME}-1017`) },
-+  { label: 'a later release name', value: owner('deepseek-official', `${NAME}-1024`) },
-+])('preserves $label', async ({ value }) => {
-+  const { host, session } = await runtime()
-+  await host.declare({ [SLOT]: { kind: 'single', scope: 'session', inline: true } })
-+  await host.mount(LabelPlugin)
-+  const view = host.renderSlot(SLOT, value, { session, fallback: value.model.name })
-+  expect(view.container.textContent).toBe(value.model.name)
-+  expect(view.view.queryByText('1017')).toBeNull()
-+})
-+
-+it('waits for the label declaration, follows changed model props, and restores the fallback on unload', async () => {
-+  const { host, session } = await runtime()
-+  const plugin = await host.mount(LabelPlugin)
-+  expect(host.slots.entries(SLOT)).toHaveLength(0)
-+  await host.declare({ [SLOT]: { kind: 'single', scope: 'session', inline: true } })
-+  const input = owner('deepseek-official')
-+  const view = host.renderSlot(SLOT, input, { session, fallback: NAME })
-+  expect(view.container.textContent).toBe(`${NAME} 1017`)
-+  view.update(owner('deepseek-official', 'My Flash'))
-+  expect(view.container.textContent).toBe('My Flash')
-+  view.update(input)
-+  expect(view.container.textContent).toBe(`${NAME} 1017`)
-+  await plugin.dispose()
-+  expect(host.slots.entries(SLOT)).toHaveLength(0)
-+  expect(view.container.textContent).toBe(NAME)
-+  await host.mount(LabelPlugin)
-+  expect(view.container.textContent).toBe(`${NAME} 1017`)
-+})
-diff --git a/packages/client/ui-deepseek-model-label-1017/tsconfig.json b/packages/client/ui-deepseek-model-label-1017/tsconfig.json
-new file mode 100644
-index 0000000000000000000000000000000000000000..16bad9c00c9f2226b7c4a265f3e8ccd9261d8848
---- /dev/null
-+++ b/packages/client/ui-deepseek-model-label-1017/tsconfig.json
-@@ -0,0 +1,30 @@
-+{
-+  "extends": "../../../tsconfig.base.client.json",
-+  "compilerOptions": {
-+    "rootDir": "src",
-+    "outDir": "lib/types"
-+  },
-+  "include": [
-+    "src"
-+  ],
-+  "references": [
-+    {
-+      "path": "../../../vendor/cordis"
-+    },
-+    {
-+      "path": "../locale/tsconfig.client.json"
-+    },
-+    {
-+      "path": "../ui-model-selection"
-+    },
-+    {
-+      "path": "../ui-renderer"
-+    },
-+    {
-+      "path": "../ui-primitives"
-+    },
-+    {
-+      "path": "../ui-slots"
-+    }
-+  ]
-+}
-diff --git a/packages/client/ui-deepseek-model-label-1017/tsdown.config.ts b/packages/client/ui-deepseek-model-label-1017/tsdown.config.ts
-new file mode 100644
-index 0000000000000000000000000000000000000000..7aa03cebc166f1d04de1f058a5e4a3db4e94c114
---- /dev/null
-+++ b/packages/client/ui-deepseek-model-label-1017/tsdown.config.ts
-@@ -0,0 +1,3 @@
-+import { clientBundle } from '../tsdown.client.ts'
-+
-+export default clientBundle(import.meta.dirname, ['lib/types/index.js'])
 diff --git a/packages/client/ui-jobs/src/client/JobListAction.module.css b/packages/client/ui-jobs/src/client/JobListAction.module.css
 index a9eedb8079880aebd3c540e990df3bf1de5685a2..efa775ad8dcfaf57e865d63a6c4a0e6b5f6e41a5 100644
 --- a/packages/client/ui-jobs/src/client/JobListAction.module.css
@@ -10788,7 +9870,7 @@ index 6594d3807d185a7b07d63aa51c5a841a5fa6dd85..50bad812918f8bd5d8e1dca776396501
  <a id="dev-note"></a>
  ### 开发备注
 diff --git a/packages/client/ui-skill/package.json b/packages/client/ui-skill/package.json
-index 998ac905fc3cbf7631e413d9cd030069956d04c8..0d81dfd50fe0b3b3294b7f6fa2789c652c388c8f 100644
+index 0bb24c40ea91869373377a286db687f9356c0d2d..331a534a2bde7b0730dca44654f01be1e4d97b70 100644
 --- a/packages/client/ui-skill/package.json
 +++ b/packages/client/ui-skill/package.json
 @@ -69,7 +69,8 @@
@@ -11319,7 +10401,7 @@ index 8777befdb01422740acd5e878f38d3fec888d50a..2c72c8203fca2d385a2e6e99f3f592df
      name: 'RegisterFactory',
      declaration: 'export interface RegisterFactory {\n    <F extends keyof SlotFactoryMap & string>(options: RegisterFactoryOptions<F>, component: SlotComponent<FactoryComponentPropsOf<F>>): () => void;\n}',
 diff --git a/packages/extensions/cordis-client-runner/src/client/slot-catalog.ts b/packages/extensions/cordis-client-runner/src/client/slot-catalog.ts
-index 11311bce0764f2c1592a4f334fbe9b0c85ac0d5e..592f4a26afdb32985474ee2ced5d541c2b511756 100644
+index 11311bce0764f2c1592a4f334fbe9b0c85ac0d5e..ed9843715985efe919c4c4fb0457d30928443399 100644
 --- a/packages/extensions/cordis-client-runner/src/client/slot-catalog.ts
 +++ b/packages/extensions/cordis-client-runner/src/client/slot-catalog.ts
 @@ -851,7 +851,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
@@ -11472,20 +10554,7 @@ index 11311bce0764f2c1592a4f334fbe9b0c85ac0d5e..592f4a26afdb32985474ee2ced5d541c
        'ModelCatalogModel',
        'ModelProviderGroup',
      ],
-@@ -1489,8 +1549,10 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
-     hookContext: '',
-     slotInject: '',
-     declaredBy: 'an entry in \'conversation.input.model\' (client-ui-model-selection), so it exists while that entry is mounted',
--    occupants: [],
--    replaceRisk: 'none',
-+    occupants: [
-+      'client-ui-deepseek-model-label-1017 DeepSeekModelLabel',
-+    ],
-+    replaceRisk: 'shadows-shipped-ui',
-     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'conversation.input.model.label\', () => ctx.slots.register(\n      { name: \'conversation.input.model.label\' },\n      ({ provider, model }) => React.createElement(\'span\', { title: provider.name }, model.name),\n    ))\n  },\n}',
-     source: 'packages/client/ui-model-selection/src/client/slots.ts:37',
-   },
-@@ -1554,7 +1616,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
+@@ -1554,7 +1614,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
      ],
      replaceRisk: 'none',
      example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'conversation.input.overlay\', () => ctx.slots.register(\n      { name: \'conversation.input.overlay\', id: \'my-entry\', order: 100, label: \'My entry\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
@@ -11494,7 +10563,7 @@ index 11311bce0764f2c1592a4f334fbe9b0c85ac0d5e..592f4a26afdb32985474ee2ced5d541c
    },
    {
      key: 'conversation.input.permission',
-@@ -1598,7 +1660,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
+@@ -1598,7 +1658,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
      ],
      replaceRisk: 'shadows-shipped-ui',
      example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'conversation.input.permission\', () => ctx.slots.register(\n      { name: \'conversation.input.permission\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
@@ -11503,7 +10572,7 @@ index 11311bce0764f2c1592a4f334fbe9b0c85ac0d5e..592f4a26afdb32985474ee2ced5d541c
    },
    {
      key: 'conversation.input.plan',
-@@ -1641,7 +1703,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
+@@ -1641,7 +1701,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
      ],
      replaceRisk: 'shadows-shipped-ui',
      example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'conversation.input.plan\', () => ctx.slots.register(\n      { name: \'conversation.input.plan\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
@@ -11512,7 +10581,7 @@ index 11311bce0764f2c1592a4f334fbe9b0c85ac0d5e..592f4a26afdb32985474ee2ced5d541c
    },
    {
      key: 'conversation.input.right',
-@@ -1699,7 +1761,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
+@@ -1699,7 +1759,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
      occupants: [],
      replaceRisk: 'none',
      example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'conversation.input.right\', () => ctx.slots.register(\n      { name: \'conversation.input.right\', id: \'my-entry\', order: 100, label: \'My entry\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
@@ -11521,7 +10590,7 @@ index 11311bce0764f2c1592a4f334fbe9b0c85ac0d5e..592f4a26afdb32985474ee2ced5d541c
    },
    {
      key: 'conversation.plan-review.actions',
-@@ -2418,6 +2480,107 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
+@@ -2418,6 +2478,107 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
      example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'deliverables.review.file.actions\', () => ctx.slots.register(\n      { name: \'deliverables.review.file.actions\', id: \'my-entry\', order: 100, label: \'My entry\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
      source: 'packages/client/ui-deliverables/src/client/file-actions.ts:21',
    },
@@ -11629,7 +10698,7 @@ index 11311bce0764f2c1592a4f334fbe9b0c85ac0d5e..592f4a26afdb32985474ee2ced5d541c
    {
      key: 'main',
      kind: 'keyed',
-@@ -2446,7 +2609,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
+@@ -2446,7 +2607,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
        'useSessionAccess: (sessionId: SessionId, action: RemoteEndpoint) => boolean',
        'useWorkspaceAccess: (workspaceId: WorkspaceId, action: RemoteEndpoint) => boolean',
      ],
@@ -11638,7 +10707,7 @@ index 11311bce0764f2c1592a4f334fbe9b0c85ac0d5e..592f4a26afdb32985474ee2ced5d541c
      hookContext: '',
      slotInject: '',
      declaredBy: 'an entry in \'root\' (client-ui-layout), so it exists while that entry is mounted',
-@@ -2454,6 +2617,9 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
+@@ -2454,6 +2615,9 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
        'client-ui-conversation ConversationPanel key \'conversation\'',
        'client-ui-plugin-manager PluginManagerPage',
        'client-ui-schedule TaskManagerPage',
@@ -11648,7 +10717,7 @@ index 11311bce0764f2c1592a4f334fbe9b0c85ac0d5e..592f4a26afdb32985474ee2ced5d541c
      ],
      replaceRisk: 'shadows-shipped-ui',
      example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'main\', () => ctx.slots.register(\n      { name: \'main\', key: \'<one key the owner dispatches>\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
-@@ -3116,7 +3282,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
+@@ -3116,7 +3280,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
      ],
      replaceRisk: 'none',
      example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'settings.action\', () => ctx.slots.register(\n      { name: \'settings.action\', id: \'my-entry\', order: 100, label: \'My entry\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
@@ -11657,7 +10726,7 @@ index 11311bce0764f2c1592a4f334fbe9b0c85ac0d5e..592f4a26afdb32985474ee2ced5d541c
    },
    {
      key: 'settings.close',
-@@ -3150,7 +3316,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
+@@ -3150,7 +3314,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
      ],
      replaceRisk: 'shadows-shipped-ui',
      example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'settings.close\', () => ctx.slots.register(\n      { name: \'settings.close\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
@@ -11666,7 +10735,7 @@ index 11311bce0764f2c1592a4f334fbe9b0c85ac0d5e..592f4a26afdb32985474ee2ced5d541c
    },
    {
      key: 'settings.general.item',
-@@ -3214,7 +3380,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
+@@ -3214,7 +3378,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
      ],
      replaceRisk: 'none',
      example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'settings.general.item\', () => ctx.slots.register(\n      { name: \'settings.general.item\', id: \'my-entry\', order: 100, label: \'My entry\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
@@ -11675,7 +10744,7 @@ index 11311bce0764f2c1592a4f334fbe9b0c85ac0d5e..592f4a26afdb32985474ee2ced5d541c
    },
    {
      key: 'settings.header',
-@@ -3248,7 +3414,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
+@@ -3248,7 +3412,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
      ],
      replaceRisk: 'shadows-shipped-ui',
      example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'settings.header\', () => ctx.slots.register(\n      { name: \'settings.header\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
@@ -11684,7 +10753,7 @@ index 11311bce0764f2c1592a4f334fbe9b0c85ac0d5e..592f4a26afdb32985474ee2ced5d541c
    },
    {
      key: 'settings.launcher',
-@@ -3279,10 +3445,11 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
+@@ -3279,10 +3443,11 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
      declaredBy: 'an entry in \'sidebar.settings\' (client-ui-settings-general), so it exists while that entry is mounted',
      occupants: [
        'client-ui-settings-account AccountMenu',
@@ -11697,7 +10766,7 @@ index 11311bce0764f2c1592a4f334fbe9b0c85ac0d5e..592f4a26afdb32985474ee2ced5d541c
    },
    {
      key: 'settings.models.footer',
-@@ -3460,7 +3627,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
+@@ -3460,7 +3625,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
      ],
      replaceRisk: 'none',
      example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'settings.onboarding\', () => ctx.slots.register(\n      { name: \'settings.onboarding\', id: \'my-entry\', order: 100, label: \'My entry\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
@@ -11706,7 +10775,7 @@ index 11311bce0764f2c1592a4f334fbe9b0c85ac0d5e..592f4a26afdb32985474ee2ced5d541c
    },
    {
      key: 'settings.plugins.tab',
-@@ -3513,14 +3680,14 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
+@@ -3513,14 +3678,14 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
      ],
      replaceRisk: 'none',
      example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'settings.plugins.tab\', () => ctx.slots.register(\n      { name: \'settings.plugins.tab\', id: \'my-entry\', order: 100, label: \'My entry\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
@@ -11723,7 +10792,7 @@ index 11311bce0764f2c1592a4f334fbe9b0c85ac0d5e..592f4a26afdb32985474ee2ced5d541c
      registerOptions: [
        {
          name: 'id',
-@@ -3542,7 +3709,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
+@@ -3542,7 +3707,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
        },
      ],
      ownerProps: [
@@ -11732,7 +10801,7 @@ index 11311bce0764f2c1592a4f334fbe9b0c85ac0d5e..592f4a26afdb32985474ee2ced5d541c
      ],
      ownerPropsReferences: [],
      standardProps: [
-@@ -3560,7 +3727,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
+@@ -3560,7 +3725,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
      keyDomain: '',
      hookContext: '',
      slotInject: '',
@@ -11741,7 +10810,7 @@ index 11311bce0764f2c1592a4f334fbe9b0c85ac0d5e..592f4a26afdb32985474ee2ced5d541c
      occupants: [
        'client-ui-agent-preset AgentPresetSection id \'agent-presets\'',
        'client-ui-settings-account AccountSection id \'account\'',
-@@ -3570,7 +3737,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
+@@ -3570,7 +3735,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
      ],
      replaceRisk: 'none',
      example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'settings.section\', () => ctx.slots.register(\n      { name: \'settings.section\', id: \'my-entry\', order: 100, label: \'My entry\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
@@ -11750,7 +10819,7 @@ index 11311bce0764f2c1592a4f334fbe9b0c85ac0d5e..592f4a26afdb32985474ee2ced5d541c
    },
    {
      key: 'settings.section.icon',
-@@ -3621,7 +3788,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
+@@ -3621,7 +3786,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
      occupants: [],
      replaceRisk: 'none',
      example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'settings.section.icon\', () => ctx.slots.register(\n      { name: \'settings.section.icon\', id: \'my-entry\', order: 100, label: \'My entry\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
@@ -11759,7 +10828,7 @@ index 11311bce0764f2c1592a4f334fbe9b0c85ac0d5e..592f4a26afdb32985474ee2ced5d541c
    },
    {
      key: 'settings.trigger',
-@@ -3655,7 +3822,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
+@@ -3655,7 +3820,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
      ],
      replaceRisk: 'shadows-shipped-ui',
      example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'settings.trigger\', () => ctx.slots.register(\n      { name: \'settings.trigger\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
@@ -11768,7 +10837,7 @@ index 11311bce0764f2c1592a4f334fbe9b0c85ac0d5e..592f4a26afdb32985474ee2ced5d541c
    },
    {
      key: 'shell.bottom',
-@@ -4027,7 +4194,60 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
+@@ -4027,7 +4192,60 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
      ],
      replaceRisk: 'none',
      example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'sidebar.footer.action\', () => ctx.slots.register(\n      { name: \'sidebar.footer.action\', id: \'my-entry\', order: 100, label: \'My entry\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
@@ -11830,7 +10899,7 @@ index 11311bce0764f2c1592a4f334fbe9b0c85ac0d5e..592f4a26afdb32985474ee2ced5d541c
    },
    {
      key: 'sidebar.panellist',
-@@ -4056,7 +4276,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
+@@ -4056,7 +4274,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
        },
      ],
      ownerProps: [
@@ -11839,7 +10908,7 @@ index 11311bce0764f2c1592a4f334fbe9b0c85ac0d5e..592f4a26afdb32985474ee2ced5d541c
      ],
      ownerPropsReferences: [],
      standardProps: [
-@@ -4078,10 +4298,12 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
+@@ -4078,10 +4296,12 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
      occupants: [
        'client-ui-plugin-manager PluginsPanelIcon',
        'client-ui-schedule TaskManagerIcon',
@@ -11853,7 +10922,7 @@ index 11311bce0764f2c1592a4f334fbe9b0c85ac0d5e..592f4a26afdb32985474ee2ced5d541c
    },
    {
      key: 'sidebar.panellist.actions',
-@@ -4136,7 +4358,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
+@@ -4136,7 +4356,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
      ],
      replaceRisk: 'none',
      example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'sidebar.panellist.actions\', () => ctx.slots.register(\n      { name: \'sidebar.panellist.actions\', id: \'my-entry\', order: 100, label: \'My entry\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
@@ -11862,7 +10931,7 @@ index 11311bce0764f2c1592a4f334fbe9b0c85ac0d5e..592f4a26afdb32985474ee2ced5d541c
    },
    {
      key: 'sidebar.right.pane.tab',
-@@ -5009,7 +5231,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
+@@ -5009,7 +5229,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
      ],
      replaceRisk: 'shadows-shipped-ui',
      example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'sidebar.settings\', () => ctx.slots.register(\n      { name: \'sidebar.settings\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
@@ -11871,7 +10940,7 @@ index 11311bce0764f2c1592a4f334fbe9b0c85ac0d5e..592f4a26afdb32985474ee2ced5d541c
    },
    {
      key: 'sidebar.toggle.badge',
-@@ -5075,7 +5297,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
+@@ -5075,7 +5295,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
      ],
      replaceRisk: 'shadows-shipped-ui',
      example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'sidebar.workspaces\', () => ctx.slots.register(\n      { name: \'sidebar.workspaces\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
@@ -11880,7 +10949,7 @@ index 11311bce0764f2c1592a4f334fbe9b0c85ac0d5e..592f4a26afdb32985474ee2ced5d541c
    },
    {
      key: 'sidebar.workspaces.directoryFlow',
-@@ -5378,6 +5600,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
+@@ -5378,6 +5598,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
        'client-ui-cordis CordisRunRow key \'cordis_run\'',
        'client-ui-cordis CordisActionRow key \'cordis_stop\'',
        'client-ui-cordis CordisActionRow key \'cordis_undefine\'',
@@ -12638,18 +11707,10 @@ index c7bde250e4072a350d5889a34f00c672c8874b0c..835ce4b4c28f04354c184ffdfc324add
  声明行的 `id` 是 Loader 编辑地址；`config.id` 是会话保存的 preset 标识符。子插件可省略行 ID，由 Loader 分配。
  
 diff --git a/packages/preset/agent-preset/skills/cordis-composition-reference/references/packages.md b/packages/preset/agent-preset/skills/cordis-composition-reference/references/packages.md
-index 0b1ae1bdef479ab96a0a20521a97d366405a3f35..792573d90796995cfa5b15d3915dc3d575e1032e 100644
+index 0b1ae1bdef479ab96a0a20521a97d366405a3f35..70e9e3ac3f45e5f9182f7af12402daa805eb4d93 100644
 --- a/packages/preset/agent-preset/skills/cordis-composition-reference/references/packages.md
 +++ b/packages/preset/agent-preset/skills/cordis-composition-reference/references/packages.md
-@@ -75,6 +75,7 @@ Every package below exports a Cordis plugin that a bundle patch can name in a Lo
- | `@deepseek-ai/dsh-client-ui-commands` | no | Client command surface: global directory cache, '/' source, three command UI kinds, popupSelect registry |
- | `@deepseek-ai/dsh-client-ui-context-menu` | no | Typed, plugin-extensible context menus with captured targets and shared Web presentation |
- | `@deepseek-ai/dsh-client-ui-conversation` | no | Target-neutral Conversation assembly, shell, composer, queue, and view navigation |
-+| `@deepseek-ai/dsh-client-ui-deepseek-model-label-1017` | no | Temporary 1017 release badge for official DeepSeek Flash model labels |
- | `@deepseek-ai/dsh-client-ui-deliverables` | no | Changed-files card with per-file comparison tabs, delivery cards, and clickable final-response file references for Web |
- | `@deepseek-ai/dsh-client-ui-directory-picker-browse` | no | In-app directory browsing surface: the workspace directory-flow owner rendering the host's listing and creation primitives |
- | `@deepseek-ai/dsh-client-ui-directory-picker-native` | no | Native directory-picker surface: the renderless workspace directory-flow occupant driving the local Desktop or Host OS chooser |
-@@ -172,6 +173,14 @@ Every package below exports a Cordis plugin that a bundle patch can name in a Lo
+@@ -172,6 +172,14 @@ Every package below exports a Cordis plugin that a bundle patch can name in a Lo
  | `@deepseek-ai/dsh-credentials-local` | yes | File-backed credentials provider ($DSH_HOME/.env under the live process environment) for the DeepSeek Harness |
  | `@deepseek-ai/dsh-deepseek-account-platform` | yes | Authorize DeepSeek accounts through browser PKCE |
  
@@ -12664,7 +11725,7 @@ index 0b1ae1bdef479ab96a0a20521a97d366405a3f35..792573d90796995cfa5b15d3915dc3d5
  ## deliverables
  
  | Package | Config | Description |
-@@ -245,6 +254,7 @@ Every package below exports a Cordis plugin that a bundle patch can name in a Lo
+@@ -245,6 +253,7 @@ Every package below exports a Cordis plugin that a bundle patch can name in a Lo
  | `@deepseek-ai/dsh-cordis-client-runner` | no | Browser half of dynamic dual-half plugin packages: event subscription, closure evaluation, guard facade, and loader entries |
  | `@deepseek-ai/dsh-cordis-host-runner` | yes | Dynamic package definition registry, host-half sandbox lifecycle, and invoke handler table for model-mounted dual-half packages |
  | `@deepseek-ai/dsh-tool-cordis` | no | Read-only runtime API inspection for Harness plugin development |
@@ -12795,7 +11856,7 @@ index 622db953d0aa4ea1ac2c37bf02b7ebbbea4f98d6..245c2816fc5e37059c591e1ac6b2233f
  
  目录与正文具有独立的生命周期：发现阶段把 frontmatter 解析进目录条目，每次加载都会重新读取当前文件，因此编辑 skill 正文无需版本化或缓存失效。
 diff --git a/packages/skill/skill-filesystem/package.json b/packages/skill/skill-filesystem/package.json
-index 25e29034ada51c2ee41c0ba3c4e6edfa68734d80..4b47664e04074381139756bcb276c395959c04da 100644
+index e469d7fc5fecf1b470966a3f2bb4444a31b71047..d851f503df9891d09d650820536818f502dd1b61 100644
 --- a/packages/skill/skill-filesystem/package.json
 +++ b/packages/skill/skill-filesystem/package.json
 @@ -20,11 +20,16 @@
@@ -13328,7 +12389,7 @@ index 8c1094455817f601450e2e2341984de24618b1e9..024866d407c1e2831e954e884df2644b
  
  <a id="dev-note"></a>
 diff --git a/packages/skill/skill/package.json b/packages/skill/skill/package.json
-index 7cbfb17d917ceaa077ad14c379aeef221cb43bf8..c9d4e1d37a34bb4fceaf46ea084479e39c6d2d06 100644
+index 887e7341a4372ada51159ef68c93624de432ec1d..60ec6b5aa73edf3887b390c3149c90ee9d8a8259 100644
 --- a/packages/skill/skill/package.json
 +++ b/packages/skill/skill/package.json
 @@ -20,11 +20,16 @@
@@ -13691,7 +12752,7 @@ index 0000000000000000000000000000000000000000..57cb7a436ed95464d6b94c35eb55b1fb
 +  }
 +}
 diff --git a/packages/subagent/tool-subagent-control/package.json b/packages/subagent/tool-subagent-control/package.json
-index 6075341cd941f569dd1368f3776295c18adcab12..6a912243c87b058c776eb5e8b0fdda2bf1631d98 100644
+index dc399e8913cd118109b6277264ad416e04f8e405..150acc47ae8779f94cb21c8afc9f0e3626563bd9 100644
 --- a/packages/subagent/tool-subagent-control/package.json
 +++ b/packages/subagent/tool-subagent-control/package.json
 @@ -20,10 +20,12 @@
@@ -13722,7 +12783,7 @@ index 507c4506b017cd7df22f0fe6f5b699cc282b089c..0bc0db2400eb601183786426dedfe542
        if (options.awaitConnected !== false) {
          await awaitConnected(ctx, mock, options.connectTimeoutMs ?? DEFAULT_CONNECT_TIMEOUT_MS)
 diff --git a/pnpm-lock.yaml b/pnpm-lock.yaml
-index d6ef3e506e9d477291875dd2739f0c863d4f1a38..60b3efddbc987ad510b101e4fd9c62ff17c61c6e 100644
+index d6ef3e506e9d477291875dd2739f0c863d4f1a38..942a62056c0b4ef0c4ecc313d97d9f9b4d4ad34b 100644
 --- a/pnpm-lock.yaml
 +++ b/pnpm-lock.yaml
 @@ -770,6 +770,9 @@ importers:
@@ -13771,50 +12832,7 @@ index d6ef3e506e9d477291875dd2739f0c863d4f1a38..60b3efddbc987ad510b101e4fd9c62ff
        '@deepseek-ai/dsh-subagent':
          specifier: workspace:*
          version: link:../../subagent/subagent
-@@ -4227,6 +4252,42 @@ importers:
-         specifier: 4.4.3
-         version: 4.4.3
- 
-+  packages/client/ui-deepseek-model-label-1017:
-+    devDependencies:
-+      '@deepseek-ai/cordis':
-+        specifier: workspace:~
-+        version: link:../../../vendor/cordis
-+      '@deepseek-ai/dsh-client-locale':
-+        specifier: workspace:*
-+        version: link:../locale
-+      '@deepseek-ai/dsh-client-test-runtime':
-+        specifier: workspace:*
-+        version: link:../../test-support/client-runtime
-+      '@deepseek-ai/dsh-client-ui-model-selection':
-+        specifier: workspace:*
-+        version: link:../ui-model-selection
-+      '@deepseek-ai/dsh-client-ui-primitives':
-+        specifier: workspace:*
-+        version: link:../ui-primitives
-+      '@deepseek-ai/dsh-client-ui-renderer':
-+        specifier: workspace:*
-+        version: link:../ui-renderer
-+      '@deepseek-ai/dsh-client-ui-slots':
-+        specifier: workspace:*
-+        version: link:../ui-slots
-+      '@deepseek-ai/dsh-session':
-+        specifier: workspace:*
-+        version: link:../../core/session
-+      '@testing-library/react':
-+        specifier: ^16.3.3
-+        version: 16.3.3(@testing-library/dom@10.4.2)(@types/react-dom@18.3.7(@types/react@18.3.31))(@types/react@18.3.31)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
-+      react:
-+        specifier: ^18.2.0
-+        version: 18.3.1
-+      react-dom:
-+        specifier: ^18.2.0
-+        version: 18.3.1(react@18.3.1)
-+
-   packages/client/ui-deliverables:
-     dependencies:
-       '@deepseek-ai/dsh-typert-protocol':
-@@ -6540,6 +6601,9 @@ importers:
+@@ -6540,6 +6565,9 @@ importers:
        '@deepseek-ai/dsh-session':
          specifier: workspace:*
          version: link:../../core/session
@@ -13824,7 +12842,7 @@ index d6ef3e506e9d477291875dd2739f0c863d4f1a38..60b3efddbc987ad510b101e4fd9c62ff
        '@deepseek-ai/dsh-util-values':
          specifier: workspace:*
          version: link:../../util/values
-@@ -7952,137 +8016,832 @@ importers:
+@@ -7952,137 +7980,832 @@ importers:
          version: link:../../util/brand
        '@deepseek-ai/dsh-util-values':
          specifier: workspace:*
@@ -14763,7 +13781,7 @@ index d6ef3e506e9d477291875dd2739f0c863d4f1a38..60b3efddbc987ad510b101e4fd9c62ff
  
    packages/deliverables/deliverable-file-references:
      devDependencies:
-@@ -11954,6 +12713,90 @@ importers:
+@@ -11954,6 +12677,90 @@ importers:
          specifier: ^18.2.0
          version: 18.3.1
  
@@ -14854,7 +13872,7 @@ index d6ef3e506e9d477291875dd2739f0c863d4f1a38..60b3efddbc987ad510b101e4fd9c62ff
    packages/feedback/command-feedback:
      dependencies:
        zod:
-@@ -20277,10 +21120,18 @@ packages:
+@@ -20277,10 +21084,18 @@ packages:
    '@mixmark-io/domino@2.2.0':
      resolution: {integrity: sha512-Y28PR25bHXUg88kCV7nivXrP2Nj2RueZ3/l/jdx6J9f8J4nsEGcgX0Qe6lt7Pa+J79+kPiJU3LguR6O/6zrLOw==}
  
@@ -14873,7 +13891,7 @@ index d6ef3e506e9d477291875dd2739f0c863d4f1a38..60b3efddbc987ad510b101e4fd9c62ff
    '@modelcontextprotocol/core@2.2.0':
      resolution: {integrity: sha512-iLhmprRmWI8EcosOA3wVvww22z02NkgqhV4fBH6f/odQBsi7xnJc0HGmi21yWO+/iKw2yzqVE127Zhna5/+JXw==}
      engines: {node: '>=20'}
-@@ -20313,6 +21164,10 @@ packages:
+@@ -20313,6 +21128,10 @@ packages:
      resolution: {integrity: sha512-kKaFkyAh6oipvc9+EAbJ552JafnMnOq5nzmzWkp1jJdBhTAAGpmIpWihUG1+rfNhmEFM98gUZDdCHCDD4v6a7Q==}
      hasBin: true
  
@@ -14884,7 +13902,7 @@ index d6ef3e506e9d477291875dd2739f0c863d4f1a38..60b3efddbc987ad510b101e4fd9c62ff
    '@modelcontextprotocol/server@2.2.0':
      resolution: {integrity: sha512-qFnltjus6Gk8Lx6J1w2RXmr3YPN22MNT6qD6zjAkaiWIlFIFxWClz0rXHNuJF/KSUyn5YGhkSvXkWDbQHVLFEQ==}
      engines: {node: '>=20'}
-@@ -21321,6 +22176,14 @@ packages:
+@@ -21321,6 +22140,14 @@ packages:
      resolution: {integrity: sha512-4BAffykYOgO+5nzBWYwE3W90sBgLJoUPRWWcL8wlyiM8IB8ipJz3UMJ9KXQd1RKQXpKp8Tutn80HZtWsu2u76w==}
      engines: {node: '>=10'}
  
@@ -14899,7 +13917,7 @@ index d6ef3e506e9d477291875dd2739f0c863d4f1a38..60b3efddbc987ad510b101e4fd9c62ff
    '@tanstack/react-virtual@3.14.10':
      resolution: {integrity: sha512-SRyoUbdFMRHuYXMijV5H4ZarQWpXkj3iANq8OFre+pybeVap8ZJjZ3Nz9bVjx4d8PfobVUQUdKyyyHYk3E+djw==}
      peerDependencies:
-@@ -27972,6 +28835,16 @@ snapshots:
+@@ -27972,6 +28799,16 @@ snapshots:
  
    '@mixmark-io/domino@2.2.0': {}
  
@@ -14916,7 +13934,7 @@ index d6ef3e506e9d477291875dd2739f0c863d4f1a38..60b3efddbc987ad510b101e4fd9c62ff
    '@modelcontextprotocol/client@2.2.0':
      dependencies:
        '@modelcontextprotocol/core': 2.2.0
-@@ -27982,10 +28855,21 @@ snapshots:
+@@ -27982,10 +28819,21 @@ snapshots:
        pkce-challenge: 5.0.1
        zod: 4.4.3
  
@@ -14938,7 +13956,7 @@ index d6ef3e506e9d477291875dd2739f0c863d4f1a38..60b3efddbc987ad510b101e4fd9c62ff
    '@modelcontextprotocol/node@2.0.0(@modelcontextprotocol/server@2.2.0)(hono@4.13.7)':
      dependencies:
        '@hono/node-server': 1.19.17(hono@4.13.7)
-@@ -28037,6 +28921,11 @@ snapshots:
+@@ -28037,6 +28885,11 @@ snapshots:
        - supports-color
        - zod
  
@@ -14950,7 +13968,7 @@ index d6ef3e506e9d477291875dd2739f0c863d4f1a38..60b3efddbc987ad510b101e4fd9c62ff
    '@modelcontextprotocol/server@2.2.0':
      dependencies:
        '@modelcontextprotocol/core': 2.2.0
-@@ -28744,6 +29633,13 @@ snapshots:
+@@ -28744,6 +29597,13 @@ snapshots:
      dependencies:
        defer-to-connect: 2.0.1
  
@@ -15446,7 +14464,7 @@ index eb0feb8769de2428677d85b271167aac64a6522c..38fac76e2ee8b4376f14126fa3d6a76d
      const root = fixture()
      baseline(root)
 diff --git a/scripts/product-package-policy.ts b/scripts/product-package-policy.ts
-index 9568a9128543081bac41cafae2b037b0e8f2e03e..dc2975cb51beab8b85b61c71d4e811f6f17bd489 100644
+index 9568a9128543081bac41cafae2b037b0e8f2e03e..51a5c2b86314ea21de9a0f4588247efeb7605e2d 100644
 --- a/scripts/product-package-policy.ts
 +++ b/scripts/product-package-policy.ts
 @@ -1,7 +1,7 @@
@@ -15480,7 +14498,7 @@ index 9568a9128543081bac41cafae2b037b0e8f2e03e..dc2975cb51beab8b85b61c71d4e811f6
    'packages/browser-use/browser-use': { category: 'optional', reason: 'Service definition used by explicitly selected browser providers.' },
    'packages/computer-use/computer-use': { category: 'optional', reason: 'Service definition used by explicitly selected computer providers.' },
    'packages/lsp/lsp': { category: 'optional', reason: 'Service definition for deployment-configured language servers.' },
-@@ -40,13 +53,15 @@ export const PRODUCT_PACKAGE_POLICY: Readonly<Record<string, ProductPackagePolic
+@@ -40,13 +53,14 @@ export const PRODUCT_PACKAGE_POLICY: Readonly<Record<string, ProductPackagePolic
    'packages/sdk/client': { category: 'sdk', reason: 'Published TypeScript embedding client runs in the consumer process.' },
    'packages/typert/generator': { category: 'build', reason: 'Build-time generation of type metadata.' },
    'packages/test-support/agent-loop-testkit': { category: 'test', reason: 'Published agent-loop test harness.' },
@@ -15493,7 +14511,6 @@ index 9568a9128543081bac41cafae2b037b0e8f2e03e..dc2975cb51beab8b85b61c71d4e811f6
    'packages/test-support/session-snapshot': { category: 'test', reason: 'Published Session snapshot replay harness.' },
 +  'packages/test-support/tool-testkit': { category: 'test', reason: 'Published native tool executor test harness.' },
 +  'packages/core/agent-tool-presentation': { category: 'optional', reason: 'Deprecated upstream selector retained for explicit external compositions; maintained profiles use native and PTC executors directly.' },
-+  'packages/client/ui-deepseek-model-label-1017': { category: 'optional', reason: 'Temporary upstream model badge available to explicitly configured client compositions.' },
    'packages/client/web': { category: 'web-distribution', reason: 'Browser boot kernel bundled into the Web distribution.' },
    'packages/client/ui-dockkit': { category: 'web-distribution', reason: 'Layout library bundled into the Web distribution.' },
    'packages/util/package-manifest': { category: 'declarations', reason: 'Shared package metadata declarations have no runtime mount.' },
@@ -15854,18 +14871,6 @@ index 342bcb6854c090a0a86bc2c420a24232655f8edc..a5f25e55f24f55f0a416ad4f40f0a0d0
  
  /** One blocked term occurrence in a tracked path or text line. */
  export interface ConcreteTermViolation {
-diff --git a/scripts/verify-package-readme-model-experience.ts b/scripts/verify-package-readme-model-experience.ts
-index 09dbf4558589eb43b6cc357d559f3aa71a079e3c..cf67a9cfa39b0d4fd8af39dc6b237df537285bb3 100644
---- a/scripts/verify-package-readme-model-experience.ts
-+++ b/scripts/verify-package-readme-model-experience.ts
-@@ -49,6 +49,7 @@ const NO_MODEL_EXPERIENCE_SECTION: Readonly<Record<string, string>> = {
-  * blocks. A package moves on or off this list with its context behavior.
-  */
- const SENTENCE_MODEL_EXPERIENCE: Readonly<Record<string, SentenceContract>> = {
-+  'packages/client/ui-deepseek-model-label-1017': { kind: 'none', reason: 'Decorates browser model labels without changing model requests or Session events.' },
-   'packages/client/ui-context-menu': { kind: 'none', reason: 'Client menu presentation and contributed callbacks add no model input.' },
-   'packages/client/ui-file-actions': { kind: 'none', reason: 'Explicit user file saves and clipboard operations add no model input.' },
-   'packages/client/ui-entry-customization': { kind: 'none', reason: 'Controls browser launchers and prepares a reviewable Creator draft without submitting model input.' },
 diff --git a/scripts/verify-package-readme-summaries.ts b/scripts/verify-package-readme-summaries.ts
 index bc96d2b1c74c668219ef2a046c6518c38e35decc..803a5f866088f589d0840f8347e89293a48ae958 100644
 --- a/scripts/verify-package-readme-summaries.ts
@@ -16181,7 +15186,7 @@ index 0000000000000000000000000000000000000000..e0b0fe035e49866b9996756698c9a3d2
 +  })) }))
 +}
 diff --git a/tsconfig.base.json b/tsconfig.base.json
-index f513971edc7f89e4ec718d98bc0149001a7479be..712395f7a446af12386dc7cce3d07657c7bb6692 100644
+index f513971edc7f89e4ec718d98bc0149001a7479be..a02b15dcfc86d40979a04513440de59d09bd76f6 100644
 --- a/tsconfig.base.json
 +++ b/tsconfig.base.json
 @@ -36,9 +36,60 @@
@@ -16299,15 +15304,7 @@ index f513971edc7f89e4ec718d98bc0149001a7479be..712395f7a446af12386dc7cce3d07657
        "@deepseek-ai/dsh-client-ui-attachment": ["./packages/client/ui-attachment/src"],
        "@deepseek-ai/dsh-client-ui-primitives": ["./packages/client/ui-primitives/src"],
        "@deepseek-ai/dsh-client-ui-dockkit": ["./packages/client/ui-dockkit/src"],
-@@ -319,6 +352,7 @@
-       "@deepseek-ai/dsh-client-ui-reference": ["./packages/client/ui-reference/src"],
-       "@deepseek-ai/dsh-client-ui-commands": ["./packages/client/ui-commands/src"],
-       "@deepseek-ai/dsh-client-ui-model-selection": ["./packages/client/ui-model-selection/src"],
-+      "@deepseek-ai/dsh-client-ui-deepseek-model-label-1017": ["./packages/client/ui-deepseek-model-label-1017/src"],
-       "@deepseek-ai/dsh-client-ui-goal": ["./packages/client/ui-goal/src"],
-       "@deepseek-ai/dsh-client-ui-message-feedback": ["./packages/client/ui-message-feedback/src"],
-       "@deepseek-ai/dsh-client-ui-agent-preset": ["./packages/client/ui-agent-preset/src"],
-@@ -327,12 +361,8 @@
+@@ -327,12 +360,8 @@
        "@deepseek-ai/dsh-client-ui-subagent": ["./packages/client/ui-subagent/src"],
        "@deepseek-ai/dsh-experimental-client-ui-agent-team": ["./packages/experimental/client-ui-agent-team/src"],
        "@deepseek-ai/dsh-experimental-client-ui-agent-team/client": ["./packages/experimental/client-ui-agent-team/src/client/index.ts"],
@@ -16320,7 +15317,7 @@ index f513971edc7f89e4ec718d98bc0149001a7479be..712395f7a446af12386dc7cce3d07657
        "@deepseek-ai/dsh-client-ui-settings-agent-loop": ["./packages/client/ui-settings-agent-loop/src"],
        "@deepseek-ai/dsh-client-ui-settings-session-log": ["./packages/client/ui-settings-session-log/src"],
        "@deepseek-ai/dsh-client-ui-settings-subagent": ["./packages/client/ui-settings-subagent/src"],
-@@ -344,7 +374,6 @@
+@@ -344,7 +373,6 @@
        "@deepseek-ai/dsh-client-ui-plan": ["./packages/client/ui-plan/src"],
        "@deepseek-ai/dsh-client-ui-user-questions": ["./packages/client/ui-user-questions/src"],
        "@deepseek-ai/dsh-client-ui-trajectory": ["./packages/client/ui-trajectory/src"],
@@ -16328,7 +15325,7 @@ index f513971edc7f89e4ec718d98bc0149001a7479be..712395f7a446af12386dc7cce3d07657
        "@deepseek-ai/dsh-client-ui-workspace": ["./packages/client/ui-workspace/src"],
        "@deepseek-ai/dsh-client-ui-theme": ["./packages/client/ui-theme/src"],
        "@deepseek-ai/dsh-client-ui-theme/brand-font.css": ["./packages/client/ui-theme/src/styles/brand-font.css"],
-@@ -376,15 +405,6 @@
+@@ -376,15 +404,6 @@
        "@deepseek-ai/dsh-experimental-tool-agent-team": ["./packages/experimental/tool-agent-team/src"],
        "@deepseek-ai/dsh-experimental-worktree": ["./packages/experimental/worktree/src"],
        "@deepseek-ai/dsh-experimental-tool-worktree": ["./packages/experimental/tool-worktree/src"],
@@ -16344,7 +15341,7 @@ index f513971edc7f89e4ec718d98bc0149001a7479be..712395f7a446af12386dc7cce3d07657
        "@deepseek-ai/dsh-experimental-webworker-runtime": ["./packages/experimental/webworker-runtime/src"],
        "@deepseek-ai/dsh-experimental-webworker-packer": ["./packages/experimental/webworker-packer/src"],
        "@deepseek-ai/dsh-experimental-inspector": ["./packages/experimental/inspector/src"],
-@@ -392,10 +412,6 @@
+@@ -392,10 +411,6 @@
        "@deepseek-ai/dsh-experimental-session-inspector": ["./packages/experimental/session-inspector/src"],
        "@deepseek-ai/dsh-experimental-session-inspector/client": ["./packages/experimental/session-inspector/src/client/index.ts"],
        "@deepseek-ai/dsh-experimental-inspector/client": ["./packages/experimental/inspector/src/client/index.ts"],
@@ -16355,7 +15352,7 @@ index f513971edc7f89e4ec718d98bc0149001a7479be..712395f7a446af12386dc7cce3d07657
        "@deepseek-ai/dsh-experimental-ptc-runtime-python": ["./packages/experimental/ptc-runtime-python/src"],
        "@deepseek-ai/dsh-util-crypto": ["./packages/util/crypto/src"],
        "@deepseek-ai/dsh-util-values": ["./packages/util/values/src"],
-@@ -403,18 +419,20 @@
+@@ -403,18 +418,20 @@
        // util/ folders are role-named without the util- prefix their npm names carry,
        // so these aliases stay hand-written like dsh-util-crypto above.
        "@deepseek-ai/dsh-util-time": ["./packages/util/time/src"],
@@ -16379,7 +15376,7 @@ index f513971edc7f89e4ec718d98bc0149001a7479be..712395f7a446af12386dc7cce3d07657
        "@deepseek-ai/dsh-agent": ["./packages/core/agent/src"],
        "@deepseek-ai/dsh-agent-default-model": ["./packages/core/agent-default-model/src"],
        "@deepseek-ai/dsh-agent-instructions": ["./packages/context/agent-instructions/src"],
-@@ -434,6 +452,9 @@
+@@ -434,6 +451,9 @@
        "@deepseek-ai/dsh-bash-sandbox": ["./packages/shell/bash-sandbox/src"],
        "@deepseek-ai/dsh-brand": ["./packages/util/brand/src"],
        "@deepseek-ai/dsh-chunked-list": ["./packages/util/chunked-list/src"],
@@ -16389,7 +15386,7 @@ index f513971edc7f89e4ec718d98bc0149001a7479be..712395f7a446af12386dc7cce3d07657
        "@deepseek-ai/dsh-cmdline": ["./packages/boot/cmdline/src"],
        "@deepseek-ai/dsh-command-compact": ["./packages/compaction/command-compact/src"],
        "@deepseek-ai/dsh-command-feedback": ["./packages/feedback/command-feedback/src"],
-@@ -444,6 +465,7 @@
+@@ -444,6 +464,7 @@
        "@deepseek-ai/dsh-compaction-image-offload": ["./packages/compaction/compaction-image-offload/src"],
        "@deepseek-ai/dsh-compaction-tool-result-pruner": ["./packages/compaction/compaction-tool-result-pruner/src"],
        "@deepseek-ai/dsh-config-editor": ["./packages/boot/config-editor/src"],
@@ -16397,7 +15394,7 @@ index f513971edc7f89e4ec718d98bc0149001a7479be..712395f7a446af12386dc7cce3d07657
        "@deepseek-ai/dsh-credentials": ["./packages/credentials/credentials/src"],
        "@deepseek-ai/dsh-credentials-local": ["./packages/credentials/credentials-local/src"],
        "@deepseek-ai/dsh-cua-bundle": ["./packages/experimental/cua-bundle/src"],
-@@ -499,6 +521,7 @@
+@@ -499,6 +520,7 @@
        "@deepseek-ai/dsh-plugin-market": ["./packages/boot/plugin-market/src"],
        "@deepseek-ai/dsh-plugin-market-index": ["./packages/util/plugin-market-index/src"],
        "@deepseek-ai/dsh-plugin-package-inventory-deepseek": ["./packages/llm/plugin-package-inventory-deepseek/src"],
@@ -16405,7 +15402,7 @@ index f513971edc7f89e4ec718d98bc0149001a7479be..712395f7a446af12386dc7cce3d07657
        "@deepseek-ai/dsh-ptc-runtime": ["./packages/ptc-runtime/ptc-runtime/src"],
        "@deepseek-ai/dsh-ptc-runtime-node": ["./packages/ptc-runtime/ptc-runtime-node/src"],
        "@deepseek-ai/dsh-pwsh-sandbox": ["./packages/shell/pwsh-sandbox/src"],
-@@ -592,6 +615,7 @@
+@@ -592,6 +614,7 @@
        "@deepseek-ai/dsh-tool-subagent": ["./packages/subagent/tool-subagent/src"],
        "@deepseek-ai/dsh-tool-subagent-control": ["./packages/subagent/tool-subagent-control/src"],
        "@deepseek-ai/dsh-tool-terminal": ["./packages/experimental/tool-terminal/src"],
@@ -16414,7 +15411,7 @@ index f513971edc7f89e4ec718d98bc0149001a7479be..712395f7a446af12386dc7cce3d07657
        "@deepseek-ai/dsh-tool-web": ["./packages/web/tool-web/src"],
        "@deepseek-ai/dsh-tool-workflow": ["./packages/workflow/tool-workflow/src"],
 diff --git a/tsconfig.client.json b/tsconfig.client.json
-index 8ef965c8ba43efe976d292f75b23d909055bc1fe..317ca1f4647e4294eb6ca68d540dfa9524aa4a5d 100644
+index 8ef965c8ba43efe976d292f75b23d909055bc1fe..fd80be02d133c95337f22085e14d5b86d5b832a3 100644
 --- a/tsconfig.client.json
 +++ b/tsconfig.client.json
 @@ -20,12 +20,14 @@
@@ -16441,17 +15438,16 @@ index 8ef965c8ba43efe976d292f75b23d909055bc1fe..317ca1f4647e4294eb6ca68d540dfa95
      "packages/client/tsdown.client.ts",
      "scripts/client-build-environment.ts",
      "scripts/shipped-locales.ts",
-@@ -56,6 +56,8 @@
+@@ -56,6 +56,7 @@
      "packages/client/*/tests/**/*.host.ts"
    ],
    "references": [
 +    { "path": "./packages/extensions/ui-deepseek-harness-product" },
-+    { "path": "./packages/client/ui-deepseek-model-label-1017" },
      { "path": "./packages/experimental/client-ui-action-cards" },
      { "path": "./packages/experimental/client-ui-creation-recommendations" },
      { "path": "./packages/experimental/client-ui-plugin-recommendations" },
 diff --git a/tsconfig.host.json b/tsconfig.host.json
-index b3a36750e6ebd4a5d82f257e6ef654d17bf351aa..bb9481802263519c72333f3d2f5a9af4fd24874a 100644
+index b3a36750e6ebd4a5d82f257e6ef654d17bf351aa..ec222d92f1e042a9f34b689f81e7dba8add81583 100644
 --- a/tsconfig.host.json
 +++ b/tsconfig.host.json
 @@ -15,10 +15,32 @@
@@ -16521,16 +15517,15 @@ index b3a36750e6ebd4a5d82f257e6ef654d17bf351aa..bb9481802263519c72333f3d2f5a9af4
      "apps/web/tests/draft-initialization.e2e.ts",
      "apps/web/tests/settings-chrome.e2e.ts",
      "apps/web/tests/session-log-upload.e2e.ts",
-@@ -124,7 +140,7 @@
+@@ -124,7 +140,6 @@
      "apps/web/tests/settings-import.e2e.ts",
      "apps/web/tests/models-settings.e2e.ts",
      "apps/web/tests/deepseek-messages-settings.e2e.ts",
 -    "apps/web/tests/model-badge.e2e.ts",
-+    "apps/web/tests/deepseek-model-label-1017.e2e.ts",
      "apps/web/tests/deepseek-messages-chat.e2e.ts",
      "apps/web/tests/models-settings-recovery.e2e.ts",
      "apps/web/tests/onboarding-deepseek-config.e2e.ts",
-@@ -151,9 +167,7 @@
+@@ -151,9 +166,7 @@
      "apps/web/tests/blank-writer-reuse.e2e.ts",
      "apps/web/tests/blank-preset-reuse.e2e.ts",
      "apps/web/tests/stats-paged-history.e2e.ts",
@@ -16540,7 +15535,7 @@ index b3a36750e6ebd4a5d82f257e6ef654d17bf351aa..bb9481802263519c72333f3d2f5a9af4
      "apps/web/tests/sidebar-title-hover-scroll.e2e.ts",
      "apps/web/tests/rail-search-expand.e2e.ts",
      "apps/web/tests/conversation-column-overflow.e2e.ts",
-@@ -163,8 +177,6 @@
+@@ -163,8 +176,6 @@
      "apps/web/tests/official-subagent-bundle.e2e.ts",
      "apps/web/tests/present.e2e.ts",
      "apps/web/tests/present-svg.e2e.ts",
@@ -16549,7 +15544,7 @@ index b3a36750e6ebd4a5d82f257e6ef654d17bf351aa..bb9481802263519c72333f3d2f5a9af4
      "apps/web/tests/composer-draft-scroll.e2e.ts",
      "apps/web/tests/composer-focus.e2e.ts",
      "apps/web/tests/composer-placeholder.e2e.ts",
-@@ -177,7 +189,6 @@
+@@ -177,7 +188,6 @@
      "apps/web/tests/fork-mid-turn.e2e.ts",
      "apps/web/tests/message-feedback.e2e.ts",
      "apps/web/tests/markdown-images.e2e.ts",
@@ -16557,7 +15552,7 @@ index b3a36750e6ebd4a5d82f257e6ef654d17bf351aa..bb9481802263519c72333f3d2f5a9af4
      "apps/web/tests/markdown-file-links.e2e.ts",
      "apps/web/tests/user-text-secret-mask.e2e.ts",
      "apps/web/tests/reference-composer.e2e.ts",
-@@ -188,7 +199,6 @@
+@@ -188,7 +198,6 @@
      "apps/web/tests/markdown-inline-code-links.e2e.ts",
      "apps/web/tests/clickable-links-gallery.e2e.ts",
      "apps/web/tests/queue-actions.e2e.ts",
@@ -16565,7 +15560,7 @@ index b3a36750e6ebd4a5d82f257e6ef654d17bf351aa..bb9481802263519c72333f3d2f5a9af4
      "apps/web/tests/idle-submission-handoff.e2e.ts",
      "apps/web/tests/queue-image.e2e.ts",
      "apps/web/tests/skill-invocation-policy.e2e.ts",
-@@ -222,7 +232,6 @@
+@@ -222,7 +231,6 @@
      "apps/web/tests/turn-tail-actions.e2e.ts",
      "apps/web/tests/goal-multi-turn-actions.e2e.ts",
      "apps/web/tests/agent-team-panel.e2e.ts",
@@ -16573,7 +15568,7 @@ index b3a36750e6ebd4a5d82f257e6ef654d17bf351aa..bb9481802263519c72333f3d2f5a9af4
      "apps/web/tests/sidebar-right.e2e.ts",
      "apps/web/tests/sidebar-terminal.e2e.ts",
      "apps/web/tests/chat-scroll-fixture.ts",
-@@ -230,7 +239,6 @@
+@@ -230,7 +238,6 @@
      "apps/web/tests/chat-long-interactions.e2e.ts",
      "apps/web/tests/chat-continuous-conversation.e2e.ts",
      "apps/web/tests/composer-tab-geometry.e2e.ts",
@@ -16581,7 +15576,7 @@ index b3a36750e6ebd4a5d82f257e6ef654d17bf351aa..bb9481802263519c72333f3d2f5a9af4
      "apps/web/tests/composer-shortcuts.e2e.ts",
      "apps/web/tests/window-drag-coverage.e2e.ts",
      "apps/web/tests/complex-history.perf.ts",
-@@ -257,6 +265,9 @@
+@@ -257,6 +264,9 @@
    // suffixes are mutually exclusive, so each aggregate excludes the other's
    // and the package test glob above needs no per-file entry.
    "exclude": [
@@ -16591,7 +15586,7 @@ index b3a36750e6ebd4a5d82f257e6ef654d17bf351aa..bb9481802263519c72333f3d2f5a9af4
      "apps/desktop/tests/keyboard.spec.ts",
      "packages/client/*/src/**",
      "benchmarks/**/*.client.ts",
-@@ -272,11 +283,29 @@
+@@ -272,11 +282,29 @@
      "scripts/client-bundle-purity.spec.ts"
    ],
    "references": [
@@ -16626,7 +15621,7 @@ index b3a36750e6ebd4a5d82f257e6ef654d17bf351aa..bb9481802263519c72333f3d2f5a9af4
      { "path": "./packages/experimental/client-ui-cot-translation/tsconfig.host.json" },
      { "path": "./packages/experimental/cot-translation-bundle" },
      { "path": "./packages/experimental/session-search" },
-@@ -314,7 +343,6 @@
+@@ -314,7 +342,6 @@
      { "path": "./packages/experimental/computer-use-cua-driver-mcp" },
      { "path": "./packages/experimental/computer-use-cua-driver-native" },
      { "path": "./packages/experimental/cua/tsconfig.host.json" },
@@ -16634,7 +15629,7 @@ index b3a36750e6ebd4a5d82f257e6ef654d17bf351aa..bb9481802263519c72333f3d2f5a9af4
      { "path": "./packages/experimental/cua-macos" },
      { "path": "./packages/client/ui-sidebar-documentpreview/tsconfig.host.json" },
      { "path": "./packages/client/ui-sidebar-browser/tsconfig.host.json" },
-@@ -337,7 +365,6 @@
+@@ -337,7 +364,6 @@
      { "path": "./vendor/logger-console" },
      { "path": "./packages/util/brand" },
      { "path": "./packages/util/package-manifest" },
@@ -16642,7 +15637,7 @@ index b3a36750e6ebd4a5d82f257e6ef654d17bf351aa..bb9481802263519c72333f3d2f5a9af4
      { "path": "./packages/util/plugin-market-index" },
      { "path": "./packages/util/http-proxy" },
      { "path": "./packages/util/launch-environment" },
-@@ -345,7 +372,6 @@
+@@ -345,7 +371,6 @@
      { "path": "./packages/util/native-command" },
      { "path": "./packages/util/home-paths" },
      { "path": "./packages/client/ui-plugin-manager/tsconfig.host.json" },
@@ -16650,7 +15645,7 @@ index b3a36750e6ebd4a5d82f257e6ef654d17bf351aa..bb9481802263519c72333f3d2f5a9af4
      { "path": "./packages/util/time" },
      { "path": "./packages/util/timeout" },
      { "path": "./packages/util/crypto" },
-@@ -353,7 +379,6 @@
+@@ -353,7 +378,6 @@
      { "path": "./packages/util/chunked-list" },
      { "path": "./packages/util/values" },
      { "path": "./packages/util/workspace-path" },
@@ -16658,7 +15653,7 @@ index b3a36750e6ebd4a5d82f257e6ef654d17bf351aa..bb9481802263519c72333f3d2f5a9af4
      { "path": "./packages/util/code-language" },
      { "path": "./packages/util/output-retention" },
      { "path": "./packages/util/atomic-write" },
-@@ -407,11 +432,6 @@
+@@ -407,11 +431,6 @@
      { "path": "./packages/session/working-directory" },
      { "path": "./packages/experimental/worktree" },
      { "path": "./packages/experimental/tool-worktree" },
@@ -16670,7 +15665,7 @@ index b3a36750e6ebd4a5d82f257e6ef654d17bf351aa..bb9481802263519c72333f3d2f5a9af4
      { "path": "./packages/session/tool-working-directory" },
      { "path": "./packages/session/session-title-llm" },
      { "path": "./packages/session/session-title-first-prompt-llm" },
-@@ -443,7 +463,6 @@
+@@ -443,7 +462,6 @@
      { "path": "./packages/experimental/auto-review" },
      { "path": "./packages/experimental/claude-code-mods" },
      { "path": "./packages/core/tools" },
@@ -16678,7 +15673,7 @@ index b3a36750e6ebd4a5d82f257e6ef654d17bf351aa..bb9481802263519c72333f3d2f5a9af4
      { "path": "./packages/core/tool-executor-ptc" },
      { "path": "./packages/core/agent-tool-presentation" },
      { "path": "./packages/skill/skill" },
-@@ -487,7 +506,6 @@
+@@ -487,7 +505,6 @@
      { "path": "./packages/sandbox/sandbox-windows-acl" },
      { "path": "./packages/shell/bash-sandbox" },
      { "path": "./packages/shell/tool-bash" },
@@ -16686,7 +15681,7 @@ index b3a36750e6ebd4a5d82f257e6ef654d17bf351aa..bb9481802263519c72333f3d2f5a9af4
      { "path": "./packages/deliverables/tool-present" },
      { "path": "./packages/deliverables/workspace-changes" },
      { "path": "./packages/fs/fs" },
-@@ -515,7 +533,6 @@
+@@ -515,7 +532,6 @@
      { "path": "./packages/spill/spill-policy" },
      { "path": "./packages/guard/timeout-policy" },
      { "path": "./packages/test-support/agent-loop-testkit" },
@@ -16694,7 +15689,7 @@ index b3a36750e6ebd4a5d82f257e6ef654d17bf351aa..bb9481802263519c72333f3d2f5a9af4
      { "path": "./packages/acp/acp" },
      { "path": "./packages/bundle/acp-app" },
      { "path": "./packages/bundle/base" },
-@@ -523,7 +540,6 @@
+@@ -523,7 +539,6 @@
      { "path": "./packages/bundle/sdk-app" },
      { "path": "./packages/bundle/sdk-minimal" },
      { "path": "./packages/bundle/web-app" },
@@ -16702,7 +15697,7 @@ index b3a36750e6ebd4a5d82f257e6ef654d17bf351aa..bb9481802263519c72333f3d2f5a9af4
      { "path": "./packages/boot/app-boot" },
      { "path": "./packages/boot/cmdline" },
      { "path": "./packages/sdk/server" },
-@@ -542,8 +558,6 @@
+@@ -542,8 +557,6 @@
      { "path": "./packages/subagent/subagent-acp" },
      { "path": "./packages/subagent/subagent-claude-code" },
      { "path": "./packages/subagent/subagent-codex" },
@@ -16711,7 +15706,7 @@ index b3a36750e6ebd4a5d82f257e6ef654d17bf351aa..bb9481802263519c72333f3d2f5a9af4
      { "path": "./packages/subagent/subagent-dsh-sdk" },
      { "path": "./packages/jobs/jobs" },
      { "path": "./packages/jobs/jobs-local" },
-@@ -551,8 +565,6 @@
+@@ -551,8 +564,6 @@
      { "path": "./packages/experimental/agent-team" },
      { "path": "./packages/experimental/agent-team-profile" },
      { "path": "./packages/experimental/inspector-profile" },

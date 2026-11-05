@@ -199,7 +199,7 @@ index 3dfceaccd1dbd65bf2a7c485213321bff16848e8..2d90eeaffb9498aa3ebbf89477ca78ef
 +  en: 74ebdce7a0b8560a
 +  zh: 8fe929ccb423e3ab
 diff --git a/apps/desktop/package.json b/apps/desktop/package.json
-index 5d4f00ebee5985c0a0ac0d69a6620e77a9f838b3..a2d46a8a9948ca0fa2ee6b2d556da73a6b506f44 100644
+index 00eee14411214e690d598a60b44a0509d94b7e40..b6a1dc734363d53dc324d61f301e61a38d019087 100644
 --- a/apps/desktop/package.json
 +++ b/apps/desktop/package.json
 @@ -47,24 +47,34 @@

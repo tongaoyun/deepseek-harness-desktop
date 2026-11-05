@@ -57,7 +57,6 @@
   ],
   "references": [
     { "path": "./packages/extensions/ui-deepseek-harness-product" },
-    { "path": "./packages/client/ui-deepseek-model-label-1017" },
     { "path": "./packages/experimental/client-ui-action-cards" },
     { "path": "./packages/experimental/client-ui-creation-recommendations" },
     { "path": "./packages/experimental/client-ui-plugin-recommendations" },
