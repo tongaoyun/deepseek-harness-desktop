@@ -17,7 +17,7 @@ import { developmentRuntimeDirectory, resolveDesktopBuildTarget } from '../../de
 import { createPluginProfile } from '../../desktop/src/project-manager.ts'
 import { DESKTOP_HOST_PROTOCOL_VERSION } from '../../desktop/src/host-protocol.ts'
 import { parseDesktopRelease } from '../../desktop/src/release.ts'
-import { companyContentRelease, contentDigest } from '@deepseek-harness/product/company-content'
+import { contentIndex } from '../../../packages/deepseek-harness-product/product/tests/content-fixtures.ts'
 import { builtinCapabilityPatches } from '../../../packages/deepseek-harness-product/desktop/src/builtin-capabilities.ts'
 import type { ProductTaskCapabilities } from '@deepseek-harness/product/protocol'
 import { startMockLlmServer } from '@deepseek-ai/dsh-llm-mock-server'
@@ -789,7 +789,7 @@ it('keeps native themes and responsive catalogs while using official details and
   expect(calls.filter(method => method === 'knowledge.documents.read')).toEqual([])
   for (const width of [1440, 390]) {
     await page.setViewportSize({ width, height: 900 })
-    expect(await page.getByRole('dialog').count()).toBe(0)
+    await expect.poll(() => page.getByRole('dialog').count()).toBe(0)
     await expectKnowledgeMainFits(page)
     expect(await page.locator('[data-knowledge-workspace]').evaluate(region => region.scrollWidth > region.clientWidth)).toBe(false)
     await page.screenshot({ path: join(screenshots, `knowledge-inline-reader-${width}.png`), animations: 'disabled' })
@@ -1078,7 +1078,7 @@ for (const { mode, installed, surface } of desktopCarriers) {
       const folderRows: { id: string; name: string; parentId: string | null; updatedAt: string }[] = [{
         id: 'folder-policies', name: 'Policies', parentId: null, updatedAt: '2026-10-10T01:00:00Z',
       }]
-      const companyRelease = companyContentRelease({ version: '1.0.0-fixture', sha256: contentDigest({}), files: {} })
+      const companyRelease = contentIndex('1.0.0-fixture', [])
       const missingFixtureRoutes: string[] = []
       onTestFinished(({ task }) => {
         if (task.result?.state === 'fail') console.error('Desktop fixture diagnostics:', {
@@ -1599,7 +1599,7 @@ for (const { mode, installed, surface } of desktopCarriers) {
           for (const width of [1440, 390]) {
             await page.setViewportSize({ width, height: 900 })
             await expectKnowledgeMainFits(page)
-            expect(await page.getByRole('dialog').count()).toBe(0)
+            await expect.poll(() => page.getByRole('dialog').count()).toBe(0)
             expect(await page.locator('[data-knowledge-workspace]').evaluate(region => region.scrollWidth > region.clientWidth)).toBe(false)
             await page.screenshot({ path: join(screenshots, `electron-${carrier}-product-knowledge-inline-reader-${width}.png`), animations: 'disabled' })
             const tree = await openKnowledgeNavigation(page)
@@ -1833,7 +1833,7 @@ for (const { mode, installed, surface } of desktopCarriers) {
           expect(await nativeHeader.getByText(/^(Expert kits|专家套件|Retail operations)$/, { exact: true }).count()).toBe(0)
           await compareOrRefreshGolden(join(expectedDir, 'task-header-without-kit.expected.md'),
             await captureStableAria(page, '[data-slot="conversation.session.header.actions"]', root, {
-              replacements: [['标准模式', 'Standard mode'], ['专家套件', 'Expert kits']],
+              replacements: [['标准模式', 'Standard mode'], ['专家套件', 'Expert kits'], ['智能体团队', 'Agent team']],
             }), webSnapshotMode())
           for (const width of [1440, 390]) {
             await page.setViewportSize({ width, height: 900 })

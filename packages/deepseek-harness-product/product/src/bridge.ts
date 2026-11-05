@@ -158,6 +158,13 @@ export class DeepSeekHarnessProductBridge {
    * @param token - Opaque token retained by the main process.
    */
   setSession(session: ProductSession, token?: string): void {
+    this.commitSession(session, token, false)
+  }
+
+  /** A successful refresh may establish its token's missing employee identity
+   * without cancelling the refresh or its concurrent sign-in waiters.
+   */
+  private commitSession(session: ProductSession, token: string | undefined, establishesEmployee: boolean): void {
     if (this.closed) return
     this.authorizationAttempt?.controller.abort(new Error('Product employee session changed'))
     this.authorizationAttempt = undefined
@@ -165,9 +172,11 @@ export class DeepSeekHarnessProductBridge {
     this.session = { ...session }
     this.sessionToken = token
     if (!session.authenticated || session.employeeId !== previousEmployee) {
-      this.identityLifecycle.abort(new Error('Product employee identity changed'))
-      this.identityLifecycle = new AbortController()
-      this.sessionRefresh = undefined
+      if (!establishesEmployee) {
+        this.identityLifecycle.abort(new Error('Product employee identity changed'))
+        this.identityLifecycle = new AbortController()
+        this.sessionRefresh = undefined
+      }
       this.catalog.reset()
     }
     const persisted = this.persistSession?.(this.session, this.sessionToken)
@@ -487,12 +496,12 @@ export class DeepSeekHarnessProductBridge {
         throw new Error('deepseek-harness product: invalid refreshed session')
       }
       const identity = refreshed.employee as Record<string, unknown> | undefined
-      this.setSession({ authenticated: true,
+      this.commitSession({ authenticated: true,
         ...(typeof identity?.employeeId === 'string' ? { employeeId: identity.employeeId } : {}),
         ...(typeof identity?.employeeName === 'string' ? { displayName: identity.employeeName } : {}),
         ...((typeof refreshed.expiresAt === 'string' || typeof refreshed.expiresAt === 'number')
           ? { expiresAt: String(refreshed.expiresAt) } : {}),
-      }, token)
+      }, token, this.session.employeeId === undefined && typeof identity?.employeeId === 'string')
     }).catch((error: unknown) => {
       if (!refreshLifetime.aborted && this.sessionToken === tokenBeforeRefresh) {
         this.handleAuthenticationFailure(error)

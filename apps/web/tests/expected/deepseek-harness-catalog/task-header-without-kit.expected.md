@@ -1,1 +1,2 @@
+- button "Agent team"
 - text: Standard mode

@@ -9,6 +9,45 @@ function refreshed(token = 'rotated-token') {
     employee: { employeeId: '10001', employeeName: 'Employee', teamId: '' } } })
 }
 
+it('establishes a token-only employee identity for concurrent startup and explicit refresh waiters', async () => {
+  const started = Promise.withResolvers<undefined>()
+  const response = Promise.withResolvers<Response>()
+  const opened = vi.fn(async (_url: string) => {})
+  const persisted = vi.fn((_session: ProductSession, _token: string | undefined) => {})
+  const tokens: Array<string | null> = []
+  let refreshSignal: AbortSignal | null | undefined
+  const bridge = new DeepSeekHarnessProductBridge({ serverUrl: 'https://product.test', sessionToken: 'valid-token',
+    persistSession: persisted,
+    fetch: async (input, init) => {
+      if (new Request(input).url.endsWith('/session/refresh')) {
+        tokens.push(new Headers(init?.headers).get('authorization'))
+        refreshSignal = init?.signal
+        started.resolve(undefined)
+        return response.promise
+      }
+      return Response.json({ success: true, data: [], pageIndex: 1, pageSize: 100, totalCount: 0, totalPages: 0 })
+    } })
+  const signIn = ensureDingTalkSession(bridge, opened)
+  const explicit = bridge.invoke('auth.refresh')
+  const completed = expect(Promise.all([signIn, explicit])).resolves.toEqual([
+    expect.objectContaining({ authenticated: true, employeeId: '10001' }),
+    expect.objectContaining({ authenticated: true, employeeId: '10001' }),
+  ])
+  try {
+    await started.promise
+    response.resolve(refreshed())
+    await completed
+    expect(refreshSignal?.aborted).toBe(false)
+    expect(tokens).toEqual(['Bearer valid-token'])
+    expect(opened).not.toHaveBeenCalled()
+    expect(persisted).toHaveBeenCalledExactlyOnceWith(bridge.getSession(), 'rotated-token')
+  } finally {
+    response.resolve(refreshed())
+    await Promise.allSettled([completed, signIn, explicit])
+    await bridge.dispose()
+  }
+})
+
 it('shares the background token rotation with startup sign-in without reopening OAuth', async () => {
   const started = Promise.withResolvers<boolean>()
   const response = Promise.withResolvers<Response>()
@@ -100,13 +139,17 @@ it.each([false, true])('retains the token rotation after a sign-in waiter cancel
   }
 })
 
-it.each(['employee-change', 'disposal'] as const)('cancels refresh waiters on %s and drains the issued rotation', async (event) => {
+it.each([
+  ['employee-change', '10001'], ['employee-change', undefined],
+  ['disposal', '10001'], ['disposal', undefined],
+] as const)('cancels refresh waiters on %s with restored employee %s and drains the issued rotation', async (event, employeeId) => {
   const started = Promise.withResolvers<boolean>()
   const response = Promise.withResolvers<Response>()
   const persisted = vi.fn((_session: ProductSession, _token: string | undefined) => {})
   let refreshSignal: AbortSignal | null | undefined
   const bridge = new DeepSeekHarnessProductBridge({ serverUrl: 'https://product.test', sessionToken: 'valid-token',
-    initialSession: { authenticated: true, employeeId: '10001', expiresAt: String(Date.now() / 1000 + 3600) },
+    initialSession: { authenticated: true, ...(employeeId === undefined ? {} : { employeeId }),
+      expiresAt: String(Date.now() / 1000 + 3600) },
     persistSession: persisted,
     fetch: async (input, init) => {
       if (new Request(input).url.endsWith('/session/refresh')) {
