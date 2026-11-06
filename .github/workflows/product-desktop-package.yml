@@ -48,7 +48,7 @@ jobs:
           tag="$(cat UPSTREAM_TAG)"
           git fetch --depth=1 origin "refs/tags/${tag}:refs/tags/${tag}"
       - uses: pnpm/action-setup@v5.0.0
-      - uses: actions/setup-node@v7.0.0
+      - uses: actions/setup-node@v7
         with:
           node-version: '24'
           cache: pnpm
@@ -135,7 +135,7 @@ jobs:
       - name: Set up pnpm
         uses: pnpm/action-setup@v5.0.0
       - name: Set up Node
-        uses: actions/setup-node@v7.0.0
+        uses: actions/setup-node@v7
         with:
           node-version: '24'
           cache: pnpm
@@ -328,7 +328,7 @@ jobs:
           ref: ${{ inputs.source_sha }}
           persist-credentials: false
       - uses: pnpm/action-setup@v5.0.0
-      - uses: actions/setup-node@v7.0.0
+      - uses: actions/setup-node@v7
         with:
           node-version: '24'
           cache: pnpm
