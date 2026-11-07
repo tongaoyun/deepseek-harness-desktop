@@ -68,6 +68,9 @@ jobs:
           sed -i 's#https://cdn.sheetjs.com/#http://192.168.2.9:8082/repository/sheetjs-proxy/#g' \
             packages/client/ui-sidebar-documentpreview/package.json pnpm-lock.yaml
           pnpm install --frozen-lockfile --registry=http://192.168.2.9:4873/
+          # Source-boundary verification must see the reviewed, portable dependency URLs.
+          sed -i 's#http://192.168.2.9:8082/repository/sheetjs-proxy/#https://cdn.sheetjs.com/#g' \
+            packages/client/ui-sidebar-documentpreview/package.json pnpm-lock.yaml
       - name: Verify source and synchronize
         env:
           GITHUB_DESKTOP_REPOSITORY: ${{ vars.DESKTOP_GITHUB_REPOSITORY }}
