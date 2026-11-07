@@ -61,6 +61,9 @@ jobs:
           npm install -g pnpm@11.28.5 --no-audit --fund=false \
             --registry=http://192.168.2.9:4873/
           pnpm config set store-dir /tmp/ci-pnpm-store
+          # This pinned package is distributed as a CDN tarball, outside the npm registry.
+          sed -i 's#https://cdn.sheetjs.com/#http://192.168.2.9:8082/repository/sheetjs-proxy/#g' \
+            packages/client/ui-sidebar-documentpreview/package.json pnpm-lock.yaml
           pnpm install --frozen-lockfile --registry=http://192.168.2.9:4873/
       - name: Verify upstream and product contracts
         run: |
