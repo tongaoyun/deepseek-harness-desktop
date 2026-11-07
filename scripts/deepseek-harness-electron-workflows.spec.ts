@@ -154,11 +154,13 @@ describe('DeepSeekHarness Electron workflows', () => {
     expect(hosted).toContain('.artifacts/deepseek-harness-catalog/electron-*-startup.txt')
   })
 
-  it('uses the reachable npm registry instead of the unavailable internal mirror', () => {
+  it('downloads packages from the internal registry with job-local storage', () => {
     for (const name of ['electron-ci.yml', 'github-desktop-sync.yml']) {
       const source = readFileSync(resolve(import.meta.dirname, '..', '.gitea', 'workflows', name), 'utf8')
-      expect(source).toContain('https://registry.npmjs.org/')
-      expect(source).not.toContain('192.168.2.9:4873')
+      expect(source).toContain('http://192.168.2.9:4873/')
+      expect(source).not.toContain('registry.npmjs.org')
+      expect(source).not.toContain('/data/ci-cache/')
+      expect(source).toContain('store-dir /tmp/ci-pnpm-store')
     }
   })
 
