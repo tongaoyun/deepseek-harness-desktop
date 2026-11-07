@@ -1,5 +1,17 @@
 name: 桌面持续集成
 
+# Download from the internal repositories; temporary files belong to this job only.
+env:
+  NPM_CONFIG_REGISTRY: http://192.168.2.9:4873/
+  NPM_CONFIG_REPLACE_REGISTRY_HOST: always
+  NPM_CONFIG_CACHE: /tmp/ci-npm-cache
+  COREPACK_NPM_REGISTRY: http://192.168.2.9:4873
+  MVNW_REPOURL: http://192.168.2.9:8082/repository/maven-public
+  PIP_INDEX_URL: http://192.168.2.9:8082/repository/pypi-proxy/simple/
+  PIP_TRUSTED_HOST: 192.168.2.9
+  PIP_NO_CACHE_DIR: 'true'
+  UV_NO_CACHE: 'true'
+
 on:
   push:
     branches: [main]
@@ -17,13 +29,11 @@ jobs:
     env:
       # Match upstream CI's shared-host budget for cases, hooks and polling.
       DSH_COVERAGE_TEST_TIMEOUT_MS: '90000'
-      PNPM_CONFIG_CACHE_DIR: /pnpm-store/metadata-cache
-      NPM_CONFIG_CACHE: /pnpm-store/npm-cache
+      PNPM_CONFIG_CACHE_DIR: /tmp/ci-pnpm-store/metadata-cache
+      NPM_CONFIG_CACHE: /tmp/ci-pnpm-store/npm-cache
       NPM_CONFIG_FETCH_TIMEOUT: '120000'
     container:
       image: ci-node:1.0.0
-      volumes:
-        - /data/ci-cache/pnpm/deepseek-harness-desktop-electron:/pnpm-store
     steps:
       - name: Checkout
         uses: http://192.168.2.67:30330/instudio/checkout@v4
@@ -45,13 +55,13 @@ jobs:
           HTTPS_PROXY: ${{ secrets.DESKTOP_GITHUB_PROXY_URL }}
           NODE_USE_ENV_PROXY: '1'
         run: |
-          # npm is reachable directly; reserve the proxy for GitHub and external download hosts.
-          export NO_PROXY="${NO_PROXY:-${no_proxy:-localhost,127.0.0.1,::1}},registry.npmjs.org"
+          # Keep the internal package registry outside the GitHub download proxy.
+          export NO_PROXY="${NO_PROXY:-${no_proxy:-localhost,127.0.0.1,::1}},192.168.2.9"
           export no_proxy="$NO_PROXY"
-          npm install -g pnpm@11.28.5 --prefer-offline --no-audit --fund=false \
-            --registry=https://registry.npmjs.org/
-          pnpm config set store-dir /pnpm-store
-          pnpm install --frozen-lockfile --prefer-offline --registry=https://registry.npmjs.org/
+          npm install -g pnpm@11.28.5 --no-audit --fund=false \
+            --registry=http://192.168.2.9:4873/
+          pnpm config set store-dir /tmp/ci-pnpm-store
+          pnpm install --frozen-lockfile --registry=http://192.168.2.9:4873/
       - name: Verify upstream and product contracts
         run: |
           pnpm run verify:upstream
