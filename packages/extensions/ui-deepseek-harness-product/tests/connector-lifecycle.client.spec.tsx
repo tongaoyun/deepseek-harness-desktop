@@ -4,7 +4,7 @@ import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, expect, it, vi } from 'vitest'
 import { ConnectorDraftSchema } from '@deepseek-harness/product/connector-draft'
 import { ConnectorEditor } from '../src/client/ConnectorEditor.tsx'
-import { ConnectorDetail } from '../src/client/ConnectorView.tsx'
+import { ConnectorDetail, ConnectorDetailModal } from '../src/client/ConnectorView.tsx'
 import { items, localDetail } from '../src/client/catalog-shared.tsx'
 import { zh } from '../src/locales.ts'
 
@@ -72,9 +72,14 @@ it('cancels an OAuth provider retry when the editor closes', async () => {
   const view = render(<ConnectorEditor onClose={vi.fn()} onSaved={vi.fn()} t={t} />)
   fireEvent.change(screen.getByLabelText(zh.mcpServerType), { target: { value: 'streamable-http' } })
   await screen.findByRole('alert')
-  fireEvent.click(screen.getByRole('button', { name: zh.retry }))
+  const retry = screen.getByRole<HTMLButtonElement>('button', { name: zh.retry })
+  retry.focus()
+  fireEvent.click(retry)
   expect(reads).toBe(2)
-  expect(screen.queryByRole('button', { name: zh.retry })).toBeNull()
+  expect(screen.getByRole('button', { name: zh.retry })).toBe(retry)
+  expect(retry.disabled).toBe(false)
+  expect(retry.getAttribute('aria-disabled')).toBe('true')
+  expect(document.activeElement).toBe(retry)
   view.unmount()
   expect(cancel).toHaveBeenCalledWith('product', invoke.mock.calls[1]?.[3])
   await act(async () => { pending.resolve([]) })
@@ -84,15 +89,47 @@ it.each(['header', 'escape', 'mask'] as const)('asks before discarding connector
   vi.stubGlobal('dshDesktop', { extensions: { invoke: vi.fn(async () => ({ ok: true, result: [] })), cancel: vi.fn() } })
   const onClose = vi.fn()
   render(<ConnectorEditor onClose={onClose} onSaved={vi.fn()} t={t} />)
-  fireEvent.change(screen.getByLabelText(zh.mcpServerName), { target: { value: 'Unsaved connector' } })
+  const name = screen.getByLabelText<HTMLInputElement>(zh.mcpServerName)
+  fireEvent.change(name, { target: { value: 'Unsaved connector' } })
+  name.focus()
+  name.setSelectionRange(2, 8)
   closeDialog(action)
   expect(onClose).not.toHaveBeenCalled()
   expect(screen.getByText(zh.knowledgeDiscardDraftConfirmation)).toBeTruthy()
-  fireEvent.click(screen.getByRole('button', { name: zh.knowledgeKeepEditing }))
-  expect(screen.getByLabelText<HTMLInputElement>(zh.mcpServerName).value).toBe('Unsaved connector')
+  const keep = screen.getByRole('button', { name: zh.knowledgeKeepEditing })
+  expect(document.activeElement).toBe(keep)
+  expect(screen.queryByRole('textbox', { name: zh.mcpServerName })).toBeNull()
+  expect(name.isConnected).toBe(true)
+  fireEvent.click(keep)
+  expect(screen.getByLabelText(zh.mcpServerName)).toBe(name)
+  expect(name.value).toBe('Unsaved connector')
+  expect(document.activeElement).toBe(name)
+  expect([name.selectionStart, name.selectionEnd]).toEqual([2, 8])
+  expect({ focused: document.activeElement === name, selection: [name.selectionStart, name.selectionEnd] }).toMatchSnapshot('Retained connector edit')
   closeDialog(action)
   fireEvent.click(screen.getByRole('button', { name: zh.knowledgeDiscardDraft }))
   expect(onClose).toHaveBeenCalledOnce()
+})
+
+it('returns to the same private device field and selection after cancelling discard', async () => {
+  const invoke = vi.fn(async () => ({ ok: true, result: template }))
+  vi.stubGlobal('dshDesktop', { extensions: { invoke, cancel: vi.fn() } })
+  render(<ConnectorDetail product={product} onCatalogChanged={vi.fn(async () => {})} t={t} />)
+  fireEvent.click(screen.getByRole('button', { name: zh.configureDevice }))
+  const field = await screen.findByLabelText<HTMLInputElement>('Authorization')
+  fireEvent.change(field, { target: { value: 'private-test-value' } })
+  field.focus()
+  field.setSelectionRange(2, 7)
+  closeDialog('escape')
+  const keep = screen.getByRole('button', { name: zh.knowledgeKeepEditing })
+  expect(document.activeElement).toBe(keep)
+  expect(field.isConnected).toBe(true)
+  expect(field.closest('[hidden]')).not.toBeNull()
+  fireEvent.click(keep)
+  expect(screen.getByLabelText('Authorization')).toBe(field)
+  expect(document.activeElement).toBe(field)
+  expect([field.selectionStart, field.selectionEnd]).toEqual([2, 7])
+  expect(invoke).toHaveBeenCalledOnce()
 })
 
 it('protects unapplied MCP JSON and browser reload without treating a loaded connector as dirty', async () => {
@@ -274,6 +311,85 @@ it('keeps a new connector identity and private input after an invalid receipt un
   expect(invoke.mock.calls.filter(call => call[1] === 'extensions.save').at(-1)?.[2]).toEqual(firstSave)
 })
 
+it.each([
+  { name: 'multiline script', command: 'python', arguments: ['-c', 'print("中文")\nprint("literal $VALUE")', ''] },
+  { name: 'CRLF script', command: 'python', arguments: ['-c', 'print("first")\r\nprint("second")'] },
+  { name: 'executable path containing equals', command: 'C:\\Tools\\release=dev\\mcp.exe', arguments: ['--literal', '$VALUE'] },
+  { name: 'long argument list', command: 'node', arguments: Array.from({ length: 30 }, () => 'x'.repeat(1000)) },
+].flatMap(value => (['create', 'edit'] as const).map(mode => ({ ...value, mode }))))(
+  'preserves an unedited $name when saving a $mode connector', async ({ command, arguments: args, mode }) => {
+    const source = ConnectorDraftSchema.parse({ ...draft, name: 'Literal MCP', transport: 'stdio', command, arguments: args,
+      url: undefined, environment: { TOKEN: '' } })
+    let saved: unknown
+    const invoke = vi.fn(async (_namespace: string, method: string, payload?: unknown) => {
+      if (method === 'extensions.connector.read') return { ok: true, result: { ...loaded, draft: source } }
+      if (method === 'extensions.save' || method === 'extensions.connector.update') {
+        const value = ConnectorDraftSchema.parse(mode === 'create' ? payload : (payload as { draft: unknown }).draft)
+        saved = value
+        return { ok: true, result: { kind: 'connector', id: value.id, version: value.version, visibility: 'PERSONAL' } }
+      }
+      return { ok: true, result: [] }
+    })
+    vi.stubGlobal('dshDesktop', { extensions: { invoke, cancel: vi.fn() } })
+    const onSaved = vi.fn()
+    render(<ConnectorEditor {...mode === 'edit' ? { editing } : {}} onClose={vi.fn()} onSaved={onSaved} t={t} />)
+    if (mode === 'create') {
+      await act(async () => {})
+      fireEvent.click(screen.getByRole('tab', { name: zh.jsonConfiguration }))
+      fireEvent.change(screen.getByLabelText(zh.mcpJsonConfiguration), { target: { value: JSON.stringify({
+        mcpServers: { 'Literal MCP': { command, args, env: { TOKEN: '' } } },
+      }) } })
+      fireEvent.click(screen.getByRole('button', { name: zh.applyConfiguration }))
+    }
+    const name = await screen.findByLabelText(zh.mcpServerName)
+    fireEvent.change(name, { target: { value: 'Renamed MCP' } })
+    fireEvent.click(screen.getByRole('button', { name: mode === 'edit' ? zh.saveConnector : zh.addMcp }))
+    await act(async () => {})
+    expect(screen.queryByRole('alert')).toBeNull()
+    expect(saved).toMatchObject({ name: 'Renamed MCP', command, arguments: args, environment: { TOKEN: '' } })
+    expect(onSaved).toHaveBeenCalledOnce()
+  },
+)
+
+it('validates changed commands and saves the corrected literal argv instead of the imported arguments', async () => {
+  const source = ConnectorDraftSchema.parse({ ...draft, transport: 'stdio', url: undefined, command: 'python',
+    arguments: ['-c', 'print("first")\nprint("second")'] })
+  let saved: unknown
+  const invoke = vi.fn(async (_namespace: string, method: string, payload?: unknown) => {
+    if (method === 'extensions.connector.read') return { ok: true, result: { ...loaded, draft: source } }
+    if (method === 'extensions.connector.update') {
+      saved = payload
+      return { ok: true, result: receipt }
+    }
+    return { ok: true, result: [] }
+  })
+  vi.stubGlobal('dshDesktop', { extensions: { invoke, cancel: vi.fn() } })
+  const onSaved = vi.fn()
+  render(<ConnectorEditor editing={editing} onClose={vi.fn()} onSaved={onSaved} t={t} />)
+  const command = await screen.findByLabelText<HTMLTextAreaElement>(zh.mcpCommand)
+  for (const value of ['node | other-command', 'node $TOKEN', 'node "unclosed']) {
+    fireEvent.change(command, { target: { value } })
+    fireEvent.click(screen.getByRole('button', { name: zh.saveConnector }))
+    expect(screen.getByRole('alert').textContent).toBe(zh.connectorCommandInvalid)
+    expect(command.value).toBe(value)
+    expect(saved).toBeUndefined()
+    expect(onSaved).not.toHaveBeenCalled()
+  }
+  expect({ command: command.value, error: screen.getByRole('alert').textContent }).toMatchInlineSnapshot(`
+    {
+      "command": "node \"unclosed",
+      "error": "请填写完整命令并检查引号。环境变量请在下方填写，命令不支持管道、重定向或变量展开。",
+    }
+  `)
+  fireEvent.change(command, { target: { value: "node --flag 'literal $TOKEN' ''" } })
+  fireEvent.click(screen.getByRole('button', { name: zh.saveConnector }))
+  await act(async () => {})
+  expect(screen.queryByRole('alert')).toBeNull()
+  expect(saved).toMatchObject({ ...editing, draft: { command: 'node', arguments: ['--flag', 'literal $TOKEN', ''] } })
+  expect(onSaved).toHaveBeenCalledOnce()
+  expect(invoke.mock.calls.filter(call => call[1] === 'extensions.connector.update')).toHaveLength(1)
+})
+
 it('ignores an abandoned device configuration read after StrictMode reactivation', async () => {
   const first = deferred<unknown>()
   const current = deferred<unknown>()
@@ -293,6 +409,35 @@ it('ignores an abandoned device configuration read after StrictMode reactivation
   expect(screen.getByLabelText<HTMLInputElement>('Authorization').value).toBe('retained-private-value')
   expect(screen.getByDisplayValue<HTMLInputElement>('https://mcp.example.test').readOnly).toBe(true)
   expect(cancel).toHaveBeenCalledWith('product', invoke.mock.calls[0]![3])
+})
+
+it.each(['read', 'save'] as const)('cancels the old connector configuration %s when its published version changes', async (phase) => {
+  const pending = deferred<unknown>()
+  const nextProduct = { ...product, version: '2.0.0' }
+  const invoke = vi.fn(async (_namespace: string, method: string, payload: unknown, _request?: string) => {
+    const next = typeof payload === 'object' && payload !== null && 'version' in payload && payload.version === nextProduct.version
+    return { ok: true, result: next ? { ...template, version: nextProduct.version }
+      : method.endsWith('.read') && phase === 'save' ? template : await pending.promise }
+  })
+  const cancel = vi.fn(), onCatalogChanged = vi.fn(async () => {})
+  vi.stubGlobal('dshDesktop', { extensions: { invoke, cancel } })
+  const props = { onClose: vi.fn(), onCatalogChanged, t }
+  const view = render(<ConnectorDetailModal {...props} detail={product} />)
+  fireEvent.click(screen.getByRole('button', { name: zh.configureDevice }))
+  if (phase === 'save') {
+    fireEvent.change(await screen.findByLabelText('Authorization'), { target: { value: 'old-version-private-value' } })
+    fireEvent.click(screen.getByRole('button', { name: zh.saveConnector }))
+  }
+  const request = invoke.mock.calls.at(-1)![3]
+  view.rerender(<ConnectorDetailModal {...props} detail={nextProduct} />)
+  expect(screen.queryByRole('dialog', { name: zh.configureDevice })).toBeNull()
+  expect(cancel).toHaveBeenCalledWith('product', request)
+  fireEvent.click(screen.getByRole('button', { name: zh.configureDevice }))
+  expect((await screen.findByLabelText<HTMLInputElement>('Authorization')).value).toBe('')
+  await act(async () => { pending.resolve(phase === 'read' ? template : { ...editing, configured: true }) })
+  expect(screen.getByLabelText<HTMLInputElement>('Authorization').value).toBe('')
+  expect(onCatalogChanged).not.toHaveBeenCalled()
+  expect(invoke.mock.calls.at(-1)?.[2]).toEqual({ id: nextProduct.id, version: nextProduct.version })
 })
 
 it.each([undefined, {}, { id: draft.id, version: '2.0.0', configured: true },
@@ -334,20 +479,35 @@ it.each([undefined, {}, { ...template, id: 'another-mcp' }, { ...template, versi
   expect(screen.getByRole<HTMLButtonElement>('button', { name: zh.saveConnector }).disabled).toBe(false)
 })
 
-it.each(['header', 'escape', 'mask'] as const)('keeps device configuration open on %s close while saving', async (action) => {
+it.each([
+  { mode: 'device', action: 'header' }, { mode: 'device', action: 'escape' }, { mode: 'device', action: 'mask' },
+  { mode: 'create', action: 'header' }, { mode: 'create', action: 'escape' }, { mode: 'create', action: 'mask' },
+] as const)('keeps $mode configuration open on $action close while saving and explains why', async ({ mode, action }) => {
   const pending = deferred<unknown>()
-  const invoke = vi.fn(async (_namespace: string, method: string) => ({ ok: true,
-    result: method === 'extensions.connector.configuration.read' ? template : await pending.promise }))
+  let savingDraft = draft
+  const invoke = vi.fn(async (_namespace: string, method: string, payload: unknown) => {
+    if (method === 'extensions.save') savingDraft = ConnectorDraftSchema.parse(payload)
+    return { ok: true, result: method === 'extensions.connector.configuration.read' ? template
+      : method === 'connectors.list' ? [] : await pending.promise }
+  })
   vi.stubGlobal('dshDesktop', { extensions: { invoke, cancel: vi.fn() } })
   const onCatalogChanged = vi.fn(async () => {})
-  render(<ConnectorDetail product={product} onCatalogChanged={onCatalogChanged} t={t} />)
-  fireEvent.click(screen.getByRole('button', { name: zh.configureDevice }))
-  fireEvent.change(await screen.findByLabelText('Authorization'), { target: { value: 'retained-private-value' } })
-  fireEvent.click(screen.getByRole('button', { name: zh.saveConnector }))
+  render(mode === 'device' ? <ConnectorDetail product={product} onCatalogChanged={onCatalogChanged} t={t} />
+    : <ConnectorEditor onClose={vi.fn()} onSaved={() => { void onCatalogChanged() }} t={t} />)
+  if (mode === 'device') {
+    fireEvent.click(screen.getByRole('button', { name: zh.configureDevice }))
+    fireEvent.change(await screen.findByLabelText('Authorization'), { target: { value: 'retained-private-value' } })
+  } else {
+    fireEvent.change(screen.getByLabelText(zh.mcpServerName), { target: { value: 'My connector' } })
+    fireEvent.change(screen.getByLabelText(zh.mcpCommand), { target: { value: 'node server.js' } })
+  }
+  fireEvent.click(screen.getByRole('button', { name: mode === 'device' ? zh.saveConnector : zh.addMcp }))
   try {
     closeDialog(action)
-    expect(screen.getByRole('dialog', { name: zh.configureDevice })).toBeTruthy()
-  } finally { await act(async () => { pending.resolve({ ...editing, configured: true }) }) }
+    expect(screen.getByRole('dialog', { name: mode === 'device' ? zh.configureDevice : zh.addMcpServer })).toBeTruthy()
+    expect(screen.getByRole('status').textContent).toBe(zh.knowledgeWaitForSave)
+  } finally { await act(async () => { pending.resolve(mode === 'device' ? { ...editing, configured: true }
+    : { ...receipt, id: savingDraft.id, version: savingDraft.version }) }) }
   expect(onCatalogChanged).toHaveBeenCalledOnce()
 })
 

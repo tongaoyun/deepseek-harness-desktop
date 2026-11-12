@@ -2,20 +2,24 @@
 import { useEffect, useState } from 'react'
 import { knowledgeFolder, useKnowledgeRequests, type KnowledgeFolder } from './knowledge-data.ts'
 
-/** Read each ancestor by identity; cancelled or failed paths never become a root selection.
+/** Read each ancestor by identity; refresh retains the path until confirmed or rejected.
  * @param knowledgeBaseId Authorized library identity.
  * @param folderId Selected folder, or root.
  * @param revision Explicit directory refresh identity.
+ * @param beforeCommit Capture current control focus before publishing a confirmed path or failure.
  * @returns A complete path, loading state, or the read failure.
  */
-export function useKnowledgeFolderLocation(knowledgeBaseId: string, folderId: string | null | undefined, revision = ''): {
+export function useKnowledgeFolderLocation(
+  knowledgeBaseId: string, folderId: string | null | undefined, revision = '', beforeCommit?: () => void,
+): {
   readonly trail: readonly KnowledgeFolder[] | undefined
   readonly loading: boolean
   readonly failure: unknown
 } {
   const request = useKnowledgeRequests()
-  const key = JSON.stringify([knowledgeBaseId, folderId ?? null, revision])
-  const [result, setResult] = useState<{ key: string; trail?: readonly KnowledgeFolder[]; failure?: unknown }>()
+  const selection = JSON.stringify([knowledgeBaseId, folderId ?? null])
+  const key = JSON.stringify([selection, revision])
+  const [result, setResult] = useState<{ key: string; selection: string; trail?: readonly KnowledgeFolder[]; failure?: unknown }>()
   useEffect(() => {
     const controller = new AbortController()
     if (folderId == null) return () => { controller.abort() }
@@ -31,12 +35,15 @@ export function useKnowledgeFolderLocation(knowledgeBaseId: string, folderId: st
         if (folder.id !== id) throw new Error('Invalid knowledge folder identity')
         trail.unshift(folder); id = folder.parentId
       }
-      if (!controller.signal.aborted) setResult({ key, trail })
+      if (!controller.signal.aborted) { beforeCommit?.(); setResult({ key, selection, trail }) }
     }
-    void read().catch((failure: unknown) => { if (!controller.signal.aborted) setResult({ key, failure }) })
+    void read().catch((failure: unknown) => {
+      if (!controller.signal.aborted) { beforeCommit?.(); setResult({ key, selection, failure }) }
+    })
     return () => { controller.abort() }
-  }, [request, knowledgeBaseId, folderId, key])
+  }, [request, knowledgeBaseId, folderId, key, selection, beforeCommit])
   const current = result?.key === key ? result : undefined
-  return { trail: folderId == null ? [] : current?.trail,
-    loading: folderId != null && current === undefined, failure: current?.failure }
+  return { trail: folderId == null ? [] : result?.selection === selection ? result.trail : undefined,
+    loading: folderId != null && current === undefined,
+    failure: folderId != null && result?.selection === selection ? result.failure : undefined }
 }

@@ -18,6 +18,8 @@ export interface SourceSelectProps {
     value?: string;
     label: string;
     disabled?: boolean;
+    /** 临时操作锁保留外观；与长期禁用同时存在时使用禁用样式。 */
+    pending?: boolean;
     action?: boolean;
     icon?: React.ReactNode;
     options: {

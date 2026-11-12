@@ -3,6 +3,14 @@ import { z } from 'zod'
 export { parseConnectorAuthorization, parseConnectorAuthorizationLaunch } from './connector-authorization.ts'
 const id = z.string().regex(/^[a-z][a-z0-9-]{2,63}$/)
 const version = z.string().regex(/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/)
+const headers = z.record(z.string().min(1).max(200), z.string().max(4000)).superRefine((values, context) => {
+  const names = Object.keys(values).map(name => name.toLowerCase())
+  if (new Set(names).size !== names.length) context.addIssue({ code: 'custom', message: 'HTTP header names must be unique regardless of case' })
+  try { new Headers(values) }
+  catch { context.addIssue({ code: 'custom', message: 'Enter valid HTTP header names and values' }) }
+})
+const environment = z.record(z.string().min(1).max(200).regex(/^[^=\0]+$/u), z.string().max(4000).refine(value => !value.includes('\0')))
+const processArgument = z.string().max(2000).refine(value => !value.includes('\0'), 'Process arguments cannot contain NUL')
 /** Public and write-only private fields accepted by personal connector editing. */
 export const ConnectorDraftFields = z.object({ kind: z.literal('connector'), id, version,
   name: z.string().trim().min(1).max(80), summary: z.string().trim().min(1).max(300),
@@ -10,9 +18,9 @@ export const ConnectorDraftFields = z.object({ kind: z.literal('connector'), id,
   transport: z.enum(['streamable-http', 'stdio']).optional(), url: z.string().max(2000).optional(),
   oauthProviderId: id.optional(),
   timeoutSeconds: z.number().int().min(1).max(600).default(60),
-  command: z.string().max(2000).optional(), arguments: z.array(z.string().max(2000)).max(100).default([]),
-  headers: z.record(z.string().min(1).max(200), z.string().max(4000)).default({}),
-  environment: z.record(z.string().min(1).max(200), z.string().max(4000)).default({}),
+  command: processArgument.optional(), arguments: z.array(processArgument).max(100).default([]),
+  headers: headers.default({}),
+  environment: environment.default({}),
 }).strict()
 /** Validate connection targets and configured OAuth boundaries. */
 export const ConnectorDraftSchema = ConnectorDraftFields.superRefine((draft, context) => {
@@ -34,6 +42,19 @@ export const ConnectorDraftSchema = ConnectorDraftFields.superRefine((draft, con
 })
 /** Validated personal connector draft; private values remain in the main process. */
 export type ConnectorDraft = z.infer<typeof ConnectorDraftSchema>
+
+/** Compare connection targets independently of metadata and private values.
+ * @param left Current connection transport, endpoint, executable and arguments.
+ * @param right Saved target whose private values may be retained.
+ * @returns Whether both targets match, treating empty optional fields as absent and comparing arguments exactly.
+ */
+export function connectorTargetMatches(left: Pick<ConnectorDraft, 'transport' | 'url' | 'command' | 'arguments'>,
+  right: Pick<ConnectorDraft, 'transport' | 'url' | 'command' | 'arguments'>): boolean {
+  return left.transport === right.transport && (left.url || undefined) === (right.url || undefined)
+    && (left.command || undefined) === (right.command || undefined) && left.arguments.length === right.arguments.length
+    && left.arguments.every((value, index) => value === right.arguments[index])
+}
+
 /** Validate the receipt for a server-owned immutable extension version. */
 export const ConnectorSaveResultSchema = z.object({
   kind: z.literal('connector'), id, version,

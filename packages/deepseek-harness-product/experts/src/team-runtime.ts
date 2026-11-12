@@ -2,7 +2,7 @@ import { teamText } from './team-i18n.ts';
 import type { ExpertSummary } from './expert-contract.ts';
 import { localizedExpertName, type LocaleId } from './i18n.ts';
 import { teamCollaboration } from './team-collaboration.ts';
-import { effectiveCoordinator, executableTeamSchema, type ExpertTeam, } from './team-contract.ts';
+import { effectiveCoordinator, executableTeamSchema, teamHasPinnedMembers, type ExpertTeam, } from './team-contract.ts';
 export interface TeamMemberRun {
     slug: string;
     name: string;
@@ -32,13 +32,13 @@ export async function executeTeam(args: {
         throw new Error(tx("团队任务必须为 1～{0} 字。请压缩为摘要（目标、约束和文件路径）后重试，不要粘贴源码。", [TEAM_TASK_MAX_CHARS]));
     args.signal?.throwIfAborted();
     const selected = team.members.map((member) => {
-        const expert = experts.find((e) => e.slug === member.expertSlug && !e.conflict);
+        const expert = experts.find((e) => e.slug === member.expertSlug && !e.conflict && (!e.teamMember || team.company === true));
         if (!expert || !args.enabled.includes(expert.slug))
             throw new Error(tx("团队成员不存在、冲突或已停用，请修复后重新召唤。"));
-        if (!member.expertVersion || !member.expertSha256 || member.expertVersion === 'reselect-required')
-            throw new Error(tx("团队成员需要重新选择并保存。"));
         return { member, expert: { ...expert, packageVersion: member.expertVersion, packageSha256: member.expertSha256 } };
     });
+    if (!teamHasPinnedMembers(team))
+        throw new Error(tx("团队成员需要重新选择并保存。"));
     const collaboration = teamCollaboration(team, args.locale);
     const results: {
         expert: string;

@@ -1,10 +1,10 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { afterEach, expect, it, vi } from 'vitest'
+import { afterEach, expect, it, onTestFinished, vi } from 'vitest'
 import { ProductError } from '@deepseek-harness/product/errors'
 import { KnowledgeDocumentReader } from '../src/client/KnowledgeDocumentReader.tsx'
 import { readKnowledgeFile } from '../src/client/knowledge-data.ts'
-import { zh, type DeepSeekHarnessProductKey } from '../src/locales.ts'
+import { en, zh, type DeepSeekHarnessProductKey } from '../src/locales.ts'
 import { createPreviewFixture, originalMetadata, originalPreview, renderKnowledgePreview } from './knowledge-preview-fixture.client.tsx'
 
 const t = (key: DeepSeekHarnessProductKey) => zh[key]
@@ -22,6 +22,146 @@ function transport(handler: (method: string, payload: unknown) => Promise<unknow
 }
 
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.clearAllMocks() })
+
+it.each(['download', 'openExternal'] as const)('retains a failed %s action while retrying and locks both file actions before rendering', async (action) => {
+  vi.stubGlobal('location', new URL('dsh-app://app/'))
+  const response = Promise.withResolvers<unknown>()
+  let writes = 0
+  const method = `knowledge.documents.${action}`
+  const api = transport(async (requested) => {
+    if (requested !== method) return originalPreview('原文件正文')
+    if (++writes === 1) throw new Error('Offline')
+    return response.promise
+  })
+  const view = render(<KnowledgeDocumentReader {...props} inline={false} />)
+  onTestFinished(() => { view.unmount(); response.resolve(undefined) })
+  const button = await screen.findByRole<HTMLButtonElement>('button', { name: action === 'download' ? zh.knowledgeDownloadOriginal : zh.knowledgeOpenExternal })
+  button.focus()
+  fireEvent.click(button)
+  const notice = await screen.findByRole('alert')
+  const other = screen.getByRole<HTMLButtonElement>('button', { name: action === 'download' ? zh.knowledgeOpenExternal : zh.knowledgeDownloadOriginal })
+  act(() => { button.click(); button.click(); other.click() })
+  expect(writes).toBe(2)
+  expect(api.invoke.mock.calls.filter(call => call[1] === 'knowledge.documents.download' || call[1] === 'knowledge.documents.openExternal')).toHaveLength(2)
+  expect(screen.getByRole('alert')).toBe(notice)
+  expect(button.getAttribute('aria-busy')).toBe('true')
+  expect(other.getAttribute('aria-busy')).toBe('false')
+  expect(button.classList.contains('product-control-pending')).toBe(true)
+  expect(button.disabled).toBe(false)
+  expect(other.disabled).toBe(false)
+  expect(button.getAttribute('aria-disabled')).toBe('true')
+  expect(other.getAttribute('aria-disabled')).toBe('true')
+  expect(document.activeElement).toBe(button)
+  expect({ error: notice.textContent, action: button.textContent, focused: document.activeElement?.textContent }).toMatchSnapshot()
+  await act(async () => { response.resolve(undefined) })
+  expect(screen.queryByRole('alert')).toBeNull()
+  expect(button.disabled).toBe(false)
+  expect(other.disabled).toBe(false)
+  expect(document.activeElement).toBe(button)
+})
+
+it.each([true, false])('retains the original-file authorization retry and hands its focus to the reader when ready (inline: %s)', async (inline) => {
+  const response = Promise.withResolvers<unknown>()
+  const invoke = vi.fn().mockRejectedValueOnce(new Error('Offline')).mockImplementation(async () => ({ ok: true, result: await response.promise }))
+  vi.stubGlobal('dshDesktop', { extensions: { invoke, cancel: vi.fn() } })
+  const preview = vi.fn(() => null)
+  const view = render(<KnowledgeDocumentReader {...props} inline={inline} renderFactorySlot={preview} />)
+  onTestFinished(() => { view.unmount(); response.resolve(originalMetadata('policy', 'doc-1')) })
+  const notice = await screen.findByRole('alert')
+  const retry = screen.getByRole<HTMLButtonElement>('button', { name: zh.retry })
+  retry.focus()
+  act(() => { retry.click(); retry.click() })
+  expect(screen.getByRole('alert')).toBe(notice)
+  expect(screen.getByRole('button', { name: zh.retry })).toBe(retry)
+  expect(retry.disabled).toBe(false)
+  expect(retry.getAttribute('aria-disabled')).toBe('true')
+  expect(document.activeElement).toBe(retry)
+  expect(retry.getAttribute('aria-busy')).toBe('true')
+  expect(retry.classList.contains('product-control-pending')).toBe(true)
+  expect(screen.queryByRole('status', { name: zh.loading })).toBeNull()
+  expect(preview).not.toHaveBeenCalled()
+  fireEvent.click(retry)
+  expect(invoke).toHaveBeenCalledTimes(2)
+  await act(async () => { response.resolve(originalMetadata('policy', 'doc-1')) })
+  expect(screen.queryByRole('alert')).toBeNull()
+  expect(preview).toHaveBeenCalledOnce()
+  expect(document.activeElement).toBe(screen.getByRole('region', { name: zh.knowledgeReadDocument }))
+})
+
+it.each([true, false])('retains a source read retry and hands its focus to the reader when confirmed (inline: %s)', async (inline) => {
+  const response = Promise.withResolvers<unknown>()
+  let reads = 0
+  const source = { knowledgeBaseId: 'policy', sourceId: 'source-1', documentId: 'doc-1', filename: '原文.md', content: '恢复的引用正文', locator: '' }
+  const api = transport(async () => { if (++reads === 1) throw new Error('Offline'); return response.promise })
+  const view = render(<KnowledgeDocumentReader knowledgeBaseId="policy" sourceId="source-1" title="引用" inline={inline}
+    renderFactorySlot={renderKnowledgePreview} onClose={vi.fn()} t={t} />)
+  onTestFinished(() => { view.unmount(); response.resolve(source) })
+  const notice = await screen.findByRole('alert')
+  const retry = screen.getByRole<HTMLButtonElement>('button', { name: zh.retry })
+  retry.focus()
+  act(() => { retry.click(); retry.click() })
+  expect(screen.getByRole('alert')).toBe(notice)
+  expect(screen.getByRole('button', { name: zh.retry })).toBe(retry)
+  expect(retry.disabled).toBe(false)
+  expect(retry.getAttribute('aria-disabled')).toBe('true')
+  expect(document.activeElement).toBe(retry)
+  expect(retry.getAttribute('aria-busy')).toBe('true')
+  expect(retry.classList.contains('product-control-pending')).toBe(true)
+  expect(screen.queryByRole('status', { name: zh.loading })).toBeNull()
+  expect(screen.queryByRole('button', { name: zh.knowledgeReadFullDocument })).toBeNull()
+  fireEvent.click(retry)
+  expect(api.invoke).toHaveBeenCalledTimes(2)
+  expect({ message: notice.textContent, action: retry.textContent,
+    loadingIndicator: screen.queryByRole('status', { name: zh.loading }) !== null }).toMatchSnapshot('Pending source retry')
+  await act(async () => { response.resolve(source) })
+  expect(await screen.findByText(source.content)).toBeDefined()
+  expect(screen.queryByRole('alert')).toBeNull()
+  expect(document.activeElement).toBe(screen.getByRole('region', { name: zh.knowledgeReadDocument }))
+  expect({ content: screen.getByText(source.content).textContent, focus: document.activeElement?.getAttribute('aria-label'),
+    retryVisible: screen.queryByRole('button', { name: zh.retry }) !== null }).toMatchSnapshot('Confirmed source retry')
+})
+
+it.each([
+  { mode: 'source', inline: true }, { mode: 'source', inline: false },
+  { mode: 'original', inline: true }, { mode: 'original', inline: false },
+])('keeps another control focused after a $mode retry succeeds (inline: $inline)', async ({ mode, inline }) => {
+  const response = Promise.withResolvers<unknown>()
+  let reads = 0
+  const invoke = vi.fn(async () => {
+    if (++reads === 1) throw new Error('Offline')
+    return { ok: true, result: await response.promise }
+  })
+  vi.stubGlobal('dshDesktop', { extensions: { invoke, cancel: vi.fn() } })
+  const source = { knowledgeBaseId: 'policy', sourceId: 'source-1', documentId: 'doc-1', filename: '原文.md', content: '已确认的引用正文', locator: '' }
+  const value = mode === 'source' ? source : originalMetadata('policy', 'doc-1')
+  const view = render(<><KnowledgeDocumentReader knowledgeBaseId="policy" title="阅读" inline={inline}
+    {...mode === 'source' ? { sourceId: 'source-1' } : { documentId: 'doc-1' }}
+    renderFactorySlot={() => null} onClose={vi.fn()} t={t} /><button type="button">其他操作</button></>)
+  onTestFinished(() => { view.unmount(); response.resolve(value) })
+  const retry = await screen.findByRole<HTMLButtonElement>('button', { name: zh.retry })
+  retry.focus(); fireEvent.click(retry)
+  const other = inline ? screen.getByRole('button', { name: '其他操作' }) : screen.getAllByRole('button', { name: zh.close })[0]!
+  other.focus()
+  await act(async () => { response.resolve(value) })
+  expect(screen.queryByRole('button', { name: zh.retry })).toBeNull()
+  expect(document.activeElement).toBe(other)
+  expect(invoke).toHaveBeenCalledTimes(2)
+})
+
+it('keeps original-file authorization alive across language changes', async () => {
+  const read = Promise.withResolvers<unknown>()
+  const invoke = vi.fn(async () => ({ ok: true, result: await read.promise }))
+  const cancel = vi.fn()
+  vi.stubGlobal('dshDesktop', { extensions: { invoke, cancel } })
+  const preview = vi.fn(() => null)
+  const view = render(<KnowledgeDocumentReader {...props} renderFactorySlot={preview} />)
+  await waitFor(() => { expect(invoke).toHaveBeenCalledOnce() })
+  view.rerender(<KnowledgeDocumentReader {...props} renderFactorySlot={preview} t={key => en[key]} />)
+  await act(async () => { read.resolve(originalMetadata('policy', 'doc-1')); await read.promise })
+  await waitFor(() => { expect(preview).toHaveBeenCalled() })
+  expect(invoke).toHaveBeenCalledOnce()
+  expect(cancel).not.toHaveBeenCalled()
+})
 
 it('sends original bytes to the official preview factory without reading indexed passages', async () => {
   const api = transport(async () => originalPreview('# 原文件\n\n不依赖索引的正文'))
@@ -46,16 +186,20 @@ it('passes Office conversion to the native factory without downloading raw Offic
   }, expect.any(String), 300_000)
 })
 
-it('reads a retrieval passage and opens its original file through a separate permission check', async () => {
+it.each([true, false])('hands focus from a retrieval passage to its separately authorized original file (inline: %s)', async (inline) => {
   const api = transport(async method => method === 'knowledge.sources.read'
-    ? { documentId: 'doc-1', filename: '原文.md', content: '检索引用', locator: '第 2 页' }
+    ? { knowledgeBaseId: 'policy', sourceId: 'source-1', documentId: 'doc-1', filename: '原文.md', content: '检索引用', locator: '第 2 页' }
     : originalPreview('原文件完整正文'))
-  render(<KnowledgeDocumentReader knowledgeBaseId="policy" sourceId="source-1" title="业务规范.md" inline
+  render(<KnowledgeDocumentReader knowledgeBaseId="policy" sourceId="source-1" title="业务规范.md" inline={inline}
     renderFactorySlot={renderKnowledgePreview} onClose={vi.fn()} t={t} />)
   await screen.findByText('检索引用')
   expect(screen.getByText(zh.knowledgeExtractedContent)).toBeDefined()
-  fireEvent.click(screen.getByRole('button', { name: zh.knowledgeReadFullDocument }))
+  const open = screen.getByRole('button', { name: zh.knowledgeReadFullDocument })
+  open.focus(); fireEvent.click(open)
+  const reader = screen.getByRole('region', { name: zh.knowledgeReadDocument })
+  expect(document.activeElement).toBe(reader)
   await screen.findByText('原文件完整正文')
+  expect(document.activeElement).toBe(reader)
   expect(screen.queryByText('检索引用')).toBeNull()
   expect(screen.queryByText(zh.knowledgeExtractedContent)).toBeNull()
   expect(api.invoke).toHaveBeenCalledWith('product', 'knowledge.sources.read', { sourceId: 'source-1' }, expect.any(String))
@@ -67,7 +211,7 @@ it('reads a retrieval passage and opens its original file through a separate per
 
 it('explains when an authorized source has no readable content', async () => {
   const api = transport(async method => method === 'knowledge.sources.read'
-    ? { documentId: 'doc-1', filename: '原文.md', content: '   ', locator: '第 2 页' }
+    ? { knowledgeBaseId: 'policy', sourceId: 'source-1', documentId: 'doc-1', filename: '原文.md', content: '   ', locator: '第 2 页' }
     : originalPreview('原文件完整正文'))
   render(<KnowledgeDocumentReader knowledgeBaseId="policy" sourceId="source-1" title="业务规范.md" inline
     renderFactorySlot={renderKnowledgePreview} onClose={vi.fn()} t={t} />)
@@ -75,6 +219,143 @@ it('explains when an authorized source has no readable content', async () => {
   expect(screen.getByText('第 2 页')).toBeDefined()
   expect(screen.queryByText('   ')).toBeNull()
   expect(api.invoke).toHaveBeenCalledWith('product', 'knowledge.sources.read', { sourceId: 'source-1' }, expect.any(String))
+})
+
+it.each(['confirmed', 'failed', 'revoked'] as const)('retains a passage and its controls during a refresh until %s', async (outcome) => {
+  const response = Promise.withResolvers<unknown>()
+  let refreshing = false
+  const source = { knowledgeBaseId: 'policy', sourceId: 'source-1', documentId: 'doc-1',
+    filename: '原文.md', content: '已确认的引用正文', locator: '第 2 页' }
+  transport(async () => refreshing ? response.promise : source)
+  const denied = vi.fn()
+  const reader = { knowledgeBaseId: 'policy', sourceId: 'source-1', title: '引用', inline: true,
+    renderFactorySlot: renderKnowledgePreview, onClose: vi.fn(), onAccessDenied: denied, t }
+  const view = render(<KnowledgeDocumentReader {...reader} refreshRevision={0} />)
+  const body = await screen.findByText(source.content)
+  const read = screen.getByRole<HTMLButtonElement>('button', { name: zh.knowledgeReadFullDocument })
+  read.focus()
+  refreshing = true
+  view.rerender(<KnowledgeDocumentReader {...reader} refreshRevision={1} />)
+  expect(screen.getByText(source.content)).toBe(body)
+  expect(screen.getByRole('button', { name: zh.knowledgeReadFullDocument })).toBe(read)
+  expect(read.disabled).toBe(false)
+  expect(read.getAttribute('aria-disabled')).toBe('true')
+  expect(document.activeElement).toBe(read)
+  expect(read.classList.contains('product-control-pending')).toBe(true)
+  expect(screen.queryByRole('status', { name: zh.loading })).toBeNull()
+  fireEvent.click(read)
+  await act(async () => {
+    if (outcome === 'revoked') response.reject(new ProductError('KNOWLEDGE_ACCESS_REVOKED', 'Revoked', false))
+    else if (outcome === 'failed') response.reject(new Error('Offline'))
+    else response.resolve({ ...source, content: '更新后的引用正文' })
+  })
+  if (outcome === 'confirmed') {
+    expect(await screen.findByText('更新后的引用正文')).not.toBeNull()
+    expect(screen.getByRole('button', { name: zh.knowledgeReadFullDocument })).toBe(read)
+    expect(read.disabled).toBe(false)
+  } else {
+    expect(screen.queryByText(source.content)).toBeNull()
+    expect(screen.queryByRole('button', { name: zh.knowledgeReadFullDocument })).toBeNull()
+    expect(screen.getByRole('alert')).not.toBeNull()
+    expect(document.activeElement).toBe(screen.getByRole('region', { name: zh.knowledgeReadDocument }))
+  }
+  expect(denied).toHaveBeenCalledTimes(outcome === 'revoked' ? 1 : 0)
+})
+
+it.each([
+  { inline: true, elsewhere: false }, { inline: false, elsewhere: false },
+  { inline: true, elsewhere: true }, { inline: false, elsewhere: true },
+])('recovers removed passage-link focus without taking focus elsewhere (inline: $inline, elsewhere: $elsewhere)', async ({ inline, elsewhere }) => {
+  const response = Promise.withResolvers<unknown>()
+  let reads = 0
+  const source = { knowledgeBaseId: 'policy', sourceId: 'source-1', documentId: 'doc-1',
+    filename: '原文.md', content: '[阅读链接](https://example.com/reference)', locator: '第 2 页' }
+  transport(async () => ++reads === 1 ? source : response.promise)
+  const reader = { knowledgeBaseId: 'policy', sourceId: 'source-1', title: '引用', inline,
+    renderFactorySlot: renderKnowledgePreview, onClose: vi.fn(), t }
+  const content = (revision: number) => <><KnowledgeDocumentReader {...reader} refreshRevision={revision} />
+    <button type="button">其他操作</button></>
+  const view = render(content(0))
+  onTestFinished(() => { view.unmount(); response.resolve(source) })
+  const link = await screen.findByRole('link', { name: '阅读链接' })
+  link.focus()
+  view.rerender(content(1))
+  await waitFor(() => { expect(reads).toBe(2) })
+  expect(screen.getByRole('link', { name: '阅读链接' })).toBe(link)
+  const other = inline ? screen.getByRole('button', { name: '其他操作' }) : screen.getAllByRole('button', { name: zh.close })[0]!
+  if (elsewhere) other.focus()
+  await act(async () => { response.reject(new Error('Offline')) })
+  expect(screen.queryByRole('link', { name: '阅读链接' })).toBeNull()
+  expect(screen.getByRole('alert')).not.toBeNull()
+  expect(document.activeElement).toBe(elsewhere ? other : screen.getByRole('region', { name: zh.knowledgeReadDocument }))
+})
+
+it.each([
+  { inline: true, outcome: 'removed' }, { inline: false, outcome: 'removed' },
+  { inline: true, outcome: 'retained' }, { inline: false, outcome: 'retained' },
+  { inline: true, outcome: 'elsewhere' }, { inline: false, outcome: 'elsewhere' },
+])('keeps source-link focus through a confirmed refresh (inline: $inline, outcome: $outcome)', async ({ inline, outcome }) => {
+  const response = Promise.withResolvers<unknown>()
+  let reads = 0
+  const source = { knowledgeBaseId: 'policy', sourceId: 'source-1', documentId: 'doc-1',
+    filename: '原文.md', content: '[阅读链接](https://example.com/reference)', locator: '第 2 页' }
+  transport(async () => ++reads === 1 ? source : response.promise)
+  const reader = { knowledgeBaseId: 'policy', sourceId: 'source-1', title: '引用', inline,
+    renderFactorySlot: renderKnowledgePreview, onClose: vi.fn(), t }
+  const content = (revision: number) => <><KnowledgeDocumentReader {...reader} refreshRevision={revision} />
+    <button type="button">其他操作</button></>
+  const view = render(content(0))
+  onTestFinished(() => { view.unmount(); response.resolve(source) })
+  const link = await screen.findByRole('link', { name: '阅读链接' })
+  link.focus()
+  view.rerender(content(1))
+  await waitFor(() => { expect(reads).toBe(2) })
+  const other = inline ? screen.getByRole('button', { name: '其他操作' }) : screen.getAllByRole('button', { name: zh.close })[0]!
+  if (outcome === 'elsewhere') other.focus()
+  await act(async () => { response.resolve({ ...source, content: outcome === 'retained' ? source.content + '\n\n更新后的正文' : '更新后的正文' }) })
+  expect(screen.getByText('更新后的正文')).not.toBeNull()
+  if (outcome === 'retained') expect(screen.getByRole('link', { name: '阅读链接' })).toBe(link)
+  else expect(screen.queryByRole('link', { name: '阅读链接' })).toBeNull()
+  expect(document.activeElement).toBe(outcome === 'elsewhere' ? other : outcome === 'retained' ? link
+    : screen.getByRole('region', { name: zh.knowledgeReadDocument }))
+  expect({ content: screen.getByText('更新后的正文').textContent, focused: document.activeElement?.getAttribute('aria-label')
+    ?? document.activeElement?.textContent, linkRetained: link.isConnected }).toMatchSnapshot('Confirmed source-link focus')
+})
+
+it.each(['passage', 'original'] as const)('does not retain another source or its %s view while a new passage is pending', async (mode) => {
+  const next = Promise.withResolvers<unknown>()
+  const pending = Promise.withResolvers<unknown>()
+  let switched = false
+  transport(async method => method === 'knowledge.sources.read' ? switched ? pending.promise : next.promise
+    : originalPreview('另一条引用的原文件'))
+  const reader = { knowledgeBaseId: 'policy', sourceId: 'source-1', title: '引用', inline: true,
+    renderFactorySlot: renderKnowledgePreview, onClose: vi.fn(), t }
+  const view = render(<KnowledgeDocumentReader {...reader} />)
+  await act(async () => { next.resolve({ knowledgeBaseId: 'policy', sourceId: 'source-1', documentId: 'doc-1',
+    filename: '原文.md', content: '另一条引用的正文', locator: '第 2 页' }) })
+  await screen.findByText('另一条引用的正文')
+  if (mode === 'original') {
+    fireEvent.click(screen.getByRole('button', { name: zh.knowledgeReadFullDocument }))
+    await screen.findByText('另一条引用的原文件')
+  }
+  switched = true
+  view.rerender(<KnowledgeDocumentReader {...reader} sourceId="source-2" />)
+  expect(screen.queryByText('另一条引用的正文')).toBeNull()
+  expect(screen.queryByText('另一条引用的原文件')).toBeNull()
+  expect(screen.queryByRole('button', { name: zh.knowledgeReadFullDocument })).toBeNull()
+  await act(async () => { pending.resolve({ knowledgeBaseId: 'policy', sourceId: 'source-2', documentId: 'doc-2',
+    filename: '新原文.md', content: '新引用的正文', locator: '第 3 页' }) })
+  expect(await screen.findByText('新引用的正文')).not.toBeNull()
+})
+
+it.each(['filename', 'locator'] as const)('rejects a source with invalid %s before displaying its body', async (field) => {
+  transport(async () => ({ knowledgeBaseId: 'policy', sourceId: 'source-1', documentId: 'doc-1',
+    filename: '原文.md', locator: '第 2 页', content: 'Invalid source body', [field]: 42 }))
+  render(<KnowledgeDocumentReader knowledgeBaseId="policy" sourceId="source-1" expectedDocumentId="doc-1"
+    title="业务规范.md" inline renderFactorySlot={renderKnowledgePreview} onClose={vi.fn()} t={t} />)
+  expect((await screen.findByRole('alert')).textContent).toBe(zh.knowledgeReadFailed)
+  expect(screen.queryByText('Invalid source body')).toBeNull()
+  expect(screen.queryByRole('button', { name: zh.knowledgeReadFullDocument })).toBeNull()
 })
 
 it('cancels the original-file request when its workspace closes the reader', async () => {
@@ -199,6 +480,29 @@ it('denies a revoked metadata check before mounting a renderer or requesting fil
   expect(view.container.querySelector('[data-original-preview]')).toBeNull()
   expect(invoke).toHaveBeenCalledOnce()
   expect(denied).toHaveBeenCalledOnce()
+})
+
+it.each([
+  ['another-library', 'doc-1'],
+  ['policy', 'another-document'],
+])('rejects preview metadata for %s/%s and allows retrying the requested file', async (knowledgeBaseId, documentId) => {
+  const denied = vi.fn()
+  let mismatched = true
+  const preview = createPreviewFixture()
+  const invoke = vi.fn(async (_namespace: string, method: string, payload: unknown) => ({ ok: true,
+    result: method === 'knowledge.documents.previewMetadata'
+      ? originalMetadata(mismatched ? knowledgeBaseId : 'policy', mismatched ? documentId : 'doc-1')
+      : await preview(method, payload, async () => originalPreview('正确的原文件')),
+  }))
+  vi.stubGlobal('dshDesktop', { extensions: { invoke, cancel: vi.fn() } })
+  const view = render(<KnowledgeDocumentReader {...props} onAccessDenied={denied} />)
+  expect((await screen.findByRole('alert')).textContent).toBe(zh.knowledgePreviewFailed)
+  expect(view.container.querySelector('[data-original-preview]')).toBeNull()
+  expect(invoke.mock.calls.map(row => row[1])).toEqual(['knowledge.documents.previewMetadata'])
+  expect(denied).not.toHaveBeenCalled()
+  mismatched = false
+  fireEvent.click(screen.getByRole('button', { name: zh.retry }))
+  await screen.findByText('正确的原文件')
 })
 
 it('preserves binary byte values across chunks and closes the transfer after completion', async () => {

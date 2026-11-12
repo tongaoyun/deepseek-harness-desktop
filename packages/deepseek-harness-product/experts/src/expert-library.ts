@@ -86,7 +86,8 @@ const summary = (expert: CustomExpert): ExpertSummary => ({
   division: expert.division, divisionZh: ZH_DIVISION[expert.division] ?? expert.division,
   avatar: expert.avatar, custom: true, packageVersion: expert.packageVersion, packageSha256: expert.packageSha256,
 })
-const overlaps = (a: ExpertSummary, b: ExpertSummary): boolean => a.slug === b.slug || !a.teamMember && !b.teamMember && [a.name, a.nameEn].some(name => [b.name, b.nameEn].some(other => normalizeName(name) === normalizeName(other)))
+type ExpertIdentity = Pick<ExpertSummary, 'slug' | 'name' | 'nameEn' | 'teamMember'>
+const overlaps = (a: ExpertIdentity, b: ExpertIdentity): boolean => a.slug === b.slug || !a.teamMember && !b.teamMember && [a.name, a.nameEn].some(name => [b.name, b.nameEn].some(other => normalizeName(name) === normalizeName(other)))
 
 /** Project committed personal settings against an already prepared read-only catalog.
  * @param catalogExperts Read-only experts with their source-conflict flags.
@@ -120,7 +121,7 @@ export function createExpertLibrary(
     if (!Number.isSafeInteger(revision) || revision < 0 || revision !== store.revision()) throw customError('conflict', locale())
   }
   // 只校验当前编辑对象，其他已有冲突不能阻断逐个修复。
-  const assertUnique = (expert: ExpertSummary, others: readonly ExpertSummary[]): void => {
+  const assertUnique = (expert: ExpertIdentity, others: readonly ExpertSummary[]): void => {
     if (others.some(other => overlaps(expert, other))) throw customError('duplicate', locale())
   }
   // 只按数组引用缓存。调用方必须返回同一份基础名册；就地修改该数组不会使冲突标记失效。
@@ -183,6 +184,8 @@ export function createExpertLibrary(
       if (value.slug === undefined && state.customExperts.length >= CUSTOM_EXPERT_LIMIT) throw customError('limit', locale())
       const slug = value.slug ?? (value.manifest ? agentSpecManifest(value.manifest).worker.suggested_name : `custom-${randomUUID()}`)
       if (value.slug === undefined && state.customExperts.some(item => item.slug === slug)) throw customError('duplicate', locale())
+      assertUnique({ slug, name: value.name, nameEn: value.name },
+        [...catalogExperts, ...state.customExperts.filter(item => item.slug !== slug).map(summary)])
       const { prompt: _prompt, agents: _agents, manifest: _manifest, resources: _resources, ...metadata } = value
       if (!packages) throw new Error('Personal expert package storage is unavailable')
       const packageRef = await packages.save(slug, value)
@@ -191,7 +194,6 @@ export function createExpertLibrary(
       const expert: CustomExpert = { ...metadata, slug, ...packageRef }
       const next = state.customExperts.filter(item => item.slug !== expert.slug)
       next.push(expert)
-      assertUnique(summary(expert), [...catalogExperts, ...next.filter(item => item.slug !== expert.slug).map(summary)])
       return persist({ customExperts: next, enabled: [...state.enabled.filter(slug => slug !== expert.slug), ...(enabled ? [expert.slug] : [])] }, expectedRevision, catalogExperts, signal)
     },
     async deleteCustom(slug, expectedRevision, signal) {

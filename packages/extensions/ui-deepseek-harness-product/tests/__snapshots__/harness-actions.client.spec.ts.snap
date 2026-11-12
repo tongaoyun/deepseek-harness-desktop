@@ -1,5 +1,112 @@
 // Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
 
+exports[`preserves task drafts and uses owned input focus for 'current' preparation ('elsewhere') 1`] = `
+{
+  "created": 0,
+  "draft": "  unfinished draft  ",
+  "focus": "elsewhere",
+  "focusedInputs": [],
+  "kind": "current",
+  "task": "original",
+}
+`;
+
+exports[`preserves task drafts and uses owned input focus for 'current' preparation ('removed') 1`] = `
+{
+  "created": 0,
+  "draft": "  unfinished draft  ",
+  "focus": "removed",
+  "focusedInputs": [
+    [
+      "original",
+    ],
+  ],
+  "kind": "current",
+  "task": "original",
+}
+`;
+
+exports[`preserves task drafts and uses owned input focus for 'current' preparation ('retained') 1`] = `
+{
+  "created": 0,
+  "draft": "  unfinished draft  ",
+  "focus": "retained",
+  "focusedInputs": [
+    [
+      "original",
+    ],
+  ],
+  "kind": "current",
+  "task": "original",
+}
+`;
+
+exports[`preserves task drafts and uses owned input focus for 'locked' preparation ('elsewhere') 1`] = `
+{
+  "created": 1,
+  "draft": "  unfinished draft  ",
+  "focus": "elsewhere",
+  "focusedInputs": [],
+  "kind": "locked",
+  "task": "new-1",
+}
+`;
+
+exports[`preserves task drafts and uses owned input focus for 'locked' preparation ('removed') 1`] = `
+{
+  "created": 1,
+  "draft": "  unfinished draft  ",
+  "focus": "removed",
+  "focusedInputs": [],
+  "kind": "locked",
+  "task": "new-1",
+}
+`;
+
+exports[`preserves task drafts and uses owned input focus for 'locked' preparation ('retained') 1`] = `
+{
+  "created": 1,
+  "draft": "  unfinished draft  ",
+  "focus": "retained",
+  "focusedInputs": [],
+  "kind": "locked",
+  "task": "new-1",
+}
+`;
+
+exports[`preserves task drafts and uses owned input focus for 'new' preparation ('elsewhere') 1`] = `
+{
+  "created": 1,
+  "draft": "  unfinished draft  ",
+  "focus": "elsewhere",
+  "focusedInputs": [],
+  "kind": "new",
+  "task": "new-1",
+}
+`;
+
+exports[`preserves task drafts and uses owned input focus for 'new' preparation ('removed') 1`] = `
+{
+  "created": 1,
+  "draft": "  unfinished draft  ",
+  "focus": "removed",
+  "focusedInputs": [],
+  "kind": "new",
+  "task": "new-1",
+}
+`;
+
+exports[`preserves task drafts and uses owned input focus for 'new' preparation ('retained') 1`] = `
+{
+  "created": 1,
+  "draft": "  unfinished draft  ",
+  "focus": "retained",
+  "focusedInputs": [],
+  "kind": "new",
+  "task": "new-1",
+}
+`;
+
 exports[`shows a localized task response failure while retaining the native task and draft 1`] = `
 {
   "created": 0,

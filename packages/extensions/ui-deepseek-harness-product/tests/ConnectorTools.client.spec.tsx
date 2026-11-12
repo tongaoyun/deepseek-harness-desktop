@@ -33,11 +33,36 @@ it('combines description search and access filtering, then restores the initial 
   fireEvent.change(screen.getByRole('combobox', { name: zh.connectorToolAccess }), { target: { value: 'WRITE' } })
   expect(screen.queryByRole('listitem')).toBeNull()
   expect(screen.getByText(zh.noSearchResults)).toBeTruthy()
-  fireEvent.click(screen.getByRole('button', { name: zh.clearConnectorFilters }))
+  const clear = screen.getByRole('button', { name: zh.clearConnectorFilters })
+  clear.focus()
+  fireEvent.click(clear)
   expect(screen.getAllByRole('listitem')).toHaveLength(20)
   expect(screen.getByRole<HTMLInputElement>('searchbox').value).toBe('')
+  expect(document.activeElement).toBe(screen.getByRole('searchbox'))
   expect(screen.getByRole<HTMLSelectElement>('combobox').value).toBe('all')
   fireEvent.change(screen.getByRole('combobox'), { target: { value: 'WRITE' } })
   expect(screen.queryByText('订单能力 0')).toBeNull()
   expect(screen.getByText('订单能力 1')).toBeTruthy()
+})
+
+it.each([21, 45])('keeps the keyboard at the newly revealed tools when all %s capabilities are shown', (total) => {
+  const view = render(<ConnectorTools tools={tools.slice(0, total)} t={t} />)
+  fireEvent.click(screen.getByText(zh.viewConnectorTools.replace('{count}', String(total))))
+  const first = screen.getByText('订单能力 0').closest('summary')!
+  fireEvent.click(first)
+  const more = screen.getByRole('button', { name: zh.showMoreConnectorTools.replace('{shown}', '20').replace('{total}', String(total)) })
+  more.focus()
+  fireEvent.click(more)
+  if (total > 40) {
+    expect(document.activeElement).toBe(more)
+    fireEvent.click(more)
+  }
+  const firstNew = screen.getByText(`订单能力 ${total > 40 ? 40 : 20}`).closest('summary')!
+  expect(document.activeElement).toBe(firstNew)
+  expect(more.isConnected).toBe(false)
+  expect(screen.getByText('订单能力 0').closest('summary')).toBe(first)
+  expect(first.parentElement).toHaveProperty('open', true)
+  expect(screen.getAllByRole('listitem')).toHaveLength(total)
+  expect({ focused: document.activeElement?.textContent, count: screen.getAllByRole('listitem').length }).toMatchSnapshot('Expanded tools focus')
+  view.unmount()
 })

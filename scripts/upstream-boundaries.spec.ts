@@ -28,6 +28,13 @@ it('owns the product expert-team snapshot without exempting native or adjacent s
   expect(productOwned('snapshots/session/product-expert-team-delegation-other/session.v4.jsonl')).toBe(false)
 })
 
+it('owns registered product browser tests without exempting native or unregistered tests', () => {
+  expect(productOwned('apps/web/tests/deepseek-harness-control-focus.e2e.ts')).toBe(true)
+  expect(productOwned('apps/web/tests/deepseek-harness-expert-retry.e2e.ts')).toBe(true)
+  expect(productOwned('apps/web/tests/official-subagent-bundle.e2e.ts')).toBe(false)
+  expect(productOwned('apps/web/tests/deepseek-harness-unregistered.e2e.ts')).toBe(false)
+})
+
 function fixture() {
   const root = mkdtempSync(join(tmpdir(), 'harness-upstream-boundary-'))
   onTestFinished(() =>{  rmSync(root, { recursive: true, force: true }) })

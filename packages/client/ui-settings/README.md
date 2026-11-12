@@ -55,7 +55,7 @@ A committed write folds its answer into the shared mirror. Refused writes refres
 <a id="understand-the-implementation"></a>
 ## Understand the implementation
 
-The optional `settings.launcher` contribution receives sidebar geometry, whether the open Settings panel covers the sidebar, the settings navigation callbacks, and the effective Settings key labels and accessible combination. The shell omits shortcut presentation for an unbound command and retains its plain Settings trigger when no launcher is registered.
+The optional `settings.launcher` contribution receives sidebar geometry, whether the open Settings panel covers the sidebar, the settings navigation callbacks, and the effective Settings key labels and accessible combination. The shell omits shortcut presentation for an unbound command and retains its plain Settings trigger when no launcher is registered. The launcher can pass a section ID to openSettings to open that section directly; an absent ID uses the default section.
 
 Application panels can reuse a registered page with `renderFactorySlot('settings.section-view', { sectionId, close, presentation: 'embedded' })`. The shared Factory owns `settings.section`; callers do not redeclare that slot or mount registrant components directly. The settings shell uses `presentation: 'dialog'`. Embedded instances suspend while the dialog is open and resume after it closes, preventing duplicate page effects. Unknown section IDs render no page; callers should observe the section ledger and show their own localized unavailable state. `close` belongs to the caller's presentation and leaves that surface without changing the conversation.
 

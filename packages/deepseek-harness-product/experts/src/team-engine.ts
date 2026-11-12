@@ -1,39 +1,42 @@
 import { readHostLocale } from './i18n.ts';
 import { teamText } from './team-i18n.ts';
 import { createHash } from 'node:crypto';
+import { createRequire } from 'node:module';
 import type { Context } from '@deepseek-ai/cordis';
 import type { Agent } from '@deepseek-ai/dsh-agent';
-import type { TeamService, TeamTaskId } from '@deepseek-ai/dsh-experimental-agent-team';
+import type { SessionId } from '@deepseek-ai/dsh-session';
+import type SubagentService from '@deepseek-ai/dsh-subagent';
+import type { TeamService, TeamTaskId } from '@deepseek-ai/dsh-agent-team';
 import { executeTeam } from './team-runtime.ts';
 import type { TeamEngineStatus } from './team-contract.ts';
 /** Native methods consumed by expert teams; the optional service remains Host-owned. */
 export type NativeTeamService = Pick<TeamService,
-    'tryMembership' | 'listMembers' | 'spawnTeammate' | 'sendMessage' | 'createTask' | 'updateTask' | 'interrupt'>;
+    'isEnabled' | 'createTask' | 'updateTask'>;
 /** Delegation and roster tools denied to expert-team members in either execution mode. */
-export const delegationTools: ReadonlySet<string> = new Set(['summon_expert', 'summon_experts', 'list_experts', 'list_expert_teams', 'get_expert_team', 'summon_expert_team', 'spawn_teammate', 'subagent', 'subagent_fork', 'workflow']);
+export const delegationTools: ReadonlySet<string> = new Set(['summon_expert', 'summon_experts', 'list_experts', 'list_expert_teams', 'get_expert_team', 'summon_expert_team', 'subagent', 'subagent_fork', 'workflow']);
 /** 原生队友仍遵守本插件不递归扩团的边界，由宿主工具门禁强制执行。 */
-export function blocksNativeDelegation(service: NativeTeamService | undefined, agent: Agent | undefined, tool: string): boolean {
+export function blocksNativeDelegation(service: Pick<SubagentService, 'namesOf'> | undefined, agent: Agent | undefined, tool: string): boolean {
     if (!agent || !delegationTools.has(tool) || service === undefined)
         return false;
-    const member = service.tryMembership(agent);
-    return member?.role === 'teammate' && /^agency-[a-z0-9-]+-[0-9a-f]{10}$/u.test(member.name);
+    return /^agency-[0-9a-f]{20}$/u.test(service.namesOf(agent).self);
 }
 let agentTeamInstalled: boolean | undefined
+const hostRequire = createRequire(import.meta.url)
 /** 可选专家团仅使用当前装配中实际可解析的包。同一进程只探测一次。 */
 export function hostHasAgentTeam(): boolean {
     if (agentTeamInstalled !== undefined)
         return agentTeamInstalled;
     try {
-        import.meta.resolve('@deepseek-ai/dsh-experimental-agent-team');
+        hostRequire.resolve('@deepseek-ai/dsh-agent-team');
         return agentTeamInstalled = true;
     }
     catch (error) {
-        if ((error as NodeJS.ErrnoException).code === 'ERR_MODULE_NOT_FOUND')
+        if ((error as NodeJS.ErrnoException).code === 'MODULE_NOT_FOUND')
             return agentTeamInstalled = false;
         throw error;
     }
 }
-export function detectTeamEngine(service: NativeTeamService | undefined, supported: boolean, toolsReady = true, maxDepth?: number, locale: 'zh' | 'en' = 'zh'): TeamEngineStatus {
+export function detectTeamEngine(service: NativeTeamService | undefined, supported: boolean, toolsReady = true, locale: 'zh' | 'en' = 'zh'): TeamEngineStatus {
     const tx = (key: string, values?: readonly unknown[]) => teamText(locale, key, values);
 
     const compatible = service !== undefined;
@@ -41,37 +44,37 @@ export function detectTeamEngine(service: NativeTeamService | undefined, support
         return { state: 'unsupported', mode: 'subagent', reason: tx("当前宿主未检测到兼容的 Agent Team 能力，使用普通子代理。"), recommendation: '' };
     if (!compatible || !toolsReady)
         return { state: 'disabled', mode: 'subagent', reason: tx("Agent Team 服务或当前会话工具尚未就绪。"), recommendation: tx("请重启应用后重试；当前仍可使用普通专家团。") };
-    if (maxDepth !== undefined)
-        return { state: 'enabled', mode: 'subagent', reason: tx("原生 Agent Team 暂不支持本插件配置的深度限制，本次使用普通子代理以保留该限制。"), recommendation: '' };
     return { state: 'enabled', mode: 'native', reason: tx("Agent Team 已启用，使用原生团队协作。"), recommendation: '' };
 }
-export function resolveTeamEngine(ctx: Context, agent?: Agent, maxDepth?: number) {
+export function resolveTeamEngine(ctx: Context, agent?: Agent) {
     const service = ctx.get('agentTeams');
     const tools = service === undefined ? undefined : agent?.ctx.get('tools');
-    const toolsReady = service === undefined || agent === undefined || tools !== undefined && ['spawn_teammate', 'send_message', 'wait_agent', 'team_task_create', 'team_task_update', 'team_task_list'].every(name => tools.get(name, agent) !== undefined);
-    return { service, status: detectTeamEngine(service, service !== undefined || hostHasAgentTeam(), toolsReady, maxDepth, readHostLocale(ctx)) };
+    const toolsReady = service === undefined || agent === undefined || service.isEnabled(agent) && tools !== undefined && ['subagent', 'send_message', 'wait_agent', 'team_task_create', 'team_task_update', 'team_task_list'].every(name => tools.get(name, agent) !== undefined);
+    return { service, status: detectTeamEngine(service, service !== undefined || hostHasAgentTeam(), toolsReady, readHostLocale(ctx)) };
 }
 const activeLeads = new WeakSet<Agent>();
-/** 显示名称可以变化；此持久标识必须保持原算法，以复用已存在的队友。 */
+/** 原生子代理名称限制为 32 字符，显示名称通过 label 单独提供。 */
 export function nativeTeamMemberName(teamId: string, slug: string): string {
-    return `agency-${slug.slice(0, 36).replace(/-+$/u, '')}-${createHash('sha256').update(`${teamId}:${slug}`).digest('hex').slice(0, 10)}`;
+    return `agency-${createHash('sha256').update(`${teamId}:${slug}`).digest('hex').slice(0, 20)}`;
 }
 type NativeDispatchArgs = Omit<Parameters<typeof executeTeam>[0], 'run'> & {
     service: NativeTeamService;
+    subagents: Pick<SubagentService, 'startActivation' | 'listDescendants' | 'sendMessage' | 'interrupt'>;
+    maxDepth?: number;
     agent: Agent;
     provider: string;
     signal: AbortSignal;
 };
-/** 原生调用只返回委派确认；成员结论通过宿主消息与任务板异步交回主会话。 */
+/** 原生调用固定本次团队配置并只返回委派确认；成员结论通过宿主消息与任务板异步交回主会话。 */
 export async function dispatchNativeTeam(args: NativeDispatchArgs) {
     const tx = (key: string, values?: readonly unknown[]) => teamText(args.locale ?? 'zh', key, values);
 
-    const team = args.team;
+    const team = structuredClone(args.team);
     args.signal.throwIfAborted();
     if (activeLeads.has(args.agent))
         throw new Error(tx("当前会话正在创建专家团，请等待本次委派完成。"));
     activeLeads.add(args.agent);
-    const launched: string[] = [];
+    const launched: SessionId[] = [];
     const tasks = new Map<string, {
         name: string;
         taskId: TeamTaskId;
@@ -80,10 +83,11 @@ export async function dispatchNativeTeam(args: NativeDispatchArgs) {
         const report = await executeTeam({ ...args, team, run: async (member) => {
                 args.signal.throwIfAborted();
                 // 队友名持久保留，复用同团同专家，避免每次召唤耗尽宿主名额。
-                const name = nativeTeamMemberName(args.team.id, member.slug);
-                const existing = args.service.listMembers(args.agent).find(item => item.name === name);
-                if (existing && existing.status !== 'inactive')
-                    throw new Error(tx("专家队友仍在运行或不可恢复：{0}", [existing.status]));
+                const name = nativeTeamMemberName(team.id, member.slug);
+                const descendants = await args.subagents.listDescendants(args.agent.id, args.signal);
+                const existing = descendants.find(item => item.parentId === args.agent.id && item.kind === 'child' && item.name === name);
+                if (existing && (existing.kind !== 'child' || existing.activity !== 'inactive' || existing.mode !== 'continuable'))
+                    throw new Error(tx("专家队友仍在运行或不可恢复：{0}", [existing.kind === 'child' ? existing.activity : existing.reason]));
                 const task = await args.service.createTask(args.agent, {
                     subject: `${team.name}：${member.name}`.slice(0, 180),
                     // 原生任务板描述最多 16384 个字符；完整说明仍原样传给队友，不在此截断执行输入。
@@ -99,16 +103,19 @@ export async function dispatchNativeTeam(args: NativeDispatchArgs) {
                         tx("本次任务编号：{0}。使用 team_task_update 领取此任务，再阅读与你职责相关的材料并完成分析。", [task.id]),
                         tx("完成后先用 send_message 将完整结论发送给 lead，再将任务标记完成。任务缺少资料时报告具体缺口，不伪造结论。不创建额外子代理、不自动追加轮次。"),
                     ].join('\n\n');
+                    let childId: SessionId;
                     if (existing) {
-                        await args.service.sendMessage(args.agent, { target: name, content: [{ type: 'text', text }], signal: args.signal });
+                        await args.subagents.sendMessage(args.agent, existing.id, [{ type: 'text', text }], { signal: args.signal });
+                        childId = existing.id;
                     }
                     else {
-                        const started = await args.service.spawnTeammate(args.agent, { name, description: member.name.slice(0, 180), prompt: [{ type: 'text', text }], context: 'fresh', provider: args.provider, signal: args.signal });
-                        if (started.member.status === 'failed')
-                            throw new Error(tx("原生队友创建失败"));
+                        const started = await args.subagents.startActivation({ name, label: member.name.slice(0, 180), parent: args.agent, prompt: [{ type: 'text', text }], provider: args.provider, signal: args.signal, delivery: 'parent', ...(args.maxDepth === undefined ? {} : { maxDepth: args.maxDepth }) });
+                        // Parent delivery owns the visible terminal result; observe capture failures locally.
+                        void started.result.catch(() => undefined);
+                        childId = started.childId;
                     }
                     accepted = true;
-                    launched.push(name);
+                    launched.push(childId);
                     args.signal.throwIfAborted();
                     return tx("委派已接受，等待成员结果。");
                 }
@@ -137,7 +144,7 @@ export async function dispatchNativeTeam(args: NativeDispatchArgs) {
             const errors: unknown[] = [];
             for (const name of launched) {
                 try {
-                    await args.service.interrupt(args.agent, name);
+                    args.subagents.interrupt(name, { kind: 'ancestor', agent: args.agent });
                 }
                 catch (cause) {
                     errors.push(cause);

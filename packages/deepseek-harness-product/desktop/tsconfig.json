@@ -21,7 +21,13 @@
       "path": "../../boot/app-boot"
     },
     {
+      "path": "../../util/official-bundles"
+    },
+    {
       "path": "../../identity/anonymous-user-id"
+    },
+    {
+      "path": "../../util/atomic-write"
     }
   ]
 }

@@ -16,7 +16,7 @@ import Sessions, { SessionId } from '@deepseek-ai/dsh-session'
 import SessionProjections from '@deepseek-ai/dsh-session-projection'
 import LocalFileSystem from '@deepseek-ai/dsh-fs-local'
 import WorkingDirectory from '@deepseek-ai/dsh-working-directory'
-import Agents from '@deepseek-ai/dsh-agent'
+import Agents, { type Agent } from '@deepseek-ai/dsh-agent'
 import AgentLoop from '@deepseek-ai/dsh-agent-loop'
 import Presets from '@deepseek-ai/dsh-agent-preset-registry'
 import { publicToolName } from '@deepseek-ai/dsh-mcp-client'
@@ -274,9 +274,9 @@ it('loads native skills with authorized MCP and exact knowledge scope, replays a
   const adapter = new FixtureAdapter()
   ctx.llm.registerAdapter(['fixture'], adapter)
   const create = async (id: string, seed?: Parameters<typeof ctx.agents.create>[0]['seed'],
-    parentAgent?: Parameters<typeof ctx.agents.create>[0]['parentAgent']) => {
+    parentAgent?: Agent) => {
     const handle = await ctx.agents.create({ sessionId: SessionId(id),
-      ...(seed === undefined ? {} : { seed }), ...(parentAgent === undefined ? {} : { parentAgent }),
+      ...(seed === undefined ? {} : { seed }), ...(parentAgent === undefined ? {} : { meta: { parentSession: parentAgent.id, origin: 'subagent' as const, delegationDepth: 1 } }),
       agentOptions: { provider: 'fixture', model: 'fixture' }, setup: child => ctx.agentPresets.mount(child, selected).then(() => undefined) })
     onTestFinished(() => handle.dispose())
     return handle

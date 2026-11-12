@@ -64,6 +64,7 @@ it.each(['refresh', 'cancel', 'failure'] as const)('keeps team definitions and e
       return captured
     },
     forSession: async () => current, refresh: async () => undefined,
+    expertVersion: async () => { throw new Error('Unexpected exact expert version read') },
   } satisfies CompanyContentSource)
   ctx.provide('subagents', { getProvider: () => undefined })
   ctx.provide('settings', { configure: () => () => {}, describe: () => [{ ns: 'agency-agents', revision: 0 }] })

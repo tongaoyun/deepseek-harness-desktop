@@ -18,6 +18,370 @@ exports[`copies the exact skill body from company and local details (zh) 1`] = `
 }
 `;
 
+exports[`does not offer a completed trash delete again after its directory refresh fails > Directory refresh failure after a committed operation 1`] = `"技能列表读取失败：仅本机所有者可管理技能重试"`;
+
+exports[`does not offer a completed trash restore again after its directory refresh fails > Directory refresh failure after a committed operation 1`] = `"技能列表读取失败：仅本机所有者可管理技能重试"`;
+
+exports[`hides an invalidated market directory until a retry succeeds and preserves its search > Pending directory retry 1`] = `
+{
+  "canRetry": false,
+  "loadingIndicator": false,
+  "message": "技能列表读取失败：仅本机所有者可管理技能重试",
+}
+`;
+
+exports[`keeps a failed project listWorkspaces read visible until its refresh succeeds > Retained project read failure 1`] = `"无法读取工作区列表：无法读取工作区登记，请重试。"`;
+
+exports[`keeps a failed project readWorkspace read visible until its refresh succeeds > Retained project read failure 1`] = `"读取失败：无法读取工作区登记，请重试。"`;
+
+exports[`keeps a failed skill delete confirmation visible during retry and closes only after completion 1`] = `
+{
+  "action": "永久删除",
+  "busy": "true",
+  "cancelDisabled": false,
+  "notice": "操作失败：仅本机所有者可管理技能",
+  "operation": "delete",
+}
+`;
+
+exports[`keeps a failed skill trash confirmation visible during retry and closes only after completion 1`] = `
+{
+  "action": "移到回收站",
+  "busy": "true",
+  "cancelDisabled": false,
+  "notice": "操作失败：仅本机所有者可管理技能",
+  "operation": "trash",
+}
+`;
+
+exports[`keeps import failure feedback, selection and action controls stable during a slow retry 1`] = `
+{
+  "action": "安装",
+  "busy": "true",
+  "cancelDisabled": false,
+  "cancelUnavailable": "true",
+  "focused": "安装",
+  "notice": "操作失败：仅本机所有者可管理技能",
+  "outcome": "failure",
+}
+`;
+
+exports[`keeps import partial feedback, selection and action controls stable during a slow retry 1`] = `
+{
+  "action": "安装",
+  "busy": "true",
+  "cancelDisabled": false,
+  "cancelUnavailable": "true",
+  "focused": "安装",
+  "notice": "导入完成：ready-skill；导入失败：broken-skill: 批量来源中存在多个同名技能: broken-skill。请修复失败项后重试。",
+  "outcome": "partial",
+}
+`;
+
+exports[`keeps market and personal category filters identical and groups imported labels without losing skills (en) 1`] = `
+{
+  "assignments": [
+    "Move to Orders & After-sales",
+    "Move to Products & Listings",
+    "Move to Procurement & Supply Chain",
+    "Move to Inventory & Warehousing",
+    "Move to Logistics & Fulfillment",
+    "Move to Finance & Reconciliation",
+    "Move to Platforms & Stores",
+    "Move to Operations & Growth",
+    "Move to Data & Business Analytics",
+    "Move to Product & Design",
+    "Move to Engineering & Integration",
+    "Move to Quality & Operations",
+    "Move to Implementation & Customer Support",
+    "Move to Enterprise Collaboration",
+    "Move to Other",
+  ],
+  "categories": [
+    "All categories",
+    "Orders & After-sales",
+    "Products & Listings",
+    "Procurement & Supply Chain",
+    "Inventory & Warehousing",
+    "Logistics & Fulfillment",
+    "Finance & Reconciliation",
+    "Platforms & Stores",
+    "Operations & Growth",
+    "Data & Business Analytics",
+    "Product & Design",
+    "Engineering & Integration",
+    "Quality & Operations",
+    "Implementation & Customer Support",
+    "Enterprise Collaboration",
+    "Other",
+  ],
+  "nestedCategories": 0,
+}
+`;
+
+exports[`keeps market and personal category filters identical and groups imported labels without losing skills (zh) 1`] = `
+{
+  "assignments": [
+    "归入订单与售后",
+    "归入商品与刊登",
+    "归入采购与供应链",
+    "归入库存与仓储",
+    "归入物流与履约",
+    "归入财务与对账",
+    "归入平台与店铺",
+    "归入运营与增长",
+    "归入数据与经营分析",
+    "归入产品与设计",
+    "归入研发与集成",
+    "归入测试与运维",
+    "归入实施与客户支持",
+    "归入企业协作",
+    "归入其他",
+  ],
+  "categories": [
+    "全部分类",
+    "订单与售后",
+    "商品与刊登",
+    "采购与供应链",
+    "库存与仓储",
+    "物流与履约",
+    "财务与对账",
+    "平台与店铺",
+    "运营与增长",
+    "数据与经营分析",
+    "产品与设计",
+    "研发与集成",
+    "测试与运维",
+    "实施与客户支持",
+    "企业协作",
+    "其他",
+  ],
+  "nestedCategories": 0,
+}
+`;
+
+exports[`keeps rejected uploads selected and explains how to repair error.upload.pathConflict 1`] = `
+{
+  "canRetry": true,
+  "message": "操作失败：上传内容存在文件或目录路径冲突：assets。请统一目录大小写，并区分文件与目录名称。",
+  "selected": "repaired-skill.zip",
+}
+`;
+
+exports[`keeps rejected uploads selected and explains how to repair error.upload.zipInvalid 1`] = `
+{
+  "canRetry": true,
+  "message": "操作失败：ZIP 压缩包无效或无法完整解压，请重新打包或改用文件夹导入。",
+  "selected": "repaired-skill.zip",
+}
+`;
+
+exports[`keeps the skill-specific diagnostic when a detail retry confirms the file is missing 1`] = `
+{
+  "error": "操作失败：技能不存在: 共享技能",
+  "retry": "重试",
+}
+`;
+
+exports[`recovers the removed 'market' skill toggle focus without taking focus elsewhere (false) 1`] = `
+{
+  "elsewhere": false,
+  "focused": "搜索",
+  "query": "技能",
+  "scope": "market",
+  "selection": [
+    2,
+    2,
+  ],
+}
+`;
+
+exports[`recovers the removed 'market' skill toggle focus without taking focus elsewhere (true) 1`] = `
+{
+  "elsewhere": true,
+  "focused": "搜索",
+  "query": "技能",
+  "scope": "market",
+  "selection": [
+    0,
+    1,
+  ],
+}
+`;
+
+exports[`recovers the removed 'mine' skill toggle focus without taking focus elsewhere (false) 1`] = `
+{
+  "elsewhere": false,
+  "focused": "搜索",
+  "query": "技能",
+  "scope": "mine",
+  "selection": [
+    2,
+    2,
+  ],
+}
+`;
+
+exports[`recovers the removed 'mine' skill toggle focus without taking focus elsewhere (true) 1`] = `
+{
+  "elsewhere": true,
+  "focused": "搜索",
+  "query": "技能",
+  "scope": "mine",
+  "selection": [
+    0,
+    1,
+  ],
+}
+`;
+
+exports[`recovers the removed 'project' skill toggle focus without taking focus elsewhere (false) 1`] = `
+{
+  "elsewhere": false,
+  "focused": "搜索",
+  "query": "技能",
+  "scope": "project",
+  "selection": [
+    2,
+    2,
+  ],
+}
+`;
+
+exports[`recovers the removed 'project' skill toggle focus without taking focus elsewhere (true) 1`] = `
+{
+  "elsewhere": true,
+  "focused": "搜索",
+  "query": "技能",
+  "scope": "project",
+  "selection": [
+    0,
+    1,
+  ],
+}
+`;
+
+exports[`reports a committed repository operation through the loaded skill page: 'add' 1`] = `
+{
+  "en": [
+    "Repository added. · company/new-skills",
+  ],
+  "zh": [
+    "仓库已添加。 · company/new-skills",
+  ],
+}
+`;
+
+exports[`reports a committed repository operation through the loaded skill page: 'add-read-failed' 1`] = `
+{
+  "en": [
+    "Repository added, but the list could not refresh. Reopen Discover Skills to check its status; do not add it again. · company/new-skills",
+  ],
+  "zh": [
+    "仓库已添加，但列表刷新失败。请重新打开发现页检查状态；不要重复添加。 · company/new-skills",
+  ],
+}
+`;
+
+exports[`reports a committed repository operation through the loaded skill page: 'remove' 1`] = `
+{
+  "en": [
+    "Repository removed. Installed skills were kept. · company/skills",
+  ],
+  "zh": [
+    "仓库已移除，已安装的技能保留。 · company/skills",
+  ],
+}
+`;
+
+exports[`reports a committed repository operation through the loaded skill page: 'remove-read-failed' 1`] = `
+{
+  "en": [
+    "Repository removed and installed skills kept, but the list could not refresh. Reopen Discover Skills; do not remove it again. · company/skills",
+  ],
+  "zh": [
+    "仓库已移除，已安装的技能保留，但列表刷新失败。请重新打开发现页；不要重复移除。 · company/skills",
+  ],
+}
+`;
+
+exports[`reports a committed repository operation through the loaded skill page: 'scan-failed' 1`] = `
+{
+  "en": [
+    "Repository added, but its scan did not finish. Check for updates in Manage repositories; do not add it again. · company/new-skills · Repository request failed. Check your connection or retry later. The previous catalog was kept.",
+  ],
+  "zh": [
+    "仓库已添加，但扫描未完成。请在管理仓库中重新检查更新；不要重复添加。 · company/new-skills · 仓库访问失败，请检查网络或稍后重试。上次列表已保留。",
+  ],
+}
+`;
+
+exports[`reports import failures and retains the selection for repair ('en', partial=false) 1`] = `"No skills were imported; failed: broken-skill: Batch source contains duplicate skill names: broken-skill. Fix the failed items and retry."`;
+
+exports[`reports import failures and retains the selection for repair ('en', partial=true) 1`] = `"Imported: ready-skill; skipped existing skills: existing-skill; failed: broken-skill: Batch source contains duplicate skill names: broken-skill. Fix the failed items and retry."`;
+
+exports[`reports import failures and retains the selection for repair ('zh', partial=false) 1`] = `"未导入任何技能；导入失败：broken-skill: 批量来源中存在多个同名技能: broken-skill。请修复失败项后重试。"`;
+
+exports[`reports import failures and retains the selection for repair ('zh', partial=true) 1`] = `"已导入：ready-skill；已跳过同名技能：existing-skill；导入失败：broken-skill: 批量来源中存在多个同名技能: broken-skill。请修复失败项后重试。"`;
+
+exports[`retains a switch failure while retrying once and clears it after the catalog confirms success 1`] = `
+{
+  "busy": "true",
+  "disabled": true,
+  "error": "操作失败：仅本机所有者可管理技能",
+}
+`;
+
+exports[`retains the 'company' skill detail and its error through one read retry ('en') 1`] = `
+{
+  "busy": "true",
+  "error": "Action failed: The skill service is temporarily unavailable. Try again.",
+  "retry": "Retry",
+}
+`;
+
+exports[`retains the 'company' skill detail and its error through one read retry ('zh') 1`] = `
+{
+  "busy": "true",
+  "error": "操作失败：暂时无法访问技能服务，请重试。",
+  "retry": "重试",
+}
+`;
+
+exports[`retains the 'project' skill detail and its error through one read retry ('en') 1`] = `
+{
+  "busy": "true",
+  "error": "Action failed: The skill service is temporarily unavailable. Try again.",
+  "retry": "Retry",
+}
+`;
+
+exports[`retains the 'project' skill detail and its error through one read retry ('zh') 1`] = `
+{
+  "busy": "true",
+  "error": "操作失败：暂时无法访问技能服务，请重试。",
+  "retry": "重试",
+}
+`;
+
+exports[`retains the 'user' skill detail and its error through one read retry ('en') 1`] = `
+{
+  "busy": "true",
+  "error": "Action failed: The skill service is temporarily unavailable. Try again.",
+  "retry": "Retry",
+}
+`;
+
+exports[`retains the 'user' skill detail and its error through one read retry ('zh') 1`] = `
+{
+  "busy": "true",
+  "error": "操作失败：暂时无法访问技能服务，请重试。",
+  "retry": "重试",
+}
+`;
+
+exports[`retranslates a failed import and preserves the selected archive without uploading it again 1`] = `"No skills were imported; failed: broken-skill: Batch source contains duplicate skill names: broken-skill. Fix the failed items and retry."`;
+
 exports[`shows a workspace registry failure instead of an empty project directory (en) 1`] = `
 {
   "locale": "en",
@@ -32,32 +396,40 @@ exports[`shows a workspace registry failure instead of an empty project director
 }
 `;
 
-exports[`submits a category with Enter but keeps IME composition in the input (en) 1`] = `
+exports[`shows incomplete restore recovery without claiming success or consuming the trash row 1`] = `"操作失败：恢复未完成，部分文件可能已回到原位置。请检查原位置及回收目录，勿重复恢复：/skills-manager/trash/item"`;
+
+exports[`shows retained repository files when update recovery fails in en 1`] = `"The skill replacement could not be restored. Some files may be in their original location. Inspect that location and the retained directory before retrying: /skills-manager/repository-backups"`;
+
+exports[`shows retained repository files when update recovery fails in zh 1`] = `"技能替换未恢复，部分文件可能位于原位置。请检查原位置及保留目录，勿重复操作：/skills-manager/repository-backups"`;
+
+exports[`stops enumerating a dropped skill directory at the bytes limit and permits a fresh selection 1`] = `
 {
-  "inputLabel": "Category name",
-  "saved": {
-    "args": {
-      "target": {
-        "name": "Finance",
-        "root": "dsh",
-        "workspace": undefined,
-      },
-    },
-  },
+  "limit": "bytes",
+  "notice": "上传内容过大，限制为 67108864 字节",
+  "readCalls": 3,
 }
 `;
 
-exports[`submits a category with Enter but keeps IME composition in the input (zh) 1`] = `
+exports[`stops enumerating a dropped skill directory at the depth limit and permits a fresh selection 1`] = `
 {
-  "inputLabel": "分类名称",
-  "saved": {
-    "args": {
-      "target": {
-        "name": "Finance",
-        "root": "dsh",
-        "workspace": undefined,
-      },
-    },
-  },
+  "limit": "depth",
+  "notice": "上传内容包含非法路径：skill/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d",
+  "readCalls": 63,
+}
+`;
+
+exports[`stops enumerating a dropped skill directory at the directories limit and permits a fresh selection 1`] = `
+{
+  "limit": "directories",
+  "notice": "上传文件过多，最多 1000 个",
+  "readCalls": 999,
+}
+`;
+
+exports[`stops enumerating a dropped skill directory at the files limit and permits a fresh selection 1`] = `
+{
+  "limit": "files",
+  "notice": "上传文件过多，最多 1000 个",
+  "readCalls": 1000,
 }
 `;

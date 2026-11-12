@@ -1,0 +1,379 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`keeps 'clawhub' search pending while typing and cancels a cleared query without flashing empty results 1`] = `
+{
+  "emptyVisible": false,
+  "pending": "repo.catalog.searchLoading",
+}
+`;
+
+exports[`keeps 'skillsh' search pending while typing and cancels a cleared query without flashing empty results 1`] = `
+{
+  "emptyVisible": false,
+  "pending": "repo.catalog.skillshLoading",
+}
+`;
+
+exports[`retains one 'add' confirmation and its failure through a locked retry 1`] = `
+{
+  "alerts": [
+    "Mutation rejected",
+  ],
+  "buttons": [
+    {
+      "busy": null,
+      "disabled": false,
+      "label": "repo.close",
+      "unavailable": null,
+    },
+    {
+      "busy": "false",
+      "disabled": false,
+      "label": "repo.cancel",
+      "unavailable": "true",
+    },
+    {
+      "busy": "true",
+      "disabled": false,
+      "label": "repo.save",
+      "unavailable": "true",
+    },
+  ],
+  "focused": "repo.save",
+  "text": "repo.addrepo.urlrepo.refrepo.directoryMutation rejectedrepo.cancelrepo.save",
+}
+`;
+
+exports[`retains one 'catalog-install' confirmation and its failure through a locked retry 1`] = `
+{
+  "alerts": [
+    "Mutation rejected",
+  ],
+  "buttons": [
+    {
+      "busy": null,
+      "disabled": false,
+      "label": "repo.close",
+      "unavailable": null,
+    },
+    {
+      "busy": "true",
+      "disabled": true,
+      "label": "dest.scope.user",
+      "unavailable": null,
+    },
+    {
+      "busy": "true",
+      "disabled": true,
+      "label": "dest.location.dsh",
+      "unavailable": null,
+    },
+    {
+      "busy": "false",
+      "disabled": false,
+      "label": "repo.cancel",
+      "unavailable": "true",
+    },
+    {
+      "busy": "true",
+      "disabled": false,
+      "label": "repo.installing",
+      "unavailable": "true",
+    },
+  ],
+  "focused": "repo.installing",
+  "text": "repo.installCatalog ordersdest.scopedest.scope.userdest.locationdest.location.dsh/skillsrepo.installLocationsHintrepo.installHintrepo.installProgressMutation rejectedrepo.cancelrepo.installing",
+}
+`;
+
+exports[`retains one 'catalog-uninstall' confirmation and its failure through a locked retry 1`] = `
+{
+  "alerts": [
+    "Mutation rejected",
+  ],
+  "buttons": [
+    {
+      "busy": null,
+      "disabled": false,
+      "label": "repo.close",
+      "unavailable": null,
+    },
+    {
+      "busy": "false",
+      "disabled": false,
+      "label": "repo.cancel",
+      "unavailable": "true",
+    },
+    {
+      "busy": "true",
+      "disabled": false,
+      "label": "repo.uninstalling",
+      "unavailable": "true",
+    },
+  ],
+  "focused": "repo.uninstalling",
+  "text": "repo.uninstallrepo.uninstallHintordersrepo.scope.user · repo.source.dsh /skillsrepo.uninstallProgressMutation rejectedrepo.cancelrepo.uninstalling",
+}
+`;
+
+exports[`retains one 'install' confirmation and its failure through a locked retry 1`] = `
+{
+  "alerts": [
+    "Mutation rejected",
+  ],
+  "buttons": [
+    {
+      "busy": null,
+      "disabled": false,
+      "label": "repo.close",
+      "unavailable": null,
+    },
+    {
+      "busy": "true",
+      "disabled": true,
+      "label": "dest.scope.user",
+      "unavailable": null,
+    },
+    {
+      "busy": "true",
+      "disabled": true,
+      "label": "dest.location.dsh",
+      "unavailable": null,
+    },
+    {
+      "busy": "false",
+      "disabled": false,
+      "label": "repo.cancel",
+      "unavailable": "true",
+    },
+    {
+      "busy": "true",
+      "disabled": false,
+      "label": "repo.installing",
+      "unavailable": "true",
+    },
+  ],
+  "focused": "repo.installing",
+  "text": "repo.installordersdest.scopedest.scope.userdest.locationdest.location.dsh/skillsrepo.installLocationsHintrepo.installHintrepo.installProgressMutation rejectedrepo.cancelrepo.installing",
+}
+`;
+
+exports[`retains one 'remove' confirmation and its failure through a locked retry 1`] = `
+{
+  "alerts": [
+    "Mutation rejected",
+  ],
+  "buttons": [
+    {
+      "busy": null,
+      "disabled": false,
+      "label": "repo.close",
+      "unavailable": null,
+    },
+    {
+      "busy": "false",
+      "disabled": false,
+      "label": "repo.cancel",
+      "unavailable": "true",
+    },
+    {
+      "busy": "true",
+      "disabled": false,
+      "label": "repo.removeConfirm",
+      "unavailable": "true",
+    },
+  ],
+  "focused": "repo.removeConfirm",
+  "text": "repo.removerepo.removeHintcompany/skillsMutation rejectedrepo.cancelrepo.removeConfirm",
+}
+`;
+
+exports[`retains one 'rollback' confirmation and its failure through a locked retry 1`] = `
+{
+  "alerts": [
+    "Mutation rejected",
+  ],
+  "buttons": [
+    {
+      "busy": null,
+      "disabled": false,
+      "label": "repo.close",
+      "unavailable": null,
+    },
+    {
+      "busy": "false",
+      "disabled": false,
+      "label": "repo.cancel",
+      "unavailable": "true",
+    },
+    {
+      "busy": "true",
+      "disabled": false,
+      "label": "repo.confirmRollback",
+      "unavailable": "true",
+    },
+  ],
+  "focused": "repo.confirmRollback",
+  "text": "repo.rollbackordersrepo.scope.user · repo.source.dsh /skillscompany/skills · newrepo.modifiedFile · SKILL.mdrepo.updateProgressMutation rejectedrepo.cancelrepo.confirmRollback",
+}
+`;
+
+exports[`retains one 'uninstall' confirmation and its failure through a locked retry 1`] = `
+{
+  "alerts": [
+    "Mutation rejected",
+  ],
+  "buttons": [
+    {
+      "busy": null,
+      "disabled": false,
+      "label": "repo.close",
+      "unavailable": null,
+    },
+    {
+      "busy": "false",
+      "disabled": false,
+      "label": "repo.cancel",
+      "unavailable": "true",
+    },
+    {
+      "busy": "true",
+      "disabled": false,
+      "label": "repo.uninstalling",
+      "unavailable": "true",
+    },
+  ],
+  "focused": "repo.uninstalling",
+  "text": "repo.uninstallrepo.uninstallHintordersrepo.scope.user · repo.source.dsh /skillsrepo.uninstallProgressMutation rejectedrepo.cancelrepo.uninstalling",
+}
+`;
+
+exports[`retains one 'update' confirmation and its failure through a locked retry 1`] = `
+{
+  "alerts": [
+    "Mutation rejected",
+  ],
+  "buttons": [
+    {
+      "busy": null,
+      "disabled": false,
+      "label": "repo.close",
+      "unavailable": null,
+    },
+    {
+      "busy": "false",
+      "disabled": false,
+      "label": "repo.cancel",
+      "unavailable": "true",
+    },
+    {
+      "busy": "true",
+      "disabled": false,
+      "label": "repo.confirmUpdate",
+      "unavailable": "true",
+    },
+  ],
+  "focused": "repo.confirmUpdate",
+  "text": "repo.reviewordersrepo.scope.user · repo.source.dsh /skillscompany/skills · newrepo.modifiedFile · SKILL.mdrepo.updateProgressMutation rejectedrepo.cancelrepo.confirmUpdate",
+}
+`;
+
+exports[`retains the 'catalog-detail' dialog and error throughout a deduplicated read retry > Recovered read focus 1`] = `
+{
+  "focused": "detail.body",
+  "tag": "TEXTAREA",
+}
+`;
+
+exports[`retains the 'catalog-detail' dialog and error throughout a deduplicated read retry 1`] = `
+{
+  "busy": "true",
+  "error": "Read unavailable",
+  "retry": "repo.retry",
+}
+`;
+
+exports[`retains the 'clawhub' search error and retry button while retrying once 1`] = `
+{
+  "action": "repo.catalog.retry",
+  "busy": "true",
+  "error": "repo.catalog.searchErrorrepo.catalog.retry",
+}
+`;
+
+exports[`retains the 'detail' dialog and error throughout a deduplicated read retry > Recovered read focus 1`] = `
+{
+  "focused": "detail.body",
+  "tag": "TEXTAREA",
+}
+`;
+
+exports[`retains the 'detail' dialog and error throughout a deduplicated read retry 1`] = `
+{
+  "busy": "true",
+  "error": "Read unavailable",
+  "retry": "repo.retry",
+}
+`;
+
+exports[`retains the 'review' dialog and error throughout a deduplicated read retry > Recovered read focus 1`] = `
+{
+  "focused": "repo.review",
+  "tag": "DIV",
+}
+`;
+
+exports[`retains the 'review' dialog and error throughout a deduplicated read retry 1`] = `
+{
+  "busy": "true",
+  "error": "Read unavailable",
+  "retry": "repo.retry",
+}
+`;
+
+exports[`retains the 'rollback' dialog and error throughout a deduplicated read retry > Recovered read focus 1`] = `
+{
+  "focused": "repo.rollback",
+  "tag": "DIV",
+}
+`;
+
+exports[`retains the 'rollback' dialog and error throughout a deduplicated read retry 1`] = `
+{
+  "busy": "true",
+  "error": "Read unavailable",
+  "retry": "repo.retry",
+}
+`;
+
+exports[`retains the 'skillsh' search error and retry button while retrying once 1`] = `
+{
+  "action": "repo.catalog.retry",
+  "busy": "true",
+  "error": "repo.catalog.skillshErrorrepo.catalog.retry",
+}
+`;
+
+exports[`retains the ClawHub load-more control until the final page: false 1`] = `
+{
+  "busy": "true",
+  "label": "repo.catalog.loadMore",
+  "rows": 1,
+}
+`;
+
+exports[`retains the ClawHub load-more control until the final page: true 1`] = `
+{
+  "busy": "true",
+  "label": "repo.catalog.loadMore",
+  "rows": 1,
+}
+`;
+
+exports[`retains the ClawHub ranking error and retry button until its read succeeds 1`] = `
+{
+  "action": "repo.catalog.retry",
+  "busy": "true",
+  "error": "repo.catalog.loadErrorrepo.catalog.retry",
+}
+`;

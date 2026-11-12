@@ -3,7 +3,7 @@ import { productFailure, ProductError } from '@deepseek-harness/product/errors'
 import { ConnectorDraftSchema } from '@deepseek-harness/product/connector-draft'
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, onTestFinished, vi } from 'vitest'
 import { StrictMode } from 'react'
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import type { CommandContribution } from '@deepseek-ai/dsh-client-ui-commands/client'
@@ -16,7 +16,7 @@ import {
 } from '../src/client/DeepSeekHarnessCapabilitiesNavigation.tsx'
 import { apply } from '../src/client/index.ts'
 import { DeepSeekHarnessSettingsMenu } from '../src/client/DeepSeekHarnessSettingsMenu.tsx'
-import { zh, type DeepSeekHarnessProductKey } from '../src/locales.ts'
+import { en, zh, type DeepSeekHarnessProductKey } from '../src/locales.ts'
 import { createPreviewFixture, originalFromFixture, originalMetadata, renderKnowledgePreview } from './knowledge-preview-fixture.client.tsx'
 
 afterEach(() => {
@@ -46,7 +46,8 @@ function installProductApi(api: Partial<ProductApi> & Pick<ProductApi, 'invoke'>
 }
 
 const t = (key: DeepSeekHarnessProductKey): string => zh[key]
-const actions = () => ({ renderFactorySlot: renderKnowledgePreview })
+const english = (key: DeepSeekHarnessProductKey): string => en[key]
+const actions = () => ({ renderFactorySlot: renderKnowledgePreview, openEmployeeSignIn: vi.fn() })
 
 function deferred<T>() {
   let resolve!: (value: T) => void
@@ -60,6 +61,177 @@ function castClientContext(value: object): ClientContext {
 }
 
 describe('DeepSeekHarness capability navigation', () => {
+
+  it.each(([
+    ['connectors', 'identity'], ['knowledge', 'identity'], ['knowledge', 'retry'],
+    ['connectors', 'removed'], ['knowledge', 'removed'], ['connectors', 'failed'],
+  ] as const).flatMap(([catalog, transition]) => [false, true].map(elsewhere => ({ catalog, transition, elsewhere }))))(
+    'recovers $catalog focus after $transition with elsewhere=$elsewhere', async ({ catalog, transition, elsewhere }) => {
+      const response = deferred<unknown>()
+      const identity = deferred<{ authenticated: boolean; employeeId: string }>()
+      const failure = new ProductError('ORGANIZATION_SYNC_EXPIRED', 'Directory unavailable', true)
+      let sessions = 0
+      let reads = 0
+      installProductApi({
+        getSession: async () => {
+          if (transition === 'identity') {
+            if (++sessions <= 2) throw failure
+            return identity.promise
+          }
+          return { authenticated: true, employeeId: 'employee' }
+        },
+        invoke: async (method) => {
+          if (method === 'connectors.refresh') return { connectedIds: [], unavailableIds: [] }
+          if (++reads === 1 && transition !== 'identity') {
+            if (transition === 'retry') throw failure
+            return [{ id: 'focus-entry', name: '目录资源', scope: 'PERSONAL', canRead: true }]
+          }
+          return response.promise
+        },
+      })
+      const Panel = catalog === 'connectors' ? ConnectorsPanel : KnowledgePanel
+      const label = catalog === 'connectors' ? zh.connectors : zh.knowledge
+      const view = render(<><button>其他操作</button><Panel t={t} {...actions()} /></>)
+      onTestFinished(() => { view.unmount(); identity.resolve({ authenticated: true, employeeId: 'employee' }); response.resolve([]) })
+      const retrying = transition === 'identity' || transition === 'retry'
+      if (retrying) await screen.findByRole('alert')
+      else await screen.findByRole('button', { name: '目录资源', exact: true })
+      const control = screen.getByRole<HTMLButtonElement>('button', { name: retrying ? zh.retry : zh.refresh })
+      control.focus()
+      act(() => { control.click(); control.click() })
+      if (transition === 'identity') await waitFor(() => { expect(sessions).toBe(3) })
+      else await waitFor(() => { expect(reads).toBe(2) })
+      expect(control.isConnected).toBe(true)
+      expect(control.getAttribute('aria-disabled')).toBe('true')
+      expect(control.disabled).toBe(false)
+      if (!retrying) screen.getByRole<HTMLButtonElement>('button', { name: '目录资源', exact: true }).focus()
+      const other = screen.getByRole<HTMLButtonElement>('button', { name: '其他操作' })
+      if (elsewhere) other.focus()
+      if (transition === 'identity') {
+        await act(async () => { identity.resolve({ authenticated: true, employeeId: 'employee' }); await identity.promise })
+        await waitFor(() => { expect(reads).toBe(1) })
+        expect(document.activeElement).toBe(elsewhere ? other : screen.getByRole('region', { name: label, exact: true }))
+      }
+      await act(async () => {
+        if (transition === 'failed') response.reject(failure)
+        else response.resolve([])
+        await response.promise.catch(() => undefined)
+      })
+      if (transition === 'failed') await screen.findByRole('alert')
+      else await screen.findByText(catalog === 'knowledge' ? zh.knowledgeNoLibraries : zh.noConnectors)
+      const region = screen.getByRole('region', { name: label, exact: true })
+      expect(document.activeElement).toBe(elsewhere ? other : region)
+      expect({ catalog: region.getAttribute('aria-label'), focus: document.activeElement?.getAttribute('aria-label') ?? document.activeElement?.textContent,
+        error: screen.queryByRole('alert') !== null, cards: screen.queryByRole('button', { name: '目录资源', exact: true }) !== null }).toMatchSnapshot()
+    },
+  )
+
+  it.each(['connectors', 'knowledge'] as const)('keeps a failed %s catalog and its retry control mounted until a read succeeds', async (catalog) => {
+    const pending = deferred<unknown>()
+    let failed = true
+    let reads = 0
+    installProductApi({ invoke: async (method) => {
+      if (method === 'connectors.refresh') return { connectedIds: [], unavailableIds: [] }
+      reads++
+      if (failed) throw new ProductError('ORGANIZATION_SYNC_EXPIRED', 'Directory unavailable', true)
+      return pending.promise
+    } })
+    const Panel = catalog === 'connectors' ? ConnectorsPanel : KnowledgePanel
+    const view = render(<Panel t={t} {...actions()} />)
+    onTestFinished(() => { view.unmount(); pending.resolve([]) })
+    const alert = await screen.findByRole('alert')
+    const retry = screen.getByRole<HTMLButtonElement>('button', { name: catalog === 'knowledge' ? zh.retry : zh.refresh })
+    const label = retry.getAttribute('aria-label') ?? retry.textContent
+    failed = false
+    retry.focus()
+    act(() => { retry.click(); retry.click() })
+    await waitFor(() => { expect(reads).toBe(2) })
+    expect(screen.getByRole('alert')).toBe(alert)
+    expect(retry.isConnected).toBe(true)
+    expect(retry.getAttribute('aria-disabled')).toBe('true')
+    expect(document.activeElement).toBe(retry)
+    expect(retry.classList.contains('product-control-pending')).toBe(true)
+    expect(document.querySelector('.product-capability-pending')).toBeNull()
+    fireEvent.click(retry)
+    expect(reads).toBe(2)
+    expect({ message: alert.querySelector('p')?.textContent ?? alert.textContent, retry: label,
+      canRetry: retry.getAttribute('aria-disabled') !== 'true', loadingIndicator: document.querySelector('.product-capability-pending') !== null }).toMatchSnapshot()
+    await act(async () => { pending.resolve([]); await pending.promise })
+    await waitFor(() => { expect(screen.queryByRole('alert')).toBeNull() })
+    expect(screen.getByText(catalog === 'knowledge' ? zh.knowledgeNoLibraries : zh.noConnectors)).toBeTruthy()
+  })
+
+  it('keeps the initial identity-read error visible while retrying the same panel', async () => {
+    const pending = deferred<{ authenticated: boolean; employeeId: string }>()
+    const session = vi.fn<NonNullable<ProductApi['getSession']>>()
+      .mockRejectedValueOnce(new Error('Offline')).mockRejectedValueOnce(new Error('Offline'))
+      .mockReturnValue(pending.promise)
+    installProductApi({ getSession: session, invoke: async () => [] })
+    const view = render(<ConnectorsPanel t={t} {...actions()} />)
+    onTestFinished(() => { view.unmount(); pending.resolve({ authenticated: true, employeeId: 'employee' }) })
+    const alert = await screen.findByRole('alert')
+    const retry = screen.getByRole<HTMLButtonElement>('button', { name: zh.retry })
+    fireEvent.click(retry)
+    expect(screen.getByRole('alert')).toBe(alert)
+    expect(screen.getByRole('button', { name: zh.retry })).toBe(retry)
+    expect(retry.getAttribute('aria-disabled')).toBe('true')
+    expect(retry.classList.contains('product-control-pending')).toBe(true)
+    expect(screen.queryByRole('status', { name: zh.loading })).toBeNull()
+    fireEvent.click(retry)
+    expect(session).toHaveBeenCalledTimes(3)
+    await act(async () => { pending.resolve({ authenticated: true, employeeId: 'employee' }); await pending.promise })
+    await screen.findByText(zh.noConnectors)
+    expect(screen.queryByRole('alert')).toBeNull()
+  })
+
+  it.each(['connectors', 'knowledge'] as const)('clears a previous employee error before reading their replacement %s catalog', async (catalog) => {
+    const pending = deferred<unknown>()
+    let employeeId = 'employee-one'
+    let listener: Parameters<ProductApi['subscribe']>[0] | undefined
+    installProductApi({ getSession: async () => ({ authenticated: true, employeeId }),
+      subscribe: (callback) => { listener = callback; return () => {} },
+      invoke: async () => {
+        if (employeeId === 'employee-one') throw new ProductError('ORGANIZATION_SYNC_EXPIRED', 'Directory unavailable', true)
+        return pending.promise
+      } })
+    const Panel = catalog === 'connectors' ? ConnectorsPanel : KnowledgePanel
+    const view = render(<Panel t={t} {...actions()} />)
+    onTestFinished(() => { view.unmount(); pending.resolve([]) })
+    await screen.findByRole('alert')
+    act(() => {
+      employeeId = 'employee-two'
+      listener?.({ type: 'session.changed', payload: { authenticated: true, employeeId } })
+    })
+    expect(screen.queryByRole('alert')).toBeNull()
+    expect(screen.queryByRole('button', { name: zh.retry })).toBeNull()
+    await act(async () => { pending.resolve([]); await pending.promise })
+    await screen.findByText(catalog === 'knowledge' ? zh.knowledgeNoLibraries : zh.noConnectors)
+  })
+
+  it.each(['connectors', 'knowledge'] as const)('translates a failed %s catalog without rereading resources', async (catalog) => {
+    const invoke = vi.fn(async () => { throw new ProductError('ORGANIZATION_SYNC_EXPIRED', 'Private directory diagnostic', true) })
+    installProductApi({ invoke })
+    const Panel = catalog === 'connectors' ? ConnectorsPanel : KnowledgePanel
+    const props = actions()
+    const view = render(<Panel t={t} {...props} />)
+    expect((await screen.findByRole('alert')).textContent).toContain(zh.organizationSyncExpired)
+    const reads = invoke.mock.calls.length
+    view.rerender(<Panel t={english} {...props} />)
+    expect(screen.getByRole('alert').textContent).toContain(en.organizationSyncExpired)
+    expect(screen.getByRole('alert').textContent).not.toContain('Private directory diagnostic')
+    expect(invoke).toHaveBeenCalledTimes(reads)
+  })
+
+  it('translates an unavailable desktop bridge while keeping its retry action', async () => {
+    Reflect.deleteProperty(globalThis, 'dshDesktop')
+    const props = actions()
+    const view = render(<ConnectorsPanel t={t} {...props} />)
+    expect((await screen.findByRole('alert')).textContent).toContain(zh.unavailable)
+    view.rerender(<ConnectorsPanel t={english} {...props} />)
+    expect(screen.getByRole('alert').textContent).toContain(en.unavailable)
+    expect(screen.getByRole('button', { name: en.retry })).toBeTruthy()
+  })
+
   it.each([
     { entries: { data: [] }, problem: 'a non-array catalog' },
     { entries: [null], problem: 'a malformed entry' },
@@ -196,17 +368,23 @@ describe('DeepSeekHarness capability navigation', () => {
 
   it('reports partial reconnect failures by name without hiding working connectors and clears them after retry', async () => {
     let available = false
+    const pending = deferred<{ connectedIds: string[]; unavailableIds: string[] }>()
     const entries = [{ id: 'erp', name: 'ERP' }, { id: 'crm', name: 'CRM' }]
     installProductApi({ invoke: async method => method === 'connectors.refresh'
-      ? { connectedIds: available ? ['erp', 'crm'] : ['erp'], unavailableIds: available ? [] : ['crm'] } : entries })
-    render(<ConnectorsPanel t={t} {...actions()} />)
+      ? available ? pending.promise : { connectedIds: ['erp'], unavailableIds: ['crm'] } : entries })
+    const view = render(<ConnectorsPanel t={t} {...actions()} />)
+    onTestFinished(() => { view.unmount(); pending.resolve({ connectedIds: [], unavailableIds: [] }) })
     await screen.findByRole('button', { name: /ERP/ })
     fireEvent.click(screen.getByRole('button', { name: zh.refresh }))
-    expect((await screen.findByRole('alert')).textContent).toBe(zh.connectorPartialRefreshFailed.replace('{names}', 'CRM'))
+    const warning = await screen.findByRole('alert')
+    expect(warning.textContent).toBe(zh.connectorPartialRefreshFailed.replace('{names}', 'CRM'))
     expect(screen.getByRole('button', { name: /ERP/ })).toBeTruthy()
     expect(screen.getByRole('button', { name: /CRM/ })).toBeTruthy()
     available = true
     fireEvent.click(screen.getByRole('button', { name: zh.refresh }))
+    expect(screen.getByRole('alert')).toBe(warning)
+    expect(screen.getByRole('button', { name: /CRM/ })).toBeTruthy()
+    await act(async () => { pending.resolve({ connectedIds: ['erp', 'crm'], unavailableIds: [] }); await pending.promise })
     await waitFor(() => { expect(screen.queryByRole('alert')).toBeNull(); expect(screen.getByRole('button', { name: /ERP/ })).toBeTruthy() })
   })
 
@@ -253,35 +431,41 @@ describe('DeepSeekHarness capability navigation', () => {
     expect(invoke.mock.calls.some(([method]) => method === 'extensions.connector.update' || method === 'extensions.save')).toBe(false)
   })
 
-  it('opens official settings and product feedback from the more menu', () => {
+  it('opens official settings while signed out and routes feedback through employee sign-in', async () => {
+    installProductApi({ getSession: async () => ({ authenticated: false }), invoke: async () => [] })
     const openSettings = vi.fn()
-    render(<DeepSeekHarnessSettingsMenu t={t} wide settingsOpen={false} openSettings={openSettings}
-      openOnboarding={vi.fn()} />)
+    const openEmployeeSignIn = vi.fn()
+    render(<DeepSeekHarnessSettingsMenu t={t} wide settingsOpen={false} openEmployeeSignIn={openEmployeeSignIn}
+      subscribeEmployeeSignIn={() => () => {}} openSettings={openSettings} openOnboarding={vi.fn()} />)
 
-    fireEvent.click(screen.getByRole('button', { name: zh.menu }))
-    expect(screen.getAllByRole('menuitem').map(item => item.textContent)).toEqual([zh.settings, zh.feedbackTitle])
+    const employee = await screen.findByRole('button', { name: zh.employeeSignedOut })
+    fireEvent.click(employee)
+    expect(screen.getAllByRole('menuitem').map(item => item.textContent)).toEqual([zh.signIn, zh.settings, zh.feedbackTitle])
     fireEvent.click(screen.getByRole('menuitem', { name: zh.settings }))
     expect(openSettings).toHaveBeenCalledOnce()
-    fireEvent.click(screen.getByRole('button', { name: zh.menu }))
+    fireEvent.click(employee)
     fireEvent.click(screen.getByRole('menuitem', { name: zh.feedbackTitle }))
-    expect(screen.getByRole('dialog', { name: zh.feedbackTitle })).not.toBeNull()
+    expect(screen.queryByRole('dialog', { name: zh.feedbackTitle })).toBeNull()
+    expect(openEmployeeSignIn).toHaveBeenCalledOnce()
     expect(openSettings).toHaveBeenCalledOnce()
   })
 
-  it('opens the native software updater from the more menu and permits retry after failure', async () => {
+  it('opens the native software updater from the employee menu and permits retry after failure', async () => {
+    installProductApi({ getSession: async () => ({ authenticated: false }), invoke: async () => [] })
     const pending = deferred<undefined>()
     const openSoftwareUpdate = vi.fn().mockRejectedValueOnce(new Error('private updater diagnostic'))
       .mockImplementationOnce(() => pending.promise)
-    render(<DeepSeekHarnessSettingsMenu t={t} wide settingsOpen={false} openSettings={vi.fn()}
-      openOnboarding={vi.fn()} openSoftwareUpdate={openSoftwareUpdate} />)
-    fireEvent.click(screen.getByRole('button', { name: zh.menu }))
-    expect(screen.getAllByRole('menuitem').map(item => item.textContent)).toEqual([zh.settings, zh.softwareUpdate, zh.feedbackTitle])
+    render(<DeepSeekHarnessSettingsMenu t={t} wide settingsOpen={false} openEmployeeSignIn={vi.fn()}
+      subscribeEmployeeSignIn={() => () => {}} openSettings={vi.fn()} openOnboarding={vi.fn()} openSoftwareUpdate={openSoftwareUpdate} />)
+    const employee = await screen.findByRole('button', { name: zh.employeeSignedOut })
+    fireEvent.click(employee)
+    expect(screen.getAllByRole('menuitem').map(item => item.textContent)).toEqual([zh.signIn, zh.settings, zh.softwareUpdate, zh.feedbackTitle])
     fireEvent.click(screen.getByRole('menuitem', { name: zh.softwareUpdate }))
     expect((await screen.findByRole('alert')).textContent).toBe(zh.softwareUpdateFailed)
     expect(document.body.textContent).not.toContain('private updater diagnostic')
-    fireEvent.click(screen.getByRole('button', { name: zh.menu }))
+    fireEvent.click(employee)
     fireEvent.click(screen.getByRole('menuitem', { name: zh.softwareUpdate }))
-    fireEvent.click(screen.getByRole('button', { name: zh.menu }))
+    fireEvent.click(employee)
     expect(screen.getByRole('menuitem', { name: zh.softwareUpdate })).toHaveProperty('disabled', true)
     await act(async () => { pending.resolve(undefined) })
     expect(openSoftwareUpdate).toHaveBeenCalledTimes(2)
@@ -326,7 +510,7 @@ describe('DeepSeekHarness capability navigation', () => {
     const injectLauncher = settingsLaunchers[0]?.options.inject as () => { openSoftwareUpdate(): Promise<void> }
     void injectLauncher().openSoftwareUpdate()
     expect(openUpdate).toHaveBeenCalledOnce()
-    expect(registrations.filter(entry => entry.options.name === 'conversation.input.left')
+    expect(registrations.filter(entry => entry.options.name === 'conversation.input.references')
       .map(entry => entry.options.id)).toEqual(['product-knowledge'])
     expect(registrations.filter(entry => entry.options.name === 'conversation.hero.agentPreset')).toEqual([])
     expect(registrations.filter(entry => entry.options.name === 'conversation.hero.actions')
@@ -435,6 +619,7 @@ describe('DeepSeekHarness capability navigation', () => {
     ['ORGANIZATION_SOURCE_INVALID', true],
   ] as const)('preserves knowledge drafts only for temporary directory failures: %s', async (code, denied) => {
     let failed = false
+    let notifyCatalog!: Parameters<ProductApi['subscribe']>[0]
     const invoke = vi.fn(async (method: string) => {
       if (method === 'knowledge.bases.list') {
         if (failed) throw new ProductError(code, 'private upstream diagnostic', !denied)
@@ -442,17 +627,17 @@ describe('DeepSeekHarness capability navigation', () => {
       }
       return { items: [], page: 1, size: 20, total: 0 }
     })
-    installProductApi({ invoke, getSession: async () => ({ authenticated: true, employeeId: 'employee' }) })
-    const { container } = render(<KnowledgePanel t={t} {...actions()} />)
+    installProductApi({ invoke, getSession: async () => ({ authenticated: true, employeeId: 'employee' }),
+      subscribe: (listener) => { notifyCatalog = listener; return () => {} },
+    })
+    render(<KnowledgePanel t={t} {...actions()} />)
     fireEvent.click(await screen.findByRole('button', { name: '我的资料', exact: true }))
     fireEvent.click(await screen.findByRole('button', { name: zh.knowledgeAddMaterial }))
-    const navigation = within(container.querySelector('[data-knowledge-navigation]') as HTMLElement)
-    const refresh = navigation.getByRole('button', { name: zh.refresh })
     fireEvent.click(await screen.findByRole('menuitem', { name: zh.knowledgeNewDocument }))
     const body = screen.getByRole<HTMLTextAreaElement>('textbox', { name: zh.knowledgeMarkdownContent })
     fireEvent.change(body, { target: { value: '保留编辑内容' } })
     failed = true
-    fireEvent.click(refresh)
+    act(() => { notifyCatalog({ type: 'catalog.changed' }) })
     await waitFor(() => { expect(screen.getByRole('alert').textContent).toContain(code) })
     expect(screen.queryByText('private upstream diagnostic')).toBeNull()
     if (denied) {
@@ -603,9 +788,12 @@ describe('DeepSeekHarness capability navigation', () => {
     fireEvent.click(screen.getByRole('tab', { name: zh.mineExtensions }))
     fireEvent.click(screen.getByRole('button', { name: zh.categoryFilter }))
     fireEvent.click(screen.getByRole('menuitem', { name: zh.categoryCollaboration }))
-    fireEvent.click(screen.getByRole('button', { name: zh.clearConnectorFilters }))
+    const clear = screen.getByRole('button', { name: zh.clearConnectorFilters })
+    clear.focus()
+    fireEvent.click(clear)
     expect(screen.getByRole('tab', { name: zh.mineExtensions, selected: true })).toBeTruthy()
     expect(screen.getByRole<HTMLInputElement>('searchbox', { name: zh.search }).value).toBe('')
+    expect(document.activeElement).toBe(screen.getByRole('searchbox', { name: zh.search }))
     expect(screen.getByRole('button', { name: /ERP MCP/ })).toBeTruthy()
     expect(screen.queryByRole('button', { name: /Docs MCP/ })).toBeNull()
   })

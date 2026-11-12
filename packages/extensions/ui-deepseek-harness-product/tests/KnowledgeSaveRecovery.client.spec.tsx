@@ -10,6 +10,7 @@ afterEach(() => { cleanup(); sessionStorage.clear(); vi.unstubAllGlobals() })
 
 const savedDocumentMetadata = { knowledgeBaseId: 'personal', filename: 'Saved.md', mediaType: 'text/markdown',
   sizeBytes: 17, status: 'READY', chunkCount: 1 }
+const savedBaseMetadata = { scope: 'PERSONAL', canManage: true, description: '', updatedAt: '2026-10-20T00:00:00Z' }
 
 it.each(['markdown', 'url', 'edit'] as const)('retains the original %s request until its document receipt is valid', async (kind) => {
   const document = { id: 'document', knowledgeBaseId: 'personal', filename: 'Retained draft.md', mediaType: 'text/markdown',
@@ -26,6 +27,7 @@ it.each(['markdown', 'url', 'edit'] as const)('retains the original %s request u
   sessionStorage.setItem(key, original)
   const invalidReceipts = [null, { id: document.id }, { ...document, id: '' }, { ...document, filename: '' },
     { ...document, updatedAt: '' }, { ...document, knowledgeBaseId: 'another-library' },
+    { ...document, folderId: 'another-folder' },
     ...(kind === 'edit' ? [{ ...document, id: 'another-document' }] : [])]
   let receipt = 0
   const writes: unknown[] = []
@@ -98,8 +100,14 @@ it.each(['base', 'folder', 'rename'] as const)('retains the original %s save unt
   sessionStorage.setItem(key, original)
   const writes: unknown[] = []
   const saved = vi.fn()
-  const invalidReceipts = kind === 'base' ? [{ name: 'Retained draft' }, { id: '', name: 'Retained draft' }, { id: 'created' }]
+  const base = { id: 'created', name: 'Retained draft', ...savedBaseMetadata }
+  const invalidReceipts = kind === 'base' ? [{ name: 'Retained draft' }, { id: '', name: 'Retained draft' }, { id: 'created' },
+    { ...base, name: 'Another library' }, { ...base, description: 'Another description' },
+    { ...base, scope: 'COMPANY' }, { ...base, scope: undefined }, { ...base, canManage: false },
+    { ...base, updatedAt: 'not-a-version' }]
     : [{ id: folder.id }, { ...folder, id: '' }, { ...folder, name: '' }, { ...folder, updatedAt: '' },
+      { ...folder, name: 'Another folder' }, { ...folder, name: 'Retained draft', parentId: 'another-parent' },
+      { ...folder, name: 'Retained draft', updatedAt: 'not-a-version' },
       ...(kind === 'rename' ? [{ ...folder, id: 'another-folder' }] : [])]
   let invalidIndex = 0
   let validReceipt = false
@@ -107,9 +115,9 @@ it.each(['base', 'folder', 'rename'] as const)('retains the original %s save unt
     if (name === 'auth.getSession') return { ok: true, result: { authenticated: true, employeeId: 'employee' } }
     if (name === 'knowledge.folders.list') return { ok: true, result: { items: [], page: 1, size: 20, total: 0 } }
     writes.push(input)
-    return { ok: true, result: validReceipt ? { ...folder, name: 'Retained draft' } : invalidReceipts[invalidIndex] }
+    return { ok: true, result: validReceipt ? kind === 'base' ? base : { ...folder, name: 'Retained draft' } : invalidReceipts[invalidIndex] }
   } } })
-  if (kind === 'base') render(<KnowledgeBaseEditor onClose={vi.fn()} onCreated={saved} t={key => zh[key]} />)
+  if (kind === 'base') render(<KnowledgeBaseEditor onClose={vi.fn()} onSaved={saved} t={key => zh[key]} />)
   else render(<KnowledgeEditor knowledgeBaseId="personal" target={{ kind: 'folder', ...(kind === 'rename' ? { folder } : {}) }} onClose={vi.fn()} onSaved={saved} t={key => zh[key]} />)
   const title = await screen.findByDisplayValue<HTMLInputElement>('Retained draft')
   for (; invalidIndex < invalidReceipts.length; invalidIndex++) {
@@ -126,7 +134,7 @@ it.each(['base', 'folder', 'rename'] as const)('retains the original %s save unt
   fireEvent.click(screen.getByRole('button', { name: zh.knowledgeRetrySave }))
   await vi.waitFor(() => { expect(saved).toHaveBeenCalledOnce() })
   expect(writes).toEqual(Array.from({ length: invalidReceipts.length + 1 }, () => payload))
-  expect(saved).toHaveBeenCalledWith(kind === 'base' ? folder.id : { ...folder, name: 'Retained draft' })
+  expect(saved).toHaveBeenCalledWith(kind === 'base' ? base.id : { ...folder, name: 'Retained draft' })
   expect(sessionStorage.getItem(key)).toBeNull()
 })
 
@@ -144,34 +152,48 @@ it.each(['markdown', 'url', 'base', 'folder'] as const)('contains unreadable rec
   const writes: { method: string; payload: unknown }[] = []
   const identity = Promise.withResolvers<undefined>()
   let holdIdentity = false
+  let identityReads = 0
   const saved = vi.fn()
   vi.stubGlobal('dshDesktop', { extensions: { cancel: vi.fn(), invoke: async (_namespace: string, name: string, input: unknown) => {
     if (name === 'auth.getSession') {
+      identityReads++
       if (holdIdentity) await identity.promise
       return { ok: true, result: { authenticated: true, employeeId: 'employee' } }
     }
     if (name === 'knowledge.folders.list') return { ok: true, result: { items: [], page: 1, size: 20, total: 0 } }
     writes.push({ method: name, payload: input })
     return { ok: true, result: { id: 'created', name: 'Retained draft', parentId: null, updatedAt: '2026-10-20T00:00:00Z',
+      ...(kind === 'base' ? savedBaseMetadata : {}),
       ...(kind === 'markdown' || kind === 'url' ? savedDocumentMetadata : {}) } }
   } } })
   const storage = vi.spyOn(window, 'sessionStorage', 'get').mockImplementation(() => { throw new DOMException('Storage blocked', 'SecurityError') })
   try {
-    if (kind === 'base') render(<KnowledgeBaseEditor onClose={vi.fn()} onCreated={saved} t={key => zh[key]} />)
+    if (kind === 'base') render(<KnowledgeBaseEditor onClose={vi.fn()} onSaved={saved} t={key => zh[key]} />)
     else render(<KnowledgeEditor knowledgeBaseId="personal" target={{ kind }} onClose={vi.fn()} onSaved={saved} t={key => zh[key]} />)
     await screen.findByText(zh.knowledgeRecoveryFailed)
     expect(screen.queryByRole('textbox')).toBeNull()
     expect(writes).toHaveLength(0)
     if (kind === 'base') expect(screen.getByRole('dialog').textContent).toMatchSnapshot()
-    fireEvent.click(screen.getByRole('button', { name: zh.retry }))
-    await screen.findByText(zh.knowledgeRecoveryFailed)
+    const retry = screen.getByRole<HTMLButtonElement>('button', { name: zh.retry })
+    fireEvent.click(retry)
+    await vi.waitFor(() => { expect(retry.getAttribute('aria-busy')).toBe('false') })
+    const notice = screen.getByRole('alert')
     expect(screen.queryByRole('textbox')).toBeNull()
     storage.mockRestore()
     expect(sessionStorage.getItem(key)).not.toBeNull()
     holdIdentity = true
-    fireEvent.click(screen.getByRole('button', { name: zh.retry }))
-    expect(screen.getByRole('status', { name: zh.loading }).textContent).toBe('')
-    expect(screen.queryByRole('button', { name: zh.retry })).toBeNull()
+    const reads = identityReads
+    retry.focus()
+    act(() => { retry.click(); retry.click() })
+    expect(screen.getByRole('alert')).toBe(notice)
+    expect(screen.getByRole('button', { name: zh.retry })).toBe(retry)
+    expect(retry.disabled).toBe(false)
+    expect(retry.getAttribute('aria-disabled')).toBe('true')
+    expect(document.activeElement).toBe(retry)
+    expect(identityReads).toBe(reads + 1)
+    expect(retry.getAttribute('aria-busy')).toBe('true')
+    expect(retry.classList.contains('product-control-pending')).toBe(true)
+    expect(screen.queryByRole('status', { name: zh.loading })).toBeNull()
     expect(screen.queryByRole('textbox')).toBeNull()
     expect(writes).toHaveLength(0)
     await act(async () => { identity.resolve(undefined); await identity.promise })
@@ -197,19 +219,20 @@ it.each(['markdown', 'url', 'base', 'folder'] as const)('retries the original %s
     writes.push(payload)
     const key = String(payload.operationId)
     if (!committed.has(key)) committed.set(key, { ...payload, id: `created-${committed.size + 1}`, name: payload.name ?? payload.title,
-      updatedAt: '2026-10-17T00:00:00Z', ...(kind === 'markdown' || kind === 'url' ? savedDocumentMetadata : {}) })
+      updatedAt: '2026-10-17T00:00:00Z', ...(kind === 'base' ? savedBaseMetadata : {}),
+      ...(kind === 'markdown' || kind === 'url' ? savedDocumentMetadata : {}) })
     if (writes.length === 1) return { ok: false, failure: productFailure(new ProductError('PRODUCT_NETWORK_UNAVAILABLE', 'Receipt lost', true)) }
     return { ok: true, result: committed.get(key) }
   } } })
-  if (kind === 'base') render(<KnowledgeBaseEditor onClose={vi.fn()} onCreated={saved} t={key => zh[key]} />)
+  if (kind === 'base') render(<KnowledgeBaseEditor onClose={vi.fn()} onSaved={saved} t={key => zh[key]} />)
   else render(<KnowledgeEditor knowledgeBaseId="personal" target={{ kind }} onClose={vi.fn()} onSaved={saved} t={key => zh[key]} />)
   const dialog = within(await screen.findByRole('dialog'))
   const title = dialog.getByRole<HTMLInputElement>('textbox', { name: kind === 'base' ? zh.knowledgeBaseName
-    : kind === 'folder' ? zh.knowledgeFolderName : zh.knowledgeDocumentTitle })
+    : kind === 'folder' ? zh.knowledgeFolderName : kind === 'url' ? zh.knowledgeOptionalTitle : zh.knowledgeDocumentTitle })
   fireEvent.change(title, { target: { value: 'My notes' } })
   if (kind === 'markdown') fireEvent.change(dialog.getByRole('textbox', { name: zh.knowledgeMarkdownContent }), { target: { value: 'Important contents' } })
   if (kind === 'url') fireEvent.change(dialog.getByRole('textbox', { name: zh.knowledgeWebsiteUrl }), { target: { value: 'https://example.com/document' } })
-  const button = dialog.getByRole<HTMLButtonElement>('button', { name: kind === 'base' ? zh.knowledgeCreate : zh.knowledgeSave })
+  const button = dialog.getByRole<HTMLButtonElement>('button', { name: kind === 'base' ? zh.knowledgeCreate : kind === 'url' ? zh.knowledgeStartImport : zh.knowledgeSave })
   await vi.waitFor(() => { expect(button.disabled).toBe(false) })
   fireEvent.click(button)
   await dialog.findByRole('alert')
@@ -232,7 +255,7 @@ it('retains the request and draft while an external create outcome remains unkno
     return { ok: false, failure: productFailure(new ProductError('IDEMPOTENCY_OPERATION_UNKNOWN', 'Outcome unknown')) }
   } } })
   const saved = vi.fn()
-  render(<KnowledgeBaseEditor onClose={vi.fn()} onCreated={saved} t={key => zh[key]} />)
+  render(<KnowledgeBaseEditor onClose={vi.fn()} onSaved={saved} t={key => zh[key]} />)
   const title = screen.getByRole<HTMLInputElement>('textbox', { name: zh.knowledgeBaseName })
   fireEvent.change(title, { target: { value: 'My library' } })
   fireEvent.click(screen.getByRole('button', { name: zh.knowledgeCreate }))
@@ -251,7 +274,7 @@ it('allows changes and a new request after an authoritative rejection', async ()
     writes.push(payload)
     return { ok: false, failure: productFailure(new ProductError('KNOWLEDGE_MANAGEMENT_FORBIDDEN', 'Not permitted')) }
   } } })
-  render(<KnowledgeBaseEditor onClose={vi.fn()} onCreated={vi.fn()} t={key => zh[key]} />)
+  render(<KnowledgeBaseEditor onClose={vi.fn()} onSaved={vi.fn()} t={key => zh[key]} />)
   const title = screen.getByRole<HTMLInputElement>('textbox', { name: zh.knowledgeBaseName })
   fireEvent.change(title, { target: { value: 'First name' } })
   fireEvent.click(screen.getByRole('button', { name: zh.knowledgeCreate }))
@@ -268,11 +291,12 @@ it.each(['markdown', 'url', 'base', 'folder'] as const)('protects the %s draft t
   vi.stubGlobal('dshDesktop', { extensions: { cancel: vi.fn(), invoke: async () => ({ ok: true,
     result: { items: [], page: 1, size: 20, total: 0 } }) } })
   const closed = vi.fn()
-  if (kind === 'base') render(<KnowledgeBaseEditor onClose={closed} onCreated={vi.fn()} t={key => zh[key]} />)
+  if (kind === 'base') render(<KnowledgeBaseEditor onClose={closed} onSaved={vi.fn()} t={key => zh[key]} />)
   else render(<KnowledgeEditor knowledgeBaseId="personal" target={{ kind }} onClose={closed} onSaved={vi.fn()} t={key => zh[key]} />)
   const dialog = within(await screen.findByRole('dialog'))
-  const label = kind === 'base' ? zh.knowledgeBaseName : kind === 'folder' ? zh.knowledgeFolderName : zh.knowledgeDocumentTitle
-  fireEvent.change(dialog.getByRole('textbox', { name: label }), { target: { value: 'Retained draft' } })
+  const label = kind === 'base' ? zh.knowledgeBaseName : kind === 'folder' ? zh.knowledgeFolderName : kind === 'url' ? zh.knowledgeOptionalTitle : zh.knowledgeDocumentTitle
+  const field = dialog.getByRole<HTMLInputElement>('textbox', { name: label })
+  fireEvent.change(field, { target: { value: 'Retained draft' } })
   const unload = new Event('beforeunload', { cancelable: true })
   window.dispatchEvent(unload)
   expect(unload.defaultPrevented).toBe(true)
@@ -282,12 +306,22 @@ it.each(['markdown', 'url', 'base', 'folder'] as const)('protects the %s draft t
     () => { fireEvent.click(screen.getByRole('dialog').previousElementSibling!) },
     () => { fireEvent.click(dialog.getByRole('button', { name: zh.cancel })) },
   ]) {
+    field.focus()
+    field.setSelectionRange(2, 7)
     dismiss()
     expect(closed).not.toHaveBeenCalled()
     await dialog.findByText(zh.knowledgeDiscardDraftConfirmation)
-    fireEvent.click(dialog.getByRole('button', { name: zh.knowledgeKeepEditing }))
-    expect(dialog.getByRole<HTMLInputElement>('textbox', { name: label }).value).toBe('Retained draft')
+    const keep = dialog.getByRole('button', { name: zh.knowledgeKeepEditing })
+    expect(document.activeElement).toBe(keep)
+    expect(dialog.queryByRole('textbox', { name: label })).toBeNull()
+    expect(field.isConnected).toBe(true)
+    fireEvent.click(keep)
+    expect(dialog.getByRole('textbox', { name: label })).toBe(field)
+    expect(field.value).toBe('Retained draft')
+    expect(document.activeElement).toBe(field)
+    expect([field.selectionStart, field.selectionEnd]).toEqual([2, 7])
   }
+  expect({ field: label, focused: document.activeElement === field, selection: [field.selectionStart, field.selectionEnd] }).toMatchSnapshot('Retained knowledge edit')
   fireEvent.click(dialog.getByRole('button', { name: zh.close }))
   fireEvent.click(dialog.getByRole('button', { name: zh.knowledgeDiscardDraft }))
   expect(closed).toHaveBeenCalledOnce()
@@ -318,35 +352,46 @@ it.each(['markdown', 'url', 'base', 'folder'] as const)('suspends and restores t
     return writes.length === 1
       ? { ok: false, failure: productFailure(new ProductError('IDEMPOTENCY_OPERATION_UNKNOWN', 'Unknown external outcome')) }
       : { ok: true, result: { ...payload, id: 'created', name: payload.name ?? payload.title, updatedAt: '2026-10-17T00:00:00Z',
+        ...(kind === 'base' ? savedBaseMetadata : {}),
         ...(kind === 'markdown' || kind === 'url' ? savedDocumentMetadata : {}) } }
   } } })
   const closed = vi.fn()
   const saved = vi.fn()
-  if (kind === 'base') render(<KnowledgeBaseEditor onClose={closed} onCreated={saved} t={key => zh[key]} />)
+  if (kind === 'base') render(<KnowledgeBaseEditor onClose={closed} onSaved={saved} t={key => zh[key]} />)
   else render(<KnowledgeEditor knowledgeBaseId="personal" target={{ kind }} onClose={closed} onSaved={saved} t={key => zh[key]} />)
   const dialog = within(await screen.findByRole('dialog'))
   fireEvent.change(dialog.getByRole('textbox', { name: kind === 'base' ? zh.knowledgeBaseName
-    : kind === 'folder' ? zh.knowledgeFolderName : zh.knowledgeDocumentTitle }), { target: { value: 'Draft' } })
+    : kind === 'folder' ? zh.knowledgeFolderName : kind === 'url' ? zh.knowledgeOptionalTitle : zh.knowledgeDocumentTitle }), { target: { value: 'Draft' } })
   if (kind === 'markdown') fireEvent.change(dialog.getByRole('textbox', { name: zh.knowledgeMarkdownContent }), { target: { value: 'Contents' } })
   if (kind === 'url') fireEvent.change(dialog.getByRole('textbox', { name: zh.knowledgeWebsiteUrl }), { target: { value: 'https://example.com' } })
-  const save = dialog.getByRole<HTMLButtonElement>('button', { name: kind === 'base' ? zh.knowledgeCreate : zh.knowledgeSave })
+  const save = dialog.getByRole<HTMLButtonElement>('button', { name: kind === 'base' ? zh.knowledgeCreate : kind === 'url' ? zh.knowledgeStartImport : zh.knowledgeSave })
   await vi.waitFor(() => { expect(save.disabled).toBe(false) })
   fireEvent.click(save)
   fireEvent.click(dialog.getByRole('button', { name: zh.close }))
   fireEvent.keyDown(document, { key: 'Escape' })
   expect(closed).not.toHaveBeenCalled()
-  expect(dialog.getByRole<HTMLButtonElement>('button', { name: zh.cancel }).disabled).toBe(true)
+  const cancel = dialog.getByRole<HTMLButtonElement>('button', { name: zh.cancel })
+  expect(cancel.disabled).toBe(false)
+  expect(cancel.getAttribute('aria-disabled')).toBe('true')
+  expect(cancel.getAttribute('aria-busy')).toBe('false')
+  expect(cancel.classList.contains('product-control-pending')).toBe(true)
+  expect(save.disabled).toBe(false)
+  expect(save.getAttribute('aria-disabled')).toBe('true')
+  fireEvent.click(save)
+  expect(writes).toHaveLength(1)
+  expect(save.getAttribute('aria-busy')).toBe('true')
+  expect(save.classList.contains('product-control-pending')).toBe(true)
   finish?.()
   await dialog.findByRole('alert')
   fireEvent.click(dialog.getByRole('button', { name: zh.knowledgeSuspendSave }))
   await vi.waitFor(() => { expect(closed).toHaveBeenCalledOnce() })
   cleanup()
-  if (kind === 'base') render(<KnowledgeBaseEditor onClose={closed} onCreated={saved} t={key => zh[key]} />)
+  if (kind === 'base') render(<KnowledgeBaseEditor onClose={closed} onSaved={saved} t={key => zh[key]} />)
   else render(<KnowledgeEditor knowledgeBaseId="personal" target={{ kind }} onClose={closed} onSaved={saved} t={key => zh[key]} />)
   await screen.findByDisplayValue('Draft')
   const restored = within(screen.getByRole('dialog'))
   expect(restored.getByRole<HTMLInputElement>('textbox', { name: kind === 'base' ? zh.knowledgeBaseName
-    : kind === 'folder' ? zh.knowledgeFolderName : zh.knowledgeDocumentTitle }).disabled).toBe(true)
+    : kind === 'folder' ? zh.knowledgeFolderName : kind === 'url' ? zh.knowledgeOptionalTitle : zh.knowledgeDocumentTitle }).disabled).toBe(true)
   fireEvent.click(restored.getByRole('button', { name: zh.knowledgeRetrySave }))
   await vi.waitFor(() => { expect(saved).toHaveBeenCalledOnce() })
   expect(writes[1]).toEqual(writes[0])
@@ -360,20 +405,20 @@ it('keeps suspended saves private to their employee and blocks writes if a store
     return { ok: false, failure: productFailure(new ProductError('IDEMPOTENCY_OPERATION_UNKNOWN', 'Unknown')) }
   } } })
   const close = vi.fn()
-  render(<KnowledgeBaseEditor onClose={close} onCreated={vi.fn()} t={key => zh[key]} />)
-  fireEvent.change(screen.getByRole('textbox'), { target: { value: 'Private draft' } })
+  render(<KnowledgeBaseEditor onClose={close} onSaved={vi.fn()} t={key => zh[key]} />)
+  fireEvent.change(screen.getByRole('textbox', { name: zh.knowledgeBaseName }), { target: { value: 'Private draft' } })
   fireEvent.click(screen.getByRole('button', { name: zh.knowledgeCreate }))
   await screen.findByRole('alert')
   fireEvent.click(screen.getByRole('button', { name: zh.knowledgeSuspendSave }))
   await vi.waitFor(() => { expect(close).toHaveBeenCalledOnce() })
   cleanup()
   employeeId = 'two'
-  render(<KnowledgeBaseEditor onClose={close} onCreated={vi.fn()} t={key => zh[key]} />)
-  expect((await screen.findByRole<HTMLInputElement>('textbox')).value).toBe('')
+  render(<KnowledgeBaseEditor onClose={close} onSaved={vi.fn()} t={key => zh[key]} />)
+  expect((await screen.findByRole<HTMLInputElement>('textbox', { name: zh.knowledgeBaseName })).value).toBe('')
   cleanup()
   employeeId = 'one'
   sessionStorage.setItem(sessionStorage.key(0)!, '{broken')
-  render(<KnowledgeBaseEditor onClose={close} onCreated={vi.fn()} t={key => zh[key]} />)
+  render(<KnowledgeBaseEditor onClose={close} onSaved={vi.fn()} t={key => zh[key]} />)
   await screen.findByText(zh.knowledgeRecoveryFailed)
   expect(screen.queryByRole('textbox')).toBeNull()
   expect(sessionStorage.length).toBe(1)
@@ -387,8 +432,8 @@ it('retains the editor and original operation when local suspension storage fail
     writes.push(payload)
     return { ok: false, failure: productFailure(new ProductError('IDEMPOTENCY_OPERATION_UNKNOWN', 'Unknown')) }
   } } })
-  render(<KnowledgeBaseEditor onClose={closed} onCreated={vi.fn()} t={key => zh[key]} />)
-  fireEvent.change(screen.getByRole('textbox'), { target: { value: 'Retained library' } })
+  render(<KnowledgeBaseEditor onClose={closed} onSaved={vi.fn()} t={key => zh[key]} />)
+  fireEvent.change(screen.getByRole('textbox', { name: zh.knowledgeBaseName }), { target: { value: 'Retained library' } })
   fireEvent.click(screen.getByRole('button', { name: zh.knowledgeCreate }))
   await screen.findByRole('alert')
   const unload = new Event('beforeunload', { cancelable: true })

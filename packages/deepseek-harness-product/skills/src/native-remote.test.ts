@@ -26,11 +26,12 @@ import { createServer } from 'node:http'
 import { setImmediate as checkpoint } from 'node:timers/promises'
 import { expect, it, onTestFinished, vi } from 'vitest'
 import { z } from 'zod'
-import { zipSync, strToU8 } from 'fflate'
+import { Zip, ZipPassThrough, zipSync, strToU8 } from 'fflate'
 import * as Managed from './index.ts'
 import * as Core from './core.ts'
 import { parseSkillDoc } from './skill-document.ts'
 import { createRepositoryManager } from './repositories.ts'
+import { en, zh } from './client-locales.ts'
 
 const user = vi.hoisted(() => ({ root: '' }))
 vi.mock('node:os', async original => ({ ...await original<typeof import('node:os')>(), homedir: () => user.root }))
@@ -57,6 +58,50 @@ async function boot() {
   const invoke = (method: string, args: Record<string, unknown>, signal?: AbortSignal) => ctx.typertGateway.invoke({ namespace: 'skillsManager', method, args, peer, signal })
   return { ctx, root, invoke }
 }
+
+it.each(['validation', 'copy'] as const)('retains every failed import through native Remote after %s failure and permits repair', async (phase) => {
+  const { root, invoke } = await boot()
+  const names = phase === 'validation' ? ['Repeated Skill', 'repeated-skill'] : ['copy-skill']
+  const entries = names.map(name => ({ path: `${name}/SKILL.md`, data: Buffer.from('---\nname: repeated-skill\ndescription: Import report\n---\nRead only.').toString('base64') }))
+  const copy = vi.spyOn(fs, 'cp')
+  onTestFinished(() => { copy.mockRestore() })
+  if (phase === 'copy') copy.mockRejectedValueOnce(Object.assign(new Error('Copy denied'), { code: 'EACCES' }))
+  const result = await invoke('uploadSkill', { request: { entries } })
+  expect(result).toMatchObject({ imported: [], skipped: [], failed: names.map(() => phase === 'validation'
+    ? { code: 'error.import.duplicateName' } : { error: 'Copy denied' }) })
+  expect(result).not.toHaveProperty('ok', false)
+  expect(await readdir(join(root, '.dsh/skills-manager/uploads'))).toEqual([])
+  const repaired = await invoke('uploadSkill', { request: { entries: [entries[0]] } })
+  expect(repaired).toMatchObject({ imported: [{ name: phase === 'validation' ? 'repeated-skill' : 'copy-skill' }], failed: [] })
+})
+
+it('assigns predefined categories atomically to imported skills and preserves company read-only access', async () => {
+  const { ctx, root: home, invoke } = await boot()
+  const skill = join(home, '.dsh/skills/finance-skill')
+  await mkdir(skill, { recursive: true })
+  await writeFile(join(skill, 'SKILL.md'), '---\nname: finance-skill\ndescription: Check finance\nmetadata:\n  category: 自定义分类\n---\nRead totals.')
+  const signal = new AbortController().signal
+  const initial = (await ctx.skillsManager.readState({}, false, signal)).roots.find(root => root.key === 'dsh')
+  if (!initial) throw new Error('Personal skill source is missing')
+  expect(initial.categories[0].name).toBe('自定义分类')
+  const target = { root: 'dsh', name: 'finance-skill', categoryId: 'finance' }
+  const first = await invoke('assignCategory', { target })
+  expect(await invoke('assignCategory', { target })).toEqual(first)
+  const root = (await ctx.skillsManager.readState({}, false, signal)).roots.find(root => root.key === 'dsh')
+  if (!root) throw new Error('Personal skill source is missing')
+  expect(root.categories).toHaveLength(2)
+  expect(new Set(root.categories.map(category => category.id)).size).toBe(2)
+  const assigned = root.categories.find(category => category.id === root.skills[0].categoryId)
+  expect(assigned?.name).toBe('财务与对账')
+  const exported = await ctx.skillsManager.exportSkill({ root: 'dsh', name: 'finance-skill' }, signal)
+  expect(parseSkillDoc(Buffer.from(exported.files['skills/finance-skill/SKILL.md'], 'base64').toString())).toMatchObject({ data: { metadata: { category: '财务与对账' } } })
+  for (const categoryId of ['shared', '', 'finance\n', 'bad\u0000category', 'bad\u007fcategory'])
+    await expect(invoke('assignCategory', { target: { ...target, categoryId } })).rejects.toMatchObject({ details: { code: 'error.category.preset' } })
+  expect((await ctx.skillsManager.readState({}, false, signal)).roots.find(root => root.key === 'dsh')).toEqual(root)
+  await expect(ctx.skillsManager.assignCategory({ ...target, root: 'company' }, signal)).rejects.toMatchObject({ code: 'skills/operation' })
+  await expect(ctx.skillsManager.assignCategory({ ...target, name: 'missing' }, signal)).rejects.toMatchObject({ code: 'skills/operation' })
+})
+
 it('retains categories through creation, local edits, publication and company discovery without changing native skill instructions', async () => {
   const { ctx, root, invoke } = await boot()
   const company = join(root, 'company')
@@ -76,39 +121,27 @@ it('retains categories through creation, local edits, publication and company di
   expect(category.name).toBe('企业协作')
   expect(initial.skills[0]?.categoryId).toBe(category.id)
   expect((await ctx.skills.get('categorized-writing'))?.content).toBe('Keep {{literal}} unchanged.')
-  await invoke('renameCategory', { target: { root: 'dsh', id: category.id, name: '文档办公' } })
+  await invoke('assignCategory', { target: { root: 'dsh', name: 'categorized-writing', categoryId: 'analytics' } })
   const published = await ctx.skillsManager.exportSkill({ root: 'dsh', name: 'categorized-writing' }, signal)
   const exported = Buffer.from(published.files['skills/categorized-writing/SKILL.md'], 'base64').toString()
-  expect(parseSkillDoc(exported)).toMatchObject({ data: { metadata: { category: '文档办公' } }, body: '\nKeep {{literal}} unchanged.\n' })
+  expect(parseSkillDoc(exported)).toMatchObject({ data: { metadata: { category: '数据与经营分析' } }, body: '\nKeep {{literal}} unchanged.\n' })
   expect(await readFile(file, 'utf8')).toBe(original)
   await mkdir(join(company, 'categorized-writing'), { recursive: true })
   await writeFile(join(company, 'categorized-writing/SKILL.md'), exported)
   const shared = (await ctx.skillsManager.readState({}, false, signal)).roots.find(item => item.key === 'company')
   if (!shared) throw new Error('Company skill source is missing')
-  expect(shared.categories[0]?.name).toBe('文档办公')
+  expect(shared.categories[0]?.name).toBe('数据与经营分析')
   expect(shared.skills[0]?.categoryId).toBe(shared.categories[0]?.id)
-  await expect(ctx.skillsManager.assignCategory({ root: 'company', name: 'categorized-writing', category: '' }, signal)).rejects.toMatchObject({ code: 'skills/operation' })
-  await invoke('assignCategory', { target: { root: 'dsh', name: 'categorized-writing', category: '' } })
-  expect((await personal()).skills[0]?.categoryId).toBeNull()
-  const unclassified = await ctx.skillsManager.exportSkill({ root: 'dsh', name: 'categorized-writing' }, signal)
-  expect(parseSkillDoc(Buffer.from(unclassified.files['skills/categorized-writing/SKILL.md'], 'base64').toString()).data).not.toHaveProperty('metadata.category')
-  await invoke('assignCategory', { target: { root: 'dsh', name: 'categorized-writing', category: category.id } })
-  await invoke('deleteCategory', { target: { root: 'dsh', id: category.id } })
-  expect(await personal()).toMatchObject({ categories: [], skills: [{ categoryId: null }] })
-  await expect(invoke('createSkill', { request: { name: 'invalid-category', description: 'No', body: 'No', category: 'x'.repeat(25) } })).rejects.toMatchObject({ details: { code: 'error.category.name' } })
+  await expect(ctx.skillsManager.assignCategory({ root: 'company', name: 'categorized-writing', categoryId: 'specialized' }, signal)).rejects.toMatchObject({ code: 'skills/operation' })
+  await invoke('assignCategory', { target: { root: 'dsh', name: 'categorized-writing', categoryId: 'specialized' } })
+  const other = await personal()
+  expect(other.categories.find(item => item.id === other.skills[0]?.categoryId)?.name).toBe('其他')
+  const otherCategory = await ctx.skillsManager.exportSkill({ root: 'dsh', name: 'categorized-writing' }, signal)
+  expect(parseSkillDoc(Buffer.from(otherCategory.files['skills/categorized-writing/SKILL.md'], 'base64').toString()).data).toMatchObject({ metadata: { category: '其他' } })
+  for (const category of [undefined, '', '自定义分类', 'finance', '企业协作\n', 'x'.repeat(25)])
+    await expect(invoke('createSkill', { request: { name: 'invalid-category', description: 'No', body: 'No', ...(category === undefined ? {} : { category }) } })).rejects.toMatchObject({ details: { code: 'error.category.preset' } })
   await expect(readFile(join(root, '.dsh/skills/invalid-category/SKILL.md'))).rejects.toMatchObject({ code: 'ENOENT' })
 }, 30000)
-it('rejects control characters in category creation and renaming without changing saved categories', async () => {
-  const { ctx, invoke } = await boot()
-  const signal = new AbortController().signal
-  const saved = await ctx.skillsManager.createCategory({ root: 'dsh', name: '研发开发' }, signal)
-  for (const name of ['研\n发', '研\u0000发', '研\u007f发']) {
-    await expect(invoke('createCategory', { target: { root: 'dsh', name } })).rejects.toMatchObject({ details: { code: 'error.category.name' } })
-    await expect(invoke('renameCategory', { target: { root: 'dsh', id: saved.category.id, name } })).rejects.toMatchObject({ details: { code: 'error.category.name' } })
-  }
-  const personal = (await ctx.skillsManager.readState({}, false, signal)).roots.find(item => item.key === 'dsh')
-  expect(personal?.categories).toEqual([saved.category])
-})
 it('reads project skills from the native current directory, including replay, without leaking another Session', async () => {
   const { ctx, root, invoke } = await boot()
   const original = join(root, 'original'), current = join(root, 'current')
@@ -159,7 +192,7 @@ it.each(['listWorkspaces', 'readWorkspace'] as const)('reports a failed native w
   await expect(invoke(method, method === 'readWorkspace' ? { workspace: root } : {})).rejects.toMatchObject({
     code: 'skills/operation', details: { code: 'error.workspace.registryUnavailable' }, cause: failure,
   })
-  expect(await invoke('createSkill', { request: { name: 'independent-orders', description: 'Local', body: 'Local body' } })).toMatchObject({ name: 'independent-orders' })
+  expect(await invoke('createSkill', { request: { name: 'independent-orders', description: 'Local', category: '企业协作', body: 'Local body' } })).toMatchObject({ name: 'independent-orders' })
   expect(await readFile(join(root, '.dsh/skills/independent-orders/SKILL.md'), 'utf8')).toContain('Local body')
 }, 30000)
 
@@ -170,7 +203,7 @@ it('detects a user-root alias before a missing project skill directory is create
   await symlink(project, alias, process.platform === 'win32' ? 'junction' : 'dir')
   vi.stubEnv('DSH_CODEX_HOME', join(alias, '.dsh'))
   ctx.provide('workspaceRegistry', { list: () => [{ path: project }] })
-  const request = { name: 'project-orders', description: 'Orders', body: 'Review orders.', workspace: project }
+  const request = { name: 'project-orders', description: 'Orders', category: '企业协作', body: 'Review orders.', workspace: project }
   await expect(invoke('createSkill', { request })).rejects.toMatchObject({
     code: 'skills/operation', details: { code: 'error.root.unsafe' },
   })
@@ -205,7 +238,7 @@ it('hides unverifiable project skills and blocks writes until the configured sou
       ],
     }
   `)
-  const request = { name: 'new-orders', description: 'Orders', body: 'New orders.', workspace: project }
+  const request = { name: 'new-orders', description: 'Orders', category: '企业协作', body: 'New orders.', workspace: project }
   await expect(invoke('createSkill', { request })).rejects.toMatchObject({
     code: 'skills/operation', details: { code: 'error.root.unsafe' },
   })
@@ -225,7 +258,7 @@ it('preserves creation, policy, upload, export and trash through native dispatch
   ctx.on('skills/change', changes)
   ctx.on('agent-preset/selected', presetChanges)
   ctx.on('commands/change', commandChanges)
-  const created = await invoke('createSkill', { request: { name: 'audit-orders', description: 'Audit orders', body: 'Review orders.' } })
+  const created = await invoke('createSkill', { request: { name: 'audit-orders', description: 'Audit orders', category: '企业协作', body: 'Review orders.' } })
   expect(created).toMatchObject({ name: 'audit-orders', root: 'dsh' })
   expect(changes).toHaveBeenCalled()
   expect(presetChanges).not.toHaveBeenCalled()
@@ -244,38 +277,70 @@ it('preserves creation, policy, upload, export and trash through native dispatch
   expect(await readFile(join(root, '.dsh/skills/upload-orders/SKILL.md'), 'utf8')).toContain('Uploaded body')
   const again = z.object({ id: z.string() }).parse(await invoke('trashSkill', { target: { root: 'dsh', name: 'upload-orders' } }))
   await invoke('deleteTrash', { id: again.id })
-  await expect(invoke('createSkill', { request: { name: 'outside-orders', description: 'No', body: 'No', workspace: root } })).rejects.toMatchObject({ code: 'skills/operation', details: { code: 'error.workspace.unregistered' } })
+  await expect(invoke('createSkill', { request: { name: 'outside-orders', description: 'No', category: '企业协作', body: 'No', workspace: root } })).rejects.toMatchObject({ code: 'skills/operation', details: { code: 'error.workspace.unregistered' } })
   await expect(invoke('setSkillEnabled', { target: { root: 'dsh', name: 'audit-orders' }, enabled: 'yes' })).rejects.toMatchObject({ code: 'gateway/input-invalid' })
   const snapshot = z.object({ summary: z.object({ total: z.number(), disabled: z.number() }), trash: z.array(z.unknown()) }).parse(await invoke('readState', { scope: {}, refreshCompany: false }))
   expect({ summary: snapshot.summary, trashCount: snapshot.trash.length }).toMatchSnapshot()
   const guest = new Peer(ctx, { principal: { kind: 'skills-test-guest' } })
   ctx.remoteAccess.registerPolicy('skills-test-guest', { bindings: () => [{ resource: { kind: 'global' }, role: { name: 'test-wide', resource: 'global', actions: ['skillsManager/createSkill'] } }] })
-  await expect(ctx.typertGateway.invoke({ namespace: 'skillsManager', method: 'createSkill', args: { request: { name: 'guest-orders', description: 'No', body: 'No' } }, peer: guest })).rejects.toMatchObject({ code: 'skills/operation', details: { code: 'error.proto.forbidden' } })
+  await expect(ctx.typertGateway.invoke({ namespace: 'skillsManager', method: 'createSkill', args: { request: { name: 'guest-orders', description: 'No', category: '企业协作', body: 'No' } }, peer: guest })).rejects.toMatchObject({ code: 'skills/operation', details: { code: 'error.proto.forbidden' } })
 }, 30000)
+
+it.each(['grow', 'shrink'] as const)('rejects a skill resource that changes size during export: %s', async (change) => {
+  const { root, invoke } = await boot()
+  const name = 'changing-export'
+  await invoke('createSkill', { request: { name, description: 'Changing resource', category: '企业协作', body: 'Read references on demand.' } })
+  const resource = join(root, '.dsh/skills', name, 'template.bin')
+  const original = Buffer.from([0, 1, 127, 128, 255])
+  await writeFile(resource, original)
+  const open = fs.open
+  const opened: Awaited<ReturnType<typeof open>>[] = []
+  const probe = vi.spyOn(fs, 'open').mockImplementation(async (...args) => {
+    const handle = await open(...args)
+    if (args[0] !== resource) return handle
+    opened.push(handle)
+    const stat = handle.stat.bind(handle)
+    vi.spyOn(handle, 'stat').mockImplementationOnce(async () => {
+      const info = await stat()
+      await writeFile(resource, change === 'grow' ? Buffer.alloc(1024 * 1024) : original.subarray(0, 1))
+      return info
+    })
+    return handle
+  })
+  onTestFinished(() => { probe.mockRestore() })
+  const outcome = await invoke('exportSkill', { target: { root: 'dsh', name } })
+    .then(() => ({ exported: true }), (error: unknown) => ({ error }))
+  expect(outcome).toMatchObject({ error: { code: 'skills/operation', details: { code: 'error.contentFile.changed' } } })
+  expect({ en: en['error.contentFile.changed'], zh: zh['error.contentFile.changed'] }).toMatchSnapshot()
+  expect(opened).toHaveLength(1)
+  expect(opened[0].fd).toBe(-1)
+  probe.mockRestore()
+  await writeFile(resource, original)
+  const result = await invoke('exportSkill', { target: { root: 'dsh', name } })
+  expect(result).toMatchObject({ files: { [`skills/${name}/template.bin`]: original.toString('base64') } })
+})
 
 it.each(['caller', 'unload'] as const)('stops exporting skill resources after %s cancellation and closes the active file', async (source) => {
   const { ctx, root, invoke } = await boot()
   const name = 'cancelled-export'
-  await invoke('createSkill', { request: { name, description: 'Export cancellation', body: 'Keep this personal skill.' } })
+  await invoke('createSkill', { request: { name, description: 'Export cancellation', category: '企业协作', body: 'Keep this personal skill.' } })
   const directory = join(root, '.dsh/skills', name)
   await writeFile(join(directory, 'first.txt'), 'First resource')
   await writeFile(join(directory, 'second.txt'), 'Second resource')
   const started = Promise.withResolvers<undefined>(), release = Promise.withResolvers<undefined>()
   const open = fs.open
   const opened: Awaited<ReturnType<typeof open>>[] = []
-  let readingSignal: AbortSignal | undefined
   const probe = vi.spyOn(fs, 'open').mockImplementation(async (...args) => {
     const handle = await open(...args)
     if (typeof args[0] !== 'string' || !args[0].startsWith(directory)) return handle
     opened.push(handle)
     if (opened.length === 1) {
-      const read = handle.readFile.bind(handle)
-      vi.spyOn(handle, 'readFile').mockImplementation(async (...options) => {
-        const input = options[0]
-        readingSignal = typeof input === 'object' && input !== null ? input.signal : undefined
+      const stat = handle.stat.bind(handle)
+      vi.spyOn(handle, 'stat').mockImplementationOnce(async () => {
+        const info = await stat()
         started.resolve(undefined)
         await release.promise
-        return read(...options)
+        return info
       })
     }
     return handle
@@ -292,14 +357,13 @@ it.each(['caller', 'unload'] as const)('stops exporting skill resources after %s
     else {
       if (!manager?.fiber) throw new Error('Skills manager is not mounted')
       disposal = manager.fiber.dispose()
-      await vi.waitFor(() => { expect(readingSignal?.aborted).toBe(true) })
+      await checkpoint()
     }
     release.resolve(undefined)
     expect(await outcome).toMatchObject({ error: { code: 'gateway/cancelled' } })
     await disposal
     expect(opened).toHaveLength(1)
     expect(opened[0].fd).toBe(-1)
-    expect(readingSignal?.aborted).toBe(true)
     expect(await readFile(join(directory, 'SKILL.md'), 'utf8')).toContain('Keep this personal skill.')
   } finally {
     release.resolve(undefined)
@@ -325,7 +389,7 @@ it('invalidates the native catalog after a committed skill write even when the c
   })
   onTestFinished(() => { probe.mockRestore() })
   try {
-    await expect(invoke('createSkill', { request: { name, description: 'Committed orders', body: 'Review committed orders.' } }, controller.signal))
+    await expect(invoke('createSkill', { request: { name, description: 'Committed orders', category: '企业协作', body: 'Review committed orders.' } }, controller.signal))
       .rejects.toMatchObject({ code: 'gateway/cancelled' })
   } finally {
     probe.mockRestore()
@@ -338,7 +402,7 @@ it('invalidates the native catalog after a committed skill write even when the c
 it.each(['upload', 'stage', 'unload-stage'] as const)('cancels skill import during %s without replacing the existing skill', async (phase) => {
   const { ctx, root, invoke } = await boot()
   const name = 'cancelled-import', target = join(root, '.dsh/skills', name)
-  await invoke('createSkill', { request: { name, description: 'Original', body: 'Original body' } })
+  await invoke('createSkill', { request: { name, description: 'Original', category: '企业协作', body: 'Original body' } })
   await writeFile(join(target, 'original.txt'), 'Original resource')
   const started = Promise.withResolvers<undefined>(), release = Promise.withResolvers<undefined>()
   const mkdir = fs.mkdir, copy = fs.cp
@@ -375,7 +439,7 @@ it.each(['upload', 'stage', 'unload-stage'] as const)('cancels skill import duri
       disposal = manager.fiber.dispose()
     } else {
       controller.abort(new Error('Import view closed before commit'))
-      queued = invoke('createSkill', { request: { name: 'after-cancel', description: 'Queued', body: 'Queued body' } })
+      queued = invoke('createSkill', { request: { name: 'after-cancel', description: 'Queued', category: '企业协作', body: 'Queued body' } })
       await expect(lstat(join(root, '.dsh/skills/after-cancel'))).rejects.toMatchObject({ code: 'ENOENT' })
     }
     release.resolve(undefined)
@@ -395,7 +459,7 @@ it.each(['upload', 'stage', 'unload-stage'] as const)('cancels skill import duri
 it.each(['backup', 'target'] as const)('finishes the complete import replacement after cancellation at %s rename', async (phase) => {
   const { ctx, root, invoke } = await boot()
   const name = 'committed-import', target = join(root, '.dsh/skills', name)
-  await invoke('createSkill', { request: { name, description: 'Original', body: 'Original body' } })
+  await invoke('createSkill', { request: { name, description: 'Original', category: '企业协作', body: 'Original body' } })
   await writeFile(join(target, 'original.txt'), 'Original resource')
   expect((await ctx.skills.get(name))?.content).toBe('Original body')
   const started = Promise.withResolvers<undefined>(), release = Promise.withResolvers<undefined>()
@@ -417,7 +481,7 @@ it.each(['backup', 'target'] as const)('finishes the complete import replacement
   let queued: Promise<unknown> | undefined
   try {
     await started.promise
-    queued = invoke('createSkill', { request: { name, description: 'Queued', body: 'Queued body' } })
+    queued = invoke('createSkill', { request: { name, description: 'Queued', category: '企业协作', body: 'Queued body' } })
       .then(value => ({ value }), (error: unknown) => ({ error }))
     release.resolve(undefined)
     expect(await outcome).toMatchObject({ error: { code: 'gateway/cancelled' } })
@@ -456,6 +520,111 @@ it('keeps committed skills and refreshes the native catalog while cancelling lat
     expect(await readdir(join(root, '.dsh/skills-manager/uploads'))).toEqual([])
   } finally { probe.mockRestore() }
 }, 30000)
+
+it('rejects duplicate ZIP entries before an archive reader can overwrite a skill resource', async () => {
+  const { ctx, root, invoke } = await boot()
+  const bytes = zipSync({
+    'SKILL.md': strToU8('---\nname: duplicate-orders\ndescription: Check orders\n---\nRead references/one.md.'),
+    'references/one.md': strToU8('First instructions.'),
+    'references/two.md': strToU8('Conflicting instructions.'),
+  }, { level: 0 })
+  const archive = Buffer.from(Buffer.from(bytes).toString('latin1').replaceAll('references/two.md', 'references/one.md'), 'latin1')
+  const changed = vi.fn()
+  ctx.on('skills/change', changed)
+  await expect(invoke('uploadSkill', { request: { zip: archive.toString('base64') } }))
+    .rejects.toMatchObject({ code: 'skills/operation', details: { code: 'error.upload.duplicate', params: { path: 'references/one.md' } } })
+  await expect(lstat(join(root, '.dsh/skills/duplicate-orders'))).rejects.toMatchObject({ code: 'ENOENT' })
+  expect(await readdir(join(root, '.dsh/skills-manager/uploads'))).toEqual([])
+  expect(await ctx.skills.get('duplicate-orders')).toBeUndefined()
+  expect(changed).not.toHaveBeenCalled()
+})
+
+it.each([false, true])('rejects incomplete ZIP extraction without committing a partial skill (existing: %s)', async (existing) => {
+  const { ctx, root, invoke } = await boot()
+  const name = 'complete-orders', target = join(root, '.dsh/skills', name)
+  if (existing) {
+    await invoke('createSkill', { request: { name, description: 'Original', category: '企业协作', body: 'Original body' } })
+    await writeFile(join(target, 'original.txt'), 'Original resource')
+  }
+  const chunks: Uint8Array[] = []
+  const archive = new Zip((error, chunk) => {
+    if (error) throw error
+    chunks.push(chunk)
+  })
+  for (const [path, text] of [
+    ['SKILL.md', `---\nname: ${name}\ndescription: Replacement\n---\nRead __proto__.`],
+    ['__proto__', 'Required resource.'],
+  ]) {
+    const file = new ZipPassThrough(path)
+    archive.add(file); file.push(strToU8(text), true)
+  }
+  archive.end()
+  const changed = vi.fn()
+  ctx.on('skills/change', changed)
+  await expect(invoke('uploadSkill', { request: { conflict: 'overwrite', zip: Buffer.concat(chunks).toString('base64') } }))
+    .rejects.toMatchObject({ code: 'skills/operation', details: { code: 'error.upload.zipInvalid' } })
+  expect(await readdir(join(root, '.dsh/skills-manager/uploads'))).toEqual([])
+  expect(changed).not.toHaveBeenCalled()
+  if (existing) {
+    expect((await readdir(target)).sort()).toEqual(['SKILL.md', 'original.txt'])
+    expect(await readFile(join(target, 'original.txt'), 'utf8')).toBe('Original resource')
+    expect((await ctx.skills.get(name))?.content).toBe('Original body')
+  } else {
+    await expect(lstat(target)).rejects.toMatchObject({ code: 'ENOENT' })
+    expect(await ctx.skills.get(name)).toBeUndefined()
+  }
+})
+
+it.each(['entries', 'zip'] as const)('rejects conflicting %s directory paths before staging any resource', async (format) => {
+  const { ctx, root, invoke } = await boot()
+  const document = '---\nname: directory-orders\ndescription: Directory resources\n---\nRead the resources.'
+  const changed = vi.fn()
+  ctx.on('skills/change', changed)
+  for (const paths of [
+    ['Assets/first.md', 'assets/second.md'],
+    ['assets/reference', 'assets/reference/note.md'],
+    ['assets/reference/note.md', 'assets/reference'],
+    ['Assets/', 'assets/second.md'],
+  ]) {
+    const entries = [['SKILL.md', document], ...paths.map(path => [path, 'Resource.'])]
+    const request = format === 'zip'
+      ? { zip: Buffer.from(zipSync(Object.fromEntries(entries.map(([path, text]) => [path, strToU8(text)])))).toString('base64') }
+      : { entries: entries.map(([path, text]) => ({ path, data: Buffer.from(text).toString('base64') })) }
+    const write = vi.spyOn(fs, 'writeFile')
+    try {
+      await expect(invoke('uploadSkill', { request }))
+        .rejects.toMatchObject({ code: 'skills/operation', details: { code: 'error.upload.pathConflict' } })
+      expect(write.mock.calls.filter(([path]) => typeof path === 'string' && path.includes('/uploads/'))).toEqual([])
+    } finally { write.mockRestore() }
+    await expect(lstat(join(root, '.dsh/skills/directory-orders'))).rejects.toMatchObject({ code: 'ENOENT' })
+    expect(await readdir(join(root, '.dsh/skills-manager/uploads'))).toEqual([])
+  }
+  expect(changed).not.toHaveBeenCalled()
+})
+
+it.each(['entries', 'zip'] as const)('preserves complete %s resources with explicit directories and ordinary object property names', async (format) => {
+  const { ctx, root, invoke } = await boot()
+  const document = '---\nname: intact-orders\ndescription: Complete resources\n---\nRead references/中文资料.md.'
+  const entries = [
+    { path: 'SKILL.md', bytes: strToU8(document) },
+    { path: 'references/中文资料.md', bytes: strToU8('保留 {{literal}}。') },
+    { path: 'references/', bytes: new Uint8Array() },
+    { path: 'assets/', bytes: new Uint8Array() },
+    { path: 'assets/__proto__', bytes: new Uint8Array([0, 255, 128]) },
+    { path: 'constructor', bytes: strToU8('Root resource.') },
+    ...(format === 'entries' ? [{ path: '__proto__', bytes: strToU8('Preserved by folder import.') }] : []),
+  ]
+  const request = format === 'zip'
+    ? { zip: Buffer.from(zipSync(Object.fromEntries(entries.map(({ path, bytes }) => [path, bytes])))).toString('base64') }
+    : { entries: entries.map(({ path, bytes }) => ({ path, data: Buffer.from(bytes).toString('base64') })) }
+  await invoke('uploadSkill', { request })
+  const target = join(root, '.dsh/skills/intact-orders')
+  for (const { path, bytes } of entries.filter(entry => !entry.path.endsWith('/'))) {
+    expect(await readFile(join(target, path))).toEqual(Buffer.from(bytes))
+  }
+  expect((await ctx.skills.get('intact-orders'))?.content).toBe('Read references/中文资料.md.')
+  expect(await readdir(join(root, '.dsh/skills-manager/uploads'))).toEqual([])
+})
 
 it.each(['entries', 'zip'] as const)('rejects nonportable %s resource paths without installing a skill, then accepts portable resources', async (format) => {
   const { ctx, root, invoke } = await boot()
@@ -497,7 +666,7 @@ it.each([
   vi.stubGlobal('fetch', fetching)
   onTestFinished(() => { vi.unstubAllGlobals() })
   const document = Buffer.from('---\nname: imported-orders\ndescription: Orders\n---\nImported body').toString('base64')
-  const create = { name: 'imported-orders', description: 'Orders', body: 'Created body' }
+  const create = { name: 'imported-orders', description: 'Orders', category: '企业协作', body: 'Created body' }
   const upload = { entries: [{ path: 'SKILL.md', data: document }] }
   const target = { catalog: 'clawhub', owner: 'orders', slug: 'imported-orders' }
   const args = method === 'createSkill' ? { request: { ...create, ...extra } }
@@ -523,7 +692,7 @@ it.each(['request', 'disposal'] as const)('does not write a skill after %s while
   const read = vi.fn((_signal?: AbortSignal) => reading)
   ctx.provide('companyContent', { read })
   const controller = new AbortController()
-  const pending = ctx.skillsManager.createSkill({ name: 'cancelled-preparation', description: 'No', body: 'No' }, controller.signal)
+  const pending = ctx.skillsManager.createSkill({ name: 'cancelled-preparation', description: 'No', category: '企业协作', body: 'No' }, controller.signal)
   const rejected = expect(pending).rejects.toMatchObject({ code: 'gateway/cancelled' })
   await vi.waitFor(() => { expect(read).toHaveBeenCalledOnce() })
   const manager = [...ctx.loader.entries()].find(entry => entry.options.name === 'cordis:manager')
@@ -544,10 +713,10 @@ it('cancels queued mutations before they write and unmounts the service on dispo
   const gate = new Promise<void>((resolve) => { release = resolve })
   const started = new Promise<void>((resolve) => { entered = resolve })
   ctx.provide('companyContent', { read: async () => { entered(); await gate; return { skillsRoot: join(root, 'company') } } })
-  const first = ctx.skillsManager.createSkill({ name: 'first-orders', description: 'First', body: 'First' }, new AbortController().signal)
+  const first = ctx.skillsManager.createSkill({ name: 'first-orders', description: 'First', category: '企业协作', body: 'First' }, new AbortController().signal)
   await started
   const controller = new AbortController()
-  const second = ctx.skillsManager.createSkill({ name: 'cancelled-orders', description: 'No', body: 'No' }, controller.signal)
+  const second = ctx.skillsManager.createSkill({ name: 'cancelled-orders', description: 'No', category: '企业协作', body: 'No' }, controller.signal)
   const rejected = expect(second).rejects.toMatchObject({ name: 'AbortError' })
   controller.abort()
   release()
@@ -657,10 +826,102 @@ it('retains repository install, confirmed update, rollback and uninstall through
   expect(await invoke('listRepositories', {})).toMatchObject({ repositories: [] })
 }, 30000)
 
+it('reports a changed repository resource through native Remote and allows a fresh preview after repair', async () => {
+  const document = '---\nname: audit-orders\ndescription: Audit orders\n---\nOriginal\n'
+  vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(new Response(zipSync({
+    'repo-main/skills/audit-orders/SKILL.md': strToU8(document),
+  })))))
+  onTestFinished(() => { vi.unstubAllGlobals() })
+  const { root, invoke } = await boot()
+  const repo = z.object({ id: z.string() }).parse(await invoke('addRepository', { request: { url: 'instudio/skills' } }))
+  await invoke('refreshRepository', { request: { id: repo.id } })
+  const request = { id: repo.id, path: 'skills/audit-orders', root: 'dsh' }
+  await invoke('installRepository', { request })
+  const resource = join(root, '.dsh/skills/audit-orders/SKILL.md')
+  const metadataPath = join(root, '.dsh/skills-manager/repositories.json')
+  const metadata = await readFile(metadataPath, 'utf8')
+  const changed = Buffer.alloc(1024 * 1024)
+  const open = fs.open
+  const opened: Awaited<ReturnType<typeof open>>[] = []
+  const probe = vi.spyOn(fs, 'open').mockImplementation(async (...args) => {
+    const handle = await open(...args)
+    if (args[0] !== resource) return handle
+    opened.push(handle)
+    const stat = handle.stat.bind(handle)
+    vi.spyOn(handle, 'stat').mockImplementationOnce(async () => {
+      const info = await stat()
+      await writeFile(resource, changed)
+      return info
+    })
+    return handle
+  })
+  onTestFinished(() => { probe.mockRestore() })
+  await expect(invoke('previewUpdate', { request })).rejects.toMatchObject({
+    code: 'skills/operation', details: { code: 'error.contentFile.changed' },
+  })
+  expect(opened.map(handle => handle.fd)).toEqual([-1])
+  expect(await readFile(metadataPath, 'utf8')).toBe(metadata)
+  expect(await readFile(resource)).toEqual(changed)
+  probe.mockRestore()
+  await writeFile(resource, document)
+  expect(await invoke('previewUpdate', { request })).toMatchObject({ localModified: false })
+})
+
 async function readRecoveryState(path: string) {
   const value: unknown = JSON.parse(await readFile(path, 'utf8'))
   return z.object({ catalogInstalls: z.array(z.object({ name: z.string(), complete: z.boolean() }).loose()) }).loose().parse(value)
 }
+
+it.each(['restore', 'pending-recovery'] as const)('keeps a native skill available after %s when restored receipt cleanup fails', async (mode) => {
+  const { ctx, root, invoke } = await boot()
+  const document = '---\nname: recovered-orders\ndescription: Recovered order review\n---\nRecovered instructions.\n'
+  await createRepositoryManager().installCatalog('clawhub:instudio/recovered-orders', {
+    name: 'recovered-orders', entries: [{ path: 'SKILL.md', data: Buffer.from(document).toString('base64') }],
+  }, { root: 'dsh' })
+  await invoke('listRepositories', {})
+  expect((await ctx.skills.get('recovered-orders'))?.content).toBe('Recovered instructions.')
+  const trash = z.object({ id: z.string() }).parse(await invoke('trashSkill', { target: { root: 'dsh', name: 'recovered-orders' } }))
+  expect(await ctx.skills.get('recovered-orders')).toBeUndefined()
+  const receipt = join(Core.trashRootPath(), `.restored-${trash.id}`)
+  const remove = fs.rm
+  const cleanup = vi.spyOn(fs, 'rm').mockImplementation(async (path, options) => {
+    if (path === receipt) throw Object.assign(new Error('Restore receipt locked'), { code: 'EACCES' })
+    return remove(path, options)
+  })
+  onTestFinished(() => { cleanup.mockRestore() })
+  if (mode === 'restore') {
+    expect(await invoke('restoreTrash', { id: trash.id, scope: {} })).toMatchObject({ id: trash.id, name: 'recovered-orders' })
+  } else {
+    const write = AtomicWrite.writeFileAtomic
+    const file = join(root, '.dsh/skills-manager/repositories.json')
+    let writes = 0
+    const commit = vi.spyOn(AtomicWrite, 'writeFileAtomic').mockImplementation(async (path, ...args) => {
+      if (path === file && ++writes === 2) throw new Error('Installation record locked')
+      return write(path, ...args)
+    })
+    try {
+      await expect(invoke('restoreTrash', { id: trash.id, scope: {} })).rejects.toMatchObject({ details: { code: 'error.repo.installState' } })
+    } finally { commit.mockRestore() }
+    await invoke('listRepositories', {})
+  }
+  expect((await lstat(receipt)).isDirectory()).toBe(true)
+  const state = z.object({ trash: z.array(z.unknown()) }).parse(await invoke('readState', { scope: {}, refreshCompany: false }))
+  const diagnostics = (await readFile(Core.logPath(), 'utf8')).trim().split('\n')
+    .map(line => z.object({ event: z.string(), detail: z.string() }).parse(JSON.parse(line)))
+  const warning = diagnostics.filter(item => item.event === 'trash-restore-cleanup-warning')
+  expect(warning).toHaveLength(1)
+  expect(warning[0].detail).toContain(receipt)
+  expect({ instructions: (await ctx.skills.get('recovered-orders'))?.content,
+    trashCount: state.trash.length, warnings: warning.map(item => item.event) }).toMatchInlineSnapshot(`
+      {
+        "instructions": "Recovered instructions.",
+        "trashCount": 0,
+        "warnings": [
+          "trash-restore-cleanup-warning",
+        ],
+      }
+    `)
+})
 
 async function pendingRecovery(method: 'listRepositories' | 'previewUpdate', options: { uninstall?: boolean } = {}) {
   vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(new Response(zipSync({ 'repo-main/skills/audit-orders/SKILL.md': strToU8('---\nname: audit-orders\ndescription: Audit orders\n---\nOriginal\n') })))))
@@ -721,7 +982,7 @@ it.each((['listRepositories', 'previewUpdate'] as const).flatMap(method => ['dis
       await Promise.race([started.promise, reading.then(() => { throw new Error('Pending installation was not recovered') })])
       const writing = change === 'disable'
         ? ctx.skillsManager.setSkillEnabled({ root: 'dsh', name: 'recovered-orders' }, false, signal)
-        : ctx.skillsManager.createCategory({ root: 'dsh', name: 'Retained category' }, signal)
+        : ctx.skillsManager.assignCategory({ root: 'dsh', name: 'recovered-orders', categoryId: 'company' }, signal)
       pending.push(writing)
       await checkpoint()
       release.resolve(undefined)
@@ -731,7 +992,7 @@ it.each((['listRepositories', 'previewUpdate'] as const).flatMap(method => ['dis
         expect(policy.disabledSkills.dsh).toContain('recovered-orders')
         expect(policy.enabledSkills.dsh).not.toContain('recovered-orders')
       } else {
-        expect(policy.categories.dsh).toMatchObject([{ name: 'Retained category' }])
+        expect(policy.categories.dsh).toMatchObject([{ name: '企业协作' }])
         expect(policy.enabledSkills.dsh).toContain('recovered-orders')
       }
       const confirmed = await readRecoveryState(repositoryPath)

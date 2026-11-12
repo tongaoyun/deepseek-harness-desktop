@@ -12,6 +12,19 @@ const expert = (slug: string, custom = false, division = 'engineering') => ({
 })
 
 describe('专家团成员选择', () => {
+  it.each(['all', 'company'] as const)('%s 来源不展示公司团队内部成员', (source) => {
+    const experts = [
+      expert('standalone'),
+      { ...expert('bundled-member'), company: true, teamMember: true },
+    ]
+    for (const status of ['', 'enabled', 'disabled'] as const) {
+      const enabled = status === 'disabled' ? [] : experts.map(item => item.slug)
+      expect(filterTeamMemberCandidates(experts, {
+        source, division: '', status, enabled, taken: [], replacing: -1, query: '',
+      }).map(item => item.slug)).toEqual(['standalone'])
+    }
+  })
+
   it('已启用筛选不包含停用专家，全部和已停用仍可选停用专家', () => {
     const experts = [expert('enabled-one'), expert('disabled-one'), expert('enabled-two')]
     const enabled = ['enabled-one', 'enabled-two']
@@ -57,5 +70,25 @@ describe('专家团成员选择', () => {
       source: 'all', division: '', status: 'enabled', enabled: ['enabled-base'],
       taken: [], replacing: -1, query: 'disabled-base',
     })).toEqual([])
+  })
+
+  it('分类别名归入预设，未知分类归入其他且保留成员选择限制', () => {
+    const experts = [
+      expert('zh-category', true, '研发与集成'),
+      expert('en-category', true, 'Engineering & Integration'),
+      expert('unknown-category', true, 'shared'),
+      expert('another-unknown', true, 'academic'),
+      expert('company-unknown', false, 'shared'),
+      { ...expert('conflict', true, 'shared'), conflict: true },
+      { ...expert('bundled', true, 'shared'), teamMember: true },
+      expert('taken', true, 'shared'),
+      expert('disabled', true, 'shared'),
+    ]
+    const options = { source: 'custom' as const, division: 'engineering', status: 'enabled' as const,
+      enabled: experts.filter(item => item.slug !== 'disabled').map(item => item.slug),
+      taken: [{ expertSlug: 'taken' }], replacing: -1, query: '',
+    }
+    expect(filterTeamMemberCandidates(experts, options).map(item => item.slug)).toEqual(['zh-category', 'en-category'])
+    expect(filterTeamMemberCandidates(experts, { ...options, division: 'specialized' }).map(item => item.slug)).toEqual(['unknown-category', 'another-unknown'])
   })
 })

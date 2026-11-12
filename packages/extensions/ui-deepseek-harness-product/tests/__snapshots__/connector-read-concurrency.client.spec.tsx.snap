@@ -1,0 +1,161 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`allows replacing saved OAuth with local settings when providers are empty > English authentication choices 1`] = `
+[
+  "Local settings",
+  "Saved OAuth provider · Unavailable",
+]
+`;
+
+exports[`allows replacing saved OAuth with local settings when providers are empty 1`] = `
+[
+  {
+    "disabled": false,
+    "label": "本机配置",
+  },
+  {
+    "disabled": true,
+    "label": "已配置的 OAuth 服务 · 不可用",
+  },
+]
+`;
+
+exports[`allows replacing saved OAuth with local settings when providers are failed > English authentication choices 1`] = `
+[
+  "Local settings",
+  "Saved OAuth provider",
+]
+`;
+
+exports[`allows replacing saved OAuth with local settings when providers are failed 1`] = `
+[
+  {
+    "disabled": false,
+    "label": "本机配置",
+  },
+  {
+    "disabled": true,
+    "label": "已配置的 OAuth 服务",
+  },
+]
+`;
+
+exports[`allows replacing saved OAuth with local settings when providers are loading > English authentication choices 1`] = `
+[
+  "Local settings",
+  "Saved OAuth provider",
+]
+`;
+
+exports[`allows replacing saved OAuth with local settings when providers are loading 1`] = `
+[
+  {
+    "disabled": false,
+    "label": "本机配置",
+  },
+  {
+    "disabled": true,
+    "label": "已配置的 OAuth 服务",
+  },
+]
+`;
+
+exports[`allows replacing saved OAuth with local settings when providers are missing > English authentication choices 1`] = `
+[
+  "Local settings",
+  "Saved OAuth provider · Unavailable",
+  "Other OAuth · OAuth",
+]
+`;
+
+exports[`allows replacing saved OAuth with local settings when providers are missing 1`] = `
+[
+  {
+    "disabled": false,
+    "label": "本机配置",
+  },
+  {
+    "disabled": true,
+    "label": "已配置的 OAuth 服务 · 不可用",
+  },
+  {
+    "disabled": false,
+    "label": "Other OAuth · OAuth",
+  },
+]
+`;
+
+exports[`recovers a removed 'device' read retry without taking focus elsewhere (false) > Recovered connector read focus 1`] = `
+{
+  "failure": null,
+  "focused": "超时时间",
+  "retryVisible": false,
+}
+`;
+
+exports[`recovers a removed 'device' read retry without taking focus elsewhere (true) > Recovered connector read focus 1`] = `
+{
+  "failure": null,
+  "focused": "关闭",
+  "retryVisible": false,
+}
+`;
+
+exports[`recovers a removed 'edit' read retry without taking focus elsewhere (false) > Recovered connector read focus 1`] = `
+{
+  "failure": null,
+  "focused": "服务器类型",
+  "retryVisible": false,
+}
+`;
+
+exports[`recovers a removed 'edit' read retry without taking focus elsewhere (true) > Recovered connector read focus 1`] = `
+{
+  "failure": null,
+  "focused": "关闭",
+  "retryVisible": false,
+}
+`;
+
+exports[`recovers a removed 'provider' read retry without taking focus elsewhere (false) > Recovered connector read focus 1`] = `
+{
+  "failure": null,
+  "focused": "服务器类型",
+  "retryVisible": false,
+}
+`;
+
+exports[`recovers a removed 'provider' read retry without taking focus elsewhere (true) > Recovered connector read focus 1`] = `
+{
+  "failure": null,
+  "focused": "关闭",
+  "retryVisible": false,
+}
+`;
+
+exports[`runs one OAuth provider retry and keeps the selected provider and private inputs 1`] = `
+{
+  "canRetry": false,
+  "failure": "无法读取公司 OAuth 提供方，请重试。",
+  "loadingIndicator": false,
+  "retry": "重试",
+}
+`;
+
+exports[`runs one device read retry and keeps the recovered draft editable 1`] = `
+{
+  "canRetry": false,
+  "failure": "产品目录暂时无法加载，请稍后重试。",
+  "loadingIndicator": false,
+  "retry": "重试",
+}
+`;
+
+exports[`runs one edit read retry and keeps the recovered draft editable 1`] = `
+{
+  "canRetry": false,
+  "failure": "产品目录暂时无法加载，请稍后重试。",
+  "loadingIndicator": false,
+  "retry": "重试",
+}
+`;

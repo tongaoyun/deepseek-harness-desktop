@@ -17,7 +17,12 @@ const owned = new Set(['UPSTREAM_COMMIT', 'UPSTREAM_TAG', 'UPSTREAM_REPOSITORY',
   'packages/extensions/README.i18n.yaml', 'packages/extensions/README.md', 'packages/extensions/README.zh.md',
   'docs/deepseek-harness-electron-architecture.md', 'docs/deepseek-harness-electron-architecture.zh.md', 'docs/deepseek-harness-electron-architecture.i18n.yaml',
   'docs/subsystems/deepseek-harness-product.md', 'docs/subsystems/deepseek-harness-product.zh.md', 'docs/subsystems/deepseek-harness-product.i18n.yaml',
-  'apps/web/tests/deepseek-harness-catalog.e2e.ts'])
+  'apps/web/tests/deepseek-harness-catalog.e2e.ts',
+  'apps/web/tests/deepseek-harness-control-focus.e2e.ts',
+  'apps/web/tests/deepseek-harness-expert-retry.e2e.ts',
+  'apps/web/tests/deepseek-harness-skill-pagination.e2e.ts',
+  'apps/web/tests/fixtures/clawhub-catalog.mjs',
+  'apps/web/tests/expected/deepseek-harness-skill-pagination.expected.md'])
 
 export function productOwned(path) {
   return productRoots.some(root => path.startsWith(root)) || owned.has(path) || path.startsWith('.gitea/')

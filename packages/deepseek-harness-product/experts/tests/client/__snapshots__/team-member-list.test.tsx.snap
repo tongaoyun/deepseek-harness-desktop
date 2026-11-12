@@ -1,0 +1,137 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`continues editing the selected member after add without saving 1`] = `
+{
+  "duty": "分析资料 2",
+  "focused": "职责摘要",
+  "members": 3,
+}
+`;
+
+exports[`continues editing the selected member after eighth without saving 1`] = `
+{
+  "duty": "分析资料 7",
+  "focused": "职责摘要",
+  "members": 8,
+}
+`;
+
+exports[`continues editing the selected member after replace without saving 1`] = `
+{
+  "duty": "原职责 candidate-0",
+  "focused": "职责摘要",
+  "members": 2,
+}
+`;
+
+exports[`keeps the moved member and its editing state through sorting in 'en' (-1, elsewhere=false) > Sorted member editing state 1`] = `
+{
+  "expanded": true,
+  "focused": "Move up",
+  "instructions": "保留的详细分工草稿",
+  "order": [
+    "保留的职责草稿",
+    "candidate-0",
+    "candidate-1",
+    "candidate-2",
+  ],
+}
+`;
+
+exports[`keeps the moved member and its editing state through sorting in 'en' (-1, elsewhere=true) > Sorted member editing state 1`] = `
+{
+  "expanded": true,
+  "focused": "name",
+  "instructions": "保留的详细分工草稿",
+  "order": [
+    "保留的职责草稿",
+    "candidate-0",
+    "candidate-1",
+    "candidate-2",
+  ],
+}
+`;
+
+exports[`keeps the moved member and its editing state through sorting in 'en' (1, elsewhere=false) > Sorted member editing state 1`] = `
+{
+  "expanded": true,
+  "focused": "Move down",
+  "instructions": "保留的详细分工草稿",
+  "order": [
+    "candidate-1",
+    "candidate-2",
+    "candidate-3",
+    "保留的职责草稿",
+  ],
+}
+`;
+
+exports[`keeps the moved member and its editing state through sorting in 'en' (1, elsewhere=true) > Sorted member editing state 1`] = `
+{
+  "expanded": true,
+  "focused": "name",
+  "instructions": "保留的详细分工草稿",
+  "order": [
+    "candidate-1",
+    "candidate-2",
+    "candidate-3",
+    "保留的职责草稿",
+  ],
+}
+`;
+
+exports[`keeps the moved member and its editing state through sorting in 'zh' (-1, elsewhere=false) > Sorted member editing state 1`] = `
+{
+  "expanded": true,
+  "focused": "上移",
+  "instructions": "保留的详细分工草稿",
+  "order": [
+    "保留的职责草稿",
+    "candidate-0",
+    "candidate-1",
+    "candidate-2",
+  ],
+}
+`;
+
+exports[`keeps the moved member and its editing state through sorting in 'zh' (-1, elsewhere=true) > Sorted member editing state 1`] = `
+{
+  "expanded": true,
+  "focused": "name",
+  "instructions": "保留的详细分工草稿",
+  "order": [
+    "保留的职责草稿",
+    "candidate-0",
+    "candidate-1",
+    "candidate-2",
+  ],
+}
+`;
+
+exports[`keeps the moved member and its editing state through sorting in 'zh' (1, elsewhere=false) > Sorted member editing state 1`] = `
+{
+  "expanded": true,
+  "focused": "下移",
+  "instructions": "保留的详细分工草稿",
+  "order": [
+    "candidate-1",
+    "candidate-2",
+    "candidate-3",
+    "保留的职责草稿",
+  ],
+}
+`;
+
+exports[`keeps the moved member and its editing state through sorting in 'zh' (1, elsewhere=true) > Sorted member editing state 1`] = `
+{
+  "expanded": true,
+  "focused": "name",
+  "instructions": "保留的详细分工草稿",
+  "order": [
+    "candidate-1",
+    "candidate-2",
+    "candidate-3",
+    "保留的职责草稿",
+  ],
+}
+`;

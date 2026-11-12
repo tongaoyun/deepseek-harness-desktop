@@ -1,0 +1,20 @@
+- main:
+  - navigation "Current location":
+    - button "Knowledge bases"
+    - button "Order knowledge"
+  - heading "Order review.md" [level=1]
+  - status: Searchable
+  - button "Back to files"
+  - button "Modify"
+  - button "Actions for “Order review.md”"
+  - tablist "Document view":
+    - tab "Original file"
+    - tab "Parsed content" [selected]
+    - tab "Processing details"
+  - tabpanel "Parsed content":
+    - region "Parsed content":
+      - paragraph: Read the indexed text passages used for search and answers.
+      - article:
+        - heading "Passage 1 Page 1" [level=2]
+        - heading "Order checklist" [level=1]
+        - paragraph: Verify the order total and delivery address before dispatch.

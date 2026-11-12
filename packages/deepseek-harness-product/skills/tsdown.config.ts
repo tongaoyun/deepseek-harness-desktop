@@ -4,7 +4,7 @@ import { generateSkillRemote } from './scripts/generate-remote.ts';
 /** Build builtin Host, browser and generated native Remote metadata in separate compiler programs. */
 export default defineConfig(({ env }) => env?.DSH_BUILD_FACE === 'client' ? [] : [
   {
-    entry: { index: 'src/index.ts', submission: 'src/submission.ts', types: 'src/types.ts' },
+    entry: { index: 'src/index.ts', types: 'src/types.ts' },
     tsconfig: './tsconfig.host.json',
     outDir: 'lib', format: 'esm', platform: 'node',
     hooks: { 'build:prepare': async () => {

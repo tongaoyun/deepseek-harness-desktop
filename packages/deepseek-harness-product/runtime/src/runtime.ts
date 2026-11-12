@@ -179,13 +179,15 @@ function connectorConfig(connector: Connector): McpClient.Config {
     if (connector.url === undefined) throw new Error(`deepseek-harness product: connector ${connector.id} has no URL`)
     return {
       transport: 'streamable-http', serverName, url: connector.url, headers: { ...connector.headers },
-      toolCallTimeoutMs: connector.timeoutSeconds * 1000, failOnStartupError: true,
+      toolCallTimeoutMs: connector.timeoutSeconds * 1000, startupTimeoutMs: connector.timeoutSeconds * 1000,
+      closeTimeoutMs: 5000, expandTemplates: false, failOnStartupError: true,
     }
   }
   if (connector.command === undefined) throw new Error(`deepseek-harness product: connector ${connector.id} has no command`)
   return {
     transport: 'stdio', serverName, command: connector.command, args: [...connector.arguments],
-    env: { ...connector.environment }, cwd: '', toolCallTimeoutMs: connector.timeoutSeconds * 1000, failOnStartupError: true,
+    env: { ...connector.environment }, cwd: '', toolCallTimeoutMs: connector.timeoutSeconds * 1000, startupTimeoutMs: connector.timeoutSeconds * 1000,
+    closeTimeoutMs: 5000, expandTemplates: false, failOnStartupError: true,
   }
 }
 

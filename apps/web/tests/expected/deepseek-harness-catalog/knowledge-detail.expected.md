@@ -1,36 +1,14 @@
 - region "Knowledge bases":
-  - complementary:
-    - button "Knowledge bases"
-    - button "Refresh"
-    - navigation "Knowledge bases":
-      - region "Personal":
-        - heading "Personal New personal knowledge base" [level=2]:
-          - button "Personal" [expanded]
-          - button "New personal knowledge base"
-        - button "Personal notes"
-        - button "Actions for “Personal notes”"
-      - region "Department":
-        - heading "Department" [level=2]:
-          - button "Department" [expanded]
-        - heading "Sales (21)" [level=3]
-        - button "Sales procedures"
-        - heading "Sales (22)" [level=3]
-        - button "Sales playbook"
-      - region "Company":
-        - heading "Company" [level=2]:
-          - button "Company" [expanded]
-        - button "Operations playbook" [expanded]
-        - navigation "Folders":
-          - text: Folders
-          - button "Expand Policies"
-          - button "Policies"
   - main:
     - navigation "Current location":
-      - button "Operations playbook"
+      - button "Knowledge bases"
     - heading "Operations playbook" [level=1]
+    - text: Company
+    - button "Search content"
+    - button "Refresh"
     - tablist "Browse mode":
       - tab "By folder" [selected]
-      - tab "All files"
+      - tab "All files in this library"
     - text: Search material names…
     - searchbox "Search material names…"
     - button "Search"
@@ -54,7 +32,6 @@
       - option "Processing failed"
       - option "Cancelled"
       - option "Deleting"
-    - button "Refresh"
     - tabpanel "By folder":
       - table:
         - rowgroup:
@@ -66,13 +43,13 @@
             - columnheader "Updated"
             - columnheader "More actions"
         - rowgroup:
-          - row "Policies Folder":
+          - row "Policies — Folder — Oct 10, 2026":
             - cell "Policies":
               - button "Policies"
-            - cell
+            - cell "—"
             - cell "Folder"
-            - cell
-            - cell
+            - cell "—"
+            - cell "Oct 10, 2026"
             - cell
           - row "Order review.md Searchable Online document 118B Oct 10, 2026 Actions for “Order review.md”":
             - cell "Order review.md":

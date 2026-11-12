@@ -1,7 +1,7 @@
 import { EXPERT_PACKAGE_SOURCE, importExpertPackage, type ExpertPackageSource } from './package-transfer.ts'
+import { ContentFileReadError } from '@deepseek-harness/product/content-files'
 import { publishedTeamSchema } from '@deepseek-harness/product/company-team'
 import { AGENCY_TEAM_SERVICE, type AgencyTeamLibrary } from './team-library.ts'
-import { nativeTeamMemberName } from './team-engine.ts'
 import { teamText } from './team-i18n.ts'
 import type { TeamInput } from '@deepseek-harness/product/company-team'
 import type { TeamSnapshot, TeamEngineStatus } from './team-contract.ts'
@@ -63,7 +63,12 @@ export default class AgencyAgentsRemote extends TypertRemoteService {
     signal.throwIfAborted()
     const source = this.ctx.get(EXPERT_PACKAGE_SOURCE) as ExpertPackageSource | undefined
     if (!source) throw new Error('Expert package source is unavailable')
-    const value = await source.read(slug, signal)
+    let value: Awaited<ReturnType<ExpertPackageSource['read']>>
+    try { value = await source.read(slug, signal) }
+    catch (cause) {
+      if (cause instanceof ContentFileReadError) throw new Error(formatHost(readHostLocale(this.ctx), cause.code), { cause })
+      throw cause
+    }
     signal.throwIfAborted()
     return value
   }
@@ -75,7 +80,7 @@ export default class AgencyAgentsRemote extends TypertRemoteService {
   }
 
   /**
-   * 读取个人专家团及原生成员名称。
+   * 读取个人专家团及固定版本成员目录。
    * @param signal - 当前读取的原生 Remote 取消信号。
    * @returns 个人专家团和成员目录。
    */
@@ -107,7 +112,7 @@ export default class AgencyAgentsRemote extends TypertRemoteService {
     const catalog = await this.library().catalog(signal)
     signal.throwIfAborted()
     for (const member of team.members) {
-      const expert = catalog.experts.find(item => item.slug === member.expertSlug && !item.conflict)
+      const expert = catalog.experts.find(item => item.slug === member.expertSlug && !item.conflict && !item.teamMember)
       if (!expert?.company || !member.expertVersion || !member.expertSha256) throw new Error(teamText(readHostLocale(this.ctx), '发布团队前，请先发布成员专家并选择公司专家版本。'))
     }
     signal.throwIfAborted()
@@ -171,8 +176,7 @@ export default class AgencyAgentsRemote extends TypertRemoteService {
 
   private describeTeams(snapshot: TeamSnapshot): TeamSnapshot {
     const engine = this.ctx.get('agencyAgentsTeamEngine') as (() => TeamEngineStatus) | undefined
-    const nativeMembers = Object.fromEntries(snapshot.teams.flatMap(team => team.members.map(member => [nativeTeamMemberName(team.id, member.expertSlug), member.expertSlug])))
-    return { ...snapshot, nativeMembers, ...(engine ? { engine: engine() } : {}) }
+    return { ...snapshot, ...(engine ? { engine: engine() } : {}) }
   }
 
   private library(): AgencyExpertLibrary {

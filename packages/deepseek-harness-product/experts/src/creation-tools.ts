@@ -6,6 +6,7 @@ import type { AgencyTeamLibrary } from './team-library.ts'
 import { customExpertInputSchema } from './expert-contract.ts'
 import { matchMember } from './creation-contract.ts'
 import { EXPERT_DIVISION_ORDER } from './names.ts'
+import { resolveContentCategory } from '@deepseek-harness/product/content-categories'
 
 const output = {
   schema: { type: 'object' as const, additionalProperties: false, properties: {
@@ -38,7 +39,7 @@ export function registerCreationTools(ctx: Context, library: AgencyExpertLibrary
     parameters: {
       name: { type: 'string', required: true, description: 'Unique display name, at most 40 characters.' },
       description: { type: 'string', required: true, description: 'Expertise summary, at most 160 characters.' },
-      division: { type: 'string', required: true, description: 'Existing category ID from list_creation_experts.' },
+      division: { type: 'string', required: true, enum: EXPERT_DIVISION_ORDER, description: 'Business category ID from list_creation_experts.' },
       prompt: { type: 'string', required: true, description: 'Complete literal SOUL.md instructions: expertise, responsibilities, workflow, constraints and deliverables.' },
       agents: { type: 'string', description: 'Optional literal AGENTS.md working instructions.' },
       emoji: { type: 'string', description: 'One emoji.' },
@@ -75,11 +76,11 @@ export function registerCreationTools(ctx: Context, library: AgencyExpertLibrary
       const catalog = await library.catalog(exec.signal), query = args.query?.normalize('NFKC').trim().toLowerCase() ?? ''
       const matches = catalog.experts.filter(expert => !expert.conflict && !expert.teamMember && [expert.name, expert.nameEn, expert.slug].some(name => name.normalize('NFKC').toLowerCase().includes(query)))
       return JSON.stringify({
-        categories: [...new Set([...EXPERT_DIVISION_ORDER, ...catalog.experts.map(expert => expert.division)])],
+        categories: EXPERT_DIVISION_ORDER,
         total: matches.length, truncated: matches.length > 80,
         experts: matches.slice(0, 80).map(expert => ({
           slug: expert.slug, name: expert.name, nameEn: expert.nameEn, description: expert.description,
-          division: expert.division, enabled: catalog.enabled.includes(expert.slug),
+          division: resolveContentCategory(expert.division).id, enabled: catalog.enabled.includes(expert.slug),
         })),
       })
     },

@@ -1,18 +1,25 @@
 import type * as React from "react";
 import type { SourceSelectProps } from "./client-types.ts";
-import { Menu, Button, IconChevronDownOutlineRegular, type MenuEntry } from "@deepseek-ai/dsh-client-ui-primitives";
+import { Menu, Button, IconChevronDownOutlineRegular, focusWithoutRing, type MenuEntry } from "@deepseek-ai/dsh-client-ui-primitives";
 
-/** 筛选与操作沿用原生菜单；禁用关闭菜单，恢复启用后等待重新打开。 */
+/** 筛选与操作沿用原生菜单；禁用关闭菜单，恢复后须重新打开；操作弹窗关闭后焦点返回原按钮。 */
 export function createSourceSelect(react: typeof React) {
   const h = react.createElement;
   return function SourceSelect(props: SourceSelectProps) {
+    const trigger = react.useRef<HTMLButtonElement>(null);
     const [requestedOpen, setOpen] = react.useState(false);
-    const open = requestedOpen && !props.disabled;
+    const disabled = props.disabled || props.pending;
+    const pendingClass = props.pending && !props.disabled ? " product-control-pending" : "";
+    const open = requestedOpen && !disabled;
     react.useLayoutEffect(() => {
-      if (props.disabled) setOpen(false);
-    }, [props.disabled]);
+      if (disabled) setOpen(false);
+    }, [disabled]);
     function close() { setOpen(false); }
-    function select(id: string) { props.onChange(id); close(); }
+    function select(id: string) {
+      if (disabled) return;
+      if (props.action && trigger.current) focusWithoutRing(trigger.current);
+      props.onChange(id); close();
+    }
     const items = react.useMemo<readonly MenuEntry[]>(function () {
       return props.options.map(function (opt) {
         return {
@@ -33,10 +40,12 @@ export function createSourceSelect(react: typeof React) {
           align: "end",
           portal: true,
           anchor: h(Button, {
+            ref: trigger,
             variant: "outline",
             size: "sm",
-            disabled: props.disabled,
-            className: props.icon ? "dssm-icon-action" : undefined,
+            disabled,
+            "aria-busy": props.pending,
+            className: (props.icon ? "dssm-icon-action" : "") + pendingClass,
             style: props.icon ? { width: 22, minWidth: 22, height: 22, padding: 0, display: "inline-flex", alignItems: "center", justifyContent: "center", borderRadius: "var(--dsw-radius-sm, 8px)" } : undefined,
             "aria-label": props.label,
             "aria-haspopup": "menu",
@@ -69,8 +78,9 @@ export function createSourceSelect(react: typeof React) {
           "aria-label": props.label,
           "aria-haspopup": "menu",
           "aria-expanded": open,
-          disabled: props.disabled,
-          className: "dssm-menu-select-trigger" + (open ? " is-open" : ""),
+          disabled,
+          "aria-busy": props.pending,
+          className: "dssm-menu-select-trigger" + (open ? " is-open" : "") + pendingClass,
           onClick: function () { setOpen(prev => !prev); },
         },
           h("span", { className: "dssm-menu-select-label" }, currentText),

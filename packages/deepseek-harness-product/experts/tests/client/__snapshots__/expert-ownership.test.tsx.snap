@@ -1,0 +1,25 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`recovers the directory after a committed 'delete' without repeating it or taking another control (elsewhere=false) 1`] = `
+{
+  "errors": 0,
+  "focus": "Search",
+  "query": "reviewer",
+  "selection": [
+    2,
+    5,
+  ],
+}
+`;
+
+exports[`recovers the directory after a committed 'save' without repeating it or taking another control (elsewhere=false) 1`] = `
+{
+  "errors": 0,
+  "focus": "Search",
+  "query": "reviewer",
+  "selection": [
+    2,
+    5,
+  ],
+}
+`;

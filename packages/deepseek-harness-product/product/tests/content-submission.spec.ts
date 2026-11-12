@@ -1,10 +1,44 @@
 import { expect, it, vi } from 'vitest'
 import { DeepSeekHarnessProductBridge } from '../src/bridge.ts'
-import { contentDigest } from '../src/company-content.ts'
+import { companyResourceRevision, contentDigest } from '../src/company-content.ts'
 
 const files = { 'skills/orders/SKILL.md': Buffer.from('---\nname: orders\ndescription: Review orders\n---\nUse approved tools.').toString('base64'),
   'skills/orders/references/policy.md': Buffer.from('Read-only policy').toString('base64') }
 const input = { resourceKey: 'skills/orders', files }
+it('looks up the exact display revision while keeping the package digest unchanged', async () => {
+  const sha256 = contentDigest(files)
+  const catalog = { name: '订单核对', division: 'business', avatar: '2' }
+  const revision = companyResourceRevision(sha256, catalog)
+  const requests: URL[] = []
+  const bridge = new DeepSeekHarnessProductBridge({ serverUrl: 'https://product.test', sessionToken: 'secret',
+    initialSession: { authenticated: true, employeeId: 'alice' }, fetch: async (url) => {
+      const request = new URL(url instanceof Request ? url.url : url)
+      requests.push(request)
+      return Response.json({ success: true, data: request.searchParams.get('revision') === sha256
+        ? { status: 'PUBLISHED', reviewNote: '' } : null })
+    } })
+  try {
+    expect(await bridge.invoke('content.submissions.inspect', input)).toMatchObject({ status: { status: 'PUBLISHED' } })
+    expect(await bridge.invoke('content.submissions.inspect', { ...input, catalog })).toMatchObject({ status: null })
+    expect(requests.map(url => url.searchParams.get('sha256'))).toEqual([sha256, sha256])
+    expect(requests.map(url => url.searchParams.get('revision'))).toEqual([sha256, revision])
+    expect(companyResourceRevision(sha256, { avatar: '2', division: 'business', name: '订单核对' })).toBe(revision)
+    expect(companyResourceRevision(sha256, { name: undefined })).toBe(sha256)
+  } finally { await bridge.dispose() }
+})
+
+it.each([{ name: ' ' }, { avatar: '36' }, { division: 'business\n' }, { credentials: 'private' }])(
+  'rejects invalid display metadata before querying or submitting company content: %j', async (catalog) => {
+    const fetch = vi.fn<typeof globalThis.fetch>()
+    const bridge = new DeepSeekHarnessProductBridge({ serverUrl: 'https://product.test', sessionToken: 'secret',
+      initialSession: { authenticated: true, employeeId: 'alice' }, fetch })
+    try {
+      await expect(bridge.invoke('content.submissions.inspect', { ...input, catalog })).rejects.toThrow()
+      await expect(bridge.invoke('content.submissions.submit', { ...input, catalog })).rejects.toThrow()
+      expect(fetch).not.toHaveBeenCalled()
+    } finally { await bridge.dispose() }
+  },
+)
 it('validates native content, uploads one resource and keeps employee credentials in main', async () => {
   const requests: { path: string; body: unknown; authorization: string | null }[] = []
   const bridge = new DeepSeekHarnessProductBridge({ serverUrl: 'https://product.test', sessionToken: 'main-only-secret',

@@ -4,7 +4,8 @@ import type { Log } from './types.ts'
 import { logPath } from './core.ts'
 const MAX_LOG_BYTES = 1 << 20
 /** Create an instance-owned, serialized diagnostic writer.
- * @returns A logger retaining the current file and one bounded previous file; failures do not reject business writes.
+ * @returns A logger keeping the current file and one bounded previous file.
+ * Failures use console without rejecting business writes.
  */
 export function makeLog(): Log {
   const file = logPath()
@@ -18,8 +19,9 @@ export function makeLog(): Log {
           await rename(file, `${file}.1`)
         }
         await appendFile(file, `${JSON.stringify({ ts: new Date().toISOString(), event, detail })}\n`, 'utf8')
-      } catch (_error) {
-        /* 日志失败不阻塞主流程 */
+      } catch (error) {
+        try { console.warn('技能管理日志写入失败', { event, detail, error: String(error) }) }
+        catch (_error) { /* Diagnostics cannot reject a committed operation or block subsequent logging. */ }
       }
     })
     await queue

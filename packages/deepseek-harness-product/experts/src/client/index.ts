@@ -1,10 +1,12 @@
 import { deepEqualJson } from '@deepseek-ai/dsh-util-values'
+import { resolveContentCategory } from '@deepseek-harness/product/content-categories'
 import { createExpertClientState, type ExpertClientState } from './client-state.ts'
 import { commitBulk } from './bulk-operations.ts'
-import { LibraryConfirm } from './library-ui.tsx'
+import { customCopyName } from './copy-name.ts'
+import { LibraryConfirm, useLibraryRemovalFocus, useLibraryActionFocus } from './library-ui.tsx'
 import type {} from '@deepseek-ai/dsh-client-ui-workspace/client'
 import { Button, Input } from './plugin-ui.ts'
-import { SegmentedControl, SegmentedTabs, StateDot, useModalLayer } from '@deepseek-ai/dsh-client-ui-primitives'
+import { SegmentedControl, SegmentedTabs, StateDot, focusWithoutRing, useModalLayer } from '@deepseek-ai/dsh-client-ui-primitives'
 import { LibraryCard } from './library-ui.tsx'
 import { IconPlus } from './team-shared.tsx'
 import type { AgencyTeamsRemote } from './remote.ts'
@@ -12,6 +14,7 @@ import { TeamsPanel, type TeamRemote } from './team-ui.tsx'
 import { TEAM_CSS } from './team-style.ts'
 import { TeamMenu } from './team-composer.tsx'
 import { TEAM_REFERENCE_SOURCE, insertTeamReference, teamReference } from './team-reference.ts'
+import { confirmTeamAction } from './team-confirmation.tsx'
 import { TeamLocaleContext } from './team-locale.ts'
 import { teamText } from '../team-i18n.ts'
 import type { ExpertTeam, TeamSnapshot } from '../team-contract.ts'
@@ -33,13 +36,13 @@ import type { RemoteResult, TypertRemoteNamespaceMap } from '@deepseek-ai/dsh-ty
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
-import { EXPERT_DIVISION_ORDER, ZH_DIVISION, EN_DIVISION } from '../names.ts'
+import { EXPERT_DIVISION_ORDER } from '../names.ts'
 import { EXPERT_AVATAR_URLS } from './avatars.ts'
 import { zh, en, ja, es, fr, de, ru, pt, type AgencyKey } from './locales.ts'
 import { TYPERT_REMOTE } from './remote.ts'
 import { DEFAULT_EXPERT_EMOJI, isExpertConflict, type CustomExpertInput, type CatalogSnapshot } from '../expert-contract.ts'
 import { CustomExpertEditor, CustomDeleteDialog, CUSTOM_EDITOR_CSS } from './custom-editor.ts'
-import { installNativeTeamNames } from './native-team-names.ts'
+import { createPortal } from 'react-dom'
 import type { AgencyCatalogRemote } from './remote.ts'
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
@@ -163,13 +166,14 @@ export function compareExpertName(
 function groupByDivision<T extends ExpertView>(list: ReadonlyArray<T>, active: 'zh' | 'en'): ExpertGroup<T>[] {
   const groups = new Map<string, T[]>()
   for (const e of list) {
-    const arr = groups.get(e.division) ?? []
+    const division = resolveContentCategory(e.division).id
+    const arr = groups.get(division) ?? []
     arr.push(e)
-    groups.set(e.division, arr)
+    groups.set(division, arr)
   }
-  return [...new Set([...DIVISION_ORDER, ...groups.keys()])].filter((d) => groups.has(d)).map((d) => ({
+  return DIVISION_ORDER.filter((d) => groups.has(d)).map((d) => ({
     division: d,
-    divisionZh: ZH_DIVISION[d] ?? d,
+    divisionZh: resolveContentCategory(d).zh,
     experts: (groups.get(d) ?? []).slice().sort((a, b) => compareExpertName(a, b, active)),
   }))
 }
@@ -195,6 +199,7 @@ export function normalizeExpertQuery(query: string): string {
 export function matchExpertQuery(expert: ExpertSearchable, query: string): boolean {
   const q = normalizeExpertQuery(query)
   if (q === '') return true
+  const category = resolveContentCategory(expert.division)
   const fields = [
     ...(!expert.slug.startsWith('custom-') ? [expert.slug] : []),
     expert.name,
@@ -202,6 +207,8 @@ export function matchExpertQuery(expert: ExpertSearchable, query: string): boole
     expert.division,
     expert.divisionZh,
     expert.divisionEn,
+    category.zh,
+    category.en,
     expert.description,
     expert.descriptionEn,
   ].map(normalizeExpertQuery)
@@ -216,7 +223,7 @@ export function filterExperts<T extends ExpertSearchable>(
   options: { readonly query?: string; readonly division?: string },
 ): T[] {
   const division = options.division ?? ''
-  return list.filter((expert) => (division === '' || expert.division === division) && matchExpertQuery(expert, options.query ?? ''))
+  return list.filter((expert) => (division === '' || resolveContentCategory(expert.division).id === resolveContentCategory(division).id) && matchExpertQuery(expert, options.query ?? ''))
 }
 
 /** 目录分类筛选值：空值表示全部，企业分类按业务流程排列。 */
@@ -324,10 +331,9 @@ export function buildExpertMentionLexicon(
     .map((expert) => active === 'en' ? expert.nameEn : expert.name)
 }
 
-/** 按当前 locale 取 @ 菜单分组标题；未知分区保留原值，便于扩展来源安全降级。 */
+/** 按当前语言显示预设分类，其他分区归入“其他”。 */
 export function inputTriggerSourceName(division: string, active: 'zh' | 'en'): string {
-  const divisions = active === 'en' ? EN_DIVISION : ZH_DIVISION
-  return divisions[division] ?? division
+  return resolveContentCategory(division)[active]
 }
 
 /** 为动态菜单分区生成跨语言稳定的来源标识。 */
@@ -379,7 +385,8 @@ const MENU_NAME_OVERRIDE = EXPERT_MENU_ITEM_SELECTORS
   .map((selector) => `${selector} span:last-child`)
   .join(',')
 const EXPERT_MENU_NAME_STYLE = 'flex:1 1 auto;max-width:none;min-width:0'
-export const COMPOSER_CSS = '.aag-btn-wrap{position:relative;order:1;display:inline-flex;flex:0 0 auto}.aag-btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;height:28px;padding:0 8px;white-space:nowrap;border:none;border-radius:999px;corner-shape:round;background:transparent;color:var(--dsw-alias-label-secondary);font-size:13px;line-height:20px;font-weight:500;cursor:pointer}.aag-btn:hover,.aag-btn[aria-expanded="true"]{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}.aag-btn:focus-visible{outline:2px solid var(--dsw-alias-label-secondary);outline-offset:2px}.aag-btn>svg{flex:none}.aag-menu{position:absolute;bottom:calc(100% + 4px);left:0;box-sizing:border-box;padding:4px;display:flex;flex-direction:column;gap:0;width:300px;max-width:360px;max-height:calc(100dvh - 24px);overflow-y:auto;border:0;border-radius:var(--dsw-radius-panel,16px);background:var(--dsw-alias-bg-layer-2);--dsw-elevation-stroke-color:var(--dsw-alias-border-l1);box-shadow:var(--dsw-elevation-prominent);z-index:10000}.aag-menu[data-placement="below"]{top:calc(100% + 4px);bottom:auto}.aag-menu-title{padding:8px 10px;font-size:12px;line-height:16px;color:var(--dsw-alias-label-tertiary)}.aag-menu-item{display:flex;align-items:center;gap:8px;width:100%;min-height:40px;padding:8px 10px;border:none;border-radius:var(--dsw-radius-md,10px);background:transparent;cursor:pointer;text-align:left;font-size:14px;line-height:22px;color:var(--dsw-alias-label-primary);box-sizing:border-box}.aag-menu-item:hover{background:var(--dsw-alias-interactive-bg-hover)}.aag-menu-empty{padding:8px 10px;color:var(--dsw-alias-label-secondary);font-size:13px}'
+/** 对话选择浮层与原生 Modal 共用层级，后打开的详情和确认位于上层。 */
+export const COMPOSER_CSS = '.aag-menu.aag-discovery{position:fixed;position-anchor:var(--dsh-expert-anchor);top:max(12px,var(--dsh-frame-overlay-top,12px));left:max(12px,anchor(left));right:12px;bottom:max(12px,calc(anchor(top) + 4px));align-self:safe end;justify-self:start;height:fit-content;position-try-fallbacks:--dsh-expert-wide;}@position-try --dsh-expert-wide{left:12px;right:12px;justify-self:safe end;}.aag-btn-wrap{anchor-name:var(--dsh-expert-anchor);position:relative;order:1;display:inline-flex;flex:0 0 auto}.aag-btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;height:28px;padding:0 8px;white-space:nowrap;border:none;border-radius:999px;corner-shape:round;background:transparent;color:var(--dsw-alias-label-secondary);font-size:13px;line-height:20px;font-weight:500;cursor:pointer}.aag-btn:hover,.aag-btn[aria-expanded="true"]{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}.aag-btn:focus-visible{outline:2px solid var(--dsw-alias-label-secondary);outline-offset:2px}.aag-btn>svg{flex:none}.aag-menu{position:fixed;box-sizing:border-box;padding:4px;display:flex;flex-direction:column;gap:0;width:300px;max-width:360px;max-height:calc(100dvh - 24px);overflow-y:auto;border:0;border-radius:var(--dsw-radius-panel,16px);background:var(--dsw-alias-bg-layer-2);--dsw-elevation-stroke-color:var(--dsw-alias-border-l1);box-shadow:var(--dsw-elevation-prominent);z-index:1000}.aag-menu-title{padding:8px 10px;font-size:12px;line-height:16px;color:var(--dsw-alias-label-tertiary)}.aag-menu-item{display:flex;align-items:center;gap:8px;width:100%;min-height:40px;padding:8px 10px;border:none;border-radius:var(--dsw-radius-md,10px);background:transparent;cursor:pointer;text-align:left;font-size:14px;line-height:22px;color:var(--dsw-alias-label-primary);box-sizing:border-box}.aag-menu-item:hover{background:var(--dsw-alias-interactive-bg-hover)}.aag-menu-empty{padding:8px 10px;color:var(--dsw-alias-label-secondary);font-size:13px}'
 // 设置页版式对齐 dsh-skills-manager：工具栏 + 汇总条 + 分组卡片 + 行内启停按钮。
 export const SETTINGS_CSS = `
 .aag-section{box-sizing:border-box;display:flex;min-width:0;width:100%;flex-direction:column;gap:16px;padding:0 0 32px;color:var(--dsw-alias-label-primary)}
@@ -388,7 +395,6 @@ export const SETTINGS_CSS = `
 .aag-settings-links{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 .aag-settings-links>span[data-mpi-check]{display:inline-flex;align-items:center}
 .aag-title{margin:0;font-size:20px;line-height:28px;font-weight:650;letter-spacing:-.2px}
-.aag-read-loading{display:flex;align-items:center;min-height:40px;color:var(--dsw-alias-label-tertiary)}
 .aag-note{overflow:hidden;color:var(--dsw-alias-label-secondary);font-size:12px;line-height:18px;text-overflow:ellipsis;white-space:nowrap}
 .aag-error{color:var(--dsw-alias-state-error-primary);font-size:13px;line-height:20px}
 .aag-filters{display:flex;align-items:flex-end;gap:10px;width:100%;min-width:0;max-width:100%}
@@ -397,7 +403,6 @@ export const SETTINGS_CSS = `
 .aag-field-search{flex:1 1 0;min-width:0;max-width:100%}
 .aag-search-wrap{display:flex;align-items:center;width:100%;min-width:0;max-width:100%}
 .aag-search{box-sizing:border-box;width:100%;min-width:0;max-width:100%}
-.aag-empty{display:flex;flex-direction:column;align-items:center;gap:12px;padding:28px 16px;border:0.5px dashed var(--dsw-alias-border-l2);border-radius:var(--dsw-radius-md,12px);background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-secondary);font-size:13px;line-height:20px;text-align:center}
 @media (max-width:560px){.aag-toolbar,.aag-title-row{flex-wrap:wrap}.aag-filters{flex-direction:column;align-items:stretch}.aag-field-category,.aag-field-search{flex:none}}
 `
 // 虚拟列表行高与卡片和间距保持一致。
@@ -421,11 +426,11 @@ export const CARD_SETTINGS_CSS = `
 .aag-card-filters .aag-field-source,.aag-card-filters .aag-field-category,.aag-card-filters .aag-field-status{flex:0 0 auto;width:auto;max-width:none}
 .aag-card-filters .aag-field-search{flex:1 1 0;min-width:0}
 .aag-card-filters .aag-field>span{display:inline-flex;width:auto;max-width:none}
-@media(max-width:560px){.aag-card-filters{align-items:stretch;gap:8px}.aag-card-filters .aag-field{flex:1 1 120px;width:auto}.aag-card-filters .aag-field-search{flex:1 1 100%}.aag-filter-actions{margin-left:0}}
+@media(max-width:560px){.aag-card-filters{flex-direction:row;align-items:stretch;gap:8px}.aag-card-filters .aag-field{flex:1 1 120px;width:auto}.aag-card-filters .aag-field-search{flex:1 1 100%}.aag-filter-actions{margin-left:0}}
 .aag-search-wrap{display:flex;align-items:center;width:100%;min-width:0;max-width:100%}
 .aag-search-wrap>.aag-search{width:100%;min-width:0;max-width:100%}
 .aag-search-wrap>.aag-search input::placeholder{color:var(--dsw-alias-label-dimmed)}
-.aag-categories{display:flex;gap:6px;overflow-x:auto;padding:2px 0 6px;scrollbar-width:thin}
+.aag-categories{display:flex;flex-wrap:wrap;gap:6px;min-width:0;padding:2px 0 6px}
 .aag-category{flex:none;min-height:36px;padding:6px 12px;border:0;border-radius:var(--dsw-radius-sm,8px);background:transparent;color:var(--dsw-alias-label-secondary);font:inherit;font-size:13px;cursor:pointer;white-space:nowrap}
 .aag-category:hover,.aag-category[aria-pressed="true"]{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}
 .aag-category[aria-pressed="true"]{font-weight:600}
@@ -476,8 +481,19 @@ interface EnabledState {
   readonly experts: readonly ExpertView[]
 }
 
-/** 将写失败映射到 agency 词条；非冲突错误返回 null，由调用方展示原始消息。 */
+class ExpertUnavailableError extends Error {}
+
+type ExpertMessage = { readonly key: AgencyKey } | { readonly failure: unknown; readonly refreshed?: boolean }
+
+function expertMessage(message: ExpertMessage, t: (key: AgencyKey) => string): string {
+  if ('key' in message) return t(message.key)
+  const { failure, ...options } = message
+  return writeErrorMessage(failure, { ...options, t })
+}
+
+/** 将选择不可用和写入冲突映射到 agency 词条；其他错误返回 null。 */
 export function writeErrorKey(error: unknown, options?: { readonly refreshed?: boolean }): AgencyKey | null {
+  if (error instanceof ExpertUnavailableError) return 'custom.unavailable'
   if (isExpertConflict(error)) {
     if (options?.refreshed === true) return 'error.conflict.refreshed'
     if (options?.refreshed === false) return 'error.conflict.refreshFailed'
@@ -496,13 +512,20 @@ export function writeErrorMessage(
   return error instanceof Error ? error.message : String(error)
 }
 
+/** Save a selection for the current Host; reset or disposal rejects the receipt with AbortError.
+ * @param remote Native expert Remote.
+ * @param cache Catalog that owns the Host lifetime and accepted revision.
+ * @param enabled Expert identifiers to enable.
+ * @param expectedRevision Settings revision used for conflict detection.
+ * @param signal Optional cancellation for the initiating operation.
+ * @returns Accepted selection in the current catalog.
+ */
 export async function writeEnabled(remote: AgencyAgentsRemoteApi, cache: ExpertClientState, enabled: ReadonlySet<string>, expectedRevision: number, signal?: AbortSignal): Promise<EnabledState> {
-  signal?.throwIfAborted()
-  const result = signal === undefined
-    ? await remote.setEnabled([...enabled], expectedRevision)
-    : await remote.setEnabled([...enabled], expectedRevision, signal)
+  const lifetime = signal ? AbortSignal.any([signal, cache.catalog.signal]) : cache.catalog.signal
+  lifetime.throwIfAborted()
+  const result = await remote.setEnabled([...enabled], expectedRevision, lifetime)
+  lifetime.throwIfAborted()
   if (!result.ok) throw result.error
-  signal?.throwIfAborted()
   return cache.catalog.acceptEnabled(result.value)
 }
 
@@ -523,30 +546,6 @@ function teamTabIcon(): React.ReactElement {
 /** 工具栏菜单不能接管焦点，否则 Lexical 无法按检测坐标插入原子引用。 */
 export function keepComposerFocus(event: { preventDefault(): void }): void {
   event.preventDefault()
-}
-
-export type ExpertMenuPlacement = 'above' | 'below'
-
-export interface ExpertMenuPosition {
-  readonly placement: ExpertMenuPlacement
-  readonly maxHeight: number
-}
-
-/**
- * 让浮层始终留在可视区域内。输入框通常贴近底部，因此默认向上展开；
- * 当上方空间更小时，改为向下展开并将列表限制在实际可滚动的高度内。
- */
-export function resolveExpertMenuPosition(
-  trigger: Pick<DOMRect, 'top' | 'bottom'>,
-  viewportHeight: number,
-): ExpertMenuPosition {
-  const gap = 4
-  const viewportInset = 12
-  const above = Math.max(0, Math.floor(trigger.top - gap - viewportInset))
-  const below = Math.max(0, Math.floor(viewportHeight - trigger.bottom - gap - viewportInset))
-  return above >= below
-    ? { placement: 'above', maxHeight: above }
-    : { placement: 'below', maxHeight: below }
 }
 
 /** 输入机暴露给工具栏的最小原子引用写入面，避免依赖 slot 的非标准 owner 参数。 */
@@ -680,18 +679,21 @@ type ButtonProps = PropsLocale<'agency'> & {
 export function AgentsButton(props: ButtonProps): React.ReactElement {
   const [mode, setMode] = React.useState<'experts' | 'teams'>('experts')
   const [open, setOpen] = React.useState(false)
-  const [insertError, setInsertError] = React.useState<string | null>(null)
+  const [insertError, setInsertError] = React.useState<ExpertMessage | null>(null)
   const [query, setQuery] = React.useState('')
   const [busy, setBusy] = React.useState(false)
+  const [reading, setReading] = React.useState(false)
   const working = React.useRef(false)
   // 失败的读取保留到显式重试，不能以旧目录继续启用或插入。
-  const catalogRead = React.useRef<Promise<CatalogState> | undefined>(undefined)
+  const catalogRead = React.useRef<{ promise: Promise<CatalogState>; epoch: number; pending: boolean }>()
   const epoch = React.useRef(0)
   const menuId = React.useId()
-  const [menuPosition, setMenuPosition] = React.useState<ExpertMenuPosition | undefined>()
-  const [menuLeft, setMenuLeft] = React.useState(0)
   const rootRef = React.useRef<HTMLDivElement | null>(null)
   const menuRef = React.useRef<HTMLDivElement | null>(null)
+  const refreshRef = React.useRef<HTMLButtonElement | null>(null)
+  const anchorStyle: React.CSSProperties & { '--dsh-expert-anchor': string } = {
+    '--dsh-expert-anchor': `--dsh-expert-${menuId.replaceAll(':', '')}`,
+  }
   const catalog = React.useSyncExternalStore(
     listener => props.cache.catalog.subscribe(listener),
     () => props.cache.catalog.getSnapshot(),
@@ -700,41 +702,12 @@ export function AgentsButton(props: ButtonProps): React.ReactElement {
     epoch.current++
     setOpen(false)
   }
-  useModalLayer(menuRef, open, close)
+  const menuReady = open
+  useModalLayer(menuRef, menuReady, close)
   React.useLayoutEffect(() => {
-    if (open) menuRef.current?.querySelector<HTMLElement>('[data-modal-autofocus]')?.focus()
-  }, [open, mode])
+    if (menuReady) menuRef.current?.querySelector<HTMLElement>('[data-modal-autofocus]')?.focus()
+  }, [menuReady, mode])
   React.useEffect(() => () => { epoch.current++ }, [])
-
-  React.useLayoutEffect(() => {
-    if (!open) return
-    const updatePosition = (): void => {
-      const root = rootRef.current
-      if (root === null) return
-      const viewportHeight = window.visualViewport?.height ?? window.innerHeight
-      const next = resolveExpertMenuPosition(root.getBoundingClientRect(), viewportHeight)
-      const rect = root.getBoundingClientRect()
-      const viewportWidth = window.visualViewport?.width ?? window.innerWidth
-      const width = Math.min(340, viewportWidth - 24)
-      setMenuLeft(Math.max(12 - rect.left, Math.min(0, viewportWidth - 12 - width - rect.left)))
-      setMenuPosition((current) => current?.placement === next.placement && current.maxHeight === next.maxHeight ? current : next)
-    }
-    updatePosition()
-    window.addEventListener('resize', updatePosition)
-    window.addEventListener('scroll', updatePosition, true)
-    const visualViewport = window.visualViewport
-    visualViewport?.addEventListener('resize', updatePosition)
-    visualViewport?.addEventListener('scroll', updatePosition)
-    const observer = typeof ResizeObserver === 'undefined' ? undefined : new ResizeObserver(updatePosition)
-    if (rootRef.current !== null) observer?.observe(rootRef.current)
-    return () => {
-      window.removeEventListener('resize', updatePosition)
-      window.removeEventListener('scroll', updatePosition, true)
-      visualViewport?.removeEventListener('resize', updatePosition)
-      visualViewport?.removeEventListener('scroll', updatePosition)
-      observer?.disconnect()
-    }
-  }, [open])
 
   React.useEffect(() => {
     if (!open) return
@@ -749,16 +722,32 @@ export function AgentsButton(props: ButtonProps): React.ReactElement {
   }, [open])
 
   const load = (): void => {
-    if (working.current) return
+    if (working.current || catalogRead.current?.pending && catalogRead.current.epoch === epoch.current) return
+    const signal = props.cache.catalog.signal
     const request = epoch.current
-    setInsertError(null)
     // 名册已在缓存里时后台刷新，避免搜索框下闪「正在处理…」。
-    setBusy(catalog.experts.length === 0)
+    setBusy(catalog.experts.length === 0 && insertError === null)
+    setReading(true)
     const pending = props.cache.catalog.refresh()
-    catalogRead.current = pending
-    void pending.catch((error: unknown) => {
-      if (request === epoch.current) setInsertError(writeErrorMessage(error, { t: props.t }))
-    }).finally(() => { if (request === epoch.current) setBusy(false) })
+    const read = { promise: pending, epoch: request, pending: true }
+    catalogRead.current = read
+    void pending.then(() => {
+      if (request !== epoch.current || signal.aborted) return
+      const refresh = refreshRef.current
+      const search = menuRef.current?.querySelector<HTMLElement>('[data-modal-autofocus]')
+      if (refresh && refresh.ownerDocument.activeElement === refresh && search) {
+        focusWithoutRing(search, { preventScroll: true })
+      }
+      setInsertError(null)
+    }).catch((error: unknown) => {
+      if (request === epoch.current && !signal.aborted) setInsertError({ failure: error })
+    }).finally(() => {
+      read.pending = false
+      if (request === epoch.current && !signal.aborted) {
+        setReading(false)
+        if (!working.current) setBusy(false)
+      }
+    })
   }
 
   const onClick = (): void => {
@@ -772,41 +761,43 @@ export function AgentsButton(props: ButtonProps): React.ReactElement {
 
   const pick = async (slug: string): Promise<void> => {
     if (working.current) return
+    const signal = props.cache.catalog.signal
+    if (signal.aborted) return
     working.current = true
     setBusy(true)
-    setInsertError(null)
     const request = ++epoch.current
     let newlyEnabled = false
     let writeStarted = false
     try {
       const insert = props.prepareInsertion?.() ?? props.insertReference
-      await catalogRead.current
-      if (request !== epoch.current) return
+      await catalogRead.current?.promise
+      if (request !== epoch.current || signal.aborted) return
       // 使用当前快照的修订号写入；冲突后刷新并交还用户重试，不静默覆盖。
       let current: EnabledState = props.cache.catalog.getSnapshot()
       const expert = current.experts.find(item => item.slug === slug)
-      if (expert === undefined || expert.conflict) throw new Error(props.t('custom.unavailable'))
+      if (expert === undefined || expert.conflict) throw new ExpertUnavailableError()
       if (!current.enabled.has(slug)) {
         writeStarted = true
-        current = await writeEnabled(props.remote, props.cache, new Set([...current.enabled, slug]), current.revision)
+        current = await writeEnabled(props.remote, props.cache, new Set([...current.enabled, slug]), current.revision, signal)
         newlyEnabled = current.enabled.has(slug)
       }
-      if (request !== epoch.current) return
+      if (request !== epoch.current || signal.aborted) return
       const selected = current.experts.find(item => item.slug === slug)
-      if (!selected || selected.conflict) throw new Error(props.t('custom.unavailable'))
+      if (!selected || selected.conflict) throw new ExpertUnavailableError()
       if (!current.enabled.has(slug) || !insertSelectedExpert(slug, props.getActive(), insert, current.experts)) {
-        setInsertError(props.t(newlyEnabled ? 'discovery.enabledInsertFailed' : 'error.insertFailed'))
+        setInsertError({ key: newlyEnabled ? 'discovery.enabledInsertFailed' : 'error.insertFailed' })
         return
       }
       // 宿主插入操作负责把光标交还编辑器；不要再抢回工具栏按钮焦点。
+      setInsertError(null)
       close()
     } catch (error) {
-      if (request !== epoch.current) return
+      if (request !== epoch.current || signal.aborted) return
       let refreshed = false
       if (writeStarted) {
         try { await props.cache.catalog.refresh(); refreshed = true } catch { /* 保留原错误并明确刷新是否成功。 */ }
       }
-      if (request === epoch.current) setInsertError(writeErrorMessage(error, { refreshed, t: props.t }))
+      if (request === epoch.current && !signal.aborted) setInsertError({ failure: error, refreshed })
     } finally {
       working.current = false
       if (request === epoch.current) setBusy(false)
@@ -824,11 +815,12 @@ export function AgentsButton(props: ButtonProps): React.ReactElement {
   const menu = open
     ? React.createElement('div', {
       className: 'aag-menu aag-discovery', ref: menuRef, id: menuId, role: 'dialog', 'aria-modal': 'true', 'aria-label': props.t('settings.nav'),
-      'data-placement': menuPosition?.placement,
-      style: { maxHeight: `${Math.min(360, menuPosition?.maxHeight ?? 360)}px`, left: `${menuLeft}px` },
+      style: anchorStyle,
     },
-      insertError === null ? null : React.createElement('div', { className: 'aag-error', role: 'alert' }, insertError,
-        React.createElement('button', { type: 'button', disabled: busy, onClick: () => load() }, props.t('btn.refresh'))),
+      insertError === null ? null : React.createElement('div', { className: 'aag-error', role: 'alert' },
+        React.createElement('span', null, expertMessage(insertError, props.t)),
+        React.createElement(Button, { ref: refreshRef, size: 'sm', disabled: busy, 'aria-disabled': busy || reading, 'aria-busy': reading,
+          className: busy || reading ? 'product-control-pending' : undefined, onClick: () => load() }, props.t('btn.refresh'))),
       'getTeams' in props.remote ? React.createElement(SegmentedControl, {
         id: 'aag-composer-mode', label: teamText(props.getActive(), '专家'), value: mode,
         options: [
@@ -843,15 +835,14 @@ export function AgentsButton(props: ButtonProps): React.ReactElement {
         query, onQuery: setQuery, busy, hasMore: searching && matches.length > results.length, onPick: slug => { void pick(slug) } }))
     : null
 
-  return React.createElement('div', { className: 'aag-btn-wrap', ref: rootRef },
+  return React.createElement('div', { className: 'aag-btn-wrap', ref: rootRef, style: anchorStyle },
     React.createElement('button', { type: 'button', className: 'aag-btn', title: props.t('button.title'), 'aria-expanded': open, 'aria-haspopup': 'dialog', 'aria-controls': open ? menuId : undefined, onMouseDown: keepComposerFocus, onClick }, expertIcon(), props.t('settings.nav')),
-    menu)
+    menu === null ? null : createPortal(menu, document.body))
 }
 
 interface OpenPrompt {
   readonly name: string
   readonly prompt: string
-  readonly returnFocus: HTMLButtonElement
 }
 
 function scrollParent(node: HTMLElement): HTMLElement | Window {
@@ -864,16 +855,15 @@ function scrollParent(node: HTMLElement): HTMLElement | Window {
   return window
 }
 
-function focusedCardIndex(node: HTMLElement): number | null {
+function focusedCardSlug(node: HTMLElement): string | null {
   const active = document.activeElement
   if (!(active instanceof HTMLElement) || !node.contains(active)) return null
-  const card = active.closest('[data-expert-index]')
+  const card = active.closest('[data-expert-slug]')
   if (!(card instanceof HTMLElement) || !node.contains(card)) return null
-  const index = Number(card.dataset.expertIndex)
-  return Number.isInteger(index) ? index : null
+  return card.dataset.expertSlug ?? null
 }
 
-/** 只挂载视口内的专家卡片。持有焦点的卡片留在树上，避免滚动后焦点掉到页面。 */
+/** 按专家标识保留视口内与持有焦点的卡片，目录更新不改变焦点归属。 */
 function ExpertCardWindow(props: {
   items: readonly ExpertView[]
   resetKey: string
@@ -882,7 +872,7 @@ function ExpertCardWindow(props: {
   const ref = React.useRef<HTMLDivElement>(null)
   const countRef = React.useRef(props.items.length)
   countRef.current = props.items.length
-  const [range, setRange] = React.useState({ start: 0, end: 8, columns: 2, row: EXPERT_CARD_ROW, pin: null as number | null, key: props.resetKey })
+  const [range, setRange] = React.useState({ start: 0, end: 8, columns: 2, row: EXPERT_CARD_ROW, pin: null as string | null, key: props.resetKey })
   React.useLayoutEffect(() => {
     setRange((current) => current.key === props.resetKey ? current : { start: 0, end: 8, columns: current.columns, row: current.row, pin: null, key: props.resetKey })
   }, [props.resetKey])
@@ -902,7 +892,7 @@ function ExpertCardWindow(props: {
       const rows = Math.ceil(countRef.current / columns)
       const start = Math.max(0, Math.floor(startPx / row) - 1)
       const end = Math.min(rows, Math.max(start + 1, Math.ceil((startPx + viewHeight) / row) + 2))
-      const pin = focusedCardIndex(node)
+      const pin = focusedCardSlug(node)
       setRange(current => current.key === props.resetKey && current.start === start && current.end === end && current.columns === columns && current.row === row && current.pin === pin
         ? current
         : { start, end, columns, row, pin, key: props.resetKey })
@@ -932,14 +922,15 @@ function ExpertCardWindow(props: {
   const end = Math.min(rows, Math.max(start, range.end))
   const shown = new Set<number>()
   for (let index = start * columns; index < Math.min(end * columns, count); index += 1) shown.add(index)
-  if (range.pin !== null && range.pin >= 0 && range.pin < count) shown.add(range.pin)
+  const pinnedIndex = range.pin === null ? -1 : props.items.findIndex(item => item.slug === range.pin)
+  if (pinnedIndex >= 0) shown.add(pinnedIndex)
   const height = rows === 0 ? 0 : rows * range.row - EXPERT_CARD_GAP
   return React.createElement('div', { ref, className: 'aag-expert-window', role: 'list', 'aria-rowcount': rows, style: { height } },
     React.createElement('div', { className: 'aag-expert-grid', style: { top: 0, gridAutoRows: `${Math.max(range.row - EXPERT_CARD_GAP, 1)}px` } },
       [...shown].sort((left, right) => left - right).map((index) => React.createElement('div', {
-        key: index,
+        key: props.items[index]!.slug,
         role: 'listitem',
-        'data-expert-index': index,
+        'data-expert-slug': props.items[index]!.slug,
         'aria-setsize': count,
         'aria-posinset': index + 1,
         style: { gridColumn: (index % columns) + 1, gridRow: Math.floor(index / columns) + 1 },
@@ -956,12 +947,18 @@ function ExpertCardsSettings(props: PropsLocale<'agency'> & {
   cache: ExpertClientState
   getActive: () => 'zh' | 'en'
 }): React.ReactElement {
+  const searchField = React.useRef<HTMLDivElement>(null)
   const cached = props.cache.catalog.getSnapshot()
   const reloadEpoch = React.useRef(0)
-  React.useEffect(() => () => { reloadEpoch.current++ }, [props.remote, props.cache])
+  const [reloading, setReloading] = React.useState(false)
+  const retry = useLibraryRemovalFocus(() => searchField.current?.querySelector('input'))
+  React.useEffect(() => {
+    setReloading(false)
+    return () => { reloadEpoch.current++ }
+  }, [props.remote, props.cache])
   const [state, setState] = React.useState<EnabledState | null>(cached.revision < 0 ? null : cached)
   const [initialOrder, setInitialOrder] = React.useState<ReadonlyArray<string> | null>(cached.revision < 0 ? null : sortExpertsByEnabled(cached.experts, cached.enabled).map(expert => expert.slug))
-  const [error, setError] = React.useState<string | null>(null)
+  const [error, setError] = React.useState<ExpertMessage | null>(null)
   const [query, setQuery] = React.useState('')
   const [division, setDivision] = React.useState('')
   const [status, setStatus] = React.useState('')
@@ -978,15 +975,22 @@ function ExpertCardsSettings(props: PropsLocale<'agency'> & {
       if (lifetime.current === controller) lifetime.current = undefined
     }
   }, [props.remote, props.cache])
+  const requestSignal = (): AbortSignal | undefined => {
+    const signal = lifetime.current?.signal
+    return signal && AbortSignal.any([signal, props.cache.catalog.signal])
+  }
   const saving = React.useRef(false)
   const [isSaving, setIsSaving] = React.useState(false)
+  const directoryArea = React.useRef<HTMLElement>(null)
+  const preserveActionFocus = useLibraryActionFocus(isSaving, props.active === false ? '' : props.source,
+    directoryArea, () => searchField.current?.querySelector('input'))
   const { source, onSourceChange } = props
   const [editor, setEditor] = React.useState<{ expert?: CustomExpertInput; enabled: boolean; revision: number; importOnly?: boolean } | null>(null)
   const [deleting, setDeleting] = React.useState<{ expert: ExpertView; revision: number } | null>(null)
   const [bulk, setBulk] = React.useState<{ targets: string[]; enabled: boolean } | null>(null)
-  const [bulkError, setBulkError] = React.useState<string | null>(null)
-  const [deleteError, setDeleteError] = React.useState<string | null>(null)
-  const [notice, setNotice] = React.useState<string | null>(null)
+  const [bulkError, setBulkError] = React.useState<ExpertMessage | null>(null)
+  const [deleteError, setDeleteError] = React.useState<ExpertMessage | null>(null)
+  const [notice, setNotice] = React.useState<AgencyKey | null>(null)
 
   const accept = async (catalog: CatalogSnapshot, started: CatalogState, signal?: AbortSignal): Promise<void> => {
     try {
@@ -995,7 +999,7 @@ function ExpertCardsSettings(props: PropsLocale<'agency'> & {
       setState(current)
       setError(null)
     } catch (cause: unknown) {
-      if (!signal?.aborted) setError(cause instanceof Error ? cause.message : String(cause))
+      if (!signal?.aborted) setError({ failure: cause })
     }
   }
   const fresh = (): EnabledState | null => {
@@ -1018,9 +1022,7 @@ function ExpertCardsSettings(props: PropsLocale<'agency'> & {
         return props.remote.importExpert(source.value.files, signal)
       }, value => {
         const original = displayName(expert, props.getActive())
-        let name = `${original.slice(0, 33)} ${props.getActive() === 'zh' ? '副本' : 'copy'}`
-        let index = 2
-        while (current.experts.some(item => [item.name, item.nameEn].includes(name))) name = `${original.slice(0, 28)} ${props.getActive() === 'zh' ? '副本' : 'copy'} ${index++}`
+        const name = customCopyName(original, ` ${props.getActive() === 'zh' ? '副本' : 'copy'}`, current.experts.flatMap(item => [item.name, item.nameEn]))
         const manifest = value.manifest ? JSON.parse(value.manifest) as Record<string, unknown> : {}
         manifest.worker = { ...(typeof manifest.worker === 'object' && manifest.worker !== null ? manifest.worker : {}), suggested_name: `custom-${crypto.randomUUID()}` }
         setEditor({ expert: { ...value, slug: undefined, manifest: JSON.stringify(manifest), name, description: displayDescription(expert, props.getActive()).slice(0, 160), division: expert.division,
@@ -1034,44 +1036,46 @@ function ExpertCardsSettings(props: PropsLocale<'agency'> & {
     const slug = reviewed.expert.slug
     if (current.revision !== reviewed.revision || !deepEqualJson(reviewed.expert, current.experts.find(expert => expert.slug === slug) ?? null)) {
       setDeleting(null)
-      setError(props.t('error.conflict'))
+      setError({ key: 'error.conflict' })
       return
     }
     const started = props.cache.catalog.getSnapshot()
+    const signal = requestSignal()
+    if (!signal || signal.aborted) return
     saving.current = true
     setIsSaving(true)
-    setDeleteError(null)
-    const signal = lifetime.current?.signal
-    signal?.throwIfAborted()
     void props.remote.deleteCustomExpert(slug, reviewed.revision, signal)
       .then(result => {
         signal?.throwIfAborted()
         if (!result.ok) throw result.error
+        preserveActionFocus()
+        setDeleteError(null)
         setDeleting(null)
-        setNotice(props.t('custom.deleted'))
+        setNotice('custom.deleted')
         void accept(result.value, started, signal)
       }).catch((cause: unknown) => {
         if (signal?.aborted) return
-        const message = cause instanceof Error ? cause.message : String(cause)
-        setDeleteError(message)
+        setDeleteError({ failure: cause })
       }).finally(() => { saving.current = false; setIsSaving(false) })
   }
 
   React.useEffect(() => {
     let alive = true
+    const signal = props.cache.catalog.signal
     const applySnapshot = (current: EnabledState): void => {
       setState(current)
       setInitialOrder((order) => order ?? sortExpertsByEnabled(current.experts, current.enabled).map((expert) => expert.slug))
     }
-    const loadCatalog = (): Promise<void> => props.cache.catalog.refresh().then((current) => { if (alive) applySnapshot(current) })
+    const loadCatalog = (): Promise<void> => props.cache.catalog.refresh().then((current) => { if (alive && !signal.aborted) applySnapshot(current) })
     const pending = loadCatalog().then(async () => {
+      if (!alive || signal.aborted) return
       const current = await props.cache.catalog.refresh(true)
-      if (!alive) return
+      if (!alive || signal.aborted) return
       applySnapshot(current)
       setError(null)
     })
     void pending.catch((err: unknown) => {
-      if (alive) setError(err instanceof Error ? err.message : String(err))
+      if (alive && !signal.aborted) setError({ failure: err })
     })
     return () => { alive = false }
   }, [props.remote, props.cache])
@@ -1090,11 +1094,12 @@ function ExpertCardsSettings(props: PropsLocale<'agency'> & {
     const next = new Set(current.enabled)
     if (next.has(slug)) next.delete(slug)
     else next.add(slug)
+    const signal = requestSignal()
+    if (!signal || signal.aborted) return
+    preserveActionFocus()
     saving.current = true
     setIsSaving(true)
     setState({ ...current, enabled: next })
-    const signal = lifetime.current?.signal
-    signal?.throwIfAborted()
     void writeEnabled(props.remote, props.cache, next, current.revision, signal)
       .then((current) => {
         signal?.throwIfAborted()
@@ -1105,11 +1110,13 @@ function ExpertCardsSettings(props: PropsLocale<'agency'> & {
         if (signal?.aborted) return
         try {
           const refreshed = await props.cache.catalog.refresh()
+          if (signal?.aborted) return
           setState(refreshed)
-          setError(writeErrorMessage(err, { refreshed: true, t: props.t }))
+          setError({ failure: err, refreshed: true })
         } catch {
+          if (signal?.aborted) return
           setState(previous)
-          setError(writeErrorMessage(err, { refreshed: false, t: props.t }))
+          setError({ failure: err, refreshed: false })
         }
       })
       .finally(() => {
@@ -1122,13 +1129,13 @@ function ExpertCardsSettings(props: PropsLocale<'agency'> & {
     if (detailRequest.current || props.active === false) return
     const controller = new AbortController()
     detailRequest.current = controller
-    setError(null)
     void read(controller.signal).then((result) => {
       controller.signal.throwIfAborted()
       if (!result.ok) throw result.error
       accept(result.value)
+      setError(null)
     }).catch((err: unknown) => {
-      if (!controller.signal.aborted) setError(err instanceof Error ? err.message : String(err))
+      if (!controller.signal.aborted) setError({ failure: err })
     }).finally(() => { if (detailRequest.current === controller) detailRequest.current = null })
   }
 
@@ -1136,19 +1143,25 @@ function ExpertCardsSettings(props: PropsLocale<'agency'> & {
     readDetail(signal => props.remote.getPrompt(expert.slug, expert.division, signal), value => action(value.prompt))
   }
 
-  const viewPrompt = (expert: ExpertView, returnFocus: HTMLButtonElement): void => {
-    withPrompt(expert, (prompt) => { setOpenPrompt({ name: displayName(expert, props.getActive()), prompt, returnFocus }) })
+  const viewPrompt = (expert: ExpertView): void => {
+    withPrompt(expert, (prompt) => { setOpenPrompt({ name: displayName(expert, props.getActive()), prompt }) })
   }
 
   const nodes: React.ReactNode[] = []
-  if (error !== null) nodes.push(React.createElement('div', { key: 'error', className: 'aag-error', role: 'alert' }, error,
-    React.createElement(Button, { onClick: () => {
+  if (error !== null) nodes.push(React.createElement('div', { key: 'error', className: 'aag-error', role: 'alert' }, expertMessage(error, props.t),
+    React.createElement(Button, { ref: retry, 'aria-disabled': reloading, 'aria-busy': reloading,
+      className: reloading ? 'product-control-pending' : undefined, onClick: () => {
+      if (reloading) return
       const request = ++reloadEpoch.current
+      const signal = props.cache.catalog.signal
+      setReloading(true)
       void props.cache.catalog.refresh(true).then(current => {
-        if (request !== reloadEpoch.current) return
+        if (request !== reloadEpoch.current || signal.aborted) return
         setState(current); setError(null)
       }).catch((cause: unknown) => {
-        if (request === reloadEpoch.current) setError(cause instanceof Error ? cause.message : String(cause))
+        if (request === reloadEpoch.current && !signal.aborted) setError({ failure: cause })
+      }).finally(() => {
+        if (request === reloadEpoch.current) setReloading(false)
       })
     } }, props.t('company.retry'))))
   {
@@ -1163,7 +1176,11 @@ function ExpertCardsSettings(props: PropsLocale<'agency'> & {
     const total = experts.length
     if (experts.some(expert => expert.conflict)) nodes.push(React.createElement('div', { key: 'conflicts', className: 'aag-error', role: 'alert' }, props.t('custom.nameConflictHint')))
     const hasFilter = normalizeExpertQuery(query) !== '' || division !== '' || status !== ''
-    const resetFilters = (): void => { setQuery(''); setDivision(''); setStatus('') }
+    const resetFilters = (): void => {
+      setQuery(''); setDivision(''); setStatus('')
+      const search = searchField.current?.querySelector('input')
+      if (search) focusWithoutRing(search)
+    }
     if (!props.sharedHeader) nodes.push(React.createElement('div', { key: 'toolbar', className: 'aag-toolbar' },
       React.createElement('div', { className: 'aag-title-row' },
         React.createElement('h2', { className: 'aag-title' }, props.t('settings.title')),
@@ -1175,14 +1192,19 @@ function ExpertCardsSettings(props: PropsLocale<'agency'> & {
         React.createElement('span', { className: 'aag-header-stat' },
           props.t('summary.enabledPrefix'),
           React.createElement('strong', null, state === null ? '—' : enabledCount)))))
-    const bulkActions = [true, false].map(next => React.createElement(Button, { key: next ? 'enable' : 'disable', disabled: isSaving || state === null || !filtered.some(expert => !expert.conflict && enabled.has(expert.slug) !== next), onClick: () => { setBulkError(null); setBulk({ targets: filtered.filter(expert => !expert.conflict && enabled.has(expert.slug) !== next).map(expert => expert.slug), enabled: next }) } }, props.t(next ? 'bulk.enable' : 'bulk.disable')))
+    const bulkActions = [true, false].map(next => {
+      const unavailable = state === null || !filtered.some(expert => !expert.conflict && enabled.has(expert.slug) !== next)
+      return React.createElement(Button, { key: next ? 'enable' : 'disable', disabled: isSaving || unavailable,
+        className: isSaving && !unavailable ? 'product-control-pending' : undefined,
+        onClick: () => { setBulkError(null); setBulk({ targets: filtered.filter(expert => !expert.conflict && enabled.has(expert.slug) !== next).map(expert => expert.slug), enabled: next }) } }, props.t(next ? 'bulk.enable' : 'bulk.disable'))
+    })
     const filterActions = React.createElement('div', { className: 'aag-filter-actions' }, bulkActions,
-      source === 'custom' ? React.createElement(Button, { disabled: isSaving || state === null, onClick: () => openEditor() }, props.t('custom.importPackage')) : null,
-      props.startCreation ? React.createElement(Button, { variant: 'primary', size: 'sm', disabled: isSaving,
+      source === 'custom' ? React.createElement(Button, { disabled: isSaving || state === null, className: isSaving && state !== null ? 'product-control-pending' : undefined, onClick: () => openEditor() }, props.t('custom.importPackage')) : null,
+      props.startCreation ? React.createElement(Button, { variant: 'primary', size: 'sm',
         icon: React.createElement(IconPlus, { size: 16, 'aria-hidden': true }),
         onClick: () => props.startCreation?.('expert'),
       }, props.t('creation.expert')) : null)
-    if (notice !== null) nodes.push(React.createElement('div', { key: 'notice', className: 'aag-custom-notice', role: 'status' }, notice))
+    if (notice !== null) nodes.push(React.createElement('div', { key: 'notice', className: 'aag-custom-notice', role: 'status' }, props.t(notice)))
     nodes.push(React.createElement('div', { key: 'filters', className: 'aag-filters aag-card-filters' },
       React.createElement('div', { className: 'aag-field aag-field-status' },
         React.createElement(CategorySelect, {
@@ -1194,7 +1216,7 @@ function ExpertCardsSettings(props: PropsLocale<'agency'> & {
           ],
         })),
       React.createElement('div', { className: 'aag-field aag-field-search' },
-        React.createElement('div', { className: 'aag-search-wrap' },
+        React.createElement('div', { ref: searchField, className: 'aag-search-wrap' },
           React.createElement(Input, {
             id: 'aag-filter-search', className: 'aag-search',
             value: query, icon: React.createElement(Search, { size: 16, strokeWidth: 1.7, 'aria-hidden': true }),
@@ -1204,13 +1226,13 @@ function ExpertCardsSettings(props: PropsLocale<'agency'> & {
           }))),
       filterActions))
     nodes.push(React.createElement('nav', { key: 'categories', className: 'aag-categories', 'aria-label': props.t('settings.filter.category') },
-      [...new Set([...expertDivisionFilterValues(), ...experts.map(expert => expert.division)])].map(value =>
+      expertDivisionFilterValues().map(value =>
         React.createElement('button', { key: value, type: 'button', className: 'aag-category', 'aria-pressed': division === value, onClick: () => setDivision(value) },
           value === '' ? props.t('settings.filter.allCategories') : inputTriggerSourceName(value, props.getActive())))))
     if (state === null && error === null) {
-      nodes.push(React.createElement('div', { key: 'loading', role: 'status', 'aria-label': props.t('settings.loading'), className: 'aag-read-loading' }, React.createElement(StateDot, { state: 'ongoing', size: 14 })))
+      nodes.push(React.createElement('div', { key: 'loading', role: 'status', 'aria-label': props.t('settings.loading'), className: 'product-capability-pending' }, React.createElement(StateDot, { state: 'ongoing', size: 14, className: 'product-read-indicator' })))
     } else if (state !== null && filtered.length === 0) {
-      nodes.push(React.createElement('div', { key: 'empty', className: 'aag-empty' },
+      nodes.push(React.createElement('div', { key: 'empty', className: 'product-capability-empty' },
         React.createElement('div', null, !hasFilter ? props.t(source === 'custom' ? 'custom.emptyTitle' : 'settings.market.empty') : props.t('settings.empty', { all: props.t('settings.filter.allCategories') })),
         source === 'custom' && !hasFilter ? React.createElement('p', { className: 'aag-note' }, props.t('custom.emptyHint')) : null,
         hasFilter ? React.createElement(Button, { onClick: resetFilters }, props.t('settings.empty.reset')) : null))
@@ -1229,12 +1251,12 @@ function ExpertCardsSettings(props: PropsLocale<'agency'> & {
             expert.company ? React.createElement('span', { className: 'aag-custom-badge' }, props.t('settings.source.company')) : expert.custom ? React.createElement('span', { className: 'aag-custom-badge' }, props.t('custom.source')) : null
           ),
           description: displayDescription(expert, props.getActive()),
-          enabled: isEnabled, disabled: isSaving || expert.conflict === true,
+          enabled: isEnabled, disabled: expert.conflict === true, pending: isSaving,
           enabledLabel: props.t('settings.enabled'), disabledLabel: props.t('settings.disabled'),
           toggle: () => toggle(expert.slug),
           moreItems: [
-            { id: 'edit', label: props.t(expert.custom ? 'custom.edit' : 'custom.copy'), shortLabel: props.t(expert.custom ? 'card.edit' : 'card.copy'), icon: React.createElement(expert.custom ? EditIcon : Copy, { size: 16, strokeWidth: 1.7, 'aria-hidden': true }), disabled: isSaving || state === null, onSelect: () => openEditor(expert) },
-            ...(expert.custom && 'dshDesktop' in globalThis ? [{ id: 'submit-company', label: props.t('custom.submitCompany'), shortLabel: props.t('card.submit'), disabled: isSaving || state === null, onSelect: () => {
+            { id: 'edit', label: props.t(expert.custom ? 'custom.edit' : 'custom.copy'), shortLabel: props.t(expert.custom ? 'card.edit' : 'card.copy'), icon: React.createElement(expert.custom ? EditIcon : Copy, { size: 16, strokeWidth: 1.7, 'aria-hidden': true }), disabled: state === null, pending: isSaving, onSelect: () => openEditor(expert) },
+            ...(expert.custom && 'dshDesktop' in globalThis ? [{ id: 'submit-company', label: props.t('custom.submitCompany'), shortLabel: props.t('card.submit'), disabled: state === null, pending: isSaving, onSelect: () => {
               document.dispatchEvent(new CustomEvent('dsh:company-content-submit', { cancelable: true, detail: {
                 kind: 'expert', name: expert.name, prepare: async (signal: AbortSignal) => {
                   signal.throwIfAborted()
@@ -1245,48 +1267,48 @@ function ExpertCardsSettings(props: PropsLocale<'agency'> & {
                 },
               } }))
             } }] : []),
-            ...(expert.custom ? [{ id: 'delete', label: props.t('custom.delete'), shortLabel: props.t('card.delete'), icon: React.createElement(TrashIcon, { size: 16, strokeWidth: 1.7, 'aria-hidden': true }), danger: true, disabled: isSaving || state === null, onSelect: () => {
+            ...(expert.custom ? [{ id: 'delete', label: props.t('custom.delete'), shortLabel: props.t('card.delete'), icon: React.createElement(TrashIcon, { size: 16, strokeWidth: 1.7, 'aria-hidden': true }), danger: true, disabled: state === null, pending: isSaving, onSelect: () => {
               if (state === null) return
               setDeleting({ expert, revision: state.revision }); setDeleteError(null)
             } }] : []),
           ],
-          actions: React.createElement('button', { type: 'button', className: 'aag-card-action', title: props.t('settings.viewPromptTitle'), 'aria-label': props.t('settings.viewPromptTitle'), 'aria-haspopup': 'dialog', onClick: (event: React.MouseEvent<HTMLButtonElement>) => viewPrompt(expert, event.currentTarget) },
+          actions: React.createElement('button', { type: 'button', className: 'aag-card-action', title: props.t('settings.viewPromptTitle'), 'aria-label': props.t('settings.viewPromptTitle'), 'aria-haspopup': 'dialog', onClick: () => viewPrompt(expert) },
             React.createElement(Eye, { size: 18, strokeWidth: 1.7, 'aria-hidden': true }), React.createElement('span', { className: 'aag-card-action-text' }, props.t('settings.viewPrompt'))),
         })
       } }))
     }
   }
-  return React.createElement('section', { className: 'aag-section', id: 'aag-expert-source-panel' }, nodes,
-    bulk === null ? null : React.createElement(LibraryConfirm, { title: props.t('bulk.title'), description: props.t('bulk.description', { action: props.t(bulk.enabled ? 'bulk.enableVerb' : 'bulk.disableVerb'), count: bulk.targets.length }), confirmLabel: props.t('bulk.confirm'), cancelLabel: props.t('bulk.cancel'), busy: isSaving, error: bulkError, close: () => setBulk(null), confirm: () => {
+  return React.createElement('section', { ref: directoryArea, className: 'aag-section', id: 'aag-expert-source-panel' }, nodes,
+    bulk === null ? null : React.createElement(LibraryConfirm, { title: props.t('bulk.title'), description: props.t('bulk.description', { action: props.t(bulk.enabled ? 'bulk.enableVerb' : 'bulk.disableVerb'), count: bulk.targets.length }), confirmLabel: props.t('bulk.confirm'), cancelLabel: props.t('bulk.cancel'), busy: isSaving, error: bulkError === null ? null : expertMessage(bulkError, props.t), close: () => { if (!saving.current) setBulk(null) }, confirm: () => {
       if (saving.current) return
-      saving.current = true; setIsSaving(true); setBulkError(null)
-      const signal = lifetime.current?.signal
-      signal?.throwIfAborted()
+      const signal = requestSignal()
+      if (!signal || signal.aborted) return
+      saving.current = true; setIsSaving(true)
       void commitBulk(props.remote, bulk.targets, bulk.enabled, signal).then(value => {
         signal?.throwIfAborted()
-        const current = props.cache.catalog.acceptEnabled(value); setState(current); setBulk(null)
+        const current = props.cache.catalog.acceptEnabled(value); setState(current); setBulkError(null); setBulk(null)
       })
-        .catch((cause: unknown) => { if (!signal?.aborted) setBulkError(cause instanceof Error ? cause.message : String(cause)) })
+        .catch((cause: unknown) => { if (!signal?.aborted) setBulkError({ failure: cause }) })
         .finally(() => { saving.current = false; setIsSaving(false) })
     } }),
     editor === null ? null : React.createElement(CustomExpertEditor, {
       ...editor, remote: props.remote, t: props.t, locale: props.getActive(),
-      signal: lifetime.current?.signal,
-      divisions: [...new Set([...EXPERT_DIVISION_ORDER, ...(state?.experts ?? []).map(expert => expert.division)])],
-      onClose: () => setEditor(null), prepareSave: () => {
+      signal: props.cache.catalog.signal,
+      divisions: EXPERT_DIVISION_ORDER,
+      onClose: () => { preserveActionFocus(); setEditor(null) }, prepareSave: () => {
         const started = props.cache.catalog.getSnapshot()
-        const signal = lifetime.current?.signal
+        const signal = requestSignal()
         return (catalog: CatalogSnapshot) => {
-          setEditor(null); onSourceChange('custom'); setQuery(''); setDivision(''); setStatus(''); setNotice(props.t('custom.saved'))
+          preserveActionFocus(); setEditor(null); onSourceChange('custom'); setQuery(''); setDivision(''); setStatus(''); setNotice('custom.saved')
           void accept(catalog, started, signal)
         }
       },
     }),
     deleting === null ? null : React.createElement(CustomDeleteDialog, {
-      name: deleting.expert.name, busy: isSaving, error: deleteError, t: props.t, close: () => setDeleting(null), confirm: () => removeExpert(deleting),
+      name: deleting.expert.name, busy: isSaving, error: deleteError === null ? null : expertMessage(deleteError, props.t), t: props.t, close: () => { if (!saving.current) setDeleting(null) }, confirm: () => removeExpert(deleting),
     }),
     openPrompt === null ? null : React.createElement(PromptDialog, {
-      value: openPrompt, title: props.t('settings.promptTitle', { name: openPrompt.name }), closeLabel: props.t('settings.promptClose'), returnFocus: openPrompt.returnFocus, onClose: () => setOpenPrompt(null),
+      value: openPrompt, title: props.t('settings.promptTitle', { name: openPrompt.name }), closeLabel: props.t('settings.promptClose'), onClose: () => { preserveActionFocus(); setOpenPrompt(null) },
     }))
 }
 
@@ -1312,9 +1334,8 @@ export function AgencySettingsPanel(props: Omit<React.ComponentProps<typeof Expe
   const experts = catalog.revision < 0 ? undefined : catalog.experts.filter(expert => !expert.teamMember && (source === 'company' ? expert.company : expert.custom))
   const teams = snapshot?.teams.filter(team => Boolean(team.company) === (source === 'company'))
   const tabLabel = (icon: React.ReactElement, name: string, total: number | undefined, enabled: number | undefined) => React.createElement(React.Fragment, null,
-    icon,
-    name,
-    React.createElement('span', { className: 'aag-tab-count', 'aria-hidden': true }, React.createElement('strong', null, total ?? '—')),
+    React.createElement('span', { className: 'aag-tab-identity' }, icon, React.createElement('span', { className: 'aag-tab-name' }, name),
+      React.createElement('span', { className: 'aag-tab-count', 'aria-hidden': true }, React.createElement('strong', null, total ?? '—'))),
     React.createElement('span', { className: 'aag-tab-count', 'aria-hidden': true }, props.t('summary.enabledPrefix'), React.createElement('strong', null, enabled ?? '—')),
   )
   const navigation = React.createElement(SegmentedTabs, {
@@ -1327,9 +1348,9 @@ export function AgencySettingsPanel(props: Omit<React.ComponentProps<typeof Expe
   })
   // 两个名册都保持挂载，切换时不丢失筛选，也不重新等待第一次加载。
   return React.createElement('section', { className: 'aag-section aag-library-shell' },
-    React.createElement('header', { className: 'aag-toolbar' }, React.createElement('div', { className: 'aag-title-row' },
-      React.createElement('h2', { className: 'aag-title' }, props.t('settings.title')), null)),
-    React.createElement('p', { className: 'aag-note' }, props.t('settings.market.hint')),
+    React.createElement('header', { className: 'product-capability-header' }, React.createElement('div', { className: 'product-capability-heading' },
+      React.createElement('h1', { className: 'product-capability-title' }, props.t('settings.title')),
+      React.createElement('p', { className: 'product-capability-description' }, props.t('settings.market.hint')))),
     creationError ? React.createElement('p', { className: 'aag-error', role: 'alert' }, creationError) : null,
     React.createElement(SegmentedTabs, { className: 'aag-market-tabs', label: props.t('settings.scope'), value: source, onChange: (value) => { if (value === 'company' || value === 'custom') setSource(value) }, items: [
       { value: 'company', id: 'aag-tab-market', panelId: 'aag-catalog-panel', label: props.t('settings.source.company') },
@@ -1384,30 +1405,9 @@ export async function apply(ctx: ClientContext): Promise<() => Promise<void>> {
   }
   void cache.teams.refresh().catch((error: unknown) => console.warn('[agency-agents] 专家团预加载失败：', error))
   void cache.catalog.refresh().catch((error: unknown) => console.warn('[agency-agents] 初始名册读取失败，目录页可重试：', error))
-  ctx.effect(() => {
-    const names = installNativeTeamNames(async () => {
-      if (cache.catalog.getSnapshot().revision < 0) return { members: new Map<string, string>(), teams: [] }
-      const snapshot = cache.teams.getSnapshot() ?? await cache.teams.refresh()
-      const experts = cache.catalog.getSnapshot().experts
-      const active = getActive()
-      const members = new Map(Object.entries(snapshot.nativeMembers ?? {}).flatMap(([identity, slug]) => {
-        const expert = experts.find(item => item.slug === slug && !item.conflict)
-        return expert ? [[identity, displayName(expert, active)] as const] : []
-      }))
-      const teams = snapshot.teams.map(team => ({
-        names: [team.name],
-        label: team.name,
-      }))
-      return { members, teams }
-    }, error => console.warn('[agency-agents] 原生成员显示名读取失败：', error))
-    const localeDispose = ctx.locale.subscribe(() => { void names.refresh() })
-    const catalogDispose = cache.catalog.subscribe(() => { void names.refresh() })
-    const teamsDispose = cache.teams.subscribe(() => { void names.refresh() })
-    return () => { localeDispose(); catalogDispose(); teamsDispose(); names.dispose() }
-  }, 'agency-agents: native member names')
   const resolveTarget = (sessionId?: SessionId): ReferenceInsertionTarget | undefined => resolveReferenceInsertionTarget(
     sessions, sessionId,
-    (actx) => actx.conversation.input.for(actx),
+    (actx) => ctx.conversation.input.for(actx),
   )
   const insertTask = (current: ReferenceInsertionTarget | undefined, reference: ReferenceInsert, sessionId?: SessionId, span?: TokenSpan): boolean => {
     if (current === undefined) return false
@@ -1427,12 +1427,16 @@ export async function apply(ctx: ClientContext): Promise<() => Promise<void>> {
     void cache.teams.refresh().catch((error: unknown) => console.warn('[agency-agents] 专家团重新加载失败：', error))
   })
   const insertTeamTask = async (current: ReferenceInsertionTarget | undefined, team: ExpertTeam, example?: string, sessionId?: SessionId, span?: TokenSpan): Promise<boolean> => {
-    if (!current) return false
+    const signal = AbortSignal.any([cache.catalog.signal, cache.teams.signal])
+    if (!current || signal.aborted) return false
+    const isCurrent = () => !signal.aborted && resolveTarget(sessionId) === current
     const id = resolveTargetSessionId(sessions, sessionId)
     const actx = id === undefined ? undefined : sessions.scope(id)
-    return insertTeamReference({ state: current.state, insertReference: (ref, tokenSpan) => current.insertReference(ref, tokenSpan),
-      insertText: (text, tokenSpan) => actx?.bail(actx, 'slash/input-insert-text', { text, span: tokenSpan }) === true,
-      notify: (level, text) => current.notify?.(level, text) }, team, example, span, getActive())
+    return insertTeamReference({ state: current.state,
+      insertReference: (ref, tokenSpan) => isCurrent() && current.insertReference(ref, tokenSpan),
+      insertText: (text, tokenSpan) => isCurrent() && actx?.bail(actx, 'slash/input-insert-text', { text, span: tokenSpan }) === true,
+      notify: (level, text) => { if (isCurrent()) current.notify?.(level, text) } }, team, example, span, getActive(),
+    (message, locale) => isCurrent() ? confirmTeamAction(message, locale, signal) : Promise.resolve(false))
   }
   const bindExpertInsertion = (sessionId?: SessionId): {
     readonly insertReference: (reference: ReferenceInsert) => boolean

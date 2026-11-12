@@ -6,6 +6,7 @@ import type { ConnectionHandle } from '@deepseek-ai/dsh-client-connection/client
 import { expect, it, onTestFinished, vi } from 'vitest'
 import { createExpertClientState } from '../../src/client/client-state.ts'
 import { TYPERT_REMOTE } from '../../src/client/remote.ts'
+import { writeEnabled } from '../../src/client/index.ts'
 
 async function fixture() {
   const ctx = new Context()
@@ -35,8 +36,20 @@ async function fixture() {
   await ctx.remote.$mount(TYPERT_REMOTE)
   const state = createExpertClientState(ctx.remote.agencyAgents)
   onTestFinished(() => { state.catalog.dispose(); state.teams.dispose() })
-  return { ...state, requests }
+  return { ...state, requests, remote: ctx.remote.agencyAgents }
 }
+
+it.each(['reset', 'dispose'] as const)('%s cancels enabled-selection writes through native Remote', async (action) => {
+  const state = await fixture()
+  const pending = writeEnabled(state.remote, state, new Set(['reviewer']), 0)
+  const aborted = expect(pending).rejects.toHaveProperty('name', 'AbortError')
+  expect(state.requests.map(request => request.endpoint)).toEqual(['agencyAgents/setEnabled'])
+  state.catalog[action]()
+  state.requests[0].resolve({ ok: true, value: { enabled: ['reviewer'], revision: 9 } })
+  await aborted
+  expect(state.requests[0].signal.aborted).toBe(true)
+  expect(state.catalog.getSnapshot().revision).toBe(-1)
+})
 
 it.each(['reset', 'dispose'] as const)('%s cancels hanging shared reads and a queued company refresh', async (action) => {
   const state = await fixture()

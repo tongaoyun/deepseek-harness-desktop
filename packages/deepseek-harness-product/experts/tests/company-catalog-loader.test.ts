@@ -48,6 +48,7 @@ it.each(['root', 'metadata', 'team'] as const)('recovers the same company releas
   const refresh = vi.fn(async () => { await restoreCompanyContent(cache, 'employee', installed.version, installed.sha256, signal) })
   ctx.provide('companyContent', {
     read: async () => installed, forSession: async () => installed, refresh,
+    expertVersion: async () => { throw new Error('Unexpected exact expert version read') },
   } satisfies CompanyContentSource)
   ctx.provide('subagents', { getProvider: () => undefined })
   ctx.provide('settings', { configure: () => () => {}, describe: () => [{ ns: 'agency-agents', revision: 0 }] })
@@ -92,6 +93,7 @@ it.each(['root', 'metadata', 'team'] as const)('recovers the same company releas
   expect(members).toHaveLength(2)
   expect(new Set(members.map(value => value.slug)).size).toBe(2)
   expect(members.every(value => /^team-member-[a-f0-9]{64}$/u.test(value.slug))).toBe(true)
+  expect(members.map(value => value.packageSlug).sort()).toEqual(['member-1', 'member-2'])
   expect(refresh).toHaveBeenCalledOnce()
   expect(first instanceof Error ? first.message : 'Unexpected catalog success').toMatchInlineSnapshot('"Could not read the expert catalog. Refresh and try again."')
   failing = true

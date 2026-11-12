@@ -37,28 +37,27 @@ it('restores the newly selected scope without exposing or clearing the previous 
   expect(sessionStorage.getItem(storageKey('second'))).toBeNull()
 })
 
-it('keeps the latest retry and its employee receipt when an older identity read finishes last', async () => {
-  sessionStorage.setItem(storageKey('scope'), JSON.stringify(draft('Initial draft')))
-  sessionStorage.setItem(storageKey('scope', 'old'), JSON.stringify(draft('Old draft')))
-  sessionStorage.setItem(storageKey('scope', 'new'), JSON.stringify(draft('New draft')))
+it('keeps the new scope and employee receipt when an older identity read finishes last', async () => {
+  sessionStorage.setItem(storageKey('first', 'old'), JSON.stringify(draft('Old draft')))
+  sessionStorage.setItem(storageKey('second', 'new'), JSON.stringify(draft('New draft')))
   const old = Promise.withResolvers<ReturnType<typeof session>>()
   const latest = Promise.withResolvers<ReturnType<typeof session>>()
   const invoke = vi.fn<(namespace: string, method: string) => Promise<unknown>>()
-    .mockResolvedValueOnce(session()).mockReturnValueOnce(old.promise).mockReturnValueOnce(latest.promise)
+    .mockReturnValueOnce(old.promise).mockReturnValueOnce(latest.promise)
   transport(invoke)
-  const hook = renderHook(() => useKnowledgeSaveRecovery('scope'))
-  await vi.waitFor(() => { expect(hook.result.current.ready).toBe(true) })
-  let first: Promise<void> | undefined
-  let second: Promise<void> | undefined
-  act(() => { first = hook.result.current.reload() })
-  act(() => { second = hook.result.current.reload() })
-  await act(async () => { latest.resolve(session('new')); await second })
-  expect(hook.result.current.draft?.title).toBe('New draft')
-  await act(async () => { old.resolve(session('old')); await first })
+  const hook = renderHook(({ scope }) => useKnowledgeSaveRecovery(scope), { initialProps: { scope: 'first' } })
+  await act(async () => { await hook.result.current.reload(); await hook.result.current.reload() })
+  expect(invoke).toHaveBeenCalledOnce()
+  hook.rerender({ scope: 'second' })
+  await act(async () => { await hook.result.current.reload() })
+  expect(invoke).toHaveBeenCalledTimes(2)
+  await act(async () => { latest.resolve(session('new')) })
+  await vi.waitFor(() => { expect(hook.result.current.draft?.title).toBe('New draft') })
+  await act(async () => { old.resolve(session('old')) })
   expect(hook.result.current.draft?.title).toBe('New draft')
   hook.result.current.recovery.clear()
-  expect(sessionStorage.getItem(storageKey('scope', 'new'))).toBeNull()
-  expect(sessionStorage.getItem(storageKey('scope', 'old'))).not.toBeNull()
+  expect(sessionStorage.getItem(storageKey('second', 'new'))).toBeNull()
+  expect(sessionStorage.getItem(storageKey('first', 'old'))).not.toBeNull()
 })
 
 it('ignores a failed read from the disposed StrictMode effect', async () => {

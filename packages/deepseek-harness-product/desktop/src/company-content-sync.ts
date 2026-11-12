@@ -7,7 +7,7 @@ import { z } from 'zod'
 import { ProductError } from '@deepseek-harness/product/errors'
 import type { CompanyContentRoots } from '@deepseek-harness/product/protocol'
 import type { CompanyResourceVersion } from '@deepseek-harness/product/company-content'
-import { installCompanyIndex, installCompanyContent, restoreCompanyContent } from './company-content.ts'
+import { installCompanyIndex, installCompanyContent, installCompanyResource, restoreCompanyContent } from './company-content.ts'
 
 const coordinate = z.object({
   version: z.string().regex(/^(?:0|\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?)$/u),
@@ -32,7 +32,7 @@ export class CompanyContentSync {
     employeeId: string
     refreshIntervalMs: number
     load: (signal: AbortSignal) => Promise<unknown>
-    loadResource: (ref: CompanyResourceVersion, signal: AbortSignal) => Promise<unknown>
+    loadResource: (ref: Pick<CompanyResourceVersion, 'resourceKey' | 'version' | 'sha256'>, signal: AbortSignal) => Promise<unknown>
   }) { this.employeeRoot = join(options.root, digest(options.employeeId)) }
 
   /** Read verified local content immediately and start the first check in background.
@@ -60,6 +60,21 @@ export class CompanyContentSync {
     return this.roots
   }
 
+  /** Resolve a team's exact expert version without switching the current catalog or Session binding.
+   * @param slug - Expert identifier validated by the main-process IPC parser.
+   * @param sha256 - Full package digest validated by the main-process IPC parser.
+   * @param signal - Caller cancellation, combined with this employee's lifecycle.
+   * @returns Verified immutable package root, downloading a missing version through employee authentication.
+   */
+  expertVersion(slug: string, sha256: string, signal?: AbortSignal): Promise<string> {
+    const control = signal === undefined ? this.lifecycle.signal : AbortSignal.any([signal, this.lifecycle.signal])
+    return this.track(async () => {
+      const ref = { resourceKey: 'experts/' + slug, version: `0.0.0-${sha256.slice(0, 56)}`, sha256 }
+      const { roots } = await installCompanyResource(this.options.root, this.options.employeeId, ref, this.options.loadResource, control)
+      return join(roots.expertsRoot, slug)
+    })
+  }
+
   /** Check once per configured monotonic interval; concurrent expert and skill pages share work.
    * @param signal - Cancel this caller without aborting other catalog readers.
    * @returns Completion after the validated catalog and its pointer commit together.
@@ -67,7 +82,7 @@ export class CompanyContentSync {
   refresh(signal?: AbortSignal): Promise<void> {
     signal?.throwIfAborted()
     this.lifecycle.signal.throwIfAborted()
-    if (this.pending) return awaitShared(this.pending, signal)
+    if (this.pending) return waitForCompanyContent(this.pending, signal)
     if (performance.now() - this.lastChecked < this.options.refreshIntervalMs) return Promise.resolve()
     const operation = this.track(async () => {
       const value = await this.options.load(this.lifecycle.signal)
@@ -81,7 +96,7 @@ export class CompanyContentSync {
     })
     this.pending = operation
     void operation.finally(() => { if (this.pending === operation) this.pending = undefined }).catch(() => undefined)
-    return awaitShared(operation, signal)
+    return waitForCompanyContent(operation, signal)
   }
 
   /** Persist or restore a Session's content without replacing an existing binding.
@@ -124,7 +139,7 @@ export class CompanyContentSync {
     const tail = action.catch(() => undefined)
     this.queues.set(request.sessionId, tail)
     void tail.finally(() => { if (this.queues.get(request.sessionId) === tail) this.queues.delete(request.sessionId) })
-    return awaitShared(action, signal)
+    return waitForCompanyContent(action, signal)
   }
 
   /** Cancel remote and filesystem work, then await all owned requests and queued pins. */
@@ -176,8 +191,12 @@ function missing(error: unknown): boolean {
   return error instanceof Error && 'code' in error && error.code === 'ENOENT'
 }
 
-/** A cancelled page releases its waiter; shared work remains owned by the desktop. */
-function awaitShared<T>(pending: Promise<T>, signal?: AbortSignal): Promise<T> {
+/** Wait for desktop-owned content work without cancelling other readers.
+ * @param pending - Initialization, cleanup or synchronization owned by the desktop.
+ * @param signal - Cancels only this wait; omission waits for completion.
+ * @returns The shared result while this caller remains active.
+ */
+export function waitForCompanyContent<T>(pending: Promise<T>, signal?: AbortSignal): Promise<T> {
   if (!signal) return pending
   signal.throwIfAborted()
   return (async () => {

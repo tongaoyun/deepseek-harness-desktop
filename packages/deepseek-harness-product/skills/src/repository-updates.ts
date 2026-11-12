@@ -1,9 +1,10 @@
-import type { CodedError, Log, SkillRoot } from "./types.ts";
+import type { Log, SkillRoot } from "./types.ts";
 import type { Archive, FileDigest, RepositoryDependencies, SkillRequest, InstallSource, RepositoryRoot, InstallRecord } from "./types.ts";
 // 仓库更新使用完整文件摘要预览和目录切换，保留备份，不执行下载内容。
 import { promises as fs } from "node:fs";
 import { join, dirname, resolve } from "node:path";
 import { createHash, randomUUID } from "node:crypto";
+import { readContentFile } from '@deepseek-harness/product/content-files';
 import { managerHomePath, userRoots, checkedRepositoryRootDefinition, projectRootForRecord, resolveWorkspaceTarget, createWorkspaceIndex, type indexRegisteredWorkspaces } from "./core.ts";
 
 const hash = (bytes: string | Uint8Array) => createHash("sha256").update(bytes).digest("hex");
@@ -62,7 +63,10 @@ async function safeDirectory(root: string) {
     if (dirname(p) === p) break;
   }
 }
-/** 完整读取目录，新增文件参与冲突检测，禁止跟随链接。 */
+/** 完整读取目录，新增文件参与冲突检测；文件大小变化或超限时不返回部分目录。
+ * @param root 已安装技能或回退副本的目录。
+ * @returns 全部文件字节；读取失败保留目录与文件，关闭当前文件句柄。
+ */
 export async function readSkillTree(root: string) {
   await safeDirectory(root);
   const result: Archive = Object.create(null); let size = 0, count = 0;
@@ -74,8 +78,10 @@ export async function readSkillTree(root: string) {
       if (info.isSymbolicLink()) throw failure("技能包含链接，拒绝更新");
       if (info.isDirectory()) await walk(target, path + "/");
       else {
-        if (!info.isFile() || info.size > 32 << 20 || (size += info.size) > 64 << 20 || Object.keys(result).length >= 1000) throw failure("技能文件数量或大小超限");
-        result[path] = await fs.readFile(target);
+        if (!info.isFile() || Object.keys(result).length >= 1000) throw failure("技能文件数量或大小超限");
+        const bytes = await readContentFile(target, Math.min(32 << 20, (64 << 20) - size));
+        size += bytes.byteLength;
+        result[path] = bytes;
       }
     }
   }
@@ -84,6 +90,14 @@ export async function readSkillTree(root: string) {
 function changesBetween(before: FileDigest[], after: FileDigest[]) {
   const a = new Map(before.map(f => [f.path, f.hash])), b = new Map(after.map(f => [f.path, f.hash]));
   return [...new Set([...a.keys(), ...b.keys()])].sort().filter(p => a.get(p) !== b.get(p)).map(path => ({ path, kind: !a.has(path) ? "added" : !b.has(path) ? "removed" : "modified" }));
+}
+
+async function reportCleanupFailure(path: string, error: unknown, log?: Log): Promise<void> {
+  const detail = `技能文件未清理，请检查保留目录：${path}（${error instanceof Error ? error.message : String(error)}）`;
+  try {
+    if (log) await log("repository-backup-warning", detail);
+    else console.warn(detail);
+  } catch (_error) { console.warn(detail); }
 }
 
 /**
@@ -101,17 +115,11 @@ export async function cleanupRepositoryBackups(records: readonly InstallRecord[]
     try {
       await safeDirectory(backupRoot);
       await fs.rm(backup, { recursive: true, force: true });
-    } catch (caught) {
-      const detail = `技能操作已完成，旧版本备份未清理: ${backup}（${caught instanceof Error ? caught.message : String(caught)}）`;
-      try {
-        if (log) await log("repository-backup-warning", detail);
-        else console.warn(detail);
-      } catch (_error) { console.warn(detail); }
-    }
+    } catch (caught) { await reportCleanupFailure(backup, caught, log); }
   }
 }
 
-/** 注入仓库存储与串行队列；提交后清理被替代的备份，清理失败只记诊断。 */
+/** 注入仓库存储与串行队列；清理失败只记诊断，恢复失败保留目录并报告位置和原因。 */
 export function createRepositoryUpdater({ read, write, repository, download, serialize, parseRepositoryInput, registeredWorkspaces, onWorkspaceIndexBuild, log }: RepositoryDependencies) {
   async function prepare(input: SkillRequest, includeArchive = false) {
     const { id, path } = input, data = await read();
@@ -164,15 +172,26 @@ export function createRepositoryUpdater({ read, write, repository, download, ser
       await fs.rename(stage, target); replaced = true;
       data.installs[data.installs.indexOf(record)] = nextRecord;
       await write(data);
-    } catch (caught) { const error = caught as CodedError;
+    } catch (error) {
       if (moved) {
         try {
-          if (replaced) await fs.rename(target, stage);
+          if (replaced) { await fs.rename(target, stage); replaced = false; }
           await fs.rename(backup, target);
-        } catch { recoveryFailed = true; throw failure("自动恢复失败，原文件保留在备份目录，请勿重复操作", "error.repo.state"); }
+        } catch (recoveryError) {
+          recoveryFailed = true;
+          throw Object.assign(failure(`自动恢复未完成，请检查技能原位置及保留目录，勿重复操作：${backupRoot}`, "error.repo.restoreRollbackFailed"), {
+            params: { path: backupRoot }, statusCode: 500,
+            cause: new AggregateError([error, recoveryError], "技能替换和自动恢复均失败"),
+          });
+        }
       }
       throw error;
-    } finally { if (!recoveryFailed) await fs.rm(stage, { recursive: true, force: true }); }
+    } finally {
+      if (!recoveryFailed && !replaced) {
+        try { await fs.rm(stage, { recursive: true, force: true }); }
+        catch (error) { await reportCleanupFailure(stage, error, log); }
+      }
+    }
     await cleanupRepositoryBackups([record], data.installs, log);
     return { name: record.name, commit: plan.commit };
   }

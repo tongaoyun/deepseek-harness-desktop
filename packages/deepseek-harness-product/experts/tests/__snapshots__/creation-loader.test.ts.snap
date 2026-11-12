@@ -9,6 +9,15 @@ exports[`creates a team without an editor, freezes disabled member versions and 
 ]
 `;
 
+exports[`lists predefined creation categories and normalizes imported expert categories 1`] = `
+[
+  {
+    "text": "{"categories":["orders","catalog","supply-chain","warehouse","logistics","finance","marketplace","marketing","analytics","product","engineering","testing","support","company","specialized"],"total":2,"truncated":false,"experts":[{"slug":"imported","name":"Imported expert","nameEn":"Imported expert","description":"Review code","division":"engineering","enabled":false},{"slug":"unlisted","name":"Unlisted expert","nameEn":"Unlisted expert","description":"Review documents","division":"specialized","enabled":false}]}",
+    "type": "text",
+  },
+]
+`;
+
 exports[`saves a complete AgentSpec after native approval, rejects without approval, and unloads its tools 1`] = `
 [
   {

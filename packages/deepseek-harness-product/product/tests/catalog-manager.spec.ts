@@ -7,13 +7,13 @@ function page(id: string) {
   return Response.json({ success: true, data: [{ id }], pageIndex: 1, pageSize: 100, totalCount: 1, totalPages: 1 })
 }
 
-function fixture(transport: typeof fetch, settle = () => {}) {
+function fixture(transport: typeof fetch, settle = () => {}, ensureFreshSession = async () => undefined) {
   const identity = new AbortController()
   const api = new DeepSeekHarnessApiClient({ baseUrl: 'https://product.test', getSessionToken: () => 'token', fetch: transport })
   const emit = vi.fn()
   const catalogs = new ProductCatalogManager({ api,
     getSession: () => ({ authenticated: true, employeeId: 'employee-a' }),
-    ensureFreshSession: async () => undefined,
+    ensureFreshSession,
     getIdentitySignal: () => identity.signal, emit })
   onTestFinished(async () => { settle(); await catalogs.dispose(); api.close() })
   return { catalogs, identity, emit }
@@ -28,6 +28,86 @@ it('reads the current connector catalog without using an earlier snapshot when n
   await catalogs.refresh()
   fail = true
   await expect(catalogs.read('connectors.list')).rejects.toThrow('unavailable')
+})
+
+it.each([false, true])('notifies a complete catalog outage and recovery with an earlier snapshot: %s', async (loaded) => {
+  let offline = false
+  const { catalogs, emit } = fixture(async () => {
+    if (offline) throw new Error('Catalog service unavailable')
+    return page('existing')
+  })
+  if (loaded) await catalogs.refresh()
+  emit.mockClear()
+  offline = true
+  await expect(catalogs.refresh()).rejects.toThrow('Catalog service unavailable')
+  expect(emit).toHaveBeenCalledOnce()
+  expect(emit.mock.lastCall?.[0]).toMatchObject({ type: 'catalog.changed',
+    payload: { employeeId: 'employee-a' } })
+  await expect(catalogs.refresh()).rejects.toThrow('Catalog service unavailable')
+  expect(emit).toHaveBeenCalledOnce()
+  offline = false
+  await catalogs.refresh()
+  expect(emit).toHaveBeenCalledTimes(2)
+})
+
+it('invalidates renderer catalogs when a scheduled refresh loses both services', async () => {
+  vi.useFakeTimers()
+  onTestFinished(() => { vi.useRealTimers() })
+  let offline = false
+  const { catalogs, emit } = fixture(async () => {
+    if (offline) throw new Error('Catalog service unavailable')
+    return page('existing')
+  })
+  await catalogs.refresh()
+  emit.mockClear()
+  offline = true
+  await vi.advanceTimersByTimeAsync(5 * 60 * 1_000)
+  expect(emit).toHaveBeenCalledOnce()
+  await vi.advanceTimersByTimeAsync(5 * 60 * 1_000)
+  expect(emit).toHaveBeenCalledOnce()
+  offline = false
+  await vi.advanceTimersByTimeAsync(5 * 60 * 1_000)
+  expect(emit).toHaveBeenCalledTimes(2)
+})
+
+it('notifies a session-renewal outage without requesting catalogs and notifies its recovery', async () => {
+  let offline = false
+  const transport = vi.fn<typeof fetch>(async () => page('existing'))
+  const { catalogs, emit } = fixture(transport, () => {}, async () => {
+    if (offline) throw new Error('Session service unavailable')
+    return undefined
+  })
+  await catalogs.refresh()
+  emit.mockClear()
+  transport.mockClear()
+  offline = true
+  await expect(catalogs.refresh()).rejects.toThrow('Session service unavailable')
+  expect(transport).not.toHaveBeenCalled()
+  expect(emit).toHaveBeenCalledOnce()
+  await expect(catalogs.refresh()).rejects.toThrow('Session service unavailable')
+  expect(emit).toHaveBeenCalledOnce()
+  offline = false
+  await catalogs.refresh()
+  expect(emit).toHaveBeenCalledTimes(2)
+  expect(transport).toHaveBeenCalledTimes(2)
+})
+
+it.each(['identity', 'reset'] as const)('does not publish a late renewal failure after %s cancellation', async (kind) => {
+  const renewal = Promise.withResolvers<undefined>()
+  const entered = Promise.withResolvers<undefined>()
+  const transport = vi.fn<typeof fetch>(async () => page('existing'))
+  const { catalogs, identity, emit } = fixture(transport, () => { renewal.resolve(undefined) }, () => {
+    entered.resolve(undefined)
+    return renewal.promise
+  })
+  const refresh = expect(catalogs.refresh()).rejects.toThrow(kind === 'identity' ? 'Employee changed' : 'reset')
+  await entered.promise
+  if (kind === 'identity') identity.abort(new Error('Employee changed'))
+  else catalogs.reset()
+  renewal.reject(new Error('Session service unavailable'))
+  await refresh
+  expect(transport).not.toHaveBeenCalled()
+  expect(emit).not.toHaveBeenCalled()
 })
 
 it('returns a pending read result even when a newer connector read fails', async () => {

@@ -67,7 +67,7 @@
     [
       {
         "type": "text",
-        "text": "{\"document\":{\"id\":\"document\",\"title\":\"Review outcome\",\"status\":\"PENDING\"},\"message\":\"Document saved; use its processing state to determine when retrieval is ready.\"}"
+        "text": "{\"document\":{\"id\":\"document\",\"knowledgeBaseId\":\"personal\",\"filename\":\"Review outcome.md\",\"status\":\"QUEUED\",\"updatedAt\":\"2026-11-06T00:00:00Z\"},\"message\":\"Document saved; use its processing state to determine when retrieval is ready.\"}"
       }
     ]
   ]

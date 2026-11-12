@@ -20,7 +20,7 @@ export const COMPANY_CONTENT_MAX_FILES = 2048
 /** Maximum characters in a portable relative content path. */
 export const COMPANY_CONTENT_MAX_PATH_LENGTH = 240
 
-/** Validate downloaded files and their canonical digest before any filesystem write.
+/** Validate portable filenames and the canonical digest before any filesystem write.
  * @param value - Authenticated server response, or null before the first publication.
  * @returns An immutable, validated release.
  */
@@ -33,8 +33,9 @@ export function companyContentRelease(value: unknown): CompanyContentRelease {
     || !('files' in value) || typeof value.files !== 'object' || value.files === null || Array.isArray(value.files)) {
     throw new Error('公司内容格式无效')
   }
-  const expertRe = /^(?:experts\/[a-z0-9]+(?:-[a-z0-9]+)*|expert-versions\/[a-z0-9]+(?:-[a-z0-9]+)*\/[a-f0-9]{64})\/[^\\\u0000-\u001f:]+$/u
-  const skillPath = /^skills\/[a-z0-9]+(?:-[a-z0-9]+)*\/[^\\\u0000-\u001f:]+$/u
+  const expertRe =
+    /^(?:experts\/[a-z0-9]+(?:-[a-z0-9]+)*|expert-versions\/[a-z0-9]+(?:-[a-z0-9]+)*\/[a-f0-9]{64})\/[^\\\u0000-\u001f:"<>|?*]+$/u
+  const skillPath = /^skills\/[a-z0-9]+(?:-[a-z0-9]+)*\/[^\\\u0000-\u001f:"<>|?*]+$/u
   const files: Record<string, string> = {}
   const paths = new Set<string>()
   let bytes = 0
@@ -43,41 +44,37 @@ export function companyContentRelease(value: unknown): CompanyContentRelease {
     if (typeof encoded !== 'string' || encoded.length > Math.ceil(COMPANY_CONTENT_MAX_BYTES / 3) * 4
       || path.length > COMPANY_CONTENT_MAX_PATH_LENGTH
       || !(path === 'catalog.json' || expertRe.test(path) || skillPath.test(path) || /^teams\/[a-z0-9]+(?:-[a-z0-9]+)*\.json$/u.test(path))
-      || path.split('/').some(part => ['', '.', '..'].includes(part) || part.endsWith('.')
+      || path.split('/').some(part => ['', '.', '..'].includes(part) || /[. ]$/u.test(part)
         || /^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\..*)?$/iu.test(part))
       || paths.has(path.toLowerCase())) throw new Error('公司内容包含非法路径或文件')
     paths.add(path.toLowerCase())
     const data = Buffer.from(encoded, 'base64')
     bytes += data.byteLength
     if (bytes > COMPANY_CONTENT_MAX_BYTES || data.toString('base64') !== encoded) throw new Error('公司内容大小或编码无效')
-    if (path.endsWith('/SKILL.md') && path.startsWith('skills/')) {
-      if (data.byteLength > 128 * 1024) throw new Error('公司技能或专家说明过长')
+    if (/^skills\/[^/]+\/SKILL\.md$/u.test(path)) {
+      if (data.byteLength > 128 * 1024) throw new Error('公司技能说明过长')
       const markdown = new TextDecoder('utf-8', { fatal: true }).decode(data).replaceAll('\r\n', '\n')
       const document = /^---\n([\s\S]*?)\n---\n([\s\S]+)$/u.exec(markdown)
       const [, frontmatter, body] = document ?? []
-      if (!frontmatter || !body?.trim() || markdown.includes('\0')) throw new Error('公司技能或专家说明无效')
+      if (!frontmatter || !body?.trim() || markdown.includes('\0')) throw new Error('公司技能说明无效')
       const parsed = parseDocument(frontmatter, { schema: 'core' })
       if (parsed.errors.length || parsed.warnings.length) {
-        throw new Error(path.endsWith('/SKILL.md') ? '公司技能 YAML 格式无效' : '公司专家 YAML 格式无效')
+        throw new Error('公司技能 YAML 格式无效')
       }
       visit(parsed, (_, node, ancestors) => {
         if (isCollection(node) && ancestors.filter(isCollection).length >= 64) {
-          throw new Error(path.endsWith('/SKILL.md') ? '公司技能 YAML 嵌套最多 64 层' : '公司专家 YAML 嵌套最多 64 层')
+          throw new Error('公司技能 YAML 嵌套最多 64 层')
         }
       })
       const metadata: unknown = parsed.toJS({ maxAliasCount: 0 })
       if (typeof metadata !== 'object' || metadata === null || Array.isArray(metadata)
         || !('name' in metadata) || typeof metadata.name !== 'string' || !metadata.name.trim() || /[\r\n]/u.test(metadata.name)
-        || path.startsWith('skills/') && metadata.name !== path.split('/')[1]
+        || metadata.name !== path.split('/')[1]
         || !('description' in metadata) || typeof metadata.description !== 'string'
-        || !metadata.description.trim() || /[\r\n]/u.test(metadata.description)) {
-        throw new Error(path.endsWith('/SKILL.md')
-          ? '公司技能必须包含与目录一致的名称和非空单行字符串简介'
-          : '公司专家必须包含非空单行字符串名称和简介')
+        || !metadata.description.trim() || metadata.description.length > 2000 || /[\r\n]/u.test(metadata.description)) {
+        throw new Error('公司技能必须包含与目录一致的名称及最多 2000 字符的非空单行简介')
       }
-      if (path.endsWith('/SKILL.md')) {
-        validateSkillInvocation(metadata)
-      }
+      validateSkillInvocation(metadata)
     }
     if (path.startsWith('teams/') && path.length > 91) throw new Error('专家团标识最多 80 个字符')
     if (path.startsWith('teams/')) {
@@ -147,15 +144,28 @@ export function contentDigest(files: Readonly<Record<string, string>>): string {
   return createHash('sha256').update(canonical).digest('hex')
 }
 
+/** Identify the package and its product-owned display metadata for review.
+ * @param sha256 - Validated immutable package digest.
+ * @param catalog - Validated display metadata; undefined fields are omitted as in JSON, and an empty catalog retains the package digest.
+ * @returns The publication revision shared with the company content service.
+ */
+export function companyResourceRevision(sha256: string, catalog: Readonly<Record<string, string | undefined>>): string {
+  const entries = Object.entries(catalog).filter((entry): entry is [string, string] => entry[1] !== undefined)
+    .sort(([left], [right]) => left < right ? -1 : left > right ? 1 : 0)
+  if (entries.length === 0) return sha256
+  return createHash('sha256').update(sha256 + '\n' + entries.map(([key, value]) => `${key}\0${value}\n`).join('')).digest('hex')
+}
+
 /** Published resource coordinates and catalog presentation, with no Nacos credentials. */
 export const companyResourceVersionSchema = z.object({
   resourceKey: z.string().regex(/^(?:skills|experts|teams)\/[a-z0-9]+(?:-[a-z0-9]+)*$/u),
   version: z.string().regex(/^0\.0\.0-[a-f0-9]{56}$/u), sha256: z.string().regex(/^[a-f0-9]{64}$/u),
   name: z.string().min(1).max(1000), description: z.string().min(1).max(2000),
   fileCount: z.number().int().min(1).max(COMPANY_CONTENT_MAX_FILES), publishedAt: z.string(),
-  catalog: z.object({ name: z.string().trim().min(1).max(80).optional(), division: z.string().trim().min(1).max(80).optional(),
+  catalog: z.object({ name: z.string().min(1).max(80).optional(), division: z.string().min(1).max(80).optional(),
     avatar: z.string().regex(/^(?:[0-9]|[12][0-9]|3[0-5])$/u).optional() }).strict()
-    .refine(value => Object.values(value).every(text => text === undefined || !/[\u0000-\u001f\u007f]/u.test(text))),
+    .refine(value => Object.values(value).every(text =>
+      text === undefined || text.trim().length > 0 && !/[\u0000-\u001f\u007f]/u.test(text))),
   dependencies: z.record(z.string().regex(/^experts\/[a-z0-9]+(?:-[a-z0-9]+)*$/u), z.string().regex(/^[a-f0-9]{64}$/u)),
 }).strict().refine(value => value.version === `0.0.0-${value.sha256.slice(0, 56)}` && Object.keys(value.dependencies).length <= 8)
 /** Exact server-owned resource version. */

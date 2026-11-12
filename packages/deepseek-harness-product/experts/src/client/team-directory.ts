@@ -11,7 +11,8 @@ import { useTeamLocale, localizedExperts } from './team-locale.ts'
  * TeamMenu and TeamsPanel are different views, but they consume the same
  * native stores. React observes their current snapshots directly, including
  * the first commit after replacing a store; refresh cancellation belongs to
- * this mounted view. Every refresh rereads teams and their member catalog.
+ * this mounted view. Concurrent refreshes share one request and report busy
+ * until both teams and their member catalog are confirmed.
  */
 export function useTeamDirectory(options: {
   cache: ExpertClientState
@@ -22,6 +23,7 @@ export function useTeamDirectory(options: {
 }): {
   snapshot: TeamSnapshot | null
   experts: ExpertSummary[]
+  refreshing: boolean
   refresh(): Promise<void>
   getSignal(): AbortSignal | undefined
 } {
@@ -30,21 +32,39 @@ export function useTeamDirectory(options: {
   const catalog = React.useSyncExternalStore(cache.catalog.subscribe, cache.catalog.getSnapshot)
   const experts = React.useMemo(() => catalog.revision < 0 ? [] : [...catalog.experts], [catalog])
   const lifetime = React.useRef<AbortController | undefined>(undefined)
+  const refreshRequest = React.useRef<{ signal: AbortSignal; promise: Promise<void> }>()
+  const [pending, setPending] = React.useState<AbortSignal>()
   const callbacks = React.useRef(options)
   callbacks.current = options
-
-  const refresh = React.useCallback(async () => {
+  const getSignal = React.useCallback(() => {
     const signal = lifetime.current?.signal
-    if (!signal || signal.aborted) return
-    try {
-      await cache.teams.refresh()
-      if (signal.aborted) return
-      await cache.catalog.refresh()
-      if (!signal.aborted) callbacks.current.onSuccess?.()
-    } catch (cause) {
-      if (!signal.aborted) callbacks.current.onError?.(cause)
-    }
+    return signal && AbortSignal.any([signal, cache.teams.signal, cache.catalog.signal])
   }, [cache])
+
+  const refresh = React.useCallback((): Promise<void> => {
+    const signal = getSignal()
+    if (!signal || signal.aborted) return Promise.resolve()
+    if (refreshRequest.current && !refreshRequest.current.signal.aborted) return refreshRequest.current.promise
+    const request = { signal, promise: Promise.resolve().then(async () => {
+      try {
+        signal.throwIfAborted()
+        await cache.teams.refresh()
+        if (signal.aborted) return
+        await cache.catalog.refresh()
+        if (!signal.aborted) callbacks.current.onSuccess?.()
+      } catch (cause) {
+        if (!signal.aborted) callbacks.current.onError?.(cause)
+      } finally {
+        if (refreshRequest.current === request) {
+          refreshRequest.current = undefined
+          if (!signal.aborted) setPending(undefined)
+        }
+      }
+    }) }
+    refreshRequest.current = request
+    setPending(signal)
+    return request.promise
+  }, [cache, getSignal])
 
   React.useEffect(() => {
     const controller = new AbortController()
@@ -56,13 +76,13 @@ export function useTeamDirectory(options: {
     }
   }, [cache, remote, refresh])
 
-  const getSignal = React.useCallback(() => lifetime.current?.signal, [])
   return React.useMemo(() => ({
     snapshot,
     experts,
+    refreshing: pending !== undefined && !pending.aborted,
     refresh,
     getSignal,
-  }), [snapshot, experts, refresh, getSignal])
+  }), [snapshot, experts, pending, refresh, getSignal])
 }
 
 /** Shared localized view model for the compact menu and full team library. */
@@ -70,6 +90,8 @@ export function useTeamDirectoryView(options: {
   cache: ExpertClientState
   remote: AgencyTeamsRemote
   fallback: string
+  /** Run after both directories are confirmed, before removing the refresh error control. */
+  onRefreshSuccess?(): void
 }): {
   locale: ReturnType<typeof useTeamLocale>['locale']
   tx: ReturnType<typeof useTeamLocale>['tx']
@@ -84,13 +106,13 @@ export function useTeamDirectoryView(options: {
   const directory = useTeamDirectory({
     cache: options.cache,
     remote: options.remote,
-    onError: cause => setError(cause instanceof Error ? tx(cause.message) : tx(options.fallback)),
-    onSuccess: () => setError(''),
+    onError: cause => setError(cause instanceof Error ? cause.message : options.fallback),
+    onSuccess: () => { options.onRefreshSuccess?.(); setError('') },
   })
   return {
     locale,
     tx,
-    error,
+    error: tx(error),
     setError,
     directory,
     snapshot: directory.snapshot,

@@ -1,6 +1,6 @@
 /** Native company-content submission access; credentials remain in the authenticated API client. */
 import { z } from 'zod'
-import { companyContentRelease, contentDigest } from './company-content.ts'
+import { companyContentRelease, companyResourceRevision, companyResourceVersionSchema, contentDigest } from './company-content.ts'
 
 /** Validate one resource and either read its review status or submit it idempotently.
  * @param method - Product-owned submission operation.
@@ -12,7 +12,7 @@ import { companyContentRelease, contentDigest } from './company-content.ts'
 export async function invokeContentSubmission(method: string, input: Readonly<Record<string, unknown>>,
   api: { request(path: string, init?: RequestInit): Promise<unknown> }, lifetime: AbortSignal): Promise<unknown> {
   const candidate = z.object({ resourceKey: z.string().regex(/^(?:skills|experts|teams)\/[a-z0-9]+(?:-[a-z0-9]+)*$/u),
-    files: z.record(z.string(), z.string()), catalog: z.record(z.string(), z.string()).optional() }).strict().parse(input)
+    files: z.record(z.string(), z.string()), catalog: companyResourceVersionSchema.shape.catalog.optional() }).strict().parse(input)
   if (Object.keys(candidate.files).length > 2048 || Object.values(candidate.files).reduce((size, value) => size + value.length, 0) > 44_744_704) throw new Error('提交内容超过大小限制')
   const sha256 = contentDigest(candidate.files)
   const release = companyContentRelease({ version: '1.0.0', sha256, files: candidate.files })
@@ -21,7 +21,8 @@ export async function invokeContentSubmission(method: string, input: Readonly<Re
     : !path.startsWith(candidate.resourceKey + '/')) || team && Object.keys(release.files).length !== 1) throw new Error('一次只能提交一个技能、专家或专家团')
   const payload = { ...candidate, sha256 }
   if (method === 'content.submissions.inspect') {
-    const status = await api.request('/api/v1/company-content/submission-status?' + new URLSearchParams({ resourceKey: candidate.resourceKey, sha256 }).toString(), { signal: lifetime })
+    const revision = companyResourceRevision(sha256, candidate.catalog ?? {})
+    const status = await api.request('/api/v1/company-content/submission-status?' + new URLSearchParams({ resourceKey: candidate.resourceKey, sha256, revision }).toString(), { signal: lifetime })
     return { sha256, fileCount: Object.keys(release.files).length, status }
   }
   return api.request('/api/v1/company-content/submissions', { method: 'POST',

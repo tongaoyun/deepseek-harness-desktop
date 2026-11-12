@@ -1,0 +1,184 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`keeps 'menu' team 'example' failures and focus in the detail dialog through one locked retry 1`] = `
+{
+  "busy": "true",
+  "error": "Draft unavailable",
+  "example": "“评估这份需求，明确首版必须做和可以暂缓的功能。”",
+  "focused": "“评估这份需求，明确首版必须做和可以暂缓的功能。”",
+  "kind": "menu",
+  "otherBusy": "false",
+}
+`;
+
+exports[`keeps 'menu' team 'summon' failures and focus in the detail dialog through one locked retry 1`] = `
+{
+  "busy": "true",
+  "error": "Draft unavailable",
+  "example": "召唤专家团",
+  "focused": "召唤专家团",
+  "kind": "menu",
+  "otherBusy": "false",
+}
+`;
+
+exports[`keeps 'panel' team 'example' failures and focus in the detail dialog through one locked retry 1`] = `
+{
+  "busy": "true",
+  "error": "Draft unavailable",
+  "example": "“评估这份需求，明确首版必须做和可以暂缓的功能。”",
+  "focused": "“评估这份需求，明确首版必须做和可以暂缓的功能。”",
+  "kind": "panel",
+  "otherBusy": "false",
+}
+`;
+
+exports[`keeps 'panel' team 'summon' failures and focus in the detail dialog through one locked retry 1`] = `
+{
+  "busy": "true",
+  "error": "Draft unavailable",
+  "example": "召唤专家团",
+  "focused": "召唤专家团",
+  "kind": "panel",
+  "otherBusy": "false",
+}
+`;
+
+exports[`keeps the delete team confirmation and failure through one locked retry 1`] = `
+{
+  "busy": "true",
+  "error": "Temporary team write failure",
+  "focused": "正在处理…",
+  "kind": "delete",
+  "submit": "正在处理…",
+}
+`;
+
+exports[`keeps the enable team confirmation and failure through one locked retry 1`] = `
+{
+  "busy": "true",
+  "error": "Temporary team write failure",
+  "focused": "正在处理…",
+  "kind": "enable",
+  "submit": "正在处理…",
+}
+`;
+
+exports[`keeps the menu retry error and selection until the directory recovers 1`] = `
+{
+  "busy": "true",
+  "error": "Team directory unavailable刷新",
+  "label": "刷新",
+  "query": "team",
+}
+`;
+
+exports[`keeps the menu-enable team confirmation and failure through one locked retry 1`] = `
+{
+  "busy": "true",
+  "error": "Temporary team write failure",
+  "focused": "正在处理…",
+  "kind": "menu-enable",
+  "submit": "正在处理…",
+}
+`;
+
+exports[`keeps the panel retry error and selection until the directory recovers 1`] = `
+{
+  "busy": "true",
+  "error": "Team directory unavailable刷新重试",
+  "label": "刷新重试",
+  "query": "team",
+}
+`;
+
+exports[`retains a focused task example when the menu team directory removes an earlier example > Refreshed task example 1`] = `
+{
+  "example": "“复核订单资料”",
+  "focused": true,
+}
+`;
+
+exports[`retains a focused task example when the panel team directory removes an earlier example > Refreshed task example 1`] = `
+{
+  "example": "“复核订单资料”",
+  "focused": true,
+}
+`;
+
+exports[`returns recovered 'menu' team detail focus to its title without taking another control (elsewhere=false) 1`] = `
+{
+  "errors": 0,
+  "title": "Original team",
+}
+`;
+
+exports[`returns recovered 'menu' team directory focus after a 'empty' result only when its refresh owns focus (elsewhere=false) 1`] = `
+{
+  "errors": 0,
+  "focus": "搜索专家团",
+}
+`;
+
+exports[`returns recovered 'menu' team directory focus after a 'populated' result only when its refresh owns focus (elsewhere=false) 1`] = `
+{
+  "errors": 0,
+  "focus": "搜索专家团",
+}
+`;
+
+exports[`returns recovered 'panel' team detail focus to its title without taking another control (elsewhere=false) 1`] = `
+{
+  "errors": 0,
+  "title": "Original team",
+}
+`;
+
+exports[`returns recovered 'panel' team directory focus after a 'empty' result only when its refresh owns focus (elsewhere=false) 1`] = `
+{
+  "errors": 0,
+  "focus": "搜索专家团",
+}
+`;
+
+exports[`returns recovered 'panel' team directory focus after a 'populated' result only when its refresh owns focus (elsewhere=false) 1`] = `
+{
+  "errors": 0,
+  "focus": "搜索专家团",
+}
+`;
+
+exports[`saves a usable 'en' company-team copy named 'TTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTT c…' 1`] = `
+{
+  "enabled": false,
+  "name": "TTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTT copy",
+}
+`;
+
+exports[`saves a usable 'zh' company-team copy named 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA…' 1`] = `
+{
+  "enabled": false,
+  "name": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA副本",
+}
+`;
+
+exports[`saves a usable 'zh' company-team copy named 'QA副本 3' 1`] = `
+{
+  "enabled": false,
+  "name": "QA副本 3",
+}
+`;
+
+exports[`saves a usable 'zh' company-team copy named '团团团团团团团团团团团团团团团团团团团团团团团团团团团团团团团团团团团团团…' 1`] = `
+{
+  "enabled": false,
+  "name": "团团团团团团团团团团团团团团团团团团团团团团团团团团团团团团团团团团团团团团副本",
+}
+`;
+
+exports[`shows the first team directory failure without an idle or retry loading placeholder 1`] = `
+{
+  "loading": false,
+  "notice": "Team directory unavailable刷新",
+}
+`;

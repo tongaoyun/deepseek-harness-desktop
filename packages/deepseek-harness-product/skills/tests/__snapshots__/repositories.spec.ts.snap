@@ -1,0 +1,49 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`rejects a repository 'explicit directory case alias' before replacing its current archive or installed skill 1`] = `
+{
+  "error": {
+    "code": "error.repo.invalid",
+    "error": "仓库存在文件或目录路径冲突: repo-main/skills/audit-orders/references",
+  },
+  "name": "explicit directory case alias",
+  "preserved": "---
+name: audit-orders
+description: Review ERP orders
+---
+Original
+",
+}
+`;
+
+exports[`rejects a repository 'file and directory conflict' before replacing its current archive or installed skill 1`] = `
+{
+  "error": {
+    "code": "error.repo.invalid",
+    "error": "仓库存在文件或目录路径冲突: repo-main/skills/audit-orders/references",
+  },
+  "name": "file and directory conflict",
+  "preserved": "---
+name: audit-orders
+description: Review ERP orders
+---
+Original
+",
+}
+`;
+
+exports[`rejects a repository 'implicit directory case alias' before replacing its current archive or installed skill 1`] = `
+{
+  "error": {
+    "code": "error.repo.invalid",
+    "error": "仓库存在文件或目录路径冲突: repo-main/skills/audit-orders/References",
+  },
+  "name": "implicit directory case alias",
+  "preserved": "---
+name: audit-orders
+description: Review ERP orders
+---
+Original
+",
+}
+`;

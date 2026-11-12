@@ -6,6 +6,7 @@ import {
   TEAM_CUSTOM_ID,
   teamInputSchema,
   teamSchema,
+  teamHasPinnedMembers,
   type TeamInput,
   type TeamSnapshot,
   type ExpertTeam,
@@ -34,12 +35,12 @@ export function createTeamLibrary(
       throw expertConflict(tx('配置已更新，请读取最新内容后重试。'))
   }
   const teams = (): ExpertTeam[] => read().custom
-  const requireMembers = (team: TeamInput, snapshot: CatalogSnapshot) => {
+  const requireMembers = (team: Pick<ExpertTeam, 'members' | 'company'>, snapshot: CatalogSnapshot) => {
     if (
       team.members.some(
         (member) =>
           !snapshot.experts.some(
-            (expert) => expert.slug === member.expertSlug && !expert.conflict,
+            (expert) => expert.slug === member.expertSlug && !expert.conflict && (!expert.teamMember || team.company === true),
           ),
       )
     )
@@ -147,7 +148,10 @@ export function createTeamLibrary(
       if (!team) throw new Error(tx('专家团不存在，请重新选择。'))
       check(revision)
       if (typeof enabled !== 'boolean') throw new Error(tx('启用状态无效。'))
-      if (enabled) requireMembers(team, all)
+      if (enabled) {
+        requireMembers(team, all)
+        if (!teamHasPinnedMembers(team)) throw new Error(tx('团队成员需要重新选择并保存。'))
+      }
       await mutateExpertSettings(store,
         [
           {

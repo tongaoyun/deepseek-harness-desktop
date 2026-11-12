@@ -251,11 +251,50 @@ it('ignores a cancelled citation denial after opening another source', async () 
 
 it.each(['en', 'zh'])('reports denied citation access in %s after closing live content', async (language) => {
   locale.setLocale(language)
-  transport(async () => { throw new ProductError('KNOWLEDGE_ACCESS_REVOKED', 'Private diagnostic') })
+  const api = transport(async () => { throw new ProductError('KNOWLEDGE_ACCESS_REVOKED', 'Private diagnostic') })
   const view = render(<KnowledgeToolResult {...props} block={block()} />)
   fireEvent.click(screen.getByText(t('knowledgeToolSearch')))
   fireEvent.click(screen.getByRole('button', { name: source.filename }))
   await screen.findByRole('alert')
   expect(screen.queryByRole('dialog')).toBeNull()
   expect(view.container.textContent).toMatchSnapshot()
+  locale.setLocale(language === 'en' ? 'zh' : 'en')
+  view.rerender(<KnowledgeToolResult {...props} block={block()} />)
+  expect(screen.getByRole('alert').textContent).toBe(`${t('knowledgeAccessRevoked')} (KNOWLEDGE_ACCESS_REVOKED)`)
+  expect(api.invoke).toHaveBeenCalledOnce()
+})
+
+it('updates download failures in the current language without restarting the citation or original preview', async () => {
+  const pending = Promise.withResolvers<unknown>()
+  let fail = true
+  const api = transport(async (method) => {
+    if (method === 'knowledge.sources.read') return { ...source, content: '完整来源' }
+    if (method === 'knowledge.documents.previewMetadata') return originalMetadata(source.knowledgeBaseId, source.documentId, source.filename)
+    if (method === 'knowledge.documents.preview.open') return originalPreview('原文正文')
+    return fail ? pending.promise : { downloaded: true }
+  })
+  const view = render(<KnowledgeToolResult {...props} block={block()} />)
+  fireEvent.click(screen.getByText(zh.knowledgeToolSearch))
+  fireEvent.click(screen.getByRole('button', { name: source.filename }))
+  await screen.findByText('完整来源')
+  fireEvent.click(screen.getByRole('button', { name: zh.knowledgeReadFullDocument }))
+  await screen.findByText('原文正文')
+  fireEvent.click(screen.getByRole('button', { name: zh.knowledgeDownloadOriginal }))
+  await waitFor(() => { expect(api.invoke.mock.calls.some(call => call[1] === 'knowledge.documents.download')).toBe(true) })
+  locale.setLocale('en')
+  view.rerender(<KnowledgeToolResult {...props} block={block()} />)
+  await act(async () => { pending.reject(new Error('Private transport details')) })
+  expect((await screen.findByRole('alert')).textContent).toBe(en.knowledgeDownloadFailed)
+  locale.setLocale('zh')
+  view.rerender(<KnowledgeToolResult {...props} block={block()} />)
+  expect(screen.getByRole('alert').textContent).toBe(zh.knowledgeDownloadFailed)
+  expect(screen.getByRole('dialog', { name: source.filename }).textContent).toMatchSnapshot()
+  for (const method of ['knowledge.sources.read', 'knowledge.documents.previewMetadata', 'knowledge.documents.preview.open']) {
+    expect(api.invoke.mock.calls.filter(call => call[1] === method)).toHaveLength(1)
+  }
+  expect(api.cancel).not.toHaveBeenCalled()
+  fail = false
+  fireEvent.click(screen.getByRole('button', { name: zh.knowledgeDownloadOriginal }))
+  await waitFor(() => { expect(screen.queryByRole('alert')).toBeNull() })
+  expect(api.invoke.mock.calls.filter(call => call[1] === 'knowledge.documents.download')).toHaveLength(2)
 })

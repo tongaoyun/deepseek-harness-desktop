@@ -1,9 +1,42 @@
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { createHash } from 'node:crypto'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { expect, it, onTestFinished } from 'vitest'
+import { expect, it, onTestFinished, vi } from 'vitest'
 import { DeepSeekHarnessApiClient } from '@deepseek-harness/product'
 import { PersonalConnectors } from '../src/personal-connectors.ts'
+
+it('keeps device settings when an HTTP success does not confirm connector deletion', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'personal-mcp-delete-receipt-'))
+  const employee = 'employee', id = 'owned-mcp', version = '1.0.0'
+  const file = join(root, createHash('sha256').update(JSON.stringify([employee, id, version])).digest('hex') + '.bin')
+  await writeFile(file, 'encrypted-device-settings')
+  await writeFile(`${file}.pending`, 'encrypted-pending-settings')
+  const committed = vi.fn()
+  let receipt: unknown = false
+  const api = new DeepSeekHarnessApiClient({ baseUrl: 'https://product.example', getSessionToken: () => 'fixture-token',
+    fetch: async (_url, init) => Response.json({ success: true, data: init?.method === 'DELETE' ? receipt : {
+      id, version, visibility: 'PERSONAL', ownerEmployeeId: employee, canEdit: true, authMode: 'none',
+      transport: 'stdio', command: 'node', arguments: [],
+    } }) })
+  const manager = new PersonalConnectors(root, {
+    isEncryptionAvailable: () => true, encryptString: value => Buffer.from(value), decryptString: value => value.toString(),
+  }, () => employee, undefined, committed)
+  onTestFinished(async () => { await manager.close(); api.close(); await rm(root, { recursive: true, force: true }) })
+  for (receipt of [false, null, {}, { removed: true }, 'true']) {
+    await expect(manager.manage('extensions.connector.delete', { id, version }, api, employee, new AbortController().signal))
+      .rejects.toMatchObject({ code: 'CONNECTOR_OPERATION_UNCONFIRMED', retryable: true })
+    expect(await readFile(file, 'utf8')).toBe('encrypted-device-settings')
+    expect(await readFile(`${file}.pending`, 'utf8')).toBe('encrypted-pending-settings')
+    expect(committed).not.toHaveBeenCalled()
+  }
+  receipt = true
+  await expect(manager.manage('extensions.connector.delete', { id, version }, api, employee, new AbortController().signal))
+    .resolves.toEqual({ removed: true, id })
+  await expect(readFile(file)).rejects.toMatchObject({ code: 'ENOENT' })
+  await expect(readFile(`${file}.pending`)).rejects.toMatchObject({ code: 'ENOENT' })
+  expect(committed).toHaveBeenCalledOnce()
+})
 
 it.each(['read', 'delete', 'configuration.read'])('rejects %s when the server returns another connector before further work', async (method) => {
   const root = await mkdtemp(join(tmpdir(), 'personal-mcp-identity-'))

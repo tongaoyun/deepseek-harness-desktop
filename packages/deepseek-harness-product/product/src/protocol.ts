@@ -1,10 +1,31 @@
 /** Public product bridge contract. Harness execution never crosses this boundary. */
 import { z } from 'zod'
 import { isProductFailure, ProductError, type ProductFailure } from './errors.ts'
-
+export { parseKnowledgeDocument, type KnowledgeDocument } from './knowledge-document.ts'
 
 /** Protocol identifier for the product desktop bridge. */
 export const PRODUCT_PROTOCOL = 'deepseek-harness.native.v1' as const
+
+/** Maximum employee browser-authorization duration, shared by main and its callers. */
+export const DINGTALK_AUTHORIZATION_TIMEOUT_MS = 5 * 60_000
+
+/** Latest authorized document processing and summary; raw engine diagnostics never cross IPC. */
+export const KnowledgeProcessingSchema = z.object({
+  documentId: z.string().refine(isKnowledgeResourceId), knowledgeBaseId: z.string().refine(isKnowledgeResourceId),
+  status: z.enum(['READY', 'QUEUED', 'PROCESSING', 'FINALIZING', 'FAILED', 'CANCELLED', 'DELETING']),
+  attempt: z.number().int().min(0).max(2_147_483_647),
+  stages: z.array(z.object({
+    name: z.enum(['DOCUMENT', 'CHUNKING', 'EMBEDDING', 'MULTIMODAL', 'ENRICHMENT']),
+    status: z.enum(['PENDING', 'RUNNING', 'COMPLETED', 'FAILED', 'SKIPPED', 'CANCELLED']),
+    durationMillis: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER).nullish().transform(value => value ?? null),
+  }).readonly()).max(5).readonly(),
+  stalled: z.boolean(), summaryStatus: z.enum(['NONE', 'PENDING', 'PROCESSING', 'COMPLETED', 'FAILED']),
+  summary: z.string().max(1_000_000), summaryEnabled: z.boolean(),
+}).refine(value => value.stages.length === (value.attempt === 0 ? 0 : 5)
+  && new Set(value.stages.map(stage => stage.name)).size === value.stages.length).readonly()
+
+/** Sanitized engine details validated at the server and product IPC boundaries. */
+export type KnowledgeProcessing = z.infer<typeof KnowledgeProcessingSchema>
 
 /** Immutable company documents, owned by main and shared with native Host plugins. */
 export interface CompanyContentRoots {
@@ -22,6 +43,13 @@ export interface CompanyContentSource {
   refresh(signal?: AbortSignal): Promise<void>
   /** Durable Session version; cancellation releases this reader and aborts verification when none remain. */
   forSession(sessionId: string, signal?: AbortSignal): Promise<CompanyContentRoots>
+  /** Exact expert package for a personal team's pinned member; never changes the active catalog or Session binding.
+   * @param slug - Company expert identifier.
+   * @param sha256 - Full immutable package digest saved with the team.
+   * @param signal - Optional reader cancellation; omission uses the source lifetime.
+   * @returns Verified package root; missing versions or damaged caches fail without using the latest expert.
+   */
+  expertVersion(slug: string, sha256: string, signal?: AbortSignal): Promise<string>
 }
 
 /** PDF upload parsing: standard document processing or embedded text without OCR. */
@@ -151,6 +179,9 @@ export type ProductMethod =
   | 'connectors.authorization.begin'
   | 'connectors.authorization.revoke'
   | 'knowledge.bases.list'
+  | 'knowledge.destinations.list'
+  | 'knowledge.bases.get'
+  | 'knowledge.bases.update'
   | 'knowledge.bases.create'
   | 'knowledge.bases.delete'
   | 'knowledge.files.limits'
@@ -162,6 +193,7 @@ export type ProductMethod =
   | Extract<KnowledgeFileMethod, `knowledge.${string}`>
   | 'knowledge.documents.read'
   | 'knowledge.documents.upload.select'
+  | 'knowledge.documents.upload.configure'
   | 'knowledge.documents.upload'
   | 'knowledge.documents.upload.discard'
   | 'knowledge.documents.upload.pending'
@@ -170,6 +202,8 @@ export type ProductMethod =
   | 'knowledge.documents.delete'
   | 'knowledge.documents.reindex'
   | 'knowledge.documents.cancel'
+  | 'knowledge.documents.processing'
+  | 'knowledge.documents.summary.refresh'
   | 'knowledge.documents.move'
   | 'knowledge.folders.list'
   | 'knowledge.folders.get'
@@ -182,6 +216,7 @@ export type ProductRuntimeMethod = Extract<ProductMethod,
   | 'auth.getSession'
   | 'connectors.list'
   | 'knowledge.bases.list'
+  | 'knowledge.destinations.list'
   | 'knowledge.search'
   | 'knowledge.sources.read'
   | 'knowledge.documents.get'
@@ -193,12 +228,14 @@ export type ProductRuntimeMethod = Extract<ProductMethod,
   | 'runtime.companyContent.read'
   | 'runtime.companyContent.refresh'
   | 'runtime.companyContent.pin'
+  | 'runtime.companyContent.expertVersion'
 
 
 const PRODUCT_RUNTIME_METHODS: readonly ProductRuntimeMethod[] = [
   'runtime.companyContent.read', 'runtime.companyContent.refresh', 'runtime.companyContent.pin',
+  'runtime.companyContent.expertVersion',
   'auth.getSession',
-  'connectors.list', 'knowledge.bases.list', 'knowledge.search', 'knowledge.sources.read', 'knowledge.documents.save',
+  'connectors.list', 'knowledge.bases.list', 'knowledge.destinations.list', 'knowledge.search', 'knowledge.sources.read', 'knowledge.documents.save',
   'knowledge.documents.get', 'knowledge.documents.previewMetadata', 'knowledge.documents.preview.open', 'knowledge.documents.preview.close',
   'runtime.knowledge.preview.policy', 'runtime.knowledge.preview.readChunk', 'runtime.knowledge.preview.write.open', 'runtime.knowledge.preview.write.append',
   'runtime.knowledge.preview.write.commit', 'runtime.knowledge.preview.write.close',
@@ -341,11 +378,12 @@ export function isProductMethod(value: unknown): value is ProductMethod {
 
     'connectors.list',
     'connectors.authorization.status', 'connectors.authorization.begin', 'connectors.authorization.revoke',
-    'knowledge.bases.list', 'knowledge.bases.create', 'knowledge.bases.delete', 'knowledge.files.limits', 'knowledge.search', 'knowledge.sources.read',
-    'knowledge.documents.list', 'knowledge.documents.get', 'knowledge.documents.previewMetadata', 'knowledge.documents.read', 'knowledge.documents.upload', 'knowledge.documents.upload.select', 'knowledge.documents.upload.discard', 'knowledge.documents.upload.pending',
+    'knowledge.bases.list', 'knowledge.destinations.list', 'knowledge.bases.get', 'knowledge.bases.update', 'knowledge.bases.create', 'knowledge.bases.delete', 'knowledge.files.limits', 'knowledge.search', 'knowledge.sources.read',
+    'knowledge.documents.list', 'knowledge.documents.get', 'knowledge.documents.previewMetadata', 'knowledge.documents.read', 'knowledge.documents.upload', 'knowledge.documents.upload.select', 'knowledge.documents.upload.configure', 'knowledge.documents.upload.discard', 'knowledge.documents.upload.pending',
     'knowledge.documents.preview.open', 'knowledge.documents.preview.read', 'knowledge.documents.preview.close',
     'knowledge.documents.download', 'knowledge.documents.openExternal',
     'knowledge.documents.save', 'knowledge.documents.importUrl', 'knowledge.documents.delete', 'knowledge.documents.reindex', 'knowledge.documents.cancel',
+    'knowledge.documents.processing', 'knowledge.documents.summary.refresh',
     'knowledge.documents.move', 'knowledge.folders.list', 'knowledge.folders.get', 'knowledge.folders.create', 'knowledge.folders.rename', 'knowledge.folders.delete',
   ].includes(value)
 }

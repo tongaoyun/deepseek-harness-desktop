@@ -9,10 +9,11 @@ import { ConnectorDraftSchema } from '@deepseek-harness/product/connector-draft'
 import { DeepSeekHarnessApiClient } from '@deepseek-harness/product'
 import { DeepSeekHarnessProductBridge } from '@deepseek-harness/product/bridge'
 import { PersonalConnectors } from '../src/personal-connectors.ts'
+import { savedConnectorResponse } from './connector-receipt-fixture.ts'
 
 vi.mock('node:fs/promises', async (importOriginal) => {
   const actual = await importOriginal<typeof import('node:fs/promises')>()
-  return { ...actual, readFile: vi.fn(actual.readFile) }
+  return { ...actual, readFile: vi.fn(actual.readFile), rm: vi.fn(actual.rm) }
 })
 
 async function fixture() {
@@ -40,11 +41,12 @@ readline.createInterface({input:process.stdin}).on('line', line => {
   let templateSignal: AbortSignal | undefined
   const request: typeof fetch = async (url, init) => {
     const path = new URL(typeof url === 'string' ? url : url instanceof URL ? url.href : url.url).pathname
+    if (init?.method === 'DELETE') return Response.json({ success: true, data: true })
     if (init?.method === 'POST') {
       if (typeof init.body !== 'string') throw new Error('Missing connector request body')
       const body = z.object({ version: z.string() }).parse(JSON.parse(init.body))
       current = entry(body.version)
-      return Response.json({ success: true, data: {} })
+      return savedConnectorResponse(init, employee)
     }
     if (path.endsWith('/configuration-template') && holdTemplate) {
       const captured = current
@@ -164,3 +166,39 @@ it('cancels an old HTTP catalog at commit while cached-client cleanup is still w
   expect(await test.bridge.invokeRuntime('connectors.list', { ids: [test.draft.id] }))
     .toMatchObject([{ version: '1.0.1', configurationStatus: 'CONFIGURED' }])
 })
+
+it.each(['connection', 'configuration', 'pending'] as const)(
+  'attempts all device cleanup and reports a confirmed deletion when %s cleanup fails', async (failure) => {
+    const test = await fixture()
+    await test.manager.enrich([test.entry()])
+    await test.actual.writeFile(`${test.filename}.pending`, 'encrypted pending settings')
+    const cause = new Error('Synthetic device cleanup failure')
+    if (failure === 'connection') {
+      // oxlint-disable-next-line typescript/unbound-method -- Invoke the real SDK teardown with its receiver before simulating its failure.
+      const close = Client.prototype.close
+      vi.spyOn(Client.prototype, 'close').mockImplementation(async function (this: Client) {
+        await close.call(this)
+        throw cause
+      })
+    } else {
+      const path = failure === 'configuration' ? test.filename : `${test.filename}.pending`
+      vi.mocked(rm).mockImplementation(async (...args) => {
+        if (args[0] === path) throw cause
+        return test.actual.rm(...args)
+      })
+    }
+    const deletion = test.manager.manage('extensions.connector.delete', {
+      id: test.draft.id, version: test.draft.version,
+    }, test.api, test.employee, new AbortController().signal)
+    await expect(deletion).rejects.toMatchObject({
+      code: 'CONNECTOR_DELETE_CLEANUP_FAILED', retryable: false,
+      resources: [{ kind: 'connector', id: test.draft.id }],
+    })
+    await expect(deletion).rejects.toHaveProperty('cause', expect.any(AggregateError))
+    expect(vi.mocked(rm).mock.calls.some(([path]) => path === test.filename)).toBe(true)
+    expect(vi.mocked(rm).mock.calls.some(([path]) => path === `${test.filename}.pending`)).toBe(true)
+    if (failure !== 'configuration') await expect(test.actual.readFile(test.filename)).rejects.toMatchObject({ code: 'ENOENT' })
+    if (failure !== 'pending') await expect(test.actual.readFile(`${test.filename}.pending`)).rejects.toMatchObject({ code: 'ENOENT' })
+    for (const pid of await test.processes()) expect(() => process.kill(pid, 0)).toThrow()
+  },
+)

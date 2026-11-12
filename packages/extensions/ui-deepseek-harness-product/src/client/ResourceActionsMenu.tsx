@@ -1,13 +1,13 @@
 import type { ReactNode } from 'react'
-import { useState } from 'react'
-import { IconEllipsisOutlineRegular, IconEditOutlineRegular, IconShareOutlineRegular, IconTrashOutlineRegular, Menu, Tooltip, type MenuEntry } from '@deepseek-ai/dsh-client-ui-primitives'
+import { useRef, useState } from 'react'
+import { IconEllipsisOutlineRegular, IconEditOutlineRegular, IconShareOutlineRegular, IconTrashOutlineRegular, Menu, Tooltip, focusWithoutRing, type MenuEntry } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { DeepSeekHarnessProductKey } from '../locales.ts'
 import type { ProductItem } from './catalog-shared.tsx'
 import css from '../DeepSeekHarnessProduct.module.css'
 
 type ResourceAccess = Partial<Pick<ProductItem, 'canEdit' | 'canSubmit' | 'canDelete' | 'reviewStatus' | 'version'>>
 
-/** Owner actions shared by connector cards and details.
+/** Connector owner actions retain dialog return focus; losing availability closes the menu.
  * @param props - Resource permissions, mutation callbacks, pending state, and localized labels.
  * @returns Available owner actions, or nothing when no action applies.
  */
@@ -19,8 +19,11 @@ export function ResourceActionsMenu({ resource, pending = false, onEdit, onSubmi
   readonly onDelete: () => void
   readonly t: (key: DeepSeekHarnessProductKey) => string
 }): ReactNode {
-  const [open, setOpen] = useState(false)
+  const trigger = useRef<HTMLButtonElement>(null)
+  const [requestedOpen, setOpen] = useState(false)
   const owner = resource.canEdit === true && resource.version !== undefined
+  const open = requestedOpen && owner && !pending
+  if (requestedOpen && (!owner || pending)) setOpen(false)
   if (!owner) return null
   const entries: MenuEntry[] = []
   entries.push({ id: 'edit', label: t('modifyResource'), icon: <IconEditOutlineRegular size={16} /> })
@@ -35,15 +38,17 @@ export function ResourceActionsMenu({ resource, pending = false, onEdit, onSubmi
       { id: 'delete', label: t('deleteResource'), icon: <IconTrashOutlineRegular size={16} />, danger: true, disabled: !resource.canDelete })
     if (!resource.canDelete) entries.push({ type: 'label', id: 'delete-unavailable', text: t('resourceDeleteShared') })
   }
-  return <Menu open={open && !pending} items={entries} portal align="end"
+  return <Menu open={open} items={entries} portal align="end"
     onClose={() => { setOpen(false) }} onSelect={(id) => {
+      if (pending) return
+      if (trigger.current) focusWithoutRing(trigger.current)
       setOpen(false)
       if (id === 'edit') onEdit()
       else if (id === 'submit') onSubmit()
       else if (id === 'delete') onDelete()
     }} anchor={<Tooltip label={t('resourceActions')} side="top" portal>
-      <button type="button" className={css.cardAction} disabled={pending} aria-label={t('resourceActions')}
-        aria-haspopup="menu" aria-expanded={open && !pending} onClick={() => { setOpen(!open) }}>
+      <button ref={trigger} type="button" className={`${css.cardAction}${pending ? ' product-control-pending' : ''}`} aria-disabled={pending} aria-label={t('resourceActions')}
+        aria-haspopup="menu" aria-expanded={open} onClick={() => { if (!pending) setOpen(!open) }}>
         <IconEllipsisOutlineRegular size={16} />
       </button>
     </Tooltip>} />

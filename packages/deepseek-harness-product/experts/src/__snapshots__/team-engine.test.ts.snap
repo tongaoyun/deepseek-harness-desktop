@@ -1,0 +1,17 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`原生专家团启动语义 > 读取专家期间团队被编辑时，任务和队友仍使用本次冻结的团队 1`] = `
+{
+  "members": [
+    "agency-b1489a9d72e6e02ab7de",
+    "agency-ac7e2715f9b91f422106",
+    "agency-25d8aced579a7658b995",
+  ],
+  "tasks": [
+    "产品方案评审团：product-manager",
+    "产品方案评审团：design-ux-researcher",
+    "产品方案评审团：engineering-software-architect",
+  ],
+  "team": "team-custom-00000000-0000-4000-8000-000000000000",
+}
+`;

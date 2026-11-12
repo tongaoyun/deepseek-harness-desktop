@@ -14,6 +14,9 @@ export type LocaleId = 'zh' | 'en'
 
 /** 简体中文宿主文案（key 集真相源）。 */
 export const zhHost = {
+  'error.contentFile.invalid': '导出资源必须为普通文件，请检查后重试。',
+  'error.contentFile.tooLarge': '导出资源超过大小限制，请缩减后重试。',
+  'error.contentFile.changed': '导出时资源发生变化，请等待编辑完成后重试。',
   'error.rootMissing': '智能体目录 root 不存在或无法访问："{root}"。请设置环境变量 {env} 或提供正确路径。',
   'error.rootNotDir': '智能体目录 root "{root}" 不是目录',
   'error.catalogEmpty': '在 root "{root}" 下未发现任何智能体（*.md 文件）。请确认路径正确。',
@@ -52,6 +55,9 @@ export type HostKey = keyof typeof zhHost
 
 /** 英文宿主文案，key 完整性由 satisfies 在编译期保证。 */
 export const enHost = {
+  'error.contentFile.invalid': 'Export resources must be regular files. Check the files and try again.',
+  'error.contentFile.tooLarge': 'The export resources exceed the size limit. Reduce their size and try again.',
+  'error.contentFile.changed': 'A resource changed during export. Finish editing and try again.',
   'error.rootMissing': 'Agent catalog root is missing or inaccessible: "{root}". Set {env} or provide a valid path.',
   'error.rootNotDir': 'Agent catalog root "{root}" is not a directory',
   'error.catalogEmpty': 'No agents (*.md files) found under root "{root}". Check the path.',

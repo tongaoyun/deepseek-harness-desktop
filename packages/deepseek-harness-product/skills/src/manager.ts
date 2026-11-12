@@ -6,9 +6,10 @@ import type { SkillManagerResults } from './generated/results.ts'
 import { Context, Service } from '@deepseek-ai/cordis'
 import { Remote, RemoteError, TypertRemoteService, remoteErrorOf, principalOf } from '@deepseek-ai/dsh-typert-protocol'
 import { isJsonValue, type JsonValue } from '@deepseek-ai/dsh-util-values'
+import { CONTENT_CATEGORIES } from '@deepseek-harness/product/content-categories'
 import { realpath } from 'node:fs/promises'
-import type { Log, ManagerScope, ManagerTarget, ManagerDestination, ManagerCreate, ManagerUpload, RootView, Diagnostic, OperationError, SkillRequest, RepositoryInput, CatalogIdentity, ManagerMarketOptions } from './types.ts'
-import { state, setSkillEnabled, setSourceEnabled, createCategory, renameCategory, deleteCategory, assignSkillCategory, moveSkillInCategory, setCategoryEnabled, importUploadedSkill, createSkill, skillDetail, exportSkill, userRoots, projectRoots, resolveWorkspaceTarget, listWorkspaces, workspaceSkills } from './core.ts'
+import type { Log, ManagerScope, ManagerTarget, ManagerCategoryAssignment, ManagerDestination, ManagerCreate, ManagerUpload, RootView, Diagnostic, OperationError, SkillRequest, RepositoryInput, CatalogIdentity, ManagerMarketOptions } from './types.ts'
+import { state, setSkillEnabled, setSourceEnabled, assignSkillCategory, importUploadedSkill, createSkill, skillDetail, exportSkill, userRoots, projectRoots, resolveWorkspaceTarget, listWorkspaces, workspaceSkills } from './core.ts'
 import { createRepositoryManager } from './repositories.ts'
 import { installationSourceKey } from './repository-updates.ts'
 import { listClawHub, searchClawHub } from './clawhub-catalog.ts'
@@ -63,7 +64,7 @@ export class SkillsManager extends TypertRemoteService {
           name: { type: 'string', description: 'Skill name; it will be normalized to kebab-case.' },
           description: { type: 'string', description: 'A concise routing description for when to use the skill.' },
           body: { type: 'string', description: 'Markdown instructions that form the skill body.' },
-          category: { type: 'string', minLength: 1, maxLength: SKILL_CATEGORY_NAME_MAX, description: 'A short, reusable category in the user\'s language, for example 文档办公, 数据分析 or 研发开发. Classify by purpose; reuse an existing category when known.' },
+          category: { type: 'string', enum: CONTENT_CATEGORIES.map(category => category.zh), minLength: 1, maxLength: SKILL_CATEGORY_NAME_MAX, description: 'Choose the predefined business category by purpose. Use 其他 when none applies.' },
         },
         required: ['name', 'description', 'body', 'category'],
         additionalProperties: false,
@@ -236,54 +237,19 @@ export class SkillsManager extends TypertRemoteService {
   @Remote
   setSourceEnabled(target: ManagerTarget, enabled: boolean, signal: AbortSignal): Promise<SkillManagerResults['setSourceEnabled']> { return this.perform(async active => setSourceEnabled(target.root, enabled, this.log, await this.options(target, active)), signal, { mutation: true, notify: true }) }
 
-  /** Create a list category.
-   * @param target Explicit operation input.
+  /** Assign one predefined business category without changing the skill source.
+   * @param target Skill identity and predefined category ID.
    * @param signal Native invocation lifetime.
-   * @returns The committed result or a typed operation failure.
+   * @returns The committed category or a typed operation failure.
    */
   @Remote
-  createCategory(target: ManagerTarget, signal: AbortSignal): Promise<SkillManagerResults['createCategory']> { return this.perform(async active => createCategory(target.root, target.name ?? '', this.log, await this.options(target, active)), signal, { mutation: true }) }
-
-  /** Rename a list category.
-   * @param target Explicit operation input.
-   * @param signal Native invocation lifetime.
-   * @returns The committed result or a typed operation failure.
-   */
-  @Remote
-  renameCategory(target: ManagerTarget, signal: AbortSignal): Promise<SkillManagerResults['renameCategory']> { return this.perform(async active => renameCategory(target.root, target.id ?? '', target.name ?? '', this.log, await this.options(target, active)), signal, { mutation: true }) }
-
-  /** Delete a list category while retaining its skills.
-   * @param target Explicit operation input.
-   * @param signal Native invocation lifetime.
-   * @returns The committed result or a typed operation failure.
-   */
-  @Remote
-  deleteCategory(target: ManagerTarget, signal: AbortSignal): Promise<SkillManagerResults['deleteCategory']> { return this.perform(async active => deleteCategory(target.root, target.id ?? '', this.log, await this.options(target, active)), signal, { mutation: true }) }
-
-  /** Assign a skill to a category.
-   * @param target Explicit operation input.
-   * @param signal Native invocation lifetime.
-   * @returns The committed result or a typed operation failure.
-   */
-  @Remote
-  assignCategory(target: ManagerTarget, signal: AbortSignal): Promise<SkillManagerResults['assignCategory']> { return this.perform(async active => assignSkillCategory(target.root, target.name ?? '', target.category ?? '', this.log, await this.options(target, active)), signal, { mutation: true }) }
-
-  /** Change category ordering.
-   * @param target Explicit operation input.
-   * @param signal Native invocation lifetime.
-   * @returns The committed result or a typed operation failure.
-   */
-  @Remote
-  moveInCategory(target: ManagerTarget, signal: AbortSignal): Promise<SkillManagerResults['moveInCategory']> { return this.perform(async active => moveSkillInCategory(target.root, target.name ?? '', target.category ?? '', target.targetName, target.position ?? 'before', this.log, await this.options(target, active)), signal, { mutation: true }) }
-
-  /** Set invocation policy for a category.
-   * @param target Explicit operation input.
-   * @param enabled Explicit operation input.
-   * @param signal Native invocation lifetime.
-   * @returns The committed result or a typed operation failure.
-   */
-  @Remote
-  setCategoryEnabled(target: ManagerTarget, enabled: boolean, signal: AbortSignal): Promise<SkillManagerResults['setCategoryEnabled']> { return this.perform(async active => setCategoryEnabled(target.root, target.category ?? '', enabled, this.log, await this.options(target, active)), signal, { mutation: true, notify: true }) }
+  assignCategory(target: ManagerCategoryAssignment, signal: AbortSignal): Promise<SkillManagerResults['assignCategory']> {
+    return this.perform(async (active) => {
+      const category = CONTENT_CATEGORIES.find(item => item.id === target.categoryId)
+      if (!category) return { ok: false as const, code: 'error.category.preset', error: '请选择预设业务分类' }
+      return assignSkillCategory(target.root, target.name, category.zh, this.log, await this.options(target, active))
+    }, signal, { mutation: true })
+  }
 
   /** Move a writable skill into the recoverable trash.
    * @param target Explicit operation input.
@@ -316,12 +282,19 @@ export class SkillsManager extends TypertRemoteService {
    * @returns The committed result or a typed operation failure.
    */
   @Remote
-  createSkill(request: ManagerCreate, signal: AbortSignal): Promise<SkillManagerResults['createSkill']> { return this.perform(async active => createSkill({ name: request.name, description: request.description, body: request.body, category: request.category }, this.log, { root: await this.root(request, active) }), signal, { mutation: true, notify: true }) }
+  createSkill(request: ManagerCreate, signal: AbortSignal): Promise<SkillManagerResults['createSkill']> {
+    return this.perform(async (active) => {
+      if (!CONTENT_CATEGORIES.some(category => category.zh === request.category))
+        return { ok: false as const, code: 'error.category.preset', error: '请选择预设业务分类' }
+      return createSkill({ name: request.name, description: request.description, body: request.body, category: request.category },
+        this.log, { root: await this.root(request, active) })
+    }, signal, { mutation: true, notify: true })
+  }
 
   /** Import a bounded file or ZIP upload.
    * @param request Explicit operation input.
    * @param signal Native invocation lifetime.
-   * @returns The committed result or a typed operation failure.
+   * @returns Per-item outcomes, including batches with no successful imports; invalid uploads throw a typed operation failure.
    */
   @Remote
   uploadSkill(request: ManagerUpload, signal: AbortSignal): Promise<SkillManagerResults['uploadSkill']> { return this.perform(async (active) => {

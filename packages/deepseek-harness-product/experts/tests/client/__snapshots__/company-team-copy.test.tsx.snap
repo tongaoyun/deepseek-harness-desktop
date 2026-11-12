@@ -1,0 +1,27 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`handles a company-team copy when the member catalog is unchanged 1`] = `
+{
+  "members": [
+    "member-1",
+    "member-2",
+  ],
+  "name": "订单诊断专家团副本",
+  "notice": "专家团配置已保存。",
+  "originalMembersUnchanged": true,
+  "updatedVersionSelected": false,
+}
+`;
+
+exports[`handles a company-team copy when the member catalog is updated 1`] = `
+{
+  "members": [
+    "member-1",
+    "member-2",
+  ],
+  "name": "订单诊断专家团副本",
+  "notice": "专家团配置已保存。",
+  "originalMembersUnchanged": true,
+  "updatedVersionSelected": true,
+}
+`;

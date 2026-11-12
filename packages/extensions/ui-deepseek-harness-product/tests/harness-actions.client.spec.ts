@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 import type { Context } from '@deepseek-ai/cordis'
 import type { DraftInitializationOptions, DraftInitializationResult, DraftReference } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import { afterEach, expect, it, vi } from 'vitest'
@@ -7,7 +8,7 @@ import { productErrorMessage } from '../src/client/product-errors.ts'
 import { zh, en } from '../src/locales.ts'
 import { RemoteError } from '@deepseek-ai/dsh-client-test-runtime'
 
-afterEach(() => vi.unstubAllGlobals())
+afterEach(() => { vi.unstubAllGlobals(); document.body.replaceChildren() })
 const asContext = (value: object) => value as Context
 
 function fixture(opening: Promise<void> = Promise.resolve()) {
@@ -49,6 +50,7 @@ function fixture(opening: Promise<void> = Promise.resolve()) {
   const using = vi.fn(async (id: string, _options: { signal?: AbortSignal }, action: (reference: object) => Promise<void>) =>
     action({ binding: { ctx: { id } } }))
   const selectPanel = vi.fn()
+  const navigation = new AbortController()
   const create = vi.fn(async (options?: { sessionId?: string }) => { const id = options?.sessionId ?? `new-${++count}`; drafts.set(id, ''); return id })
   const workspaceItems = [{ workspaceId: 'workspace', sessionIds: ['original'] }]
   const initializeDefault = vi.fn(async (_signal?: AbortSignal): Promise<typeof workspaceItems[number] | undefined> => undefined)
@@ -58,11 +60,12 @@ function fixture(opening: Promise<void> = Promise.resolve()) {
     { ok: true; value: string | null } | { ok: false; error: RemoteError }
   > => ({ ok: true, value: await pickDirectory() }))
   const setDraft = vi.fn((id: string, value: string) => { drafts.set(id, value); references.set(id, []) })
+  const focusInput = vi.fn((_id: string) => {})
   const input = (id: string) => ({
     get draftSnapshot() { return { text: drafts.get(id) ?? '', references: references.get(id) ?? [] } },
     state: { getSnapshot: () => ({ draft: drafts.get(id) ?? '',
       occurrences: (references.get(id) ?? []).map((reference, index) => ({ ...reference, occurrenceId: index + 1 })) }) },
-    setDraft: (value: string) => { setDraft(id, value) }, focus: vi.fn(),
+    setDraft: (value: string) => { setDraft(id, value) }, focus: () => { focusInput(id) },
   })
   const requestDraftInitialization = vi.fn((binding: { ctx: { id: string } },
     options: DraftInitializationOptions): DraftInitializationResult => {
@@ -99,16 +102,64 @@ function fixture(opening: Promise<void> = Promise.resolve()) {
     workspaces: { list: { getSnapshot: () => ({ items: workspaceItems }) }, initializeDefault, create: createWorkspace },
     conversation: { input: { for: (binding: { id: string }) => input(binding.id), requestDraftInitialization } },
     remote: { agentPresets: { select, list }, directoryPicker: { pick: pickNative } },
-    layout: { selectPanel, beginNavigation: () => new AbortController().signal },
+    layout: { selectPanel, beginNavigation: () => navigation.signal },
     uiWorkspace: { openSession: (id: string) => { active = id }, pickDirectory },
   })
   return { actions: createHarnessActions(ctx), preparation, capabilities, drafts, selectedPresets, references, setDraft,
-    requestDraftInitialization,
+    requestDraftInitialization, focusInput, navigation,
     select, list, retain, using, selectPanel, create, invoke, workspaceItems, initializeDefault, createWorkspace, pickDirectory, pickNative,
     active: () => active, switchTo: (id: string) => { drafts.set(id, 'other draft'); active = id },
     sessionChanged: (employeeId: string) => { for (const listener of listeners) listener({ type: 'session.changed', payload: { authenticated: true, employeeId } }) },
     dispose: async () => { await Promise.all(effects.map(effect => effect())) }, listeners, release, refreshSkills }
 }
+
+it.each((['current', 'new', 'locked'] as const).flatMap(kind =>
+  (['retained', 'removed', 'elsewhere'] as const).map(focus => ({ kind, focus }))))(
+  'preserves task drafts and uses owned input focus for $kind preparation ($focus)', async ({ kind, focus }) => {
+    const f = fixture()
+    const response = Promise.withResolvers<unknown>()
+    f.invoke.mockImplementationOnce(() => response.promise)
+    if (kind === 'locked') f.select.mockResolvedValueOnce({ ok: false,
+      error: new RemoteError('agent-preset/locked', 'started', { sessionId: SessionId('original'), agentPreset: 'prepared' }) })
+    const origin = document.createElement('button')
+    const other = document.createElement('button')
+    document.body.append(origin, other)
+    origin.focus()
+    const operation = f.actions.setKnowledgeSelection(['policy'])
+    await vi.waitFor(() => { expect(f.invoke).toHaveBeenCalledOnce() })
+    if (focus === 'removed') origin.remove()
+    else if (focus === 'elsewhere') other.focus()
+    response.resolve(f.preparation(kind === 'new' ? 'NEW_SESSION' : 'CURRENT_SESSION', 'prepared', ['policy']))
+    await operation
+    const destination = kind === 'current' ? 'original' : 'new-1'
+    expect(f.active()).toBe(destination)
+    expect(f.drafts.get(destination)).toBe('  unfinished draft  ')
+    expect(f.focusInput.mock.calls).toEqual(kind === 'current' && focus !== 'elsewhere' ? [[destination]] : [])
+    expect(document.activeElement).toBe(focus === 'removed' ? document.body : focus === 'elsewhere' ? other : origin)
+    expect({ kind, focus, task: f.active(), focusedInputs: f.focusInput.mock.calls,
+      draft: f.drafts.get(destination), created: f.create.mock.calls.length }).toMatchSnapshot()
+    await f.dispose()
+  },
+)
+
+it.each(['navigation', 'session'] as const)('does not return task focus after a %s change', async (change) => {
+  const f = fixture()
+  const response = Promise.withResolvers<unknown>()
+  f.invoke.mockImplementationOnce(() => response.promise)
+  const origin = document.createElement('button')
+  document.body.append(origin)
+  origin.focus()
+  const operation = f.actions.setKnowledgeSelection(['policy'])
+  await vi.waitFor(() => { expect(f.invoke).toHaveBeenCalledOnce() })
+  if (change === 'navigation') f.navigation.abort()
+  else f.switchTo('other')
+  response.resolve(f.preparation('NEW_SESSION', 'prepared', ['policy']))
+  await operation
+  expect(f.active()).toBe(change === 'navigation' ? 'original' : 'other')
+  expect(f.focusInput).not.toHaveBeenCalled()
+  expect(document.activeElement).toBe(origin)
+  await f.dispose()
+})
 
 it('restores a started task in place without changing its pinned composition, draft, or navigation', async () => {
   const f = fixture()
@@ -266,11 +317,11 @@ it('preserves native preset selection errors and leaves the draft and navigation
   await f.dispose()
 })
 
-it('preserves native preset roster errors', async () => {
+it('reads task knowledge independently of the native preset roster', async () => {
   const f = fixture()
-  const error = new RemoteError('gateway/internal', 'roster disconnected', {}, { cause: new Error('carrier closed') })
-  f.list.mockResolvedValueOnce({ ok: false, error })
-  await expect(f.actions.readMode()).rejects.toBe(error)
+  await expect(f.actions.readCapabilities()).resolves.toEqual(f.capabilities)
+  expect(f.list).not.toHaveBeenCalled()
+  expect(f.invoke).toHaveBeenCalledExactlyOnceWith('product', 'tasks.capabilities.read', { sessionId: 'original' }, expect.any(String))
   expect(f.select).not.toHaveBeenCalled()
   expect(f.drafts.get('original')).toBe('  unfinished draft  ')
   await f.dispose()
@@ -435,7 +486,7 @@ it.each([
 ])('rejects malformed task selection rather than presenting it as typed data (%j)', async (response) => {
   const f = fixture()
   f.invoke.mockResolvedValueOnce(response)
-  await expect(f.actions.readMode()).rejects.toMatchObject({ code: 'CAPABILITY_RESPONSE_INVALID' })
+  await expect(f.actions.readCapabilities()).rejects.toMatchObject({ code: 'CAPABILITY_RESPONSE_INVALID' })
   expect(f.create).not.toHaveBeenCalled()
   expect(f.select).not.toHaveBeenCalled()
   await f.dispose()
@@ -445,8 +496,8 @@ it('shows a localized task response failure while retaining the native task and 
   const f = fixture()
   f.invoke.mockResolvedValueOnce({ kind: 'CURRENT_SESSION', presetId: 'prepared' })
   const error: unknown = await f.actions.setKnowledgeSelection(['policy']).catch((reason: unknown) => reason)
-  expect({ zh: productErrorMessage(error, key => zh[key], 'taskSelectionFailed'),
-    en: productErrorMessage(error, key => en[key], 'taskSelectionFailed'),
+  expect({ zh: productErrorMessage(error, key => zh[key], 'knowledgeSelectionFailed'),
+    en: productErrorMessage(error, key => en[key], 'knowledgeSelectionFailed'),
     task: f.active(), draft: f.drafts.get('original'),
     created: f.create.mock.calls.length, selected: f.select.mock.calls.length }).toMatchSnapshot()
   await f.dispose()

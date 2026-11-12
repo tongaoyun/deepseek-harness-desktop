@@ -9,3 +9,11 @@ exports[`keeps reading a file when processing becomes CANCELLED and it leaves th
 exports[`keeps reading a file when processing becomes FAILED and it leaves the active status filter 1`] = `"处理失败原文件可查看，检索暂不可用；可尝试重新处理，仍失败时请检查原文件"`;
 
 exports[`keeps reading a file when processing becomes READY and it leaves the active status filter 1`] = `"可检索"`;
+
+exports[`keeps the personal-library confirmation open when deletion fails > Pending library deletion retry 1`] = `
+{
+  "action": "Deleting…",
+  "focused": true,
+  "message": "Could not delete the knowledge base. Try again.",
+}
+`;

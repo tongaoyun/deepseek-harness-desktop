@@ -1,0 +1,13 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`rejects and localizes a 'company' resource that changes during export: 'grow' 1`] = `"导出时资源发生变化，请等待编辑完成后重试。"`;
+
+exports[`rejects and localizes a 'company' resource that changes during export: 'shrink' 1`] = `"A resource changed during export. Finish editing and try again."`;
+
+exports[`rejects and localizes a 'local' resource that changes during export: 'grow' 1`] = `"导出时资源发生变化，请等待编辑完成后重试。"`;
+
+exports[`rejects and localizes a 'local' resource that changes during export: 'shrink' 1`] = `"A resource changed during export. Finish editing and try again."`;
+
+exports[`rejects and localizes a 'personal' resource that changes during export: 'grow' 1`] = `"导出时资源发生变化，请等待编辑完成后重试。"`;
+
+exports[`rejects and localizes a 'personal' resource that changes during export: 'shrink' 1`] = `"A resource changed during export. Finish editing and try again."`;

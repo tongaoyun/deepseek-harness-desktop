@@ -76,7 +76,9 @@ export const publishedTeamSchema = z.object({
   id: z.string().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/u).max(80),
   team: teamInputSchema.safeExtend({
     id: z.never().optional(),
-    members: z.array(teamMemberSchema.required({ expertVersion: true, expertSha256: true }).refine(member => member.expertVersion === '0.0.0-' + member.expertSha256.slice(0, 56))).min(2).max(8)
+    members: z.array(teamMemberSchema.safeExtend({ expertSlug: text(128).regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/u) })
+      .required({ expertVersion: true, expertSha256: true })
+      .refine(member => member.expertVersion === '0.0.0-' + member.expertSha256.slice(0, 56))).min(2).max(8)
       .refine(items => new Set(items.map(item => item.expertSlug)).size === items.length),
   }),
 }).strict()

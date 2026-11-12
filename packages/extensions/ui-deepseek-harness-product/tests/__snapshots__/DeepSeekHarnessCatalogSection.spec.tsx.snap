@@ -1,5 +1,131 @@
 // Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
 
+exports[`DeepSeekHarness capability navigation > keeps a failed connectors catalog and its retry control mounted until a read succeeds 1`] = `
+{
+  "canRetry": false,
+  "loadingIndicator": false,
+  "message": "钉钉组织同步已过期，请联系管理员完成同步后重试。 (ORGANIZATION_SYNC_EXPIRED)",
+  "retry": "刷新",
+}
+`;
+
+exports[`DeepSeekHarness capability navigation > keeps a failed knowledge catalog and its retry control mounted until a read succeeds 1`] = `
+{
+  "canRetry": false,
+  "loadingIndicator": false,
+  "message": "钉钉组织同步已过期，请联系管理员完成同步后重试。 (ORGANIZATION_SYNC_EXPIRED)",
+  "retry": "重试",
+}
+`;
+
+exports[`DeepSeekHarness capability navigation > recovers 'connectors' focus after 'failed' with elsewhere=false 1`] = `
+{
+  "cards": false,
+  "catalog": "连接器",
+  "error": true,
+  "focus": "连接器",
+}
+`;
+
+exports[`DeepSeekHarness capability navigation > recovers 'connectors' focus after 'failed' with elsewhere=true 1`] = `
+{
+  "cards": false,
+  "catalog": "连接器",
+  "error": true,
+  "focus": "其他操作",
+}
+`;
+
+exports[`DeepSeekHarness capability navigation > recovers 'connectors' focus after 'identity' with elsewhere=false 1`] = `
+{
+  "cards": false,
+  "catalog": "连接器",
+  "error": false,
+  "focus": "连接器",
+}
+`;
+
+exports[`DeepSeekHarness capability navigation > recovers 'connectors' focus after 'identity' with elsewhere=true 1`] = `
+{
+  "cards": false,
+  "catalog": "连接器",
+  "error": false,
+  "focus": "其他操作",
+}
+`;
+
+exports[`DeepSeekHarness capability navigation > recovers 'connectors' focus after 'removed' with elsewhere=false 1`] = `
+{
+  "cards": false,
+  "catalog": "连接器",
+  "error": false,
+  "focus": "连接器",
+}
+`;
+
+exports[`DeepSeekHarness capability navigation > recovers 'connectors' focus after 'removed' with elsewhere=true 1`] = `
+{
+  "cards": false,
+  "catalog": "连接器",
+  "error": false,
+  "focus": "其他操作",
+}
+`;
+
+exports[`DeepSeekHarness capability navigation > recovers 'knowledge' focus after 'identity' with elsewhere=false 1`] = `
+{
+  "cards": false,
+  "catalog": "知识库",
+  "error": false,
+  "focus": "知识库",
+}
+`;
+
+exports[`DeepSeekHarness capability navigation > recovers 'knowledge' focus after 'identity' with elsewhere=true 1`] = `
+{
+  "cards": false,
+  "catalog": "知识库",
+  "error": false,
+  "focus": "其他操作",
+}
+`;
+
+exports[`DeepSeekHarness capability navigation > recovers 'knowledge' focus after 'removed' with elsewhere=false 1`] = `
+{
+  "cards": false,
+  "catalog": "知识库",
+  "error": false,
+  "focus": "知识库",
+}
+`;
+
+exports[`DeepSeekHarness capability navigation > recovers 'knowledge' focus after 'removed' with elsewhere=true 1`] = `
+{
+  "cards": false,
+  "catalog": "知识库",
+  "error": false,
+  "focus": "其他操作",
+}
+`;
+
+exports[`DeepSeekHarness capability navigation > recovers 'knowledge' focus after 'retry' with elsewhere=false 1`] = `
+{
+  "cards": false,
+  "catalog": "知识库",
+  "error": false,
+  "focus": "知识库",
+}
+`;
+
+exports[`DeepSeekHarness capability navigation > recovers 'knowledge' focus after 'retry' with elsewhere=true 1`] = `
+{
+  "cards": false,
+  "catalog": "知识库",
+  "error": false,
+  "focus": "其他操作",
+}
+`;
+
 exports[`DeepSeekHarness capability navigation > rejects malformed knowledge identities and recovers to server-issued resources on retry 1`] = `
 {
   "failure": "产品目录暂时无法加载，请稍后重试。",

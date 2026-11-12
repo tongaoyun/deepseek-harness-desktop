@@ -1,5 +1,6 @@
 import type { JsonValue } from '@deepseek-ai/dsh-util-values';
 import type { TrashMetadata } from './types.ts';
+import { trashMetadataSchema } from './trash-metadata.ts';
 import type { SkillRoot, RepositoryDestination, RootInput, Diagnostic, OperationError, CodedError, Log, DiscoveredEntry, SkillEntry, ParsedSkill, Scan, ManagerState, PolicyResult, Policy, SkillItem, ViewItem, RootView, SkillView, ScopeOptions, MutationOptions, RenameOptions, UploadInput, CreateInput, ImportCandidate, ImportPending, ImportConflict, ImportFailure, ImportResult } from "./types.ts";
 // 用户和项目技能的文件管理、分类与原生调用策略。
 //
@@ -20,6 +21,8 @@ import { canonicalizeWatchPath, resolveDshHome, resolveAgentsHome } from '@deeps
 import { isSkillName, type SkillProviderObservation } from '@deepseek-ai/dsh-skill';
 import { parseSkillInvocationPolicy } from '@deepseek-ai/dsh-skill-filesystem/document';
 import { parseSkillDoc, skillCategory, normalizeSkillCategory, withSkillCategory } from './skill-document.ts';
+import { createArchivePathValidator } from '@deepseek-harness/product/content-paths';
+import { readContentFile } from '@deepseek-harness/product/content-files';
 import { companyContentRelease, contentDigest, COMPANY_CONTENT_MAX_BYTES, COMPANY_CONTENT_MAX_FILES, COMPANY_CONTENT_MAX_PATH_LENGTH } from '@deepseek-harness/product/company-content';
 export { parseSkillDoc };
 export { resolveDshHome, resolveAgentsHome };
@@ -33,9 +36,10 @@ import {
   isAbsolute,
   sep,
 } from "node:path";
-import { constants as fsConstants, promises as fs } from "node:fs";
+import { promises as fs } from "node:fs";
 import { createHash, randomUUID } from "node:crypto";
 import { unzipSync } from "fflate";
+import { z } from 'zod';
 import {
   discoverReadonlyEntries,
   isMissingSkillPath,
@@ -1671,161 +1675,39 @@ function projectSkillCategories(state: ManagerState, key: string, entries: Skill
   }
 }
 
-export async function createCategory(key: string, name: string, log?: Log, options: ScopeOptions = {}) {
+/** Assign a portable label without changing the source skill files.
+ * @param key Explicit source identity.
+ * @param skillName Existing skill name in that source.
+ * @param name Category label stored for export and local display.
+ * @param log Optional operation diagnostic writer.
+ * @param options Selected project and company roots.
+ * @returns Committed category identity, or an operation failure without policy changes.
+ */
+export async function assignSkillCategory(key: string, skillName: string, name: string, log?: Log, options: ScopeOptions = {}) {
   const ready = await writableCategoryState(key, options);
   if ("ok" in ready) return ready;
+  if (!validStateSkillName(skillName) || !(await resolveEntry(ready.root, skillName)))
+    return categoryError("error.skill.notFound", `技能不存在: ${skillName}`, { name: skillName });
   const label = normalizeSkillCategory(name);
-  if (!label)
-    return categoryError("error.category.name", "分类名称需为 1–24 个字符的单行文字");
-  if (ready.state.categories[ready.rootKey].some((item) => item.name === label))
-    return categoryError("error.category.duplicate", `已有同名分类: ${label}`, { name: label });
-  const category = { id: randomBytes(8).toString("hex"), name: label };
-  ready.state.categories[ready.rootKey].push(category);
-  ready.state.categoryOrder[ready.rootKey][category.id] = [];
-  await writeManagerState(ready.state);
-  if (log) log("category-create", `在 ${ready.rootKey} 添加分类 ${label}`);
-  return { root: ready.rootKey, category };
-}
-
-export async function renameCategory(key: string, id: string, name: string, log?: Log, options: ScopeOptions = {}) {
-  const ready = await writableCategoryState(key, options);
-  if ("ok" in ready) return ready;
-  const label = normalizeSkillCategory(name);
-  const list = ready.state.categories[ready.rootKey];
-  const category = list.find((item) => item.id === id);
-  if (!category) return categoryError("error.category.notFound", "分类不存在", { id });
-  if (!label)
-    return categoryError("error.category.name", "分类名称需为 1–24 个字符的单行文字");
-  if (list.some((item) => item !== category && item.name === label))
-    return categoryError("error.category.duplicate", `已有同名分类: ${label}`, { name: label });
-  category.name = label;
-  await writeManagerState(ready.state);
-  if (log) log("category-rename", `重命名 ${ready.rootKey} 分类为 ${label}`);
-  return { root: ready.rootKey, category };
-}
-
-export async function deleteCategory(key: string, id: string, log?: Log, options: ScopeOptions = {}) {
-  const ready = await writableCategoryState(key, options);
-  if ("ok" in ready) return ready;
-  const list = ready.state.categories[ready.rootKey];
-  if (!list.some((item) => item.id === id)) return categoryError("error.category.notFound", "分类不存在", { id });
-  ready.state.categories[ready.rootKey] = list.filter((item) => item.id !== id);
-  delete ready.state.categoryOrder[ready.rootKey][id];
-  for (const [skillName, categoryId] of Object.entries(ready.state.categoryMembers[ready.rootKey])) {
-    if (categoryId === id) ready.state.categoryMembers[ready.rootKey][skillName] = '';
+  if (!label) return categoryError("error.category.name", "分类名称需为 1–24 个字符的单行文字");
+  let category = ready.state.categories[ready.rootKey].find(item => item.name === label);
+  if (!category) {
+    category = { id: randomBytes(8).toString("hex"), name: label };
+    ready.state.categories[ready.rootKey].push(category);
   }
-  await writeManagerState(ready.state);
-  if (log) log("category-delete", `删除 ${ready.rootKey} 分类 ${id}，技能留在未分类`);
-  return { root: ready.rootKey, id };
-}
-
-export async function assignSkillCategory(key: string, skillName: string, categoryId: string, log?: Log, options: ScopeOptions = {}) {
-  const ready = await writableCategoryState(key, options);
-  if ("ok" in ready) return ready;
-  if (!validStateSkillName(skillName))
-    return categoryError("error.skill.notFound", `技能不存在: ${skillName}`, { name: skillName });
-  if (categoryId) {
-    const entry = await resolveEntry(ready.root, skillName);
-    if (!entry)
-      return categoryError("error.skill.notFound", `技能不存在: ${skillName}`, { name: skillName });
-    if (!ready.state.categories[ready.rootKey].some((item) => item.id === categoryId))
-      return categoryError("error.category.notFound", "分类不存在", { id: categoryId });
-    const previousId = ready.state.categoryMembers[ready.rootKey][skillName] || "";
-    if (previousId !== categoryId) {
-      ready.state.categoryOrder[ready.rootKey][previousId] = (ready.state.categoryOrder[ready.rootKey][previousId] || []).filter((name) => name !== skillName);
-      const targetOrder = ready.state.categoryOrder[ready.rootKey][categoryId] || [];
-      if (!targetOrder.includes(skillName)) targetOrder.push(skillName);
-      ready.state.categoryOrder[ready.rootKey][categoryId] = targetOrder;
-    }
-    ready.state.categoryMembers[ready.rootKey][skillName] = categoryId;
-  } else {
-    const previousId = ready.state.categoryMembers[ready.rootKey][skillName] || "";
-    if (previousId) {
-      ready.state.categoryOrder[ready.rootKey][previousId] = (ready.state.categoryOrder[ready.rootKey][previousId] || []).filter((name) => name !== skillName);
-      const looseOrder = ready.state.categoryOrder[ready.rootKey][""] || [];
-      if (!looseOrder.includes(skillName)) looseOrder.push(skillName);
-      ready.state.categoryOrder[ready.rootKey][""] = looseOrder;
-    }
-    ready.state.categoryMembers[ready.rootKey][skillName] = '';
+  const categoryId = category.id;
+  const previousId = ready.state.categoryMembers[ready.rootKey][skillName] || "";
+  if (previousId !== categoryId) {
+    const orders = ready.state.categoryOrder[ready.rootKey];
+    orders[previousId] = (orders[previousId] || []).filter(name => name !== skillName);
+    const targetOrder = orders[categoryId] || [];
+    if (!targetOrder.includes(skillName)) targetOrder.push(skillName);
+    orders[categoryId] = targetOrder;
   }
+  ready.state.categoryMembers[ready.rootKey][skillName] = categoryId;
   await writeManagerState(ready.state);
-  if (log) log("category-assign", `${ready.rootKey}/${skillName} 归入 ${categoryId || "未分类"}`);
-  return { root: ready.rootKey, name: skillName, categoryId: categoryId || null };
-}
-
-export async function moveSkillInCategory(key: string, skillName: string, categoryId: string, targetName?: string, position: string = "before", log?: Log, options: ScopeOptions = {}) {
-  const ready = await writableCategoryState(key, options);
-  if ("ok" in ready) return ready;
-  if (!validStateSkillName(skillName))
-    return categoryError("error.skill.notFound", `技能不存在: ${skillName}`, { name: skillName });
-  if (categoryId && !ready.state.categories[ready.rootKey].some((item) => item.id === categoryId))
-    return categoryError("error.category.notFound", "分类不存在", { id: categoryId });
-  if (position !== "before" && position !== "after")
-    return categoryError("error.category.position", "技能排序位置无效");
-
-  const entries = (await scanEntries(ready.root)).entries.map((entry) => entry.name);
-  if (!entries.includes(skillName))
-    return categoryError("error.skill.notFound", `技能不存在: ${skillName}`, { name: skillName });
-  if (targetName && (!validStateSkillName(targetName) || !entries.includes(targetName)))
-    return categoryError("error.skill.notFound", `排序目标不存在: ${targetName}`, { name: targetName });
-
-  const members = ready.state.categoryMembers[ready.rootKey];
-  const orders = ready.state.categoryOrder[ready.rootKey];
-  const previousId = members[skillName] || "";
-  const orderedNames = (id: string) => {
-    const available = entries.filter((name) => (members[name] || "") === id).sort((a, b) => a.localeCompare(b));
-    const availableSet = new Set(available);
-    const saved = (orders[id] || []).filter((name) => availableSet.has(name));
-    return [...saved, ...available.filter((name) => !saved.includes(name))];
-  };
-  if (targetName && (members[targetName] || "") !== categoryId)
-    return categoryError("error.category.target", "排序目标不属于目标分类", { name: targetName, category: categoryId });
-
-  const sourceOrder = orderedNames(previousId).filter((name) => name !== skillName);
-  const targetOrder = previousId === categoryId ? sourceOrder : orderedNames(categoryId).filter((name) => name !== skillName);
-  let index = targetName ? targetOrder.indexOf(targetName) : -1;
-  if (index < 0) index = targetOrder.length;
-  else if (position === "after") index += 1;
-  targetOrder.splice(index, 0, skillName);
-
-  if (previousId !== categoryId) orders[previousId] = sourceOrder;
-  orders[categoryId] = targetOrder;
-  if (categoryId) members[skillName] = categoryId;
-  else members[skillName] = '';
-  await writeManagerState(ready.state);
-  if (log) log("category-order", `${ready.rootKey}/${skillName} 移至 ${categoryId || "未分类"} ${position} ${targetName || "末尾"}`);
-  return { root: ready.rootKey, name: skillName, categoryId: categoryId || null, order: targetOrder };
-}
-
-export async function setCategoryEnabled(key: string, categoryId: string, enabled: boolean, log?: Log, options: ScopeOptions = {}) {
-  const ready = await writableCategoryState(key, options);
-  if ("ok" in ready) return ready;
-  const root = ready.root;
-  if (categoryId && categoryId !== "*" && !ready.state.categories[ready.rootKey].some((item) => item.id === categoryId))
-    return categoryError("error.category.notFound", "分类不存在", { id: categoryId });
-  const scanned = (await scanEntries(root)).entries.map((entry) => entry.name);
-  const members = ready.state.categoryMembers[ready.rootKey];
-  const names = categoryId === "*"
-    ? scanned
-    : categoryId
-      ? Object.entries(members).filter(([, id]) => id === categoryId).map(([name]) => name)
-      : scanned.filter((name) => !members[name]);
-  const skipped: string[] = [];
-  const changedNames: string[] = [];
-  for (const name of names) {
-    const result = await applyPolicySkillEnabled(root, name, enabled, ready.state);
-    if (result && result.ok === false) {
-      if (result.code === "error.skill.notLoadable" || result.code === "error.skill.noFrontmatter") skipped.push(name);
-      else if (result.code !== "error.skill.notFound") return result;
-      continue;
-    }
-    changedNames.push(name);
-  }
-  if (changedNames.length) await writeManagerState(ready.state);
-  if (log)
-    for (const name of changedNames)
-      log(enabled ? "policy-enable" : "policy-disable", `${enabled ? "启用" : "停用"} ${ready.rootKey}/${name}（本地策略，源文件不变）`);
-  return { root: ready.rootKey, categoryId: categoryId || null, enabled: enabled === true, changed: changedNames.length, skipped };
+  if (log) log("category-assign", `${ready.rootKey}/${skillName} 归入 ${categoryId}`);
+  return { root: ready.rootKey, name: skillName, categoryId };
 }
 
 async function safeExistingEntryPaths(root: string, name: string) {
@@ -1843,21 +1725,33 @@ async function safeExistingEntryPaths(root: string, name: string) {
 }
 
 async function readTrashMetadata(id: string): Promise<TrashMetadata | null> {
-  if (entryPath(trashRootPath(), id) === null) return null;
+  const trashRoot = trashRootPath(), itemRoot = entryPath(trashRoot, id);
+  if (!itemRoot || !/^\d+-[a-f0-9-]{36}$/.test(id)) return null;
+  const invalid = () => codedError(`回收站条目损坏或路径不安全，文件已保留: ${id}`, 'error.trash.invalid', { id });
   try {
-    const value: TrashMetadata = JSON.parse(
-      await fs.readFile(join(trashRootPath(), id, "metadata.json"), "utf8"),
-    );
-    if (
-      !value ||
-      value.id !== id ||
-      typeof value.name !== "string" ||
-      !Array.isArray(value.entries)
-    )
-      return null;
+    for (const directory of [trashRoot, itemRoot]) {
+      const info = await fs.lstat(directory);
+      if (!info.isDirectory() || info.isSymbolicLink()) throw invalid();
+    }
+    const file = join(itemRoot, 'metadata.json'), info = await fs.lstat(file);
+    if (!info.isFile() || info.isSymbolicLink() || info.size > 512 * 1024) throw invalid();
+    const parsed = trashMetadataSchema.safeParse(JSON.parse(await fs.readFile(file, 'utf8')));
+    if (!parsed.success) throw invalid();
+    const value = parsed.data;
+    if (value.id !== id || entryPath(itemRoot, value.name) === null
+      || new Set(value.entries).size !== value.entries.length
+      || value.entries.some(name => name !== value.name && name !== `${value.name}.md`)) throw invalid();
+    const expected = new Set(['metadata.json', ...value.entries]), actual = await fs.readdir(itemRoot);
+    if (actual.length !== expected.size || actual.some(name => !expected.has(name))) throw invalid();
+    for (const name of value.entries) {
+      const entry = await fs.lstat(join(itemRoot, name));
+      if (name === value.name ? !entry.isDirectory() || entry.isSymbolicLink() : !entry.isFile() && !entry.isSymbolicLink()) throw invalid();
+    }
     return value;
-  } catch {
-    return null;
+  } catch (error) {
+    if (error instanceof Error && 'code' in error && error.code === 'ENOENT') return null;
+    if (error instanceof SyntaxError) { const failure = invalid(); failure.cause = error; throw failure; }
+    throw error;
   }
 }
 
@@ -2062,20 +1956,31 @@ export async function listTrash() {
   let items;
   try {
     items = await fs.readdir(trashRootPath(), { withFileTypes: true });
-  } catch {
-    return [];
+  } catch (error) {
+    if (error instanceof Error && 'code' in error && error.code === 'ENOENT') return [];
+    throw error;
   }
   const result = [];
   for (const item of items) {
     if (!item.isDirectory() || item.name.startsWith(".")) continue;
-    const metadata = await readTrashMetadata(item.name);
-    if (metadata) result.push(metadata);
+    try {
+      const metadata = await readTrashMetadata(item.name);
+      if (metadata) result.push(metadata);
+    } catch (error) {
+      console.warn(`回收站条目无法读取，文件已保留，请检查: ${join(trashRootPath(), item.name)}`, error);
+    }
   }
   return result.sort((a, b) =>
     String(b.deletedAt).localeCompare(String(a.deletedAt)),
   );
 }
 
+/** Restore all files from one trash entry; diagnostics cannot reject a committed restore.
+ * @param id Saved trash identity.
+ * @param log Optional management log; failures fall back to console diagnostics.
+ * @param options Authorized destination and repository receipt handling.
+ * @returns Restore result, or a failure result for a missing entry or conflicting destination.
+ */
 export async function restoreTrash(id: string, log?: Log, options: MutationOptions = {}) {
   const metadata = await readTrashMetadata(id);
   if (!metadata)
@@ -2089,8 +1994,12 @@ export async function restoreTrash(id: string, log?: Log, options: MutationOptio
   if (!definition || definition.ok === false)
     return definition || readonlyError("restore");
   const root = definition.path;
-  const conflicts = await safeExistingEntryPaths(root, metadata.name);
-  if (conflicts.length)
+  let conflict = false;
+  for (const name of [metadata.name, `${metadata.name}.md`]) {
+    try { await fs.lstat(join(root, name)); conflict = true; }
+    catch (error) { if (!(error instanceof Error && 'code' in error && error.code === 'ENOENT')) throw error; }
+  }
+  if (conflict)
     return {
       ok: false,
       error: `无法恢复，同名技能已存在: ${metadata.name}`,
@@ -2119,16 +2028,21 @@ export async function restoreTrash(id: string, log?: Log, options: MutationOptio
       await fs.rename(itemRoot, join(trashRootPath(), `.restored-${id}`));
     } else await fs.rm(itemRoot, { recursive: true, force: true });
     committed = true;
-    if (log) log("restore", `从回收站恢复 ${metadata.name} -> ${root}`);
+    if (log) await reportTrashOperation("restore", `从回收站恢复 ${metadata.name} -> ${root}`, log);
     return { id, name: metadata.name, root: trashRootMetadata(definition) };
   } catch (caught) { const error = caught as CodedError;
     if (committed) throw error;
-    for (const item of moved.reverse())
-      await movePathWithFallback(
-        item.destination,
-        item.source,
-        options.renameOptions,
-      ).catch(() => undefined);
+    const rollbackFailures: string[] = [];
+    for (const item of moved.reverse()) {
+      try { await movePathWithFallback(item.destination, item.source, options.renameOptions); }
+      catch (rollbackError) { rollbackFailures.push(String(rollbackError)); }
+    }
+    if (rollbackFailures.length) {
+      const failure = codedError(`恢复技能回滚未完成，请检查技能原位置及回收目录: ${itemRoot}`,
+        'error.trash.restoreRollbackFailed', { path: itemRoot, error: rollbackFailures.join('; ') });
+      failure.cause = error;
+      throw failure;
+    }
     throw error;
   }
 }
@@ -2183,13 +2097,26 @@ async function forgetCategoryMember(metadata: TrashMetadata, options: MutationOp
   await writeManagerState(current.state);
 }
 
-async function reportTrashDeletion(event: string, detail: string, log?: Log) {
+async function reportTrashOperation(event: string, detail: string, log?: Log) {
   if (log) {
     try { await log(event, detail); return; }
     catch (_error) { /* Console retains the diagnostic when its configured writer fails. */ }
   }
   try { console.warn(event, detail); }
-  catch (_error) { /* Diagnostics cannot change a committed deletion. */ }
+  catch (_error) { /* Diagnostics cannot change a committed operation. */ }
+}
+
+/** Remove a committed restoration's hidden receipt; cleanup failure preserves its success.
+ * @param id Successfully restored trash identity, after its installation records commit.
+ * @param log Optional management log; failures fall back to console diagnostics.
+ * @returns Cleanup completion; retained receipts and their paths are reported on failure.
+ */
+export async function cleanupRestoreReceipt(id: string, log?: Log): Promise<void> {
+  const receipt = join(trashRootPath(), `.restored-${id}`);
+  try { await fs.rm(receipt, { recursive: true, force: true }); }
+  catch (error) {
+    await reportTrashOperation("trash-restore-cleanup-warning", `技能已恢复，恢复凭据未清理，请检查保留目录：${receipt}（${String(error)}）`, log);
+  }
 }
 
 export async function permanentlyDeleteTrash(id: string, log?: Log, options: MutationOptions = {}) {
@@ -2204,9 +2131,9 @@ export async function permanentlyDeleteTrash(id: string, log?: Log, options: Mut
   await fs.rm(join(trashRootPath(), id), { recursive: true, force: true });
   try { await forgetCategoryMember(metadata, options); }
   catch (error) {
-    await reportTrashDeletion("trash-category-warning", `回收站条目已永久删除，分类记录暂时保留: ${String(error)}`, log);
+    await reportTrashOperation("trash-category-warning", `回收站条目已永久删除，分类记录暂时保留: ${String(error)}`, log);
   }
-  if (log) await reportTrashDeletion("trash-delete", `永久删除回收站条目 ${metadata.name} (${id})`, log);
+  if (log) await reportTrashOperation("trash-delete", `永久删除回收站条目 ${metadata.name} (${id})`, log);
   return { id, name: metadata.name };
 }
 
@@ -2448,7 +2375,7 @@ async function replaceWithCopy(source: string, dest: string, isDir: boolean, exi
  * 导入技能到目标根。
  * options.conflict 控制同名条目的跳过或覆盖。
  * 取消停止尚未提交的技能；已提交项保留在结果中，供调用方刷新目录。
- * 成功返回 { kind, imported, skipped, failed }；失败返回 { ok:false, error }。
+ * 条目处理返回 { kind, imported, skipped, failed }，包含全部条目失败的情况；输入或来源不可用返回 { ok:false, error }。
  */
 async function importSkill(source: string, log?: Log, options: MutationOptions = {}): Promise<ImportResult> {
   options.signal?.throwIfAborted();
@@ -2523,19 +2450,6 @@ async function importSkill(source: string, log?: Log, options: MutationOptions =
       nameCount.set(candidate.kebab, (nameCount.get(candidate.kebab) || 0) + 1);
   }
 
-  function failureResult() {
-    return {
-      ok: false,
-      // 聚合失败明细的原文；前端优先展示已翻译的 failed 明细，此处仅作兜底。
-      error: failed.map((item) => item.error).join("；"),
-      code: "error.import.failed",
-      kind: analysis.kind,
-      imported,
-      skipped,
-      failed,
-    };
-  }
-
   for (const c of candidates) {
     options.signal?.throwIfAborted();
     if (
@@ -2598,7 +2512,7 @@ async function importSkill(source: string, log?: Log, options: MutationOptions =
     pending.push({ name: c.kebab, source: c.source, isDir: c.isDir, dest });
   }
 
-  if (pending.length === 0 && conflicts.length === 0) return failureResult();
+  if (pending.length === 0 && conflicts.length === 0) return { kind: analysis.kind, imported, skipped, failed };
 
   if (options.beforeImport) await options.beforeImport(pending, conflicts, failed);
   options.signal?.throwIfAborted();
@@ -2658,7 +2572,6 @@ async function importSkill(source: string, log?: Log, options: MutationOptions =
   }
 
   if (imported.length === 0 && failed.length === 0) options.signal?.throwIfAborted();
-  if (failed.length && imported.length === 0) return failureResult();
   return { kind: analysis.kind, imported, skipped, failed };
 }
 
@@ -2698,6 +2611,14 @@ function normalizeUploadPath(input: string) {
     });
   }
   return { path: parts.join("/"), directory };
+}
+
+function uploadPathValidator() {
+  return createArchivePathValidator((kind, path) => {
+    throw kind === 'duplicate'
+      ? codedError(`上传内容包含重复路径: ${path}`, "error.upload.duplicate", { path })
+      : codedError(`上传内容存在文件或目录路径冲突: ${path}`, "error.upload.pathConflict", { path });
+  });
 }
 
 function decodeUploadBase64(value: string, maxBytes: number, code = "error.upload.tooLarge") {
@@ -2756,18 +2677,15 @@ async function writeUploadedEntries(contentRoot: string, entries: UploadInput["e
       { limit: MAX_UPLOAD_ENTRIES },
     );
   let total = 0;
-  const seen = new Set();
-  for (const entry of entries) {
+  const validatePath = uploadPathValidator();
+  const normalizedEntries = entries.map(entry => {
     signal?.throwIfAborted();
     const normalized = normalizeUploadPath(entry && entry.path);
-    const key = normalized.path.toLowerCase();
-    if (seen.has(key))
-      throw codedError(
-        `上传内容包含重复路径: ${normalized.path}`,
-        "error.upload.duplicate",
-        { path: normalized.path },
-      );
-    seen.add(key);
+    validatePath(normalized);
+    return { entry, normalized };
+  });
+  for (const { entry, normalized } of normalizedEntries) {
+    signal?.throwIfAborted();
     if (normalized.directory) continue;
     const bytes = decodeUploadBase64(
       entry && entry.data,
@@ -2800,12 +2718,15 @@ async function writeUploadedZip(contentRoot: string, encoded: string, signal?: A
     "error.upload.archiveTooLarge",
   );
   let count = 0;
+  let fileCount = 0;
   let total = 0;
+  const validatePath = uploadPathValidator();
   let files;
   try {
     files = unzipSync(archive, {
       filter(info) {
         const normalized = normalizeUploadPath(info.name);
+        validatePath(normalized);
         count += 1;
         if (count > MAX_UPLOAD_ENTRIES)
           throw codedError(
@@ -2826,9 +2747,13 @@ async function writeUploadedZip(contentRoot: string, encoded: string, signal?: A
             "error.upload.tooLarge",
             { limit: MAX_UPLOAD_TOTAL_BYTES },
           );
-        return !normalized.directory;
+        if (normalized.directory) return false;
+        fileCount += 1;
+        return true;
       },
     });
+    if (Object.keys(files).length !== fileCount)
+      throw codedError("ZIP 未完整解压，请改用技能文件夹导入", "error.upload.zipInvalid");
   } catch (caught) { const error = caught as CodedError;
     if (error && /^error\./.test(String(error.code || ""))) throw error;
     throw codedError(
@@ -2883,6 +2808,7 @@ async function prepareUploadedSource(sessionRoot: string, input: UploadInput, si
 /**
  * 接收浏览器读取后的内容，在 manager 私有目录暂存并复用现有原子导入链路。
  * input: { name, entries:[{path,data(base64)}] } 或 { name, zip:base64 }。
+ * 路径冲突或 ZIP 解压缺失文件时不安装任何技能，并清理暂存内容。
  * 取消清理未提交内容；已开始的文件替换和清理完成后才返回。
  */
 export async function importUploadedSkill(input: UploadInput, log?: Log, options: MutationOptions = {}): Promise<ImportResult> {
@@ -3516,21 +3442,15 @@ export async function exportSkill(key: string, name: string, options: ScopeOptio
   let bytes = 0;
   const add = async (file: string, path: string) => {
     signal?.throwIfAborted();
-    const handle = await fs.open(file, fsConstants.O_RDONLY | fsConstants.O_NOFOLLOW);
-    try {
-      signal?.throwIfAborted();
-      const info = await handle.stat();
-      signal?.throwIfAborted();
-      if (!info.isFile() || info.size + bytes > COMPANY_CONTENT_MAX_BYTES || Object.keys(files).length >= COMPANY_CONTENT_MAX_FILES) throw new Error('技能文件超出发布限制');
-      const original = await handle.readFile({ signal });
-      const data = path === 'SKILL.md' && categoryId !== undefined
-        ? Buffer.from(withSkillCategory(original.toString('utf8'), policy.state.categories[key]?.find(item => item.id === categoryId)?.name))
-        : original;
-      signal?.throwIfAborted();
-      bytes += data.byteLength;
-      if (bytes > COMPANY_CONTENT_MAX_BYTES) throw new Error('技能文件超出发布限制');
-      files[resourceKey + '/' + path] = data.toString('base64');
-    } finally { await handle.close(); }
+    if (Object.keys(files).length >= COMPANY_CONTENT_MAX_FILES) throw new Error('技能文件超出发布限制');
+    const original = await readContentFile(file, COMPANY_CONTENT_MAX_BYTES - bytes, signal);
+    const data = path === 'SKILL.md' && categoryId !== undefined
+      ? Buffer.from(withSkillCategory(original.toString('utf8'), policy.state.categories[key]?.find(item => item.id === categoryId)?.name))
+      : original;
+    signal?.throwIfAborted();
+    bytes += data.byteLength;
+    if (bytes > COMPANY_CONTENT_MAX_BYTES) throw new Error('技能文件超出发布限制');
+    files[resourceKey + '/' + path] = data.toString('base64');
   };
   const root = detail.kind === 'flat' ? detail.path : dirname(detail.path);
   const walk = async (directory: string, prefix: string) => {

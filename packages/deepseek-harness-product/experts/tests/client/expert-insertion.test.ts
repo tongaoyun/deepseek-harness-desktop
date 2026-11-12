@@ -1,0 +1,176 @@
+import { TEST_TEAMS } from '../../src/fixtures/teams.ts'
+import type { TokenSpan } from '@deepseek-ai/dsh-client-ui-input-trigger/client'
+import { describe, expect, it, vi } from 'vitest'
+import { expertDetectText, insertExpertReference, matchExpertQuery, type ReferenceInsertionTarget } from '../../src/client/index.ts'
+import { composerProjection } from '../../src/test-utils/composer-projection.ts'
+import { insertTeamReference, teamReference } from '../../src/client/team-reference.ts'
+
+const reference = { source: 'agency', ref: 'expert', label: '专家', clipboardText: '@专家' }
+function input(initial: string, failText = false) {
+  let draft = initial
+  let draftRev = 4
+  const notices: string[] = []
+  const target: ReferenceInsertionTarget = {
+    state: { getSnapshot: () => ({ ...composerProjection(draft, []), draftRev }) },
+    insertReference: (_ref, span) => {
+      if (span.draftRev !== draftRev) return false
+      draft = draft.slice(0, span.start) + '\uFFFC ' + draft.slice(span.end)
+      draftRev++
+      return true
+    },
+    insertText: (text, span) => {
+      if (failText || span.draftRev !== draftRev) return false
+      draft = draft.slice(0, span.start) + text + draft.slice(span.end)
+      draftRev++
+      return true
+    },
+    notify: (_level, text) => { notices.push(text) },
+  }
+  return { target, snapshot: () => target.state.getSnapshot(), notices }
+}
+
+describe('选择专家时自动填入任务示例', () => {
+  it('异步确认期间草稿变化时停止插入，不覆盖用户的新内容', async () => {
+    const value = input('原始需求')
+    const result = await insertTeamReference(value.target, TEST_TEAMS[0], '示例', undefined, 'en', async () => {
+      value.target.insertReference(reference, { start: 0, end: 0, draftRev: 4 })
+      return true
+    })
+    expect(result).toBe(false)
+    expect(value.snapshot().draft).not.toContain('示例')
+  })
+  it('团队使用独立的原生引用，空白草稿填入示例且不发送', async () => {
+    const value = input('')
+    expect(teamReference(TEST_TEAMS[0])).toMatchObject({ source: 'agency-agents:teams', ref: TEST_TEAMS[0].id, label: '产品方案评审团' })
+    expect(await insertTeamReference(value.target, TEST_TEAMS[0])).toBe(true)
+    expect(value.snapshot().draft).toContain(TEST_TEAMS[0].examples[0])
+  })
+  it('已有正文选择团队不会覆盖草稿，也不添加默认示例', async () => {
+    const value = input('请保留我的需求')
+    expect(await insertTeamReference(value.target, TEST_TEAMS[0])).toBe(true)
+    await new Promise<void>(resolve => setTimeout(resolve, 0))
+    expect(value.snapshot().draft).toBe('@专家 请保留我的需求')
+  })
+  it('仅有团队触发词时，选中后仍填入默认示例', async () => {
+    const value = input('@产品')
+    expect(await insertTeamReference(value.target, TEST_TEAMS[0], undefined, { start: 0, end: 3, draftRev: 4 })).toBe(true)
+    await new Promise<void>(resolve => setTimeout(resolve, 0))
+    expect(value.snapshot().draft).toContain(TEST_TEAMS[0].examples[0])
+  })
+  it('UI 不匹配 build、guide 等单词内部的字母', () => {
+    const expert = { slug: 'builder', name: '开发专家', nameEn: 'Builder', division: '', divisionEn: '', divisionZh: '', description: '', descriptionEn: 'Build a guide for acquisition' }
+    expect(matchExpertQuery(expert, 'UI')).toBe(false)
+    expect(matchExpertQuery({ ...expert, nameEn: 'Engineering reviewer' }, 'eng')).toBe(true)
+    expect(matchExpertQuery({ ...expert, nameEn: 'Engineering reviewer' }, 'rev')).toBe(true)
+    expect(matchExpertQuery({ ...expert, descriptionEn: 'Build UI components' }, 'UI')).toBe(true)
+  })
+  it('已有多枚剪贴板引用时按 detect 坐标追加专家和示例', () => {
+    const value = input('\uFFFC \uFFFC ')
+    insertExpertReference(value.target, reference, '示例任务')
+    expect(value.snapshot().draft).toBe('@专家 @专家 @专家 \n\n示例任务')
+  })
+  it('已有引用后的 @ 触发区间仍以 detect 坐标替换', () => {
+    const value = input('\uFFFC @UI')
+    insertExpertReference(value.target, reference, '示例任务', { start: 2, end: 5, draftRev: 4 })
+    expect(value.snapshot().draft).toBe('@专家 @专家 \n\n示例任务')
+  })
+  it('空白正文保留原生引用并填入一次示例', () => {
+    const value = input('')
+    expect(insertExpertReference(value.target, reference, '示例任务')).toBe(true)
+    expect(value.snapshot().draft).toBe('@专家 \n\n示例任务')
+    insertExpertReference(value.target, reference, '其他示例')
+    expect(value.snapshot().draft).toBe('@专家 @专家 \n\n示例任务')
+  })
+  it('有正文时仅插入引用，不追加或覆盖用户需求', () => {
+    const value = input('我的需求\n保持内容')
+    insertExpertReference(value.target, reference, '示例任务')
+    expect(value.snapshot().draft).toBe('@专家 我的需求\n保持内容')
+  })
+  it('@ 候选用原触发区间替换，排除触发词后判断空白正文', () => {
+    const value = input('@UX')
+    expect(insertExpertReference(value.target, reference, '示例任务', { start: 0, end: 3, draftRev: 4 })).toBe(true)
+    expect(value.snapshot().draft).toBe('@专家 \n\n示例任务')
+  })
+  it('过期触发区间不插入标签，也不写示例', () => {
+    const value = input('@UX')
+    expect(insertExpertReference(value.target, reference, '示例任务', { start: 0, end: 3, draftRev: 3 })).toBe(false)
+    expect(value.snapshot().draft).toBe('@UX')
+  })
+  it('键盘选择等待宿主外层编辑事务提交，再按新坐标填入示例', async () => {
+    const value = input('@UX')
+    const target = { ...value.target, insertReference: (ref: typeof reference, span: TokenSpan) => {
+      // 外层键盘事务返回后才排入宿主提交，早于它的微任务会读到旧草稿。
+      queueMicrotask(() => { queueMicrotask(() => { value.target.insertReference(ref, span) }) })
+      return true
+    } }
+    expect(insertExpertReference(target, reference, '示例任务', { start: 0, end: 3, draftRev: 4 })).toBe(true)
+    await new Promise<void>(resolve => setTimeout(resolve, 0))
+    expect(value.snapshot().draft).toBe('@专家 \n\n示例任务')
+  })
+  it('键盘引用提交后若草稿已清空，不把旧专家示例写入新草稿', async () => {
+    vi.useFakeTimers()
+    try {
+      const value = input('@UX')
+      const target = { ...value.target, insertReference: (ref: typeof reference, span: TokenSpan) => {
+        queueMicrotask(() => { queueMicrotask(() => { value.target.insertReference(ref, span) }) })
+        return true
+      } }
+      expect(insertExpertReference(target, reference, '旧专家示例', { start: 0, end: 3, draftRev: 4 })).toBe(true)
+      await Promise.resolve(); await Promise.resolve()
+      const selected = value.snapshot()
+      value.target.insertText?.('', { start: 0, end: expertDetectText(selected).length, draftRev: selected.draftRev })
+      await vi.runAllTimersAsync()
+      expect(value.snapshot().draft).toBe('')
+    } finally { vi.useRealTimers() }
+  })
+  it('团队示例追加前若草稿已变化，保留新正文并报告追加未完成', async () => {
+    const value = input('原始正文')
+    const target = { ...value.target, insertReference: (...args: Parameters<ReferenceInsertionTarget['insertReference']>) => {
+      const inserted = value.target.insertReference(...args)
+      const selected = value.snapshot()
+      value.target.insertText?.('新的任务', { start: 0, end: expertDetectText(selected).length, draftRev: selected.draftRev })
+      return inserted
+    } }
+    expect(await insertTeamReference(target, TEST_TEAMS[0], '旧团队示例', undefined, 'zh', async () => true)).toBe(true)
+    expect({ draft: value.snapshot().draft, notices: value.notices }).toMatchInlineSnapshot(`
+      {
+        "draft": "新的任务",
+        "notices": [
+          "示例追加失败，草稿已保留。",
+        ],
+      }
+    `)
+  })
+  it('完成团队选择前写入已确认的示例，不留下延迟的草稿修改', async () => {
+    const value = input('保留原始正文')
+    expect(await insertTeamReference(value.target, TEST_TEAMS[0], '团队示例', undefined, 'zh', async () => true)).toBe(true)
+    expect(value.snapshot().draft).toBe('@专家 保留原始正文\n\n团队示例')
+    expect(value.notices).toEqual([])
+  })
+  it('取消追加示例时仍选择团队并保留原始正文', async () => {
+    const value = input('原始正文')
+    expect(await insertTeamReference(value.target, TEST_TEAMS[0], '团队示例', undefined, 'zh', async () => false)).toBe(true)
+    expect(value.snapshot().draft).toBe('@专家 原始正文')
+    expect(value.notices).toEqual([])
+  })
+  it.each(['rejected', 'throws'] as const)('团队示例追加 %s 时保留正文和已选择的团队并提示', async (failure) => {
+    const value = input('原始正文', failure === 'rejected')
+    const target = failure === 'throws' ? { ...value.target, insertText: () => { throw new Error('宿主事件失败') } } : value.target
+    expect(await insertTeamReference(target, TEST_TEAMS[0], '团队示例', undefined, 'zh', async () => true)).toBe(true)
+    expect(value.snapshot().draft).toBe('@专家 原始正文')
+    expect(value.notices).toEqual(['示例追加失败，草稿已保留。'])
+  })
+  it('示例写入失败时保留已成功插入的标签并提示，不要求重复选专家', () => {
+    const value = input('', true)
+    expect(insertExpertReference(value.target, reference, '示例任务', undefined, '示例未填入')).toBe(true)
+    expect(value.snapshot().draft).toBe('@专家 ')
+    expect(value.notices).toEqual(['示例未填入'])
+  })
+  it('正文插入事件抛错仍反馈为示例失败，保留成功的专家选择', () => {
+    const value = input('')
+    const target = { ...value.target, insertText: () => { throw new Error('宿主事件失败') } }
+    expect(insertExpertReference(target, reference, '示例任务', undefined, '示例未填入')).toBe(true)
+    expect(value.snapshot().draft).toBe('@专家 ')
+    expect(value.notices).toEqual(['示例未填入'])
+  })
+})

@@ -2,6 +2,7 @@ import { readFile } from 'node:fs/promises'
 import { expect, it, vi } from 'vitest'
 import { companyContentRelease, contentDigest } from '../src/company-content.ts'
 import { invokeContentSubmission } from '../src/content-submission-bridge.ts'
+import { publishedTeamDocument } from '../src/company-team.ts'
 const document = await readFile(new URL('./fixtures/team.json', import.meta.url), 'utf8')
 it('submits one self-contained team through the authenticated product bridge and rejects resource spoofing', async () => {
   const files = { 'teams/orders.json': Buffer.from(document).toString('base64') }
@@ -13,4 +14,12 @@ it('submits one self-contained team through the authenticated product bridge and
   expect(request).toHaveBeenCalledWith('/api/v1/company-content/submissions', expect.objectContaining({ method: 'POST', signal }))
   await expect(invokeContentSubmission('content.submissions.submit', { resourceKey: 'teams/other', files }, api, signal)).rejects.toThrow()
   await expect(invokeContentSubmission('content.submissions.submit', { resourceKey: 'teams/orders', files, ownerEmployeeId: 'spoofed' }, api, signal)).rejects.toThrow()
+})
+
+it.each(['../orders', 'orders/inventory', 'Orders', '订单专家', 'orders--inventory', 'orders_name'])('rejects a nonportable published member identifier: %s', (expertSlug) => {
+  const value = publishedTeamDocument(document)
+  value.team.members[0]!.expertSlug = expertSlug
+  const json = JSON.stringify(value)
+  const files = { 'teams/orders.json': Buffer.from(json).toString('base64') }
+  expect(() => companyContentRelease({ version: '1.0.0', files, sha256: contentDigest(files) })).toThrow()
 })

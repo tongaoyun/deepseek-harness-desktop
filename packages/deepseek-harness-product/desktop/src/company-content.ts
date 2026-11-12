@@ -148,6 +148,50 @@ function hasCode(error: unknown, code: string): boolean {
   return error instanceof Error && 'code' in error && error.code === code
 }
 
+/** Resolve an immutable resource independently of the active company catalog.
+ * @param root - Main-owned company cache.
+ * @param employeeId - Main-authenticated identity.
+ * @param ref - Validated resource coordinates and file count when supplied by a catalog index.
+ * @param load - Employee-authenticated exact-version reader.
+ * @param signal - Owner cancellation; partial content is never installed.
+ * @returns Verified original files and their immutable local directories.
+ */
+export async function installCompanyResource(root: string, employeeId: string,
+  ref: Pick<CompanyResourceVersion, 'resourceKey' | 'version' | 'sha256'> & Partial<Pick<CompanyResourceVersion, 'fileCount'>>,
+  load: (ref: Pick<CompanyResourceVersion, 'resourceKey' | 'version' | 'sha256'>, signal: AbortSignal) => Promise<unknown>,
+  signal: AbortSignal): Promise<{ roots: CompanyContentRoots; files: Readonly<Record<string, string>> }> {
+  signal.throwIfAborted()
+  await privateDirectory(root)
+  const resourceRoot = join(root, 'resources')
+  await privateDirectory(resourceRoot)
+  const employee = join(resourceRoot, createHash('sha256').update(employeeId).digest('hex'))
+  await privateDirectory(employee)
+  const directory = join(employee, ref.sha256)
+  let files: Readonly<Record<string, string>>
+  let cached = true
+  try { files = await readCache(directory, ref.version, ref.sha256, signal) }
+  catch (error) {
+    if (!hasCode(error, 'ENOENT')) throw error
+    // Missing descendants of an existing version are corruption, never permission to replace it.
+    try { await lstat(directory); throw new Error('公司内容资源缓存已损坏') }
+    catch (missing) { if (!hasCode(missing, 'ENOENT')) throw missing }
+    const payload = await load(ref, signal)
+    if (typeof payload !== 'object' || payload === null || !('resourceKey' in payload) || payload.resourceKey !== ref.resourceKey
+      || !('sha256' in payload) || payload.sha256 !== ref.sha256 || !('files' in payload)) throw new Error('公司内容资源版本不匹配')
+    files = companyContentRelease({ version: ref.version, sha256: ref.sha256, files: payload.files }).files
+    cached = false
+  }
+  const paths = Object.keys(files)
+  if (!paths.length || ref.fileCount !== undefined && paths.length !== ref.fileCount || paths.some(path =>
+    ref.resourceKey.startsWith('teams/') ? path !== ref.resourceKey + '.json' : !path.startsWith(ref.resourceKey + '/'))) {
+    throw new Error('资源内容与版本索引不符')
+  }
+  if (!cached) await installCompanyContent(resourceRoot, employeeId, { version: ref.version, sha256: ref.sha256, files }, signal)
+  signal.throwIfAborted()
+  return { files, roots: { version: ref.version, sha256: ref.sha256,
+    skillsRoot: join(directory, 'skills'), expertsRoot: join(directory, 'experts') } }
+}
+
 /** Download changed versions and atomically install a complete local catalog.
  * @param root - Employee-isolated cache owner.
  * @param employeeId - Main-authenticated identity.
@@ -157,32 +201,13 @@ function hasCode(error: unknown, code: string): boolean {
  * @returns Complete immutable roots for a new Session.
  */
 export async function installCompanyIndex(root: string, employeeId: string, value: unknown,
-  load: (ref: CompanyResourceVersion, signal: AbortSignal) => Promise<unknown>, signal: AbortSignal): Promise<CompanyContentRoots> {
+  load: (ref: Pick<CompanyResourceVersion, 'resourceKey' | 'version' | 'sha256'>, signal: AbortSignal) => Promise<unknown>,
+  signal: AbortSignal): Promise<CompanyContentRoots> {
   const index = companyContentIndex(value)
   if (!index) return installCompanyContent(root, employeeId, null, signal)
-  await privateDirectory(root)
-  const resourceRoot = join(root, 'resources')
-  await privateDirectory(resourceRoot)
   const files: Record<string, string> = {}
   for (const ref of [...index.resources, ...index.dependencies]) {
-    signal.throwIfAborted()
-    const directory = join(resourceRoot, createHash('sha256').update(employeeId).digest('hex'), ref.sha256)
-    let content: Record<string, string>
-    try { content = await readCache(directory, ref.version, ref.sha256, signal) }
-    catch (error) {
-      if (!hasCode(error, 'ENOENT')) throw error
-      // Missing descendants of an existing version are corruption, never permission to replace it.
-      try { await lstat(directory); throw new Error('公司内容资源缓存已损坏') }
-      catch (missing) { if (!hasCode(missing, 'ENOENT')) throw missing }
-      const payload = await load(ref, signal)
-      if (typeof payload !== 'object' || payload === null || !('resourceKey' in payload) || payload.resourceKey !== ref.resourceKey
-        || !('sha256' in payload) || payload.sha256 !== ref.sha256 || !('files' in payload)) throw new Error('公司内容资源版本不匹配')
-      const validated = companyContentRelease({ version: ref.version, sha256: ref.sha256, files: payload.files })
-      if (Object.keys(validated.files).length !== ref.fileCount || Object.keys(validated.files).some(path =>
-        ref.resourceKey.startsWith('teams/') ? path !== ref.resourceKey + '.json' : !path.startsWith(ref.resourceKey + '/'))) throw new Error('资源内容与版本索引不符')
-      await installCompanyContent(resourceRoot, employeeId, validated, signal)
-      content = { ...validated.files }
-    }
+    const { files: content } = await installCompanyResource(root, employeeId, ref, load, signal)
     for (const [path, encoded] of Object.entries(content)) {
       const target = index.dependencies.includes(ref)
         ? path.replace(/^experts\/([^/]+)\//u, `expert-versions/$1/${ref.sha256}/`) : path

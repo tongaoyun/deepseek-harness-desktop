@@ -7,3 +7,48 @@ exports[`ends authorization at its deadline while 'begin' is pending and ignores
 exports[`ends authorization at its deadline while 'status' is pending and ignores its late 'reject' during retry 1`] = `"授权未完成，请重试。"`;
 
 exports[`ends authorization at its deadline while 'status' is pending and ignores its late 'resolve' during retry 1`] = `"授权未完成，请重试。"`;
+
+exports[`keeps catalog connector focus when a confirmed refresh changes tools (elsewhere) 1`] = `
+{
+  "expanded": true,
+  "focused": "关闭",
+  "outcome": "elsewhere",
+  "query": "订单",
+}
+`;
+
+exports[`keeps catalog connector focus when a confirmed refresh changes tools (empty) 1`] = `
+{
+  "expanded": true,
+  "focused": "业务能力",
+  "outcome": "empty",
+  "query": "订单",
+}
+`;
+
+exports[`keeps catalog connector focus when a confirmed refresh changes tools (pagination) 1`] = `
+{
+  "expanded": true,
+  "focused": "搜索业务能力",
+  "outcome": "pagination",
+  "query": "订单",
+}
+`;
+
+exports[`keeps catalog connector focus when a confirmed refresh changes tools (removed) 1`] = `
+{
+  "expanded": true,
+  "focused": "搜索业务能力",
+  "outcome": "removed",
+  "query": "订单",
+}
+`;
+
+exports[`keeps catalog connector focus when a confirmed refresh changes tools (retained) 1`] = `
+{
+  "expanded": true,
+  "focused": "查询订单 0只读",
+  "outcome": "retained",
+  "query": "订单",
+}
+`;

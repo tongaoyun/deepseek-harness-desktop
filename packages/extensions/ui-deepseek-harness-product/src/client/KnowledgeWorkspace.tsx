@@ -1,43 +1,57 @@
 /** Organization libraries and their materials share one navigation and reading surface. */
-import { useLayoutEffect, useRef, useState, type ReactNode } from 'react'
-import { Button, IconChevronDownOutlineRegular, IconChevronLeftOutlineRegular, IconChevronRightOutlineRegular, IconDatabaseOutlineRegular, IconEllipsisOutlineRegular, IconFolderOpenOutlineRegular, IconPlusOutlineRegular, IconRefreshOutlineRegular, IconTrashOutlineRegular, Menu, Modal, Tooltip, focusWithoutRing, type MenuEntry } from '@deepseek-ai/dsh-client-ui-primitives'
+import { useCallback, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from 'react'
+import { Button, Modal, focusWithoutRing } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PropsRenderFactories } from '@deepseek-ai/dsh-client-ui-slots'
 import type { DeepSeekHarnessProductKey } from '../locales.ts'
 import css from '../DeepSeekHarnessProduct.module.css'
-import { localDetail, knowledgeScopeLabel, type ProductItem } from './catalog-shared.tsx'
+import { localDetail, type ProductItem } from './catalog-shared.tsx'
 import { KnowledgeDocuments } from './KnowledgeDocuments.tsx'
 import { KnowledgeLibraryDirectory } from './KnowledgeLibraryDirectory.tsx'
-import { ProductLoading } from './ProductLoading.tsx'
+import { ProductSignIn } from './ProductSignIn.tsx'
+import { KnowledgeLibraryActions } from './KnowledgeLibraryActions.tsx'
 import { KnowledgeBaseEditor } from './KnowledgeBaseEditor.tsx'
 import { useKnowledgeRequests } from './knowledge-data.ts'
 import { productErrorMessage } from './product-errors.ts'
+import { useResultFocus } from './useResultFocus.ts'
 
 /** Browse authorized library trees and read materials without opening a task.
- * @param props The authenticated catalog state and directory refresh commands.
+ * Removed libraries return to the directory without taking focus from another region.
+ * @param props The authenticated catalog state, refresh commands, and optional region ref for read-result focus recovery.
  * @returns A searchable directory, or the selected library's folders and materials.
  */
-export function KnowledgeWorkspace({ entries: directoryEntries, loading, refreshRevision = 0, error,
-  authRequired, authPending, authError, onRefresh, onSignIn, renderFactorySlot, t }: PropsRenderFactories & {
+export function KnowledgeWorkspace({ entries: directoryEntries, loading, loaded = !loading, refreshRevision = 0, error,
+  authRequired, onRefresh, onSignIn, renderFactorySlot, workspaceRef, t }: PropsRenderFactories & {
     readonly entries: readonly ProductItem[]
     readonly loading: boolean
+    readonly loaded?: boolean
     readonly refreshRevision?: number
     readonly error?: string
     readonly authRequired: boolean
-    readonly authPending: boolean
-    readonly authError: boolean
     readonly onRefresh: () => void
     readonly onSignIn: () => void
+    readonly workspaceRef?: RefObject<HTMLElement>
     readonly t: (key: DeepSeekHarnessProductKey) => string
   }): ReactNode {
-  const root = useRef<HTMLElement>(null)
+  const localRoot = useRef<HTMLElement>(null)
+  const root = workspaceRef ?? localRoot
+  const deleteDialog = useRef<HTMLElement | null>(null)
+  const bindDeleteDialog = useCallback((node: HTMLParagraphElement | null) => {
+    deleteDialog.current = node?.closest<HTMLElement>('[role="dialog"]') ?? null
+  }, [])
+  const preserveDeleteFocus = useResultFocus(deleteDialog, () => {
+    const heading = root.current?.querySelector<HTMLElement>('[data-knowledge-directory] h1')
+    if (heading) focusWithoutRing(heading, { preventScroll: true })
+  })
   const focusedLibrary = useRef<string>()
   const [selectedId, setSelectedId] = useState<string>()
-  const [navigationVisible, setNavigationVisible] = useState(false)
-  const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(new Set())
+  const [directoryQuery, setDirectoryQuery] = useState('')
+  const [directoryScope, setDirectoryScope] = useState('all')
   const [creating, setCreating] = useState(false)
+  const [editingId, setEditingId] = useState<string>()
   const [deleting, setDeleting] = useState<ProductItem>()
   const [deletePending, setDeletePending] = useState(false)
-  const [deleteError, setDeleteError] = useState('')
+  const deleteWriting = useRef(false)
+  const [deleteError, setDeleteError] = useState<unknown>()
   const [deletedIds, setDeletedIds] = useState<ReadonlySet<string>>(new Set())
   const entries = authRequired ? [] : directoryEntries.filter(entry => !deletedIds.has(entry.id))
   const currentEntries = useRef(entries)
@@ -55,77 +69,20 @@ export function KnowledgeWorkspace({ entries: directoryEntries, loading, refresh
       : [...root.current?.querySelectorAll<HTMLButtonElement>('[data-knowledge-base]') ?? []]
         .find(button => button.dataset.knowledgeBase === previousId)
         ?? root.current?.querySelector<HTMLElement>('[data-knowledge-directory] h1')
-    if (destination) focusWithoutRing(destination)
+    const area = root.current
+    const focused = area?.ownerDocument.activeElement
+    if (destination && (focused === area?.ownerDocument.body || activeLibraryId !== undefined && area?.contains(focused ?? null))) {
+      focusWithoutRing(destination, { preventScroll: activeLibraryId === undefined })
+    }
   }, [activeLibraryId, authRequired, selectedId])
-  const scopes = ['PERSONAL', 'DEPARTMENT', 'COMPANY',
-    ...(entries.some(entry => !['PERSONAL', 'DEPARTMENT', 'COMPANY'].includes(entry.scope ?? '')) ? ['OTHER'] : [])]
-  const selectLibrary = (id: string): void => { setSelectedId(id); setNavigationVisible(false) }
-  const renderLibrary = (entry: ProductItem, children: ReactNode, openLibrary?: () => void): ReactNode => <div key={entry.id}
-    className={css.knowledgeLibraryBranch}>
-    <div className={css.knowledgeLibraryHeading}>
-      <button type="button" className={css.knowledgeLibraryRow} aria-current={selected?.id === entry.id ? 'page' : undefined}
-        aria-expanded={selected?.id === entry.id} onClick={() => {
-          if (selected?.id === entry.id) openLibrary?.()
-          selectLibrary(entry.id)
-        }} title={entry.label}>
-        {selected?.id === entry.id ? <IconChevronDownOutlineRegular size={12} /> : <IconChevronRightOutlineRegular size={12} />}
-        <IconDatabaseOutlineRegular size={17} /><span>{entry.label}</span>
-      </button>
-      {entry.scope === 'PERSONAL' && entry.canManage === true && <KnowledgeLibraryActions entry={entry} disabled={deletePending}
-        onDelete={() => { setDeleteError(''); setDeleting(entry) }} t={t} />}
-    </div>
-    {selected?.id === entry.id && <div className={css.knowledgeLibraryMaterials}>{children}</div>}
-  </div>
-  const navigation = (children: ReactNode, openLibrary?: () => void): ReactNode => <>
-    <header className={css.knowledgeLibraryHeader}>
-      <button type="button" className={css.knowledgeDirectoryBack} onClick={() => { setSelectedId(undefined); setNavigationVisible(false) }}>
-        <IconChevronLeftOutlineRegular size={16} /><span>{t('knowledge')}</span>
-      </button>
-      <Tooltip label={t('refresh')}><button type="button" className={css.iconButton} aria-label={t('refresh')}
-        disabled={loading} onClick={onRefresh}><IconRefreshOutlineRegular size={16} /></button></Tooltip>
-    </header>
-    {selected && !authRequired && error !== undefined && <div role="alert" className={css.catalogError}>
-      <p>{error}</p><Button variant="outline" size="sm" disabled={loading} onClick={onRefresh}>{t('retry')}</Button>
-    </div>}
-    <nav className={css.knowledgeLibraryGroups} aria-label={t('knowledge')} aria-busy={loading}>
-      {scopes.map((scope) => {
-        const values = entries.filter(entry => scope === 'OTHER'
-          ? !['PERSONAL', 'DEPARTMENT', 'COMPANY'].includes(entry.scope ?? '') : entry.scope === scope)
-        const groups = new Map<string, ProductItem[]>()
-        for (const entry of values) {
-          const duplicateName = new Set(values.filter(value => value.ownerName === entry.ownerName)
-            .map(value => value.ownerDepartmentId)).size > 1
-          const department = scope === 'DEPARTMENT' ? `${entry.ownerName ?? t('scopeDepartment')}${duplicateName ? ` (${entry.ownerDepartmentId ?? ''})` : ''}` : ''
-          groups.set(department, [...groups.get(department) ?? [], entry])
-        }
-        return <section className={css.knowledgeLibraryGroup} key={scope} aria-label={scope === 'OTHER' ? t('otherKnowledge') : knowledgeScopeLabel(scope, t)}>
-          <h2 className={css.knowledgeLibraryGroupHeading}><button type="button" aria-expanded={!collapsed.has(scope)} onClick={() => {
-            setCollapsed((previous) => {
-              const next = new Set(previous)
-              if (next.has(scope)) next.delete(scope)
-              else next.add(scope)
-              return next
-            })
-          }}><span>{scope === 'OTHER' ? t('otherKnowledge') : knowledgeScopeLabel(scope, t)}</span>
-            {collapsed.has(scope) ? <IconChevronRightOutlineRegular size={12} /> : <IconChevronDownOutlineRegular size={12} />}
-          </button>{scope === 'PERSONAL' && !authRequired && error === undefined && <Tooltip label={t('knowledgeCreatePersonalBase')}>
-            <button type="button" className={css.iconButton} aria-label={t('knowledgeCreatePersonalBase')} disabled={loading}
-              onClick={() => { setCreating(true) }}><IconPlusOutlineRegular size={15} /></button></Tooltip>}</h2>
-          {!collapsed.has(scope) && (values.length === 0 ? <div className={css.knowledgeLibraryEmpty}>
-            {loading && entries.length === 0 ? <ProductLoading label={t('loading')} /> : t('empty')}</div>
-            : [...groups].map(([name, group]) => <div key={name}>
-              {name && <h3 className={css.knowledgeDepartmentHeading}>{name}</h3>}
-              {group.map(entry => renderLibrary(entry, children, openLibrary))}
-            </div>))}
-        </section>
-      })}
-    </nav>
-  </>
   const confirmDelete = async (): Promise<void> => {
-    if (deleting === undefined || deletePending) return
-    setDeletePending(true); setDeleteError('')
+    if (deleting === undefined || deleteWriting.current) return
+    deleteWriting.current = true
+    setDeletePending(true)
     try {
       await request('knowledge.bases.delete', { knowledgeBaseId: deleting.id })
+      preserveDeleteFocus()
+      setDeleteError(undefined)
       setDeleting(undefined)
       setDeletedIds(previous => new Set([...previous, deleting.id]))
       setSelectedId((current) => {
@@ -134,60 +91,47 @@ export function KnowledgeWorkspace({ entries: directoryEntries, loading, refresh
       })
       onRefresh()
     } catch (failure) {
-      setDeleteError(productErrorMessage(failure, t, 'knowledgeDeleteBaseFailed'))
-    } finally { setDeletePending(false) }
+      setDeleteError(failure)
+    } finally { deleteWriting.current = false; setDeletePending(false) }
   }
-  return <><section ref={root} className={css.knowledgeWorkspacePage} data-knowledge-workspace data-navigation-visible={String(navigationVisible)} aria-label={t('knowledge')}>
-    {selected && <header className={css.knowledgeWorkspaceMobileHeader}>
-      <Tooltip label={t('knowledgeBrowse')}><button type="button" className={css.iconButton} aria-label={t('knowledgeBrowse')}
-        aria-controls="knowledge-workspace-navigation" aria-expanded={navigationVisible}
-        onClick={() => { setNavigationVisible(value => !value) }}><IconFolderOpenOutlineRegular size={18} /></button></Tooltip>
-      <span>{t('knowledgeBrowse')}</span>
-    </header>}
-    {!authRequired && selected ? <KnowledgeDocuments key={selected.id} product={localDetail(selected)} t={t}
-      refreshRevision={refreshRevision} renderFactorySlot={renderFactorySlot}
-      renderNavigation={navigation} onNavigate={() => { setNavigationVisible(false) }} />
-      : !authRequired ? <KnowledgeLibraryDirectory entries={entries} loading={loading} error={error}
-        onOpen={selectLibrary} onCreate={() => { setCreating(true) }} onRefresh={onRefresh} t={t}
-        renderActions={entry => entry.scope === 'PERSONAL' && entry.canManage === true
-          ? <KnowledgeLibraryActions entry={entry} disabled={deletePending} onDelete={() => { setDeleteError(''); setDeleting(entry) }} t={t} /> : null} />
-        : <div className={css.knowledgeWorkspace}>
-          <aside className={css.knowledgeWorkspaceNavigation} id="knowledge-workspace-navigation" data-knowledge-navigation>{navigation(null)}</aside>
-          <main className={css.knowledgeWorkspaceMain} data-knowledge-content>
-            <div className={css.knowledgeWorkspaceEmpty}>
-              {loading ? <ProductLoading label={t('loading')} />
-                : <div className={css.authEmptyState} role="status" aria-live="polite">
-                  <div className={css.authEmptyCopy}><strong>{authPending ? t('authWaiting') : authError ? t('authFailedTitle') : t('authTitle')}</strong>
-                    <span>{t('authRequired')}</span>{authError && <span role="alert">{t('signInFailed')}</span>}</div>
-                  <Button variant="primary" size="sm" disabled={authPending} onClick={onSignIn}>{t(authPending ? 'signingIn' : 'signIn')}</Button>
-                </div>}
-            </div>
-          </main>
-        </div>}
-  </section>{creating && <KnowledgeBaseEditor t={t} onClose={() => { setCreating(false) }} onCreated={(id) => {
-    setCreating(false); setSelectedId(id); setNavigationVisible(false); onRefresh()
-    setCollapsed((previous) => { const next = new Set(previous); next.delete('PERSONAL'); return next })
-  }} />}{deleting && <Modal open title={t('knowledgeDeleteBase')} closeLabel={t('close')} onClose={() => { if (!deletePending) { setDeleting(undefined); setDeleteError('') } }} footer={<>
-    <Button variant="ghost" size="sm" disabled={deletePending} onClick={() => { setDeleting(undefined); setDeleteError('') }}>{t('cancel')}</Button>
-    <Button variant="primary" className={css.knowledgeDanger} size="sm" disabled={deletePending} onClick={() => { void confirmDelete() }}>
+  const closeDelete = () => {
+    if (deleteWriting.current) return
+    setDeleting(undefined); setDeleteError(undefined)
+  }
+  return <><section ref={root} tabIndex={-1} className={css.knowledgeWorkspacePage} data-knowledge-workspace aria-label={t('knowledge')}>
+    {!authRequired ? <>
+      <KnowledgeLibraryDirectory hidden={selected !== undefined} entries={entries} loading={loading} loaded={loaded} error={error}
+        query={directoryQuery} scope={directoryScope} onQueryChange={setDirectoryQuery} onScopeChange={setDirectoryScope}
+        onOpen={setSelectedId} onCreate={() => { setCreating(true) }} onRefresh={onRefresh} t={t}
+        renderActions={entry => entry.canManage === true
+          ? <KnowledgeLibraryActions name={entry.label} disabled={deletePending} onEdit={() => { setEditingId(entry.id) }} onDelete={entry.scope === 'PERSONAL' ? () => { setDeleteError(undefined); setDeleting(entry) } : undefined} t={t} /> : null} />
+      {selected && <KnowledgeDocuments key={selected.id} product={localDetail(selected)} t={t}
+        refreshRevision={refreshRevision} renderFactorySlot={renderFactorySlot}
+        onBack={() => { setSelectedId(undefined) }}
+        onEditLibrary={selected.canManage === true ? () => { setEditingId(selected.id) } : undefined}
+        onDeleteLibrary={selected.scope === 'PERSONAL' && selected.canManage === true
+          ? () => { setDeleteError(undefined); setDeleting(selected) } : undefined}
+        deletePending={deletePending} directoryError={error} directoryLoading={loading} onRefreshDirectory={onRefresh} />}
+    </> : <div className={css.catalogScroll}><div className="product-capability-content">
+      <header className={`${css.catalogHeader} product-capability-header`}>
+        <div className="product-capability-heading">
+          <h1 className="product-capability-title">{t('knowledge')}</h1>
+          <p className="product-capability-description">{t('knowledgeDirectoryHint')}</p>
+        </div>
+      </header>
+      <ProductSignIn onSignIn={onSignIn} t={t} />
+    </div>
+    </div>}
+  </section>{creating && <KnowledgeBaseEditor t={t} onClose={() => { setCreating(false) }} onSaved={(id) => {
+    setCreating(false); setSelectedId(id); onRefresh()
+  }} />}{editingId && <KnowledgeBaseEditor key={editingId} knowledgeBaseId={editingId} t={t}
+    onClose={() => { setEditingId(undefined) }} onSaved={() => { setEditingId(undefined); onRefresh() }} />}{deleting && <Modal open title={t('knowledgeDeleteBase')} closeLabel={t('close')} onClose={closeDelete} footer={<>
+    <Button variant="ghost" size="sm" aria-disabled={deletePending} className={deletePending ? 'product-control-pending' : undefined} onClick={closeDelete}>{t('cancel')}</Button>
+    <Button variant="primary" className={`${css.knowledgeDanger}${deletePending ? ' product-control-pending' : ''}`} size="sm" aria-disabled={deletePending}
+      aria-busy={deletePending} onClick={() => { void confirmDelete() }}>
       {t(deletePending ? 'deletingResource' : 'deleteResource')}
     </Button>
-  </>}><p className={css.knowledgeConfirmation}>{t('knowledgeDeleteBaseConfirmation').replace('{name}', deleting.label)}</p>
-    {deleteError && <p role="alert" className={css.catalogError}>{deleteError}</p>}
+  </>}><p ref={bindDeleteDialog} className={css.knowledgeConfirmation}>{t('knowledgeDeleteBaseConfirmation').replace('{name}', deleting.label)}</p>
+    {deleteError !== undefined && <p role="alert" className={css.catalogError}>{productErrorMessage(deleteError, t, 'knowledgeDeleteBaseFailed')}</p>}
   </Modal>}</>
-}
-
-function KnowledgeLibraryActions({ entry, disabled, onDelete, t }: {
-  readonly entry: ProductItem
-  readonly disabled: boolean
-  readonly onDelete: () => void
-  readonly t: (key: DeepSeekHarnessProductKey) => string
-}): ReactNode {
-  const [open, setOpen] = useState(false)
-  const items: MenuEntry[] = [{ id: 'delete', label: t('knowledgeDeleteBase'), icon: <IconTrashOutlineRegular size={16} />, danger: true }]
-  return <Menu open={open && !disabled} onClose={() => { setOpen(false) }} portal align="end" items={items}
-    onSelect={(id) => { setOpen(false); if (id === 'delete') onDelete() }} anchor={<Tooltip label={t('knowledgeLibraryActions').replace('{name}', entry.label)}>
-      <button type="button" className={css.iconButton} disabled={disabled} aria-label={t('knowledgeLibraryActions').replace('{name}', entry.label)}
-        aria-haspopup="menu" aria-expanded={open} onClick={(event) => { event.stopPropagation(); setOpen(!open) }}><IconEllipsisOutlineRegular size={16} /></button>
-    </Tooltip>} />
 }

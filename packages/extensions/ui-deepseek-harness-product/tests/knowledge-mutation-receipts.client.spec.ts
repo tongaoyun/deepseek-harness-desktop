@@ -2,7 +2,7 @@ import { expect, it } from 'vitest'
 import { ProductError } from '@deepseek-harness/product/errors'
 import { productErrorMessage } from '../src/client/product-errors.ts'
 import { zh, type DeepSeekHarnessProductKey } from '../src/locales.ts'
-import { confirmKnowledgeDocumentMutation, confirmKnowledgeDocumentUpload, confirmKnowledgeFolderDeletion } from '../src/client/knowledge-mutation-receipts.ts'
+import { confirmKnowledgeDocumentMutation, confirmKnowledgeDocumentWrite, confirmKnowledgeFolderDeletion } from '../src/client/knowledge-mutation-receipts.ts'
 
 const target = { knowledgeBaseId: 'personal', documentId: 'document', folderId: 'destination' }
 const document = { id: target.documentId, knowledgeBaseId: target.knowledgeBaseId, filename: 'Notes.md', mediaType: 'text/markdown',
@@ -56,21 +56,21 @@ it('distinguishes file operation recovery from retained editor drafts', () => {
   expect(productErrorMessage(error, t, 'knowledgeSaveFailed')).toBe(`${zh.knowledgeOperationUnknown} (${error.code})`)
 })
 
-it('requires complete upload metadata for the captured library and folder', () => {
+it('requires complete write metadata for the captured document, library and folder', () => {
   const receipt = { ...document, folderId: target.folderId }
   for (const value of [null, {}, { ...receipt, id: '' }, { ...receipt, filename: '' }, { ...receipt, updatedAt: '' },
-    { ...receipt, status: '' }, { ...receipt, mediaType: undefined }, { ...receipt, knowledgeBaseId: 'other' },
+    { ...receipt, id: 'other' }, { ...receipt, status: '' }, { ...receipt, mediaType: undefined }, { ...receipt, knowledgeBaseId: 'other' },
     { ...receipt, folderId: 'other' }, { ...receipt, folderId: null }, document]) {
-    expect(() => { confirmKnowledgeDocumentUpload(value, target) }).toThrow(expect.objectContaining(unknownOutcome))
+    expect(() => { confirmKnowledgeDocumentWrite(value, target) }).toThrow(expect.objectContaining(unknownOutcome))
   }
-  confirmKnowledgeDocumentUpload(receipt, target)
+  confirmKnowledgeDocumentWrite(receipt, target)
 })
 
 it('confirms root uploads with absent or explicit null destinations', () => {
   for (const receipt of [document, { ...document, folderId: null }]) {
-    confirmKnowledgeDocumentUpload(receipt, { knowledgeBaseId: target.knowledgeBaseId })
-    confirmKnowledgeDocumentUpload(receipt, { knowledgeBaseId: target.knowledgeBaseId, folderId: null })
+    confirmKnowledgeDocumentWrite(receipt, { knowledgeBaseId: target.knowledgeBaseId })
+    confirmKnowledgeDocumentWrite(receipt, { knowledgeBaseId: target.knowledgeBaseId, folderId: null })
   }
-  expect(() => { confirmKnowledgeDocumentUpload({ ...document, folderId: 'other' }, { knowledgeBaseId: target.knowledgeBaseId }) })
+  expect(() => { confirmKnowledgeDocumentWrite({ ...document, folderId: 'other' }, { knowledgeBaseId: target.knowledgeBaseId }) })
     .toThrow(expect.objectContaining(unknownOutcome))
 })

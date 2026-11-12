@@ -13,8 +13,7 @@ export type SkillApi = <K extends SkillMethod>(method: K, input: SkillInput<K>, 
 
 const scopeFields: Partial<Record<SkillMethod, 'target' | 'request' | 'scope' | 'destination'>> = {
   readState: 'scope', readDetail: 'target', exportSkill: 'target', setSkillEnabled: 'target', setSourceEnabled: 'target',
-  createCategory: 'target', renameCategory: 'target', deleteCategory: 'target', assignCategory: 'target',
-  moveInCategory: 'target', setCategoryEnabled: 'target', trashSkill: 'target', restoreTrash: 'scope',
+  assignCategory: 'target', trashSkill: 'target', restoreTrash: 'scope',
   createSkill: 'request', uploadSkill: 'request', installCatalog: 'destination',
 }
 

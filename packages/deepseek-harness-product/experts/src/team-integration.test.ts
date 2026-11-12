@@ -8,7 +8,6 @@ import { Context } from '@deepseek-ai/cordis'
 import type { SettingsNamespace } from '@deepseek-ai/dsh-settings'
 import { apply } from './index.ts'
 import AgencyAgentsRemote from './remote.ts'
-import { nativeTeamMemberName } from './team-engine.ts'
 import { MemorySettings } from './settings-memory.ts'
 class TestSettings extends MemorySettings {
   protected async persist(
@@ -71,9 +70,9 @@ describe('专家团宿主与远端集成', () => {
         getProvider: () => ({
           capabilities: { agentOptions: true, agentPreset: true, outputSchema: true, depthLimit: true },
         }),
-        startActivation: async (spec: { childId: string; request: Record<string, unknown>; label: string }) => {
+        startActivation: async (spec: { childId: string; label: string }) => {
           probe.create(spec)
-          starts.push({ ...spec.request, label: spec.label })
+          starts.push({ ...spec, label: spec.label })
           return {
             result: Promise.resolve({
               output: [{ type: 'text', text: '租赁建议' }],
@@ -94,7 +93,6 @@ describe('专家团宿主与远端集成', () => {
     const members = memberCatalog.experts.map((expert, i) => ({ ...firstDraft.members[i], expertSlug: expert.slug }))
     const initial = await remote.saveTeam({ ...firstDraft, members }, false, memberCatalog.revision)
     expect(initial.teams).toHaveLength(1)
-    expect(initial.nativeMembers).toEqual(Object.fromEntries(initial.teams.flatMap(team => team.members.map(member => [nativeTeamMemberName(team.id, member.expertSlug), member.expertSlug]))))
     const catalog = await remote.getCatalog(false, new AbortController().signal)
     for (const group of initial.teams) {
       for (const member of group.members) {
@@ -175,7 +173,8 @@ describe('专家团宿主与远端集成', () => {
     await expect(invoke('get_expert_team', { team: saved.id })).rejects.toThrow('未启用')
     const latest = await remote.getTeams(new AbortController().signal)
     await remote.setTeamEnabled(team.id, true, latest.revision)
-    const { service: native } = createNativeTeam()
+    const { service: native, subagents: nativeSubagents } = createNativeTeam()
+    Object.assign(ctx.subagents, nativeSubagents)
     services.set('agentTeams', native)
     expect((await remote.getTeams(new AbortController().signal)).engine).toMatchObject({ state: 'enabled', mode: 'native' })
     const notReady = await invoke('get_expert_team', { team: team.id })
@@ -188,6 +187,6 @@ describe('专家团宿主与远端集成', () => {
     expect(nativeReport.dispatch.started).toBe(3)
     expect(nativeReport).not.toHaveProperty('coverage')
     expect(starts).toHaveLength(priorStarts)
-    expect(native.spawnTeammate).toHaveBeenCalledTimes(3)
+    expect(nativeSubagents.startActivation).toHaveBeenCalledTimes(3)
   })
 })

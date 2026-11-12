@@ -1,0 +1,25 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`recovers removed workspace retry focus after an available result without scrolling or stealing focus 1`] = `
+{
+  "focused": "dest.workspace",
+  "result": "available",
+  "text": "Project",
+}
+`;
+
+exports[`recovers removed workspace retry focus after an empty result without scrolling or stealing focus 1`] = `
+{
+  "focused": "dest.scope",
+  "result": "empty",
+  "text": "dest.scope.workspace",
+}
+`;
+
+exports[`recovers removed workspace retry focus after an unavailable result without scrolling or stealing focus 1`] = `
+{
+  "focused": "dest.workspace",
+  "result": "unavailable",
+  "text": "dest.workspace.unavailable",
+}
+`;

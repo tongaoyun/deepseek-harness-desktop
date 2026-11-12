@@ -1,10 +1,10 @@
-import { teamFixture } from '../../product/tests/content-fixtures.ts'
+import { contentIndex, expertFiles, teamFixture, versionRef } from '../../product/tests/content-fixtures.ts'
 import { mkdtemp, readFile, rm, readdir, rename, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { expect, it, onTestFinished, vi } from 'vitest'
 import { contentDigest } from '@deepseek-harness/product/company-content'
-import { installCompanyContent, restoreCompanyContent } from '../src/company-content.ts'
+import { installCompanyContent, installCompanyIndex, installCompanyResource, restoreCompanyContent } from '../src/company-content.ts'
 
 vi.mock('node:fs/promises', async (original) => {
   const fs = await original<typeof import('node:fs/promises')>()
@@ -118,4 +118,27 @@ it('restores the entire team file from its immutable release without replacing o
   expect(first.expertsRoot).not.toBe(latest.expertsRoot)
   expect(await restoreCompanyContent(root, 'alice', first.version, first.sha256, signal)).toEqual(first)
   expect(await readFile(join(first.expertsRoot, '..', 'teams/orders.json'), 'utf8')).toBe(Buffer.from(original.files['teams/orders.json']!, 'base64').toString('utf8'))
+})
+
+it.each([false, true])('enforces the index file count for cached=%s resources', async (cached) => {
+  const root = await fixture(), signal = new AbortController().signal
+  const files = expertFiles('orders'), ref = versionRef('experts/orders', files)
+  const load = vi.fn(async () => ({ ...ref, files }))
+  if (cached) await installCompanyResource(root, 'a', ref, load, signal)
+  load.mockClear()
+  await expect(installCompanyIndex(root, 'a', contentIndex('1.0.0', [{ ...ref, fileCount: ref.fileCount + 1 }]), load, signal))
+    .rejects.toThrow('资源内容与版本索引不符')
+  expect(load).toHaveBeenCalledTimes(cached ? 0 : 1)
+})
+
+it('rejects cached resources from another expert without fetching or installing a catalog', async () => {
+  const root = await fixture(), signal = new AbortController().signal
+  const files = expertFiles('another'), ref = versionRef('experts/another', files)
+  const load = vi.fn(async () => ({ ...ref, files }))
+  const original = await installCompanyResource(root, 'a', ref, load, signal)
+  load.mockClear()
+  await expect(installCompanyResource(root, 'a', { ...ref, resourceKey: 'experts/orders' }, load, signal))
+    .rejects.toThrow('资源内容与版本索引不符')
+  expect(load).not.toHaveBeenCalled()
+  expect(await readFile(join(original.roots.expertsRoot, 'another/config/SOUL.md'), 'utf8')).toBe('Follow the supplied instructions.')
 })

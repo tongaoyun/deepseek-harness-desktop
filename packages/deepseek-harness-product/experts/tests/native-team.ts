@@ -1,7 +1,9 @@
 /** Native-typed Agent Teams doubles used by expert dispatch tests. */
 import { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
-import { TeamId, TeamTaskId, type TeamMemberView, type TeamTaskView } from '@deepseek-ai/dsh-experimental-agent-team'
+import { TeamTaskId, type TeamTaskView } from '@deepseek-ai/dsh-agent-team'
+import type SubagentService from '@deepseek-ai/dsh-subagent'
+import type { SubagentDescendantListEntry, SubagentActivationSpec } from '@deepseek-ai/dsh-subagent'
 import { MessageId } from '@deepseek-ai/dsh-llm/brand'
 import { Session, SessionId } from '@deepseek-ai/dsh-session'
 import { randomUUID } from 'node:crypto'
@@ -19,9 +21,9 @@ export function createTeamAgent(ctx = new Context()): Agent {
     runMaintenance: task => task(new AbortController().signal), whenIdle: () => Promise.resolve() }
 }
 
-/** Build one complete native roster row, including its durable identity. */
-export function nativeTeamMember(name: string, status: TeamMemberView['status'] = 'running'): TeamMemberView {
-  return { id: SessionId(name), name, role: 'teammate', status, diagnostics: [] }
+/** Build one native catalog row with its parent-owned identity. */
+export function nativeTeamMember(name: string, parentId: SessionId, activity: 'running' | 'inactive' = 'running'): SubagentDescendantListEntry {
+  return { kind: 'child', id: SessionId(name), name, parentId, activity, depth: 1, mode: 'continuable', label: name, hasChildren: false }
 }
 
 function task(): TeamTaskView {
@@ -31,19 +33,24 @@ function task(): TeamTaskView {
 
 /** Exercise current native method signatures and statuses without starting model work. */
 export function createNativeTeam() {
-  const members: TeamMemberView[] = []
-  const service = {
-    tryMembership: vi.fn<NativeTeamService['tryMembership']>(agent => ({ root: agent, id: TeamId(agent.id), role: 'lead', name: 'lead' })),
-    listMembers: vi.fn<NativeTeamService['listMembers']>(() => members),
-    spawnTeammate: vi.fn<NativeTeamService['spawnTeammate']>(async (_agent, request) => {
-      const member = nativeTeamMember(request.name)
+  const members: SubagentDescendantListEntry[] = []
+  const subagents = {
+    namesOf: vi.fn<SubagentService['namesOf']>(() => ({ self: 'lead' })),
+    listDescendants: vi.fn<SubagentService['listDescendants']>(async () => members),
+    startActivation: vi.fn(async (request: SubagentActivationSpec) => {
+      const name = request.name ?? 'agent-1'
+      const member = nativeTeamMember(name, request.parent.id)
       members.push(member)
-      return { member }
+      return { childId: member.id, name, messageId: MessageId('native-message'),
+        result: Promise.resolve({ stopReason: 'completed' as const, output: [] }), dispose: async () => {} }
     }),
-    sendMessage: vi.fn<NativeTeamService['sendMessage']>(async () => ({ messageId: MessageId('native-message') })),
+    sendMessage: vi.fn<SubagentService['sendMessage']>(async () => MessageId('native-message')),
+    interrupt: vi.fn<SubagentService['interrupt']>(() => {}),
+  } satisfies Pick<SubagentService, 'namesOf' | 'listDescendants' | 'startActivation' | 'sendMessage' | 'interrupt'>
+  const service = {
+    isEnabled: vi.fn<NativeTeamService['isEnabled']>(() => true),
     createTask: vi.fn<NativeTeamService['createTask']>(async () => task()),
     updateTask: vi.fn<NativeTeamService['updateTask']>(async () => ({ ...task(), revision: 2, status: 'deleted' })),
-    interrupt: vi.fn<NativeTeamService['interrupt']>(() => ({ previousStatus: 'running' })),
   } satisfies NativeTeamService
-  return { service, members }
+  return { service, subagents, members }
 }

@@ -27,6 +27,7 @@
   },
   "include": [
     "src",
-    "tests"
+    "tests",
+    "../../client/ui-conversation/src/css-modules.d.ts"
   ]
 }

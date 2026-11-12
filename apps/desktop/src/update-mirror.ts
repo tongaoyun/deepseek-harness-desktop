@@ -1,5 +1,5 @@
 /** Credential-free, immutable package mirrors for native updater payloads. */
-import type { DesktopUpdateHttpExecutor } from './update-http-executor.ts'
+import type { DesktopUpdateHttpExecutor } from './updates/electron-updater/http-executor.ts'
 
 /** A public package directory containing the same versioned files as a GitHub release. */
 export interface DesktopUpdateMirror {

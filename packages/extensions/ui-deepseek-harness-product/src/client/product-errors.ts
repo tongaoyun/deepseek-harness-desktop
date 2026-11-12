@@ -1,8 +1,20 @@
-/** Localized public diagnostics for organization and knowledge failures. */
+/** Localized public diagnostics for product operations. */
 import { productFailure } from '@deepseek-harness/product/errors'
 import type { DeepSeekHarnessProductKey } from '../locales.ts'
 
+/** Retained failure data formatted in the active locale when rendered. */
+export interface ProductFailureReport {
+  /** Failure returned by the operation. */
+  readonly failure: unknown
+  /** Localized fallback for unrecognized failures. */
+  readonly fallback: DeepSeekHarnessProductKey
+}
+
 const messageKeys: Readonly<Record<string, DeepSeekHarnessProductKey>> = {
+  EMPLOYEE_UNAUTHORIZED: 'employeeSignInRequired',
+  PRODUCT_HOST_IDENTITY_CHANGED: 'employeeHostRestartRequired',
+  METHOD_NOT_ALLOWED: 'serverFeatureUnavailable',
+  NOT_FOUND: 'serverFeatureUnavailable',
   FEEDBACK_INVALID: 'feedbackSendFailed',
   FEEDBACK_IMAGES_INVALID: 'feedbackImagesInvalid',
   EXTENSION_DRAFT_CHANGED: 'draftChanged',
@@ -16,6 +28,8 @@ const messageKeys: Readonly<Record<string, DeepSeekHarnessProductKey>> = {
   CONNECTOR_AUTHORIZATION_REQUIRED: 'connectorProviderAuthorizationRequired',
   CONNECTOR_CONFIGURATION_REQUIRED: 'privateValuesRequired',
   CONNECTOR_SAVE_PENDING: 'connectorSavePending',
+  CONNECTOR_OPERATION_UNCONFIRMED: 'connectorOperationUnconfirmed',
+  CONNECTOR_DELETE_CLEANUP_FAILED: 'connectorDeleteCleanupFailed',
   EXTENSION_OWNER_REQUIRED: 'ownerRequired',
   EXTENSION_IMPORT_INVALID: 'importInvalid',
   CAPABILITY_RESPONSE_INVALID: 'taskResponseInvalid',
@@ -53,6 +67,7 @@ const messageKeys: Readonly<Record<string, DeepSeekHarnessProductKey>> = {
   KNOWLEDGE_PREVIEW_FAILED: 'knowledgePreviewFailed',
   KNOWLEDGE_PREVIEW_CLEANUP_FAILED: 'knowledgePreviewCleanupFailed',
   KNOWLEDGE_PARSE_MODE_INVALID: 'knowledgeParseModeInvalid',
+  KNOWLEDGE_BASE_CONFLICT: 'knowledgeBaseConflict',
   KNOWLEDGE_FOLDER_CONFLICT: 'knowledgeFolderConflict',
   KNOWLEDGE_FOLDER_CHANGED: 'knowledgeFolderChanged',
   KNOWLEDGE_FOLDER_NOT_EMPTY: 'knowledgeFolderNotEmpty',
@@ -71,7 +86,7 @@ export function isKnowledgeSaveUnconfirmed(error: unknown): boolean {
  * @param error - Failure returned by product transport.
  * @param t - Current locale dictionary.
  * @param fallback - Message for unrecognized failures.
- * @returns Localized cause and diagnostic code, or the generic fallback.
+ * @returns Localized cause, with diagnostic codes only for failures requiring investigation.
  */
 export function productErrorMessage(error: unknown, t: (key: DeepSeekHarnessProductKey) => string,
   fallback: DeepSeekHarnessProductKey): string {
@@ -81,5 +96,7 @@ export function productErrorMessage(error: unknown, t: (key: DeepSeekHarnessProd
     ? fallback : failure.code === 'IDEMPOTENCY_OPERATION_UNKNOWN' && fallback === 'knowledgeChangeFailed'
       ? 'knowledgeChangeUnconfirmed' : Object.hasOwn(messageKeys, failure.code) ? messageKeys[failure.code] : undefined
   const checks = failure.dependencyChecks?.filter(value => value.status !== 'READY').map(value => `${value.reference}: ${value.status}`)
-  return `${key === undefined ? t(fallback) : `${t(key)} (${failure.code})`}${checks?.length ? ` ${checks.join('; ')}` : ''}`
+  const message = key === undefined ? t(fallback) : t(key)
+  if (failure.code === 'EMPLOYEE_UNAUTHORIZED' || failure.code === 'PRODUCT_HOST_IDENTITY_CHANGED') return message
+  return `${message}${key === undefined ? '' : ` (${failure.code})`}${checks?.length ? ` ${checks.join('; ')}` : ''}`
 }

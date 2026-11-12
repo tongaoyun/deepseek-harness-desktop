@@ -1,0 +1,21 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`removes a confirmed deletion from the catalog and prevents repeating it after device cleanup fails 1`] = `"The connector was deleted, but device connections or private settings could not be fully cleared. Restart the app and refresh to confirm. Do not delete it again. (CONNECTOR_DELETE_CLEANUP_FAILED)"`;
+
+exports[`retains 'delete' feedback and locks confirmation before rendering a retry 1`] = `
+{
+  "action": "删除中…",
+  "busy": "true",
+  "error": "删除未完成，请重试。",
+  "focused": "删除中…",
+}
+`;
+
+exports[`retains 'submit' feedback and locks confirmation before rendering a retry 1`] = `
+{
+  "action": "提交发布",
+  "busy": "true",
+  "error": "保存失败，请重试。",
+  "focused": "提交发布",
+}
+`;

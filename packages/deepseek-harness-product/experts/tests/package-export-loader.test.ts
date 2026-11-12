@@ -13,6 +13,7 @@ import type { CompanyContentSource } from '@deepseek-harness/product/protocol'
 import { installCompanyContent } from '../../desktop/src/company-content.ts'
 import { contentIndex, encoded, expertFiles, versionRef } from '../../product/tests/content-fixtures.ts'
 import { createHash } from 'node:crypto'
+import { promises as localFs } from 'node:fs'
 import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
@@ -27,7 +28,7 @@ vi.mock('node:fs/promises', async (original) => {
   return { ...fs, readFile: vi.fn(fs.readFile) }
 })
 
-async function fixture() {
+async function fixture(locale = 'en') {
   const fs = await vi.importActual<typeof import('node:fs/promises')>('node:fs/promises')
   const root = await mkdtemp(join(tmpdir(), 'expert-export-loader-'))
   const ctx = new Context()
@@ -62,6 +63,7 @@ async function fixture() {
   let current = first.installed
   ctx.provide('companyContent', {
     read: async () => current, forSession: async () => current, refresh: async () => undefined,
+    expertVersion: async () => { throw new Error('Unexpected exact expert version read') },
   } satisfies CompanyContentSource)
   const localFiles = { ...expertFiles('local-expert', 'Local instructions {{literal}}'),
     'experts/local-expert/references/本地资料.md': encoded('Local reference') }
@@ -71,7 +73,7 @@ async function fixture() {
     await writeFile(file, Buffer.from(bytes, 'base64'))
   }
   ctx.provide('subagents', { getProvider: () => undefined })
-  ctx.provide('settings', { configure: () => () => {}, describe: () => [{ ns: 'agency-agents', revision: 0 }] })
+  ctx.provide('settings', { configure: () => () => {}, describe: () => [{ ns: 'agency-agents', revision: 0 }, { ns: 'locale', value: { preference: locale } }] })
   ctx.provide('webServer', {})
   await ctx.plugin(Loader)
   Object.assign(ctx.loader.builtins, { include: Include, prompt: SystemPrompt, tools: Tools,
@@ -89,6 +91,10 @@ async function fixture() {
   for (const entry of ctx.loader.entries()) await entry.fiber?.await()
   const peer = new Peer(ctx, { principal: { kind: 'owner' } })
   return { first, second, localFiles, personalFiles: expertPackageFiles(personal.slug, personal), fs, cleanup,
+    localRoot: join(root, 'local', 'experts'),
+    personalRoot: join(first.installed.expertsRoot, '..', '..', 'personal-experts', personal.slug, personalRef.packageSha256),
+    prompt: () => ctx.typertGateway.invoke({ namespace: 'agencyAgents', method: 'getPrompt',
+      args: { slug: personal.slug, division: personal.division }, peer, signal }),
     update: () => { current = second.installed },
     invoke: (slug: string, requestSignal = signal) => ctx.typertGateway.invoke({ namespace: 'agencyAgents', method: 'exportExpert',
       args: { slug }, peer, signal: requestSignal }),
@@ -103,6 +109,87 @@ it.each(['local', 'company', 'personal'] as const)('exports complete files from 
     personal: { files: personalFiles, catalog: { name: '个人专家', division: 'specialized', avatar: '5' } },
   }
   expect(await invoke(source + '-expert')).toEqual({ resourceKey: 'experts/' + source + '-expert', ...expected[source] })
+})
+
+it.each((['local', 'company', 'personal'] as const).flatMap(source => (['grow', 'shrink'] as const).map(change => ({ source, change }))))(
+  'rejects and localizes a $source resource that changes during export: $change', async ({ source, change }) => {
+    const { invoke, first, localRoot, personalRoot } = await fixture(change === 'grow' ? 'zh' : 'en')
+    const resource = source === 'company' ? join(first.installed.expertsRoot, 'company-expert/assets/中文模板.bin')
+      : source === 'local' ? join(localRoot, 'local-expert/references/本地资料.md') : join(personalRoot, 'assets/个人模板.bin')
+    const original = await readFile(resource)
+    const open = localFs.open
+    const opened: Awaited<ReturnType<typeof open>>[] = []
+    const probe = vi.spyOn(localFs, 'open').mockImplementation(async (...args) => {
+      const handle = await open(...args)
+      if (args[0] !== resource) return handle
+      opened.push(handle)
+      const stat = handle.stat.bind(handle)
+      vi.spyOn(handle, 'stat').mockImplementationOnce(async () => {
+        const info = await stat()
+        await writeFile(resource, change === 'grow' ? Buffer.alloc(1024 * 1024) : original.subarray(0, 1))
+        return info
+      })
+      return handle
+    })
+    onTestFinished(() => { probe.mockRestore() })
+    const outcome = await invoke(source + '-expert').then(() => 'Unexpected export success', (error: unknown) => {
+      if (!(error instanceof Error)) throw error
+      return error.message
+    })
+    expect(outcome).toMatchSnapshot()
+    expect(outcome).toBe(change === 'grow' ? '导出时资源发生变化，请等待编辑完成后重试。'
+      : 'A resource changed during export. Finish editing and try again.')
+    expect(opened).toHaveLength(1)
+    expect(opened[0].fd).toBe(-1)
+    probe.mockRestore()
+    await writeFile(resource, original)
+    const result = await invoke(source + '-expert')
+    expect(result).toHaveProperty('resourceKey', 'experts/' + source + '-expert')
+  },
+)
+
+it.each(['company', 'personal'] as const)('cancels an in-progress %s package read and closes the file before retry', async (source) => {
+  const { invoke, first, personalRoot, cleanup } = await fixture()
+  const resource = source === 'company' ? join(first.installed.expertsRoot, 'company-expert/assets/中文模板.bin')
+    : join(personalRoot, 'assets/个人模板.bin')
+  const started = Promise.withResolvers<undefined>(), release = Promise.withResolvers<undefined>()
+  const open = localFs.open
+  const opened: Awaited<ReturnType<typeof open>>[] = []
+  const probe = vi.spyOn(localFs, 'open').mockImplementation(async (...args) => {
+    const handle = await open(...args)
+    if (args[0] !== resource) return handle
+    opened.push(handle)
+    const stat = handle.stat.bind(handle)
+    vi.spyOn(handle, 'stat').mockImplementationOnce(async () => {
+      const info = await stat()
+      started.resolve(undefined)
+      await release.promise
+      return info
+    })
+    return handle
+  })
+  const controller = new AbortController()
+  const pending = invoke(source + '-expert', controller.signal)
+  const outcome = pending.then(() => ({ exported: true }), (error: unknown) => ({ error }))
+  cleanup.push(async () => { release.resolve(undefined); await outcome; probe.mockRestore() })
+  await started.promise
+  controller.abort(new Error('Export view closed'))
+  release.resolve(undefined)
+  expect(await outcome).toHaveProperty('error')
+  expect(opened).toHaveLength(1)
+  expect(opened[0].fd).toBe(-1)
+  probe.mockRestore()
+  expect(await invoke(source + '-expert')).toHaveProperty('resourceKey', 'experts/' + source + '-expert')
+})
+
+it('blocks personal export and model instructions when the fixed package contains an unrecorded resource', async () => {
+  const { invoke, prompt, personalRoot } = await fixture()
+  await expect(prompt()).resolves.toHaveProperty('prompt', expect.stringContaining('Personal instructions {{literal}}'))
+  const path = join(personalRoot, 'assets/unrecorded.md')
+  await writeFile(path, 'Unrecorded content')
+  await expect(invoke('personal-expert')).rejects.toThrowErrorMatchingInlineSnapshot('[Error: 个人专家文件目录与保存版本不一致，请重新导入或编辑后保存]')
+  await expect(prompt()).rejects.toThrowErrorMatchingInlineSnapshot('[Error: 个人专家文件目录与保存版本不一致，请重新导入或编辑后保存]')
+  expect(await readFile(path, 'utf8')).toBe('Unrecorded content')
 })
 
 it.each(['refresh', 'cancel'] as const)('retains one export version across a company catalog %s during metadata reads', async (action) => {

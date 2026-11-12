@@ -14,6 +14,7 @@ interface Selection {
   readonly folderId: string | null | undefined
   readonly path: string
   sha256?: string
+  uploadStarted?: true
 }
 
 /** Retain employee-scoped native file selections for confirmed or explicitly discarded uploads. */
@@ -54,10 +55,32 @@ export class KnowledgeUploads implements KnowledgeUpload {
       }
       return unique.map((path) => {
         const operationId = randomUUID()
-        this.selections.set(`${employee}:${operationId}`, { baseId, mode, folderId, path })
-        return { operationId, filename: basename(path), pdfParseMode: mode, ...(folderId === undefined ? {} : { folderId }) }
+        const selection = { baseId, mode, folderId, path }
+        this.selections.set(`${employee}:${operationId}`, selection)
+        return pendingSelection(operationId, selection)
       })
     } finally { this.selecting = false }
+  }
+
+  /** Change PDF handling before any upload attempt, replacing the unsent operation atomically.
+   * @param baseId Original target library.
+   * @param operationId Native-owned selection to replace.
+   * @param mode Validated PDF parsing mode.
+   * @returns Replacement identity with the same file and destination.
+   */
+  configure(baseId: string, operationId: string, mode: KnowledgePdfParseMode): KnowledgeUploadPending {
+    const employee = this.requireEmployee()
+    const key = `${employee}:${operationId}`
+    const selection = this.selections.get(key)
+    if (!selection || selection.baseId !== baseId) throw new ProductError('KNOWLEDGE_UPLOAD_SELECTION_MISSING', 'Select the file again before uploading', false)
+    if (this.active.has(key) || selection.uploadStarted) throw new ProductError('IDEMPOTENCY_KEY_REUSED', 'Upload handling cannot change after an attempt', false)
+    if (extname(selection.path).toLowerCase() !== '.pdf') throw new ProductError('KNOWLEDGE_PARSE_MODE_INVALID', 'Only PDF selections have handling options', false)
+    if (selection.mode === mode) return pendingSelection(operationId, selection)
+    const nextId = randomUUID()
+    const next = { ...selection, mode }
+    this.selections.set(`${employee}:${nextId}`, next)
+    this.selections.delete(key)
+    return pendingSelection(nextId, next)
   }
 
   /** Retry a retained file after rechecking employee identity, limits and its exact content.
@@ -83,6 +106,7 @@ export class KnowledgeUploads implements KnowledgeUpload {
       if (selection.baseId !== baseId || selection.mode !== mode || selection.folderId !== folderId) {
         throw new ProductError('IDEMPOTENCY_KEY_REUSED', 'Upload destination cannot change during retry', false)
       }
+      selection.uploadStarted = true
       const limits = await api.request<Readonly<Record<string, unknown>>>('/api/v1/knowledge-file-limits', { signal: combined })
       if (typeof limits.uploadMaxBytes !== 'number' || !Number.isSafeInteger(limits.uploadMaxBytes) || limits.uploadMaxBytes < 1) {
         throw new Error('Invalid knowledge upload limits')
@@ -119,8 +143,7 @@ export class KnowledgeUploads implements KnowledgeUpload {
     const employee = this.employee()
     if (!employee || this.identity !== employee) { this.resetIdentity(); return [] }
     return [...this.selections].flatMap(([key, selection]) => selection.baseId !== baseId ? []
-      : [{ operationId: key.slice(employee.length + 1), filename: basename(selection.path), pdfParseMode: selection.mode,
-        ...(selection.folderId === undefined ? {} : { folderId: selection.folderId }) }])
+      : [pendingSelection(key.slice(employee.length + 1), selection)])
   }
 
   /** Release private file selections when employee identity changes. */
@@ -140,6 +163,12 @@ export class KnowledgeUploads implements KnowledgeUpload {
 
   /** Cancel pending reads and release selections when the desktop closes. */
   close(): void { this.lifetime.abort(); this.resetIdentity() }
+}
+
+function pendingSelection(operationId: string, selection: Selection): KnowledgeUploadPending {
+  return { operationId, filename: basename(selection.path), pdfParseMode: selection.mode,
+    ...(selection.folderId === undefined ? {} : { folderId: selection.folderId }),
+    ...(!selection.uploadStarted && extname(selection.path).toLowerCase() === '.pdf' ? { canConfigure: true as const } : {}) }
 }
 
 /** Limit text extraction selection to PDF documents.

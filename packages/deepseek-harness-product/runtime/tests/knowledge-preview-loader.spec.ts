@@ -12,7 +12,7 @@ import Sessions from '@deepseek-ai/dsh-session'
 import SessionProjections from '@deepseek-ai/dsh-session-projection'
 import Agents from '@deepseek-ai/dsh-agent'
 import Presets from '@deepseek-ai/dsh-agent-preset-registry'
-import OfficeToPdf, { OfficeSourceKey } from '@deepseek-ai/dsh-office-to-pdf'
+import OfficeKit, { OfficeSourceKey } from '@deepseek-ai/dsh-office-kit'
 import * as Runtime from '@deepseek-harness/product-runtime'
 import { describe, expect, it, onTestFinished, vi } from 'vitest'
 
@@ -114,7 +114,7 @@ async function fixture() {
   await ctx.plugin(Agents)
   await ctx.plugin(Presets, { default: 'minimal' })
   ctx.provide('sessionQuery', { listSessions: async () => [], observeSession: vi.fn() })
-  ctx.loader.builtins['original-preview-provider'] = OfficeToPdf
+  ctx.loader.builtins['original-preview-provider'] = OfficeKit
   ctx.loader.builtins['original-preview-product'] = Runtime
   const profile = [
     { id: 'office', name: 'cordis:original-preview-provider', config: { maxConcurrentConversions: 1, maxInputBytes: 1024, maxOutputBytes: 1024 } },
@@ -176,7 +176,7 @@ describe('original Office preview public Loader entry', () => {
       await writeFile(outputPath, pdf)
       return { backend: 'native', missingFonts: [] }
     })
-    const occupied = h.ctx.officeToPdf.convert({ extension: 'docx', priority: 'foreground', source: {
+    const occupied = h.ctx.officeKit.convert({ extension: 'docx', priority: 'foreground', source: {
       key: OfficeSourceKey('independent-queue-occupant'), version: 'v1', bytes: original.length,
       read: async () => ({ bytes: original, version: 'v1' }),
     } })

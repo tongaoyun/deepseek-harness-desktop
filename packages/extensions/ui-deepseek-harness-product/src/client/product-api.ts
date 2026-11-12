@@ -6,7 +6,7 @@ import { isProductFailure, ProductError } from '@deepseek-harness/product/errors
 export interface ProductApi {
   invoke(method: string, payload?: unknown, requestId?: string, timeoutMs?: number): Promise<unknown>
   cancel(requestId: string): void
-  getSession(): Promise<{ readonly authenticated?: boolean; readonly employeeId?: string }>
+  getSession(): Promise<{ readonly authenticated?: boolean; readonly employeeId?: string; readonly displayName?: string }>
   subscribe(listener: (event: { readonly type: string; readonly payload?: unknown }) => void): () => void
 }
 interface Transport {
@@ -64,8 +64,10 @@ export function productApi(): ProductApi | undefined {
       const result = await invoke('auth.getSession')
       if (typeof result !== 'object' || result === null || !('authenticated' in result) || typeof result.authenticated !== 'boolean') throw new Error('Invalid employee session response')
       if ('employeeId' in result && result.employeeId !== undefined && typeof result.employeeId !== 'string') throw new Error('Invalid employee identity')
+      if ('displayName' in result && result.displayName !== undefined && typeof result.displayName !== 'string') throw new Error('Invalid employee display name')
       return { authenticated: result.authenticated,
-        ...'employeeId' in result && typeof result.employeeId === 'string' ? { employeeId: result.employeeId } : {} }
+        ...'employeeId' in result && typeof result.employeeId === 'string' ? { employeeId: result.employeeId } : {},
+        ...'displayName' in result && typeof result.displayName === 'string' ? { displayName: result.displayName } : {} }
     },
     subscribe: listener => transport.subscribe('product', (event) => {
       if (typeof event === 'object' && event !== null && 'type' in event && typeof event.type === 'string') listener({ type: event.type,

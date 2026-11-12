@@ -4,3 +4,17 @@ exports[`bounds a large catalog, expands full descriptions and searches tools be
 "订单能力 124只读order.tool_124完整说明 124
 需要保留的注意事项"
 `;
+
+exports[`keeps the keyboard at the newly revealed tools when all 21 capabilities are shown > Expanded tools focus 1`] = `
+{
+  "count": 21,
+  "focused": "订单能力 20只读",
+}
+`;
+
+exports[`keeps the keyboard at the newly revealed tools when all 45 capabilities are shown > Expanded tools focus 1`] = `
+{
+  "count": 45,
+  "focused": "订单能力 40只读",
+}
+`;

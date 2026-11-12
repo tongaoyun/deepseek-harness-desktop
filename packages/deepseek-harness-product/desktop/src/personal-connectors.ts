@@ -9,15 +9,17 @@ import { StdioClientTransport } from '@modelcontextprotocol/client/stdio'
 import { Server, isInitializeRequest, type ServerContext } from '@modelcontextprotocol/server'
 import { NodeStreamableHTTPServerTransport } from '@modelcontextprotocol/node'
 import { scrubbedParentEnv } from '@deepseek-ai/dsh-subprocess'
-import { ConnectorDraftSchema, type ConnectorDraft } from '@deepseek-harness/product/connector-draft'
+import { ConnectorDraftFields, ConnectorDraftSchema, connectorTargetMatches, type ConnectorDraft } from '@deepseek-harness/product/connector-draft'
 import { DeepSeekHarnessApiError, type DeepSeekHarnessApiClient } from '@deepseek-harness/product'
 import { ProductError } from '@deepseek-harness/product/errors'
 import { z } from 'zod'
+import { confirmConnectorDeletionReceipt, confirmConnectorReleaseReceipt } from './connector-receipts.ts'
 
 const CommonConfiguration = z.object({ timeoutSeconds: z.number().int().min(1).max(600).default(60),
-  arguments: z.array(z.string()), environment: z.record(z.string(), z.string()), headers: z.record(z.string(), z.string()) })
+  arguments: ConnectorDraftFields.shape.arguments,
+  environment: ConnectorDraftFields.shape.environment, headers: ConnectorDraftFields.shape.headers })
 const Configuration = z.discriminatedUnion('transport', [
-  CommonConfiguration.extend({ transport: z.literal('stdio'), command: z.string().min(1), url: z.undefined().optional() }),
+  CommonConfiguration.extend({ transport: z.literal('stdio'), command: ConnectorDraftFields.shape.command.unwrap().min(1), url: z.undefined().optional() }),
   CommonConfiguration.extend({ transport: z.literal('streamable-http'), url: z.string().min(1), command: z.undefined().optional() }),
 ])
 type Configuration = z.infer<typeof Configuration>
@@ -73,6 +75,7 @@ export class PersonalConnectors {
    * @param employee Authenticated employee ID.
    * @param signal Operation cancellation.
    * @returns Public editing fields or the committed business result, without private values.
+   * Confirmed deletions with incomplete device cleanup report a nonretryable failure.
    */
   async manage(method: string, input: Readonly<Record<string, unknown>>, api: DeepSeekHarnessApiClient,
     employee: string, signal: AbortSignal): Promise<unknown> {
@@ -99,8 +102,8 @@ export class PersonalConnectors {
       }
       if (method !== 'extensions.connector.configuration.save') throw new Error('Unsupported connector configuration operation')
       if (!this.secure.isEncryptionAvailable()) throw new Error('OS credential encryption is unavailable')
-      const values = z.object({ headers: z.record(z.string().min(1).max(200), z.string().max(4000)),
-        environment: z.record(z.string().min(1).max(200), z.string().max(4000)),
+      const values = z.object({ headers: ConnectorDraftFields.shape.headers,
+        environment: ConnectorDraftFields.shape.environment,
         timeoutSeconds: z.number().int().min(1).max(600) }).strict().parse(input.configuration)
       const { config: previous } = await this.configuration(entry, employee, signal, true)
       const requiredValues = (provided: Record<string, string>, required: Record<string, string>, saved: Record<string, string>) => {
@@ -133,11 +136,21 @@ export class PersonalConnectors {
       throw new ProductError('EXTENSION_OWNER_REQUIRED', 'Only the owner can manage a personal connector', false)
     }
     if (method === 'extensions.connector.delete') {
-      await api.request(`/api/v1/connectors/${encodeURIComponent(entry.id)}`, { method: 'DELETE', signal })
+      const receipt = await api.request(`/api/v1/connectors/${encodeURIComponent(entry.id)}`, { method: 'DELETE', signal })
+      signal.throwIfAborted()
+      confirmConnectorDeletionReceipt(receipt, entry.id)
       this.catalogCommitted?.()
-      await this.disconnectConnector(employee, entry.id)
-      await rm(this.filename(employee, entry.id, entry.version), { force: true })
-      await rm(`${this.filename(employee, entry.id, entry.version)}.pending`, { force: true })
+      const filename = this.filename(employee, entry.id, entry.version)
+      const cleanup = await Promise.allSettled([
+        this.disconnectConnector(employee, entry.id),
+        rm(filename, { force: true }),
+        rm(`${filename}.pending`, { force: true }),
+      ])
+      const failures: unknown[] = []
+      for (const result of cleanup) if (result.status === 'rejected') failures.push(result.reason)
+      if (failures.length) throw new ProductError('CONNECTOR_DELETE_CLEANUP_FAILED',
+        'Connector deletion is confirmed; device cleanup is incomplete', false,
+        [{ kind: 'connector', id: entry.id }], { cause: new AggregateError(failures, 'Deleted connector device cleanup failed') })
       return { removed: true, id: entry.id }
     }
     let config = entry.authMode === 'oauth' ? undefined : (await this.configuration(entry, employee, signal, true)).config
@@ -166,16 +179,18 @@ export class PersonalConnectors {
     if (method !== 'extensions.connector.update') throw new Error('Unsupported connector operation')
     let edited = ConnectorDraftSchema.parse(input.draft)
     if (edited.id !== entry.id || edited.version !== nextVersion) throw new Error('Connector identity is fixed')
-    const sameTarget = config && edited.transport === config.transport && (edited.url || undefined) === config.url
-      && (edited.command || undefined) === config.command && JSON.stringify(edited.arguments) === JSON.stringify(config.arguments)
-    const retained = (values: Record<string, string>, previous: Record<string, string>): Record<string, string> =>
+    const sameTarget = config && connectorTargetMatches(edited, config)
+    const previousHeaders = new Map(Object.entries(config?.headers ?? {}).map(([key, value]) => [key.toLowerCase(), value]))
+    const previousEnvironment = new Map(Object.entries(config?.environment ?? {}))
+    const retained = (values: Record<string, string>, previous: (key: string) => string | undefined): Record<string, string> =>
       Object.fromEntries(Object.entries(values).map(([key, value]) => {
         if (value !== '') return [key, value]
-        if (sameTarget && previous[key] !== undefined) return [key, previous[key]]
+        const saved = sameTarget ? previous(key) : undefined
+        if (saved !== undefined) return [key, saved]
         throw new ProductError('CONNECTOR_CONFIGURATION_REQUIRED', 'Enter private values for the new connection target', false)
       }))
-    edited = { ...edited, headers: retained(edited.headers, config?.headers ?? {}),
-      environment: retained(edited.environment, config?.environment ?? {}) }
+    edited = { ...edited, headers: retained(edited.headers, key => previousHeaders.get(key.toLowerCase())),
+      environment: retained(edited.environment, key => previousEnvironment.get(key)) }
     await this.saveConfiguration(edited, api, employee, signal)
     return { kind: 'connector', id: edited.id, version: edited.version, visibility: 'PERSONAL' }
   }
@@ -221,11 +236,13 @@ export class PersonalConnectors {
       let tools: Tool[]
       try { tools = await this.discover(client, signal, config.timeoutSeconds) } finally { await client.close() }
       if (!tools.length) throw new ProductError('CONNECTOR_DISCOVERY_FAILED', 'MCP server exposes no usable tools', false)
-      await api.request('/api/v1/connectors', { method: 'POST', signal, headers: { 'content-type': 'application/json' }, body: JSON.stringify({
+      const receipt = await api.request('/api/v1/connectors', { method: 'POST', signal, headers: { 'content-type': 'application/json' }, body: JSON.stringify({
         id: draft.id, name: draft.name, summary: draft.summary, category: draft.category, version: draft.version,
         transport: 'streamable-http', url: provider.url, command: '', arguments: [], environment: {}, headers: {},
         authMode: 'oauth', oauthProviderId: draft.oauthProviderId, toolNames: tools.map(tool => tool.name),
       }) })
+      signal.throwIfAborted()
+      confirmConnectorReleaseReceipt(receipt, { id: draft.id, version: draft.version, employeeId: employee })
       this.catalogCommitted?.()
       await this.disconnectConnector(employee, draft.id)
       return
@@ -251,14 +268,12 @@ export class PersonalConnectors {
         [{ kind: 'connector', id: draft.id }])
     }
     if (!pending) {
-      const staging = `${filename}.${randomUUID()}.tmp`
-      try {
-        await writeFile(staging, this.secure.encryptString(JSON.stringify({ employee, config, body })), { mode: 0o600, signal, flag: 'wx', flush: true })
-        await rename(staging, `${filename}.pending`)
-      } finally { await rm(staging, { force: true }) }
+      await this.writeConfiguration(`${filename}.pending`, this.secure.encryptString(JSON.stringify({ employee, config, body })), signal)
     }
     try {
-      await api.request('/api/v1/connectors', { method: 'POST', signal, headers: { 'content-type': 'application/json' }, body })
+      const receipt = await api.request('/api/v1/connectors', { method: 'POST', signal, headers: { 'content-type': 'application/json' }, body })
+      signal.throwIfAborted()
+      confirmConnectorReleaseReceipt(receipt, { id: draft.id, version: draft.version, employeeId: employee })
     } catch (error) {
       signal.throwIfAborted()
       if (error instanceof DeepSeekHarnessApiError && !error.retryable && error.status < 500 && error.status !== 408) {
@@ -489,13 +504,21 @@ export class PersonalConnectors {
       && JSON.stringify(Object.keys(entry.environment).sort()) === JSON.stringify(Object.keys(pending.config.environment).sort())
       && JSON.stringify(entry.tools.map(tool => tool.name).sort()) === JSON.stringify([...publicFields.toolNames].sort())
   }
-  private async finalize(filename: string, config: Configuration): Promise<void> {
+  /** Flush encrypted bytes before replacement; failed staging cleanup retains both failure causes. */
+  private async writeConfiguration(filename: string, encrypted: Buffer, signal?: AbortSignal): Promise<void> {
     const staging = `${filename}.${randomUUID()}.tmp`
     try {
-      await writeFile(staging, this.secure.encryptString(JSON.stringify(config)), { mode: 0o600, flag: 'wx', flush: true })
+      await writeFile(staging, encrypted, { mode: 0o600, signal, flag: 'wx', flush: true })
       await rename(staging, filename)
-      await rm(`${filename}.pending`, { force: true })
-    } finally { await rm(staging, { force: true }) }
+    } catch (error) {
+      try { await rm(staging, { force: true }) }
+      catch (cleanupError) { throw new AggregateError([error, cleanupError], 'Encrypted connector settings cleanup failed', { cause: error }) }
+      throw error
+    }
+  }
+  private async finalize(filename: string, config: Configuration): Promise<void> {
+    await this.writeConfiguration(filename, this.secure.encryptString(JSON.stringify(config)))
+    await rm(`${filename}.pending`, { force: true })
   }
   private connectorSignal(employee: string, id: string): AbortSignal {
     this.lifetime.signal.throwIfAborted()

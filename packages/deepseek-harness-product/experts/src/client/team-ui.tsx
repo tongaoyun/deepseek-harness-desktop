@@ -1,14 +1,15 @@
 import type { RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
 import type { ExpertClientState } from './client-state.ts'
+import { customCopyName } from './copy-name.ts'
 import { deepEqualJson } from '@deepseek-ai/dsh-util-values'
-import { StateDot } from '@deepseek-ai/dsh-client-ui-primitives';
+import { StateDot, focusWithoutRing } from '@deepseek-ai/dsh-client-ui-primitives';
 import { localizedExperts, useTeamLocale } from './team-locale.ts';
 import { useTeamDirectoryView } from './team-directory.ts';
-import { LibraryCard } from './library-ui.tsx';
+import { LibraryCard, useLibraryRemovalFocus, useLibraryActionFocus } from './library-ui.tsx';
 import { Button, Input } from './plugin-ui.ts';
 import { CategorySelect } from './category-select.ts';
 import React from 'react';
-import { effectiveCoordinator, type ExpertTeam, type TeamInput, type TeamSnapshot, } from '../team-contract.ts';
+import { effectiveCoordinator, teamHasPinnedMembers, type ExpertTeam, type TeamInput, type TeamSnapshot, } from '../team-contract.ts';
 import type { ExpertSummary } from '../expert-contract.ts';
 import type { AgencyCatalogRemote, AgencyTeamsRemote } from './remote.ts';
 import { TeamEditor } from './team-editor.tsx';
@@ -25,25 +26,48 @@ export async function unwrap<T>(promise: Promise<RemoteResult<T>>): Promise<T> {
         throw result.error;
     return result.value;
 }
+/** 团队详情原位更新；聚焦示例消失后返回标题，不滚动或抢占其他控件。 */
 export function TeamDetails(props: {
     team: ExpertTeam;
     experts: readonly ExpertSummary[];
+    busy?: boolean;
+    selecting?: { example?: string };
+    error?: string;
+    refreshing?: boolean;
+    refreshLabel?: string;
+    onRefresh?(): void;
     close(): void;
     onSelect?(example?: string): void;
     onCopy?(): void;
     onEdit?(): void;
     onDelete?(): void;
+    /** 父目录在详情移除前捕获其持有的焦点，提交后按当前页面恢复。 */
+    captureCloseFocus?(): void;
 }) {
     const { locale, tx } = useTeamLocale();
 
     props = { ...props, team: props.team, experts: localizedExperts(props.experts, locale) };
     const [prompt, setPrompt] = React.useState(false);
-    return (<TeamDialog title={tx("{0}详情", [props.team.name])} close={props.close} className="agt-detail">
+    const title = React.useRef<HTMLHeadingElement>(null);
+    const captureCloseFocus = React.useRef(props.captureCloseFocus);
+    captureCloseFocus.current = props.captureCloseFocus;
+    React.useLayoutEffect(() => () => {
+        const dialog = title.current?.closest('[role="dialog"]');
+        if (dialog?.contains(dialog.ownerDocument.activeElement)) captureCloseFocus.current?.();
+    }, []);
+    const retry = useLibraryRemovalFocus(() => title.current);
+    const [focusedExample, setFocusedExample] = React.useState<string | null>(null);
+    const exampleFocus = useLibraryRemovalFocus(() => title.current);
+    return (<TeamDialog title={tx("{0}详情", [props.team.name])} close={props.close} className="agt-detail"
+      footer={props.error ? <><p className="aag-error" role="alert">{props.error}</p>
+        {props.onRefresh && <Button ref={retry} aria-disabled={props.busy || props.refreshing || false} aria-busy={props.refreshing}
+          className={props.busy || props.refreshing ? 'product-control-pending' : undefined}
+          onClick={() => { if (!props.busy && !props.refreshing) props.onRefresh?.() }}>{props.refreshLabel ?? tx("刷新重试")}</Button>}</> : undefined}>
       <header className="agt-detail-head">
         <TeamAvatars team={props.team} experts={props.experts} large/>
         <div>
           <div className="agt-name-line">
-            <h2>{props.team.name}</h2>
+            <h2 ref={title} tabIndex={-1}>{props.team.name}</h2>
             {props.team.tags.length > 0 && (<div className="agt-tags">
               {props.team.tags.map((tag) => (<span className="agt-tag" key={tag}>
                   {tag}
@@ -54,11 +78,12 @@ export function TeamDetails(props: {
             {tx(props.team.company ? "市场专家团" : "我的专家团")} ·{' '}
             {props.team.members.length}{tx("位专家")}</p>
           <div className="agt-row">
-            {props.onSelect && (<Button variant="primary" onClick={() => props.onSelect?.()}>
+            {props.onSelect && (<Button variant="primary" aria-disabled={props.busy} className={props.busy ? 'product-control-pending' : undefined}
+              aria-busy={props.selecting !== undefined && props.selecting.example === undefined} onClick={() => { if (!props.busy) props.onSelect?.() }}>
                 <IconSend size={16}/>{tx("召唤专家团")}</Button>)}
-            {props.onCopy && (<Button onClick={props.onCopy}>
+            {props.onCopy && (<Button aria-disabled={props.busy} className={props.busy ? 'product-control-pending' : undefined} onClick={() => { if (!props.busy) props.onCopy?.() }}>
                 <IconCopy size={16}/>{tx("复制并自定义")}</Button>)}
-            {props.onEdit && (<Button onClick={props.onEdit}>{tx("编辑专家团")}</Button>)}
+            {props.onEdit && (<Button aria-disabled={props.busy} className={props.busy ? 'product-control-pending' : undefined} onClick={() => { if (!props.busy) props.onEdit?.() }}>{tx("编辑专家团")}</Button>)}
           </div>
         </div>
       </header>
@@ -67,7 +92,10 @@ export function TeamDetails(props: {
         <h3>
           <IconBulb />{tx("团队帮你做")}</h3>
         <div className="agt-examples">
-          {props.team.examples.map((example, i) => (<Button key={i} disabled={!props.onSelect} style={{ display: 'flex', width: '100%', height: 'auto', whiteSpace: 'normal', justifyContent: 'space-between' }} onClick={() => props.onSelect?.(example)}>
+          {[...new Set(props.team.examples)].map((example) => (<Button key={example} ref={example === focusedExample ? exampleFocus : undefined}
+            onFocus={() => setFocusedExample(example)} disabled={!props.onSelect} aria-disabled={props.busy || !props.onSelect}
+            className={props.busy && props.onSelect ? 'product-control-pending' : undefined} aria-busy={props.selecting?.example === example}
+            style={{ display: 'flex', width: '100%', height: 'auto', whiteSpace: 'normal', justifyContent: 'space-between' }} onClick={() => { if (!props.busy) props.onSelect?.(example) }}>
               <span>“{example}”</span>
               <IconSend size={16}/>
             </Button>))}
@@ -98,7 +126,8 @@ export function TeamDetails(props: {
         <Button style={{ marginTop: 8 }} onClick={() => setPrompt(!prompt)} aria-expanded={prompt}>{tx("查看主理人提示词")}</Button>
         {prompt && (<Input.TextArea className="agt-read-prompt" readOnly aria-label={tx("主理人提示词正文")} value={effectiveCoordinator(props.team, locale)} style={{ height: 280, resize: 'none', overflow: 'auto' }}/>)}
       </section>
-      {props.onDelete && (<Button danger style={{ margin: '0 16px 16px', alignSelf: 'flex-start' }} onClick={props.onDelete}>{tx("删除专家团")}</Button>)}
+      {props.onDelete && (<Button danger aria-disabled={props.busy} className={props.busy ? 'product-control-pending' : undefined}
+        style={{ margin: '0 16px 16px', alignSelf: 'flex-start' }} onClick={() => { if (!props.busy) props.onDelete?.() }}>{tx("删除专家团")}</Button>)}
     </TeamDialog>);
 }
 export function TeamsPanel(props: {
@@ -116,9 +145,18 @@ export function TeamsPanel(props: {
 }) {
     const { locale, tx, error, setError, directory, snapshot, experts } = useTeamDirectoryView({ cache: props.cache, remote: props.remote, fallback: "加载失败。" });
     const [query, setQuery] = React.useState('');
+    const searchField = React.useRef<HTMLDivElement>(null);
+    const retry = useLibraryRemovalFocus(() => searchField.current?.querySelector('input'));
     const [status, setStatus] = React.useState('');
     const [notice, setNotice] = React.useState('');
-    const [busy, setBusy] = React.useState(false);
+    const operation = React.useRef<AbortSignal | null>(null);
+    const [pending, setPending] = React.useState<{ signal: AbortSignal; teamId: string; action: 'enable' | 'delete' | 'select'; example?: string } | null>(null);
+    const busy = pending !== null && !pending.signal.aborted;
+    const directoryArea = React.useRef<HTMLElement>(null);
+    const preserveActionFocus = useLibraryActionFocus(busy, props.active === false ? '' : props.source ?? '',
+        directoryArea, () => searchField.current?.querySelector('input'));
+    const preserveCloseFocus = useLibraryActionFocus(false, props.active === false ? '' : props.source ?? '',
+        directoryArea, () => searchField.current?.querySelector('input'));
     const [detailsId, setDetailsId] = React.useState<string | null>(null);
     const details = snapshot?.teams.find(team => team.id === detailsId) ?? null;
     const [editor, setEditor] = React.useState<{
@@ -126,6 +164,7 @@ export function TeamsPanel(props: {
         enabled: boolean;
         revision: number;
     } | null>(null);
+    const closeEditor = () => { preserveCloseFocus(); setEditor(null); };
     const [confirm, setConfirm] = React.useState<{
         team: ExpertTeam;
         action: 'enable' | 'delete' | 'select';
@@ -133,7 +172,7 @@ export function TeamsPanel(props: {
         snapshot: TeamSnapshot;
     } | null>(null);
     React.useEffect(() => {
-        setBusy(false);
+        setPending(null);
         setError('');
         setNotice('');
         setDetailsId(null);
@@ -150,11 +189,13 @@ export function TeamsPanel(props: {
     React.useEffect(() => {
         if (!props.active) return;
         let live = true;
+        const signal = directory.getSignal();
+        if (!signal || signal.aborted) return;
         void props.cache.catalog.refresh(props.source === 'company').then(() => {
-            if (live) return directory.refresh();
-        }).catch(cause => { if (live) setError(cause instanceof Error ? cause.message : tx("加载失败。")); });
+            if (live && !signal.aborted) return directory.refresh();
+        }).catch(cause => { if (live && !signal.aborted) setError(cause instanceof Error ? cause.message : "加载失败。"); });
         return () => { live = false; };
-    }, [props.active, props.source, props.remote, props.cache, directory.refresh]);
+    }, [props.active, props.source, props.remote, props.cache, directory.refresh, directory.getSignal]);
     const accept = async (value: TeamSnapshot, started: TeamSnapshot | null, signal: AbortSignal) => {
         const next = await props.cache.teams.acceptMutation(value, started);
         signal.throwIfAborted();
@@ -162,19 +203,23 @@ export function TeamsPanel(props: {
     };
     const change = async (team: ExpertTeam, action: 'enable' | 'delete' | 'select', example?: string, reviewed?: TeamSnapshot) => {
         const signal = directory.getSignal();
-        if (busy || !snapshot || !signal || signal.aborted)
+        if ((operation.current && !operation.current.aborted) || !snapshot || !signal || signal.aborted)
             return;
         if (reviewed && (reviewed.revision !== snapshot.revision
             || !deepEqualJson(team, snapshot.teams.find(value => value.id === team.id) ?? null)
             || reviewed.enabledTeams.includes(team.id) !== snapshot.enabledTeams.includes(team.id)
             || team.members.some(member => reviewed.enabledExperts.includes(member.expertSlug) !== snapshot.enabledExperts.includes(member.expertSlug)))) {
             setConfirm(null);
-            setError(tx("配置已更新，请读取最新内容后重试。"));
+            setError("配置已更新，请读取最新内容后重试。");
             return;
         }
         const revision = (reviewed ?? snapshot).revision;
         const enabling = action !== 'delete' &&
             (action === 'select' || !snapshot.enabledTeams.includes(team.id));
+        if (enabling && !teamHasPinnedMembers(team)) {
+            setError("团队成员需要重新选择并保存。");
+            return;
+        }
         const missing = team.members.filter((m) => !snapshot.enabledExperts.includes(m.expertSlug));
         if (!reviewed && (action === 'delete' || (enabling && missing.length))) {
             setConfirm({ team, action, example, snapshot });
@@ -182,13 +227,15 @@ export function TeamsPanel(props: {
             return;
         }
         const started = props.cache.teams.getSnapshot();
-        setBusy(true);
-        setError('');
+        if (action === 'enable') preserveActionFocus();
+        operation.current = signal;
+        setPending({ signal, teamId: team.id, action, example });
         try {
             const insert = action === 'select' ? props.prepareSelect?.() ?? props.onSelect : undefined;
             if (action === 'delete') {
                 const next = await unwrap(props.remote.deleteTeam(team.id, revision, signal));
                 if (signal.aborted) return;
+                preserveActionFocus();
                 setConfirm(null);
                 setDetailsId(null);
                 setNotice(tx("专家团已删除，成员与历史会话保留。"));
@@ -215,20 +262,22 @@ export function TeamsPanel(props: {
                     const inserted = await insert?.(selected, example);
                     if (signal.aborted) return;
                     if (!inserted) {
-                        setError(tx("团队已启用，但无法写入当前聊天草稿。请关闭设置后，在聊天的专家团入口选择。"));
+                        setError("团队已启用，但无法写入当前聊天草稿。请关闭设置后，在聊天的专家团入口选择。");
                         return;
                     }
                     setDetailsId(null);
-                    setNotice(tx("专家团已加入草稿，确认需求后发送。"));
+                    setNotice("专家团已加入草稿，确认需求后发送。");
                 }
             }
+            setError('');
             setConfirm(null);
         }
         catch (cause) {
-            if (!signal.aborted) setError(cause instanceof Error ? tx(cause.message) : tx("操作失败。"));
+            if (!signal.aborted) setError(cause instanceof Error ? cause.message : "操作失败。");
         }
         finally {
-            if (!signal.aborted) setBusy(false);
+            if (operation.current === signal) operation.current = null;
+            if (!signal.aborted) setPending(null);
         }
     };
     const copy = (team: ExpertTeam) => {
@@ -237,7 +286,10 @@ export function TeamsPanel(props: {
         setEditor({
             value: {
                 ...structuredClone(value),
-                name: tx("{0}副本", [team.name]).slice(0, 40),
+                members: value.members.map(member => ({ ...member,
+                    expertSlug: experts.find(expert => expert.slug === member.expertSlug)?.packageSlug ?? member.expertSlug,
+                })),
+                name: customCopyName(team.name, tx("{0}副本", ['']), snapshot!.teams.map(team => team.name)),
             },
             enabled: false,
             revision: snapshot!.revision,
@@ -253,7 +305,7 @@ export function TeamsPanel(props: {
         enabled: snapshot!.enabledTeams.includes(team.id),
         revision: snapshot!.revision,
     });
-    const panel = (<section className="aag-section aag-team-library" id="aag-team-source-panel">
+    const panel = (<section ref={directoryArea} className="aag-section aag-team-library" id="aag-team-source-panel">
       {!props.sharedHeader && <div className="aag-toolbar">
         <div className="aag-title-row">
           {!props.sharedHeader && <h2 className="aag-title">{props.title ?? tx("专家团")}</h2>}
@@ -274,34 +326,35 @@ export function TeamsPanel(props: {
         ]}/>
         </div>
         <div className="aag-field aag-field-search">
-          <div className="aag-search-wrap">
+          <div ref={searchField} className="aag-search-wrap">
             <Input id="aag-team-search" className="aag-search" aria-label={tx("搜索专家团")} placeholder={tx("搜索团队、用途或成员")} value={query} autoComplete="off" spellCheck={false} icon={<IconSearch size={16}/>} onChange={(event) => setQuery(event.target.value)}/>
           </div>
         </div>
         {props.startCreation && <div className="aag-filter-actions">
-          <Button variant="primary" size="sm" disabled={busy} icon={<IconPlus size={16} aria-hidden="true" />} onClick={props.startCreation}>{tx('通过对话创建专家团')}</Button>
+          <Button variant="primary" size="sm" icon={<IconPlus size={16} aria-hidden="true" />} onClick={props.startCreation}>{tx('通过对话创建专家团')}</Button>
         </div>}
       </div>
-      {error && (<div className="aag-error" role="alert">
+      {error && !details && !confirm && (<div className="aag-error" role="alert">
           {error}
-          <button type="button" onClick={() => void directory.refresh()}>{tx("刷新重试")}</button>
+          <Button ref={retry} aria-disabled={directory.refreshing} aria-busy={directory.refreshing}
+            className={directory.refreshing ? 'product-control-pending' : undefined} onClick={() => void directory.refresh()}>{tx("刷新重试")}</Button>
         </div>)}
       {notice && (<p role="status" className="aag-custom-notice">
-          {notice}
+          {tx(notice)}
         </p>)}
-      {!snapshot && !error && <div role="status" aria-label={tx("正在加载专家团…")} className="aag-read-loading"><StateDot state="ongoing" size={14} /></div>}
+      {!snapshot && !error && <div role="status" aria-label={tx("正在加载专家团…")} className="product-capability-pending"><StateDot state="ongoing" size={14} className="product-read-indicator" /></div>}
       <div className="aag-expert-grid aag-team-grid">
         {filtered.map((team) => {
             const issue = teamIssue(team, experts, snapshot!.enabledExperts);
             const enabled = snapshot!.enabledTeams.includes(team.id);
             return (<LibraryCard key={team.id} testId="team-card" name={team.name} avatar={<div className="aag-team-avatar">
                   <TeamAvatars team={team} experts={experts}/>
-                </div>} metadata={tx("{0} 位专家", [team.members.length])} description={enabled && issue
+                </div>} metadata={tx("{0} 位专家", [team.members.length])} description={(enabled || !teamHasPinnedMembers(team)) && issue
                     ? `${team.description} ${tx(issue)}`
-                    : team.description} enabled={enabled} disabled={busy} enabledLabel={tx("已启用")} disabledLabel={tx("已停用")} toggle={() => void change(team, 'enable')} moreItems={[
-                    ...(team.company ? [{ id: 'copy', label: tx("复制并自定义"), shortLabel: tx("复制"), disabled: busy, onSelect: () => copy(team) }] : [
-                      { id: 'edit', label: tx("编辑专家团"), shortLabel: tx("编辑"), icon: <IconCopy size={16} />, disabled: busy, onSelect: () => edit(team) },
-                      ...('dshDesktop' in globalThis ? [{ id: 'submit', label: tx("提交发布"), shortLabel: tx("提交"), disabled: busy, onSelect: () => {
+                    : team.description} enabled={enabled} pending={busy} enabledLabel={tx("已启用")} disabledLabel={tx("已停用")} toggle={() => void change(team, 'enable')} moreItems={[
+                    ...(team.company ? [{ id: 'copy', label: tx("复制并自定义"), shortLabel: tx("复制"), pending: busy, onSelect: () => copy(team) }] : [
+                      { id: 'edit', label: tx("编辑专家团"), shortLabel: tx("编辑"), icon: <IconCopy size={16} />, pending: busy, onSelect: () => edit(team) },
+                      ...('dshDesktop' in globalThis ? [{ id: 'submit', label: tx("提交发布"), shortLabel: tx("提交"), pending: busy, onSelect: () => {
                         document.dispatchEvent(new CustomEvent('dsh:company-content-submit', { cancelable: true, detail: {
                           name: team.name, prepare: async (signal: AbortSignal) => {
                             signal.throwIfAborted();
@@ -310,7 +363,7 @@ export function TeamsPanel(props: {
                           },
                         } }));
                       } }] : []),
-                      { id: 'delete', label: tx("删除专家团"), shortLabel: tx("删除"), icon: <IconTrash size={16} />, danger: true, disabled: busy, onSelect: () => void change(team, 'delete') },
+                      { id: 'delete', label: tx("删除专家团"), shortLabel: tx("删除"), icon: <IconTrash size={16} />, danger: true, pending: busy, onSelect: () => void change(team, 'delete') },
                     ]),
                 ]} actions={<>
                   <button type="button" className="aag-card-action" title={tx("查看详情")} aria-label={tx("查看详情")} aria-haspopup="dialog" onClick={() => setDetailsId(team.id)}>
@@ -318,16 +371,22 @@ export function TeamsPanel(props: {
                 </>}/>);
         })}
       </div>{' '}
-      {snapshot && !filtered.length && (<div className="aag-empty">
+      {snapshot && !filtered.length && (<div className="product-capability-empty">
           <IconUsers size={40}/>
           <h3>{tx("没有找到专家团")}</h3>
           <p>{tx(props.source === 'company' ? "审核发布后的专家团会展示在这里。" : "换个关键词，或创建自己的专家团。")}</p>
           {(query || status) && <Button onClick={() => {
                 setQuery('');
                 setStatus('');
+                const search = searchField.current?.querySelector('input');
+                if (search) focusWithoutRing(search);
             }}>{tx("清除筛选")}</Button>}
         </div>)}
-      {details && (<TeamDetails team={details} experts={experts} close={() => setDetailsId(null)} onCopy={() => copy(details)} onSelect={(example) => void change(details, 'select', example)} onEdit={details.company ? undefined : () => {
+      {details && (<TeamDetails team={details} experts={experts} busy={busy} error={confirm ? undefined : error} captureCloseFocus={preserveCloseFocus}
+        refreshing={directory.refreshing} onRefresh={() => void directory.refresh()}
+        selecting={busy && pending.teamId === details.id && pending.action === 'select' ? { example: pending.example } : undefined}
+        close={() => { if (!operation.current || operation.current.aborted) setDetailsId(null) }}
+        onCopy={() => copy(details)} onSelect={(example) => void change(details, 'select', example)} onEdit={details.company ? undefined : () => {
                     setEditor({
                         value: details,
                         enabled: snapshot!.enabledTeams.includes(details.id),
@@ -335,7 +394,7 @@ export function TeamsPanel(props: {
                     });
                     setDetailsId(null);
                 }} onDelete={details.company ? undefined : () => void change(details, 'delete')}/>)}
-      {editor && (<TeamEditor initial={editor.value} experts={experts} enabled={editor.enabled} enabledExperts={snapshot?.enabledExperts ?? []} close={() => setEditor(null)} refresh={async () => {
+      {editor && (<TeamEditor initial={editor.value} experts={experts} enabled={editor.enabled} enabledExperts={snapshot?.enabledExperts ?? []} signal={directory.getSignal()} close={closeEditor} refresh={async () => {
                 const signal = directory.getSignal();
                 if (!signal) throw new DOMException('Expert panel is unavailable', 'AbortError');
                 signal.throwIfAborted();
@@ -353,20 +412,22 @@ export function TeamsPanel(props: {
                 const started = props.cache.teams.getSnapshot();
                 const next = await unwrap(props.remote.saveTeam(value, enabled, revision ?? editor.revision, signal));
                 signal.throwIfAborted();
-                setEditor(null);
-                setNotice(tx("专家团配置已保存。"));
-                props.onSaved?.();
                 try {
                     await accept(next, started, signal);
                 } catch (cause) {
-                    if (!signal.aborted) setError(cause instanceof Error ? tx(cause.message) : tx("加载失败。"));
+                    if (!signal.aborted) setError(cause instanceof Error ? cause.message : "加载失败。");
                 }
+                if (signal.aborted) return;
+                closeEditor();
+                setNotice(tx("专家团配置已保存。"));
+                props.onSaved?.();
             }}/>)}
       {confirm && (<TeamConfirm title={confirm.action === 'delete' ? tx("删除专家团？") : tx("启用团队成员")} description={confirm.action === 'delete'
                 ? tx("删除“{0}”的配置，保留成员专家和历史会话。", [confirm.team.name]) : tx("同时启用：{0}。停用团队时不会停用成员。", [confirm.team.members
                     .filter((m) => !snapshot!.enabledExperts.includes(m.expertSlug))
                     .map((m) => experts.find((e) => e.slug === m.expertSlug)?.name ?? tx("失效成员"))
-                    .join(locale === 'en' ? ', ' : '、')])} label={confirm.action === 'delete' ? tx("确认删除") : tx("启用团队及所需成员")} danger={confirm.action === 'delete'} busy={busy} error={error} onCancel={() => setConfirm(null)} onConfirm={() => {
+                    .join(locale === 'en' ? ', ' : '、')])} label={confirm.action === 'delete' ? tx("确认删除") : tx("启用团队及所需成员")} danger={confirm.action === 'delete'} busy={busy} error={error}
+        onCancel={() => { if (!operation.current || operation.current.aborted) setConfirm(null) }} onConfirm={() => {
                 const current = confirm;
                 void change(current.team, current.action, current.example, current.snapshot);
             }} />)}

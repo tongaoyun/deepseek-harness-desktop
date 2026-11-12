@@ -15,12 +15,15 @@ import { Config, SUMMON_EXPERTS_CONCURRENCY, SUMMON_EXPERTS_MAX, SUMMON_TASK_MAX
 import AgencyAgentsRemote from './remote.ts'
 import { AGENCY_AGENTS_DESCRIPTORS } from './remote-contract.ts'
 import { expertConflict } from './expert-contract.ts'
-import { buildExpertMentionLexicon, buildExpertReference, CARD_SETTINGS_CSS, compareExpertName, COMPOSER_CSS, EXPERT_AVATAR_POOL_INDEXES, expertAvatarIndex, expertAvatarIndexForDivision, expertDivisionFilterValues, expertMentionFromReference, filterExperts, formatExpertMention, formatExpertMentionInsertion, inject as clientInject, inputTriggerCandidateName, inputTriggerSourceId, inputTriggerSourceName, insertExpertReference, insertSelectedExpert, keepComposerFocus, matchExpertQuery, normalizeExpertQuery, resolveExpertMenuPosition, resolveReferenceInsertionTarget, resolveTargetSessionId, SETTINGS_CSS, sortExpertsByEnabled, sortExpertsByOrder, writeErrorKey, writeErrorMessage } from './client/index.ts'
+import { buildExpertMentionLexicon, buildExpertReference, CARD_SETTINGS_CSS, compareExpertName, COMPOSER_CSS, EXPERT_AVATAR_POOL_INDEXES, expertAvatarIndex, expertAvatarIndexForDivision, expertDivisionFilterValues, expertMentionFromReference, filterExperts, formatExpertMention, formatExpertMentionInsertion, inject as clientInject, inputTriggerCandidateName, inputTriggerSourceId, inputTriggerSourceName, insertExpertReference, insertSelectedExpert, keepComposerFocus, matchExpertQuery, normalizeExpertQuery, resolveReferenceInsertionTarget, resolveTargetSessionId, SETTINGS_CSS, sortExpertsByEnabled, sortExpertsByOrder, writeErrorKey, writeErrorMessage } from './client/index.ts'
 import { en, zh, type AgencyKey } from './client/locales.ts'
-import { ROSTER } from './fixtures/roster.ts'
 import { enHost, formatHost, matchDivision, readHostLocale, renderExpertList, renderSummonResults, resolveHostLocale, zhHost } from './i18n.ts'
 import { TYPERT_REMOTE } from './client/remote.ts'
 import { readAgencySettings, expertSettingsNamespace } from './settings.ts'
+
+const codeReviewer = { slug: 'engineering-code-reviewer', name: '代码审查工程师', nameEn: 'Code Reviewer',
+  emoji: '🔍', division: 'engineering', divisionZh: '工程', divisionEn: 'Engineering',
+  description: '审查代码与测试。', descriptionEn: 'Review code and tests.', custom: false }
 
 async function mkdtemp(prefix: string): Promise<string> {
   const parent = await rawMkdtemp(prefix), root = join(parent, 'experts')
@@ -303,7 +306,7 @@ describe('summon_expert', () => {
       label: 'Reviewer',
       signal: controller.signal,
       delivery: 'caller',
-      request: { prompt: [{ type: 'text', text: 'review' }] },
+      prompt: [{ type: 'text', text: 'review' }],
     })
     expect(disposed).toBe(true)
   })
@@ -377,9 +380,9 @@ describe('summon_expert', () => {
       tools: { register: (tool: unknown) => tools.push(tool) },
       subagents: {
         getProvider: () => ({ capabilities: { agentOptions: true, agentPreset: true, outputSchema: true, depthLimit: true } }),
-        startActivation: async (spec: { childId: string; request: Record<string, unknown>; label: string }) => {
+        startActivation: async (spec: { childId: string; label: string }) => {
           probe.create(spec)
-          startOptions = { ...spec.request, label: spec.label }
+          startOptions = { ...spec, label: spec.label }
           return {
             result: Promise.resolve({ output: [{ type: 'text', text: 'done' }], stopReason: 'completed' }),
             dispose: async () => undefined,
@@ -416,9 +419,9 @@ describe('summon_expert', () => {
       tools: { register: (tool: unknown) => tools.push(tool) },
       subagents: {
         getProvider: () => ({ capabilities: { agentOptions: true, agentPreset: true, outputSchema: true, depthLimit: true } }),
-        startActivation: async (spec: { childId: string; request: Record<string, unknown>; label: string }) => {
+        startActivation: async (spec: { childId: string; label: string }) => {
           probe.create(spec)
-          startOptions = { ...spec.request, label: spec.label }
+          startOptions = { ...spec, label: spec.label }
           return {
             result: Promise.resolve({ output: [{ type: 'text', text: 'done' }], stopReason: 'completed' }),
             dispose: async () => undefined,
@@ -932,9 +935,21 @@ describe('filterExperts', () => {
   })
 
   it('分类与检索同时生效，无匹配时返回空列表', () => {
-    expect(filterExperts(experts, { division: 'academic' }).map((item) => item.slug)).toEqual(['academic-historian'])
-    expect(filterExperts(experts, { division: 'academic', query: 'review' })).toEqual([])
+    expect(filterExperts(experts, { division: 'specialized' }).map((item) => item.slug)).toEqual(['academic-historian'])
+    expect(filterExperts(experts, { division: 'specialized', query: 'review' })).toEqual([])
     expect(filterExperts(experts, { division: 'engineering', query: 'CODE' }).map((item) => item.slug)).toEqual(['engineering-code-reviewer'])
+  })
+
+  it('导入的中英文分类使用预设筛选，未知分类可按其他检索', () => {
+    const imported = [
+      { ...experts[0], slug: 'zh-category', division: '研发与集成' },
+      { ...experts[0], slug: 'en-category', division: 'Engineering & Integration' },
+      { ...experts[1], slug: 'unknown-category', division: 'shared' },
+      experts[1],
+    ]
+    expect(filterExperts(imported, { division: 'engineering' }).map(item => item.slug)).toEqual(['zh-category', 'en-category'])
+    expect(filterExperts(imported, { division: 'specialized', query: '其他' }).map(item => item.slug)).toEqual(['unknown-category', 'academic-historian'])
+    expect(filterExperts(imported, { query: 'Other' }).map(item => item.slug)).toEqual(['unknown-category', 'academic-historian'])
   })
 
   it('已启用专家排在前面，且两组内部保持原有顺序', () => {
@@ -997,9 +1012,9 @@ describe('expertAvatarIndex', () => {
   })
 
   it('外部专家的头像保持稳定且来自可用头像池', () => {
-    for (const expert of ROSTER) {
-      const index = expertAvatarIndexForDivision(expert.slug, expert.division)
-      expect(index).toBe(expertAvatarIndexForDivision(expert.slug, expert.division))
+    for (const division of ['engineering', 'orders', 'new-custom-division', '']) {
+      const index = expertAvatarIndexForDivision('custom-expert', division)
+      expect(index).toBe(expertAvatarIndexForDivision('custom-expert', division))
       expect(Object.values(EXPERT_AVATAR_POOL_INDEXES).flat()).toContain(index)
     }
   })
@@ -1086,7 +1101,7 @@ describe('@ 菜单分组标题本地化', () => {
   it('按当前语言返回分区显示名，未知分区回退原值', () => {
     expect(inputTriggerSourceName('product', 'zh')).toBe('产品与设计')
     expect(inputTriggerSourceName('product', 'en')).toBe('Product & Design')
-    expect(inputTriggerSourceName('custom', 'zh')).toBe('custom')
+    expect(inputTriggerSourceName('custom', 'zh')).toBe('其他')
   })
 
   it('候选名称只保留专家名，选中时也不带回 emoji', () => {
@@ -1218,7 +1233,7 @@ describe('@ 菜单分组标题本地化', () => {
       return true
     }
 
-    const experts = [{ ...ROSTER.find(e => e.slug === 'engineering-code-reviewer')!, name: '代码审查工程师', custom: false, divisionZh: '工程', divisionEn: 'Engineering' }]
+    const experts = [codeReviewer]
     expect(insertSelectedExpert('engineering-code-reviewer', 'zh', insertReference, experts)).toBe(true)
     expect(calls).toHaveLength(1)
     expect(insertSelectedExpert('missing-expert', 'zh', insertReference, experts)).toBe(false)
@@ -1227,8 +1242,8 @@ describe('@ 菜单分组标题本地化', () => {
   })
 
   it('历史 chip 的专家已移除时不抛错、不泄露内部 slug', () => {
-    expect(expertMentionFromReference('engineering-code-reviewer', 'zh', [{ ...ROSTER.find(e => e.slug === 'engineering-code-reviewer')!, name: '代码审查工程师', custom: false, divisionZh: '工程', divisionEn: 'Engineering' }])).toBe('@代码审查工程师\u00A0')
-    expect(expertMentionFromReference('engineering-code-reviewer', 'en', [{ ...ROSTER.find(e => e.slug === 'engineering-code-reviewer')!, name: '代码审查工程师', custom: false, divisionZh: '工程', divisionEn: 'Engineering' }])).toBe('@Code Reviewer\u00A0')
+    expect(expertMentionFromReference('engineering-code-reviewer', 'zh', [codeReviewer])).toBe('@代码审查工程师\u00A0')
+    expect(expertMentionFromReference('engineering-code-reviewer', 'en', [codeReviewer])).toBe('@Code Reviewer\u00A0')
     expect(expertMentionFromReference('missing-expert', 'zh')).toBe('@已移除专家（请重新选择）\u00A0')
     expect(expertMentionFromReference('missing-expert', 'en')).toBe('@Removed expert (please reselect)\u00A0')
   })
@@ -1262,14 +1277,6 @@ describe('@ 菜单分组标题本地化', () => {
     expect(prevented).toBe(true)
   })
 
-  it('专家菜单按触发按钮实际可用空间展开并保持在视口内', () => {
-    expect(resolveExpertMenuPosition({ top: 640, bottom: 668 } as DOMRect, 694))
-      .toEqual({ placement: 'above', maxHeight: 624 })
-    expect(resolveExpertMenuPosition({ top: 56, bottom: 84 } as DOMRect, 694))
-      .toEqual({ placement: 'below', maxHeight: 594 })
-    expect(resolveExpertMenuPosition({ top: 12, bottom: 40 } as DOMRect, 52))
-      .toEqual({ placement: 'above', maxHeight: 0 })
-  })
 })
 
 describe('list_experts 语言切换', () => {

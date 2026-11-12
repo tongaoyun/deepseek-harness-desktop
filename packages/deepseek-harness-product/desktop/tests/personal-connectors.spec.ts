@@ -8,6 +8,7 @@ import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/cli
 import { DeepSeekHarnessApiClient } from '@deepseek-harness/product'
 import { ConnectorDraftSchema } from '@deepseek-harness/product/connector-draft'
 import { PersonalConnectors } from '../src/personal-connectors.ts'
+import { savedConnectorResponse } from './connector-receipt-fixture.ts'
 import { ConnectorProxy } from '../src/connector-proxy.ts'
 
 it('rejects query-bearing MCP endpoints at the shared draft boundary', () => {
@@ -67,7 +68,7 @@ it('discovers real MCP annotations without business calls, encrypts secrets, iso
       saved.push(value)
       if (value.id === 'my-orders') storedEntry = { ...storedEntry, ...value, tools: (value.toolNames as string[]).map(name => ({ name })) }
       if (lostReceipt) throw new Error('commit receipt lost')
-      return Response.json({ success: true, data: {} })
+      return savedConnectorResponse(init, owner)
     }) })
   const signal = new AbortController().signal
   const draft = ConnectorDraftSchema.parse({ kind: 'connector', id: 'my-orders', version: '1.0.0', name: 'Orders', summary: 'Orders',
@@ -159,19 +160,19 @@ it('discovers real MCP annotations without business calls, encrypts secrets, iso
   await expect(manager.manage('extensions.connector.update', { id: draft.id, version: draft.version,
     draft: { ...update, url: 'https://another.example/mcp' } }, api, owner, signal)).rejects.toMatchObject({ code: 'CONNECTOR_CONFIGURATION_REQUIRED' })
   failUpdate = true
-  const edited = { ...update, name: 'Updated orders' }
+  const edited = { ...update, name: 'Updated orders', headers: { 'X-Private-Secret': '' } }
   await expect(manager.manage('extensions.connector.update', { id: draft.id, version: draft.version, draft: edited }, api, owner, signal))
     .rejects.toMatchObject({ code: 'CONNECTOR_SAVE_PENDING', retryable: true })
   expect((await readdir(root)).filter(name => name.endsWith('.pending'))).toHaveLength(1)
   const resumed = await manager.manage('extensions.connector.read', { id: draft.id, version: draft.version }, api, owner, signal)
-  expect(resumed).toMatchObject({ savePending: true, draft: { name: 'Updated orders', headers: { 'x-private-secret': '' } } })
+  expect(resumed).toMatchObject({ savePending: true, draft: { name: 'Updated orders', headers: { 'X-Private-Secret': '' } } })
   expect(JSON.stringify(resumed)).not.toContain('device-secret')
   await expect(manager.manage('extensions.connector.update', { id: draft.id, version: draft.version, draft: update }, api, owner, signal))
     .rejects.toMatchObject({ code: 'CONNECTOR_SAVE_PENDING' })
   failUpdate = false
   expect(await manager.manage('extensions.connector.update', { id: draft.id, version: draft.version, draft: edited }, api, owner, signal))
     .toMatchObject({ version: '1.0.1' })
-  expect(saved[2]).toMatchObject({ version: '1.0.1', name: 'Updated orders', headers: { 'x-private-secret': '' } })
+  expect(saved[2]).toMatchObject({ version: '1.0.1', name: 'Updated orders', headers: { 'X-Private-Secret': '' } })
   expect(headers.every(value => value === 'device-secret')).toBe(true)
   await expect(manager.manage('extensions.connector.read', { id: draft.id, version: '1.0.0' }, api, owner, signal)).rejects.toMatchObject({ code: 'EXTENSION_VERSION_CONFLICT' })
   await expect(manager.manage('extensions.connector.read', { id: draft.id, version: '1.0.1' }, api, 'another', signal)).rejects.toMatchObject({ code: 'EXTENSION_OWNER_REQUIRED' })
@@ -231,10 +232,15 @@ it('retires replaced stdio children, preserves other connectors and scrubs ambie
   const manager = new PersonalConnectors(root, secure, () => 'employee-one')
   onTestFinished(() => manager.close())
   const api = new DeepSeekHarnessApiClient({ baseUrl: 'https://product.example', getSessionToken: () => 'employee-token',
-    fetch: async () => Response.json({ success: true, data: {} }) })
+    fetch: async (_url, init) => !init?.body ? Response.json({ success: true, data: { ...draft, environment: { PRIVATE_VALUE: '' },
+      ownerEmployeeId: 'employee-one', visibility: 'PERSONAL', canEdit: true, authMode: 'none', status: 'ready' } })
+      : savedConnectorResponse(init, 'employee-one') })
   const draft = ConnectorDraftSchema.parse({ kind: 'connector', id: 'my-stdio', version: '1.0.0', name: 'Stdio', summary: 'Stdio test',
     category: 'developer-tools', transport: 'stdio', command: process.execPath, arguments: ['--input-type=module', '-e', child], environment: { PRIVATE_VALUE: 'secret' } })
   await manager.save(draft, api, 'employee-one', new AbortController().signal)
+  await expect(manager.manage('extensions.connector.update', { id: draft.id, version: draft.version,
+    draft: { ...draft, version: '1.0.1', environment: { private_value: '' } } }, api, 'employee-one', new AbortController().signal))
+    .rejects.toMatchObject({ code: 'CONNECTOR_CONFIGURATION_REQUIRED' })
   const enriched = await manager.enrich([{ id: draft.id, version: draft.version, ownerEmployeeId: 'employee-one', visibility: 'PERSONAL',
     transport: 'stdio', command: draft.command, arguments: draft.arguments, authMode: 'none', ready: true, status: 'ready', tools: [{ name: 'read' }] }]) as { tools: { description: string }[] }[]
   const evidence = JSON.parse(enriched[0]!.tools[0]!.description) as { pid: number; scrubbed: boolean; configured: boolean }
@@ -301,7 +307,9 @@ it('deletes only the selected connector connections while another connector fini
   const api = new DeepSeekHarnessApiClient({ baseUrl: 'https://product.example', getSessionToken: () => 'fixture-token',
     fetch: async (_url, init) => {
       if (init?.method === 'DELETE' && rejectDeletion) return Response.json({ success: false }, { status: 503 })
-      return Response.json({ success: true, data: init?.method ? {} : entries[1] })
+      if (init?.method === 'DELETE') return Response.json({ success: true, data: true })
+      if (init?.method === 'POST') return savedConnectorResponse(init, employee)
+      return Response.json({ success: true, data: entries[1] })
     } })
   const signal = new AbortController().signal
   for (const draft of drafts) await manager.save(draft, api, employee, signal)

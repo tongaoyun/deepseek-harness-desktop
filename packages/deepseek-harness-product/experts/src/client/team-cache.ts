@@ -10,7 +10,6 @@ function sameSnapshot(current: TeamSnapshot, next: TeamSnapshot): boolean {
     && deepEqualJson(current.enabledTeams, next.enabledTeams)
     && deepEqualJson(current.enabledExperts, next.enabledExperts)
     && deepEqualJson(current.engine ?? null, next.engine ?? null)
-    && deepEqualJson(current.nativeMembers ?? null, next.nativeMembers ?? null)
 }
 
 /** Share team queries and notifications without retaining state across plugin instances. */
@@ -18,6 +17,10 @@ export class ExpertTeams {
   private readonly lifecycle = new SnapshotLifecycle<TeamSnapshot | null>(null)
   private pending?: Promise<TeamSnapshot>
   constructor(private readonly remote: Pick<AgencyTeamsRemote, 'getTeams'>) {}
+  /** Capture cancellation for operations on the current Host.
+   * @returns Signal aborted by reset or disposal; reset supplies a new signal for later operations.
+   */
+  get signal(): AbortSignal { return this.lifecycle.signal }
   /** Read the current immutable snapshot.
    * @returns Latest accepted data, or the initial empty state after reset.
    */

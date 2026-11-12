@@ -19,6 +19,7 @@ import { join } from 'node:path'
 import { expect, it, onTestFinished } from 'vitest'
 import { ConnectorProxy } from '../src/connector-proxy.ts'
 import { PersonalConnectors } from '../src/personal-connectors.ts'
+import { savedConnectorResponse } from './connector-receipt-fixture.ts'
 
 async function fixture(resources = true, timeoutSeconds = 5) {
   const root = await mkdtemp(join(tmpdir(), 'personal-mcp-resources-'))
@@ -57,7 +58,7 @@ async function fixture(resources = true, timeoutSeconds = 5) {
     decryptString: (value: Buffer) => value.toString() }
   const manager = new PersonalConnectors(join(root, 'configuration'), secure, () => employee)
   const api = new DeepSeekHarnessApiClient({ baseUrl: 'https://product.invalid', getSessionToken: () => 'fixture-token',
-    fetch: async () => Response.json({ success: true, data: {} }) })
+    fetch: async (_url, init) => savedConnectorResponse(init, employee) })
   const draft = ConnectorDraftSchema.parse({ kind: 'connector', id: 'resource-mcp', version: '1.0.0', name: 'Resources',
     summary: 'Native resource relay', category: 'other', transport: 'stdio', command: process.execPath,
     arguments: ['--input-type=module', '-e', child], timeoutSeconds,

@@ -1,0 +1,26 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`keeps failed feedback and the send button stable while retrying once 1`] = `
+{
+  "action": "正在提交…",
+  "busy": "true",
+  "error": "未能确认反馈提交结果。内容已保留，可以重试。",
+  "focused": true,
+}
+`;
+
+exports[`returns focus and the saved selection to the feedback draft after removing screenshots in en 1`] = `
+{
+  "draft": "保留反馈草稿",
+  "focused": true,
+  "images": 0,
+}
+`;
+
+exports[`returns focus and the saved selection to the feedback draft after removing screenshots in zh 1`] = `
+{
+  "draft": "保留反馈草稿",
+  "focused": true,
+  "images": 0,
+}
+`;

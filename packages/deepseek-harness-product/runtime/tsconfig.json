@@ -13,7 +13,7 @@
     { "path": "../../../packages/core/scope" },
     { "path": "../../../packages/util/atomic-write" },
     { "path": "../../../packages/util/brand" },
-    { "path": "../../../packages/document/office-to-pdf" },
+    { "path": "../../../packages/document/office-kit" },
     { "path": "../../../vendor/schemastery" },
     { "path": "../../../packages/core/agent-default-model" },
     { "path": "../../../packages/boot/cmdline" },

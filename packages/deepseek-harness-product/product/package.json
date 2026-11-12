@@ -46,6 +46,18 @@
     "./company-team": {
       "types": "./lib/types/company-team.d.ts",
       "default": "./lib/company-team.js"
+    },
+    "./content-categories": {
+      "types": "./lib/types/content-categories.d.ts",
+      "default": "./lib/content-categories.js"
+    },
+    "./content-paths": {
+      "types": "./lib/types/content-paths.d.ts",
+      "default": "./lib/content-paths.js"
+    },
+    "./content-files": {
+      "types": "./lib/types/content-files.d.ts",
+      "default": "./lib/content-files.js"
     }
   },
   "scripts": {
@@ -63,6 +75,6 @@
   },
   "dependencies": {
     "yaml": "^2.9.0",
-    "zod": "^4.4.3"
+    "zod": "^4.6.6"
   }
 }

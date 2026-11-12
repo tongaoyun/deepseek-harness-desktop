@@ -1,0 +1,78 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`preserves the editable expert draft and ignores its save result after Host reset 1`] = `
+{
+  "canSave": true,
+  "draft": "保留这份未保存草稿",
+  "revision": 0,
+}
+`;
+
+exports[`retains a focused expert card and its avatar when a preceding expert leaves the directory, scrolled: false > Focused expert after directory update 1`] = `
+{
+  "avatarPreserved": true,
+  "cardPreserved": true,
+  "focusedExpert": "合规审查合规检查其他市场查看复制已停用",
+}
+`;
+
+exports[`retains a focused expert card and its avatar when a preceding expert leaves the directory, scrolled: true > Focused expert after directory update 1`] = `
+{
+  "avatarPreserved": true,
+  "cardPreserved": true,
+  "focusedExpert": "合规审查合规检查其他市场查看复制已停用",
+}
+`;
+
+exports[`retains expert bulk feedback and confirmation controls throughout a retry 1`] = `
+{
+  "action": "确认修改",
+  "busy": "true",
+  "error": "Offline",
+}
+`;
+
+exports[`retains expert delete feedback and confirmation controls throughout a retry 1`] = `
+{
+  "action": "删除专家",
+  "busy": "true",
+  "error": "Offline",
+}
+`;
+
+exports[`retains expert edit read feedback until the detail retry succeeds 1`] = `
+{
+  "action": "编辑",
+  "notice": "Read unavailable重试加载",
+}
+`;
+
+exports[`retains expert prompt read feedback until the detail retry succeeds 1`] = `
+{
+  "action": "查看",
+  "notice": "Read unavailable重试加载",
+}
+`;
+
+exports[`saves the Loader-mounted company expert copy named 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA🚀BBB…' 1`] = `
+{
+  "enabled": false,
+  "name": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA🚀BBB 副本",
+}
+`;
+
+exports[`saves the Loader-mounted company expert copy named 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA👩\\u20…' 1`] = `
+{
+  "enabled": false,
+  "name": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA👩‍💻 副本",
+}
+`;
+
+exports[`saves the Loader-mounted company expert copy named 'QA 副本 3' 1`] = `
+{
+  "enabled": false,
+  "name": "QA 副本 3",
+}
+`;
+
+exports[`translates a Loader-mounted team directory failure without issuing another read 1`] = `"Could not read the expert catalog. Refresh and try again.Refresh and retry"`;

@@ -327,3 +327,32 @@ it('retains an entire selection before preparation and isolates invalid files fr
     .rejects.toMatchObject({ code: 'KNOWLEDGE_UPLOAD_SELECTION_MISSING' })
   expect(select).toHaveBeenCalledOnce()
 })
+
+it('replaces only an unsent PDF identity and locks its mode after an unknown upload outcome', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'knowledge-upload-options-'))
+  onTestFinished(() => rm(root, { recursive: true, force: true }))
+  const path = join(root, '中文模板.pdf')
+  await writeFile(path, 'PDF fixture')
+  let employee = 'first'
+  const uploads = new KnowledgeUploads(() => employee, async () => [path], 1000)
+  const api = new DeepSeekHarnessApiClient({ baseUrl: 'https://product.test', getSessionToken: () => employee,
+    fetch: async url => (url instanceof Request ? url.url : url.toString()).endsWith('/knowledge-file-limits')
+      ? Response.json({ success: true, data: { uploadMaxBytes: 1000 } }) : Promise.reject(new Error('Lost receipt')) })
+  onTestFinished(() => { uploads.close(); api.close() })
+  const [original] = await uploads.choose('base', 'STANDARD', 'folder')
+  if (!original) throw new Error('Missing PDF selection')
+  expect(original.canConfigure).toBe(true)
+  expect(() => uploads.configure('other', original.operationId, 'TEXT')).toThrow()
+  const replacement = uploads.configure('base', original.operationId, 'TEXT')
+  expect(replacement).toEqual({ ...original, operationId: replacement.operationId, pdfParseMode: 'TEXT' })
+  expect(replacement.operationId).not.toBe(original.operationId)
+  expect(uploads.pending('base')).toEqual([replacement])
+  expect(JSON.stringify(replacement)).not.toContain(root)
+  await expect(uploads.send('base', original.operationId, 'STANDARD', 'folder', api)).rejects.toMatchObject({ code: 'KNOWLEDGE_UPLOAD_SELECTION_MISSING' })
+  await expect(uploads.send('base', replacement.operationId, 'TEXT', 'folder', api)).rejects.toThrow('Lost receipt')
+  expect(uploads.pending('base')[0]).not.toHaveProperty('canConfigure')
+  expect(() => uploads.configure('base', replacement.operationId, 'STANDARD')).toThrow(expect.objectContaining({ code: 'IDEMPOTENCY_KEY_REUSED' }))
+  employee = 'second'
+  expect(() => uploads.configure('base', replacement.operationId, 'STANDARD')).toThrow()
+  expect(uploads.pending('base')).toEqual([])
+})

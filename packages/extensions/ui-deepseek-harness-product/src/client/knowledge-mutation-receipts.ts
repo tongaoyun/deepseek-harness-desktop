@@ -12,9 +12,9 @@ function unconfirmed(): ProductError {
  * @param target Captured library, document, and optional move destination.
  * @returns Nothing when the receipt confirms the submitted operation.
  */
-export function confirmKnowledgeDocumentMutation(action: 'move' | 'delete' | 'reindex' | 'cancel', value: unknown,
+export function confirmKnowledgeDocumentMutation(action: 'move' | 'delete' | 'reindex' | 'cancel' | 'summary', value: unknown,
   target: { readonly knowledgeBaseId: string; readonly documentId: string; readonly folderId?: string | null }): void {
-  if (action === 'reindex' || action === 'cancel') {
+  if (action === 'reindex' || action === 'cancel' || action === 'summary') {
     try {
       const document = knowledgeDocument(value)
       if (document.id !== target.documentId || document.knowledgeBaseId !== target.knowledgeBaseId
@@ -40,16 +40,21 @@ export function confirmKnowledgeFolderDeletion(value: unknown, folderId: string)
     || !('deleted' in value) || typeof value.deleted !== 'boolean') throw unconfirmed()
 }
 
-/** Confirm the uploaded document belongs to the selected library and destination.
- * @param value Untrusted upload response.
- * @param target Captured library and upload destination.
+/** Confirm a saved or uploaded document belongs to the selected library and destination.
+ * @param value Untrusted write response.
+ * @param target Captured library, destination, and optional existing document identity.
  * @returns Nothing when complete document metadata confirms the selected location.
  */
-export function confirmKnowledgeDocumentUpload(value: unknown,
-  target: { readonly knowledgeBaseId: string; readonly folderId?: string | null | undefined }): void {
+export function confirmKnowledgeDocumentWrite(value: unknown,
+  target: {
+    readonly knowledgeBaseId: string
+    readonly folderId?: string | null | undefined
+    readonly documentId?: string | undefined
+  }): void {
   try {
     const document = knowledgeDocument(value)
     if (document.id.trim() === '' || document.knowledgeBaseId !== target.knowledgeBaseId
+      || target.documentId !== undefined && document.id !== target.documentId
       || (document.folderId ?? null) !== (target.folderId ?? null) || document.filename.trim() === ''
       || document.updatedAt.trim() === '' || document.status.trim() === '') throw unconfirmed()
   } catch (_error) { throw unconfirmed() }

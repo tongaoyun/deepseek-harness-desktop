@@ -24,6 +24,7 @@ import { agencySettingsSchema } from '../src/expert-library.ts'
 import { createExpertLibrary, type AgencySettings } from '../src/expert-library.ts'
 import { registerCreationTools } from '../src/creation-tools.ts'
 import { agentSpecManifest } from '@deepseek-harness/product/company-content'
+import { CONTENT_CATEGORIES } from '@deepseek-harness/product/content-categories'
 import { z } from 'zod'
 
 let ctx: Context | undefined
@@ -135,6 +136,22 @@ it('creates a team without an editor, freezes disabled member versions and rejec
   expect((await run('create_expert_team', { ...team, name: 'Missing', members: [{ ...team.members[0], expertSlug: 'unknown' }, team.members[1]] })).isError).toBe(true)
   expect((await run('create_expert_team', { ...team, name: 'Repeated', members: [team.members[0], team.members[0]] })).isError).toBe(true)
   expect((await teams.snapshot()).teams).toHaveLength(1)
+}, 30000)
+
+it('lists predefined creation categories and normalizes imported expert categories', async () => {
+  const { run } = await boot(async () => [
+    { slug: 'imported', name: 'Imported expert', nameEn: 'Imported expert', description: 'Review code', descriptionEn: '', division: '研发与集成', divisionZh: '研发与集成', emoji: '🧩', custom: false },
+    { slug: 'unlisted', name: 'Unlisted expert', nameEn: 'Unlisted expert', description: 'Review documents', descriptionEn: '', division: 'shared', divisionZh: 'shared', emoji: '🧩', custom: false },
+  ])
+  const result = await run('list_creation_experts', {})
+  expect(result.isError).toBe(false)
+  const content = result.content.find(block => block.type === 'text')
+  if (content?.type !== 'text') throw new Error('Expert catalog text is missing')
+  expect(JSON.parse(content.text)).toMatchObject({
+    categories: CONTENT_CATEGORIES.map(category => category.id),
+    experts: [{ slug: 'imported', division: 'engineering' }, { slug: 'unlisted', division: 'specialized' }],
+  })
+  expect(result.content).toMatchSnapshot()
 }, 30000)
 it('rejects unsafe or repeated resource paths before committing a personal expert', async () => {
   const { context, library, run } = await boot()

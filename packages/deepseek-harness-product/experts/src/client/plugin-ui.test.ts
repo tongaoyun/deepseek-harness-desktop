@@ -14,7 +14,6 @@ import { TEAM_CSS } from './team-style.ts'
 
 test('团队弹窗不会把按钮样式改坏', () => {
   assert.doesNotMatch(TEAM_CSS, /\.agt-dialog button:not\(/)
-  assert.match(TEAM_CSS, /\.agt-dialog button\.agt-plain-btn\{/)
   assert.match(TEAM_CSS, /\.agt-picker-row\{[^}]*border-radius:0/)
   assert.match(TEAM_CSS, /\.agt-picker-row\{[^}]*overflow:hidden/)
   assert.doesNotMatch(TEAM_CSS, /aria-pressed=true/)
@@ -120,7 +119,6 @@ test('弹窗右上角的关闭按钮与页脚动作不同名，避免同名二�
     value: { name: '专家', prompt: '正文' },
     title: '提示词',
     closeLabel: '关闭',
-    returnFocus: document.createElement('button'),
     onClose: () => undefined,
   }))
   assert.equal(nameCount(prompt, '关闭'), 1, '× 不应复用页脚关闭文案')

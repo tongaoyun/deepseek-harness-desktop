@@ -1,6 +1,6 @@
 {
   "name": "@deepseek-harness/product-experts",
-  "description": "Harness 内建专家套件模块",
+  "description": "Harness \u5185\u5efa\u4e13\u5bb6\u5957\u4ef6\u6a21\u5757",
   "version": "0.1.0",
   "type": "module",
   "packageManager": "pnpm@11.22.0",
@@ -80,11 +80,9 @@
     }
   },
   "dependencies": {
-    "@deepseek-ai/dsh-skill-filesystem": "workspace:*",
     "@deepseek-harness/product": "workspace:*",
     "fflate": "^0.8.3",
-    "yaml": "^2.8.3",
-    "zod": "^4.4.3"
+    "zod": "^4.6.6"
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "workspace:~",
@@ -114,7 +112,7 @@
     "@deepseek-ai/dsh-client-ui-slots": "workspace:*",
     "@deepseek-ai/dsh-client-ui-tool": "workspace:*",
     "@deepseek-ai/dsh-config-editor": "workspace:*",
-    "@deepseek-ai/dsh-experimental-agent-team": "workspace:*",
+    "@deepseek-ai/dsh-agent-team": "workspace:*",
     "@deepseek-ai/dsh-fs-local": "workspace:*",
     "@deepseek-ai/dsh-llm": "workspace:*",
     "@deepseek-ai/dsh-ptc-runtime": "workspace:*",
@@ -150,7 +148,12 @@
     "tsdown": "^0.22.2",
     "typescript": "^6.0.3",
     "vitest": "^4.1.11",
-    "@deepseek-ai/dsh-client-ui-workspace": "workspace:*"
+    "@deepseek-ai/dsh-client-ui-workspace": "workspace:*",
+    "@deepseek-ai/dsh-client-ui-agent-team": "workspace:*",
+    "yaml": "^2.8.3",
+    "@deepseek-ai/dsh-tool-agent-team": "workspace:*",
+    "@deepseek-ai/dsh-tool-subagent-control": "workspace:*",
+    "@deepseek-ai/dsh-session-query-sqlite": "workspace:*"
   },
   "private": true
 }

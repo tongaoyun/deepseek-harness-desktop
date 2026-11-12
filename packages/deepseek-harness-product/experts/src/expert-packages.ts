@@ -1,8 +1,9 @@
 /** Immutable personal AgentSpec files; Settings references are updated separately. */
-import { mkdir, lstat, readFile, writeFile, rename, rm } from 'node:fs/promises'
+import { mkdir, lstat, readdir, writeFile, rename, rm } from 'node:fs/promises'
 import { join, dirname } from 'node:path'
 import { randomUUID } from 'node:crypto'
-import { agentSpecManifest, agentSpecPrompt, companyContentRelease, contentDigest } from '@deepseek-harness/product/company-content'
+import { agentSpecManifest, agentSpecPrompt, companyContentRelease, contentDigest, COMPANY_CONTENT_MAX_BYTES, COMPANY_CONTENT_MAX_FILES } from '@deepseek-harness/product/company-content'
+import { readContentFile } from '@deepseek-harness/product/content-files'
 import { customExpertInputSchema, type CustomExpert, type CustomExpertInput } from './expert-contract.ts'
 import { expertPackageManifest } from './package-manifest.ts'
 
@@ -31,7 +32,7 @@ export class ExpertPackageStore {
    * @param root - Resolves the currently authenticated employee directory.
    */
   constructor(private readonly root: () => Promise<string>) {}
-  /** Stage and atomically install an immutable package.
+  /** Stage and atomically install an immutable package; failed cleanup retains the installation failure as its cause.
    * @param slug - Package identifier.
    * @param input - Complete editable package.
    * @returns Immutable version and full digest.
@@ -48,6 +49,7 @@ export class ExpertPackageStore {
     if (exists) { await this.readFiles(slug, hash); return { packageVersion: `0.0.0-${hash.slice(0, 56)}`, packageSha256: hash } }
     const staging = join(parent, `.staging-${randomUUID()}`)
     await mkdir(staging, { mode: 0o700 })
+    let staged = true
     try {
       const prefix = `experts/${slug}/`
       for (const [path, encoded] of Object.entries(files)) {
@@ -56,12 +58,19 @@ export class ExpertPackageStore {
         await writeFile(destination, Buffer.from(encoded, 'base64'), { flag: 'wx', mode: 0o600 })
       }
       await writeFile(join(staging, '.package-index.json'), JSON.stringify(Object.keys(files)), { flag: 'wx', mode: 0o600 })
-      try { await rename(staging, target) }
+      try { await rename(staging, target); staged = false }
       catch (error) {
         if (!(error instanceof Error && 'code' in error && ['EEXIST', 'ENOTEMPTY', 'EPERM'].includes(String(error.code)))) throw error
         await this.readFiles(slug, hash)
       }
-    } finally { await rm(staging, { recursive: true, force: true }) }
+    } catch (error) {
+      try { await rm(staging, { recursive: true, force: true }) }
+      catch (cleanupError) {
+        throw new AggregateError([error, cleanupError], '个人专家文件写入失败，且暂存目录未清理', { cause: error })
+      }
+      throw error
+    }
+    if (staged) await rm(staging, { recursive: true, force: true })
     return { packageVersion: `0.0.0-${hash.slice(0, 56)}`, packageSha256: hash }
   }
   /** Read and validate a saved package for editing.
@@ -86,31 +95,54 @@ export class ExpertPackageStore {
     const value = await this.read(expert)
     return agentSpecPrompt(value.prompt, value.agents ?? '', join(await this.root(), expert.slug, expert.packageSha256))
   }
-  /** Read every indexed file and verify the content digest.
+  /** Verify the complete saved directory and read every indexed file without following symbolic links.
    * @param slug - Package identifier.
    * @param hash - Expected full SHA-256.
-   * @returns Validated base64-encoded package files.
+   * @param signal - Optional cancellation for directory checks and bounded file reads.
+   * @returns Validated base64-encoded package files; unknown entries, duplicate paths and digest changes fail without modifying storage.
    */
-  async readFiles(slug: string, hash: string): Promise<Record<string, string>> {
+  async readFiles(slug: string, hash: string, signal?: AbortSignal): Promise<Record<string, string>> {
+    signal?.throwIfAborted()
     if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/u.test(slug) || !/^[a-f0-9]{64}$/u.test(hash)) throw new Error('Invalid expert package reference')
-    const root = join(await this.root(), slug, hash)
+    const employeeRoot = await this.root(), parent = join(employeeRoot, slug), root = join(parent, hash)
+    await assertDirectory(employeeRoot)
+    await assertDirectory(parent)
     await assertDirectory(root)
     const indexPath = join(root, '.package-index.json')
-    const info = await lstat(indexPath)
-    if (!info.isFile() || info.isSymbolicLink() || info.size > 512 * 1024) throw new Error('个人专家索引损坏')
-    const index: unknown = JSON.parse(await readFile(indexPath, 'utf8'))
-    if (!Array.isArray(index) || index.length > 2048 || index.some(path => typeof path !== 'string' || !path.startsWith(`experts/${slug}/`))) throw new Error('个人专家索引损坏')
+    const index: unknown = JSON.parse((await readContentFile(indexPath, 512 * 1024, signal)).toString('utf8'))
+    if (!Array.isArray(index) || index.length === 0 || index.length > COMPANY_CONTENT_MAX_FILES) throw new Error('个人专家索引损坏')
+    const paths = new Set<string>()
+    const directories = new Map<string, Set<string>>([['', new Set(['.package-index.json'])]])
+    for (const entry of index) {
+      if (typeof entry !== 'string' || !entry.startsWith(`experts/${slug}/`) || paths.has(entry)) throw new Error('个人专家索引损坏')
+      if (entry.split('/').some(part => !part || part === '.' || part === '..') || /[\\\0:]/u.test(entry)) throw new Error('个人专家文件路径无效')
+      paths.add(entry)
+      const parts = entry.slice(`experts/${slug}/`.length).split('/')
+      for (let i = 0; i < parts.length; i++) {
+        const directory = parts.slice(0, i).join('/'), names = directories.get(directory) ?? new Set<string>()
+        names.add(parts[i])
+        directories.set(directory, names)
+      }
+    }
+    for (const [relative, expected] of directories) {
+      signal?.throwIfAborted()
+      const directory = join(root, relative)
+      if (relative) await assertDirectory(directory)
+      const actual = await readdir(directory)
+      if (actual.length !== expected.size || actual.some(name => !expected.has(name))) {
+        throw new Error('个人专家文件目录与保存版本不一致，请重新导入或编辑后保存')
+      }
+    }
     const files: Record<string, string> = {}
     let bytes = 0
-    for (const entry of index) {
-      if (typeof entry !== 'string' || entry.split('/').some(part => !part || part === '.' || part === '..') || /[\\\0:]/u.test(entry)) throw new Error('个人专家文件路径无效')
+    for (const entry of paths) {
+      signal?.throwIfAborted()
       const relative = entry.slice(`experts/${slug}/`.length)
-      const parts = relative.split('/')
-      for (let i = 1; i < parts.length; i++) await assertDirectory(join(root, ...parts.slice(0, i)))
-      const path = join(root, relative), info = await lstat(path)
-      if (!info.isFile() || info.isSymbolicLink() || (bytes += info.size) > 32 * 1024 * 1024) throw new Error('个人专家文件损坏')
-      files[entry] = (await readFile(path)).toString('base64')
+      const content = await readContentFile(join(root, relative), COMPANY_CONTENT_MAX_BYTES - bytes, signal)
+      bytes += content.byteLength
+      files[entry] = content.toString('base64')
     }
+    signal?.throwIfAborted()
     return { ...companyContentRelease({ version: `0.0.0-${hash.slice(0, 56)}`, sha256: hash, files }).files }
   }
 }

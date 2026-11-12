@@ -1,0 +1,88 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`hides the complete document page on a library mismatch and allows retry 1`] = `"<div role="alert" class="_knowledgeDirectoryError_18bb7e"><p>资料暂时无法加载，请刷新后重试。</p><button type="button" class="_button_4d2f85 _outline_4d2f85 _sm_4d2f85" aria-disabled="false" aria-busy="false">重试</button></div>"`;
+
+exports[`keeps the materials toolbar and heading focus through clearing a empty filter 1`] = `
+{
+  "focused": "业务规范",
+  "loadingPlaceholder": false,
+  "search": "",
+}
+`;
+
+exports[`keeps the materials toolbar and heading focus through clearing a matching filter 1`] = `
+{
+  "focused": "业务规范",
+  "loadingPlaceholder": false,
+  "search": "",
+}
+`;
+
+exports[`retains the delete confirmation and operation identity after a temporary failure > Pending document deletion retry 1`] = `
+{
+  "action": "Deleting…",
+  "focused": true,
+  "message": "The operation did not complete. Retry.",
+}
+`;
+
+exports[`retains the knowledge.documents.get failure while retrying without rebuilding the controls > Pending material retry 1`] = `
+{
+  "action": "重试",
+  "message": "正文暂时无法读取，请重试。",
+}
+`;
+
+exports[`retains the knowledge.documents.list failure while retrying without rebuilding the controls > Pending material retry 1`] = `
+{
+  "action": "重试",
+  "message": "资料暂时无法加载，请刷新后重试。重试",
+}
+`;
+
+exports[`retains the knowledge.folders.list failure while retrying without rebuilding the controls > Pending material retry 1`] = `
+{
+  "action": "重试",
+  "message": "文件夹暂时无法加载，请刷新后重试。重试",
+}
+`;
+
+exports[`returns from an externally removed document without taking focus elsewhere (focus=header) > Removed document navigation 1`] = `
+{
+  "draft": "未提交的筛选词",
+  "focused": "知识库",
+  "readerVisible": false,
+}
+`;
+
+exports[`returns from an externally removed document without taking focus elsewhere (focus=outside) > Removed document navigation 1`] = `
+{
+  "draft": "未提交的筛选词",
+  "focused": "其他操作",
+  "readerVisible": false,
+}
+`;
+
+exports[`returns from an externally removed document without taking focus elsewhere (focus=reader) > Removed document navigation 1`] = `
+{
+  "draft": "未提交的筛选词",
+  "focused": "业务规范",
+  "readerVisible": false,
+}
+`;
+
+exports[`returns from content search to the same materials controls, selection, and focus > Restored materials 1`] = `
+{
+  "focused": "正文搜索",
+  "query": "未提交的筛选词",
+  "selected": true,
+}
+`;
+
+exports[`returns from reader to the same materials controls, selection, and focus > Restored materials 1`] = `
+{
+  "focused": "业务规范.md",
+  "query": "未提交的筛选词",
+  "selected": true,
+}
+`;

@@ -1,8 +1,8 @@
 diff --git a/apps/desktop/scripts/desktop-package-environment.mjs b/apps/desktop/scripts/desktop-package-environment.mjs
-index 27a7f92c7f17c25b291f790d759988fc50fa7bcd..0e877e3cdae73e069ea1d34fff315620b0a9c656 100644
+index 83e9dbbc0f8faa017ed22ee2da1e74005ba59f8a..f60e7b24a73b8db2641aaa48c59b9872823efe85 100644
 --- a/apps/desktop/scripts/desktop-package-environment.mjs
 +++ b/apps/desktop/scripts/desktop-package-environment.mjs
-@@ -156,7 +156,7 @@ export function validateDesktopPackageEnvironment(environment, target, options =
+@@ -121,7 +121,7 @@ export function validateDesktopPackageEnvironment(environment, target, options =
    resolveDesktopTargetBuildPaths(environment, target.platform, target.arch)
    resolveDesktopAppId(environment)
    resolveNpmRegistry(environment)

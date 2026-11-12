@@ -327,9 +327,9 @@ describe("真实 Host 与 Remote 集成", () => {
         getProvider: () => ({
           capabilities: { agentOptions: true, agentPreset: true, outputSchema: true, depthLimit: true },
         }),
-        startActivation: async (spec: { childId: string; request: Record<string, unknown>; label: string }) => {
+        startActivation: async (spec: { childId: string; label: string }) => {
           probe.create(spec);
-          starts.push({ ...spec.request, label: spec.label });
+          starts.push({ ...spec, label: spec.label });
           return {
             result: Promise.resolve({
               output: [{ type: "text", text: "租赁建议" }],
@@ -623,7 +623,7 @@ it.each(["删除", "改名"] as const)("他窗%s释放名称后，编辑器保�
   const render = () => {
     cursor = 0;
     const nodes = elements(CustomExpertEditor(props));
-    (nodes.find(node => node.type === "form")! as unknown as { ref: { current: unknown } }).ref.current = { reportValidity: () => true };
+    (nodes.find(node => node.type === "form")! as unknown as { ref: { current: unknown } }).ref.current = { reportValidity: () => true, querySelector: () => null };
     return nodes;
   };
   const click = (label: string) => {

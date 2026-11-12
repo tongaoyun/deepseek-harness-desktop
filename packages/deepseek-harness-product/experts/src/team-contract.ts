@@ -21,10 +21,16 @@ export const teamSnapshotSchema = z.object({
   enabledExperts: z.array(z.string()),
   revision: z.number().int().min(0),
   engine: teamEngineStatusSchema.optional(),
-  nativeMembers: z.record(z.string(), z.string()).optional(),
 })
 /** Validated team catalog and enabled membership at one revision. */
 export type TeamSnapshot = z.infer<typeof teamSnapshotSchema>
+/** Check whether every member has a complete fixed version reference.
+ * @param team Saved team, including any references awaiting explicit reselection.
+ * @returns False for missing or invalidated references; valid older versions remain accepted.
+ */
+export function teamHasPinnedMembers(team: Pick<TeamInput, 'members'>): boolean {
+  return team.members.every(member => Boolean(member.expertVersion && member.expertSha256 && member.expertVersion !== 'reselect-required'))
+}
 export const effectiveCoordinator = (team: TeamInput, locale: 'zh' | 'en' = 'zh'): string =>
   team.coordinatorMode === 'custom'
     ? team.coordinatorPrompt

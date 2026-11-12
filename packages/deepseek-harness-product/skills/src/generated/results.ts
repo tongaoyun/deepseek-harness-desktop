@@ -6,12 +6,7 @@ export interface SkillManagerResults {
   readWorkspace: { project: { root: string; name: string; workspaceCwds: string[]; }; roots: import("../types.ts").RootView[]; warnings: import("../types.ts").Diagnostic[]; };
   setSkillEnabled: { root: string; name: string; enabled: boolean; ok?: undefined; error?: undefined; code?: undefined; params?: undefined; };
   setSourceEnabled: { root: string; enabled: boolean; };
-  createCategory: { root: string; category: { id: string; name: string; }; };
-  renameCategory: { root: string; category: import("../types.ts").SkillCategory; };
-  deleteCategory: { root: string; id: string; };
-  assignCategory: { root: string; name: string; categoryId: string | null; };
-  moveInCategory: { root: string; name: string; categoryId: string | null; order: string[]; };
-  setCategoryEnabled: { root: string; categoryId: string | null; enabled: boolean; changed: number; skipped: string[]; };
+  assignCategory: { root: string; name: string; categoryId: string; };
   createSkill: { name: string; path: string; root: string; ok?: undefined; error?: undefined; code?: undefined; params?: undefined; };
   uploadSkill: import("../types.ts").ImportResult;
   listRepositories: { installRoots: import("../types.ts").RepositoryDestination[]; catalogInstalls: string[]; catalogCopies: { id: string; name: string; installedRoot: "dsh" | "agents"; installedWorkspace?: string | undefined; canUninstall: boolean; }[]; catalogWarnings: { id: string; code: string; error: string; }[]; repositories: { skills: { installations: { tracked: true; updateAvailable: boolean; canRollback: boolean; canUninstall: boolean; status: string; installedWorkspace?: string | undefined; installedRoot: import("../types.ts").RepositoryRoot; }[]; status: string; path: string; name: string; description: string; valid: boolean; documentHash: string; files?: import("../types.ts").FileDigest[] | undefined; }[]; id: string; commit: string | null; refreshedAt: string | null; error: import("../types.ts").Diagnostic | null; owner: string; name: string; ref: string; subdirectory: string; }[]; };

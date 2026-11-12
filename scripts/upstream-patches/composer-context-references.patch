@@ -1,0 +1,69 @@
+diff --git a/docs/subsystems/slots.i18n.yaml b/docs/subsystems/slots.i18n.yaml
+index 7d02bb4794849b9238ea950b2a519fbbc0ca350a..085e70373f87809a07299e6138e6749ab50ec367 100644
+--- a/docs/subsystems/slots.i18n.yaml
++++ b/docs/subsystems/slots.i18n.yaml
+@@ -24,8 +24,8 @@
+   en: 3481dfa6cd3097da
+   zh: acbd6f06a7da1752
+ /web-client-slots/conversation-hierarchy:
+-  en: e1d572c42e91d663
+-  zh: 5a649dea2682be7f
++  en: a22c391c1e619b9b
++  zh: 67d90fa1914e7629
+ /web-client-slots/extension-rules:
+   en: e5fdcd6fafe4d161
+   zh: 7fd0c4374705b372
+diff --git a/docs/subsystems/slots.md b/docs/subsystems/slots.md
+index 820bd901716996eec6ddda4f53d5c3ae3f990d60..543393f822ada1a7d55ebb2270851b17ef4e8422 100644
+--- a/docs/subsystems/slots.md
++++ b/docs/subsystems/slots.md
+@@ -186,6 +186,7 @@ Factory: conversation.content [ConversationContent]
+ │  └─ conversation.plan-review.actions
+ ├─ conversation.composer.bar [InputBar]
+ │  ├─ conversation.input.attachments
++│  ├─ conversation.input.references
+ │  ├─ conversation.input.permission
+ │  ├─ conversation.input.plan
+ │  ├─ conversation.input.model
+@@ -216,6 +217,8 @@ Factory: conversation.images.content [MessageImagesContent / ImageGallery]
+ Factory: conversation.chat.reasoning.content [ReasoningContent / MarkdownText]
+ ```
+ 
++Use `conversation.input.references` for persistent task context inside the composer card above the editable draft. Editable file references remain owned by the native draft editor.
++
+ All four image Slots default to `MessageImages`, which calls `conversation.images.content` with the caller's image references and authorized loader. User and output image replacements are independent. The `conversation.user.text` Factory is shared by user content, Queue, and Goal; its `inline: true` keyed Slot renders span anchors and inline error placeholders rather than block wrappers.
+ 
+ The generated [Client inspect catalog](../../packages/extensions/cordis-client-runner/src/client/slot-catalog.ts) covers all shell branches and is the exhaustive contract for each key: cardinality, scope, owner props, standard props, current occupants, declaration owner, and replacement risk. A running dynamic package can query the live tree and an exact key with `cordis_inspect what:"client"`; the source catalog is generated from `SlotMap` declarations and `slots.register()` call sites by `pnpm run gen-client-catalog`.
+diff --git a/docs/subsystems/slots.zh.md b/docs/subsystems/slots.zh.md
+index 69456901eb602a2ea6ab5da539feed1a4b8c0524..576738658a53dd1f1c334a5aa4690a1f82dcba7d 100644
+--- a/docs/subsystems/slots.zh.md
++++ b/docs/subsystems/slots.zh.md
+@@ -188,6 +188,7 @@ Factory: conversation.content [ConversationContent]
+ │  └─ conversation.plan-review.actions
+ ├─ conversation.composer.bar [InputBar]
+ │  ├─ conversation.input.attachments
++│  ├─ conversation.input.references
+ │  ├─ conversation.input.permission
+ │  ├─ conversation.input.plan
+ │  ├─ conversation.input.model
+@@ -218,6 +219,8 @@ Factory: conversation.images.content [MessageImagesContent / ImageGallery]
+ Factory: conversation.chat.reasoning.content [ReasoningContent / MarkdownText]
+ ```
+ 
++`conversation.input.references` 在输入卡片内、可编辑草稿上方展示持久任务上下文。可编辑的文件引用继续由原生草稿编辑器管理。
++
+ 四个图片 Slot 默认均填入 `MessageImages`，由它携带调用者的图片引用和授权 loader 调用 `conversation.images.content`。用户与输出图片的替换互不影响。`conversation.user.text` Factory 由用户内容、Queue 和 Goal 共用；其 `inline: true` keyed Slot 使用 span 锚点及行内错误占位，而不是块级包装。
+ 
+ 生成的 [Client inspect catalog](../../packages/extensions/cordis-client-runner/src/client/slot-catalog.ts) 是包含所有外壳分支及每个 key 的完整参考，包含 cardinality、scope、owner props、标准 props、当前 occupant、声明 owner 与替换风险。运行中的动态包可以用 `cordis_inspect what:"client"` 查询实时树与某个精确 key；源码 catalog 由 `pnpm run gen-client-catalog` 根据 `SlotMap` 声明和 `slots.register()` 调用点生成。
+diff --git a/packages/client/ui-conversation/src/client/skeleton/InputBar.tsx b/packages/client/ui-conversation/src/client/skeleton/InputBar.tsx
+index f7957393d306d9fa0ad24b1884fffdaab39b290b..ffb1bef7168a6030248ae73d50faac01a5d5b3d4 100644
+--- a/packages/client/ui-conversation/src/client/skeleton/InputBar.tsx
++++ b/packages/client/ui-conversation/src/client/skeleton/InputBar.tsx
+@@ -481,6 +481,7 @@ export const InputBar = memo(function InputBar({
+             size: imageSizeText(imageLimits.maxImageBytes),
+           },
+         })}
++        {sessionId !== undefined && renderSlot('conversation.input.references', {})}
+         {/* One scrollport, one text surface: the contenteditable grows with
+             its content and .scroll — capped at 14 lines in CSS — is the only
+             thing that scrolls. Chips are decorator portals inside the same

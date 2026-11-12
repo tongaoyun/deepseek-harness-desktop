@@ -7,22 +7,21 @@ import {
 import React from 'react'
 
 /** 多行输入使用标准 textarea 属性和产品输入样式。 */
-export function TextArea({ rows = 3, className, ...props }: React.TextareaHTMLAttributes<HTMLTextAreaElement>): React.ReactElement {
+export const TextArea = React.forwardRef<HTMLTextAreaElement, React.TextareaHTMLAttributes<HTMLTextAreaElement>>(function TextArea({ rows = 3, className, ...props }, ref) {
   const classes = ['aag-textarea', className].filter(Boolean).join(' ')
-  return React.createElement('textarea', { ...props, rows, className: classes })
-}
+  return React.createElement('textarea', { ...props, ref, rows, className: classes })
+})
 
 type InputProps = React.ComponentPropsWithoutRef<typeof PrimitiveInput> & {
   /** 原生 Modal 在记录打开按钮后聚焦此控件。 */
   'data-modal-autofocus'?: boolean
 }
 
-/** 单行输入沿用原生属性，多行表单使用产品 TextArea。 */
-export function Input({ className, ...props }: InputProps): React.ReactElement {
+/** 单行输入透传原生属性和输入节点引用，多行表单使用产品 TextArea。 */
+export const Input = Object.assign(React.forwardRef<HTMLInputElement, InputProps>(function Input({ className, ...props }, ref) {
   const classes = ['aag-host-input', className].filter(Boolean).join(' ')
-  return React.createElement(PrimitiveInput, { ...props, className: classes })
-}
-Input.TextArea = TextArea
+  return React.createElement(PrimitiveInput, { ...props, ref, className: classes })
+}), { TextArea })
 
 type NativeModalProps = Extract<React.ComponentProps<typeof PrimitiveModal>, { headless?: false }>
 type ModalProps = Pick<NativeModalProps, 'title' | 'description' | 'children' | 'footer' | 'onClose' | 'className' | 'contentClassName'>
@@ -63,7 +62,7 @@ type ButtonProps = React.ComponentPropsWithoutRef<typeof PrimitiveButton> & {
 }
 
 /** 原生按钮和加载指示保留操作文案；产品补充危险态，并禁用忙碌操作。 */
-export function Button({ variant = 'outline', danger, loading, className, icon, ...props }: ButtonProps): React.ReactElement {
+export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(function Button({ variant = 'outline', danger, loading, className, icon, ...props }, ref) {
   const classes = [
     'aag-theme',
     className,
@@ -71,13 +70,14 @@ export function Button({ variant = 'outline', danger, loading, className, icon, 
   ].filter(Boolean).join(' ')
   return React.createElement(PrimitiveButton, {
     ...props,
+    ref,
     variant,
     className: classes,
     icon: loading ? React.createElement(StateDot, { state: 'ongoing', size: 14 }) : icon,
     'aria-busy': loading || props['aria-busy'],
     disabled: props.disabled || loading,
   })
-}
+})
 
 /** 独立挂载的界面按页面语言选择中英文。 */
 export function documentUiLocale(): 'zh' | 'en' {

@@ -23,7 +23,7 @@ function parse(value: string): KnowledgeSaveDraft {
     || !('parentId' in row) || !(row.parentId === null || typeof row.parentId === 'string')
     || !('save' in row) || typeof row.save !== 'object' || row.save === null
     || !('method' in row.save) || typeof row.save.method !== 'string'
-    || !['knowledge.bases.create', 'knowledge.folders.create', 'knowledge.folders.rename',
+    || !['knowledge.bases.create', 'knowledge.bases.update', 'knowledge.folders.create', 'knowledge.folders.rename',
       'knowledge.documents.importUrl', 'knowledge.documents.save'].includes(row.save.method)
     || !('payload' in row.save) || typeof row.save.payload !== 'object' || row.save.payload === null
     || Array.isArray(row.save.payload) || !('operationId' in row.save.payload) || typeof row.save.payload.operationId !== 'string'
@@ -66,20 +66,27 @@ class KnowledgeSaveRecovery {
   }
 }
 
-interface RecoveryState { readonly ready: boolean; readonly draft?: KnowledgeSaveDraft; readonly error?: unknown }
+interface RecoveryState {
+  readonly ready: boolean
+  readonly loading: boolean
+  readonly draft?: KnowledgeSaveDraft
+  readonly error?: unknown
+}
 
 function initialState(): RecoveryState {
-  try { return { ready: !Object.keys(sessionStorage).some(key => key.startsWith(prefix)) } }
-  catch (error) { return { ready: false, error } }
+  try { return { ready: !Object.keys(sessionStorage).some(key => key.startsWith(prefix)), loading: false } }
+  catch (error) { return { ready: false, loading: false, error } }
 }
 
 /** Restore a suspended edit before enabling a new write in the same library and action.
- * Scope replacement and newer retries invalidate earlier reads, including their employee storage key.
+ * Scope replacement invalidates earlier reads, including their employee storage key; pending reads ignore repeated retries.
  * @param scope Resource and action identity, excluding editable values.
+ * @param onReadCommit Capture owned focus before a confirmed recovery result changes the editor.
  * @returns Loaded draft or storage/identity failure with explicit retry, and employee-bound suspension commands.
  */
-export function useKnowledgeSaveRecovery(scope: string): {
+export function useKnowledgeSaveRecovery(scope: string, onReadCommit?: () => void): {
   ready: boolean
+  loading: boolean
   draft?: KnowledgeSaveDraft
   error?: unknown
   recovery: KnowledgeSaveRecovery
@@ -87,22 +94,32 @@ export function useKnowledgeSaveRecovery(scope: string): {
 } {
   const owner = useMemo(() => ({ recovery: new KnowledgeSaveRecovery(scope), initial: initialState() }), [scope])
   const [state, setState] = useState(() => ({ owner, value: owner.initial }))
-  const active = useRef<{ owner: typeof owner; controller: AbortController } | undefined>(undefined)
+  const active = useRef<{ owner: typeof owner; controller: AbortController; pending: boolean } | undefined>(undefined)
   const load = useCallback(async () => {
-    if (active.current?.owner !== owner) return
+    if (active.current?.owner !== owner || active.current.pending) return
     active.current.controller.abort()
     const controller = new AbortController()
-    active.current = { owner, controller }
-    setState({ owner, value: { ready: false } })
+    const reading = { owner, controller, pending: true }
+    active.current = reading
+    setState(previous => ({ owner, value: { ready: false, loading: true,
+      ...previous.owner === owner && previous.value.error !== undefined ? { error: previous.value.error } : {} } }))
     try {
       const draft = await owner.recovery.read(controller.signal)
-      if (!controller.signal.aborted) setState({ owner, value: { ready: true, ...draft === undefined ? {} : { draft } } })
+      if (!controller.signal.aborted) {
+        onReadCommit?.()
+        setState({ owner, value: { ready: true, loading: false, ...draft === undefined ? {} : { draft } } })
+      }
     } catch (error) {
-      if (!controller.signal.aborted) setState({ owner, value: { ready: false, error } })
+      if (!controller.signal.aborted) {
+        onReadCommit?.()
+        setState({ owner, value: { ready: false, loading: false, error } })
+      }
+    } finally {
+      reading.pending = false
     }
-  }, [owner])
+  }, [owner, onReadCommit])
   useEffect(() => {
-    active.current = { owner, controller: new AbortController() }
+    active.current = { owner, controller: new AbortController(), pending: false }
     if (!owner.initial.ready && owner.initial.error === undefined) void load()
     return () => {
       if (active.current?.owner !== owner) return

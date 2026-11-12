@@ -23,6 +23,11 @@ export class ExpertCatalog {
 
   constructor(private readonly remote: AgencyCatalogRemote) {}
 
+  /** Capture cancellation for operations on the current Host.
+   * @returns Signal aborted by reset or disposal; reset supplies a new signal for later operations.
+   */
+  get signal(): AbortSignal { return this.lifecycle.signal }
+
   /** Read the current immutable snapshot.
    * @returns Latest accepted data, or the initial empty state after reset.
    */

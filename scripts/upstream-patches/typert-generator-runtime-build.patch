@@ -1,11 +1,11 @@
 diff --git a/packages/typert/generator/package.json b/packages/typert/generator/package.json
-index 9f0ee2cd0a5bbbe1f3216d4033c24ac79824e880..976596e482321387fdb11bea685c13613b7dfd27 100644
+index 246c4b7cd8d123866c5ab5a6d6eb2fc607ff7377..4940b35aa536851e9fe2feebe82daa3b87b54d6b 100644
 --- a/packages/typert/generator/package.json
 +++ b/packages/typert/generator/package.json
-@@ -44,5 +44,9 @@
+@@ -47,5 +47,9 @@
      "@deepseek-ai/dsh-typert-registry": "workspace:*",
      "@deepseek-ai/cordis": "workspace:~",
-     "zod": "4.4.3"
+     "zod": "4.6.6"
 +  },
 +  "scripts": {
 +    "build": "tsc -b && tsdown --config-loader native --config tsdown.config.ts",

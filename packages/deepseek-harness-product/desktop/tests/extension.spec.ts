@@ -20,16 +20,22 @@ const fixture = vi.hoisted(() => ({ authenticate: vi.fn<typeof import('@deepseek
   encryptionAvailable: vi.fn(() => false),
   knowledgeReset: vi.fn(async () => {}),
   companyPrepare: vi.fn(async () => {}), companyClose: vi.fn(async () => {}),
+  expertVersion: vi.fn(async (_slug: string, _sha256: string, _signal?: AbortSignal) => '/company/resources/orders'),
   bridgeOptions: vi.fn<(options: ProductBridgeOptions) => void>(),
   invoke: vi.fn(async (..._args: unknown[]) => ({})), refreshCatalog: vi.fn(async () => {}) }))
-vi.mock('../src/company-content-sync.ts', () => ({ CompanyContentSync: class {
-  prepare = async () => { await fixture.companyPrepare(); void fixture.companyContent().catch(() => undefined); return this.read() }
-  read = () => ({ skillsRoot: '/company/skills', expertsRoot: '/company/experts', version: '0', sha256: '0'.repeat(64) })
-  refresh = async () => { await fixture.companyContent() }
-  pin = async () => this.read()
-  close = fixture.companyClose
-} }))
+vi.mock('../src/company-content-sync.ts', async original => ({
+  waitForCompanyContent: (await original<typeof import('../src/company-content-sync.ts')>()).waitForCompanyContent,
+  CompanyContentSync: class {
+    prepare = async () => { await fixture.companyPrepare(); void fixture.companyContent().catch(() => undefined); return this.read() }
+    read = () => ({ skillsRoot: '/company/skills', expertsRoot: '/company/experts', version: '0', sha256: '0'.repeat(64) })
+    refresh = async () => { await fixture.companyContent() }
+    pin = async () => this.read()
+    expertVersion = fixture.expertVersion
+    close = fixture.companyClose
+  } }))
 vi.mock('../src/builtin-capabilities.ts', () => ({ builtinCapabilityPatches: () => [] }))
+vi.mock('../src/native-capabilities.ts', () => ({ prepareNativeCapabilities: async () => {} }))
+
 vi.mock('node:fs', async original => ({ ...await original<typeof import('node:fs')>(), writeFileSync: fixture.writeFile,
   rmSync: fixture.removeFile }))
 vi.mock('electron', () => ({
@@ -73,6 +79,7 @@ beforeEach(() => {
   fixture.connectorsClose.mockReset().mockResolvedValue()
   fixture.knowledgePrepare.mockReset().mockResolvedValue()
   fixture.companyPrepare.mockReset().mockResolvedValue(); fixture.companyClose.mockReset().mockResolvedValue()
+  fixture.expertVersion.mockReset().mockResolvedValue('/company/resources/orders')
   fixture.knowledgeReset.mockReset().mockResolvedValue()
   fixture.writeFile.mockReset(); fixture.removeFile.mockReset(); fixture.encryptionAvailable.mockReset().mockReturnValue(false)
 })
@@ -257,6 +264,30 @@ it('enters the workspace while the background company check fails and exposes re
   } finally { await extension.close() }
 })
 
+it('resolves pinned experts only over authenticated Host IPC with validated version coordinates', async () => {
+  const extension = createExtension({ getWindow: () => undefined, isQuitting: () => false, requestHost: async () => ({}) })
+  const sha256 = 'a'.repeat(64)
+  const caller = new AbortController()
+  try {
+    await extension.prepareHost({ directory: '/unused-profile', installAnchor: '/unused-runtime/package.json' })
+    await expect(extension.invokeRuntime('runtime.companyContent.expertVersion', { slug: 'orders', sha256 }, caller.signal))
+      .resolves.toBe('/company/resources/orders')
+    expect(fixture.expertVersion).toHaveBeenCalledWith('orders', sha256, expect.any(AbortSignal))
+    const forwarded = fixture.expertVersion.mock.calls[0]![2]!
+    caller.abort()
+    expect(forwarded.aborted).toBe(true)
+    expect(isProductMethod('runtime.companyContent.expertVersion')).toBe(false)
+    for (const payload of [{ slug: '../orders', sha256 }, { slug: 'orders', sha256: '../version' },
+      { slug: 'orders', sha256, employeeId: 'another' }]) {
+      await expect(extension.invokeRuntime('runtime.companyContent.expertVersion', payload)).rejects.toThrow()
+    }
+    fixture.session = { authenticated: true, employeeId: 'another' }
+    await expect(extension.invokeRuntime('runtime.companyContent.expertVersion', { slug: 'orders', sha256 }))
+      .rejects.toMatchObject({ code: 'PRODUCT_HOST_IDENTITY_CHANGED' })
+    expect(fixture.expertVersion).toHaveBeenCalledOnce()
+  } finally { await extension.close() }
+})
+
 it('exits without writing inference configuration when startup retry is declined', async () => {
   fixture.authenticate.mockRejectedValueOnce(new DeepSeekHarnessApiError(503, 'UNAVAILABLE', 'private'))
   fixture.dialog.mockResolvedValueOnce({ response: 1 })
@@ -324,7 +355,7 @@ it('keeps a Host bound to its startup employee while allowing the same employee 
     await extension.prepareHost({ directory: '/unused-profile', installAnchor: '/unused-runtime/package.json' })
     fixture.session = { authenticated: false }
     await persist(fixture.session, undefined)
-    await expect(extension.invokeRuntime('connectors.list')).rejects.toMatchObject({ code: 'PRODUCT_HOST_IDENTITY_CHANGED' })
+    await expect(extension.invokeRuntime('connectors.list')).rejects.toMatchObject({ code: 'EMPLOYEE_UNAUTHORIZED' })
     fixture.session = { authenticated: true, employeeId: 'fixture' }
     await persist(fixture.session, 'new-token')
     await expect(extension.invokeRuntime('connectors.list')).resolves.toEqual([])
@@ -359,6 +390,138 @@ it('rejects a late Host result after its employee changes', async () => {
     release.resolve(undefined)
     expect(await pending).toBeInstanceOf(Error)
   } finally { release.resolve(undefined); await pending; await extension.close() }
+})
+
+it('restores company catalogs, exact experts and Session bindings after the startup employee signs in again', async () => {
+  const extension = createExtension({ getWindow: () => undefined, isQuitting: () => false, requestHost: async () => ({}) })
+  const persist = fixture.bridgeOptions.mock.calls[0]![0].persistSession!
+  try {
+    await extension.prepareHost({ directory: '/unused-profile', installAnchor: '/unused-runtime/package.json' })
+    fixture.session = { authenticated: false }
+    await persist(fixture.session, undefined)
+    fixture.session = { authenticated: true, employeeId: 'fixture' }
+    await persist(fixture.session, 'new-token')
+    const roots = await extension.invokeRuntime('runtime.companyContent.read')
+    expect(roots).toMatchObject({ skillsRoot: '/company/skills', expertsRoot: '/company/experts' })
+    await expect(extension.invokeRuntime('runtime.companyContent.refresh')).resolves.toEqual(roots)
+    await expect(extension.invokeRuntime('runtime.companyContent.pin', { sessionId: 'existing-task', started: true }))
+      .resolves.toEqual(roots)
+    await expect(extension.invokeRuntime('runtime.companyContent.expertVersion', { slug: 'orders', sha256: 'a'.repeat(64) }))
+      .resolves.toBe('/company/resources/orders')
+    expect(fixture.companyPrepare).toHaveBeenCalledTimes(2)
+    expect(fixture.companyClose).toHaveBeenCalledOnce()
+    fixture.session = { authenticated: true, employeeId: 'second' }
+    await persist(fixture.session, 'other-token')
+    await expect(extension.invokeRuntime('runtime.companyContent.read')).rejects.toMatchObject({ code: 'PRODUCT_HOST_IDENTITY_CHANGED' })
+    expect(fixture.companyPrepare).toHaveBeenCalledTimes(2)
+  } finally { await extension.close() }
+})
+
+it('shares restored company initialization while allowing one reader to cancel independently', async () => {
+  const extension = createExtension({ getWindow: () => undefined, isQuitting: () => false, requestHost: async () => ({}) })
+  const persist = fixture.bridgeOptions.mock.calls[0]![0].persistSession!
+  const entered = Promise.withResolvers<undefined>(), release = Promise.withResolvers<undefined>()
+  const pending: Promise<unknown>[] = []
+  try {
+    await persist(fixture.session, 'initial-token')
+    await extension.prepareHost({ directory: '/unused-profile', installAnchor: '/unused-runtime/package.json' })
+    fixture.session = { authenticated: false }
+    await persist(fixture.session, undefined)
+    fixture.session = { authenticated: true, employeeId: 'fixture' }
+    await persist(fixture.session, 'new-token')
+    fixture.companyPrepare.mockImplementationOnce(async () => { entered.resolve(undefined); await release.promise })
+    const controller = new AbortController()
+    const cancelled = extension.invokeRuntime('runtime.companyContent.read', undefined, controller.signal).catch((error: unknown) => error)
+    pending.push(cancelled)
+    await entered.promise
+    const active = extension.invokeRuntime('runtime.companyContent.pin', { sessionId: 'new-task', started: false })
+    pending.push(active)
+    const reason = new Error('Page closed')
+    controller.abort(reason)
+    expect(await cancelled).toBe(reason)
+    expect(fixture.companyPrepare).toHaveBeenCalledTimes(2)
+    expect(fixture.companyClose).toHaveBeenCalledOnce()
+    release.resolve(undefined)
+    await expect(active).resolves.toMatchObject({ skillsRoot: '/company/skills' })
+    await expect(extension.invokeRuntime('runtime.companyContent.read')).resolves.toMatchObject({ expertsRoot: '/company/experts' })
+    expect(fixture.companyPrepare).toHaveBeenCalledTimes(2)
+  } finally { release.resolve(undefined); await Promise.allSettled(pending); await extension.close() }
+})
+
+it('waits for an earlier company cleanup before restoring the same employee catalog', async () => {
+  const extension = createExtension({ getWindow: () => undefined, isQuitting: () => false, requestHost: async () => ({}) })
+  const persist = fixture.bridgeOptions.mock.calls[0]![0].persistSession!
+  const entered = Promise.withResolvers<undefined>(), release = Promise.withResolvers<undefined>()
+  const pending: Promise<unknown>[] = []
+  try {
+    await persist(fixture.session, 'initial-token')
+    await extension.prepareHost({ directory: '/unused-profile', installAnchor: '/unused-runtime/package.json' })
+    fixture.companyClose.mockImplementationOnce(async () => { entered.resolve(undefined); await release.promise })
+    fixture.session = { authenticated: false }
+    pending.push(Promise.resolve(persist(fixture.session, undefined)))
+    await entered.promise
+    fixture.session = { authenticated: true, employeeId: 'fixture' }
+    await persist(fixture.session, 'new-token')
+    const restored = extension.invokeRuntime('runtime.companyContent.read')
+    pending.push(restored)
+    await setImmediate()
+    expect(fixture.companyPrepare).toHaveBeenCalledOnce()
+    release.resolve(undefined)
+    await expect(restored).resolves.toMatchObject({ skillsRoot: '/company/skills' })
+    expect(fixture.companyPrepare).toHaveBeenCalledTimes(2)
+  } finally { release.resolve(undefined); await Promise.allSettled(pending); await extension.close() }
+})
+
+it('discards failed restored content preparation and retries without restarting the Host', async () => {
+  const extension = createExtension({ getWindow: () => undefined, isQuitting: () => false, requestHost: async () => ({}) })
+  const persist = fixture.bridgeOptions.mock.calls[0]![0].persistSession!
+  try {
+    await persist(fixture.session, 'initial-token')
+    await extension.prepareHost({ directory: '/unused-profile', installAnchor: '/unused-runtime/package.json' })
+    fixture.session = { authenticated: false }
+    await persist(fixture.session, undefined)
+    fixture.session = { authenticated: true, employeeId: 'fixture' }
+    await persist(fixture.session, 'new-token')
+    const failure = new Error('Content cache is temporarily unavailable')
+    fixture.companyPrepare.mockRejectedValueOnce(failure)
+    await expect(extension.invokeRuntime('runtime.companyContent.read')).rejects.toBe(failure)
+    await expect(extension.invokeRuntime('runtime.companyContent.read')).resolves.toMatchObject({ expertsRoot: '/company/experts' })
+    expect(fixture.companyPrepare).toHaveBeenCalledTimes(3)
+    expect(fixture.companyClose).toHaveBeenCalledTimes(2)
+  } finally { await extension.close() }
+})
+
+it.each(['identity', 'close'] as const)('rejects restored content when %s changes before initialization completes', async (interruption) => {
+  const extension = createExtension({ getWindow: () => undefined, isQuitting: () => false, requestHost: async () => ({}) })
+  const persist = fixture.bridgeOptions.mock.calls[0]![0].persistSession!
+  const entered = Promise.withResolvers<undefined>(), release = Promise.withResolvers<undefined>()
+  let pending: Promise<unknown> | undefined
+  let closing: Promise<void> | undefined
+  try {
+    await persist(fixture.session, 'initial-token')
+    await extension.prepareHost({ directory: '/unused-profile', installAnchor: '/unused-runtime/package.json' })
+    fixture.session = { authenticated: false }
+    await persist(fixture.session, undefined)
+    await expect(extension.invokeRuntime('runtime.companyContent.read')).rejects.toMatchObject({ code: 'EMPLOYEE_UNAUTHORIZED' })
+    expect(fixture.companyPrepare).toHaveBeenCalledOnce()
+    fixture.session = { authenticated: true, employeeId: 'fixture' }
+    await persist(fixture.session, 'new-token')
+    fixture.companyPrepare.mockImplementationOnce(async () => { entered.resolve(undefined); await release.promise })
+    pending = extension.invokeRuntime('runtime.companyContent.read').catch((error: unknown) => error)
+    await entered.promise
+    if (interruption === 'identity') {
+      fixture.session = { authenticated: true, employeeId: 'second' }
+      await persist(fixture.session, 'other-token')
+    } else closing = extension.close()
+    expect(await pending).toBeInstanceOf(Error)
+    release.resolve(undefined)
+    await closing
+    if (interruption === 'identity') {
+      await expect(extension.invokeRuntime('runtime.companyContent.read')).rejects.toMatchObject({ code: 'PRODUCT_HOST_IDENTITY_CHANGED' })
+    }
+    expect(fixture.companyPrepare).toHaveBeenCalledTimes(2)
+    expect(fixture.companyClose).toHaveBeenCalledTimes(2)
+  } finally { release.resolve(undefined); await pending; await closing; await extension.close() }
 })
 
 it.each(['bootstrap', 'company'] as const)('does not publish another employee\'s Host environment after switching during %s preparation', async (phase) => {

@@ -1,27 +1,27 @@
-# Product
+# 产品说明
 
 <!-- impeccable:product-schema 1 -->
 
-## Platform
+## 平台
 
-web
+Harness 桌面内的网页界面。
 
-## Users
+## 用户
 
-Authenticated employees browse personal, department, and company resources in the Harness desktop.
+已登录员工，按权限使用个人、部门和公司资源。
 
-## Product purpose
+## 用途
 
-Provide skills, experts, teams, connectors, and knowledge alongside the native Harness conversation experience. The knowledge workspace manages authorized libraries, folders, documents, uploads, and original-file previews.
+在原生对话旁提供技能、专家套件、专家团、连接器和知识库。知识工作区管理已授权的知识库、文件夹和资料，支持上传、阅读及原文件预览。
 
-## Capabilities and constraints
+## 能力与约束
 
-Use native Harness controls, themes, document previews, task knowledge selection, permissions, and approvals. Keep product behavior in the product extension. Do not change native core code or introduce another retrieval engine. Personal, department, and company scopes remain distinct. Read-only users can browse and preview; management actions require existing server permissions.
+复用 Harness 原生控件、主题、预览、任务知识库选择和审批。产品行为通过扩展点接入，不修改原生核心执行逻辑，不增加检索引擎。个人、部门和公司权限独立；只读用户可浏览和预览，管理操作由服务端实时授权。
 
-## Brand commitments
+## 界面要求
 
-The knowledge redesign references WorkBuddy's clear resource browsing and document management. Preserve the surrounding Harness shell and its light and dark themes.
+资源浏览和资料管理参考 WorkBuddy。保留 Harness 窗口框架、字体及明暗主题，统一使用原生控件。
 
-## Navigation
+## 导航
 
-The knowledge workspace opens a searchable library directory. Employees choose a library before its materials load and can return to the directory.
+知识库先展示可搜索的目录，选库后读取资料；返回目录保留筛选与位置。

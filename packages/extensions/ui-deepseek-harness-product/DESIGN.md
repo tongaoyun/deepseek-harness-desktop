@@ -1,6 +1,6 @@
 ---
-name: DeepSeek Harness knowledge workspace
-description: Native resource browsing, document management, and inline reading.
+name: DeepSeek Harness 知识工作区
+description: 使用原生控件浏览资源、管理资料和阅读文档。
 colors:
   primary-fill: "var(--dsw-alias-button-primary-fill)"
   primary-foreground: "var(--dsw-alias-label-primary-foreground)"
@@ -16,15 +16,15 @@ colors:
 typography:
   headline:
     fontFamily: "var(--dsw-font-family)"
-    fontSize: "28px"
-    fontWeight: 600
-    lineHeight: "36px"
-    letterSpacing: "-0.02em"
-  title:
-    fontFamily: "var(--dsw-font-family)"
     fontSize: "24px"
     fontWeight: 600
     lineHeight: "32px"
+    letterSpacing: "-0.4px"
+  title:
+    fontFamily: "var(--dsw-font-family)"
+    fontSize: "20px"
+    fontWeight: 600
+    lineHeight: "28px"
     letterSpacing: "-0.02em"
   card-title:
     fontFamily: "var(--dsw-font-family)"
@@ -36,6 +36,11 @@ typography:
     fontSize: "13px"
     fontWeight: 400
     lineHeight: "20px"
+  composer-reference:
+    fontFamily: "var(--dsw-font-family)"
+    fontSize: "14px"
+    fontWeight: 400
+    lineHeight: "22px"
   label:
     fontFamily: "var(--dsw-font-family)"
     fontSize: "12px"
@@ -51,8 +56,8 @@ spacing:
   icon-gap: "4px"
   control-gap: "8px"
   row-padding: "16px"
-  card-gap: "20px"
-  card-padding: "24px"
+  card-gap: "16px"
+  card-padding: "18px 20px 14px"
 components:
   button-primary:
     backgroundColor: "{colors.primary-fill}"
@@ -72,6 +77,12 @@ components:
     typography: "{typography.label}"
     height: "28px"
     padding: "0 10px"
+  button-icon-header:
+    textColor: "{colors.label-secondary}"
+    rounded: "{rounded.native-control-small}"
+    height: "28px"
+    width: "28px"
+    padding: "0"
   search-field:
     backgroundColor: "{colors.surface-base}"
     textColor: "{colors.label-primary}"
@@ -83,7 +94,7 @@ components:
     backgroundColor: "{colors.surface-base}"
     textColor: "{colors.label-primary}"
     rounded: "{rounded.library-card}"
-    padding: "24px 24px 20px"
+    padding: "{spacing.card-padding}"
   navigation-row:
     textColor: "{colors.label-secondary}"
     rounded: "{rounded.navigation-row}"
@@ -93,86 +104,102 @@ components:
     textColor: "{colors.label-primary}"
 ---
 
-# Design System: DeepSeek Harness knowledge workspace
+# 知识工作区设计规范
 
-## Overview
+## 范围
 
-**Creative North Star: "Native Harness resource workspace"**
+本规范覆盖产品资源页标题、知识库目录、资料管理和页内阅读。资源浏览参考 WorkBuddy，资料添加和上传参考 WeKnora；窗口框架、主题、字体、控件及原文件预览复用 Harness。权限与原生能力约束见[产品说明](PRODUCT.md)，操作行为见[模块说明](README.md#knowledge)。
 
-This reference describes the product knowledge directory, library materials, and inline reader. WorkBuddy informs resource browsing; Harness owns the surrounding shell, theme, system typography, controls, and original-file preview.
+## 颜色与字体
 
-**Key Characteristics:**
+使用上方定义的原生语义变量，随明暗主题切换；不另设调色板。主按钮和选中导航保持中性色，焦点使用原生业务色。就绪状态使用绿色圆点和普通正文颜色，失败使用原生错误色；状态必须同时有文字。
 
-- Neutral light and dark surfaces with restrained semantic color.
-- A searchable card directory followed by a separate materials workspace.
-- Compact controls, generous document rows, and visible keyboard state.
+字体继承用户设置的 `--dsw-font-family`。库内和阅读标题为 20/28px，卡片标题为 16/24px。正文为 13/20px，资料描述行高为 22px，辅助标签为 12/18px。空状态标题为 15/22px、字重 500。对话知识库引用为 14/22px，位于输入框内的草稿上方；原文件字体由原生预览控制。
 
-The [product constraints](PRODUCT.md) govern native reuse and permissions. The [package reference](README.md#knowledge) owns operation, authorization, and processing behavior.
+对话输入框的能力提示使用 12/20px，小图标、文字与原生小按钮同行，左右内边距为 14px，顶部留白为 8px。读取失败使用错误色；文字和操作允许换行。登录提示不占用对话输入区。
 
-## Colors
+员工登录状态集中在左下角：用户图标与单行状态或姓名组成一个按钮。整行点击展开原生菜单，菜单对齐员工栏左侧并向上展开，再次点击可关闭。关闭菜单或从菜单打开的授权、反馈窗口后，焦点回到员工入口。未登录文字直接可见，菜单首项为“登录”，设置、反馈和软件更新入口始终可用。未登录选择反馈先完成统一授权，再打开编辑器；取消授权不再打开，登录失效时关闭编辑器。折叠侧栏保留图标和无障碍名称。钉钉授权弹窗统一显示等待、取消和重试。连接器与知识库未登录时保留页面标题、13/20px 的简短说明和指向同一授权弹窗的小按钮，不展示独立授权状态或大卡片。
 
-The native palette uses cool neutral surfaces and labels, neutral primary buttons, and semantic success/error accents. Frontmatter values stay bound to the active Harness theme; the [native theme source](../../client/ui-theme/src/styles/design-platform.css) owns their light and dark values.
+## 页面标题
 
-### Primary
+专家套件、技能、连接器和知识库目录共用 `product-capability-*` 页面与标题样式。正文最大宽度为 1128px，顶部留白为 28px，横向留白为 20–44px；macOS 另加原生窗口控件避让空间。滚动区域位于正文外侧，保留稳定滚动条空间，切换页面不改变标题的水平位置。
 
-- **Primary fill and foreground:** directory creation, upload, and dialog confirmation actions.
+页面主标题统一使用一级标题、24/32px、字重 600、字距 -0.4px。说明紧随其下，间距为 4px，使用 13/20px 和原生次要文字颜色；长说明允许换行。操作按钮位于标题区域右侧，空间不足时换行，标题和说明保持左对齐。
 
-### Neutral
+专家与技能的业务分类自动换行，全部预设分类直接可见，不依赖横向滚动；筛选顺序和选中状态在市场与我的保持一致。专家与专家团的筛选栏在窄窗口按行换行，搜索独占一行，字段保持原生控件高度。
 
-- **Base and module surfaces:** the directory/materials canvas and the quieter library navigation rail.
-- **Primary, secondary, and tertiary labels:** names and selected content, descriptions and metadata, then quiet supporting labels.
-- **Border and hover fill:** card edges, table separators, and interactive row feedback.
+内容区域不超过 640px 时，顶部留白为 24px，横向留白为 20px，主标题字号不变。页面标题与库内、文件夹和阅读标题保持独立层级。
 
-Ready uses the success accent only for its dot. Failed states and operation errors use the native error alias. Native business color remains available for keyboard focus; it does not replace the neutral primary button fill.
+## 目录与资料布局
 
-**The Theme Alias Rule.** Use the native semantic aliases in both themes; primary controls and selected navigation remain neutral.
+目录沿用统一资源页宽度和留白。标题、范围切换、搜索和刷新位于卡片列表上方。卡片网格每列最窄 250px，间距 16px；图标与标题同行，真实描述位于标题下方，最多两行，不为缺少描述预留空行。
 
-**The Readable Status Rule.** Ready status uses primary label text and a green dot; color supplements the localized status label.
+进入知识库后使用整页资料浏览器，不增加侧栏。正文最大宽度 1200px，内边距为 28px 40px 40px。返回目录与祖先路径位于标题上方，当前文件夹只出现在主标题。库根目录展示库名和范围；文件夹标题旁提供库级“全部文件”入口。右侧统一放置“添加资料”、刷新和管理菜单。
 
-## Typography
+库根目录的浏览模式、搜索和筛选位于可换行的同一工具栏；文件夹不展示浏览模式。由全部文件返回文件夹时恢复原位置。文件夹与文件共用语义表格，单元格上下内边距为 16px，名称允许换行；文件夹显示更新时间，状态和大小用横线表示。只有文件夹时不展示文件选择框或无意义缩进。
 
-All roles inherit the user-configurable native text family (`--dsw-font-family`), whose default stack starts with Apple system, BlinkMacSystemFont, Segoe UI, and CJK system fallbacks. This workspace adds no display face.
+阅读页替换资料表格，顶部集中显示文件名、状态、返回、按权限开放的编辑与更多操作。解析正文最大宽度 820px，原文件预览使用可用正文区域。
 
-The headline role leads the directory; title leads library/folder materials; card-title names libraries. Body serves rows and navigation; descriptions use the same size with a more open line height (22px). Label serves controls, statuses, and metadata. At compact width, the directory heading becomes (24px/32px) and the materials heading becomes (20px/28px). Original-file typography belongs to the native preview.
+## 窄窗口
 
-## Layout
+资料容器宽度不超过 900px 时，工具栏换行后从起始侧对齐，筛选靠末端。不超过 840px 时隐藏格式、大小和更新时间列，保留名称、状态和操作。
 
-The centered directory caps its width (1200px), with desktop padding (40px 40px 48px). Header, scope tabs, search, refresh, and library cards form the discovery view. Cards use an auto-fill grid with a minimum column width (250px) and the card gap token; their descriptions clamp to two lines.
+工作区宽度不超过 640px 时，资料内边距为 20px，标题操作允许换行。目录范围切换和搜索铺满宽度；资料搜索独占一行，筛选分为两列，清除筛选独占一行。macOS 顶部留出原生窗口控件空间。
 
-An opened library uses a navigation rail (236px) and a flexible materials pane. The pane has a sticky breadcrumb/action header, body padding (24px 28px 28px), a title with management actions, browsing-mode tabs, search and filters, then a full-width table. Table cells use vertical padding (16px); filenames wrap. The inline reader replaces the materials content while retaining navigation and document actions. Passage reading caps its width (820px); original-file preview uses the available pane.
+## 控件与交互
 
-At a materials-container width of at most (680px), format, size, and update columns disappear while name, status, and actions remain. At a workspace-container width of at most (640px), the directory uses padding (24px 20px), cards form a narrow grid, and scope tabs and search fill the width. The workspace shows either navigation or materials under a mobile browse header. Filters use two flexible columns plus refresh (28px), and clear filters occupies its own row. Materials body padding becomes (16px). The viewport breakpoint (640px) also lets search and add actions wrap. macOS top padding includes the native frame clearance.
+按钮、分段切换、菜单、弹窗、提示、图标和正文渲染使用原生组件。目录创建使用常规按钮，资料管理和弹窗使用小按钮。标题刷新与更多操作的尺寸为 28px，表格图标操作区域为 34px。
 
-## Elevation & Depth
+“添加资料”是唯一主入口，菜单依次提供上传文件、导入网页、新建文档、分隔线和新建文件夹。当前文件夹菜单提供改名与删除；文件夹行保留创建子目录和上传快捷入口。
 
-Cards, navigation, and materials use tonal separation and fine borders without card shadows. Table and workspace separators use hairlines (0.5px); library cards use a continuous stroke (1px). Native menus and dialogs retain `--dsw-elevation-prominent`; menus retain native material treatment. The native segmented indicator uses `--dsw-elevation-soft`. Outline buttons use the native inset hairline. Do not redefine those effects in this extension.
+图标保留具体资源的无障碍名称，并用简短提示解释操作。提示在锚点下方靠右，间距 2px；鼠标悬停等待 350ms，键盘焦点立即显示。菜单已打开或操作禁用时隐藏提示；禁用同时清除菜单展开请求，恢复后需重新打开。
 
-**The Overlay Depth Rule.** Keep directory cards and document rows flat; native menus and dialogs own overlay elevation.
+目录搜索即时筛选卡片，资料搜索明确提交；格式和状态筛选有本地化标签。清除专家、专家团、连接器、工具或知识库目录筛选后，焦点回到当前搜索框；清除资料筛选后聚焦资料标题，结果为空也保留有效焦点。原生分段控件负责选中态、键盘操作和减少动画偏好。进入知识库期间保留目录搜索与范围。
 
-## Shapes
+打开库或文件夹后通过原生 `focusWithoutRing` 聚焦标题；阅读时聚焦返回按钮，返回后恢复原文件按钮或资料标题。返回目录恢复原卡片，卡片不存在时聚焦目录标题。操作菜单打开弹窗前聚焦原按钮，由原生弹窗在关闭或取消后恢复焦点。资料删除成功后，原按钮被移除或禁用时聚焦资料标题；搜索框、草稿和等待期间主动移到其他区域的焦点保持原位。
 
-Library cards use the card radius token with clipped content; their icon containers have softly curved corners (10px). Search and icon controls use the search radius, and navigation rows use the navigation radius. Native buttons keep their regular and small radii; native menus and dialogs retain their own geometry. These local values describe this workspace and do not replace the shared radius scale.
+## 状态与权限
 
-## Components
+技能、专家、专家团和连接器的独立空状态共用虚线描边、12px 原生圆角、13/20px 文字、28px 上下内边距及 88px 最小高度；来源分组内部不重复加框。知识库目录使用同样描边，保留 300px 最小高度。首次目录读取预留对应空状态的空间；读取指示延迟 250ms 显示，快速返回不闪现转圈，辅助技术始终可获知加载状态。刷新保留已经确认的列表和空结果，不重新替换成首屏加载占位。
 
-**Buttons and menus.** Reuse native primary, outline, and ghost variants. Directory creation uses regular size; workspace and dialog actions use small size. Primary hover uses the native primary-hover alias; outline/ghost hover uses hover fill. Disabled native buttons reduce opacity (0.4). Menu anchors expose expanded state and localized names; portaled native menus preserve their keyboard behavior.
+启停开关、确认弹窗、编辑器保存区及冲突的写入入口在操作期间保留外观并禁用重复操作，实际执行操作的区域设置 `aria-busy`；专家导入和添加附件不显示保存进度，关联按钮仅临时锁定。专家与专家团的保存、保存并启用仅提交按钮显示保存进度，相邻按钮保留名称。长期不可用仍使用禁用样式。提交发布的内容检查重试保留错误区及原按钮，不插入额外加载行。上传及批量队列在最后一项处理时仍保留提交按钮，重试保留原失败行，仅发起操作的按钮显示忙碌。独立的 AI 创建入口保持可用，不随目录写入禁用；已完成首次读取的知识库目录在后台刷新时仍可创建。读取只影响自身的加载反馈，不禁用整个工具栏。启停成功由开关反映，不插入通用成功横幅挤动目录；失败显示可重试的错误并保留已确认状态。
 
-**Search, filters, and scope tabs.** Search uses a native search input in a labeled bordered wrapper; focus strengthens the border. Directory search filters the cards, while materials search has an explicit submit action. Format/status selects have localized labels. Native SegmentedControl owns scope and browsing-mode selection, selected indicators, keyboard focus, and reduced-motion behavior.
+资料页首次读取或切换目录使用本地化加载文字和三行静态占位，完整资料页就绪后再显示搜索与筛选。同一目录修改或清除筛选时保留工具栏，不重新插入首屏占位。等待时保留新增入口并禁用。后台读取保留已有行、同一文件夹的路径和标题，不影响已选资料的批量操作。刷新按钮保留图标与外观，通过 `aria-busy` 和无障碍状态说明等待；读取失败在原区域提供重试。
 
-**Library cards and navigation.** The large card button opens the library; its footer holds scope/owner information and separate permitted actions. Hover strengthens the border and fills the button; keyboard focus adds an inset outline (2px). Navigation exposes current and expanded state. Opening a library focuses the materials heading through native `focusWithoutRing`; returning restores the originating card, or the directory heading when the card is absent.
+资料、解析内容和保存位置分页在等待及读取失败时保留分页栏和已确认的总数，按钮保留外观并临时禁用；新页正文与目录须读取成功后展示。连续点击同一方向只移动一页。切换文件、目录或筛选条件清除对应的旧总数。
 
-**Materials and reading.** Use semantic table headers, labeled selection checkboxes, native file-type icons, wrapped names, textual processing status, and explicit pagination. Ready text stays primary with a dot (5px). Loading uses ProductLoading with an accessible label; busy regions expose `aria-busy`; errors use alerts and retry actions; empty states distinguish no content from no matches. Read-only users retain browsing/reading controls, while management and batch actions follow existing permissions. Upload, edit, move, and confirmation states use native Modal/Menu; original files render through `document.preview`, and extracted passages through MarkdownText.
+目录、资料和处理详情的刷新，以及任务知识库、正文搜索、引用阅读、原文件授权、解析内容、保存位置、库信息和连接器配置的读取重试，在等待期间保留键盘焦点、图标、名称与尺寸；通过 `aria-disabled` 标记等待，事件处理阻止重复操作。既有内容与错误继续保留，确认结果后更新。正文搜索的提交按钮同样保留焦点，空查询不可提交。
 
-## Do's and Don'ts
+批量操作未提交时取消、关闭或按 Esc，保留原勾选、操作栏和按钮焦点，不刷新资料。提交后关闭才清除勾选并重新核对列表；通过关闭按钮、Esc 或遮罩关闭后，原操作栏移除时焦点返回资料标题，不滚动页面，其他控件的焦点及文本选择保持原位。
 
-### Do:
+连接器详情刷新保留工具列表、搜索条件和展开状态，配置入口保持原位并阻止重复操作；刷新失败后及重试期间隐藏未确认的工具与配置操作，保留浏览控件；成功后恢复搜索、筛选、展开和已加载数量。隐藏内容不接受键盘焦点，原焦点进入刷新入口；其他控件保持焦点。连接器和知识库目录、连接器编辑、本机配置及 OAuth 服务列表的读取重试保留错误区及原按钮，成功后再恢复内容；不插入首屏占位，不短暂显示失效条目。配置保存、知识库编辑器、原文件操作、提交发布和反馈发送重试保留错误至回执确认；进度仅标记当前动作，冲突复核不标记保存忙碌。弹窗中的操作错误显示在当前弹窗固定区域，不在遮罩后的页面重复展示；重试保留原错误区，取消后清除。单文件移动保留按钮名称与外观，仅提交按钮标记忙碌。单文件与批量移动首次提交即固定目标目录，等待及重试均不能改选，列表中的目标与实际请求一致。部分连接失败的提示保留至重连结果确认。临时禁用样式同时覆盖页面及原生弹窗。
 
-- **Do** reuse native Button, SegmentedControl, Menu, Modal, Tooltip, icons, MarkdownText, and document.preview.
-- **Do** keep search, format, status, refresh, and clear-filter controls usable when the workspace narrows.
-- **Do** preserve localized names, explicit loading/error/empty states, permission-dependent actions, and library transition focus.
+技能页面和仓库刷新保留原按钮图标、尺寸、名称、外观和键盘焦点，批量刷新期间连续报告忙碌状态。目录、项目工作区、第三方榜单与搜索读取失败后的重试保留原错误区和按钮，不额外插入加载行，成功后再恢复内容。市场、本机、项目及发现页的技能详情，以及更新与回退预览读取失败时保留当前弹窗和重试按钮焦点，原位重试原资源并阻止重复请求；关闭时取消读取并清除弹窗错误。安装位置菜单在临时等待时保留选中项、路径和外观，关闭菜单并锁定操作；工作区重试保留焦点，连续触发只读取一次。缺失目录和读取错误仍使用禁用样式。
 
-### Don't:
+技能导入、移入回收站和永久删除的确认按钮保留名称与外观，仅执行按钮标记忙碌；等待期间不能取消或关闭。失败及部分导入提示在当前弹窗保留至重试结果确认，背景不重复展示。
 
-- **Don't** hardcode a separate light/dark palette or replace the Harness text family.
-- **Don't** turn the ready label green or communicate processing state through color alone.
-- **Don't** create parallel native controls, document viewers, retrieval engines, or configuration systems.
+任务知识库选择弹窗刷新保留勾选行、焦点及待选状态，确认前锁定应用按钮并保留其外观。引用调整、摘要重新生成、专家保存和资料删除重试保留错误区，确认成功后清除；等待期间不能重复提交或关闭，旧任务结果不能改变当前窗口。任务配置、目录、资料、正文搜索、引用、解析内容、处理详情及编辑器读取失败后的重试保留原错误区、操作按钮与外观，不插入额外加载行；成功后清除错误。输入区的任务配置重试成功移除按钮时，仅将该按钮持有的焦点交回原生输入框，恢复原光标，不改变草稿或其他控件焦点。同一任务的引用应用、移除和恢复成功后，仅恢复原操作持有的输入焦点，不抢占等待期间移到其他控件的焦点；需要新任务时沿用原生导航和输入框聚焦。保存位置的路径和文件夹列表须全部确认后才开放保存，草稿恢复重试保留焦点并阻止重复读取，确认前保持编辑入口关闭。冲突复核保留对照内容和按钮位置，等待时锁定确认，读取失败清除对照内容。相同查询重复搜索保留结果及空结果；后台目录刷新原位复核已提交搜索和当前来源，保留页面、阅读位置和焦点，不执行未提交的查询。同一检索引用刷新保留正文和原文件入口，不重新插入加载占位。切换引用、修改查询或读取失败时清除对应旧内容；原文件按原生预览规则重新核对并加载。
+
+空库保留浏览模式和标题操作，隐藏搜索与筛选。空文件夹省略工具栏，保留顶部分隔线。空状态最小高度为 220px，窄窗口为 190px，说明指向“添加资料”。筛选无结果保留工具栏和清除入口。
+
+只读用户可浏览、阅读与预览。管理入口要求权限已确认，库删除还要求位于库根目录。确认失权后清除资料和管理操作，保留返回与重新核对入口。后台移除当前库或文件时返回列表；原控件被移除且焦点退到页面时聚焦对应标题，其他区域的焦点保持原位。列表内删除知识库成功关闭确认框后，丢失的确认框焦点返回目录标题，不滚动或抢占其他区域的焦点。原文件复用 `document.preview`，解析片段使用原生 MarkdownText。
+
+## 添加资料与上传
+
+原生弹窗在文档、网页和文件夹字段上方展示目标路径，上传队列逐项标明保存位置；路径未确认时显示加载或不可用。由全部文件发起创建时保存到库根目录。保存位置的文件夹行使用原生无底色按钮，图标与名称左对齐，进入箭头靠右；名称允许换行，行高至少 36px。目录导航将原按钮持有的焦点交到选择区，保留其他字段的焦点和草稿。
+
+上传打开原生文件选择器并沿用库设置。尚未上传的 PDF 可展开处理选项，选择沿用库设置或仅提取已有文字；后者明确不识别扫描页和图片文字。开始上传后固定处理模式，失败重试不改变模式。
+
+导入网页先展示并聚焦 URL，说明将网页正文加入知识库，再提供可选名称。无效地址显示关联字段的错误并禁用提交；等待时显示导入中。
+
+## 处理详情
+
+阅读页在原文件、解析内容和处理详情间切换。详情使用平面表格展示阶段、文字状态和右对齐耗时，无可用耗时使用横线。摘要位于表格下方，使用原生 MarkdownText，重新生成按权限开放。刷新保留已有详情及同一文档同一页的解析正文；分页、文档变化或读取失败不展示旧正文。错误在页内展示，刷新不打开另一层弹窗。
+
+## 视觉规则
+
+目录卡片和资料表格保持平面，不增加阴影。表格与工作区分隔线为 0.5px，卡片描边为 1px、圆角为 12px；卡片图标容器圆角为 6px。搜索圆角为 7px，导航行为 5px，其余控件使用原生圆角。
+
+原生菜单与弹窗保留自身材质和浮层阴影，分段选中态沿用原生轻阴影。不覆写共享主题，不以颜色单独表达状态，不另建文档查看器、检索引擎或配置系统。
+
+对话专家与专家团浮层共用原生刷新按钮和错误行间距。团队列表在浮层剩余高度内独立滚动，页签、搜索及重试入口保持可见。专家与专家团目录重试成功移除按钮时，其焦点返回原搜索框并保留文本选择；团队详情返回标题，用户已移到其他控件时保持原位。

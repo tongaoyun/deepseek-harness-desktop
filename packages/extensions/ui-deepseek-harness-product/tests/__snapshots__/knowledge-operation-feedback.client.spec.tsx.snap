@@ -1,0 +1,101 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`keeps base-create save feedback and locks repeated submission and dismissal before rendering 1`] = `
+{
+  "action": "Saving…",
+  "error": "Could not create the knowledge base. Try again.",
+  "focused": true,
+}
+`;
+
+exports[`keeps base-edit save feedback and locks repeated submission and dismissal before rendering 1`] = `
+{
+  "action": "Saving…",
+  "error": "Could not save library details. Try again.",
+  "focused": true,
+}
+`;
+
+exports[`keeps folder save feedback and locks repeated submission and dismissal before rendering 1`] = `
+{
+  "action": "Saving…",
+  "error": "Save did not complete. Your edits are preserved. Retry.",
+  "focused": true,
+}
+`;
+
+exports[`keeps markdown save feedback and locks repeated submission and dismissal before rendering 1`] = `
+{
+  "action": "Saving…",
+  "error": "Save did not complete. Your edits are preserved. Retry.",
+  "focused": true,
+}
+`;
+
+exports[`keeps the base-create suspension focused and distinct from saving through an identity failure 1`] = `
+{
+  "action": "Keep and Close",
+  "busy": "true",
+  "error": "The original save could not be restored or retained. Retry; the draft has not been discarded.",
+  "focused": true,
+  "save": "Retry Original Save",
+  "saving": "false",
+  "waiting": "Wait for the current operation to finish before closing.",
+}
+`;
+
+exports[`keeps the base-edit suspension focused and distinct from saving through an identity failure 1`] = `
+{
+  "action": "Keep and Close",
+  "busy": "true",
+  "error": "The original save could not be restored or retained. Retry; the draft has not been discarded.",
+  "focused": true,
+  "save": "Retry Original Save",
+  "saving": "false",
+  "waiting": "Wait for the current operation to finish before closing.",
+}
+`;
+
+exports[`keeps the folder suspension focused and distinct from saving through an identity failure 1`] = `
+{
+  "action": "Keep and Close",
+  "busy": "true",
+  "error": "The original save could not be restored or retained. Retry; the draft has not been discarded.",
+  "focused": true,
+  "save": "Retry Original Save",
+  "saving": "false",
+  "waiting": "Wait for the current operation to finish before closing.",
+}
+`;
+
+exports[`keeps the markdown suspension focused and distinct from saving through an identity failure 1`] = `
+{
+  "action": "Keep and Close",
+  "busy": "true",
+  "error": "The original save could not be restored or retained. Retry; the draft has not been discarded.",
+  "focused": true,
+  "save": "Retry Original Save",
+  "saving": "false",
+  "waiting": "Wait for the current operation to finish before closing.",
+}
+`;
+
+exports[`keeps the url suspension focused and distinct from saving through an identity failure 1`] = `
+{
+  "action": "Keep and Close",
+  "busy": "true",
+  "error": "The original save could not be restored or retained. Retry; the draft has not been discarded.",
+  "focused": true,
+  "save": "Retry Original Save",
+  "saving": "false",
+  "waiting": "Wait for the current operation to finish before closing.",
+}
+`;
+
+exports[`keeps url save feedback and locks repeated submission and dismissal before rendering 1`] = `
+{
+  "action": "Importing…",
+  "error": "Save did not complete. Your edits are preserved. Retry.",
+  "focused": true,
+}
+`;

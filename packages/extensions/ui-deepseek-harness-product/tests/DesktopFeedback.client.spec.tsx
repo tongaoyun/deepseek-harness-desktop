@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { afterEach, expect, it, vi } from 'vitest'
+import { afterEach, expect, it, onTestFinished, vi } from 'vitest'
 import { DesktopFeedback } from '../src/client/DesktopFeedback.tsx'
-import { zh } from '../src/locales.ts'
+import { en, zh } from '../src/locales.ts'
 
 afterEach(() => { cleanup(); vi.unstubAllGlobals() })
 
@@ -13,32 +13,107 @@ function previewUrls() {
 }
 
 function feedbackBridge(fail = false) {
-  const invoke = vi.fn(async (_namespace: string, method: string, _payload?: unknown, _requestId?: string) => method === 'support.feedback.submit' && fail
+  const invoke = vi.fn(async (_namespace: string, method: string, _payload?: unknown, _requestId?: string): Promise<unknown> => method === 'support.feedback.submit' && fail
     ? { ok: false, failure: { code: 'SERVER_ERROR', message: 'fixture error', retryable: true, resources: [] } }
     : { ok: true, result: method === 'auth.getSession' ? { authenticated: true, employeeId: 'employee-1' } : { status: 'READY' } })
   vi.stubGlobal('dshDesktop', { extensions: { invoke, cancel: vi.fn(), subscribe: () => () => {} } })
   return invoke
 }
 
+it('keeps failed feedback and the send button stable while retrying once', async () => {
+  const invoke = feedbackBridge(true)
+  const response = Promise.withResolvers<{ ok: true; result: { id: string } }>()
+  const view = render(<DesktopFeedback open onClose={vi.fn()} t={key => zh[key]} />)
+  onTestFinished(() => { view.unmount(); response.resolve({ ok: true, result: { id: 'released' } }) })
+  fireEvent.change(screen.getByLabelText(zh.feedbackMessage), { target: { value: '保留失败草稿' } })
+  const send = screen.getByRole<HTMLButtonElement>('button', { name: zh.feedbackSend })
+  send.focus()
+  fireEvent.click(send)
+  const error = await screen.findByRole('alert')
+  await waitFor(() => { expect(send.disabled).toBe(false) })
+  invoke.mockImplementationOnce(() => response.promise)
+  act(() => { send.click(); send.click() })
+  expect(screen.getByRole('alert')).toBe(error)
+  expect(send.disabled).toBe(false)
+  expect(send.getAttribute('aria-disabled')).toBe('true')
+  expect(document.activeElement).toBe(send)
+  expect(send.getAttribute('aria-busy')).toBe('true')
+  expect(send.classList.contains('product-control-pending')).toBe(true)
+  await waitFor(() => { expect(invoke.mock.calls.filter(call => call[1] === 'support.feedback.submit')).toHaveLength(2) })
+  expect({ error: error.textContent, action: send.textContent, busy: send.getAttribute('aria-busy'),
+    focused: document.activeElement === send }).toMatchSnapshot()
+  await act(async () => { response.resolve({ ok: true, result: { id: 'confirmed' } }) })
+  await screen.findByText('confirmed')
+  expect(screen.queryByRole('alert')).toBeNull()
+  expect(screen.getByRole('button', { name: zh.feedbackSend })).toBe(send)
+  expect(document.activeElement).toBe(screen.getByLabelText(zh.feedbackMessage))
+  const calls = invoke.mock.calls.filter(call => call[1] === 'support.feedback.submit')
+  expect(calls[1]?.[2]).toEqual(calls[0]?.[2])
+})
+
+it('keeps focus on another control when feedback completes after the user moves there', async () => {
+  const invoke = feedbackBridge()
+  const response = Promise.withResolvers<{ ok: true; result: { id: string } }>()
+  const view = render(<DesktopFeedback open onClose={vi.fn()} t={key => zh[key]} />)
+  onTestFinished(() => { view.unmount(); response.resolve({ ok: true, result: { id: 'released' } }) })
+  fireEvent.change(screen.getByLabelText(zh.feedbackMessage), { target: { value: '保留操作位置' } })
+  invoke.mockImplementationOnce(() => response.promise)
+  const send = screen.getByRole('button', { name: zh.feedbackSend })
+  send.focus()
+  fireEvent.click(send)
+  const close = screen.getAllByRole('button', { name: zh.close }).at(-1)!
+  close.focus()
+  await act(async () => { response.resolve({ ok: true, result: { id: 'confirmed' } }) })
+  await screen.findByText('confirmed')
+  expect(document.activeElement).toBe(close)
+})
+
 it('previews screenshots inside the content editor and releases removed previews without device reporting', async () => {
   const invoke = feedbackBridge()
-  const { revoke } = previewUrls()
+  const { create, revoke } = previewUrls()
   const view = render(<DesktopFeedback open onClose={() => undefined} t={key => zh[key]} />)
   const textarea = screen.getByLabelText(zh.feedbackMessage)
   fireEvent.paste(textarea, { clipboardData: { files: [new File(['jpeg'], 'pasted.jpg', { type: 'image/jpeg' })], getData: () => '' } })
   expect(await screen.findByAltText('pasted.jpg')).toBeTruthy()
   expect(screen.getByAltText('pasted.jpg').closest('[aria-busy]')?.contains(textarea)).toBe(true)
   fireEvent.drop(textarea, { dataTransfer: { types: ['Files'], files: [new File(['webp'], 'dropped.webp', { type: 'image/webp' })] } })
-  expect(await screen.findByAltText('dropped.webp')).toBeTruthy()
+  const retained = await screen.findByAltText('dropped.webp')
   fireEvent.click(screen.getByRole('button', { name: `${zh.remove} pasted.jpg` }))
   expect(screen.queryByAltText('pasted.jpg')).toBeNull()
   expect(revoke).toHaveBeenCalledWith('blob:pasted.jpg')
+  expect(screen.getByAltText('dropped.webp')).toBe(retained)
+  expect(create).toHaveBeenCalledTimes(2)
+  expect(revoke).not.toHaveBeenCalledWith('blob:dropped.webp')
   expect(document.querySelector('input[type="file"]')).toBeNull()
   expect(document.body.textContent).not.toContain('重试上报')
   expect(invoke.mock.calls.some(call => call[1].startsWith('support.device.'))).toBe(false)
   view.unmount()
   expect(revoke).toHaveBeenCalledWith('blob:pasted.jpg')
   expect(revoke).toHaveBeenCalledWith('blob:dropped.webp')
+})
+
+it.each(['zh', 'en'] as const)('returns focus and the saved selection to the feedback draft after removing screenshots in %s', async (language) => {
+  feedbackBridge()
+  const { revoke } = previewUrls()
+  const text = language === 'zh' ? zh : en
+  render(<DesktopFeedback open onClose={vi.fn()} t={key => text[key]} />)
+  const input = screen.getByLabelText<HTMLTextAreaElement>(text.feedbackMessage)
+  fireEvent.change(input, { target: { value: '保留反馈草稿' } })
+  input.setSelectionRange(1, 3)
+  fireEvent.paste(input, { clipboardData: { files: ['first.png', 'middle.png', 'last.png'].map(name => new File(['png'], name, { type: 'image/png' })), getData: () => '' } })
+  const retained = await screen.findByAltText('last.png')
+  for (const name of ['middle.png', 'last.png', 'first.png']) {
+    const remove = screen.getByRole('button', { name: `${text.remove} ${name}` })
+    remove.focus()
+    fireEvent.click(remove)
+    expect(document.activeElement).toBe(input)
+    expect(input.value).toBe('保留反馈草稿')
+    expect([input.selectionStart, input.selectionEnd]).toEqual([1, 3])
+    expect(revoke).toHaveBeenCalledWith(`blob:${name}`)
+    if (name === 'middle.png') expect(screen.getByAltText('last.png')).toBe(retained)
+  }
+  expect({ focused: document.activeElement?.getAttribute('id') === input.id, draft: input.value,
+    images: screen.queryAllByRole('img').length }).toMatchSnapshot()
 })
 
 it('rejects invalid attachments atomically and preserves text clipboard behavior', async () => {
@@ -59,16 +134,56 @@ it('rejects invalid attachments atomically and preserves text clipboard behavior
   expect(event.defaultPrevented).toBe(false)
 })
 
+it('translates attachment errors without discarding the feedback draft', () => {
+  feedbackBridge()
+  const view = render(<DesktopFeedback open onClose={() => undefined} t={key => zh[key]} />)
+  const input = screen.getByLabelText(zh.feedbackMessage)
+  fireEvent.change(input, { target: { value: '保留草稿' } })
+  fireEvent.paste(input, { clipboardData: { files: [new File(['gif'], 'bad.gif', { type: 'image/gif' })], getData: () => '' } })
+  expect(screen.getByRole('alert').textContent).toBe(zh.feedbackImagesInvalid)
+  view.rerender(<DesktopFeedback open onClose={() => undefined} t={key => en[key]} />)
+  expect(screen.getByRole('alert').textContent).toBe(en.feedbackImagesInvalid)
+  expect(screen.getByLabelText(en.feedbackMessage)).toHaveProperty('value', '保留草稿')
+})
+
+it('translates submission failures without resending or changing their retry identity', async () => {
+  const invoke = feedbackBridge(true)
+  const view = render(<DesktopFeedback open onClose={() => undefined} t={key => zh[key]} />)
+  fireEvent.change(screen.getByLabelText(zh.feedbackMessage), { target: { value: '保留失败反馈' } })
+  fireEvent.click(screen.getByRole('button', { name: zh.feedbackSend }))
+  expect((await screen.findByRole('alert')).textContent).toBe(zh.feedbackSendFailed)
+  const first = invoke.mock.calls.find(call => call[1] === 'support.feedback.submit')
+  view.rerender(<DesktopFeedback open onClose={() => undefined} t={key => en[key]} />)
+  expect(screen.getByRole('alert').textContent).toBe(en.feedbackSendFailed)
+  expect(invoke.mock.calls.filter(call => call[1] === 'support.feedback.submit')).toHaveLength(1)
+  fireEvent.click(screen.getByRole('button', { name: en.feedbackSend }))
+  await screen.findByRole('alert')
+  expect(invoke.mock.calls.filter(call => call[1] === 'support.feedback.submit')[1]?.[2]).toEqual(first?.[2])
+})
+
 it('retains image bytes and previews for an unsuccessful submission', async () => {
   const invoke = feedbackBridge(true); previewUrls()
-  render(<DesktopFeedback open onClose={() => undefined} t={key => zh[key]} />)
+  const response = Promise.withResolvers<{ ok: false; failure: { code: string; message: string; retryable: boolean; resources: [] } }>()
+  const view = render(<DesktopFeedback open onClose={() => undefined} t={key => zh[key]} />)
+  onTestFinished(() => { view.unmount(); response.resolve({ ok: false, failure: { code: 'SERVER_ERROR', message: 'released', retryable: true, resources: [] } }) })
   const image = new File(['png'], 'retained.png', { type: 'image/png' })
   Object.defineProperty(image, 'arrayBuffer', { value: async () => new Uint8Array([1, 2, 3]).buffer })
   fireEvent.paste(screen.getByLabelText(zh.feedbackMessage), { clipboardData: { files: [image], getData: () => '' } })
   fireEvent.change(screen.getByLabelText(zh.feedbackMessage), { target: { value: '图片反馈' } })
+  const preview = screen.getByAltText('retained.png')
+  const remove = screen.getByRole<HTMLButtonElement>('button', { name: `${zh.remove} retained.png` })
+  invoke.mockImplementationOnce(() => response.promise)
   fireEvent.click(screen.getByRole('button', { name: zh.feedbackSend }))
+  await waitFor(() => { expect(invoke.mock.calls.some(call => call[1] === 'support.feedback.submit')).toBe(true) })
+  expect(remove.disabled).toBe(true)
+  expect(remove.classList.contains('product-control-pending')).toBe(true)
+  fireEvent.click(remove)
+  expect(screen.getByAltText('retained.png')).toBe(preview)
+  await act(async () => { response.resolve({ ok: false, failure: { code: 'SERVER_ERROR', message: 'fixture error', retryable: true, resources: [] } }) })
   await screen.findByRole('alert')
-  expect(screen.getByAltText('retained.png')).toBeTruthy()
+  expect(screen.getByAltText('retained.png')).toBe(preview)
+  expect(screen.getByRole('button', { name: `${zh.remove} retained.png` })).toBe(remove)
+  expect(remove.disabled).toBe(false)
   const first = invoke.mock.calls.find(call => call[1] === 'support.feedback.submit')
   fireEvent.click(screen.getByRole('button', { name: zh.feedbackSend }))
   await waitFor(() => { expect(invoke.mock.calls.filter(call => call[1] === 'support.feedback.submit')).toHaveLength(2) })

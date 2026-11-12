@@ -1,0 +1,91 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`compares 'different' 'description' edits with the reviewed team after '使用最新内容' 1`] = `
+{
+  "choice": "使用最新内容",
+  "closeRequested": 1,
+  "confirmation": null,
+  "description": "另一窗口更新的简介",
+  "local": "different",
+  "reloadProtected": false,
+  "tags": "需求评审，方案比较，迭代规划",
+}
+`;
+
+exports[`compares 'different' 'description' edits with the reviewed team after '保留我的草稿' 1`] = `
+{
+  "choice": "保留我的草稿",
+  "closeRequested": 0,
+  "confirmation": "放弃未保存修改？",
+  "description": "尚未保存的另一份简介",
+  "local": "different",
+  "reloadProtected": true,
+  "tags": "需求评审，方案比较，迭代规划",
+}
+`;
+
+exports[`compares 'different' 'tags' edits with the reviewed team after '保留我的草稿' 1`] = `
+{
+  "choice": "保留我的草稿",
+  "closeRequested": 0,
+  "confirmation": "放弃未保存修改？",
+  "description": "适合需求评审、方案比较与迭代规划。结合用户价值、使用体验和实现成本，明确首版范围、功能优先级及下一步行动。",
+  "local": "different",
+  "reloadProtected": true,
+  "tags": "尚未保存的标签",
+}
+`;
+
+exports[`compares 'latest' 'description' edits with the reviewed team after '保留我的草稿' 1`] = `
+{
+  "choice": "保留我的草稿",
+  "closeRequested": 1,
+  "confirmation": null,
+  "description": "另一窗口更新的简介",
+  "local": "latest",
+  "reloadProtected": false,
+  "tags": "需求评审，方案比较，迭代规划",
+}
+`;
+
+exports[`compares 'latest' 'tags' edits with the reviewed team after '保留我的草稿' 1`] = `
+{
+  "choice": "保留我的草稿",
+  "closeRequested": 1,
+  "confirmation": null,
+  "description": "适合需求评审、方案比较与迭代规划。结合用户价值、使用体验和实现成本，明确首版范围、功能优先级及下一步行动。",
+  "local": "latest",
+  "reloadProtected": false,
+  "tags": "最新标签",
+}
+`;
+
+exports[`compares 'original' 'description' edits with the reviewed team after '保留我的草稿' 1`] = `
+{
+  "choice": "保留我的草稿",
+  "closeRequested": 0,
+  "confirmation": "放弃未保存修改？",
+  "description": "适合需求评审、方案比较与迭代规划。结合用户价值、使用体验和实现成本，明确首版范围、功能优先级及下一步行动。",
+  "local": "original",
+  "reloadProtected": true,
+  "tags": "需求评审，方案比较，迭代规划",
+}
+`;
+
+exports[`protects the expert only when restoring an attachment with changed bytes 1`] = `
+{
+  "closeRequested": 0,
+  "content": "changed",
+  "dialogs": 2,
+  "reloadProtected": true,
+}
+`;
+
+exports[`protects the expert only when restoring an attachment with same bytes 1`] = `
+{
+  "closeRequested": 1,
+  "content": "same",
+  "dialogs": 1,
+  "reloadProtected": false,
+}
+`;

@@ -8,6 +8,7 @@ import { ConnectorDraftSchema } from '@deepseek-harness/product/connector-draft'
 import { DeepSeekHarnessApiClient } from '@deepseek-harness/product'
 import { DeepSeekHarnessProductBridge } from '@deepseek-harness/product/bridge'
 import { PersonalConnectors } from '../src/personal-connectors.ts'
+import { savedConnectorResponse } from './connector-receipt-fixture.ts'
 
 vi.mock('node:fs/promises', async (importOriginal) => {
   const actual = await importOriginal<typeof import('node:fs/promises')>()
@@ -124,7 +125,7 @@ readline.createInterface({input:process.stdin}).on('line', line => {
         await release.promise
         if (mode === 'cancel') return Response.json({ success: false, errCode: 'CONNECTOR_VERSION_CONFLICT', errMessage: 'Rejected edit' }, { status: 409 })
         version = '1.0.1'
-        return Response.json({ success: true, data: {} })
+        return savedConnectorResponse(init, employee)
       }
       if (path === '/api/v1/connectors' || path === '/api/v1/knowledge-bases') {
         const entries = path === '/api/v1/connectors' ? [entry(version)] : []

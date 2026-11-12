@@ -1,7 +1,8 @@
 /** AgentSpec package import and export over native Remote. */
-import { lstat, readdir, readFile } from 'node:fs/promises'
+import { lstat, readdir } from 'node:fs/promises'
 import { join } from 'node:path'
-import { agentSpecManifest, companyContentRelease, contentDigest } from '@deepseek-harness/product/company-content'
+import { agentSpecManifest, companyContentRelease, contentDigest, COMPANY_CONTENT_MAX_BYTES, COMPANY_CONTENT_MAX_FILES } from '@deepseek-harness/product/company-content'
+import { readContentFile } from '@deepseek-harness/product/content-files'
 import { customExpertInputSchema, type CustomExpertInput } from './expert-contract.ts'
 import { expertDescriptionSummary } from './package-manifest.ts'
 
@@ -53,8 +54,10 @@ export async function readExpertPackage(root: string, slug: string, signal: Abor
     if (info.isDirectory()) {
       for (const name of await readdir(target)) await walk(relative ? relative + '/' + name : name)
     } else {
-      if (!info.isFile() || (bytes += info.size) > 32 * 1024 * 1024 || Object.keys(files).length >= 2048) throw new Error('专家包超过限制')
-      files[`experts/${slug}/${relative}`] = (await readFile(target, { signal })).toString('base64')
+      if (!info.isFile() || Object.keys(files).length >= COMPANY_CONTENT_MAX_FILES) throw new Error('专家包超过限制')
+      const content = await readContentFile(target, COMPANY_CONTENT_MAX_BYTES - bytes, signal)
+      bytes += content.byteLength
+      files[`experts/${slug}/${relative}`] = content.toString('base64')
     }
   }
   await walk('')

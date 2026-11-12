@@ -10,12 +10,7 @@ export interface SkillManagerResults {
   readWorkspace: CoreResult<'workspaceSkills'>
   setSkillEnabled: CoreResult<'setSkillEnabled'>
   setSourceEnabled: CoreResult<'setSourceEnabled'>
-  createCategory: CoreResult<'createCategory'>
-  renameCategory: CoreResult<'renameCategory'>
-  deleteCategory: CoreResult<'deleteCategory'>
   assignCategory: CoreResult<'assignSkillCategory'>
-  moveInCategory: CoreResult<'moveSkillInCategory'>
-  setCategoryEnabled: CoreResult<'setCategoryEnabled'>
   createSkill: CoreResult<'createSkill'>
   uploadSkill: CoreResult<'importUploadedSkill'>
   listRepositories: RepositoryResult<'list'>

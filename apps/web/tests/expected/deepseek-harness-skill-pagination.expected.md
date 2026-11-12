@@ -1,0 +1,60 @@
+- text: Catalog skill 0 Read-only catalog fixture 0 fixture/skill-0
+- button "Details"
+- button "Install"
+- text: Catalog skill 1 Read-only catalog fixture 1 fixture/skill-1
+- button "Details"
+- button "Install"
+- text: Catalog skill 2 Read-only catalog fixture 2 fixture/skill-2
+- button "Details"
+- button "Install"
+- text: Catalog skill 3 Read-only catalog fixture 3 fixture/skill-3
+- button "Details"
+- button "Install"
+- text: Catalog skill 4 Read-only catalog fixture 4 fixture/skill-4
+- button "Details"
+- button "Install"
+- text: Catalog skill 5 Read-only catalog fixture 5 fixture/skill-5
+- button "Details"
+- button "Install"
+- text: Catalog skill 6 Read-only catalog fixture 6 fixture/skill-6
+- button "Details"
+- button "Install"
+- text: Catalog skill 7 Read-only catalog fixture 7 fixture/skill-7
+- button "Details"
+- button "Install"
+- text: Catalog skill 8 Read-only catalog fixture 8 fixture/skill-8
+- button "Details"
+- button "Install"
+- text: Catalog skill 9 Read-only catalog fixture 9 fixture/skill-9
+- button "Details"
+- button "Install"
+- text: Catalog skill 10 Read-only catalog fixture 10 fixture/skill-10
+- button "Details"
+- button "Install"
+- text: Catalog skill 11 Read-only catalog fixture 11 fixture/skill-11
+- button "Details"
+- button "Install"
+- text: Catalog skill 12 Read-only catalog fixture 12 fixture/skill-12
+- button "Details"
+- button "Install"
+- text: Catalog skill 13 Read-only catalog fixture 13 fixture/skill-13
+- button "Details"
+- button "Install"
+- text: Catalog skill 14 Read-only catalog fixture 14 fixture/skill-14
+- button "Details"
+- button "Install"
+- text: Catalog skill 15 Read-only catalog fixture 15 fixture/skill-15
+- button "Details"
+- button "Install"
+- text: Catalog skill 16 Read-only catalog fixture 16 fixture/skill-16
+- button "Details"
+- button "Install"
+- text: Catalog skill 17 Read-only catalog fixture 17 fixture/skill-17
+- button "Details"
+- button "Install"
+- text: Catalog skill 18 Read-only catalog fixture 18 fixture/skill-18
+- button "Details"
+- button "Install"
+- text: Catalog skill 19 Read-only catalog fixture 19 fixture/skill-19
+- button "Details"
+- button "Install"

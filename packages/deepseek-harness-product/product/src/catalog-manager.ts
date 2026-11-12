@@ -37,7 +37,7 @@ export class ProductCatalogManager {
 
   constructor(private readonly options: ProductCatalogManagerOptions) {}
 
-  /** Refresh catalogs independently, preserving each last successful payload for change detection.
+  /** Refresh catalogs independently, notifying payload or failure changes without serving old snapshots.
    * @param signal - Optional caller cancellation; absent callers share a background refresh.
    * @returns Completion after all remote requests settle.
    */
@@ -132,10 +132,16 @@ export class ProductCatalogManager {
   private async loadSnapshot(signal: AbortSignal): Promise<void> {
     const api = this.options.api
     if (api === undefined) throw new Error('deepseek-harness product: server URL is not configured')
-    await this.options.ensureFreshSession()
+    const routes = Object.entries(CATALOG_ROUTES) as [CatalogMethod, string][]
+    try { await this.options.ensureFreshSession() }
+    catch (error) {
+      signal.throwIfAborted()
+      for (const [method] of routes) this.failures.add(method)
+      this.publishChanges()
+      throw error
+    }
     signal.throwIfAborted()
     const employeeId = this.options.getSession().employeeId
-    const routes = Object.entries(CATALOG_ROUTES) as [CatalogMethod, string][]
     const requests = await Promise.all(routes.map(async ([method, route]) => {
       const revision = this.nextRevision(method)
       try { return { method, revision, result: { status: 'fulfilled', value: await api.listAll(route, 100, signal) } as const } }
@@ -151,17 +157,19 @@ export class ProductCatalogManager {
         this.failures.delete(method)
       } else this.failures.add(method)
     }
-    // Compare payloads as well as routes. A same-route update must invalidate
-    // renderer caches even when the catalog shape and keys stay unchanged.
+    this.publishChanges()
+    const failure = requests.find(entry => entry.result.status === 'rejected')?.result
+    if (failure?.status === 'rejected') throw failure.reason
+  }
+
+  private publishChanges(): void {
     const nextSignature = JSON.stringify({
       snapshot: [...this.snapshot.entries()],
-      failures: [...this.failures],
+      failures: [...this.failures].sort(),
     })
     const changed = nextSignature !== this.signature
     this.signature = nextSignature
-    if (changed && requests.some(entry => entry.result.status === 'fulfilled')) this.emitChanged()
-    const failure = requests.find(entry => entry.result.status === 'rejected')?.result
-    if (failure?.status === 'rejected') throw failure.reason
+    if (changed) this.emitChanged()
   }
 
   private nextRevision(method: CatalogMethod): number {

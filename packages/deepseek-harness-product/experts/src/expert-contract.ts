@@ -14,6 +14,9 @@ export function isExpertEmoji(value: string): boolean {
 }
 
 const nameSchema = z.string().trim().min(1).max(40).refine(value => !/[@\r\n\u0000-\u001f\u007f]/u.test(value))
+const packageTextSchema = z.string().max(128 * 1024).refine(value => !value.includes('\0')
+  && new TextEncoder().encode(value).byteLength <= 128 * 1024)
+/** Editable metadata and bounded UTF-8 AgentSpec text, shared by Host and Client. */
 export const customExpertInputSchema = z.object({
   slug: z.string().regex(CUSTOM_EXPERT_SLUG).optional(),
   name: nameSchema,
@@ -24,9 +27,9 @@ export const customExpertInputSchema = z.object({
     return trimmed !== '' && isExpertEmoji(trimmed) ? trimmed : DEFAULT_EXPERT_EMOJI
   }),
   avatar: z.number().int().min(0).max(35).default(0),
-  prompt: z.string().min(1).max(128 * 1024).refine(value => value.trim().length > 0),
-  agents: z.string().max(128 * 1024).optional(),
-  manifest: z.string().max(128 * 1024).optional(),
+  prompt: packageTextSchema.min(1).refine(value => value.trim().length > 0),
+  agents: packageTextSchema.optional(),
+  manifest: packageTextSchema.optional(),
   resources: z.record(z.string(), z.string()).default({}),
 }).strict()
 
@@ -45,6 +48,8 @@ export const expertSummarySchema = z.object({
   description: z.string(), descriptionEn: z.string(),
   emoji: z.string(), division: z.string(), divisionZh: z.string(),
   packageVersion: z.string().optional(), packageSha256: z.string().optional(),
+  /** Stable package identifier for a team member whose runtime slug is team-scoped. */
+  packageSlug: z.string().regex(CUSTOM_EXPERT_SLUG).optional(),
   company: z.boolean().optional(),
   teamMember: z.boolean().optional(),
   conflict: z.boolean().optional(),

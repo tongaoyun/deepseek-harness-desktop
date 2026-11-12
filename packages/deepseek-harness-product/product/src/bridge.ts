@@ -142,7 +142,7 @@ export class DeepSeekHarnessProductBridge {
   }
 
   /** Read an immutable resource version through the existing employee session.
-   * @param ref - Coordinates validated by the catalog index parser.
+   * @param ref - Immutable resource coordinates validated by main.
    * @param signal - Employee lifecycle or sync cancellation.
    * @returns Package files whose digest is checked before local installation.
    */
@@ -446,10 +446,10 @@ export class DeepSeekHarnessProductBridge {
       return this.knowledgeFiles(method as KnowledgeFileMethod, input, this.api, this.session, signal)
     }
     if (method.startsWith('knowledge.documents.') || method.startsWith('knowledge.folders.') || method === 'knowledge.sources.read'
-      || method === 'knowledge.bases.create' || method === 'knowledge.files.limits') {
+      || method === 'knowledge.bases.create' || method === 'knowledge.bases.get' || method === 'knowledge.destinations.list' || method === 'knowledge.files.limits') {
       return invokeKnowledge(this.api, method, input, this.knowledgeUpload, signal)
     }
-    if (method === 'knowledge.bases.delete') {
+    if (method === 'knowledge.bases.update' || method === 'knowledge.bases.delete') {
       const result = await invokeKnowledge(this.api, method, input, this.knowledgeUpload, signal)
       this.catalog.reset()
       // Deletion is already committed on the server. A stale catalog should

@@ -1,5 +1,5 @@
 diff --git a/packages/typert/generator/README.i18n.yaml b/packages/typert/generator/README.i18n.yaml
-index f0ae35ad127937e0716edecae61c106d33d21bee..9dc0c7f95d0c8e2b9139d886fb2ac6a1d0436358 100644
+index 20ddf7dbd1baefaca61c67157e842620ff6e64cc..4b244859fc66b7871c021ae2b0af82c9382c645a 100644
 --- a/packages/typert/generator/README.i18n.yaml
 +++ b/packages/typert/generator/README.i18n.yaml
 @@ -42,8 +42,8 @@
@@ -11,10 +11,10 @@ index f0ae35ad127937e0716edecae61c106d33d21bee..9dc0c7f95d0c8e2b9139d886fb2ac6a1
 +  en: 6369d349635c07bc
 +  zh: 4ae29923c38d9393
  /deepseek-ai-dsh-typert-generator/understand-the-implementation/emission-and-publication-contract:
-   en: 2f6f72eecffc33c2
-   zh: ded33dbc1d9a4ea5
+   en: 0b8a7adb91f66d26
+   zh: 09565b09a6de5310
 diff --git a/packages/typert/generator/README.md b/packages/typert/generator/README.md
-index 1a33a22a2bcc2828b7efaaac95ed9076a0dc6b46..413370bb85b4da79e03d61226bbe1b2ccba3dca3 100644
+index 84288e450bd4a398dac47ca392149ff148e61ec4..a0d760442b8329387a0e5d00d52dce4bcb085e4c 100644
 --- a/packages/typert/generator/README.md
 +++ b/packages/typert/generator/README.md
 @@ -109,7 +109,7 @@ The generator is built on one separation: extraction and emission are decoupled
@@ -27,7 +27,7 @@ index 1a33a22a2bcc2828b7efaaac95ed9076a0dc6b46..413370bb85b4da79e03d61226bbe1b2c
  ### Emission and publication contract
  
 diff --git a/packages/typert/generator/README.zh.md b/packages/typert/generator/README.zh.md
-index 536eb139af790ce685eb90d348f10f684e1ea176..3d7bb440f14bc1f8d8727742648f458bceb64e8a 100644
+index bec2ccd9057858b012fd3bf683a8214d503c5815..89423443d0d9e1562a398e0c5500474eb6f1c785 100644
 --- a/packages/typert/generator/README.zh.md
 +++ b/packages/typert/generator/README.zh.md
 @@ -109,7 +109,7 @@ JSON、YAML、SVG、PNG、JPEG 和 WebP 资源导出不提供 TypeScript 声明
@@ -40,7 +40,7 @@ index 536eb139af790ce685eb90d348f10f684e1ea176..3d7bb440f14bc1f8d8727742648f458b
  ### 生成与发布约定
  
 diff --git a/packages/typert/generator/src/analyzer.ts b/packages/typert/generator/src/analyzer.ts
-index e4e4d9f8a23073d949945b1404c8977dac5e380d..8ce3220478eb16392a97d73275a9fbded4e798ff 100644
+index aaefd42cde8fec8c53bc3caa9119eb29840f8f54..c244d14ab736e8493eb01d96eb3b874f517ba941 100644
 --- a/packages/typert/generator/src/analyzer.ts
 +++ b/packages/typert/generator/src/analyzer.ts
 @@ -559,7 +559,10 @@ export class WorkspaceAnalyzer {
@@ -91,10 +91,10 @@ index b297faf103aa9db656f59ca424bd7e978232e46a..986ddc87f3a445592f5574d43bc01cc0
  {
    "crossFaceLinks": [
 diff --git a/packages/typert/generator/tests/type-model.spec.ts b/packages/typert/generator/tests/type-model.spec.ts
-index 2cfb3327115a077a51ade4b5e30b1476ffe4948e..d2296d240331b2f4c93fc1c2ab07402fd3c9991f 100644
+index 53cd8499505d018e5e44a88e09b1c6bcfadb47d5..b9959e489b70556285c4033b226700ad691be2ca 100644
 --- a/packages/typert/generator/tests/type-model.spec.ts
 +++ b/packages/typert/generator/tests/type-model.spec.ts
-@@ -1178,6 +1178,18 @@ describe('WorkspaceAnalyzer', { timeout: 60_000 }, () => {
+@@ -1196,6 +1196,18 @@ describe('WorkspaceAnalyzer', { timeout: 60_000 }, () => {
      ])
    })
  

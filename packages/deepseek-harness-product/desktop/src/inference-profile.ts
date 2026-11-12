@@ -10,6 +10,7 @@ export function inferenceProfile(bootstrap: ProductRuntimeBootstrap, defaultPlug
   return [
     { id: 'llm-deepseek-account', disabled: true },
     { id: 'ui-settings-account', disabled: true },
+    { id: 'ui-account-notifications', disabled: true },
     { insert: [{ id: 'product-inference-default', name: defaultPlugin,
       config: { baseURL: bootstrap.endpoints.litellm, models: bootstrap.models } }] },
   ]

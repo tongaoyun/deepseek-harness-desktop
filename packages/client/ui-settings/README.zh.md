@@ -55,7 +55,7 @@ kind: "package-reference"
 <a id="understand-the-implementation"></a>
 ## 理解实现
 
-可选的 `settings.launcher` 贡献接收侧栏布局、设置面板是否覆盖侧栏、设置导航回调，以及有效的设置键位标签和无障碍组合。命令未绑定时，外壳不传快捷键展示信息；未注册入口时，外壳保留普通设置按钮。
+可选的 `settings.launcher` 贡献接收侧栏布局、设置面板是否覆盖侧栏、设置导航回调，以及有效的设置键位标签和无障碍组合。命令未绑定时，外壳不传快捷键展示信息；未注册入口时，外壳保留普通设置按钮。 入口可以向 openSettings 传入分区 ID，直接打开对应分区；未传 ID 时使用默认分区。
 
 主内容区可通过 `renderFactorySlot('settings.section-view', { sectionId, close, presentation: 'embedded' })` 复用已注册页面。共享 Factory 持有 `settings.section` 的渲染权，调用方不重复声明插槽，也不直接挂载注册组件。设置窗口使用 `presentation: 'dialog'`。窗口打开时内嵌实例暂停，关闭后恢复，避免重复运行页面副作用。未知页面 ID 不渲染内容；调用方应订阅页面注册表并显示本地化的不可用提示。`close` 由当前展示容器提供，关闭该容器且不改变对话。
 

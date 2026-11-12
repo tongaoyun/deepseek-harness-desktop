@@ -9,14 +9,13 @@ import type {} from '@deepseek-ai/dsh-client-ui-workspace/client'
 import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
 import { parseTaskCapabilities, parseTaskCapabilityResult, type ProductTaskCapabilityRequest, type ProductTaskCapabilities } from '@deepseek-harness/product/protocol'
 import type { DeepSeekHarnessCatalogActions } from './DeepSeekHarnessCatalogSection.tsx'
-import type { AgentPresetRow } from '@deepseek-ai/dsh-agent-preset-registry/types'
 import { invokeProduct, productApi, type ProductApi } from './product-api.ts'
 import { items, type Catalog, type ProductItem } from './catalog-shared.tsx'
 import { CAPABILITY_PANELS } from './DeepSeekHarnessCapabilitiesNavigation.tsx'
 
 /** Adapt product selection to official task services.
  * @param ctx Client plugin context.
- * @returns Serialized actions with cancellable Session acquisition, native failure details, and unchanged drafts on failure.
+ * @returns Serialized actions with cancellable Session acquisition and owned input focus; failures preserve drafts and native details.
  */
 export function createHarnessActions(ctx: Context): DeepSeekHarnessCatalogActions & TaskModeActions {
   let pending: Promise<unknown> = Promise.resolve()
@@ -90,7 +89,8 @@ export function createHarnessActions(ctx: Context): DeepSeekHarnessCatalogAction
     const value = await invoke('tasks.capabilities.read', sessionId === undefined ? {} : { sessionId })
     return parseTaskCapabilities(value)
   }
-  const prepare = async (request: ProductTaskCapabilityRequest, signal: AbortSignal, options: { navigation?: AbortSignal } = {}) => {
+  const prepare = async (request: ProductTaskCapabilityRequest, signal: AbortSignal,
+    options: { navigation: AbortSignal; focusOrigin: Element | null }) => {
     const current = request.sessionId as SessionId | undefined
     const value = await invoke('tasks.capabilities.prepare', {
       ...request, ...current === undefined ? {} : { sessionId: current },
@@ -118,14 +118,18 @@ export function createHarnessActions(ctx: Context): DeepSeekHarnessCatalogAction
       if (sessionId !== current) {
         initializeDraft(reference.binding, draft(current))
       }
-      if (currentSession() === current && options.navigation?.aborted !== true) {
+      if (currentSession() === current && !options.navigation.aborted) {
+        const origin = options.focusOrigin
+        const focused = document.activeElement
+        const ownsFocus = focused === origin || origin !== null && !origin.isConnected && focused === document.body
         ctx.uiWorkspace.openSession(sessionId)
-        input.focus()
+        if (sessionId === current && ownsFocus) input.focus()
       }
       return Promise.resolve()
     })
   }
   const enqueue = (request: ProductTaskCapabilityRequest, sessionId = currentSession()) => {
+    const focusOrigin = document.activeElement
     const signal = operationSignal()
     const source = sessionId === undefined ? undefined : ctx.sessions.retain(sessionId, { source: 'gateway', signal })
     let navigation: AbortSignal
@@ -133,7 +137,7 @@ export function createHarnessActions(ctx: Context): DeepSeekHarnessCatalogAction
     catch (error) { source?.release(); throw error }
     const captured = structuredClone({ ...request, ...sessionId === undefined ? {} : { sessionId } })
     return serialize(signal, async (signal) => {
-      try { await source?.ready; await prepare(captured, signal, { navigation }) }
+      try { await source?.ready; await prepare(captured, signal, { navigation, focusOrigin }) }
       finally { source?.release() }
     })
   }
@@ -143,21 +147,6 @@ export function createHarnessActions(ctx: Context): DeepSeekHarnessCatalogAction
       const panel = CAPABILITY_PANELS.find(value => value.labelKey === catalog)
       if (panel === undefined) throw new Error('Task capability panel is unavailable')
       ctx.layout.selectPanel(panel.id)
-    },
-    readMode: async (sessionId) => {
-      const id = sessionId ?? currentSession()
-      const [roster, capabilities] = await Promise.all([
-        ctx.remote.agentPresets.list(),
-        readCapabilities(id),
-      ])
-      if (!roster.ok) throw roster.error
-      const current = id === undefined ? undefined : ctx.sessions.list.getSnapshot().byId[id]?.projectionValues?.agentPreset
-      const modeId = (capabilities.unavailable === undefined ? capabilities.basePresetId : roster.value.presets.find(row => row.isDefault)?.id) ?? (typeof current === 'string' && !current.startsWith('product-task-')
-        ? current : roster.value.presets.find(row => row.isDefault)?.id)
-      const mode = roster.value.presets.find(row => row.id === modeId)
-      if (mode === undefined) throw new Error('Task execution mode is unavailable')
-      return { mode, capabilities,
-        options: roster.value.presets.filter(row => row.selectable && row.defaultable && row.broken === undefined) }
     },
     setKnowledgeSelection: (ids, sessionId) => enqueue({ knowledgeBaseIds: ids }, sessionId),
     recoverCapabilities: sessionId => enqueue({ recoverCapabilities: true }, sessionId),
@@ -201,12 +190,8 @@ export interface TaskModeActions {
   readonly readKnowledgeCatalog: (signal?: AbortSignal) => Promise<readonly ProductItem[]>
   /** Open a capability directory without changing the current Session or draft. */
   readonly openCatalog: (catalog: Catalog) => void
-  /** Read one Session's mode and capability summary, or the current task when omitted. */
-  readonly readMode: (sessionId?: SessionId) => Promise<{
-    mode: AgentPresetRow
-    options: readonly AgentPresetRow[]
-    capabilities: ProductTaskCapabilities
-  }>
+  /** Read one Session's knowledge selection, or the current task when omitted. */
+  readonly readCapabilities: (sessionId?: SessionId) => Promise<ProductTaskCapabilities>
   /** Apply a complete knowledge selection once, retaining other task configuration. */
   readonly setKnowledgeSelection: (ids: readonly string[], sessionId?: SessionId) => Promise<void>
   readonly recoverCapabilities: (sessionId?: SessionId) => Promise<void>

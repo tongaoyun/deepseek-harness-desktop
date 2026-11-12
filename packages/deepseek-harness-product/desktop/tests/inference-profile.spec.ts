@@ -15,6 +15,10 @@ it('adds company routes without overwriting native API-key or user provider conf
         "id": "ui-settings-account",
       },
       {
+        "disabled": true,
+        "id": "ui-account-notifications",
+      },
+      {
         "insert": [
           {
             "config": {
@@ -38,5 +42,5 @@ it('adds company routes without overwriting native API-key or user provider conf
 it('keeps native API-key providers available when company models contain no DeepSeek route', () => {
   const rows = inferenceProfile({ modelApiKey: 'private', endpoints: { litellm: 'https://models.test/v1' },
     models: ['gpt-example'] }, 'file:///product/inference-default.js')
-  expect(rows.filter(row => row.disabled).map(row => row.id)).toEqual(['llm-deepseek-account', 'ui-settings-account'])
+  expect(rows.filter(row => row.disabled).map(row => row.id)).toEqual(['llm-deepseek-account', 'ui-settings-account', 'ui-account-notifications'])
 })

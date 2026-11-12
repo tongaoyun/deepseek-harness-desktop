@@ -44,11 +44,11 @@ function sources(meta: unknown): readonly KnowledgeSource[] | undefined {
 export function KnowledgeToolResult({ toolName, phase, block, useDisclosure, renderFactorySlot, t }: KnowledgeToolProps): ReactNode {
   const { expanded, toggle } = useDisclosure()
   const [selected, setSelected] = useState<KnowledgeSource>()
-  const [readError, setReadError] = useState('')
+  const [readError, setReadError] = useState<unknown>()
   const accessDenied = useCallback((failure: unknown) => {
     setSelected(undefined)
-    setReadError(productErrorMessage(failure, t, 'knowledgeReadFailed'))
-  }, [t])
+    setReadError(failure)
+  }, [])
   const settled = phase === 'result' && 'kind' in block
   const failed = settled && block.isError
   const stopped = settled && block.error?.code === 'interrupted'
@@ -70,12 +70,12 @@ export function KnowledgeToolResult({ toolName, phase, block, useDisclosure, ren
         : entries.length === 0 ? <p className={css.catalogStatus}>{t('noSearchResults')}</p>
           : <ul className={css.knowledgeToolSources} aria-label={t('knowledgeToolSources')}>
             {entries.map(source => <li key={source.sourceId}>
-              <button type="button" className={css.knowledgeSourceLink} onClick={() => { setReadError(''); setSelected(source) }}>{source.filename}</button>
+              <button type="button" className={css.knowledgeSourceLink} onClick={() => { setReadError(undefined); setSelected(source) }}>{source.filename}</button>
               <span>{source.knowledgeBaseName}</span>{source.locator && <span>{source.locator}</span>}
             </li>)}
           </ul>}
     </DisclosureRow>
-    {readError && <p className={css.catalogError} role="alert">{readError}</p>}
+    {readError !== undefined && <p className={css.catalogError} role="alert">{productErrorMessage(readError, t, 'knowledgeReadFailed')}</p>}
     {selected && <KnowledgeDocumentReader key={selected.sourceId} knowledgeBaseId={selected.knowledgeBaseId}
       sourceId={selected.sourceId} expectedDocumentId={selected.documentId} title={selected.filename} renderFactorySlot={renderFactorySlot}
       onAccessDenied={accessDenied} onClose={() => { setSelected(undefined) }} t={t} />}

@@ -224,8 +224,7 @@ export class DesktopHostProcess {
    * @param inspectPort - Optional loopback inspector port for workspace development.
    * @param environment - Environment inherited by the Host and its plugin subprocesses.
    * @param onFailure - Receives the first unexpected child failure, including after readiness.
-   * @param primaryRuntime - Optional bundled dependency payload; when supplied, missing sibling
-   *   `office-skills` resources fail Host startup.
+   * @param primaryRuntime - Optional bundled dependency payload; the Host exposes it to its profile as `DSH_PRIMARY_RUNTIME`.
    * @param packageManager - Bundled pnpm entry and Node launcher directory, scoped to package operations.
    * @param onPlatformSession - Private credential updates for embedded Platform views.
    * @param onExtensionInvoke - Main-owned dispatcher for Host extension calls; absent calls fail safely.
@@ -264,7 +263,8 @@ export class DesktopHostProcess {
       entry,
       runtimeDir,
       this.projectDir,
-      this.primaryRuntime ?? join(runtimeDir, '..', 'runtime', 'primary-runtime'),
+      // Empty asks the Host for the payload beside its runtime directory, so that layout has one owner.
+      this.primaryRuntime ?? '',
       ...this.packageManager === undefined ? [] : [this.packageManager.pnpm, this.packageManager.nodeBin],
     ], {
       cwd: this.projectDir,

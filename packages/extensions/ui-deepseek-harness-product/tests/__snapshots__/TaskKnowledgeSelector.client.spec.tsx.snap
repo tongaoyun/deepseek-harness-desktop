@@ -1,0 +1,82 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`keeps the catalog retry and error stable until its failure without applying an incomplete scope > Pending catalog retry 1`] = `
+{
+  "canRetry": false,
+  "loadingIndicator": false,
+  "message": "产品目录暂时无法加载，请稍后重试。",
+  "retry": "重试",
+}
+`;
+
+exports[`keeps the catalog retry and error stable until its success without applying an incomplete scope > Pending catalog retry 1`] = `
+{
+  "canRetry": false,
+  "loadingIndicator": false,
+  "message": "产品目录暂时无法加载，请稍后重试。",
+  "retry": "重试",
+}
+`;
+
+exports[`keeps the removal button focused and the error stable during a locked retry in en 1`] = `
+{
+  "action": "Remove knowledge base "业务规范"",
+  "busy": "true",
+  "message": "Knowledge selection failed. Please retry.",
+}
+`;
+
+exports[`keeps the removal button focused and the error stable during a locked retry in zh 1`] = `
+{
+  "action": "移除知识库「业务规范」",
+  "busy": "true",
+  "message": "知识库调整失败，请重试。",
+}
+`;
+
+exports[`locks knowledge preparation before rapid clicks and keeps its error and draft while retrying > Pending selection retry 1`] = `
+{
+  "action": "应用中…",
+  "focused": "应用中…",
+  "message": "知识库调整失败，请重试。",
+}
+`;
+
+exports[`recovers a removed catalog option without taking focus elsewhere (false) > Refreshed catalog option focus 1`] = `
+{
+  "focused": "搜索知识库…",
+  "remaining": [
+    "业务规范",
+  ],
+}
+`;
+
+exports[`recovers a removed catalog option without taking focus elsewhere (true) > Refreshed catalog option focus 1`] = `
+{
+  "focused": "取消",
+  "remaining": [
+    "业务规范",
+  ],
+}
+`;
+
+exports[`recovers a removed catalog retry without taking focus elsewhere (false) > Recovered catalog retry focus 1`] = `
+{
+  "focused": "搜索知识库…",
+  "retryVisible": false,
+}
+`;
+
+exports[`recovers a removed catalog retry without taking focus elsewhere (true) > Recovered catalog retry focus 1`] = `
+{
+  "focused": "取消",
+  "retryVisible": false,
+}
+`;
+
+exports[`retains selection rows and focus during a catalog refresh until failed > Rejected catalog focus 1`] = `
+{
+  "failure": "所选知识库已失去访问权限，请刷新并重新选择。 (KNOWLEDGE_ACCESS_REVOKED)",
+  "focused": "搜索知识库…",
+}
+`;

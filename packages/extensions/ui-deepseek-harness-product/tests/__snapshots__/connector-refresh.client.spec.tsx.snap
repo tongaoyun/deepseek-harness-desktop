@@ -1,0 +1,59 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`moves hidden capability focus to its refresh retry without taking focus elsewhere (false) 1`] = `
+{
+  "elsewhere": false,
+  "focused": "刷新",
+  "hidden": true,
+}
+`;
+
+exports[`moves hidden capability focus to its refresh retry without taking focus elsewhere (true) 1`] = `
+{
+  "elsewhere": true,
+  "focused": "Elsewhere",
+  "hidden": true,
+}
+`;
+
+exports[`recovers 'device' connector refresh focus after success (elsewhere=false) 1`] = `
+{
+  "elsewhere": false,
+  "focused": "配置本机连接",
+  "mode": "device",
+}
+`;
+
+exports[`recovers 'device' connector refresh focus after success (elsewhere=true) 1`] = `
+{
+  "elsewhere": true,
+  "focused": "Elsewhere",
+  "mode": "device",
+}
+`;
+
+exports[`recovers 'oauth' connector refresh focus after success (elsewhere=false) 1`] = `
+{
+  "elsewhere": false,
+  "focused": "断开账号",
+  "mode": "oauth",
+}
+`;
+
+exports[`recovers 'oauth' connector refresh focus after success (elsewhere=true) 1`] = `
+{
+  "elsewhere": true,
+  "focused": "Elsewhere",
+  "mode": "oauth",
+}
+`;
+
+exports[`restores capability browsing after a failed authorization refresh without rebuilding its controls 1`] = `
+{
+  "access": "READ",
+  "expanded": true,
+  "firstExpanded": true,
+  "query": "订单",
+  "visible": 40,
+}
+`;

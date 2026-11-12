@@ -1,5 +1,6 @@
 import type * as React from "react";
 import { Button } from '@deepseek-ai/dsh-client-ui-primitives';
+import { useRetryFocus } from './retry-focus.ts';
 import type { SourceSelectProps, Translate } from "./client-types.ts";
 import type { WorkspaceRow } from "./core.ts";
 import type { DestinationKit, DestinationValue, DestinationPickerProps } from "./destination-types.ts";
@@ -72,10 +73,14 @@ interface Dependencies {
   translateError: (t: Translate, error: unknown) => string;
 }
 
-/** 创建、导入、仓库安装共用的目标选择器：范围、工作区下拉、位置、写入预览。 */
+/** 创建、导入、仓库安装共用目标选择器；重试移除时将其焦点交给工作区或范围，不滚动或抢占其他控件。 */
 export function createDestinationPicker({ react, SourceSelect, translateError }: Dependencies) {
   const h = react.createElement;
   return function DestinationPicker({ t, value, onChange, workspaces, userDestinations, allowAgents, disabled, loading = false, workspaceError, onRetryWorkspaces }: DestinationPickerProps) {
+    const scopeField = react.useRef<HTMLDivElement>(null);
+    const workspaceField = react.useRef<HTMLDivElement>(null);
+    const retryRef = useRetryFocus(() => workspaceField.current?.querySelector<HTMLButtonElement>('button:not(:disabled)')
+      ?? scopeField.current?.querySelector<HTMLButtonElement>('button:not(:disabled)'));
     const inWorkspace = value.scope === "workspace";
     const workspaceDisabled = disabled || loading || !!workspaceError;
     const chosen = workspaces.find((row) => !!row.registeredPaths[0] && row.registeredPaths[0] === value.workspace);
@@ -101,15 +106,16 @@ export function createDestinationPicker({ react, SourceSelect, translateError }:
     const locationOptions = locations.map((key) => ({ value: key, label: t("dest.location." + key), disabled: target(key)?.available === false }));
     // 右侧二级选择器：用户目录下选位置，指定工作区下选工作区。两者都是下拉，放在范围右边。
     const second = inWorkspace
-      ? h("div", { className: "dssm-field", key: "workspace" },
+      ? h("div", { className: "dssm-field", key: "workspace", ref: workspaceField },
           h("span", { className: "dssm-label" }, t("dest.workspace")),
-          h(SourceSelect, { label: t("dest.workspace"), value: value.workspace, disabled: workspaceDisabled || workspaces.length === 0, options: workspaceOptions, onChange: (next: string) => {
+          h(SourceSelect, { label: t("dest.workspace"), value: value.workspace, disabled: !!workspaceError || workspaces.length === 0,
+            pending: disabled || loading, options: workspaceOptions, onChange: (next: string) => {
             if (!workspaceDisabled && workspaces.length > 0 && (next === "" || destinationReady({ ...value, scope: "workspace", workspace: next }, workspaces))) onChange({ workspace: next });
           } }))
       : h("div", { className: "dssm-field", key: "location" },
           h("span", { className: "dssm-label" }, t("dest.location")),
           h(SourceSelect, {
-            label: t("dest.location"), value: value.location, disabled: disabled || locations.length === 0, options: locationOptions,
+            label: t("dest.location"), value: value.location, disabled: locations.length === 0, pending: disabled, options: locationOptions,
             // 置灰项也可能被合成事件触发，所以选择器自己再拒绝一次，不靠 disabled 属性兜底。
             onChange: (next: string) => { if (!disabled && usable(next)) onChange({ location: next as "dsh" | "agents" }); },
           }));
@@ -118,16 +124,18 @@ export function createDestinationPicker({ react, SourceSelect, translateError }:
     const broken = inWorkspace ? [] : locations.filter((key) => target(key)?.available === false);
     return h("div", { className: "dssm-destination" },
       h("div", { className: "dssm-destination-pair" },
-        h("div", { className: "dssm-field", key: "scope" },
+        h("div", { className: "dssm-field", key: "scope", ref: scopeField },
           h("span", { className: "dssm-label" }, t("dest.scope")),
           h(SourceSelect, {
-            label: t("dest.scope"), value: value.scope, disabled, options: scopeOptions,
+            label: t("dest.scope"), value: value.scope, pending: disabled, options: scopeOptions,
             onChange: (next: string) => { if (!disabled && (next === "workspace" || next === "user")) onChange(next === "workspace" ? { scope: "workspace", location: "dsh" } : { scope: "user", workspace: "" }); },
           })),
         second),
       inWorkspace && workspaceError ? h("div", { className: "dssm-feedback dssm-error", role: "alert" },
         t("dest.loadFailed", { error: workspaceError }),
-        onRetryWorkspaces ? h(Button, { variant: "outline", disabled: disabled || loading, onClick: onRetryWorkspaces }, t("dest.retry")) : null) : null,
+        onRetryWorkspaces ? h(Button, { ref: retryRef, variant: "outline", disabled, "aria-disabled": disabled || loading, "aria-busy": loading,
+          className: disabled || loading ? "product-control-pending" : undefined,
+          onClick: () => { if (!disabled && !loading) onRetryWorkspaces(); } }, t("dest.retry")) : null) : null,
       inWorkspace && !loading && !workspaceError && workspaces.length === 0 ? h("p", { className: "dssm-feedback dssm-warning", role: "status" }, t("dest.empty")) : null,
       inWorkspace && workspaces.length > 0 && !chosen ? h("p", { className: "dssm-note" }, t("dest.pickFirst")) : null,
       path ? h("code", { className: "dssm-destination-path" }, path) : null,

@@ -1,0 +1,97 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`keeps source-link focus through a confirmed refresh (inline: false, outcome: 'elsewhere') > Confirmed source-link focus 1`] = `
+{
+  "content": "更新后的正文",
+  "focused": "关闭",
+  "linkRetained": false,
+}
+`;
+
+exports[`keeps source-link focus through a confirmed refresh (inline: false, outcome: 'removed') > Confirmed source-link focus 1`] = `
+{
+  "content": "更新后的正文",
+  "focused": "查看文件",
+  "linkRetained": false,
+}
+`;
+
+exports[`keeps source-link focus through a confirmed refresh (inline: false, outcome: 'retained') > Confirmed source-link focus 1`] = `
+{
+  "content": "更新后的正文",
+  "focused": "阅读链接",
+  "linkRetained": true,
+}
+`;
+
+exports[`keeps source-link focus through a confirmed refresh (inline: true, outcome: 'elsewhere') > Confirmed source-link focus 1`] = `
+{
+  "content": "更新后的正文",
+  "focused": "其他操作",
+  "linkRetained": false,
+}
+`;
+
+exports[`keeps source-link focus through a confirmed refresh (inline: true, outcome: 'removed') > Confirmed source-link focus 1`] = `
+{
+  "content": "更新后的正文",
+  "focused": "查看文件",
+  "linkRetained": false,
+}
+`;
+
+exports[`keeps source-link focus through a confirmed refresh (inline: true, outcome: 'retained') > Confirmed source-link focus 1`] = `
+{
+  "content": "更新后的正文",
+  "focused": "阅读链接",
+  "linkRetained": true,
+}
+`;
+
+exports[`retains a failed download action while retrying and locks both file actions before rendering 1`] = `
+{
+  "action": "下载原文件",
+  "error": "原文件下载失败，请重试。",
+  "focused": "下载原文件",
+}
+`;
+
+exports[`retains a failed openExternal action while retrying and locks both file actions before rendering 1`] = `
+{
+  "action": "用系统应用打开",
+  "error": "无法用系统应用打开，请下载原文件后重试。",
+  "focused": "用系统应用打开",
+}
+`;
+
+exports[`retains a source read retry and hands its focus to the reader when confirmed (inline: false) > Confirmed source retry 1`] = `
+{
+  "content": "恢复的引用正文",
+  "focus": "查看文件",
+  "retryVisible": false,
+}
+`;
+
+exports[`retains a source read retry and hands its focus to the reader when confirmed (inline: false) > Pending source retry 1`] = `
+{
+  "action": "重试",
+  "loadingIndicator": false,
+  "message": "正文暂时无法读取，请重试。",
+}
+`;
+
+exports[`retains a source read retry and hands its focus to the reader when confirmed (inline: true) > Confirmed source retry 1`] = `
+{
+  "content": "恢复的引用正文",
+  "focus": "查看文件",
+  "retryVisible": false,
+}
+`;
+
+exports[`retains a source read retry and hands its focus to the reader when confirmed (inline: true) > Pending source retry 1`] = `
+{
+  "action": "重试",
+  "loadingIndicator": false,
+  "message": "正文暂时无法读取，请重试。",
+}
+`;

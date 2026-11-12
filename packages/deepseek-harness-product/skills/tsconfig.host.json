@@ -2,8 +2,7 @@
   "extends": "./tsconfig.shared.json",
   "compilerOptions": { "lib": ["ES2024", "DOM", "DOM.Iterable"] },
   "files": [
-    "src/index.ts",
-    "src/submission.ts"
+    "src/index.ts"
   ],
   "include": [
     "src/**/*.ts",

@@ -20,6 +20,7 @@ import { parseDesktopRelease } from '../../desktop/src/release.ts'
 import { contentIndex } from '../../../packages/deepseek-harness-product/product/tests/content-fixtures.ts'
 import { builtinCapabilityPatches } from '../../../packages/deepseek-harness-product/desktop/src/builtin-capabilities.ts'
 import type { ProductTaskCapabilities } from '@deepseek-harness/product/protocol'
+import { ProductError, productFailure } from '@deepseek-harness/product/errors'
 import { startMockLlmServer } from '@deepseek-ai/dsh-llm-mock-server'
 import { loadOptionalPatches } from '@deepseek-ai/dsh-app-boot'
 import { ToolCallId, createAssistantMessage, createToolResultMessage, createUserMessage } from '@deepseek-ai/dsh-llm'
@@ -45,8 +46,12 @@ async function cancelTaskKnowledge(page: Page): Promise<void> {
   await dialog.waitFor({ state: 'hidden' })
 }
 
+async function openEmployeeMenu(page: Page): Promise<void> {
+  await page.locator('button[data-collapsed][aria-haspopup="menu"]').click()
+}
+
 async function setCodingView(page: Page, enabled: boolean): Promise<void> {
-  await page.getByRole('button', { name: /^(More menu|更多菜单)$/, exact: true }).click()
+  await openEmployeeMenu(page)
   await page.getByRole('menuitem', { name: /^(Settings|设置)$/, exact: true }).click()
   const dialog = page.getByRole('dialog', { name: /^(Settings|设置)$/, exact: true })
   await dialog.getByRole('button', { name: /^(General|通用设置)$/, exact: true }).click()
@@ -95,23 +100,53 @@ function filteredKnowledgeDocuments(baseId: string, query = '', folderId?: strin
     && (folderId === undefined || row.folderId === folderId))
 }
 
-async function openKnowledgeNavigation(page: Page) {
+async function openKnowledgeMaterials(page: Page) {
   const directory = page.locator('[data-knowledge-directory]')
   if (await directory.isVisible()) await directory.locator('[data-knowledge-base][data-scope="PERSONAL"]').first().click()
-  const navigation = page.locator('[data-knowledge-navigation]')
-  await navigation.waitFor({ state: 'attached' })
-  if (!await navigation.isVisible()) await page.getByRole('button', { name: /^(Browse materials|浏览资料)$/, exact: true }).click()
-  await navigation.waitFor({ state: 'visible' })
-  return navigation
+  const materials = page.locator('[data-knowledge-content]')
+  await materials.waitFor({ state: 'visible' })
+  return materials
+}
+
+async function openKnowledgeDirectory(page: Page): Promise<Locator> {
+  const directory = page.locator('[data-knowledge-directory]')
+  if (!await directory.isVisible()) {
+    const navigation = await openKnowledgeMaterials(page)
+    await navigation.getByRole('button', { name: /^(Knowledge bases|知识库)$/, exact: true }).click()
+  }
+  await directory.waitFor()
+  return directory
+}
+
+async function selectKnowledgeLibrary(page: Page, name: string): Promise<void> {
+  const directory = await openKnowledgeDirectory(page)
+  await directory.getByRole('button', { name, exact: true }).click()
 }
 
 async function openKnowledgeFile(page: Page, name: string): Promise<void> {
-  const browse = page.getByRole('button', { name: /^(Browse materials|浏览资料)$/, exact: true })
-  if (await browse.isVisible() && await browse.getAttribute('aria-expanded') === 'true') await browse.click()
   const back = page.getByRole('button', { name: /^(Back to files|返回文件列表)$/, exact: true })
   if (await back.count()) await back.click()
-  await page.getByRole('tab', { name: /^(All files|全部文件)$/, exact: true }).click()
+  await page.getByRole('tab', { name: /^(All files in this library|本库全部文件)$/, exact: true }).click()
   await page.locator('[data-knowledge-content]').getByRole('button', { name, exact: true }).click()
+}
+
+async function captureKnowledgeFlow(page: Page, name: string): Promise<void> {
+  for (const theme of ['light', 'dark'] as const) {
+    await page.emulateMedia({ colorScheme: theme })
+    for (const width of [1440, 1024, 390]) {
+      await page.setViewportSize({ width, height: 900 })
+      await page.waitForFunction(drawer => Boolean(document.querySelector('[data-sidebar-drawer]')) === drawer, width < 768)
+      const dialog = page.locator('[role="dialog"][aria-modal="true"]')
+      if (await dialog.count() === 0 && await page.locator('[data-sidebar-drawer]:not([data-sidebar-collapsed])').count()) {
+        await page.getByRole('button', { name: /^(Collapse sidebar|收起侧边栏)$/, exact: true }).click()
+        await page.locator('[data-sidebar-drawer][data-sidebar-collapsed]').waitFor()
+      }
+      if (await dialog.count()) expect(await dialog.evaluate(node => node.scrollWidth > node.clientWidth + 1)).toBe(false)
+      await page.screenshot({ path: join(screenshots, `knowledge-${name}-${theme}-${width}.png`), animations: 'disabled' })
+    }
+  }
+  await page.emulateMedia({ colorScheme: 'light' })
+  await page.setViewportSize({ width: 1440, height: 900 })
 }
 
 async function submitKnowledgeUpload(page: Page): Promise<void> {
@@ -122,35 +157,55 @@ async function submitKnowledgeUpload(page: Page): Promise<void> {
   await dialog.getByRole('button', { name: /^(Close|关闭)$/, exact: true }).last().click()
 }
 
-async function expectKnowledgeNavigationFits(navigation: Locator): Promise<void> {
-  await expect.poll(async () => navigation.evaluate((element) => {
-    const rect = (value: Element | null): DOMRect | undefined => value?.getBoundingClientRect()
-    const heading = element.querySelector('button[aria-current="page"][class*="knowledgeLibraryRow"]')
-    const tree = element.querySelector('[class*="knowledgeWorkspaceTree"]')
-    const controls = tree === null ? [] : [...tree.querySelectorAll('button, input')]
-    const navigationRect = element.getBoundingClientRect()
-    const headingRect = rect(heading)
-    const treeRect = rect(tree)
-    const isInsideNavigation = (value: DOMRect | undefined): boolean => value !== undefined
-      && value.width > 0 && value.height > 0
-      && value.left >= navigationRect.left - 1 && value.right <= navigationRect.right + 1
-    const controlsInsideNavigation = controls.length > 0 && controls.every(control => isInsideNavigation(rect(control)))
-    return {
-      headingHasWidth: (headingRect?.width ?? 0) > 0 && (heading?.querySelector('span')?.getBoundingClientRect().width ?? 0) > 0,
-      headingIsAboveTree: headingRect !== undefined && treeRect !== undefined && headingRect.bottom <= treeRect.top + 1,
-      treeInsideNavigation: isInsideNavigation(treeRect),
-      controlsInsideNavigation,
-      navigationOverflow: element.scrollWidth > element.clientWidth + 1,
-      treeOverflow: tree !== null && tree.scrollWidth > tree.clientWidth + 1,
+async function expectKnowledgeActionHint(page: Page, trigger: Locator, primary: Locator, label: string, capture: string): Promise<void> {
+  await trigger.hover()
+  const hint = page.getByRole('tooltip', { name: label, exact: true })
+  await hint.waitFor()
+  await expect.poll(() => hint.getAttribute('data-side')).toBe('bottom')
+  const primaryBox = await primary.boundingBox()
+  const triggerBox = await trigger.boundingBox()
+  expect(triggerBox!.height).toBe(primaryBox!.height)
+  expect(triggerBox!.y).toBe(primaryBox!.y)
+  const expectHintClear = async () => {
+    const hintBox = await hint.boundingBox()
+    expect(hintBox!.y).toBeGreaterThanOrEqual(primaryBox!.y + primaryBox!.height)
+    expect(hintBox!.x).toBeGreaterThanOrEqual(0)
+    expect(hintBox!.x + hintBox!.width).toBeLessThanOrEqual(page.viewportSize()!.width)
+    for (const control of await page.locator('[data-knowledge-content]').locator('button, input, select, [role="tab"]').all()) {
+      const box = await control.boundingBox()
+      if (box === null) continue
+      expect(hintBox!.x >= box.x + box.width || hintBox!.x + hintBox!.width <= box.x
+        || hintBox!.y >= box.y + box.height || hintBox!.y + hintBox!.height <= box.y,
+      `Hint covers ${await control.getAttribute('aria-label') ?? await control.textContent()}`).toBe(true)
     }
-  })).toMatchObject({
-    headingHasWidth: true,
-    headingIsAboveTree: true,
-    treeInsideNavigation: true,
-    controlsInsideNavigation: true,
-    navigationOverflow: false,
-    treeOverflow: false,
-  })
+  }
+  await expectHintClear()
+  await page.screenshot({ path: join(screenshots, capture), animations: 'disabled' })
+  await page.mouse.move(0, 0)
+  await hint.waitFor({ state: 'hidden' })
+  await trigger.focus()
+  await trigger.press('Shift+Tab')
+  await page.keyboard.press('Tab')
+  await hint.waitFor()
+  expect(await trigger.evaluate(node => document.activeElement === node)).toBe(true)
+  await expectHintClear()
+}
+
+async function expectKnowledgeHeaderFits(materials: Locator): Promise<void> {
+  await expect.poll(async () => materials.evaluate((element) => {
+    const heading = element.querySelector('[data-knowledge-materials-heading]')
+    const breadcrumb = element.querySelector('nav')
+    const pageRect = element.getBoundingClientRect()
+    const headingRect = heading?.getBoundingClientRect()
+    const breadcrumbRect = breadcrumb?.getBoundingClientRect()
+    return {
+      headingHasWidth: (headingRect?.width ?? 0) > 0,
+      breadcrumbIsAboveHeading: headingRect !== undefined && breadcrumbRect !== undefined && breadcrumbRect.bottom <= headingRect.top,
+      contentInsidePage: headingRect !== undefined && headingRect.left >= pageRect.left && headingRect.right <= pageRect.right,
+      hasSidebar: element.parentElement?.querySelector('aside') !== null,
+      hasOverflow: element.scrollWidth > element.clientWidth + 1,
+    }
+  })).toEqual({ headingHasWidth: true, breadcrumbIsAboveHeading: true, contentInsidePage: true, hasSidebar: false, hasOverflow: false })
 }
 
 async function expectKnowledgeMainFits(page: Page): Promise<void> {
@@ -160,7 +215,7 @@ async function expectKnowledgeMainFits(page: Page): Promise<void> {
     const layout = element.parentElement
     const grid = layout ? getComputedStyle(layout).gridTemplateColumns : ''
     return { hasOverflow: element.scrollWidth > element.clientWidth, visible: element.clientWidth > 0,
-      responsiveColumns: grid.split(' ').length === (workspaceWidth <= 640 ? 1 : 2),
+      responsiveColumns: grid.split(' ').length === 1,
       scrollWidth: element.scrollWidth, clientWidth: element.clientWidth, viewportWidth: window.innerWidth,
       workspaceWidth, mainWidth: element.getBoundingClientRect().width, grid,
       children: [...element.children].map(child => ({ tag: child.tagName,
@@ -296,7 +351,10 @@ async function expectLayout(page: Page, catalog: string, columns: number): Promi
   expect(cardPaint.missingTokens).toEqual([])
 }
 
-it('keeps a cited XLSX original visible inside the source modal on desktop and narrow viewports', async () => {
+it.each([false, true])('keeps a cited XLSX original visible and returns removed retry focus inside the source modal (focus elsewhere: %s)', async (elsewhere) => {
+  const sourceRead = Promise.withResolvers<undefined>()
+  const metadataRead = Promise.withResolvers<undefined>()
+  onTestFinished(() => { sourceRead.resolve(undefined); metadataRead.resolve(undefined) })
   const source = { sourceId: 'sheet-source', knowledgeBaseId: 'personal-notes', knowledgeBaseName: 'Personal notes',
     documentId: 'document-4', filename: 'Order totals.xlsx', locator: 'Preview!A1' }
   const session = Session.create(SessionId('knowledge-source-preview-fixture'))
@@ -331,13 +389,23 @@ it('keeps a cited XLSX original visible inside the source modal on desktop and n
   page.setDefaultTimeout(15_000)
   const calls: string[] = []
   const file = knowledgeOriginal(source.documentId)
-  await page.exposeFunction('__sourcePreviewInvoke', (method: string) => {
+  let sourceReads = 0, metadataReads = 0
+  const failure = { fixtureFailure: { code: 'SERVER_ERROR', message: 'Fixture read failure', retryable: true, resources: [] } }
+  await page.exposeFunction('__sourcePreviewInvoke', async (method: string) => {
     calls.push(method)
     switch (method) {
       case 'auth.getSession': return { authenticated: true }
       case 'tasks.capabilities.read': return { knowledgeBaseIds: [] }
-      case 'knowledge.sources.read': return { ...source, content: 'Office preview spreadsheet passage.' }
-      case 'knowledge.documents.previewMetadata': return knowledgeDocuments(source.knowledgeBaseId).find(row => row.id === source.documentId)
+      case 'knowledge.sources.read':
+        if (++sourceReads === 1) return failure
+        if (sourceReads !== 2) throw new Error('Unexpected duplicate source read')
+        await sourceRead.promise
+        return { ...source, content: 'Office preview spreadsheet passage.' }
+      case 'knowledge.documents.previewMetadata':
+        if (++metadataReads === 1) return failure
+        if (metadataReads !== 2) throw new Error('Unexpected duplicate original-file authorization')
+        await metadataRead.promise
+        return knowledgeDocuments(source.knowledgeBaseId).find(row => row.id === source.documentId)
       case 'knowledge.documents.preview.open': return { transferId: 'sheet-transfer', fileName: source.filename, mediaType: file.mediaType,
         byteLength: file.data.byteLength, maxBytes: 50 * 1024 * 1024, chunkSize: 256 * 1024 }
       case 'knowledge.documents.preview.read': return { data: [...file.data], offset: 0, eof: true }
@@ -350,6 +418,7 @@ it('keeps a cited XLSX original visible inside the source modal on desktop and n
     Object.defineProperty(globalThis, 'dshDesktop', { value: { extensions: {
       invoke: async (_namespace: string, method: string) => {
         let result = await api.__sourcePreviewInvoke(method)
+        if (typeof result === 'object' && result !== null && 'fixtureFailure' in result) return { ok: false, failure: result.fixtureFailure }
         if (method === 'knowledge.documents.preview.read' && typeof result === 'object' && result !== null
           && 'data' in result && Array.isArray(result.data)) result = { ...result, data: Uint8Array.from(result.data) }
         return { ok: true, result }
@@ -368,9 +437,31 @@ it('keeps a cited XLSX original visible inside the source modal on desktop and n
   await row.getByText('Search knowledge', { exact: true }).click()
   await row.getByRole('button', { name: source.filename, exact: true }).click()
   const dialog = page.getByRole('dialog', { name: source.filename, exact: true })
+  const reader = dialog.getByRole('region', { name: 'View file', exact: true })
+  const close = dialog.getByRole('button', { name: 'Close', exact: true }).first()
+  const retry = reader.getByRole('button', { name: 'Retry', exact: true })
+  await retry.press('Enter')
+  await expect.poll(() => sourceReads).toBe(2)
+  expect(await retry.getAttribute('aria-busy')).toBe('true')
+  expect(await retry.evaluate(node => node === document.activeElement)).toBe(true)
+  await page.keyboard.press('Enter')
+  expect(sourceReads).toBe(2)
+  if (elsewhere) await close.focus()
+  sourceRead.resolve(undefined)
   await dialog.getByText('Office preview spreadsheet passage.', { exact: true }).waitFor()
-  await dialog.getByRole('button', { name: 'View original file', exact: true }).click()
+  expect(await (elsewhere ? close : reader).evaluate(node => node === document.activeElement)).toBe(true)
+  await dialog.getByRole('button', { name: 'View original file', exact: true }).press('Enter')
+  expect(await reader.evaluate(node => node === document.activeElement)).toBe(true)
+  await retry.press('Enter')
+  await expect.poll(() => metadataReads).toBe(2)
+  expect(await retry.getAttribute('aria-busy')).toBe('true')
+  expect(await retry.evaluate(node => node === document.activeElement)).toBe(true)
+  await page.keyboard.press('Enter')
+  expect(metadataReads).toBe(2)
+  if (elsewhere) await close.focus()
+  metadataRead.resolve(undefined)
   await dialog.locator('[data-excel-preview]').waitFor()
+  await expect.poll(() => (elsewhere ? close : reader).evaluate(node => node === document.activeElement)).toBe(true)
   for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 600 }, { width: 1440, height: 900 }]) {
     await page.setViewportSize(viewport)
     await expect.poll(() => dialog.locator('[data-excel-preview] canvas').first().evaluate((canvas) => {
@@ -399,12 +490,1249 @@ it('keeps a cited XLSX original visible inside the source modal on desktop and n
         && viewport !== undefined && viewport.height > 150 && header !== undefined && footer !== undefined
         && viewport.top >= header.bottom && viewport.bottom <= footer.top + 1
     })).toBe(true)
-    await page.screenshot({ path: join(screenshots, `knowledge-source-modal-xlsx-${viewport.width}-${viewport.height}.png`), animations: 'disabled' })
+    await page.screenshot({ path: join(screenshots, `knowledge-source-modal-xlsx-${elsewhere ? 'elsewhere' : 'reader'}-${viewport.width}-${viewport.height}.png`), animations: 'disabled' })
   }
   expect(await dialog.getByText(source.locator, { exact: true }).count()).toBe(1)
   await dialog.getByRole('button', { name: 'Close', exact: true }).last().click()
   expect(calls.filter(method => method === 'knowledge.documents.preview.close')).toHaveLength(1)
   expect(calls).not.toContain('knowledge.documents.preview.renderOffice')
+  expect(tripwire.pageErrors).toEqual([])
+})
+
+it('edits library details and reads body search and indexed passages through the real product workspace', async () => {
+  const scaffold = await launchWebScaffold({ firstUse: true,
+    extraInstallAnchors: [join(REPO_ROOT, 'packages/deepseek-harness-product/desktop/package.json')],
+    extraOverlayPath: [join(packageDir, 'cordis.patch.yml'), join(REPO_ROOT, 'apps/web/tests/pin-browse-picker.overlay.yml')],
+  })
+  onTestFinished(() => scaffold.close())
+  const executablePath = process.env.DSH_PLAYWRIGHT_EXECUTABLE_PATH
+  const browser = await chromium.launch(executablePath === undefined ? {} : { executablePath, args: ['--disable-crashpad-for-testing'] })
+  onTestFinished(() => browser.close())
+  const page = await newEnglishPage(browser)
+  const tripwire = watchConsole(page)
+  page.setDefaultTimeout(15_000)
+  let library = { ...organizationKnowledge[0], id: 'personal-notes', name: 'Personal notes', description: 'Original description', updatedAt: '2026-11-05T00:00:00Z' }
+  let sourceReads = 0
+  const calls: { method: string; payload: Readonly<Record<string, unknown>> }[] = []
+  await page.exposeFunction('__contentInvoke', (method: string, payload: Readonly<Record<string, unknown>> = {}) => {
+    calls.push({ method, payload })
+    switch (method) {
+      case 'auth.getSession': return { authenticated: true, employeeId: 'fixture-employee' }
+      case 'tasks.capabilities.read': return { knowledgeBaseIds: [] }
+      case 'catalog.refresh': return { refreshed: true }
+      case 'knowledge.bases.list': return [library]
+      case 'knowledge.bases.get': return library
+      case 'knowledge.bases.update':
+        expect(payload.expectedUpdatedAt).toBe(library.updatedAt)
+        library = { ...library, name: String(payload.name), description: String(payload.description),
+          updatedAt: '2026-11-05T00:01:00Z' }
+        return library
+      case 'knowledge.folders.list': return { items: [], page: payload.page ?? 1, size: payload.size ?? 20, total: 0 }
+      case 'knowledge.documents.upload.pending': return []
+      case 'knowledge.documents.list': return { items: [knowledgeDocuments('personal-notes')[0]], page: 1, size: 20, total: 1 }
+      case 'knowledge.documents.read': return { items: [{ id: 'passage-1', documentId: 'document-1', locator: 'Page 1',
+        content: '# Order checklist\n\nVerify the order total and delivery address before dispatch.' }], page: 1, size: 20, total: 1 }
+      case 'knowledge.search': return [{ sourceId: 'passage-1', knowledgeBaseId: 'personal-notes', documentId: 'document-1',
+        filename: 'Order review.md', locator: 'Page 1', content: 'Verify the order total and delivery address before dispatch.' }]
+      case 'knowledge.sources.read': return { sourceId: 'passage-1', knowledgeBaseId: 'personal-notes', documentId: 'document-1',
+        filename: ++sourceReads === 1 ? null : 'Order review.md', locator: 'Page 1', content: 'Verify the order total and delivery address before dispatch.' }
+      default: throw new Error(`Unexpected content method: ${method}`)
+    }
+  })
+  await page.addInitScript(() => {
+    const api = globalThis as typeof globalThis & { __contentInvoke(method: string, payload?: unknown): Promise<unknown> }
+    Object.defineProperty(globalThis, 'dshDesktop', { value: { extensions: {
+      invoke: async (_namespace: string, method: string, payload?: unknown) => (
+        { ok: true, result: await api.__contentInvoke(method, payload) }),
+      cancel: () => {}, subscribe: () => () => {},
+    } } })
+  })
+  await mkdir(screenshots, { recursive: true })
+  onTestFinished(async ({ task }) => {
+    if (task.result?.state === 'fail') await page.screenshot({ path: join(screenshots, 'knowledge-content-failure.png') })
+  })
+  await page.goto(scaffold.authenticatedUrl)
+  await page.getByRole('button', { name: 'Knowledge bases', exact: true }).click()
+  const directory = page.locator('[data-knowledge-directory]')
+  const directoryInput = directory.getByRole('searchbox')
+  await directoryInput.fill('Personal')
+  const directoryInputNode = await directoryInput.elementHandle()
+  const libraryButton = directory.getByRole('button', { name: 'Personal notes', exact: true })
+  const libraryButtonNode = await libraryButton.elementHandle()
+  await selectKnowledgeLibrary(page, 'Personal notes')
+  const materials = page.locator('[data-knowledge-content]')
+  await materials.getByRole('button', { name: 'Knowledge bases', exact: true }).click()
+  expect(await directoryInput.evaluate((node, previous) => node === previous, directoryInputNode)).toBe(true)
+  expect(await directoryInput.inputValue()).toBe('Personal')
+  expect(await libraryButton.evaluate((node, previous) => node === previous, libraryButtonNode)).toBe(true)
+  expect(await libraryButton.evaluate(node => node === document.activeElement)).toBe(true)
+  await directoryInput.fill('')
+  await libraryButton.click()
+  await materials.getByRole('button', { name: 'Actions for “Personal notes”', exact: true }).click()
+  await page.getByRole('menuitem', { name: 'Edit library', exact: true }).click()
+  const editor = page.getByRole('dialog', { name: 'Edit library', exact: true })
+  await editor.getByRole('textbox', { name: 'Knowledge base name', exact: true }).fill('Order knowledge')
+  const description = editor.getByRole('textbox', { name: 'Description', exact: true })
+  await description.fill('Order checks and dispatch references.')
+  const descriptionNode = await description.elementHandle()
+  await description.evaluate((node: HTMLTextAreaElement) => { node.focus(); node.setSelectionRange(2, 7) })
+  await editor.getByRole('button', { name: 'Close', exact: true }).click()
+  expect(await editor.getByRole('button', { name: 'Keep editing', exact: true }).evaluate(node => node === document.activeElement)).toBe(true)
+  expect(await description.count()).toBe(0)
+  await captureKnowledgeFlow(page, 'library-edit-discard')
+  await editor.getByRole('button', { name: 'Keep editing', exact: true }).click()
+  expect(await description.evaluate((node, previous) => node === previous, descriptionNode)).toBe(true)
+  expect(await description.evaluate(node => node === document.activeElement)).toBe(true)
+  expect(await description.evaluate((node: HTMLTextAreaElement) => [node.selectionStart, node.selectionEnd])).toEqual([2, 7])
+  await captureKnowledgeFlow(page, 'library-edit')
+  await editor.getByRole('button', { name: 'Save', exact: true }).click()
+  await editor.waitFor({ state: 'hidden' })
+  await materials.getByRole('heading', { name: 'Order knowledge', exact: true }).waitFor()
+  const fileFilter = materials.getByRole('searchbox')
+  const fileFilterNode = await fileFilter.elementHandle()
+  const fileButton = materials.getByRole('button', { name: 'Order review.md', exact: true })
+  const fileButtonNode = await fileButton.elementHandle()
+  const contentSearchButton = await materials.getByRole('button', { name: 'Search content', exact: true }).elementHandle()
+  await materials.getByRole('button', { name: 'Search content', exact: true }).click()
+  await materials.getByRole('searchbox', { name: 'Search content', exact: true }).fill('order total')
+  await materials.getByRole('button', { name: 'Search', exact: true }).click()
+  const result = materials.getByRole('button', { name: /Order review.md Page 1 Verify/ })
+  await result.waitFor()
+  const searchInput = await materials.getByRole('searchbox', { name: 'Search content', exact: true }).elementHandle()
+  const resultButton = await result.elementHandle()
+  await captureKnowledgeFlow(page, 'content-search')
+  await compareOrRefreshGolden(join(expectedDir, 'knowledge-content-search.expected.md'),
+    await captureStableAria(page, '[data-knowledge-content]', scaffold.workspaceCwd), webSnapshotMode())
+  await result.click()
+  expect(await materials.getByRole('searchbox', { name: 'Search content', exact: true }).count()).toBe(0)
+  expect(await materials.getByRole('button', { name: /Order review.md Page 1 Verify/ }).count()).toBe(0)
+  expect(await materials.getByRole('button', { name: 'Back to search results', exact: true }).evaluate(node => node === document.activeElement)).toBe(true)
+  await materials.getByRole('alert').waitFor()
+  expect(await materials.getByRole('alert').textContent()).toBe('Content could not be read. Retry.')
+  expect(await materials.locator('[data-knowledge-inline-reader]').getByText('Verify the order total and delivery address before dispatch.', { exact: true }).count()).toBe(0)
+  await compareOrRefreshGolden(join(expectedDir, 'knowledge-source-read-error.expected.md'),
+    await captureStableAria(page, '[data-knowledge-content]', scaffold.workspaceCwd), webSnapshotMode())
+  await materials.getByRole('button', { name: 'Retry', exact: true }).click()
+  await materials.getByRole('button', { name: 'View original file', exact: true }).waitFor()
+  await materials.getByRole('button', { name: 'Back to search results', exact: true }).click()
+  expect(await result.evaluate((node, previous) => node === previous, resultButton)).toBe(true)
+  expect(await result.evaluate(node => node === document.activeElement)).toBe(true)
+  expect(await materials.getByRole('searchbox', { name: 'Search content', exact: true }).evaluate((node, previous) => node === previous, searchInput)).toBe(true)
+  await materials.getByRole('button', { name: 'Back to materials', exact: true }).click()
+  expect(await fileFilter.evaluate((node, previous) => node === previous, fileFilterNode)).toBe(true)
+  expect(await fileButton.evaluate((node, previous) => node === previous, fileButtonNode)).toBe(true)
+  expect(await materials.getByRole('button', { name: 'Search content', exact: true }).evaluate((node, previous) => node === previous, contentSearchButton)).toBe(true)
+  expect(await materials.getByRole('button', { name: 'Search content', exact: true }).evaluate(node => node === document.activeElement)).toBe(true)
+  await page.setViewportSize({ width: 1280, height: 300 })
+  await fileButton.scrollIntoViewIfNeeded()
+  await materials.getByRole('button', { name: 'Actions for “Order review.md”', exact: true }).click()
+  const materialsScrollTop = await materials.evaluate(node => node.scrollTop)
+  expect(materialsScrollTop).toBeGreaterThan(0)
+  await page.getByRole('menuitem', { name: 'Parsed content', exact: true }).click()
+  await materials.getByRole('heading', { name: 'Order checklist', exact: true }).waitFor()
+  await materials.getByRole('button', { name: 'Back to files', exact: true }).click()
+  expect(await fileButton.evaluate((node, previous) => node === previous, fileButtonNode)).toBe(true)
+  expect(await fileButton.evaluate(node => node === document.activeElement)).toBe(true)
+  expect(await materials.evaluate(node => node.scrollTop)).toBe(materialsScrollTop)
+  await materials.getByRole('button', { name: 'Actions for “Order review.md”', exact: true }).click()
+  await page.getByRole('menuitem', { name: 'Parsed content', exact: true }).click()
+  await materials.getByRole('heading', { name: 'Order checklist', exact: true }).waitFor()
+  await page.setViewportSize({ width: 390, height: 900 })
+  await page.locator('[data-sidebar-drawer]').waitFor()
+  if (await page.locator('[data-sidebar-drawer]:not([data-sidebar-collapsed])').count()) {
+    await page.getByRole('button', { name: 'Collapse sidebar', exact: true }).click()
+    await page.locator('[data-sidebar-drawer][data-sidebar-collapsed]').waitFor()
+  }
+  const overflow = await materials.evaluate(node => ({ width: node.clientWidth, scroll: node.scrollWidth,
+    children: [...node.querySelectorAll<HTMLElement>('*')].filter(child => child.getBoundingClientRect().right
+      > node.getBoundingClientRect().right + 1).slice(0, 8).map(child => ({ tag: child.tagName, role: child.getAttribute('role'),
+      width: child.clientWidth, text: child.textContent?.slice(0, 80) })),
+  }))
+  expect(overflow.scroll, JSON.stringify(overflow)).toBeLessThanOrEqual(overflow.width + 1)
+  await captureKnowledgeFlow(page, 'parsed-content')
+  await compareOrRefreshGolden(join(expectedDir, 'knowledge-parsed-content.expected.md'),
+    await captureStableAria(page, '[data-knowledge-content]', scaffold.workspaceCwd), webSnapshotMode())
+  await openEmployeeMenu(page)
+  await page.getByRole('menuitem', { name: 'Settings', exact: true }).click()
+  const settings = page.getByRole('dialog', { name: 'Settings', exact: true })
+  await settings.getByRole('button', { name: 'General', exact: true }).click()
+  await settings.getByRole('button', { name: 'English', exact: true }).click()
+  await page.getByRole('menuitem', { name: '中文', exact: true }).click()
+  await page.getByRole('dialog', { name: '设置', exact: true }).getByRole('button', { name: '关闭', exact: true }).last().click()
+  await materials.getByRole('tab', { name: '解析内容', exact: true }).waitFor()
+  await materials.getByRole('heading', { name: 'Order checklist', exact: true }).waitFor()
+  await captureKnowledgeFlow(page, 'parsed-content-zh')
+  expect(calls.filter(call => call.method === 'knowledge.documents.read')).toHaveLength(2)
+  expect(calls.find(call => call.method === 'knowledge.search')?.payload).toEqual({ query: 'order total',
+    knowledgeBaseIds: ['personal-notes'], knowledgeBaseRefs: [], restrictToKnowledgeBaseRefs: true, limit: 12 })
+  expect(calls.filter(call => call.method === 'knowledge.sources.read')).toHaveLength(2)
+  expect(calls.filter(call => call.method === 'knowledge.bases.update')).toHaveLength(1)
+  expect(tripwire.pageErrors).toEqual([])
+})
+
+it.each(['materials', 'passages', 'destination'] as const)('retains knowledge pagination focus for %s through pending reads and page boundaries', async (surface) => {
+  const scaffold = await launchWebScaffold({ firstUse: true,
+    extraInstallAnchors: [join(REPO_ROOT, 'packages/deepseek-harness-product/desktop/package.json')],
+    extraOverlayPath: [join(packageDir, 'cordis.patch.yml'), join(REPO_ROOT, 'apps/web/tests/pin-browse-picker.overlay.yml')],
+  })
+  onTestFinished(() => scaffold.close())
+  const browser = await chromium.launch()
+  onTestFinished(() => browser.close())
+  const page = await newEnglishPage(browser)
+  page.setDefaultTimeout(10_000)
+  const tripwire = watchConsole(page)
+  const pending = Promise.withResolvers<undefined>()
+  const destinationPending = Promise.withResolvers<undefined>()
+  onTestFinished(() => { pending.resolve(undefined); destinationPending.resolve(undefined) })
+  const reads: number[] = []
+  const method = surface === 'materials' ? 'knowledge.documents.list'
+    : surface === 'passages' ? 'knowledge.documents.read' : 'knowledge.folders.list'
+  const library = { ...organizationKnowledge[0], id: 'personal-notes', name: 'Pagination library', updatedAt: '2026-11-10T00:00:00Z' }
+  const document = knowledgeDocuments(library.id)[0]!
+  const nestedName = '季度归档与跨部门项目交付资料-' + 'archive-reference-'.repeat(6)
+  await page.exposeFunction('__paginationInvoke', async (requested: string, payload: Record<string, unknown> = {}) => {
+    const number = Number(payload.page ?? 1)
+    if (requested === method) {
+      reads.push(number)
+      if (number === 2) await pending.promise
+    }
+    switch (requested) {
+      case 'auth.getSession': return { authenticated: true, employeeId: 'fixture-employee' }
+      case 'tasks.capabilities.read': return { knowledgeBaseIds: [] }
+      case 'knowledge.bases.list': return [library]
+      case 'knowledge.bases.get': return library
+      case 'knowledge.documents.upload.pending': return []
+      case 'knowledge.folders.get': return { id: payload.folderId, name: payload.folderId === 'nested' ? nestedName : 'Folder 1',
+        parentId: payload.folderId === 'nested' ? 'folder-1' : null, updatedAt: library.updatedAt }
+      case 'knowledge.folders.list': {
+        if (surface === 'destination' && payload.parentId) {
+          await destinationPending.promise
+          const items = payload.parentId === 'folder-1'
+            ? [{ id: 'nested', name: nestedName, parentId: 'folder-1', updatedAt: library.updatedAt }] : []
+          return { items, page: number, size: 20, total: items.length }
+        }
+        return { items: surface === 'destination'
+          ? [{ id: `folder-${number}`, name: `Folder ${number}`, parentId: null, updatedAt: library.updatedAt }] : [],
+        page: number, size: 20, total: surface === 'destination' ? 21 : 0 }
+      }
+      case 'knowledge.documents.list': return { items: surface === 'destination' ? [] : [{ ...document, filename: `Document ${number}.md` }],
+        page: number, size: 20, total: surface === 'destination' ? 0 : 21 }
+      case 'knowledge.documents.read': return { items: [{ id: `passage-${number}`, documentId: document.id,
+        content: `Indexed page ${number}`, locator: '' }], page: number, size: 20, total: 21 }
+      default: throw new Error(`Unexpected pagination method: ${requested}`)
+    }
+  })
+  await page.addInitScript(() => {
+    const api = globalThis as typeof globalThis & { __paginationInvoke(method: string, payload?: unknown): Promise<unknown> }
+    Object.defineProperty(globalThis, 'dshDesktop', { value: { extensions: {
+      invoke: async (_namespace: string, method: string, payload?: unknown) => (
+        { ok: true, result: await api.__paginationInvoke(method, payload) }),
+      cancel: () => {}, subscribe: () => () => {},
+    } } })
+  })
+  await mkdir(screenshots, { recursive: true })
+  onTestFinished(async ({ task }) => {
+    if (task.result?.state === 'fail') await page.screenshot({ path: join(screenshots, `pagination-${surface}-failure.png`) })
+  })
+  await page.goto(scaffold.authenticatedUrl)
+  await page.getByRole('button', { name: 'Knowledge bases', exact: true }).click()
+  await page.getByRole('button', { name: library.name, exact: true }).click()
+  const materials = page.locator('[data-knowledge-content]')
+  if (surface === 'passages') {
+    await materials.getByRole('button', { name: 'Actions for “Document 1.md”', exact: true }).click()
+    await page.getByRole('menuitem', { name: 'Parsed content', exact: true }).click()
+  } else if (surface === 'destination') {
+    await materials.getByRole('button', { name: 'Add materials', exact: true }).click()
+    reads.length = 0
+    await page.getByRole('menuitem', { name: 'New folder', exact: true }).click()
+  }
+  const region = surface === 'destination' ? page.getByRole('group', { name: 'Parent folder', exact: true })
+    : surface === 'passages' ? materials.getByRole('region', { name: 'Parsed content', exact: true }) : materials
+  const next = region.getByRole('button', { name: 'Next page', exact: true })
+  const previous = region.getByRole('button', { name: 'Previous page', exact: true })
+  await next.waitFor()
+  await expect.poll(() => next.getAttribute('aria-disabled')).toBe('false')
+  const nextNode = await next.elementHandle()
+  const previousNode = await previous.elementHandle()
+  await next.focus()
+  const initialTop = await next.evaluate(node => node.getBoundingClientRect().top)
+  await next.press('Enter')
+  await expect.poll(() => reads).toEqual([1, 2])
+  expect(await next.evaluate(node => node === window.document.activeElement)).toBe(true)
+  expect(await next.getAttribute('aria-disabled')).toBe('true')
+  expect(await next.evaluate(node => node.classList.contains('product-control-pending'))).toBe(true)
+  expect(await next.evaluate(node => node.getBoundingClientRect().top)).toBeCloseTo(initialTop, 0)
+  expect(await region.getByRole('status').count()).toBe(0)
+  if (surface === 'materials') {
+    const add = materials.getByRole('button', { name: 'Add materials', exact: true })
+    expect(await add.isDisabled()).toBe(true)
+    expect(await add.evaluate(node => getComputedStyle(node).opacity)).toBe('1')
+  }
+  await page.keyboard.press('Enter')
+  expect(reads).toEqual([1, 2])
+  for (const theme of ['light', 'dark'] as const) {
+    await page.emulateMedia({ colorScheme: theme })
+    for (const width of [1440, 1024, 390]) {
+      await page.setViewportSize({ width, height: 900 })
+      await next.scrollIntoViewIfNeeded()
+      expect(await region.evaluate(node => node.scrollWidth <= node.clientWidth)).toBe(true)
+      await page.screenshot({ path: join(screenshots, `pagination-${surface}-${theme}-${width}.png`), animations: 'disabled' })
+    }
+  }
+  pending.resolve(undefined)
+  await expect.poll(() => previous.getAttribute('aria-disabled')).toBe('false')
+  expect(await next.evaluate((node, original) => node === original, nextNode)).toBe(true)
+  expect(await next.evaluate(node => node === window.document.activeElement)).toBe(true)
+  await page.keyboard.press('Enter')
+  expect(reads).toEqual([1, 2])
+  await previous.focus(); await previous.press('Enter')
+  await expect.poll(() => reads).toEqual([1, 2, 1])
+  await expect.poll(() => next.getAttribute('aria-disabled')).toBe('false')
+  expect(await previous.getAttribute('aria-disabled')).toBe('true')
+  expect(await previous.evaluate((node, original) => node === original, previousNode)).toBe(true)
+  expect(await previous.evaluate(node => node === window.document.activeElement)).toBe(true)
+  await page.keyboard.press('Enter')
+  expect(reads).toEqual([1, 2, 1])
+  if (surface === 'destination') {
+    const name = page.getByRole('textbox', { name: 'Folder name', exact: true })
+    await name.fill('Retained folder draft')
+    const folder = region.getByRole('button', { name: 'Folder 1', exact: true })
+    expect(await folder.evaluate((node) => {
+      const style = getComputedStyle(node)
+      return { display: style.display, alignment: style.justifyContent, background: style.backgroundColor }
+    })).toEqual({ display: 'flex', alignment: 'flex-start', background: 'rgba(0, 0, 0, 0)' })
+    await folder.focus(); await folder.press('Enter')
+    await expect.poll(() => region.getAttribute('aria-busy')).toBe('true')
+    expect(await region.evaluate(node => node === window.document.activeElement)).toBe(true)
+    await name.focus()
+    await name.evaluate((node: HTMLInputElement) => { node.setSelectionRange(2, 7) })
+    destinationPending.resolve(undefined)
+    await expect.poll(() => region.getAttribute('aria-busy')).toBe('false')
+    expect(await name.evaluate(node => node === window.document.activeElement)).toBe(true)
+    expect(await name.evaluate((node: HTMLInputElement) => [node.selectionStart, node.selectionEnd])).toEqual([2, 7])
+    const nested = region.getByRole('button', { name: nestedName, exact: true })
+    await nested.focus(); await nested.press('Enter')
+    await expect.poll(() => region.getAttribute('aria-busy')).toBe('false')
+    expect(await region.evaluate(node => node === window.document.activeElement)).toBe(true)
+    await folder.focus(); await folder.press('Enter')
+    await expect.poll(() => region.getAttribute('aria-busy')).toBe('false')
+    expect(await region.evaluate(node => node === window.document.activeElement)).toBe(true)
+    for (const theme of ['light', 'dark'] as const) {
+      await page.emulateMedia({ colorScheme: theme })
+      for (const width of [1440, 390]) {
+        await page.setViewportSize({ width, height: 900 })
+        expect(await region.evaluate(node => node.scrollWidth <= node.clientWidth)).toBe(true)
+        expect(await nested.evaluate(node => node.scrollWidth <= node.clientWidth && node.getBoundingClientRect().height >= 36)).toBe(true)
+        const label = nested.locator('span')
+        expect(await label.evaluate(node => node.getBoundingClientRect().height
+          > Number.parseFloat(getComputedStyle(node).lineHeight))).toBe(true)
+        await page.screenshot({ path: join(screenshots, `destination-navigation-${theme}-${width}.png`), animations: 'disabled' })
+      }
+    }
+    const root = region.getByRole('button', { name: 'Library home', exact: true })
+    await root.focus(); await root.press('Enter')
+    await expect.poll(() => region.getAttribute('aria-busy')).toBe('false')
+    expect(await region.evaluate(node => node === window.document.activeElement)).toBe(true)
+    expect(await name.inputValue()).toBe('Retained folder draft')
+  }
+  expect(tripwire.pageErrors).toEqual([])
+  expect(tripwire.warnings).toEqual([])
+})
+
+it.each(['edit', 'device', 'providers'] as const)('keeps connector %s retry focus and its form stable', async (surface) => {
+  const scaffold = await launchWebScaffold({ firstUse: true,
+    extraInstallAnchors: [join(REPO_ROOT, 'packages/deepseek-harness-product/desktop/package.json')],
+    extraOverlayPath: [join(packageDir, 'cordis.patch.yml'), join(REPO_ROOT, 'apps/web/tests/pin-browse-picker.overlay.yml')],
+  })
+  onTestFinished(() => scaffold.close())
+  const browser = await chromium.launch()
+  onTestFinished(() => browser.close())
+  const page = await newEnglishPage(browser)
+  page.setDefaultTimeout(10_000)
+  const tripwire = watchConsole(page)
+  const pending = Promise.withResolvers<undefined>()
+  onTestFinished(() => { pending.resolve(undefined) })
+  const method = surface === 'edit' ? 'extensions.connector.read' : surface === 'device'
+    ? 'extensions.connector.configuration.read' : 'connectors.list'
+  let opened = false
+  let reads = 0
+  await page.exposeFunction('__connectorRetryInvoke', async (requested: string) => {
+    if (opened && requested === method) {
+      if (++reads > 1) await pending.promise
+      return { fixtureFailure: productFailure(new ProductError('EXTERNAL_SERVICE_ERROR', 'PRIVATE_CONNECTOR_READ_FAILURE', true)) }
+    }
+    switch (requested) {
+      case 'auth.getSession': return { authenticated: true, employeeId: 'fixture-employee' }
+      case 'tasks.capabilities.read': return { knowledgeBaseIds: [] }
+      case 'connectors.list': return [{ ...connectors[0], id: 'fixture-connector', displayName: 'Fixture connector',
+        visibility: surface === 'edit' ? 'PERSONAL' : 'COMPANY', canEdit: surface === 'edit',
+        canConfigure: true, authMode: 'none' }]
+      default: throw new Error(`Unexpected connector retry method: ${requested}`)
+    }
+  })
+  await page.addInitScript(() => {
+    const api = globalThis as typeof globalThis & { __connectorRetryInvoke(method: string): Promise<unknown> }
+    Object.defineProperty(globalThis, 'dshDesktop', { value: { extensions: {
+      invoke: async (_namespace: string, method: string) => {
+        const result = await api.__connectorRetryInvoke(method)
+        return typeof result === 'object' && result !== null && 'fixtureFailure' in result
+          ? { ok: false, failure: result.fixtureFailure } : { ok: true, result }
+      }, cancel: () => {}, subscribe: () => () => {},
+    } } })
+  })
+  await page.goto(scaffold.authenticatedUrl)
+  await page.getByRole('button', { name: 'Connectors', exact: true }).click()
+  if (surface === 'edit') await page.getByRole('tab', { name: 'Mine', exact: true }).click()
+  await page.getByText('Fixture connector', { exact: true }).waitFor()
+  opened = true
+  if (surface === 'providers') {
+    await page.getByRole('button', { name: 'Add', exact: true }).click()
+    await page.getByLabel('Server type', { exact: true }).selectOption('streamable-http')
+    await page.getByLabel('Server name', { exact: true }).fill('Retained connector name')
+  } else {
+    await page.getByText('Fixture connector', { exact: true }).click()
+    const details = page.getByRole('dialog', { name: 'Connector details', exact: true })
+    if (surface === 'device') await details.getByRole('button', { name: 'Configure this device', exact: true }).click()
+    else {
+      await details.getByRole('button', { name: 'More actions', exact: true }).click()
+      await page.getByRole('menuitem', { name: 'Modify', exact: true }).click()
+    }
+  }
+  const retry = page.getByRole('button', { name: 'Retry', exact: true })
+  await retry.waitFor()
+  const button = await retry.elementHandle()
+  const notice = await page.getByRole('alert').elementHandle()
+  await retry.focus()
+  const box = await retry.boundingBox()
+  await retry.press('Enter')
+  await expect.poll(() => reads).toBe(2)
+  await expect.poll(() => retry.getAttribute('aria-busy')).toBe('true')
+  expect(await retry.evaluate(node => node === document.activeElement), 'retry keeps keyboard focus during its read').toBe(true)
+  expect(await retry.getAttribute('aria-disabled')).toBe('true')
+  expect(await retry.evaluate(node => getComputedStyle(node).opacity)).toBe('1')
+  expect(await retry.boundingBox()).toEqual(box)
+  await page.keyboard.press('Enter')
+  await page.keyboard.press(' ')
+  expect(reads).toBe(2)
+  await mkdir(screenshots, { recursive: true })
+  for (const theme of ['light', 'dark'] as const) {
+    await page.emulateMedia({ colorScheme: theme })
+    for (const width of [1440, 390]) {
+      await page.setViewportSize({ width, height: 900 })
+      await retry.focus()
+      await retry.scrollIntoViewIfNeeded()
+      expect(await page.locator('body').evaluate(node => node.scrollWidth <= node.clientWidth)).toBe(true)
+      await page.screenshot({ path: join(screenshots, `connector-retry-${surface}-${theme}-${width}.png`), animations: 'disabled' })
+    }
+  }
+  pending.resolve(undefined)
+  await expect.poll(() => retry.getAttribute('aria-busy')).toBe('false')
+  expect(await retry.getAttribute('aria-disabled')).toBe('false')
+  expect(await retry.evaluate((node, original) => node === original, button)).toBe(true)
+  expect(await page.getByRole('alert').evaluate((node, original) => node === original, notice)).toBe(true)
+  expect(await retry.evaluate(node => node === document.activeElement)).toBe(true)
+  if (surface === 'providers') expect(await page.getByLabel('Server name', { exact: true }).inputValue()).toBe('Retained connector name')
+  expect(tripwire.pageErrors).toEqual([])
+  expect(tripwire.warnings).toEqual([])
+})
+
+it.each(['search', 'source', 'original', 'passages', 'task-catalog', 'document-editor', 'conflict-review'] as const)('keeps %s retry keyboard focus and prevents duplicate reads', async (surface) => {
+  const scaffold = await launchWebScaffold({ firstUse: true,
+    extraInstallAnchors: [join(REPO_ROOT, 'packages/deepseek-harness-product/desktop/package.json')],
+    extraOverlayPath: [join(packageDir, 'cordis.patch.yml'), join(REPO_ROOT, 'apps/web/tests/pin-browse-picker.overlay.yml')],
+  })
+  onTestFinished(() => scaffold.close())
+  const browser = await chromium.launch()
+  onTestFinished(() => browser.close())
+  const page = await newEnglishPage(browser)
+  page.setDefaultTimeout(10_000)
+  const tripwire = watchConsole(page)
+  const pending = Promise.withResolvers<undefined>()
+  onTestFinished(() => { pending.resolve(undefined) })
+  const method = surface === 'search' ? 'knowledge.search' : surface === 'source' ? 'knowledge.sources.read'
+    : surface === 'original' ? 'knowledge.documents.previewMetadata' : surface === 'passages' ? 'knowledge.documents.read'
+      : surface === 'document-editor' || surface === 'conflict-review' ? 'knowledge.documents.get' : 'knowledge.bases.list'
+  const source = { sourceId: 'passage-1', knowledgeBaseId: 'personal-notes', documentId: 'document-1',
+    filename: 'Order review.md', locator: 'Section 1', content: 'Check the order total.' }
+  let reads = 0
+  await page.exposeFunction('__retryFocusInvoke', async (requested: string) => {
+    if (requested === method) {
+      reads++
+      if (surface === 'conflict-review' && reads === 1) return { ...knowledgeDocuments('personal-notes')[0], manualContent: 'Original document' }
+      if (reads > (surface === 'conflict-review' ? 2 : 1)) await pending.promise
+      return { fixtureFailure: productFailure(new ProductError('EXTERNAL_SERVICE_ERROR', 'PRIVATE_READ_FAILURE', true)) }
+    }
+    switch (requested) {
+      case 'auth.getSession': return { authenticated: true, employeeId: 'fixture-employee' }
+      case 'tasks.capabilities.read': return { knowledgeBaseIds: [] }
+      case 'knowledge.bases.list': return [organizationKnowledge[0]]
+      case 'knowledge.documents.upload.pending': return []
+      case 'knowledge.folders.list': return { items: [], page: 1, size: 20, total: 0 }
+      case 'knowledge.documents.list': return { items: [knowledgeDocuments('personal-notes')[0]], page: 1, size: 20, total: 1 }
+      case 'knowledge.search': return [source]
+      case 'knowledge.documents.save': return { fixtureFailure: productFailure(new ProductError('KNOWLEDGE_DOCUMENT_CONFLICT', 'Document changed')) }
+      default: throw new Error(`Unexpected retry method: ${requested}`)
+    }
+  })
+  await page.addInitScript(() => {
+    const api = globalThis as typeof globalThis & { __retryFocusInvoke(method: string): Promise<unknown> }
+    Object.defineProperty(globalThis, 'dshDesktop', { value: { extensions: {
+      invoke: async (_namespace: string, method: string) => {
+        const result = await api.__retryFocusInvoke(method)
+        return typeof result === 'object' && result !== null && 'fixtureFailure' in result
+          ? { ok: false, failure: result.fixtureFailure } : { ok: true, result }
+      }, cancel: () => {}, subscribe: () => () => {},
+    } } })
+  })
+  await page.goto(scaffold.authenticatedUrl)
+  if (surface === 'task-catalog') await openTaskKnowledge(page)
+  else {
+    await page.getByRole('button', { name: 'Knowledge bases', exact: true }).click()
+    await selectKnowledgeLibrary(page, 'Personal notes')
+    const materials = page.locator('[data-knowledge-content]')
+    if (surface === 'search' || surface === 'source') {
+      await materials.getByRole('button', { name: 'Search content', exact: true }).click()
+      await materials.getByRole('searchbox', { name: 'Search content', exact: true }).fill('order')
+      await materials.getByRole('button', { name: 'Search', exact: true }).click()
+      if (surface === 'source') await materials.getByRole('button', { name: /Order review.md.*Section 1/ }).click()
+    } else if (surface === 'document-editor' || surface === 'conflict-review') {
+      await materials.getByRole('button', { name: 'Actions for “Order review.md”', exact: true }).click()
+      await page.getByRole('menuitem', { name: 'Modify', exact: true }).click()
+      if (surface === 'conflict-review') {
+        const editor = page.getByRole('dialog', { name: 'Edit document', exact: true })
+        await editor.getByRole('textbox', { name: 'Content', exact: true }).fill('Retained local draft')
+        await editor.getByRole('button', { name: 'Save', exact: true }).click()
+        await editor.getByRole('button', { name: 'Read latest version', exact: true }).click()
+        await expect.poll(() => reads).toBe(2)
+        await expect.poll(() => editor.getByRole('button', { name: 'Read latest version', exact: true }).getAttribute('aria-busy')).toBe('false')
+      }
+    } else if (surface === 'passages') {
+      await materials.getByRole('button', { name: 'Actions for “Order review.md”', exact: true }).click()
+      await page.getByRole('menuitem', { name: 'Parsed content', exact: true }).click()
+    } else await materials.getByRole('button', { name: 'Order review.md', exact: true }).click()
+  }
+  const retry = page.getByRole('button', { name: surface === 'conflict-review' ? 'Read latest version' : 'Retry', exact: true })
+  await retry.waitFor()
+  const button = await retry.elementHandle()
+  const notice = await page.getByRole('alert').elementHandle()
+  await retry.focus()
+  const box = await retry.boundingBox()
+  await retry.press('Enter')
+  const expectedReads = surface === 'conflict-review' ? 3 : 2
+  await expect.poll(() => reads).toBe(expectedReads)
+  await expect.poll(() => retry.getAttribute('aria-busy')).toBe('true')
+  expect(await retry.evaluate(node => node === document.activeElement)).toBe(true)
+  expect(await retry.getAttribute('aria-disabled')).toBe('true')
+  expect(await retry.evaluate(node => getComputedStyle(node).opacity)).toBe('1')
+  expect(await retry.boundingBox()).toEqual(box)
+  await page.keyboard.press('Enter')
+  await page.keyboard.press(' ')
+  expect(reads).toBe(expectedReads)
+  await mkdir(screenshots, { recursive: true })
+  for (const theme of ['light', 'dark'] as const) {
+    await page.emulateMedia({ colorScheme: theme })
+    for (const width of [1440, 390]) {
+      await page.setViewportSize({ width, height: 900 })
+      await page.waitForFunction(drawer => Boolean(document.querySelector('[data-sidebar-drawer]')) === drawer, width < 768)
+      if (await page.locator('[data-sidebar-drawer]:not([data-sidebar-collapsed])').count()) {
+        await page.getByRole('button', { name: 'Collapse sidebar', exact: true }).click()
+      }
+      await retry.focus()
+      await retry.scrollIntoViewIfNeeded()
+      expect(await page.locator('body').evaluate(node => node.scrollWidth <= node.clientWidth)).toBe(true)
+      await page.screenshot({ path: join(screenshots, `retry-${surface}-${theme}-${width}.png`), animations: 'disabled' })
+    }
+  }
+  pending.resolve(undefined)
+  await expect.poll(() => retry.getAttribute('aria-busy')).toBe('false')
+  expect(await retry.getAttribute('aria-disabled')).toBe('false')
+  expect(await retry.evaluate((node, original) => node === original, button)).toBe(true)
+  expect(await page.getByRole('alert').evaluate((node, original) => node === original, notice)).toBe(true)
+  expect(await retry.evaluate(node => node === document.activeElement)).toBe(true)
+  if (surface === 'conflict-review') expect(await page.getByRole('textbox', { name: 'Content', exact: true }).inputValue()).toBe('Retained local draft')
+  expect(tripwire.pageErrors).toEqual([])
+  expect(tripwire.warnings).toEqual([])
+})
+
+it.each([false, true])('recovers deleted knowledge-library dialog focus without replacing directory controls (elsewhere=%s)', async (elsewhere) => {
+  const scaffold = await launchWebScaffold({ firstUse: true,
+    extraInstallAnchors: [join(REPO_ROOT, 'packages/deepseek-harness-product/desktop/package.json')],
+    extraOverlayPath: [join(packageDir, 'cordis.patch.yml'), join(REPO_ROOT, 'apps/web/tests/pin-browse-picker.overlay.yml')],
+  })
+  onTestFinished(() => scaffold.close())
+  const browser = await chromium.launch()
+  onTestFinished(() => browser.close())
+  const page = await newEnglishPage(browser)
+  page.setDefaultTimeout(10_000)
+  const tripwire = watchConsole(page)
+  const pending = Promise.withResolvers<undefined>()
+  onTestFinished(() => { pending.resolve(undefined) })
+  let deleted = false
+  let writes = 0
+  const calls: string[] = []
+  await page.exposeFunction('__libraryDeleteInvoke', async (method: string) => {
+    calls.push(method)
+    switch (method) {
+      case 'auth.getSession': return { authenticated: true, employeeId: 'fixture-employee' }
+      case 'tasks.capabilities.read': return { knowledgeBaseIds: [] }
+      case 'knowledge.bases.list': return organizationKnowledge.filter(entry => !deleted || entry.id !== 'personal-notes')
+      case 'knowledge.bases.delete': writes++; await pending.promise; deleted = true; return undefined
+      default: throw new Error(`Unexpected directory deletion method: ${method}`)
+    }
+  })
+  await page.addInitScript(() => {
+    const api = globalThis as typeof globalThis & { __libraryDeleteInvoke(method: string): Promise<unknown> }
+    Object.defineProperty(globalThis, 'dshDesktop', { value: { extensions: {
+      invoke: async (_namespace: string, method: string) => ({ ok: true, result: await api.__libraryDeleteInvoke(method) }),
+      cancel: () => {}, subscribe: () => () => {},
+    } } })
+  })
+  await page.goto(scaffold.authenticatedUrl)
+  await page.getByRole('button', { name: 'Knowledge bases', exact: true }).click()
+  const directory = page.locator('[data-knowledge-directory]')
+  await directory.getByRole('button', { name: 'Personal notes', exact: true }).waitFor()
+  await directory.getByRole('tab', { name: 'Personal', exact: true }).click()
+  const search = directory.getByRole('searchbox')
+  await search.fill('Personal')
+  const originalSearch = await search.elementHandle()
+  const action = directory.getByRole('button', { name: 'Actions for “Personal notes”', exact: true })
+  await action.click()
+  await page.getByRole('menuitem', { name: 'Delete knowledge base', exact: true }).click()
+  const dialog = page.getByRole('dialog', { name: 'Delete knowledge base', exact: true })
+  await dialog.getByRole('button', { name: 'Cancel', exact: true }).click()
+  expect(writes).toBe(0)
+  await expect.poll(() => action.evaluate(node => node === document.activeElement)).toBe(true)
+  await action.press('Enter')
+  await page.getByRole('menuitem', { name: 'Delete knowledge base', exact: true }).click()
+  await dialog.getByRole('button', { name: 'Delete', exact: true }).press('Enter')
+  await expect.poll(() => writes).toBe(1)
+  await page.keyboard.press('Enter')
+  expect(writes).toBe(1)
+  if (elsewhere) {
+    await search.focus()
+    await search.evaluate((node) => { if (node instanceof HTMLInputElement) node.setSelectionRange(1, 3) })
+  }
+  pending.resolve(undefined)
+  await dialog.waitFor({ state: 'hidden' })
+  await action.waitFor({ state: 'hidden' })
+  const target = elsewhere ? search : directory.getByRole('heading', { name: 'Knowledge bases', level: 1, exact: true })
+  await expect.poll(() => target.evaluate(node => node === document.activeElement)).toBe(true)
+  expect(await search.evaluate((node, original) => node === original, originalSearch)).toBe(true)
+  expect(await search.inputValue()).toBe('Personal')
+  expect(await directory.getByRole('tab', { name: 'Personal', exact: true }).getAttribute('aria-selected')).toBe('true')
+  if (elsewhere) {
+    const selection = await search.evaluate(node => node instanceof HTMLInputElement ? [node.selectionStart, node.selectionEnd] : [])
+    expect(selection).toEqual([1, 3])
+  }
+  expect(calls.some(method => method.startsWith('knowledge.documents.') || method.startsWith('knowledge.folders.'))).toBe(false)
+  if (!elsewhere) {
+    await mkdir(screenshots, { recursive: true })
+    for (const theme of ['light', 'dark'] as const) {
+      await page.emulateMedia({ colorScheme: theme })
+      for (const width of [1440, 390]) {
+        await page.setViewportSize({ width, height: width === 390 ? 560 : 900 })
+        await page.waitForFunction(drawer => Boolean(document.querySelector('[data-sidebar-drawer]')) === drawer, width < 768)
+        if (await page.locator('[data-sidebar-drawer]:not([data-sidebar-collapsed])').count()) {
+          await page.getByRole('button', { name: 'Collapse sidebar', exact: true }).click()
+          await target.focus()
+        }
+        expect(await target.evaluate(node => node === document.activeElement)).toBe(true)
+        expect(await directory.evaluate(node => node.scrollWidth <= node.clientWidth)).toBe(true)
+        await page.screenshot({ path: join(screenshots, `knowledge-delete-result-${theme}-${width}.png`), animations: 'disabled' })
+      }
+    }
+  }
+  expect(tripwire.pageErrors).toEqual([])
+})
+
+it.each([
+  ['materials', false], ['materials', true], ['reader', false], ['reader', true],
+] as const)('recovers deleted material dialog focus from %s without replacing browsing controls (elsewhere=%s)', async (source, elsewhere) => {
+  const scaffold = await launchWebScaffold({ firstUse: true,
+    extraInstallAnchors: [join(REPO_ROOT, 'packages/deepseek-harness-product/desktop/package.json')],
+    extraOverlayPath: [join(packageDir, 'cordis.patch.yml'), join(REPO_ROOT, 'apps/web/tests/pin-browse-picker.overlay.yml')],
+  })
+  onTestFinished(() => scaffold.close())
+  const browser = await chromium.launch()
+  onTestFinished(() => browser.close())
+  const page = await newEnglishPage(browser)
+  page.setDefaultTimeout(10_000)
+  const tripwire = watchConsole(page)
+  const pending = Promise.withResolvers<undefined>()
+  const refreshed = Promise.withResolvers<undefined>()
+  onTestFinished(() => { pending.resolve(undefined); refreshed.resolve(undefined) })
+  const document = knowledgeDocuments('personal-notes')[0]!
+  let writes = 0
+  let deleted = false
+  await page.exposeFunction('__materialDeleteInvoke', async (method: string) => {
+    switch (method) {
+      case 'auth.getSession': return { authenticated: true, employeeId: 'fixture-employee' }
+      case 'tasks.capabilities.read': return { knowledgeBaseIds: [] }
+      case 'knowledge.bases.list': return [organizationKnowledge[0]]
+      case 'knowledge.documents.upload.pending': return []
+      case 'knowledge.folders.list': return { items: [], page: 1, size: 20, total: 0 }
+      case 'knowledge.documents.list':
+        if (deleted) await refreshed.promise
+        return { items: deleted ? [] : [document], page: 1, size: 20, total: deleted ? 0 : 1 }
+      case 'knowledge.documents.processing': return { documentId: document.id, knowledgeBaseId: document.knowledgeBaseId,
+        status: 'READY', attempt: 0, stalled: false, summaryStatus: 'COMPLETED', summaryEnabled: true, summary: 'Confirmed summary.', stages: [] }
+      case 'knowledge.documents.delete':
+        writes++; await pending.promise; deleted = true
+        return { documentId: document.id, taskId: 'deletion-task', status: 'DELETING' }
+      default: throw new Error(`Unexpected material deletion method: ${method}`)
+    }
+  })
+  await page.addInitScript(() => {
+    const api = globalThis as typeof globalThis & { __materialDeleteInvoke(method: string): Promise<unknown> }
+    Object.defineProperty(globalThis, 'dshDesktop', { value: { extensions: {
+      invoke: async (_namespace: string, method: string) => ({ ok: true, result: await api.__materialDeleteInvoke(method) }),
+      cancel: () => undefined, subscribe: () => () => undefined,
+    } } })
+  })
+  await page.goto(scaffold.authenticatedUrl)
+  await page.getByRole('button', { name: 'Knowledge bases', exact: true }).click()
+  await page.locator('[data-knowledge-directory]').getByRole('button', { name: 'Personal notes', exact: true }).click()
+  const materials = page.locator('[data-knowledge-content]')
+  await materials.getByRole('button', { name: document.filename, exact: true }).waitFor()
+  const search = materials.getByRole('searchbox', { name: 'Search material names…', exact: true })
+  await search.fill('Unsubmitted draft')
+  const originalSearch = await search.elementHandle()
+  const action = materials.getByRole('button', { name: `Actions for “${document.filename}”`, exact: true })
+  if (source === 'reader') {
+    await action.click()
+    await page.getByRole('menuitem', { name: 'Processing details', exact: true }).click()
+    await materials.getByRole('button', { name: 'Back to files', exact: true }).waitFor()
+  }
+  await action.click()
+  await page.getByRole('menuitem', { name: 'Delete', exact: true }).click()
+  const dialog = page.getByRole('dialog', { name: 'Delete material', exact: true })
+  await dialog.getByRole('button', { name: 'Cancel', exact: true }).click()
+  expect(writes).toBe(0)
+  await expect.poll(() => action.evaluate(node => node === window.document.activeElement)).toBe(true)
+  await action.press('Enter')
+  await page.getByRole('menuitem', { name: 'Delete', exact: true }).click()
+  await dialog.getByRole('button', { name: 'Delete', exact: true }).press('Enter')
+  await expect.poll(() => writes).toBe(1)
+  await page.keyboard.press('Enter')
+  expect(writes).toBe(1)
+  const other = page.getByRole('button', { name: 'Knowledge bases', exact: true }).first()
+  if (elsewhere) await other.focus()
+  pending.resolve(undefined)
+  await dialog.waitFor({ state: 'hidden' })
+  const heading = materials.getByRole('heading', { name: 'Personal notes', level: 1, exact: true })
+  const target = elsewhere ? other : heading
+  await expect.poll(() => target.evaluate(node => node === window.document.activeElement)).toBe(true)
+  refreshed.resolve(undefined)
+  await materials.getByRole('button', { name: document.filename, exact: true }).waitFor({ state: 'hidden' })
+  await expect.poll(() => target.evaluate(node => node === window.document.activeElement)).toBe(true)
+  expect(await search.evaluate((node, original) => node === original, originalSearch)).toBe(true)
+  expect(await search.inputValue()).toBe('Unsubmitted draft')
+  if (!elsewhere) {
+    await mkdir(screenshots, { recursive: true })
+    for (const theme of ['light', 'dark'] as const) {
+      await page.emulateMedia({ colorScheme: theme })
+      for (const width of [1440, 390]) {
+        await page.setViewportSize({ width, height: 900 })
+        await expectKnowledgeMainFits(page)
+        await page.screenshot({ path: join(screenshots, `material-delete-${source}-${theme}-${width}.png`), animations: 'disabled' })
+      }
+    }
+  }
+  expect(tripwire.pageErrors).toEqual([])
+})
+
+it.each([
+  ...(['move', 'delete', 'reindex'] as const).flatMap(action => [false, true].map(elsewhere => ({ action, elsewhere, backdrop: false }))),
+  { action: 'delete' as const, elsewhere: false, backdrop: true },
+])(
+  'returns from a completed $action batch with stable materials controls (elsewhere=$elsewhere, backdrop=$backdrop)', async ({ action, elsewhere, backdrop }) => {
+    const scaffold = await launchWebScaffold({ firstUse: true,
+      extraInstallAnchors: [join(REPO_ROOT, 'packages/deepseek-harness-product/desktop/package.json')],
+      extraOverlayPath: [join(packageDir, 'cordis.patch.yml'), join(REPO_ROOT, 'apps/web/tests/pin-browse-picker.overlay.yml')],
+    })
+    onTestFinished(() => scaffold.close())
+    const browser = await chromium.launch()
+    onTestFinished(() => browser.close())
+    const page = await newEnglishPage(browser)
+    page.setDefaultTimeout(10_000)
+    const tripwire = watchConsole(page)
+    const pending = Promise.withResolvers<undefined>()
+    const refreshed = Promise.withResolvers<undefined>()
+    onTestFinished(() => { pending.resolve(undefined); refreshed.resolve(undefined) })
+    const document = knowledgeDocuments('personal-notes')[0]!
+    const folder = { id: 'archive', name: 'Archive', parentId: null, updatedAt: document.updatedAt }
+    let writes = 0
+    let submitted = false
+    let reads = 0
+    await page.exposeFunction('__batchFocusInvoke', async (method: string, payload: Record<string, unknown> = {}) => {
+      switch (method) {
+        case 'auth.getSession': return { authenticated: true, employeeId: 'fixture-employee' }
+        case 'tasks.capabilities.read': return { knowledgeBaseIds: [] }
+        case 'knowledge.bases.list': return [organizationKnowledge[0]]
+        case 'knowledge.documents.upload.pending': return []
+        case 'knowledge.folders.get': return folder
+        case 'knowledge.folders.list': return { items: payload.parentId === null ? [folder] : [],
+          page: payload.page, size: payload.size, total: payload.parentId === null ? 1 : 0 }
+        case 'knowledge.documents.list': {
+          reads++
+          if (submitted) await refreshed.promise
+          const items = submitted && action !== 'reindex' ? [] : [document]
+          return { items, page: payload.page, size: payload.size, total: items.length }
+        }
+        case `knowledge.documents.${action}`:
+          writes++; await pending.promise; submitted = true
+          return action === 'move' ? { documentId: document.id, folderId: payload.folderId, moved: true }
+            : action === 'delete' ? { documentId: document.id, taskId: 'delete-task', status: 'DELETING' }
+              : { ...document, status: 'QUEUED' }
+        default: throw new Error(`Unexpected batch focus method: ${method}`)
+      }
+    })
+    await page.addInitScript(() => {
+      const api = globalThis as typeof globalThis & { __batchFocusInvoke(method: string, payload?: unknown): Promise<unknown> }
+      Object.defineProperty(globalThis, 'dshDesktop', { value: { extensions: {
+        invoke: async (_namespace: string, method: string, payload?: unknown) => ({
+          ok: true, result: await api.__batchFocusInvoke(method, payload),
+        }),
+        cancel: () => undefined, subscribe: () => () => undefined,
+      } } })
+    })
+    await page.goto(scaffold.authenticatedUrl)
+    await page.getByRole('button', { name: 'Knowledge bases', exact: true }).click()
+    await page.locator('[data-knowledge-directory]').getByRole('button', { name: 'Personal notes', exact: true }).click()
+    const materials = page.locator('[data-knowledge-content]')
+    await materials.getByRole('button', { name: document.filename, exact: true }).waitFor()
+    const search = materials.getByRole('searchbox', { name: 'Search material names…', exact: true })
+    await search.fill('Unsubmitted draft')
+    const originalSearch = await search.elementHandle()
+    const selection = materials.getByRole('checkbox', { name: 'Select files on this page', exact: true })
+    await selection.check()
+    const title = action === 'move' ? 'Move selected' : action === 'delete' ? 'Delete selected' : 'Reprocess selected'
+    const trigger = materials.getByRole('button', { name: title, exact: true })
+    await trigger.click()
+    const dialog = page.getByRole('dialog', { name: title, exact: true })
+    const initialReads = reads
+    await dialog.getByRole('button', { name: 'Cancel', exact: true }).click()
+    await expect.poll(() => trigger.evaluate(node => node === window.document.activeElement)).toBe(true)
+    expect(await selection.isChecked()).toBe(true)
+    expect(reads).toBe(initialReads)
+    expect(writes).toBe(0)
+    await trigger.press('Enter')
+    if (action === 'move') await dialog.getByRole('button', { name: folder.name, exact: true }).click()
+    const confirm = dialog.getByRole('button', { name: action === 'move' ? 'Move' : action === 'delete' ? 'Delete' : 'Reprocess', exact: true })
+    await confirm.press('Enter')
+    await expect.poll(() => writes).toBe(1)
+    await page.keyboard.press('Enter')
+    expect(writes).toBe(1)
+    pending.resolve(undefined)
+    await dialog.getByText('1 / 1 files confirmed', { exact: true }).waitFor()
+    const close = dialog.getByRole('button', { name: 'Close', exact: true }).last()
+    if (elsewhere) {
+      await search.focus()
+      await search.evaluate((node) => { if (node instanceof HTMLInputElement) node.setSelectionRange(1, 3) })
+      await page.keyboard.press('Escape')
+    } else if (backdrop) await dialog.locator('..').locator(':scope > [aria-hidden="true"]').click({ position: { x: 1, y: 1 } })
+    else await close.press('Enter')
+    await dialog.waitFor({ state: 'hidden' })
+    const target = elsewhere ? search : materials.getByRole('heading', { name: 'Personal notes', level: 1, exact: true })
+    await expect.poll(() => target.evaluate(node => node === window.document.activeElement)).toBe(true)
+    refreshed.resolve(undefined)
+    await expect.poll(() => materials.locator('[aria-busy="true"]').count()).toBe(0)
+    await expect.poll(() => target.evaluate(node => node === window.document.activeElement)).toBe(true)
+    expect(await search.evaluate((node, original) => node === original, originalSearch)).toBe(true)
+    expect(await search.inputValue()).toBe('Unsubmitted draft')
+    if (action === 'reindex') expect(await selection.isChecked()).toBe(false)
+    else expect(await selection.count()).toBe(0)
+    expect(await materials.getByRole('group', { name: 'Batch file actions', exact: true }).count()).toBe(0)
+    if (elsewhere) {
+      const selectionRange = await search.evaluate(node => node instanceof HTMLInputElement ? [node.selectionStart, node.selectionEnd] : [])
+      expect(selectionRange).toEqual([1, 3])
+    } else {
+      await mkdir(screenshots, { recursive: true })
+      for (const theme of ['light', 'dark'] as const) {
+        await page.emulateMedia({ colorScheme: theme })
+        for (const width of [1440, 390]) {
+          await page.setViewportSize({ width, height: 900 })
+          await expectKnowledgeMainFits(page)
+          await page.screenshot({ path: join(screenshots, `batch-close-${action}-${backdrop ? 'backdrop-' : ''}${theme}-${width}.png`),
+            animations: 'disabled' })
+        }
+      }
+    }
+    expect(tripwire.pageErrors).toEqual([])
+    expect(tripwire.warnings).toEqual([])
+  },
+)
+
+it.each(['connectors', 'directory', 'materials', 'processing'] as const)('keeps %s refresh focus and controls stable until the read settles', async (surface) => {
+  const scaffold = await launchWebScaffold({ firstUse: true,
+    extraInstallAnchors: [join(REPO_ROOT, 'packages/deepseek-harness-product/desktop/package.json')],
+    extraOverlayPath: [join(packageDir, 'cordis.patch.yml'), join(REPO_ROOT, 'apps/web/tests/pin-browse-picker.overlay.yml')],
+  })
+  onTestFinished(() => scaffold.close())
+  const browser = await chromium.launch()
+  onTestFinished(() => browser.close())
+  const page = await newEnglishPage(browser)
+  page.setDefaultTimeout(10_000)
+  const tripwire = watchConsole(page)
+  const pending = Promise.withResolvers<undefined>()
+  onTestFinished(() => { pending.resolve(undefined) })
+  let waiting = false
+  let reads = 0
+  const method = surface === 'connectors' ? 'connectors.refresh' : surface === 'directory' ? 'knowledge.bases.list'
+    : surface === 'materials' ? 'knowledge.documents.list' : 'knowledge.documents.processing'
+  await page.exposeFunction('__refreshFocusInvoke', async (requested: string, payload: Record<string, unknown> = {}) => {
+    if (requested === method && waiting) { reads++; await pending.promise }
+    switch (requested) {
+      case 'auth.getSession': return { authenticated: true, employeeId: 'fixture-employee' }
+      case 'tasks.capabilities.read': return { knowledgeBaseIds: [] }
+      case 'connectors.list': return connectors
+      case 'connectors.refresh': return { connectedIds: ['erp'], unavailableIds: [] }
+      case 'knowledge.bases.list': return [organizationKnowledge[0]]
+      case 'knowledge.documents.upload.pending': return []
+      case 'knowledge.folders.list': return { items: [], page: 1, size: 20, total: 0 }
+      case 'knowledge.documents.list': return { items: [knowledgeDocuments('personal-notes')[0]], page: 1, size: 20, total: 1 }
+      case 'knowledge.documents.processing': return { documentId: payload.documentId, knowledgeBaseId: payload.knowledgeBaseId,
+        status: 'READY', attempt: 0, stalled: false, summaryStatus: 'COMPLETED', summaryEnabled: true,
+        summary: 'Confirmed summary.', stages: [] }
+      default: throw new Error(`Unexpected refresh method: ${requested}`)
+    }
+  })
+  await page.addInitScript(() => {
+    const api = globalThis as typeof globalThis & { __refreshFocusInvoke(method: string, payload?: unknown): Promise<unknown> }
+    Object.defineProperty(globalThis, 'dshDesktop', { value: { extensions: {
+      invoke: async (_namespace: string, method: string, payload?: unknown) => (
+        { ok: true, result: await api.__refreshFocusInvoke(method, payload) }),
+      cancel: () => {}, subscribe: () => () => {},
+    } } })
+  })
+  await page.goto(scaffold.authenticatedUrl)
+  await page.getByRole('button', { name: surface === 'connectors' ? 'Connectors' : 'Knowledge bases', exact: true }).click()
+  let region = surface === 'connectors' ? page.getByRole('tabpanel') : page.locator('[data-knowledge-directory]')
+  if (surface !== 'connectors') await region.getByRole('button', { name: 'Personal notes', exact: true }).waitFor()
+  else await page.getByText('Order management', { exact: true }).waitFor()
+  if (surface === 'materials' || surface === 'processing') {
+    await selectKnowledgeLibrary(page, 'Personal notes')
+    region = page.locator('[data-knowledge-content]')
+    await region.getByRole('button', { name: 'Order review.md', exact: true }).waitFor()
+    if (surface === 'processing') {
+      await region.getByRole('button', { name: 'Actions for “Order review.md”', exact: true }).click()
+      await page.getByRole('menuitem', { name: 'Processing details', exact: true }).click()
+      region = page.locator('[data-knowledge-inline-reader]')
+      await region.getByText('Confirmed summary.', { exact: true }).waitFor()
+    }
+  }
+  const refresh = surface === 'connectors' ? page.getByRole('button', { name: 'Refresh', exact: true })
+    : region.getByRole('button', { name: 'Refresh', exact: true })
+  const button = await refresh.elementHandle()
+  const glyph = await refresh.locator('svg').elementHandle()
+  await refresh.focus()
+  const box = await refresh.boundingBox()
+  waiting = true
+  await refresh.press('Enter')
+  await expect.poll(() => reads).toBe(1)
+  await expect.poll(() => refresh.getAttribute('aria-busy')).toBe('true')
+  expect(await refresh.evaluate(node => node === document.activeElement)).toBe(true)
+  expect(await refresh.getAttribute('aria-disabled')).toBe('true')
+  expect(await refresh.evaluate(node => getComputedStyle(node).opacity)).toBe('1')
+  expect(await refresh.boundingBox()).toEqual(box)
+  await page.keyboard.press('Enter')
+  expect(reads).toBe(1)
+  await mkdir(screenshots, { recursive: true })
+  for (const theme of ['light', 'dark'] as const) {
+    await page.emulateMedia({ colorScheme: theme })
+    for (const width of [1440, 390]) {
+      await page.setViewportSize({ width, height: 900 })
+      await page.waitForFunction(drawer => Boolean(document.querySelector('[data-sidebar-drawer]')) === drawer, width < 768)
+      if (await page.locator('[data-sidebar-drawer]:not([data-sidebar-collapsed])').count()) {
+        await page.getByRole('button', { name: 'Collapse sidebar', exact: true }).click()
+      }
+      await refresh.focus()
+      await refresh.scrollIntoViewIfNeeded()
+      expect(await page.locator('body').evaluate(node => node.scrollWidth <= node.clientWidth)).toBe(true)
+      await page.screenshot({ path: join(screenshots, `refresh-${surface}-${theme}-${width}.png`), animations: 'disabled' })
+    }
+  }
+  pending.resolve(undefined)
+  await expect.poll(() => refresh.getAttribute('aria-disabled')).toBe('false')
+  expect(await refresh.evaluate((node, original) => node === original, button)).toBe(true)
+  expect(await refresh.locator('svg').evaluate((node, original) => node === original, glyph)).toBe(true)
+  expect(await refresh.evaluate(node => node === document.activeElement)).toBe(true)
+  expect(tripwire.pageErrors).toEqual([])
+  expect(tripwire.warnings).toEqual([])
+})
+
+it('restores connector capability browsing after a failed refresh without remounting its controls', async () => {
+  const scaffold = await launchWebScaffold({ firstUse: true,
+    extraInstallAnchors: [join(REPO_ROOT, 'packages/deepseek-harness-product/desktop/package.json')],
+    extraOverlayPath: [join(packageDir, 'cordis.patch.yml'), join(REPO_ROOT, 'apps/web/tests/pin-browse-picker.overlay.yml')],
+  })
+  onTestFinished(() => scaffold.close())
+  const browser = await chromium.launch()
+  onTestFinished(() => browser.close())
+  const page = await newEnglishPage(browser)
+  page.setDefaultTimeout(10_000)
+  const tripwire = watchConsole(page)
+  const failure = Promise.withResolvers<undefined>(), retry = Promise.withResolvers<undefined>()
+  onTestFinished(() => { failure.resolve(undefined); retry.resolve(undefined) })
+  let reads = 0, revocations = 0
+  const descriptor = { ...connectors[0], authMode: 'oauth', authorizationStatus: 'AUTHORIZED',
+    tools: Array.from({ length: 45 }, (_, index) => ({ name: `order.read_${index}`, displayName: `Read order ${index}`,
+      description: `Read-only order instructions ${index}`, access: 'READ' })) }
+  await page.exposeFunction('__capabilityRetryInvoke', async (method: string) => {
+    switch (method) {
+      case 'auth.getSession': return { authenticated: true, employeeId: 'fixture-employee' }
+      case 'tasks.capabilities.read': return { knowledgeBaseIds: [] }
+      case 'connectors.list': {
+        reads++
+        if (reads === 2) { await failure.promise; throw new Error('Directory unavailable') }
+        if (reads === 3) await retry.promise
+        return [{ ...descriptor, authorizationStatus: reads > 1 ? 'REQUIRED' : 'AUTHORIZED' }]
+      }
+      case 'connectors.authorization.revoke': { revocations++; return { connectorId: 'erp', status: 'REQUIRED' } }
+      default: throw new Error(`Unexpected capability refresh method: ${method}`)
+    }
+  })
+  await page.addInitScript(() => {
+    const api = globalThis as typeof globalThis & { __capabilityRetryInvoke(method: string): Promise<unknown> }
+    Object.defineProperty(globalThis, 'dshDesktop', { value: { extensions: {
+      invoke: async (_namespace: string, method: string) => ({ ok: true, result: await api.__capabilityRetryInvoke(method) }),
+      cancel: () => {}, subscribe: () => () => {},
+    } } })
+  })
+  await page.goto(scaffold.authenticatedUrl)
+  await page.getByRole('button', { name: 'Connectors', exact: true }).click()
+  await page.getByRole('button', { name: /Order management Orders/ }).click()
+  const dialog = page.getByRole('dialog', { name: 'Connector details', exact: true })
+  const disclosure = dialog.locator('details').first()
+  await disclosure.locator(':scope > summary').click()
+  const search = dialog.getByRole('searchbox', { name: 'Search capabilities', exact: true })
+  const searchNode = await search.elementHandle()
+  await search.fill('order')
+  const access = dialog.getByRole('combobox')
+  await access.selectOption('READ')
+  const first = dialog.locator('summary').filter({ hasText: /^Read order 0/ })
+  await first.click()
+  const firstNode = await first.elementHandle()
+  await dialog.getByRole('button', { name: 'Show more (20 / 45 shown)', exact: true }).click()
+  const more = dialog.getByRole('button', { name: 'Show more (40 / 45 shown)', exact: true })
+  const moreNode = await more.elementHandle()
+  await dialog.getByRole('button', { name: 'Disconnect account', exact: true }).click()
+  await expect.poll(() => reads).toBe(2)
+  await first.focus()
+  failure.resolve(undefined)
+  const refresh = dialog.getByRole('button', { name: 'Refresh', exact: true })
+  await refresh.waitFor()
+  await expect.poll(() => refresh.evaluate(node => node === document.activeElement)).toBe(true)
+  expect(await search.isVisible()).toBe(false)
+  expect(await dialog.getByRole('listitem').count()).toBe(0)
+  await refresh.press('Enter')
+  await expect.poll(() => reads).toBe(3)
+  expect(await search.isVisible()).toBe(false)
+  expect(await refresh.evaluate(node => node === document.activeElement)).toBe(true)
+  expect(await refresh.getAttribute('aria-busy')).toBe('true')
+  await refresh.press('Enter')
+  expect(reads).toBe(3)
+  retry.resolve(undefined)
+  await search.waitFor()
+  expect(await search.evaluate((node, original) => node === original, searchNode)).toBe(true)
+  expect(await search.inputValue()).toBe('order')
+  expect(await access.inputValue()).toBe('READ')
+  expect(await disclosure.evaluate((node: HTMLDetailsElement) => node.open)).toBe(true)
+  expect(await first.evaluate((node, original) => node === original, firstNode)).toBe(true)
+  expect(await first.locator('..').evaluate((node: HTMLDetailsElement) => node.open)).toBe(true)
+  expect(await more.evaluate((node, original) => node === original, moreNode)).toBe(true)
+  expect(await dialog.getByRole('listitem').count()).toBe(40)
+  expect(await dialog.getByRole('button', { name: 'Connect account', exact: true }).evaluate(node => node === document.activeElement)).toBe(true)
+  expect(revocations).toBe(1)
+  await mkdir(screenshots, { recursive: true })
+  for (const theme of ['light', 'dark'] as const) {
+    await page.emulateMedia({ colorScheme: theme })
+    for (const width of [1440, 390]) {
+      await page.setViewportSize({ width, height: 900 })
+      await search.focus()
+      expect(await dialog.evaluate(node => node.scrollWidth <= node.clientWidth)).toBe(true)
+      await page.screenshot({ path: join(screenshots, `connector-tools-recovered-${theme}-${width}.png`), animations: 'disabled' })
+    }
+  }
+  expect(tripwire.pageErrors).toEqual([])
+  expect(tripwire.warnings).toEqual([])
+})
+
+it.each(['connectors', 'tools', 'directory', 'materials'] as const)('restores %s filter focus without rebuilding its search controls', async (surface) => {
+  const scaffold = await launchWebScaffold({ firstUse: true,
+    extraInstallAnchors: [join(REPO_ROOT, 'packages/deepseek-harness-product/desktop/package.json')],
+    extraOverlayPath: [join(packageDir, 'cordis.patch.yml'), join(REPO_ROOT, 'apps/web/tests/pin-browse-picker.overlay.yml')],
+  })
+  onTestFinished(() => scaffold.close())
+  const browser = await chromium.launch()
+  onTestFinished(() => browser.close())
+  const page = await newEnglishPage(browser)
+  page.setDefaultTimeout(10_000)
+  const tripwire = watchConsole(page)
+  const pending = Promise.withResolvers<undefined>()
+  onTestFinished(() => { pending.resolve(undefined) })
+  let waiting = false
+  let resetReads = 0
+  await page.exposeFunction('__filterFocusInvoke', async (method: string, payload: Record<string, unknown> = {}) => {
+    switch (method) {
+      case 'auth.getSession': return { authenticated: true, employeeId: 'fixture-employee' }
+      case 'tasks.capabilities.read': return { knowledgeBaseIds: [] }
+      case 'connectors.list': return connectors
+      case 'knowledge.bases.list': return [organizationKnowledge[0]]
+      case 'knowledge.documents.upload.pending': return []
+      case 'knowledge.folders.list': return { items: [], page: 1, size: 20, total: 0 }
+      case 'knowledge.documents.list': {
+        if (waiting && !payload.query) { resetReads++; await pending.promise }
+        const items = payload.query ? [] : [knowledgeDocuments('personal-notes')[0]]
+        return { items, page: 1, size: 20, total: items.length }
+      }
+      default: throw new Error(`Unexpected filter method: ${method}`)
+    }
+  })
+  await page.addInitScript(() => {
+    const api = globalThis as typeof globalThis & { __filterFocusInvoke(method: string, payload?: unknown): Promise<unknown> }
+    Object.defineProperty(globalThis, 'dshDesktop', { value: { extensions: {
+      invoke: async (_namespace: string, method: string, payload?: unknown) => (
+        { ok: true, result: await api.__filterFocusInvoke(method, payload) }),
+      cancel: () => {}, subscribe: () => () => {},
+    } } })
+  })
+  const connector = surface === 'connectors' || surface === 'tools'
+  await page.goto(scaffold.authenticatedUrl)
+  await page.getByRole('button', { name: connector ? 'Connectors' : 'Knowledge bases', exact: true }).click()
+  let region = connector ? page.getByRole('tabpanel') : page.locator('[data-knowledge-directory]')
+  if (connector) await page.getByText('Order management', { exact: true }).waitFor()
+  else await region.getByRole('button', { name: 'Personal notes', exact: true }).waitFor()
+  if (surface === 'tools') {
+    await page.getByRole('button', { name: /Order management Orders/ }).click()
+    region = page.getByRole('dialog', { name: 'Connector details', exact: true })
+    await region.locator('summary').filter({ hasText: 'View capabilities (2)' }).click()
+  } else if (surface === 'materials') {
+    await selectKnowledgeLibrary(page, 'Personal notes')
+    region = page.locator('[data-knowledge-content]')
+    await region.getByRole('button', { name: 'Order review.md', exact: true }).waitFor()
+  }
+  const search = surface === 'connectors' ? page.getByRole('searchbox', { name: 'Search', exact: true })
+    : region.getByRole('searchbox', { name: surface === 'tools' ? 'Search capabilities'
+      : surface === 'directory' ? 'Search knowledge bases…' : 'Search material names…', exact: true })
+  const input = await search.elementHandle()
+  await search.fill('no-matching-fixture')
+  if (surface === 'materials') await search.press('Enter')
+  await region.getByText('No matching results', { exact: true }).waitFor()
+  const clear = region.getByRole('button', { name: 'Clear filters', exact: true })
+  await clear.focus()
+  waiting = surface === 'materials'
+  await clear.press('Enter')
+  if (waiting) await expect.poll(() => resetReads).toBe(1)
+  const destination = surface === 'materials' ? region.getByRole('heading', { level: 1 }) : search
+  await expect.poll(() => destination.evaluate(node => node === document.activeElement)).toBe(true)
+  expect(await search.evaluate((node, original) => node === original, input)).toBe(true)
+  expect(await search.inputValue()).toBe('')
+  expect(await region.getByRole('status', { name: 'Reading materials…', exact: true }).count()).toBe(0)
+  await mkdir(screenshots, { recursive: true })
+  for (const theme of ['light', 'dark'] as const) {
+    await page.emulateMedia({ colorScheme: theme })
+    for (const width of [1440, 390]) {
+      await page.setViewportSize({ width, height: 900 })
+      await page.waitForFunction(drawer => Boolean(document.querySelector('[data-sidebar-drawer]')) === drawer, width < 768)
+      if (await page.locator('[data-sidebar-drawer]:not([data-sidebar-collapsed])').count()) {
+        await page.getByRole('button', { name: 'Collapse sidebar', exact: true }).click()
+      }
+      await destination.focus()
+      expect(await page.locator('body').evaluate(node => node.scrollWidth <= node.clientWidth)).toBe(true)
+      await page.screenshot({ path: join(screenshots, `clear-${surface}-${theme}-${width}.png`), animations: 'disabled' })
+    }
+  }
+  pending.resolve(undefined)
+  if (waiting) await region.getByRole('button', { name: 'Order review.md', exact: true }).waitFor()
+  expect(await destination.evaluate(node => node === document.activeElement)).toBe(true)
+  expect(await search.evaluate((node, original) => node === original, input)).toBe(true)
+  expect(tripwire.pageErrors).toEqual([])
+  expect(tripwire.warnings).toEqual([])
+})
+
+it('reads document stages and regenerates its summary within the native materials reader', async () => {
+  const scaffold = await launchWebScaffold({ firstUse: true,
+    extraInstallAnchors: [join(REPO_ROOT, 'packages/deepseek-harness-product/desktop/package.json')],
+    extraOverlayPath: [join(packageDir, 'cordis.patch.yml'), join(REPO_ROOT, 'apps/web/tests/pin-browse-picker.overlay.yml')],
+  })
+  onTestFinished(() => scaffold.close())
+  const executablePath = process.env.DSH_PLAYWRIGHT_EXECUTABLE_PATH
+  const browser = await chromium.launch(executablePath === undefined ? {} : { executablePath, args: ['--disable-crashpad-for-testing'] })
+  onTestFinished(() => browser.close())
+  const page = await newEnglishPage(browser)
+  const tripwire = watchConsole(page)
+  page.setDefaultTimeout(15_000)
+  let reads = 0
+  let failRead = true
+  let regenerated = false
+  const writes: { readonly knowledgeBaseId?: string; readonly documentId?: string; readonly operationId?: string }[] = []
+  await page.exposeFunction('__processingInvoke', (method: string, payload?: {
+    knowledgeBaseId?: string
+    documentId?: string
+    operationId?: string
+  }) => {
+    switch (method) {
+      case 'auth.getSession': return { authenticated: true }
+      case 'tasks.capabilities.read': return { knowledgeBaseIds: [] }
+      case 'knowledge.bases.list': return [organizationKnowledge[0]]
+      case 'knowledge.folders.list': return { items: [], page: 1, size: 100, total: 0 }
+      case 'knowledge.documents.upload.pending': return []
+      case 'knowledge.documents.list': return { items: [knowledgeDocuments('personal-notes')[0]], page: 1, size: 20, total: 1 }
+      case 'knowledge.documents.processing': {
+        reads++
+        if (failRead) return { fixtureFailure: productFailure(new ProductError('EXTERNAL_SERVICE_ERROR', 'PRIVATE_ENGINE_TRACE', true)) }
+        return { documentId: payload?.documentId, knowledgeBaseId: payload?.knowledgeBaseId, status: 'READY', attempt: 1,
+          stalled: false, summaryStatus: 'COMPLETED', summaryEnabled: true,
+          summary: regenerated ? 'Updated summary: verify the order total before dispatch.' : 'Review order totals and delivery evidence.',
+          stages: ['DOCUMENT', 'CHUNKING', 'EMBEDDING', 'MULTIMODAL', 'ENRICHMENT'].map(name => ({ name,
+            status: name === 'MULTIMODAL' ? 'SKIPPED' : 'COMPLETED', durationMillis: name === 'MULTIMODAL' ? null : 1250 })) }
+      }
+      case 'knowledge.documents.summary.refresh':
+        writes.push({ ...payload }); regenerated = true
+        return knowledgeDocuments('personal-notes')[0]
+      default: throw new Error(`Unexpected processing method: ${method}`)
+    }
+  })
+  await page.addInitScript(() => {
+    const api = globalThis as typeof globalThis & { __processingInvoke(method: string, payload?: unknown): Promise<unknown> }
+    Object.defineProperty(globalThis, 'dshDesktop', { value: { extensions: {
+      invoke: async (_namespace: string, method: string, payload?: unknown) => {
+        const result = await api.__processingInvoke(method, payload)
+        if (typeof result === 'object' && result !== null && 'fixtureFailure' in result) return { ok: false, failure: result.fixtureFailure }
+        return { ok: true, result }
+      }, cancel: () => {}, subscribe: () => () => {},
+    } } })
+  })
+  await mkdir(screenshots, { recursive: true })
+  onTestFinished(async ({ task }) => {
+    if (task.result?.state === 'fail') await page.screenshot({ path: join(screenshots, 'knowledge-processing-failure.png') })
+  })
+  await page.goto(scaffold.authenticatedUrl)
+  await page.getByRole('button', { name: 'Knowledge bases', exact: true }).click()
+  await selectKnowledgeLibrary(page, 'Personal notes')
+  expect(reads).toBe(0)
+  const materials = page.locator('[data-knowledge-content]')
+  await materials.getByRole('button', { name: 'Actions for “Order review.md”', exact: true }).click()
+  await page.getByRole('menuitem', { name: 'Processing details', exact: true }).click()
+  const reader = page.locator('[data-knowledge-inline-reader]')
+  await reader.getByRole('alert').waitFor()
+  expect(await reader.innerText()).not.toContain('PRIVATE_ENGINE_TRACE')
+  failRead = false
+  await reader.getByRole('button', { name: 'Refresh', exact: true }).click()
+  await reader.getByRole('table').waitFor()
+  await reader.getByText('Review order totals and delivery evidence.', { exact: true }).waitFor()
+  await captureKnowledgeFlow(page, 'processing')
+  await compareOrRefreshGolden(join(expectedDir, 'knowledge-processing.expected.md'),
+    await captureStableAria(page, '[data-knowledge-inline-reader]', scaffold.workspaceCwd), webSnapshotMode())
+  await reader.getByRole('button', { name: 'Regenerate summary', exact: true }).click()
+  await reader.getByText('Updated summary: verify the order total before dispatch.', { exact: true }).waitFor()
+  expect(writes).toHaveLength(1)
+  expect(writes[0]?.knowledgeBaseId).toBe('personal-notes')
+  expect(writes[0]?.documentId).toBe('document-1')
+  expect(writes[0]?.operationId).toMatch(/^[\da-f-]{36}$/u)
+  expect(await reader.getByRole('alert').count()).toBe(0)
+  expect(await reader.getByRole('dialog').count()).toBe(0)
   expect(tripwire.pageErrors).toEqual([])
 })
 
@@ -415,6 +1743,7 @@ it('keeps native themes and responsive catalogs while using official details and
   await writeFile(capabilitiesOverlay, JSON.stringify(builtinCapabilityPatches()))
   const scaffold = await launchWebScaffold({
     firstUse: true,
+    profile: { packages: [], bundles: ['@deepseek-ai/dsh-experimental-agent-team-profile'] },
     extraInstallAnchors: [join(REPO_ROOT, 'packages/deepseek-harness-product/desktop/package.json')],
     extraOverlayPath: [capabilitiesOverlay, join(packageDir, 'cordis.patch.yml'), join(REPO_ROOT, 'apps/web/tests/pin-browse-picker.overlay.yml')],
   })
@@ -434,11 +1763,21 @@ it('keeps native themes and responsive catalogs while using official details and
     console.error('Catalog workflow failure:', await page.locator('body').innerText(), tripwire)
   })
   const calls: string[] = []
+  let captureUploadQueue = false
   const uploadModes: string[] = []
   const uploadFolders: (string | null | undefined)[] = []
   const fileTransfers = new Map<string, { readonly mediaType: string; readonly data: Uint8Array }>()
   let transferSequence = 0
   let largePreview = false
+  let emptyPersonalLibrary = true
+  let folderOnlyPersonalLibrary = false
+  let materialGate: Promise<void> | undefined
+  let materialFailure: string | undefined
+  let invalidMaterialPage = false
+  let mismatchedPreviewMetadata = false
+  let denyMaterials = false
+  let pathGate: Promise<void> | undefined
+  let failPath = false
   const newPersonalBases: Record<string, unknown>[] = []
   const managedFolders: { id: string; name: string; parentId: string | null; updatedAt: string }[] = [{
     id: 'folder-policies', name: 'Policies', parentId: null, updatedAt: '2026-10-10T01:00:00Z',
@@ -455,8 +1794,14 @@ it('keeps native themes and responsive catalogs while using official details and
   let capabilities: ProductTaskCapabilities = { basePresetId: 'standard', knowledgeBaseIds: [] }
   const personalResources: Record<string, unknown>[] = []
   let failSave = true
-  await page.exposeFunction('__productInvoke', (method: string, payload?: { sessionId?: string; revision?: number; id?: string; name?: string; kind?: string; version?: string; draft?: Record<string, unknown>; basePresetId?: string; knowledgeBaseIds?: string[]; knowledgeBaseId?: string; documentId?: string; query?: string; page?: number; size?: number; folderId?: string | null; parentId?: string | null; pdfParseMode?: string; rendered?: boolean; transferId?: string; offset?: number }): unknown => {
+  await page.exposeFunction('__productInvoke', async (method: string, payload?: { sessionId?: string; revision?: number; id?: string; name?: string; description?: string; kind?: string; version?: string; draft?: Record<string, unknown>; basePresetId?: string; knowledgeBaseIds?: string[]; knowledgeBaseId?: string; documentId?: string; query?: string; page?: number; size?: number; folderId?: string | null; parentId?: string | null; pdfParseMode?: string; rendered?: boolean; transferId?: string; offset?: number }): Promise<unknown> => {
     calls.push(method)
+    if (method === 'knowledge.documents.list' || method === 'knowledge.folders.list') {
+      await materialGate
+      if (denyMaterials) return { fixtureFailure: productFailure(new ProductError('KNOWLEDGE_ACCESS_REVOKED', 'Permission revoked', false)) }
+      if (method === materialFailure) throw new Error('Connection interrupted')
+      if (method === 'knowledge.documents.list' && invalidMaterialPage) return { items: [], page: 1, size: 0, total: 0 }
+    }
     switch (method) {
       case 'auth.getSession': return { authenticated: true }
       case 'tasks.capabilities.read': return capabilities
@@ -501,7 +1846,8 @@ it('keeps native themes and responsive catalogs while using official details and
       case 'knowledge.bases.list': return [...organizationKnowledge, ...newPersonalBases,
         { id: 'playbook', name: 'Operations playbook', scope: 'COMPANY', companyId: 'fixture-company', ownerName: 'Fixture company', canRead: true, canManage: false }]
       case 'knowledge.bases.create': {
-        const base = { id: 'created-personal', name: payload?.name, scope: 'PERSONAL', ownerEmployeeId: 'fixture-employee', canRead: true, canManage: true }
+        const base = { id: 'created-personal', name: payload?.name, description: payload?.description,
+          updatedAt: '2026-10-10T01:00:00Z', scope: 'PERSONAL', ownerEmployeeId: 'fixture-employee', canRead: true, canManage: true }
         newPersonalBases.push(base)
         return base
       }
@@ -518,10 +1864,13 @@ it('keeps native themes and responsive catalogs while using official details and
         materialRequests.push({ ...payload })
         const page = payload?.page ?? 1
         const size = payload?.size ?? 20
-        const documents = filteredKnowledgeDocuments(payload?.knowledgeBaseId ?? '', payload?.query, payload?.folderId)
+        const documents = (emptyPersonalLibrary || folderOnlyPersonalLibrary) && payload?.knowledgeBaseId === 'created-personal' ? []
+          : filteredKnowledgeDocuments(payload?.knowledgeBaseId ?? '', payload?.query, payload?.folderId)
         return { items: documents.slice((page - 1) * size, page * size), page, size, total: documents.length }
       }
       case 'knowledge.folders.get': {
+        await pathGate
+        if (failPath) throw new Error('Folder path unavailable')
         const folder = managedFolders.find(row => row.id === payload?.folderId)
         if (!folder) throw new Error('Missing managed folder')
         return folder
@@ -529,7 +1878,8 @@ it('keeps native themes and responsive catalogs while using official details and
       case 'knowledge.folders.list': {
         const page = payload?.page ?? 1
         const size = payload?.size ?? 100
-        const folders = managedFolders.filter(row => row.parentId === (payload?.parentId ?? null))
+        const folders = emptyPersonalLibrary && payload?.knowledgeBaseId === 'created-personal' ? []
+          : managedFolders.filter(row => row.parentId === (payload?.parentId ?? null))
         return { items: folders.slice((page - 1) * size, page * size), page, size, total: folders.length }
       }
       case 'knowledge.folders.create': {
@@ -550,7 +1900,13 @@ it('keeps native themes and responsive catalogs while using official details and
         return { folderId: payload?.folderId, deleted: true }
       }
       case 'knowledge.documents.upload.pending': return []
-      case 'knowledge.documents.upload.select': uploadModes.push(payload?.pdfParseMode ?? 'STANDARD'); uploadFolders.push(payload?.folderId); return []
+      case 'knowledge.documents.upload.select':
+        uploadModes.push(payload?.pdfParseMode ?? 'STANDARD'); uploadFolders.push(payload?.folderId)
+        return captureUploadQueue ? [{ operationId: 'fixture-upload-selection-0001', filename: '中文模板.pdf',
+          pdfParseMode: payload?.pdfParseMode ?? 'STANDARD', folderId: payload?.folderId ?? null, canConfigure: true }] : []
+      case 'knowledge.documents.upload.configure':
+        return { operationId: 'fixture-upload-replacement-0001', filename: '中文模板.pdf', pdfParseMode: payload?.pdfParseMode,
+          folderId: managedFolders.find(row => row.name === 'October')?.id ?? null, canConfigure: true }
       case 'knowledge.documents.read': return knowledgeContents(payload?.documentId ?? '', payload?.page ?? 1, payload?.size ?? 50)
       case 'knowledge.documents.preview.open': {
         const file = payload?.rendered ? { mediaType: 'application/pdf', data: Uint8Array.from(pdfFixture()) }
@@ -577,7 +1933,10 @@ it('keeps native themes and responsive catalogs while using official details and
       }
       case 'knowledge.documents.preview.close': fileTransfers.delete(payload?.transferId ?? ''); return { closed: true }
       case 'knowledge.documents.download': return { cancelled: false }
-      case 'knowledge.documents.previewMetadata': return knowledgeDocuments(payload?.knowledgeBaseId ?? '').find(row => row.id === payload?.documentId)
+      case 'knowledge.documents.previewMetadata': {
+        const document = knowledgeDocuments(payload?.knowledgeBaseId ?? '').find(row => row.id === payload?.documentId)
+        return mismatchedPreviewMetadata ? { ...document, id: 'another-document' } : document
+      }
       case 'knowledge.documents.get': return { ...knowledgeDocuments(payload?.knowledgeBaseId ?? '').find(row => row.id === payload?.documentId), manualContent: '# Order review\n\nKeep the original evidence.' }
       case 'knowledge.search': return [{ sourceId: 'policy-source', documentId: 'document-1', filename: 'Order review.md',
         content: 'Check order totals before changing delivery details.', locator: 'Section 1' }]
@@ -594,6 +1953,7 @@ it('keeps native themes and responsive catalogs while using official details and
     Object.defineProperty(globalThis, 'dshDesktop', { value: { extensions: {
       invoke: async (_namespace: string, method: string, payload?: unknown) => {
         let result = await api.__productInvoke(method, payload)
+        if (typeof result === 'object' && result !== null && 'fixtureFailure' in result) return { ok: false, failure: result.fixtureFailure }
         if (method === 'knowledge.documents.preview.read' && typeof result === 'object' && result !== null && 'data' in result && Array.isArray(result.data)) {
           result = { ...result, data: Uint8Array.from(result.data) }
         }
@@ -661,15 +2021,13 @@ it('keeps native themes and responsive catalogs while using official details and
       expect(Math.max(...tabWidths) - Math.min(...tabWidths)).toBeLessThan(1)
       await page.screenshot({ path: join(screenshots, `knowledge-directory-${theme}-${viewport.width}.png`), animations: 'disabled' })
       if (theme === 'light' && viewport.width === 1440) await snapshot('knowledge-directory', '[data-knowledge-directory]')
-      const knowledgeList = await openKnowledgeNavigation(page)
-      await knowledgeList.getByRole('button', { name: 'Sales procedures', exact: true }).waitFor()
-      await knowledgeList.getByRole('heading', { name: 'Sales (21)', exact: true }).waitFor()
-      await knowledgeList.getByRole('heading', { name: 'Sales (22)', exact: true }).waitFor()
-      await knowledgeList.getByRole('button', { name: 'Policies', exact: true }).waitFor()
-      await expectKnowledgeNavigationFits(knowledgeList)
+      const knowledgeList = await openKnowledgeMaterials(page)
+      await knowledgeList.getByRole('heading', { name: 'Personal notes', exact: true }).waitFor()
+      expect(await knowledgeList.getByRole('button', { name: 'Sales procedures', exact: true }).count()).toBe(0)
+      expect(await knowledgeList.getByRole('heading', { name: 'Sales (21)', exact: true }).count()).toBe(0)
+      await expectKnowledgeHeaderFits(knowledgeList)
       if (viewport.width === 390) {
         await page.screenshot({ path: join(screenshots, `knowledge-navigation-${theme}-390.png`), animations: 'disabled' })
-        await page.getByRole('button', { name: 'Browse materials', exact: true }).click()
       }
       const materialStatus = page.locator('[data-knowledge-content] td:nth-child(2) > span').first()
       await materialStatus.waitFor()
@@ -681,7 +2039,13 @@ it('keeps native themes and responsive catalogs while using official details and
         status.getBoundingClientRect().right <= status.parentElement!.getBoundingClientRect().right)).toBe(true)
       expect(await page.locator('[data-knowledge-workspace]').evaluate(region => region.scrollWidth > region.clientWidth)).toBe(false)
       await page.screenshot({ path: join(screenshots, `knowledge-${theme}-${viewport.width}.png`) })
-      if (theme === 'light' && viewport.width === 1440) await snapshot('knowledge', '[data-knowledge-navigation]')
+      if (viewport.width === 1440) {
+        const materialSearch = knowledgeList.getByRole('searchbox')
+        await materialSearch.focus()
+        await page.screenshot({ path: join(screenshots, `knowledge-search-focus-${theme}.png`), animations: 'disabled' })
+        await materialSearch.blur()
+      }
+      if (theme === 'light' && viewport.width === 1440) await snapshot('knowledge', '[data-knowledge-content]')
     }
   }
   await page.setViewportSize({ width: 1440, height: 900 })
@@ -764,12 +2128,34 @@ it('keeps native themes and responsive catalogs while using official details and
   await page.screenshot({ path: join(screenshots, 'connector-required-mobile.png') })
   await page.setViewportSize({ width: 1440, height: 900 })
   await page.keyboard.press('Escape')
+  connectorCatalog = connectorCatalog.map(connector => connector.id === 'erp' ? { ...connector,
+    tools: Array.from({ length: 45 }, (_, index) => ({ name: `order.inspect_${index}`, displayName: `Order capability ${index}`,
+      description: `Read-only inspection ${index}`, access: 'READ' })),
+  } : connector)
+  await page.getByRole('button', { name: 'Refresh', exact: true }).click()
+  await page.getByRole('button', { name: /Order management Orders/ }).click()
+  await connectorDialog.getByText('View capabilities (45)', { exact: true }).click()
+  const firstTool = connectorDialog.locator('summary').filter({ hasText: 'Order capability 0' })
+  await firstTool.click()
+  const firstToolNode = await firstTool.elementHandle()
+  const moreTools = connectorDialog.getByRole('button', { name: 'Show more (20 / 45 shown)', exact: true })
+  await moreTools.focus()
+  await moreTools.press('Enter')
+  const lastBatch = connectorDialog.getByRole('button', { name: 'Show more (40 / 45 shown)', exact: true })
+  expect(await lastBatch.evaluate(node => node === document.activeElement)).toBe(true)
+  await lastBatch.press('Enter')
+  expect(await connectorDialog.locator('summary').filter({ hasText: 'Order capability 40' }).evaluate(node => node === document.activeElement)).toBe(true)
+  expect(await firstTool.evaluate((node, previous) => node === previous, firstToolNode)).toBe(true)
+  expect(await firstTool.locator('..').evaluate((node: HTMLDetailsElement) => node.open)).toBe(true)
+  expect(await connectorDialog.getByRole('listitem').count()).toBe(45)
+  expect(calls.some(method => method === 'connectors.tools.call')).toBe(false)
+  await page.keyboard.press('Escape')
   await page.getByRole('button', { name: 'Knowledge bases', exact: true }).click()
-  await (await openKnowledgeNavigation(page)).getByRole('button', { name: 'Operations playbook', exact: true }).click()
+  await selectKnowledgeLibrary(page, 'Operations playbook')
   const materials = page.locator('[data-knowledge-content]')
   await materials.getByRole('button', { name: 'Order review.md', exact: true }).waitFor()
   expect(await page.getByRole('checkbox').count()).toBe(0)
-  expect(await materials.getByRole('button', { name: /^(Upload files|New)$/, exact: true }).count()).toBe(0)
+  expect(await materials.getByRole('button', { name: /^Add materials$/, exact: true }).count()).toBe(0)
   expect(await materials.getByRole('button', { name: /^Actions for/ }).count()).toBe(1)
   expect(await page.getByRole('dialog').count()).toBe(0)
   await snapshot('knowledge-detail', '[data-knowledge-workspace]')
@@ -780,49 +2166,67 @@ it('keeps native themes and responsive catalogs while using official details and
     await page.screenshot({ path: join(screenshots, `knowledge-materials-readonly-${width}.png`), animations: 'disabled' })
   }
   await page.setViewportSize({ width: 1440, height: 900 })
+  mismatchedPreviewMetadata = true
+  const beforePreview = calls.filter(method => method === 'knowledge.documents.preview.open').length
   await openKnowledgeFile(page, 'Order review.md')
   const contentReader = page.locator('[data-knowledge-inline-reader]')
+  await contentReader.getByRole('alert').waitFor()
+  expect(calls.filter(method => method === 'knowledge.documents.preview.open')).toHaveLength(beforePreview)
+  for (const theme of ['light', 'dark'] as const) {
+    await page.emulateMedia({ colorScheme: theme })
+    for (const width of [1440, 390]) {
+      await page.setViewportSize({ width, height: 900 })
+      await expectKnowledgeMainFits(page)
+      await page.screenshot({ path: join(screenshots, `knowledge-preview-identity-failure-${theme}-${width}.png`), animations: 'disabled' })
+    }
+  }
+  mismatchedPreviewMetadata = false
+  await contentReader.getByRole('button', { name: 'Retry', exact: true }).click()
   await contentReader.getByText('Check order totals before changing delivery details.', { exact: true }).waitFor()
   await contentReader.getByRole('heading', { name: 'Order review', exact: true }).waitFor()
   await contentReader.getByText('Final policy passage: preserve the audit record.', { exact: true }).waitFor()
   expect(await contentReader.getByText('Extracted content', { exact: true }).count()).toBe(0)
   expect(calls.filter(method => method === 'knowledge.documents.read')).toEqual([])
-  for (const width of [1440, 390]) {
-    await page.setViewportSize({ width, height: 900 })
-    await expect.poll(() => page.getByRole('dialog').count()).toBe(0)
-    await expectKnowledgeMainFits(page)
-    expect(await page.locator('[data-knowledge-workspace]').evaluate(region => region.scrollWidth > region.clientWidth)).toBe(false)
-    await page.screenshot({ path: join(screenshots, `knowledge-inline-reader-${width}.png`), animations: 'disabled' })
+  for (const theme of ['light', 'dark'] as const) {
+    await page.emulateMedia({ colorScheme: theme })
+    for (const width of [1440, 1024, 390]) {
+      await page.setViewportSize({ width, height: 900 })
+      await expect.poll(() => page.getByRole('dialog').count()).toBe(0)
+      await expectKnowledgeMainFits(page)
+      expect(await page.locator('[data-knowledge-workspace]').evaluate(region => region.scrollWidth > region.clientWidth)).toBe(false)
+      await page.screenshot({ path: join(screenshots, `knowledge-inline-reader-${theme}-${width}.png`), animations: 'disabled' })
+    }
   }
+  await page.emulateMedia({ colorScheme: 'light' })
   await page.setViewportSize({ width: 1440, height: 900 })
-  await (await openKnowledgeNavigation(page)).getByRole('button', { name: 'Sales procedures', exact: true }).click()
+  await materials.getByRole('button', { name: 'Back to files', exact: true }).click()
+  expect(await materials.getByRole('button', { name: 'Order review.md', exact: true }).evaluate(node => document.activeElement === node)).toBe(true)
+  await selectKnowledgeLibrary(page, 'Sales procedures')
   await materials.getByRole('button', { name: 'Order review.md', exact: true }).waitFor()
   expect(await contentReader.count()).toBe(0)
-  await (await openKnowledgeNavigation(page)).getByRole('button', { name: 'Policies', exact: true }).click()
+  await (await openKnowledgeMaterials(page)).getByRole('button', { name: 'Policies', exact: true }).click()
   await materials.getByRole('button', { name: 'Policy 2.pdf', exact: true }).waitFor()
   expect(await materials.getByRole('button', { name: 'Order review.md', exact: true }).count()).toBe(0)
   expect(materialRequests.at(-1)).toMatchObject({ knowledgeBaseId: 'sales-policy', folderId: 'folder-policies' })
-  await (await openKnowledgeNavigation(page)).getByRole('button', { name: 'Personal notes', exact: true }).click()
+  await selectKnowledgeLibrary(page, 'Personal notes')
   const personalMaterials = page.locator('[data-knowledge-content]')
   await personalMaterials.getByRole('button', { name: 'Order review.md', exact: true }).waitFor()
-  expect(await personalMaterials.getByRole('button', { name: 'Upload files', exact: true }).isVisible()).toBe(true)
+  expect(await personalMaterials.getByRole('button', { name: 'Add materials', exact: true }).isVisible()).toBe(true)
   for (const width of [1440, 390]) {
     await page.setViewportSize({ width, height: 900 })
-    await personalMaterials.getByRole('button', { name: 'Upload files', exact: true }).click()
+    await personalMaterials.getByRole('button', { name: 'Add materials', exact: true }).click()
     const uploadMenu = page.getByRole('menu')
-    await uploadMenu.getByRole('menuitem', { name: 'Upload text PDF (text layer, no OCR)', exact: true }).waitFor()
+    await uploadMenu.getByRole('menuitem', { name: 'Upload files', exact: true }).waitFor()
     expect(await uploadMenu.evaluate(element => element.scrollWidth > element.clientWidth)).toBe(false)
     await page.screenshot({ path: join(screenshots, `knowledge-upload-menu-${width}.png`), animations: 'disabled' })
     await page.keyboard.press('Escape')
   }
   await page.setViewportSize({ width: 1440, height: 900 })
-  for (const label of ['Upload file (standard parsing)', 'Upload text PDF (text layer, no OCR)']) {
-    await personalMaterials.getByRole('button', { name: 'Upload files', exact: true }).click()
-    await page.getByRole('menuitem', { name: label, exact: true }).click()
-    await expect.poll(() => personalMaterials.getByRole('button', { name: 'Upload files', exact: true }).isEnabled()).toBe(true)
-  }
-  expect(uploadModes).toEqual(['STANDARD', 'TEXT'])
-  await page.getByRole('tab', { name: 'All files', exact: true }).click()
+  await personalMaterials.getByRole('button', { name: 'Add materials', exact: true }).click()
+  await page.getByRole('menuitem', { name: 'Upload files', exact: true }).click()
+  await expect.poll(() => personalMaterials.getByRole('button', { name: 'Add materials', exact: true }).isEnabled()).toBe(true)
+  expect(uploadModes).toEqual(['STANDARD'])
+  await page.getByRole('tab', { name: 'All files in this library', exact: true }).click()
   await personalMaterials.getByRole('button', { name: 'Next page', exact: true }).click()
   await personalMaterials.getByRole('button', { name: 'Handover guide.md', exact: true }).waitFor()
   expect(materialRequests.at(-1)).toMatchObject({ knowledgeBaseId: 'personal-notes', page: 2, size: 20 })
@@ -862,61 +2266,302 @@ it('keeps native themes and responsive catalogs while using official details and
   expect(calls.filter(method => method === 'tasks.capabilities.prepare')).toHaveLength(beforeMaterials)
   const knowledgeWrites = /^knowledge\.(documents\.(save|delete|move|reindex|importUrl)|folders\.(create|rename|delete))$/u
   expect(calls.filter(method => knowledgeWrites.test(method))).toEqual([])
-  await (await openKnowledgeNavigation(page)).getByRole('button', { name: 'New personal knowledge base', exact: true }).click()
+  await (await openKnowledgeDirectory(page)).getByRole('button', { name: 'New personal knowledge base', exact: true }).click()
   const baseEditor = page.getByRole('dialog', { name: 'New personal knowledge base', exact: true })
   await baseEditor.getByRole('textbox', { name: 'Knowledge base name', exact: true }).fill('Personal project files')
+  const firstRead = Promise.withResolvers<undefined>()
+  materialGate = firstRead.promise
   await baseEditor.getByRole('button', { name: 'Create', exact: true }).click()
-  await expect.poll(async () => (await openKnowledgeNavigation(page)).getByRole('button', { name: 'Personal project files', exact: true }).getAttribute('aria-current')).toBe('page')
-  await (await openKnowledgeNavigation(page)).getByRole('button', { name: 'New folder', exact: true }).click()
+  await personalMaterials.getByRole('heading', { name: 'Personal project files', exact: true }).waitFor()
+  await personalMaterials.getByRole('status', { name: 'Reading materials…', exact: true }).waitFor()
+  expect(await personalMaterials.getByRole('searchbox').count()).toBe(0)
+  expect(await personalMaterials.getByRole('button', { name: 'Add materials', exact: true }).isDisabled()).toBe(true)
+  for (const theme of ['light', 'dark'] as const) {
+    await page.emulateMedia({ colorScheme: theme })
+    for (const width of [1440, 1024, 390]) {
+      await page.setViewportSize({ width, height: 900 })
+      await page.waitForFunction(drawer => Boolean(document.querySelector('[data-sidebar-drawer]')) === drawer, width < 768)
+      if (await page.locator('[data-sidebar-drawer]:not([data-sidebar-collapsed])').count()) {
+        await page.getByRole('button', { name: 'Collapse sidebar', exact: true }).click()
+        await page.locator('[data-sidebar-drawer][data-sidebar-collapsed]').waitFor()
+      }
+      await expectKnowledgeHeaderFits(personalMaterials)
+      await page.screenshot({ path: join(screenshots, `knowledge-loading-${theme}-${width}.png`), animations: 'disabled' })
+    }
+  }
+  materialGate = undefined
+  firstRead.resolve(undefined)
+  const emptyLibrary = personalMaterials.locator('[data-knowledge-empty="materials"]')
+  await emptyLibrary.waitFor()
+  expect(await personalMaterials.getByRole('searchbox').count()).toBe(0)
+  expect(await personalMaterials.getByRole('combobox').count()).toBe(0)
+  expect(await personalMaterials.getByRole('tablist', { name: 'Browse mode', exact: true }).count()).toBe(1)
+  expect(await personalMaterials.getByRole('button', { name: 'Add materials', exact: true }).count()).toBe(1)
+  for (const theme of ['light', 'dark'] as const) {
+    await page.emulateMedia({ colorScheme: theme })
+    for (const viewport of [
+      { width: 1440, height: 900 }, { width: 1280, height: 820 }, { width: 1024, height: 768 }, { width: 390, height: 844 },
+    ]) {
+      await page.setViewportSize(viewport)
+      await page.waitForFunction(drawer => Boolean(document.querySelector('[data-sidebar-drawer]')) === drawer, viewport.width < 768)
+      if (await page.locator('[data-sidebar-drawer]:not([data-sidebar-collapsed])').count()) {
+        await page.getByRole('button', { name: 'Collapse sidebar', exact: true }).click()
+        await page.locator('[data-sidebar-drawer][data-sidebar-collapsed]').waitFor()
+      }
+      await expectKnowledgeHeaderFits(personalMaterials)
+      await page.screenshot({ path: join(screenshots, `knowledge-empty-${theme}-${viewport.width}.png`), animations: 'disabled' })
+      const libraryActions = personalMaterials.getByRole('button', { name: 'Actions for “Personal project files”', exact: true })
+      await expectKnowledgeActionHint(page, libraryActions, personalMaterials.getByRole('button', { name: 'Add materials', exact: true }),
+        'More actions', `knowledge-actions-hover-${theme}-${viewport.width}.png`)
+      await page.keyboard.press('Enter')
+      const deleteItem = page.getByRole('menuitem', { name: 'Delete knowledge base', exact: true })
+      await deleteItem.waitFor()
+      expect(await page.getByRole('tooltip').count()).toBe(0)
+      const menuBox = await page.getByRole('menu').boundingBox()
+      const headingBox = await personalMaterials.getByRole('heading', { level: 1 }).boundingBox()
+      if (viewport.width > 640) expect(menuBox!.x).toBeGreaterThan(headingBox!.x + headingBox!.width)
+      expect(menuBox!.x).toBeGreaterThanOrEqual(0)
+      expect(menuBox!.x + menuBox!.width).toBeLessThanOrEqual(viewport.width)
+      await page.screenshot({ path: join(screenshots, `knowledge-empty-menu-${theme}-${viewport.width}.png`), animations: 'disabled' })
+      await page.keyboard.press('Escape')
+      expect(await libraryActions.evaluate(node => document.activeElement === node)).toBe(true)
+      expect(await page.getByRole('tooltip').count()).toBe(0)
+    }
+  }
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await page.emulateMedia({ colorScheme: 'light' })
+  await openEmployeeMenu(page)
+  await page.getByRole('menuitem', { name: 'Settings', exact: true }).click()
+  const localeSettings = page.getByRole('dialog', { name: 'Settings', exact: true })
+  await localeSettings.getByRole('button', { name: 'General', exact: true }).click()
+  await localeSettings.getByRole('button', { name: 'English', exact: true }).click()
+  await page.getByRole('menuitem', { name: '中文', exact: true }).click()
+  await page.getByRole('dialog', { name: '设置', exact: true }).getByRole('button', { name: '关闭', exact: true }).last().click()
+  await personalMaterials.getByRole('button', { name: '添加资料', exact: true }).waitFor()
+  for (const width of [1440, 1280, 390]) {
+    await page.setViewportSize({ width, height: 820 })
+    await page.waitForFunction(drawer => Boolean(document.querySelector('[data-sidebar-drawer]')) === drawer, width < 768)
+    if (await page.locator('[data-sidebar-drawer]:not([data-sidebar-collapsed])').count()) {
+      await page.getByRole('button', { name: '收起侧边栏', exact: true }).click()
+      await page.locator('[data-sidebar-drawer][data-sidebar-collapsed]').waitFor()
+    }
+    await expectKnowledgeActionHint(page, personalMaterials.getByRole('button', { name: '“Personal project files”的操作', exact: true }),
+      personalMaterials.getByRole('button', { name: '添加资料', exact: true }), '更多操作', `knowledge-actions-hover-zh-${width}.png`)
+    await page.keyboard.press('Enter')
+    await page.getByRole('menuitem', { name: '删除知识库', exact: true }).waitFor()
+    expect(await page.getByRole('tooltip').count()).toBe(0)
+    await page.keyboard.press('Escape')
+  }
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await page.screenshot({ path: join(screenshots, 'knowledge-empty-zh-1440.png'), animations: 'disabled' })
+  await personalMaterials.getByRole('button', { name: '“Personal project files”的操作', exact: true }).click()
+  await page.getByRole('menuitem', { name: '删除知识库', exact: true }).waitFor()
+  await page.screenshot({ path: join(screenshots, 'knowledge-empty-menu-zh-1440.png'), animations: 'disabled' })
+  await page.keyboard.press('Escape')
+  await openEmployeeMenu(page)
+  await page.getByRole('menuitem', { name: '设置', exact: true }).click()
+  const chineseSettings = page.getByRole('dialog', { name: '设置', exact: true })
+  await chineseSettings.getByRole('button', { name: '中文', exact: true }).click()
+  await page.getByRole('menuitem', { name: 'English', exact: true }).click()
+  await page.getByRole('dialog', { name: 'Settings', exact: true }).getByRole('button', { name: 'Close', exact: true }).last().click()
+  emptyPersonalLibrary = false
+  folderOnlyPersonalLibrary = true
+  await personalMaterials.getByRole('button', { name: 'Refresh', exact: true }).click()
+  await personalMaterials.getByRole('button', { name: 'Policies', exact: true }).waitFor()
+  expect(await personalMaterials.getByRole('checkbox').count()).toBe(0)
+  for (const theme of ['light', 'dark'] as const) {
+    await page.emulateMedia({ colorScheme: theme })
+    for (const width of [1440, 1024, 390]) {
+      await page.setViewportSize({ width, height: 900 })
+      await page.waitForFunction(drawer => Boolean(document.querySelector('[data-sidebar-drawer]')) === drawer, width < 768)
+      if (await page.locator('[data-sidebar-drawer]:not([data-sidebar-collapsed])').count()) {
+        await page.getByRole('button', { name: 'Collapse sidebar', exact: true }).click()
+        await page.locator('[data-sidebar-drawer][data-sidebar-collapsed]').waitFor()
+      }
+      await expectKnowledgeHeaderFits(personalMaterials)
+      await personalMaterials.getByRole('button', { name: 'Folder actions for Policies', exact: true }).click()
+      await page.getByRole('menuitem', { name: 'Upload to this folder', exact: true }).waitFor()
+      await page.screenshot({ path: join(screenshots, `knowledge-folder-only-${theme}-${width}.png`), animations: 'disabled' })
+      await page.keyboard.press('Escape')
+    }
+  }
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await page.emulateMedia({ colorScheme: 'light' })
+  folderOnlyPersonalLibrary = false
+  await personalMaterials.getByRole('button', { name: 'Refresh', exact: true }).click()
+  await personalMaterials.getByRole('button', { name: 'Order review.md', exact: true }).waitFor()
+  const refreshRead = Promise.withResolvers<undefined>()
+  materialGate = refreshRead.promise
+  await personalMaterials.getByRole('button', { name: 'Refresh', exact: true }).click()
+  await expect.poll(() => personalMaterials.getByRole('button', { name: 'Refresh', exact: true }).getAttribute('aria-busy')).toBe('true')
+  expect(await personalMaterials.getByRole('button', { name: 'Order review.md', exact: true }).isVisible()).toBe(true)
+  for (const width of [1440, 390]) {
+    await page.setViewportSize({ width, height: 900 })
+    await page.screenshot({ path: join(screenshots, `knowledge-refresh-${width}.png`), animations: 'disabled' })
+  }
+  materialGate = undefined
+  refreshRead.resolve(undefined)
+  await expect.poll(() => personalMaterials.getByRole('button', { name: 'Refresh', exact: true }).isDisabled()).toBe(false)
+  for (const failureKind of ['folders', 'files', 'invalid-page']) {
+    materialFailure = failureKind === 'folders' ? 'knowledge.folders.list' : failureKind === 'files' ? 'knowledge.documents.list' : undefined
+    invalidMaterialPage = failureKind === 'invalid-page'
+    await personalMaterials.getByRole('button', { name: 'Refresh', exact: true }).click()
+    const failure = personalMaterials.getByRole('alert')
+    await failure.getByRole('button', { name: 'Retry', exact: true }).waitFor()
+    for (const width of [1440, 390]) {
+      await page.setViewportSize({ width, height: 900 })
+      await expectKnowledgeHeaderFits(personalMaterials)
+      await page.screenshot({ path: join(screenshots, `knowledge-${failureKind}-failure-${width}.png`), animations: 'disabled' })
+    }
+    materialFailure = undefined
+    invalidMaterialPage = false
+    await failure.getByRole('button', { name: 'Retry', exact: true }).click()
+    await expect.poll(() => personalMaterials.getByRole('button', { name: 'Refresh', exact: true }).isDisabled()).toBe(false)
+    await expect.poll(() => failure.count()).toBe(0)
+  }
+  const folderPath = Promise.withResolvers<undefined>()
+  pathGate = folderPath.promise
+  await personalMaterials.getByRole('button', { name: 'Policies', exact: true }).click()
+  await personalMaterials.getByRole('button', { name: 'Policy 2.pdf', exact: true }).waitFor()
+  expect(await personalMaterials.getByRole('button', { name: 'Actions for “Personal project files”', exact: true }).count()).toBe(0)
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await page.screenshot({ path: join(screenshots, 'knowledge-path-pending-1440.png'), animations: 'disabled' })
+  failPath = true
+  folderPath.resolve(undefined)
+  pathGate = undefined
+  await personalMaterials.getByRole('navigation').getByRole('alert').waitFor()
+  await page.screenshot({ path: join(screenshots, 'knowledge-path-failure-1440.png'), animations: 'disabled' })
+  failPath = false
+  await personalMaterials.getByRole('button', { name: 'Refresh', exact: true }).click()
+  await personalMaterials.getByRole('heading', { name: 'Policies', exact: true }).waitFor()
+  await personalMaterials.getByRole('button', { name: 'Personal project files', exact: true }).click()
+  await personalMaterials.getByRole('button', { name: 'Order review.md', exact: true }).waitFor()
+  denyMaterials = true
+  await personalMaterials.getByRole('button', { name: 'Refresh', exact: true }).click()
+  await personalMaterials.getByRole('alert').waitFor()
+  expect(await personalMaterials.getByRole('button', { name: 'Order review.md', exact: true }).count()).toBe(0)
+  expect(await personalMaterials.getByRole('button', { name: 'Actions for “Personal project files”', exact: true }).count()).toBe(0)
+  await page.screenshot({ path: join(screenshots, 'knowledge-access-revoked-1440.png'), animations: 'disabled' })
+  denyMaterials = false
+  await personalMaterials.getByRole('alert').getByRole('button', { name: 'Retry', exact: true }).click()
+  await personalMaterials.getByRole('button', { name: 'Order review.md', exact: true }).waitFor()
+  await personalMaterials.getByRole('searchbox').fill('no-matching-material')
+  await personalMaterials.getByRole('button', { name: 'Search', exact: true }).click()
+  await personalMaterials.getByText('No matching results', { exact: true }).waitFor()
+  expect(await personalMaterials.getByRole('combobox').count()).toBe(2)
+  for (const theme of ['light', 'dark'] as const) {
+    await page.emulateMedia({ colorScheme: theme })
+    for (const width of [1440, 1024, 390]) {
+      await page.setViewportSize({ width, height: 900 })
+      await expectKnowledgeHeaderFits(personalMaterials)
+      await page.screenshot({ path: join(screenshots, `knowledge-filter-empty-${theme}-${width}.png`), animations: 'disabled' })
+    }
+  }
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await page.emulateMedia({ colorScheme: 'light' })
+  await personalMaterials.getByRole('button', { name: 'Clear filters', exact: true }).click()
+  await personalMaterials.getByRole('button', { name: 'Order review.md', exact: true }).waitFor()
+  await (await openKnowledgeMaterials(page)).getByRole('button', { name: 'Add materials', exact: true }).click()
+  await page.getByRole('menuitem', { name: 'New folder', exact: true }).click()
   const folderEditor = page.getByRole('dialog', { name: 'New folder', exact: true })
   await folderEditor.getByRole('textbox', { name: 'Folder name', exact: true }).fill('Project evidence')
   await folderEditor.getByRole('button', { name: 'Save', exact: true }).click()
-  await (await openKnowledgeNavigation(page)).getByRole('button', { name: 'Project evidence', exact: true }).waitFor()
-  await (await openKnowledgeNavigation(page)).getByRole('button', { name: 'Folder actions for Project evidence', exact: true }).click()
+  await (await openKnowledgeMaterials(page)).getByRole('heading', { name: 'Project evidence', exact: true, level: 1 }).waitFor()
+  await (await openKnowledgeMaterials(page)).getByRole('button', { name: 'Folder actions for Project evidence', exact: true }).click()
   await page.getByRole('menuitem', { name: 'Rename folder', exact: true }).click()
   const renameEditor = page.getByRole('dialog', { name: 'Rename folder', exact: true })
   await renameEditor.getByRole('textbox', { name: 'Folder name', exact: true }).fill('Project records')
   await renameEditor.getByRole('button', { name: 'Save', exact: true }).click()
-  await (await openKnowledgeNavigation(page)).getByRole('button', { name: 'Project records', exact: true }).click()
-  await personalMaterials.getByRole('button', { name: 'Upload files', exact: true }).click()
-  await page.getByRole('menuitem', { name: 'Upload file (standard parsing)', exact: true }).click()
+  await (await openKnowledgeMaterials(page)).getByRole('heading', { name: 'Project records', exact: true, level: 1 }).waitFor()
+  await personalMaterials.getByRole('button', { name: 'Add materials', exact: true }).click()
+  await page.getByRole('menuitem', { name: 'Upload files', exact: true }).click()
   await expect.poll(() => uploadFolders.at(-1)).toBe('created-folder')
   for (const width of [1440, 390]) {
     await page.setViewportSize({ width, height: 900 })
-    const tree = await openKnowledgeNavigation(page)
+    const tree = await openKnowledgeMaterials(page)
     await tree.getByRole('button', { name: 'Folder actions for Project records', exact: true }).click()
     await page.getByRole('menuitem', { name: 'Rename folder', exact: true }).waitFor()
-    expect(await page.getByRole('menuitem', { name: 'New folder', exact: true }).count()).toBe(0)
+    expect(await page.getByRole('menuitem', { name: /^(New folder|New subfolder|Upload to this folder)$/, exact: true }).count()).toBe(0)
     expect(await page.getByRole('menu').evaluate(element => element.scrollWidth > element.clientWidth)).toBe(false)
     await page.screenshot({ path: join(screenshots, `knowledge-folder-actions-${width}.png`), animations: 'disabled' })
     await page.keyboard.press('Escape')
   }
   await page.setViewportSize({ width: 1440, height: 900 })
-  await (await openKnowledgeNavigation(page)).getByRole('button', { name: 'Folder actions for Project records', exact: true }).click()
-  await page.getByRole('menuitem', { name: 'New subfolder', exact: true }).click()
+  await (await openKnowledgeMaterials(page)).getByRole('button', { name: 'Add materials', exact: true }).click()
+  await page.getByRole('menuitem', { name: 'New folder', exact: true }).click()
   const subfolderEditor = page.getByRole('dialog', { name: 'New folder', exact: true })
+  await captureKnowledgeFlow(page, 'create-folder')
   await expect.poll(() => subfolderEditor.getByRole('button', { name: 'Project records', exact: true }).getAttribute('aria-current')).toBe('page')
   await subfolderEditor.getByRole('textbox', { name: 'Folder name', exact: true }).fill('October')
   await subfolderEditor.getByRole('button', { name: 'Save', exact: true }).click()
-  await expect.poll(async () => (await openKnowledgeNavigation(page)).getByRole('button', { name: 'October', exact: true }).getAttribute('aria-current')).toBe('page')
+  await expect.poll(async () => (await openKnowledgeMaterials(page)).getByRole('heading', { name: 'October', exact: true, level: 1 }).getAttribute('aria-current')).toBe('page')
+  await personalMaterials.locator('[data-knowledge-empty="materials"]').waitFor()
+  expect(await personalMaterials.getByRole('heading', { name: 'October', exact: true }).evaluate(node => document.activeElement === node)).toBe(true)
   expect(await personalMaterials.getByRole('navigation').textContent()).toContain('Project records')
-  for (const width of [1440, 390]) {
-    await page.setViewportSize({ width, height: 900 })
-    const tree = await openKnowledgeNavigation(page)
-    await expectKnowledgeNavigationFits(tree)
-    await page.screenshot({ path: join(screenshots, `knowledge-nested-folders-${width}.png`), animations: 'disabled' })
-    await tree.getByRole('button', { name: 'October', exact: true }).click()
-    await expectKnowledgeMainFits(page)
+  await personalMaterials.getByRole('button', { name: 'Add materials', exact: true }).click()
+  await page.getByRole('menuitem', { name: 'New document', exact: true }).click()
+  await page.getByRole('dialog').getByText('Personal project files / Project records / October', { exact: true }).waitFor()
+  await captureKnowledgeFlow(page, 'create-document')
+  await page.keyboard.press('Escape')
+  await personalMaterials.getByRole('button', { name: 'Add materials', exact: true }).click()
+  await page.getByRole('menuitem', { name: 'Import webpage', exact: true }).click()
+  const webpage = page.getByRole('dialog', { name: 'Import webpage', exact: true })
+  expect(await webpage.getByRole('textbox', { name: 'Website URL', exact: true }).evaluate(node => document.activeElement === node)).toBe(true)
+  await captureKnowledgeFlow(page, 'import-webpage')
+  await webpage.getByRole('textbox', { name: 'Website URL', exact: true }).fill('not-a-url')
+  await webpage.getByText('Enter a complete http:// or https:// webpage address.', { exact: true }).waitFor()
+  expect(await webpage.getByRole('button', { name: 'Start import', exact: true }).isDisabled()).toBe(true)
+  await captureKnowledgeFlow(page, 'import-webpage-invalid')
+  await webpage.getByRole('textbox', { name: 'Website URL', exact: true }).fill('')
+  await page.keyboard.press('Escape')
+  captureUploadQueue = true
+  await personalMaterials.getByRole('button', { name: 'Add materials', exact: true }).click()
+  await page.getByRole('menuitem', { name: 'Upload files', exact: true }).click()
+  await page.getByRole('dialog').getByText('Personal project files / Project records / October', { exact: true }).waitFor()
+  await captureKnowledgeFlow(page, 'upload-destination')
+  await page.getByRole('dialog').locator('summary').click()
+  await captureKnowledgeFlow(page, 'upload-options')
+  await page.getByRole('dialog').getByRole('combobox', { name: 'PDF handling', exact: true }).selectOption('TEXT')
+  await page.getByRole('dialog').getByText('Extract existing PDF text without recognizing scanned pages or text in images.', { exact: true }).waitFor()
+  await captureKnowledgeFlow(page, 'upload-options-text')
+  await page.keyboard.press('Escape')
+  captureUploadQueue = false
+  for (const theme of ['light', 'dark'] as const) {
+    await page.emulateMedia({ colorScheme: theme })
+    for (const width of [1440, 1024, 390]) {
+      await page.setViewportSize({ width, height: 900 })
+      const tree = await openKnowledgeMaterials(page)
+      await page.waitForFunction(drawer => Boolean(document.querySelector('[data-sidebar-drawer]')) === drawer, width < 768)
+      if (await page.locator('[data-sidebar-drawer]:not([data-sidebar-collapsed])').count()) {
+        await page.getByRole('button', { name: 'Collapse sidebar', exact: true }).click()
+        await page.locator('[data-sidebar-drawer][data-sidebar-collapsed]').waitFor()
+      }
+      await expectKnowledgeHeaderFits(tree)
+      await page.screenshot({ path: join(screenshots, `knowledge-nested-folders-${theme}-${width}.png`), animations: 'disabled' })
+      await tree.getByRole('button', { name: 'Folder actions for October', exact: true }).click()
+      expect(await page.getByRole('menuitem').allTextContents()).toEqual(['Rename folder', 'Delete folder'])
+      await page.screenshot({ path: join(screenshots, `knowledge-current-folder-menu-${theme}-${width}.png`), animations: 'disabled' })
+      await page.keyboard.press('Escape')
+      await tree.getByRole('button', { name: 'Add materials', exact: true }).click()
+      await page.screenshot({ path: join(screenshots, `knowledge-new-menu-${theme}-${width}.png`), animations: 'disabled' })
+      await page.keyboard.press('Escape')
+      await tree.getByRole('button', { name: 'Project records', exact: true }).focus()
+      await page.keyboard.press('Tab')
+      await page.screenshot({ path: join(screenshots, `knowledge-breadcrumb-focus-${theme}-${width}.png`), animations: 'disabled' })
+      await tree.getByRole('heading', { name: 'October', exact: true, level: 1 }).waitFor()
+      await expectKnowledgeMainFits(page)
+    }
   }
   await page.setViewportSize({ width: 1440, height: 900 })
-  await (await openKnowledgeNavigation(page)).getByRole('button', { name: 'Folder actions for October', exact: true }).click()
+  await page.emulateMedia({ colorScheme: 'light' })
+  await (await openKnowledgeMaterials(page)).getByRole('button', { name: 'Folder actions for October', exact: true }).click()
   await page.getByRole('menuitem', { name: 'Delete folder', exact: true }).click()
   await page.getByRole('dialog', { name: 'Delete folder', exact: true }).getByRole('button', { name: 'Delete', exact: true }).click()
-  await expect.poll(async () => (await openKnowledgeNavigation(page)).getByRole('button', { name: 'Project records', exact: true }).getAttribute('aria-current')).toBe('page')
-  await (await openKnowledgeNavigation(page)).getByRole('button', { name: 'Folder actions for Project records', exact: true }).click()
+  await expect.poll(async () => (await openKnowledgeMaterials(page)).getByRole('heading', { name: 'Project records', exact: true, level: 1 }).getAttribute('aria-current')).toBe('page')
+  await (await openKnowledgeMaterials(page)).getByRole('button', { name: 'Folder actions for Project records', exact: true }).click()
   await page.getByRole('menuitem', { name: 'Delete folder', exact: true }).click()
   await page.getByRole('dialog', { name: 'Delete folder', exact: true }).getByRole('button', { name: 'Delete', exact: true }).click()
-  await expect.poll(async () => (await openKnowledgeNavigation(page)).getByRole('button', { name: 'Project records', exact: true }).count()).toBe(0)
+  await expect.poll(async () => (await openKnowledgeMaterials(page)).getByRole('button', { name: 'Project records', exact: true }).count()).toBe(0)
   await personalMaterials.getByRole('button', { name: /^Actions for.*Order review\.md/ }).click()
   expect(await page.getByRole('menuitem', { name: 'Open in system app', exact: true }).count()).toBe(0)
   await page.getByRole('menuitem', { name: 'Download original file', exact: true }).click()
@@ -924,19 +2569,18 @@ it('keeps native themes and responsive catalogs while using official details and
   expect(fileTransfers.size).toBe(0)
   expect(calls.filter(method => method === 'tasks.capabilities.prepare')).toHaveLength(beforeMaterials)
   await page.keyboard.press('Escape')
-  const knowledgeNavigation = await openKnowledgeNavigation(page)
-  await knowledgeNavigation.getByRole('button', { name: 'Sales procedures', exact: true }).click()
-  await knowledgeNavigation.getByRole('button', { name: 'Actions for “Personal project files”', exact: true }).click()
+  const knowledgeDirectory = await openKnowledgeDirectory(page)
+  await knowledgeDirectory.getByRole('button', { name: 'Actions for “Personal project files”', exact: true }).click()
   await page.getByRole('menuitem', { name: 'Delete knowledge base', exact: true }).click()
   await page.getByRole('dialog', { name: 'Delete knowledge base', exact: true }).getByRole('button', { name: 'Delete', exact: true }).click()
-  await expect.poll(() => knowledgeNavigation.getByRole('button', { name: 'Personal project files', exact: true }).count()).toBe(0)
-  expect(await knowledgeNavigation.getByRole('button', { name: 'Sales procedures', exact: true }).getAttribute('aria-current')).toBe('page')
+  await expect.poll(() => knowledgeDirectory.getByRole('button', { name: 'Personal project files', exact: true }).count()).toBe(0)
+  await selectKnowledgeLibrary(page, 'Sales procedures')
   expect(newPersonalBases).toHaveLength(0)
   expect(calls.filter(method => method === 'tasks.capabilities.prepare')).toHaveLength(beforeMaterials)
   for (const width of [1440, 390]) {
     await page.setViewportSize({ width, height: 900 })
-    const navigation = await openKnowledgeNavigation(page)
-    expect(await navigation.getByRole('button', { name: 'Sales procedures', exact: true }).getAttribute('aria-current')).toBe('page')
+    const navigation = await openKnowledgeMaterials(page)
+    expect(await navigation.getByRole('heading', { name: 'Sales procedures', exact: true }).isVisible()).toBe(true)
     await page.screenshot({ path: join(screenshots, `knowledge-unrelated-delete-${width}.png`), animations: 'disabled' })
   }
   await page.setViewportSize({ width: 1440, height: 900 })
@@ -953,6 +2597,19 @@ it('keeps native themes and responsive catalogs while using official details and
       const bounds = button.getBoundingClientRect()
       return bounds.left >= 0 && bounds.right <= window.innerWidth && button.scrollWidth <= button.clientWidth + 1
     })).toBe(true)
+    const reference = page.getByRole('group', { name: 'Task knowledge bases', exact: true })
+    await reference.getByRole('button', { name: 'Operations playbook', exact: true }).waitFor()
+    expect(await reference.evaluate((element) => {
+      const card = element.closest('[data-composer-card]')
+      const editor = card?.querySelector('[data-composer-input]')
+      const bounds = element.getBoundingClientRect()
+      const cardBounds = card?.getBoundingClientRect()
+      const beforeDraft = editor != null
+        && !!(element.compareDocumentPosition(editor) & Node.DOCUMENT_POSITION_FOLLOWING)
+      return { beforeDraft,
+        withinCard: cardBounds !== undefined && bounds.left >= cardBounds.left && bounds.right <= cardBounds.right,
+        overflow: element.scrollWidth > element.clientWidth + 1 }
+    })).toEqual({ beforeDraft: true, withinCard: true, overflow: false })
     await page.screenshot({ path: join(screenshots, `knowledge-reference-${width}.png`), animations: 'disabled' })
   }
   await page.setViewportSize({ width: 1440, height: 900 })
@@ -1487,7 +3144,7 @@ for (const { mode, installed, surface } of desktopCarriers) {
           expect(await capability.getByRole('alert').count()).toBe(0)
           expect(await capability.evaluate(region => region.scrollWidth > region.clientWidth)).toBe(false)
         }
-        await page.getByRole('button', { name: /^(More menu|更多菜单)$/, exact: true }).click()
+        await openEmployeeMenu(page)
         await page.getByRole('menuitem', { name: /^(Settings|设置)$/, exact: true }).click()
         const sharedSettings = page.getByRole('dialog', { name: /^(Settings|设置)$/, exact: true })
         await sharedSettings.waitFor()
@@ -1503,7 +3160,7 @@ for (const { mode, installed, surface } of desktopCarriers) {
         expect(JSON.stringify(deviceReports)).not.toContain(secret)
         expect(deviceReports[0]?.deviceId).toMatch(/^[0-9a-f-]{36}$/u)
         expect(deviceReports[0]?.desktopVersion).toBe(applicationVersion)
-        await page.getByRole('button', { name: /^(More menu|更多菜单)$/, exact: true }).click()
+        await openEmployeeMenu(page)
         expect(await page.getByRole('menuitem', { name: /^(Check for updates|检查更新)$/, exact: true }).count()).toBe(1)
         const signing = z.enum(['signed', 'unsigned', 'internal']).default('unsigned').parse(process.env.PACKAGE_SIGNING)
         if (installed === undefined || signing === 'unsigned') {
@@ -1530,7 +3187,7 @@ for (const { mode, installed, surface } of desktopCarriers) {
           await expect.poll(() => retriedUpdatePage.title()).toMatch(/^(Update Failed|更新失败)$/u)
           await retriedUpdatePage.locator('#close').click()
           await expect.poll(() => app!.windows().length).toBe(1)
-          await page.getByRole('button', { name: /^(More menu|更多菜单)$/, exact: true }).click()
+          await openEmployeeMenu(page)
         }
         await page.getByRole('menuitem', { name: /^(Feedback|反馈)$/, exact: true }).click()
         const feedbackDialog = page.getByRole('dialog', { name: /^(Feedback|反馈)$/, exact: true })
@@ -1584,13 +3241,13 @@ for (const { mode, installed, surface } of desktopCarriers) {
             await page.getByRole('button', { name, exact: true }).click()
             await page.getByText(content, { exact: true }).first().waitFor()
           }
-          await (await openKnowledgeNavigation(page)).getByRole('button', { name: 'Operations playbook', exact: true }).click()
+          await selectKnowledgeLibrary(page, 'Operations playbook')
           const sharedMaterials = page.locator('[data-knowledge-content]')
           await sharedMaterials.getByRole('button', { name: 'Order review.md', exact: true }).waitFor()
-          expect(await sharedMaterials.getByRole('button', { name: /^(Upload files|上传文件|New|新建)$/, exact: true }).count()).toBe(0)
-          const navigation = await openKnowledgeNavigation(page)
-          await navigation.getByRole('heading', { name: 'Sales (21)', exact: true }).waitFor()
-          await navigation.getByRole('heading', { name: 'Sales (22)', exact: true }).waitFor()
+          expect(await sharedMaterials.getByRole('button', { name: /^(Add materials|添加资料)$/, exact: true }).count()).toBe(0)
+          const navigation = await openKnowledgeMaterials(page)
+          await navigation.getByRole('heading', { name: 'Operations playbook', exact: true }).waitFor()
+          expect(await navigation.locator('aside').count()).toBe(0)
           await openKnowledgeFile(page, 'Order review.md')
           const reader = page.locator('[data-knowledge-inline-reader]')
           await reader.getByRole('heading', { name: 'Order review', exact: true }).waitFor()
@@ -1602,106 +3259,114 @@ for (const { mode, installed, surface } of desktopCarriers) {
             await expect.poll(() => page.getByRole('dialog').count()).toBe(0)
             expect(await page.locator('[data-knowledge-workspace]').evaluate(region => region.scrollWidth > region.clientWidth)).toBe(false)
             await page.screenshot({ path: join(screenshots, `electron-${carrier}-product-knowledge-inline-reader-${width}.png`), animations: 'disabled' })
-            const tree = await openKnowledgeNavigation(page)
+            await sharedMaterials.getByRole('button', { name: /^(Back to files|返回文件列表)$/, exact: true }).click()
+            await sharedMaterials.getByRole('tab', { name: /^(By folder|按文件夹)$/, exact: true }).click()
+            const tree = await openKnowledgeMaterials(page)
             await tree.getByRole('button', { name: 'Policies', exact: true }).waitFor()
             await page.screenshot({ path: join(screenshots, `electron-${carrier}-product-knowledge-navigation-${width}.png`), animations: 'disabled' })
             await openKnowledgeFile(page, 'Order review.md')
           }
           await page.setViewportSize({ width: 1440, height: 900 })
-          await (await openKnowledgeNavigation(page)).getByRole('button', { name: 'Policies', exact: true }).click()
+          await sharedMaterials.getByRole('button', { name: /^(Back to files|返回文件列表)$/, exact: true }).click()
+          await sharedMaterials.getByRole('tab', { name: /^(By folder|按文件夹)$/, exact: true }).click()
+          await (await openKnowledgeMaterials(page)).getByRole('button', { name: 'Policies', exact: true }).click()
           await sharedMaterials.getByRole('button', { name: 'Policy 2.pdf', exact: true }).waitFor()
           expect(await sharedMaterials.getByRole('button', { name: 'Order review.md', exact: true }).count()).toBe(0)
           expect(await reader.count()).toBe(0)
-          await (await openKnowledgeNavigation(page)).getByRole('button', { name: 'Personal notes', exact: true }).click()
+          await selectKnowledgeLibrary(page, 'Personal notes')
           const ownMaterials = page.locator('[data-knowledge-content]')
           await ownMaterials.getByRole('button', { name: 'Order review.md', exact: true }).waitFor()
           await expectOriginalPreviews(page, 'electron')
           largePreview = true
           await expectLargeOriginalPreview(page, 'electron')
           largePreview = false
-          expect(await ownMaterials.getByRole('button', { name: /^(Upload files|上传文件)$/, exact: true }).isVisible()).toBe(true)
+          expect(await ownMaterials.getByRole('button', { name: /^(Add materials|添加资料)$/, exact: true }).isVisible()).toBe(true)
           const uploadPaths = { text: join(root, 'text-policy.pdf'), standard: join(root, 'standard-policy.pdf') }
           await writeFile(uploadPaths.text, '%PDF-1.4 embedded text')
           await writeFile(uploadPaths.standard, '%PDF-1.4 standard document')
-          await app.evaluate(({ dialog }, paths) => {
-            Reflect.set(dialog, 'showOpenDialog', async (...args: unknown[]) => {
-              const options = args.at(-1)
-              Reflect.set(globalThis, '__knowledgePickerOptions', options)
-              const textOnly = typeof options === 'object' && options !== null && 'filters' in options
-              return { canceled: false, filePaths: [textOnly ? paths.text : paths.standard] }
-            })
-          }, uploadPaths)
           for (const width of [1440, 390]) {
             await page.setViewportSize({ width, height: 900 })
-            await ownMaterials.getByRole('button', { name: /^(Upload files|上传文件)$/, exact: true }).click()
+            await ownMaterials.getByRole('button', { name: /^(Add materials|添加资料)$/, exact: true }).click()
             const uploadMenu = page.getByRole('menu')
-            await uploadMenu.getByRole('menuitem', { name: /^(Upload text PDF \(text layer, no OCR\)|上传文本型 PDF（保留文字，无 OCR）)$/, exact: true }).waitFor()
+            await uploadMenu.getByRole('menuitem', { name: /^(Upload files|上传文件)$/, exact: true }).waitFor()
             expect(await uploadMenu.evaluate(element => element.scrollWidth > element.clientWidth)).toBe(false)
             await page.screenshot({ path: join(screenshots, `electron-${carrier}-product-knowledge-upload-menu-${width}.png`), animations: 'disabled' })
             await page.keyboard.press('Escape')
           }
           await page.setViewportSize({ width: 1440, height: 900 })
-          for (const [mode, label] of [['TEXT', /^(Upload text PDF \(text layer, no OCR\)|上传文本型 PDF（保留文字，无 OCR）)$/],
-            ['STANDARD', /^(Upload file \(standard parsing\)|上传文件（通用解析）)$/]] as const) {
-            await ownMaterials.getByRole('button', { name: /^(Upload files|上传文件)$/, exact: true }).click()
-            await page.getByRole('menuitem', { name: label, exact: true }).click()
+          for (const mode of ['TEXT', 'STANDARD'] as const) {
+            await app.evaluate(({ dialog }, path) => {
+              Reflect.set(dialog, 'showOpenDialog', async (...args: unknown[]) => {
+                Reflect.set(globalThis, '__knowledgePickerOptions', args.at(-1))
+                return { canceled: false, filePaths: [path] }
+              })
+            }, mode === 'TEXT' ? uploadPaths.text : uploadPaths.standard)
+            await ownMaterials.getByRole('button', { name: /^(Add materials|添加资料)$/, exact: true }).click()
+            await page.getByRole('menuitem', { name: /^(Upload files|上传文件)$/, exact: true }).click()
+            if (mode === 'TEXT') {
+              await page.getByRole('dialog').locator('summary').click()
+              await page.getByRole('dialog').getByRole('combobox', { name: /^(PDF handling|PDF 处理方式)$/, exact: true }).selectOption('TEXT')
+              await expect.poll(() => page.getByRole('dialog').getByRole('combobox').isEnabled()).toBe(true)
+            }
             await submitKnowledgeUpload(page)
             await expect.poll(() => uploadedFiles.at(-1)?.mode).toBe(mode)
-            expect(await app.evaluate((): unknown => Reflect.get(globalThis, '__knowledgePickerOptions'))).toEqual({
-              properties: ['openFile', 'multiSelections'], ...mode === 'TEXT' ? { filters: [{ name: 'PDF', extensions: ['pdf'] }] } : {},
-            })
-            await expect.poll(() => ownMaterials.getByRole('button', { name: /^(Upload files|上传文件)$/, exact: true }).isEnabled()).toBe(true)
+            expect(await app.evaluate((): unknown => Reflect.get(globalThis, '__knowledgePickerOptions'))).toEqual({ properties: ['openFile', 'multiSelections'] })
+            await expect.poll(() => ownMaterials.getByRole('button', { name: /^(Add materials|添加资料)$/, exact: true }).isEnabled()).toBe(true)
           }
           expect(uploadedFiles).toEqual([{ mode: 'TEXT', filename: 'text-policy.pdf' }, { mode: 'STANDARD', filename: 'standard-policy.pdf' }])
-          await (await openKnowledgeNavigation(page)).getByRole('button', { name: 'Policies', exact: true }).click()
-          await ownMaterials.getByRole('button', { name: /^(Upload files|上传文件)$/, exact: true }).click()
-          await page.getByRole('menuitem', { name: /^(Upload file \(standard parsing\)|上传文件（通用解析）)$/, exact: true }).click()
+          await (await openKnowledgeMaterials(page)).getByRole('button', { name: 'Policies', exact: true }).click()
+          await ownMaterials.getByRole('button', { name: /^(Add materials|添加资料)$/, exact: true }).click()
+          await page.getByRole('menuitem', { name: /^(Upload files|上传文件)$/, exact: true }).click()
           await submitKnowledgeUpload(page)
           await expect.poll(() => uploadedFiles.at(-1)?.folderId).toBe('folder-policies')
-          expect(await (await openKnowledgeNavigation(page)).getByRole('button', { name: 'Policies', exact: true }).getAttribute('aria-current')).toBe('page')
-          await (await openKnowledgeNavigation(page)).getByRole('button', { name: /^(New personal knowledge base|新建个人知识库)$/, exact: true }).click()
+          expect(await (await openKnowledgeMaterials(page)).getByRole('button', { name: 'Policies', exact: true }).getAttribute('aria-current')).toBe('page')
+          await (await openKnowledgeDirectory(page)).getByRole('button', { name: /^(New personal knowledge base|新建个人知识库)$/, exact: true }).click()
           const baseEditor = page.getByRole('dialog', { name: /^(New personal knowledge base|新建个人知识库)$/, exact: true })
           await baseEditor.getByRole('textbox', { name: /^(Knowledge base name|知识库名称)$/, exact: true }).fill('Desktop personal files')
           await baseEditor.getByRole('button', { name: /^(Create|创建)$/, exact: true }).click()
-          await expect.poll(async () => (await openKnowledgeNavigation(page)).getByRole('button', { name: 'Desktop personal files', exact: true }).getAttribute('aria-current')).toBe('page')
-          await (await openKnowledgeNavigation(page)).getByRole('button', { name: /^(New folder|新建文件夹)$/, exact: true }).click()
+          await (await openKnowledgeMaterials(page)).getByRole('heading', { name: 'Desktop personal files', exact: true }).waitFor()
+          await (await openKnowledgeMaterials(page)).getByRole('button', { name: /^(Add materials|添加资料)$/, exact: true }).click()
+          await page.getByRole('menuitem', { name: /^(New folder|新建文件夹)$/, exact: true }).click()
           const folderEditor = page.getByRole('dialog', { name: /^(New folder|新建文件夹)$/, exact: true })
           await folderEditor.getByRole('textbox', { name: /^(Folder name|文件夹名称)$/, exact: true }).fill('Desktop evidence')
           await folderEditor.getByRole('button', { name: /^(Save|保存)$/, exact: true }).click()
-          await (await openKnowledgeNavigation(page)).getByRole('button', { name: /^(Folder actions for Desktop evidence|Desktop evidence的文件夹操作)$/, exact: true }).click()
+          await (await openKnowledgeMaterials(page)).getByRole('button', { name: /^(Folder actions for Desktop evidence|Desktop evidence的文件夹操作)$/, exact: true }).click()
           await page.getByRole('menuitem', { name: /^(Rename folder|重命名文件夹)$/, exact: true }).click()
           const renameEditor = page.getByRole('dialog', { name: /^(Rename folder|重命名文件夹)$/, exact: true })
           await renameEditor.getByRole('textbox', { name: /^(Folder name|文件夹名称)$/, exact: true }).fill('Desktop records')
           await renameEditor.getByRole('button', { name: /^(Save|保存)$/, exact: true }).click()
-          const folderAction = (await openKnowledgeNavigation(page)).getByRole('button', { name: /^(Folder actions for Desktop records|Desktop records的文件夹操作)$/, exact: true })
+          const folderAction = (await openKnowledgeMaterials(page)).getByRole('button', { name: /^(Folder actions for Desktop records|Desktop records的文件夹操作)$/, exact: true })
           await folderAction.click()
-          await page.getByRole('menuitem', { name: /^(New subfolder|新建子文件夹)$/, exact: true }).click()
+          expect(await page.getByRole('menuitem', { name: /^(New subfolder|新建子文件夹)$/, exact: true }).count()).toBe(0)
+          await page.keyboard.press('Escape')
+          await (await openKnowledgeMaterials(page)).getByRole('button', { name: /^(Add materials|添加资料)$/, exact: true }).click()
+          await page.getByRole('menuitem', { name: /^(New folder|新建文件夹)$/, exact: true }).click()
           const subfolderEditor = page.getByRole('dialog', { name: /^(New folder|新建文件夹)$/, exact: true })
           await expect.poll(() => subfolderEditor.getByRole('button', { name: 'Desktop records', exact: true }).getAttribute('aria-current')).toBe('page')
           await subfolderEditor.getByRole('textbox', { name: /^(Folder name|文件夹名称)$/, exact: true }).fill('October')
           await subfolderEditor.getByRole('button', { name: /^(Save|保存)$/, exact: true }).click()
-          await expect.poll(async () => (await openKnowledgeNavigation(page)).getByRole('button', { name: 'October', exact: true }).getAttribute('aria-current')).toBe('page')
+          await expect.poll(async () => (await openKnowledgeMaterials(page)).getByRole('heading', { name: 'October', exact: true, level: 1 }).getAttribute('aria-current')).toBe('page')
           for (const width of [1440, 390]) {
             await page.setViewportSize({ width, height: 900 })
-            const tree = await openKnowledgeNavigation(page)
-            await expectKnowledgeNavigationFits(tree)
+            const tree = await openKnowledgeMaterials(page)
+            await expectKnowledgeHeaderFits(tree)
             await page.screenshot({ path: join(screenshots, `electron-${carrier}-knowledge-nested-folders-${width}.png`), animations: 'disabled' })
-            await tree.getByRole('button', { name: 'October', exact: true }).click()
+            await tree.getByRole('heading', { name: 'October', exact: true, level: 1 }).waitFor()
             await expectKnowledgeMainFits(page)
           }
           await page.setViewportSize({ width: 1440, height: 900 })
-          await (await openKnowledgeNavigation(page)).getByRole('button', { name: /^(Folder actions for October|October的文件夹操作)$/, exact: true }).click()
+          await (await openKnowledgeMaterials(page)).getByRole('button', { name: /^(Folder actions for October|October的文件夹操作)$/, exact: true }).click()
           await page.getByRole('menuitem', { name: /^(Delete folder|删除文件夹)$/, exact: true }).click()
           await page.getByRole('dialog', { name: /^(Delete folder|删除文件夹)$/, exact: true })
             .getByRole('button', { name: /^(Delete|删除)$/, exact: true }).click()
-          await expect.poll(async () => (await openKnowledgeNavigation(page)).getByRole('button', { name: 'Desktop records', exact: true }).getAttribute('aria-current')).toBe('page')
+          await expect.poll(async () => (await openKnowledgeMaterials(page)).getByRole('button', { name: 'Desktop records', exact: true }).getAttribute('aria-current')).toBe('page')
           await folderAction.click()
           await page.screenshot({ path: join(screenshots, `electron-${carrier}-product-knowledge-folder-actions.png`), animations: 'disabled' })
           await page.getByRole('menuitem', { name: /^(Delete folder|删除文件夹)$/, exact: true }).click()
           await page.getByRole('dialog', { name: /^(Delete folder|删除文件夹)$/, exact: true })
             .getByRole('button', { name: /^(Delete|删除)$/, exact: true }).click()
-          await expect.poll(async () => (await openKnowledgeNavigation(page)).getByRole('button', { name: 'Desktop records', exact: true }).count()).toBe(0)
-          await (await openKnowledgeNavigation(page)).getByRole('button', { name: 'Personal notes', exact: true }).click()
+          await expect.poll(async () => (await openKnowledgeMaterials(page)).getByRole('button', { name: 'Desktop records', exact: true }).count()).toBe(0)
+          await selectKnowledgeLibrary(page, 'Personal notes')
           await ownMaterials.getByRole('button', { name: 'Office policy.docx', exact: true }).waitFor()
           const originalDownload = join(root, 'downloaded-original.docx')
           await app.evaluate(({ dialog, shell }, downloadPath) => {
@@ -1721,7 +3386,7 @@ for (const { mode, installed, surface } of desktopCarriers) {
           if (typeof openedPath !== 'string') throw new Error('Missing system-open file')
           expect(createHash('sha256').update(await readFile(openedPath)).digest('hex'))
             .toBe(createHash('sha256').update(realOfficeBytes('docx')).digest('hex'))
-          await page.getByRole('tab', { name: /^(All files|全部文件)$/, exact: true }).click()
+          await page.getByRole('tab', { name: /^(All files in this library|本库全部文件)$/, exact: true }).click()
           await ownMaterials.getByRole('button', { name: /^(Next page|下一页)$/, exact: true }).click()
           await ownMaterials.getByRole('button', { name: 'Handover guide.md', exact: true }).waitFor()
           await page.locator('[data-knowledge-content]').getByRole('searchbox').fill('handover')

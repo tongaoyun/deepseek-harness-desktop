@@ -2,23 +2,25 @@
 version: 1
 slug: "product-src-client-knowledgeworkspace-tsx-b1297a25"
 primary_target: "packages/extensions/ui-deepseek-harness-product/src/client/KnowledgeWorkspace.tsx"
-related_targets: ["packages/extensions/ui-deepseek-harness-product/src/client/KnowledgeLibraryDirectory.tsx","packages/extensions/ui-deepseek-harness-product/src/client/KnowledgeDocuments.tsx","packages/extensions/ui-deepseek-harness-product/src/DeepSeekHarnessProduct.module.css"]
+related_targets: ["packages/extensions/ui-deepseek-harness-product/src/client/KnowledgeLibraryDirectory.tsx","packages/extensions/ui-deepseek-harness-product/src/client/KnowledgeLibraryActions.tsx","packages/extensions/ui-deepseek-harness-product/src/client/KnowledgeDocuments.tsx","packages/extensions/ui-deepseek-harness-product/src/client/KnowledgeProcessingDetails.tsx","packages/extensions/ui-deepseek-harness-product/src/client/KnowledgeDestination.tsx","packages/extensions/ui-deepseek-harness-product/src/client/KnowledgeUploadDialog.tsx","packages/extensions/ui-deepseek-harness-product/src/client/KnowledgeEditor.tsx","packages/extensions/ui-deepseek-harness-product/src/client/KnowledgeBaseEditor.tsx","packages/extensions/ui-deepseek-harness-product/src/client/KnowledgeContentSearch.tsx","packages/extensions/ui-deepseek-harness-product/src/client/KnowledgeParsedContent.tsx","packages/extensions/ui-deepseek-harness-product/src/DeepSeekHarnessProduct.module.css"]
 ---
 
-# Knowledge workspace
+# 知识库工作区
 
-Mode: Operate. Scope: the product knowledge directory, library materials, and inline reader. The surrounding Harness shell and native controls retain their identity.
+本页限定知识库目录、资料管理和页内阅读的设计范围。布局、主题、尺寸与控件规则统一见[设计规范](../../DESIGN.md#知识工作区设计规范)，权限、检索范围和操作行为见[模块说明](../../README.md#knowledge)。
 
-## Direction contract
+## 页面结构
 
-THESIS: Separate choosing a library from managing its contents. WorkBuddy is the user-pinned product reference; preserve real permissions, file operations, and native preview behavior.
+先选择个人、部门或公司知识库，再进入资料列表与原件阅读。返回目录保留查询、范围和焦点，离开知识库取消在途读取。工作区复用 Harness 原生主题、字体、按钮、菜单、弹窗、提示和预览。
 
-OWN-WORLD: Native Harness neutral surfaces and selection, system typography, 12px library corners, a quiet navigation rail, and generous document rows. Honor native light and dark tokens.
+## 操作与状态
 
-STORY: Find a personal, department, or company library, open its materials, then read the original document. Returning to the directory cancels the previous library's work.
+“添加资料”集中提供上传文件、导入网页、新建文档和新建文件夹。创建和上传始终显示真实目标路径；位置未确认时不得默认为库根目录。PDF 处理方式在上传开始后固定，重试沿用同一文件、位置和操作标识。
 
-FIRST VIEWPORT: A 28px library title and concise helper text lead a centered directory. A search field, scope tabs, and one primary create action sit above responsive library cards. Within a library, the navigation rail stays separate from a title, compact filter toolbar, and full-width materials table. Reading replaces only the materials pane.
+首屏使用静态占位与加载文字，刷新保留已确认内容。空目录、筛选无结果和读取失败分别展示；失权后移除资料与管理操作，保留返回和重新核对入口。
 
-FORM: The user-pinned WorkBuddy resource-management reference within the incumbent Harness system; code-led. No visual-world tournament applies to this pinned reference.
+正文检索、解析内容和处理详情在当前工作区内展示。原件使用原生预览，解析内容使用原生 MarkdownText；禁止显示上游原始诊断或虚构进度。
 
-FINISH: Use independent visual review, DESIGN.md, and light and dark captures at desktop, tablet, and mobile widths. Runtime icons come from native Harness primitives.
+## 视觉验收
+
+覆盖浅色、深色及桌面、平板、手机宽度。检查文本对比度、控件换行、键盘焦点和权限状态；目录卡片与资料表格保持平面，浮层深度由原生菜单和弹窗负责。

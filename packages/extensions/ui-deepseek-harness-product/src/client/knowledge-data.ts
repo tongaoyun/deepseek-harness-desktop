@@ -1,30 +1,9 @@
 /** Validate credential-free knowledge responses received through product IPC. */
 import { useCallback, useEffect, useRef } from 'react'
 import { productFailure } from '@deepseek-harness/product/errors'
-import { text } from './catalog-shared.tsx'
+import { isKnowledgeResourceId } from '@deepseek-harness/product/protocol'
 import { invokeProduct, productApi } from './product-api.ts'
-
-/** Document metadata and optional manager-only editable text. */
-export interface KnowledgeDocument {
-  readonly id: string
-  readonly knowledgeBaseId: string
-  readonly filename: string
-  readonly mediaType: string
-  readonly sizeBytes: number
-  readonly status: string
-  readonly chunkCount: number
-  readonly failureMessage?: string
-  readonly updatedAt: string
-  readonly sourceType?: string
-  readonly sourceUrl?: string
-  readonly manualContent?: string
-  /** Detail-only permission projection; list actions use the library's management permission. */
-  readonly canManage?: boolean
-  readonly folderId?: string | null
-  readonly previewMaxBytes?: number
-  readonly downloadMaxBytes?: number
-  readonly uploadMaxBytes?: number
-}
+export { parseKnowledgeDocument as knowledgeDocument, type KnowledgeDocument } from '@deepseek-harness/product/protocol'
 
 /** Stable product folder identity, distinct from its visible name. */
 export interface KnowledgeFolder {
@@ -38,13 +17,12 @@ export interface KnowledgeFolder {
 export interface KnowledgePage<T> { readonly items: readonly T[]; readonly page: number; readonly size: number; readonly total: number }
 
 /** One retrieval passage with its source and document identities. */
-export interface KnowledgeSearchResult {
-  readonly knowledgeBaseId?: string
-  readonly sourceId?: string
-  readonly documentId?: string
-  readonly knowledgeBaseName?: string
-  readonly filename?: string
-  readonly locator?: string
+export interface KnowledgePassage {
+  readonly knowledgeBaseId: string
+  readonly sourceId: string
+  readonly documentId: string
+  readonly filename: string
+  readonly locator: string
   readonly content: string
 }
 
@@ -75,27 +53,8 @@ function string(value: unknown): string {
 }
 
 function number(value: unknown): number {
-  if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) throw new Error('Invalid knowledge response count')
+  if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 0) throw new Error('Invalid knowledge response count')
   return value
-}
-
-/** Read a document's metadata; text is available only for editable manual documents.
- * @param value Product document response.
- * @returns Validated metadata without credentials.
- */
-export function knowledgeDocument(value: unknown): KnowledgeDocument {
-  const row = record(value)
-  return {
-    id: string(row.id), knowledgeBaseId: string(row.knowledgeBaseId), filename: string(row.filename),
-    mediaType: string(row.mediaType), sizeBytes: number(row.sizeBytes), status: string(row.status),
-    chunkCount: number(row.chunkCount), updatedAt: string(row.updatedAt),
-    ...Object.fromEntries(['failureMessage', 'sourceType', 'sourceUrl', 'manualContent'].flatMap(key =>
-      typeof row[key] === 'string' ? [[key, row[key]]] : [])),
-    ...(typeof row.canManage === 'boolean' ? { canManage: row.canManage } : {}),
-    ...(row.folderId === null || typeof row.folderId === 'string' ? { folderId: row.folderId } : {}),
-    ...Object.fromEntries(['previewMaxBytes', 'downloadMaxBytes', 'uploadMaxBytes'].flatMap(key =>
-      typeof row[key] === 'number' && Number.isSafeInteger(row[key]) && row[key] > 0 ? [[key, row[key]]] : [])),
-  }
 }
 
 /** Validate paginated metadata or content returned by the server.
@@ -106,7 +65,11 @@ export function knowledgeDocument(value: unknown): KnowledgeDocument {
 export function knowledgePage<T>(value: unknown, read: (entry: unknown) => T): KnowledgePage<T> {
   const page = record(value)
   if (!Array.isArray(page.items)) throw new Error('Invalid knowledge response items')
-  return { items: page.items.map(read), page: number(page.page), size: number(page.size), total: number(page.total) }
+  const pageNumber = number(page.page)
+  const size = number(page.size)
+  const total = number(page.total)
+  if (pageNumber < 1 || size < 1 || page.items.length > size || page.items.length > total) throw new Error('Invalid knowledge response page')
+  return { items: page.items.map(read), page: pageNumber, size, total }
 }
 
 /** Read bounded binary chunks and attempt to close the main-process transfer on completion or failure.
@@ -168,23 +131,25 @@ export function knowledgeFolder(value: unknown): KnowledgeFolder {
     updatedAt: string(row.updatedAt) }
 }
 
-/** Read retrieval passages without treating document text as interface configuration.
- * @param value Retrieval response.
- * @returns Valid passages and their source identities.
+/** Read one retrieval passage without changing its original text.
+ * @param value Search or source-read response.
+ * @param expected Library and optional source and document identities requested by the caller.
+ * @returns A complete passage; invalid fields or mismatched identities reject the response.
+ * Empty content lets the reader display its empty state.
  */
-export function knowledgeSearchResults(value: unknown): readonly KnowledgeSearchResult[] {
-  if (!Array.isArray(value)) throw new Error('Invalid knowledge search response')
-  return value.flatMap((entry) => {
-    if (typeof entry !== 'object' || entry === null || Array.isArray(entry)) return []
-    const row = record(entry)
-    // Content is allowed to be empty so the reader can explain that the
-    // authorized source has no readable body. Identity fields still use the
-    // non-empty text helper below.
-    const content = typeof row.content === 'string' ? row.content : undefined
-    if (content === undefined) return []
-    return [{ content, ...Object.fromEntries(['sourceId', 'documentId', 'knowledgeBaseId', 'knowledgeBaseName', 'filename', 'locator']
-      .flatMap(key => text(row, key) === undefined ? [] : [[key, text(row, key)]])) }]
-  })
+export function knowledgePassage(value: unknown, expected: {
+  readonly knowledgeBaseId: string
+  readonly sourceId?: string
+  readonly documentId?: string
+}): KnowledgePassage {
+  const row = record(value)
+  const knowledgeBaseId = string(row.knowledgeBaseId), sourceId = string(row.sourceId), documentId = string(row.documentId)
+  const filename = string(row.filename), locator = string(row.locator), content = string(row.content)
+  if (!isKnowledgeResourceId(knowledgeBaseId) || !isKnowledgeResourceId(sourceId) || !isKnowledgeResourceId(documentId)
+    || filename.trim() === '') throw new Error('Invalid knowledge source response')
+  if (knowledgeBaseId !== expected.knowledgeBaseId || expected.sourceId !== undefined && sourceId !== expected.sourceId
+    || expected.documentId !== undefined && documentId !== expected.documentId) throw new Error('Knowledge source identity changed')
+  return { knowledgeBaseId, sourceId, documentId, filename, locator, content }
 }
 
 /** Own request cancellation for one mounted knowledge view.

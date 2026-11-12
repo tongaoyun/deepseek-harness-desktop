@@ -12,6 +12,10 @@ import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import * as JsonlPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
 import SessionProjections from '@deepseek-ai/dsh-session-projection'
 import Subagents from '@deepseek-ai/dsh-subagent'
+import AgentTeams from '@deepseek-ai/dsh-agent-team'
+import * as TeamTools from '@deepseek-ai/dsh-tool-agent-team'
+import * as SubagentControl from '@deepseek-ai/dsh-tool-subagent-control'
+import SessionQuery from '@deepseek-ai/dsh-session-query-sqlite'
 import * as Spawn from '@deepseek-ai/dsh-subagent-spawn-in-process'
 import * as Fork from '@deepseek-ai/dsh-subagent-fork-in-process'
 import * as SubagentTool from '@deepseek-ai/dsh-tool-subagent'
@@ -89,7 +93,10 @@ describe.each(['global', 'preset', 'shadow'] as const)('%s native tool registrat
     ['expert', 'subagent'], ['expert', 'subagent_fork'],
   ] as const
   it.each(registration === 'preset'
-    ? [...cases, ['team', 'workflow'] as const, ['expert', 'workflow'] as const] : cases)('%s enforces its delegation policy for native %s at depth 2', async (mode, tool) => {
+    ? [...cases, ['team', 'workflow'] as const, ['expert', 'workflow'] as const]
+    : registration === 'global' ? [...cases, ['native-team', 'subagent'] as const, ['native-team', 'subagent_fork'] as const] : cases)('%s enforces its delegation policy for native %s at depth 2', async (mode: 'team' | 'expert' | 'native-team', tool: 'subagent' | 'subagent_fork' | 'workflow') => {
+    const nativeTeam = mode === 'native-team'
+    const isTeam = mode !== 'expert'
     const root = await mkdtemp(join(tmpdir(), 'expert-delegation-loader-'))
     const ctx = new Context()
     onTestFinished(async () => {
@@ -110,6 +117,7 @@ describe.each(['global', 'preset', 'shadow'] as const)('%s native tool registrat
       prompt: SystemPrompt, tools: Tools, executor: NativeExecutor,
       agents: AgentRegistry, loop: AgentLoop, subagents: Subagents,
       spawn: Spawn, fork: Fork, subagentTool: SubagentTool, experts: Experts,
+      agentTeams: AgentTeams, teamTools: TeamTools, subagentControl: SubagentControl, query: SessionQuery,
       sandboxPolicy: SandboxPolicy, workflowRuntime: WorkflowProgram, workflowEngine: WorkflowEngine, workflowTool: WorkflowTool,
     })
     const delegationPlugins = [
@@ -127,6 +135,11 @@ describe.each(['global', 'preset', 'shadow'] as const)('%s native tool registrat
       { name: 'cordis:tools' }, { name: 'cordis:executor' },
       { name: 'cordis:agents' }, { name: 'cordis:loop', config: { agents: [] } },
       { name: 'cordis:subagents', config: { maxDepth: 2 } },
+      ...nativeTeam ? [
+        { name: 'cordis:query', config: { path: ':memory:', openAt: 'never' } },
+        { name: 'cordis:agentTeams', config: { defaultEnabled: true } },
+        { name: 'cordis:teamTools' }, { name: 'cordis:subagentControl' },
+      ] : [],
       { name: 'cordis:spawn' }, { name: 'cordis:fork' },
       ...(tool === 'workflow' ? [
         { name: 'cordis:sandboxPolicy', config: { mode: 'danger-full-access', workspaceRoot: root } },
@@ -171,18 +184,22 @@ describe.each(['global', 'preset', 'shadow'] as const)('%s native tool registrat
     expect(ctx.tools.get(tool) !== undefined).toBe(registration === 'global')
     expect(parent.ctx.tools.get(tool, parent)).toBeDefined()
     ctx.on('tools/pre-execute', async () => ({ kind: 'allow' }))
-    const name = mode === 'team' ? 'summon_expert_team' : 'summon_expert'
-    const args = mode === 'team' ? { team: team.id, task: 'Review' } : { expert: 'reviewer', task: 'Review' }
+    const name = isTeam ? 'summon_expert_team' : 'summon_expert'
+    const args = isTeam ? { team: team.id, task: 'Review' } : { expert: 'reviewer', task: 'Review' }
     const batch = await ctx.tools.execute({ agent: parent, signal: new AbortController().signal,
       calls: [{ id: ToolCallId('review'), type: 'tool-call', name, arguments: JSON.stringify(args) }] })
+    if (nativeTeam) {
+      while (await ctx.subagents.waitForTreeWork(parent)) await parent.whenIdle()
+      await parent.whenIdle()
+    }
     expect(batch.results[0].result.isError, JSON.stringify(batch.results[0].result)).toBe(false)
-    const count = mode === 'team' ? 2 : 1
+    const count = isTeam ? 2 : 1
     expect(members).toHaveLength(count)
-    expect.soft(outcomes, JSON.stringify(batch.results[0].result)).toEqual(Array.from({ length: count * attempts }, () => mode === 'team'
+    expect.soft(outcomes, JSON.stringify(batch.results[0].result)).toEqual(Array.from({ length: count * attempts }, () => isTeam
       ? { isError: true, message: 'Team members cannot create subagents or expand the team. Report gaps to the coordinator.' } : { isError: false }))
-    expect.soft(grandchildren).toHaveLength(mode === 'team' ? 0 : attempts)
+    expect.soft(grandchildren).toHaveLength(isTeam ? 0 : attempts)
     expect.soft(adapter.advertised).toEqual(Array.from({ length: count * attempts }, () => true))
     expect.soft(shadowed.size).toBe(registration === 'shadow' ? count : 0)
-    if (tool === 'workflow') expect.soft(ctx.ptcRuntime).toMatchObject({ runs: mode === 'team' ? 0 : 1 })
+    if (tool === 'workflow') expect.soft(ctx.ptcRuntime).toMatchObject({ runs: isTeam ? 0 : 1 })
   }, 30000)
 })

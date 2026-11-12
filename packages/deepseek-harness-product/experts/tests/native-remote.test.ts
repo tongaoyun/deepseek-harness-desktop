@@ -19,11 +19,10 @@ import { AGENCY_LIBRARY_SERVICE, agencySettingsSchema, createExpertLibrary, type
 import { AGENCY_TEAM_SERVICE, createTeamLibrary } from '../src/team-library.ts'
 import type { CompanyContentSource } from '@deepseek-harness/product/protocol'
 import { teamSnapshotSchema, type TeamSnapshot } from '../src/team-contract.ts'
-import { nativeTeamMemberName } from '../src/team-engine.ts'
 import { TEST_TEAMS } from '../src/fixtures/teams.ts'
 import { MemorySettings } from '../src/settings-memory.ts'
 import { expertSettingsNamespace } from '../src/settings.ts'
-import { catalogSnapshotSchema } from '../src/expert-contract.ts'
+import { catalogSnapshotSchema, type ExpertSummary } from '../src/expert-contract.ts'
 import { AGENCY_AGENTS_DESCRIPTORS, TYPERT_REMOTE } from '../src/remote-contract.ts'
 
 declare module '@deepseek-ai/dsh-typert-protocol' {
@@ -72,21 +71,51 @@ async function savedTeam(base?: Parameters<typeof createExpertLibrary>[0]) {
   return { ...host, snapshot, team: snapshot.teams[0] }
 }
 
-it('keeps native member labels and current execution metadata complete after team mutations', async () => {
+it('keeps current execution metadata complete after team mutations', async () => {
   const { ctx, invoke, snapshot, team } = await savedTeam()
-  const members = Object.fromEntries(team.members.map(member => [nativeTeamMemberName(team.id, member.expertSlug), member.expertSlug]))
-  expect(snapshot.nativeMembers).toEqual(members)
   const engine: NonNullable<TeamSnapshot['engine']> = { state: 'enabled', mode: 'native', reason: 'Available', recommendation: '' }
   ctx.provide('agencyAgentsTeamEngine', () => engine)
   const enabled = teamSnapshotSchema.parse(await invoke('setTeamEnabled', { id: team.id, enabled: true, expectedRevision: snapshot.revision }))
-  expect(enabled).toMatchObject({ nativeMembers: members, engine })
+  expect(enabled).toMatchObject({ engine })
   const removed = teamSnapshotSchema.parse(await invoke('deleteTeam', { id: team.id, expectedRevision: enabled.revision }))
-  expect(removed).toMatchObject({ teams: [], nativeMembers: {}, engine })
+  expect(removed).toMatchObject({ teams: [], engine })
 })
 
 it('refuses to publish a team before its personal member experts are published', async () => {
   const { invoke, snapshot, team } = await savedTeam()
   await expect(invoke('exportTeam', { id: team.id, expectedRevision: snapshot.revision })).rejects.toThrow('Publish the member experts')
+})
+
+it('rejects company-team internals through native save, enable and export calls without changing Settings', async () => {
+  const standalone: ExpertSummary = {
+    slug: 'reviewer', name: 'Reviewer', nameEn: 'Reviewer', description: 'Review', descriptionEn: 'Review',
+    emoji: '🧩', division: 'engineering', divisionZh: '工程', custom: false, company: true,
+    packageVersion: `0.0.0-${'a'.repeat(56)}`, packageSha256: 'a'.repeat(64),
+  }
+  const bundled: ExpertSummary = { ...standalone, slug: `team-member-${'b'.repeat(64)}`, teamMember: true }
+  const { invoke, settings, ns } = await boot(async () => [standalone, bundled])
+  const { id: _id, ...template } = TEST_TEAMS[0]
+  const input = { ...template, members: [standalone, bundled].map(expert => ({
+    expertSlug: expert.slug, expertVersion: expert.packageVersion!, expertSha256: expert.packageSha256!,
+    duty: 'Review', instructions: 'Report findings',
+  })) }
+  const before = structuredClone(settings.get(ns))
+  await expect(invoke('saveTeam', { team: input, enabled: false, expectedRevision: 0 }))
+    .rejects.toThrow('Some members were deleted or have conflicting names')
+  await expect(invoke('saveTeam', { team: { ...input, company: true }, enabled: false, expectedRevision: 0 }))
+    .rejects.toMatchObject({ code: 'gateway/input-invalid' })
+  expect(settings.get(ns)).toEqual(before)
+  expect(settings.describe().find(item => item.ns === ns)?.revision).toBe(0)
+
+  const team = { ...input, id: TEST_TEAMS[0].id }
+  await settings.mutate(ns, [{ op: 'set', path: ['customTeams'], value: [team] }], 0)
+  const seeded = structuredClone(settings.get(ns))
+  await expect(invoke('setTeamEnabled', { id: team.id, enabled: true, expectedRevision: 1 }))
+    .rejects.toThrow('Some members were deleted or have conflicting names')
+  await expect(invoke('exportTeam', { id: team.id, expectedRevision: 1 }))
+    .rejects.toThrow('Publish the member experts')
+  expect(settings.get(ns)).toEqual(seeded)
+  expect(settings.describe().find(item => item.ns === ns)?.revision).toBe(1)
 })
 
 it('preserves strict parsing, defaults, saved revisions and authorization through native dispatch', async () => {
@@ -145,7 +174,7 @@ it('cancelling a company refresh prevents a subsequent catalog read without abor
   const refreshing = Promise.withResolvers<undefined>()
   const refresh = vi.fn((_signal?: AbortSignal) => refreshing.promise)
   const unused = () => Promise.reject(new Error('Unexpected company read'))
-  ctx.provide('companyContent', { refresh, read: unused, forSession: unused } satisfies CompanyContentSource)
+  ctx.provide('companyContent', { refresh, read: unused, forSession: unused, expertVersion: unused } satisfies CompanyContentSource)
   const catalog = vi.spyOn(library, 'catalog')
   const controller = new AbortController()
   const pending = invoke('getCatalog', { refreshCompany: true }, controller.signal)
@@ -316,7 +345,6 @@ it.each(['create-expert', 'edit-expert', 'delete-expert', 'save-team', 'enable-t
       const teams = teamSnapshotSchema.parse(result)
       expect(teams.revision).toBe(snapshot.revision + 1)
       expect(teams.teams).toHaveLength(operation === 'delete-team' ? 0 : 1)
-      expect(Object.keys(teams.nativeMembers ?? {})).toHaveLength(operation === 'delete-team' ? 0 : team.members.length)
       if (operation !== 'delete-team') {
         expect(teams.enabledTeams).toContain(team.id)
         expect(teams.enabledExperts).toEqual(expect.arrayContaining(team.members.map(member => member.expertSlug)))

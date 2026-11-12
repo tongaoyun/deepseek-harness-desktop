@@ -55,6 +55,7 @@ export function markdownValidationSource(source: string): string {
     '模型看到的内容': 'What the model sees', 'Token 影响': 'Token effect', 'KV Cache 影响': 'KV Cache effect',
     '变更': 'Change', '迁移': 'Migration',
   }
+  if (!Object.keys(names).some(name => source.includes(name))) return source
   const lines = source.split('\n')
   for (const heading of markdownHeadingLines(source)) {
     const name = names[heading.text]

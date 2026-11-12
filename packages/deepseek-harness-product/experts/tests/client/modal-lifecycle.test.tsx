@@ -8,11 +8,12 @@ import { CustomExpertEditor } from '../../src/client/custom-editor.ts'
 import { LibraryConfirm } from '../../src/client/library-ui.tsx'
 import { RemoteError } from '@deepseek-ai/dsh-typert-protocol'
 import type { AgencyCatalogRemote } from '../../src/client/remote.ts'
-import { en } from '../../src/client/locales.ts'
+import { en, zh } from '../../src/client/locales.ts'
 import { PromptDialog } from '../../src/client/prompt-dialog.ts'
 import { TEST_TEAMS } from '../../src/fixtures/teams.ts'
 import { TeamEditor } from '../../src/client/team-editor.tsx'
 import { TeamDialog } from '../../src/client/team-shared.tsx'
+import { confirmTeamAction } from '../../src/client/team-confirmation.tsx'
 import { importExpertPackage } from '../../src/package-transfer.ts'
 import { expertPackageFiles } from '../../src/expert-packages.ts'
 
@@ -20,7 +21,7 @@ beforeEach(() => { vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true) })
 afterEach(() => { cleanup(); document.body.replaceChildren(); vi.unstubAllGlobals() })
 
 const dialogs = [
-  { name: 'prompt', view: (close: () => void, opener: HTMLElement) => <PromptDialog title="Prompt" value={{ name: 'Review', prompt: 'Review changes' }} closeLabel="Done" returnFocus={opener} onClose={close} /> },
+  { name: 'prompt', view: (close: () => void) => <PromptDialog title="Prompt" value={{ name: 'Review', prompt: 'Review changes' }} closeLabel="Done" onClose={close} /> },
   { name: 'confirmation', view: (close: () => void) => <LibraryConfirm title="Confirmation" cancelLabel="Cancel" confirmLabel="Confirm" confirm={vi.fn()} close={close} /> },
   { name: 'team', view: (close: () => void) => <TeamDialog title="Team" close={close}><input aria-label="Team name" /></TeamDialog> },
 ]
@@ -40,7 +41,96 @@ function focusOpener(): HTMLButtonElement {
   return opener
 }
 
-it('closes a disabled category menu and requires a new action after enabling', () => {
+function unloadPrevented(): boolean {
+  const event = new Event('beforeunload', { cancelable: true })
+  window.dispatchEvent(event)
+  return event.defaultPrevented
+}
+
+it('does not open a team confirmation for an already cancelled operation', async () => {
+  const opener = focusOpener()
+  const controller = new AbortController()
+  controller.abort()
+  await expect(confirmTeamAction('保留原始草稿。', 'zh', controller.signal)).resolves.toBe(false)
+  expect(screen.queryByRole('dialog')).toBeNull()
+  expect(document.activeElement).toBe(opener)
+})
+
+it.each(['confirm', 'cancel', 'abort', 'pagehide'] as const)('settles a team confirmation through %s and releases the native modal', async (action) => {
+  const opener = focusOpener()
+  const controller = new AbortController()
+  let pending!: Promise<boolean>
+  await act(async () => { pending = confirmTeamAction('保留原始草稿。', 'zh', controller.signal) })
+  const dialog = await screen.findByRole('dialog', { name: '确认选择专家团' })
+  expect(within(dialog).getByText('保留原始草稿。')).toBeTruthy()
+  let accepted!: boolean
+  await act(async () => {
+    if (action === 'abort') controller.abort()
+    else if (action === 'pagehide') window.dispatchEvent(new Event('pagehide'))
+    else fireEvent.click(within(dialog).getByRole('button', { name: action === 'confirm' ? '确认' : '取消' }))
+    accepted = await pending
+  })
+  expect(accepted).toBe(action === 'confirm')
+  expect(screen.queryByRole('dialog')).toBeNull()
+  expect(document.activeElement).toBe(opener)
+  expect(fireEvent.keyDown(document, { key: 'Escape' })).toBe(true)
+})
+
+it.each(['expert', 'team'] as const)('protects %s edits from reload and releases protection after reverting or unmounting', (kind) => {
+  const unused = (): Promise<never> => Promise.reject(new Error('Unexpected remote operation'))
+  const dictionary: Readonly<Record<string, string>> = en
+  const view = render(kind === 'expert'
+    ? <CustomExpertEditor enabled={false} revision={1} divisions={['specialized']} locale="en" t={key => dictionary[key] ?? key}
+      remote={{ getCatalog: unused, importExpert: unused, exportExpert: unused,
+        getCustomExpert: unused, saveCustomExpert: unused, deleteCustomExpert: unused }}
+      prepareSave={() => vi.fn()} onClose={vi.fn()} />
+    : <TeamEditor initial={TEST_TEAMS[0]} experts={[]} enabled={false} enabledExperts={[]}
+      save={unused} refresh={unused} close={vi.fn()} />)
+  expect(unloadPrevented()).toBe(false)
+  const field = screen.getByRole<HTMLInputElement>('textbox', { name: kind === 'expert' ? en['custom.name'] : '团队名称' })
+  const initial = field.value
+  fireEvent.change(field, { target: { value: '尚未保存的名称' } })
+  expect(unloadPrevented()).toBe(true)
+  fireEvent.change(field, { target: { value: initial } })
+  expect(unloadPrevented()).toBe(false)
+  fireEvent.change(field, { target: { value: '继续编辑' } })
+  expect(unloadPrevented()).toBe(true)
+  view.unmount()
+  expect(unloadPrevented()).toBe(false)
+})
+
+it('protects unapplied team tags from reload without treating the loaded team as dirty', () => {
+  const unused = (): Promise<never> => Promise.reject(new Error('Unexpected remote operation'))
+  render(<TeamEditor initial={TEST_TEAMS[0]} experts={[]} enabled={false} enabledExperts={[]}
+    save={unused} refresh={unused} close={vi.fn()} />)
+  expect(unloadPrevented()).toBe(false)
+  fireEvent.change(screen.getByRole('textbox', { name: '场景标签' }), { target: { value: '待保存' } })
+  expect(unloadPrevented()).toBe(true)
+})
+
+it.each(['expert', 'team'] as const)('protects an unchanged %s during save and releases it after a failed save', async (kind) => {
+  let reject!: (error: Error) => void
+  const pending = new Promise<never>((_resolve, fail) => { reject = fail })
+  const save = vi.fn(() => pending)
+  const unused = (): Promise<never> => Promise.reject(new Error('Unexpected remote operation'))
+  const dictionary: Readonly<Record<string, string>> = en
+  render(kind === 'expert'
+    ? <CustomExpertEditor expert={{ name: 'Reviewer', description: 'Review code', division: 'specialized', prompt: 'Review changes' }}
+      enabled={false} revision={1} divisions={['specialized']} locale="en" t={key => dictionary[key] ?? key}
+      remote={{ getCatalog: unused, importExpert: unused, exportExpert: unused,
+        getCustomExpert: unused, saveCustomExpert: save, deleteCustomExpert: unused }}
+      prepareSave={() => vi.fn()} onClose={vi.fn()} />
+    : <TeamEditor initial={TEST_TEAMS[0]} experts={[]} enabled={false} enabledExperts={[]} save={save} refresh={unused} close={vi.fn()} />)
+  expect(unloadPrevented()).toBe(false)
+  fireEvent.click(screen.getByRole('button', { name: kind === 'expert' ? en['custom.save'] : '保存修改' }))
+  expect(save).toHaveBeenCalledOnce()
+  expect(unloadPrevented()).toBe(true)
+  await act(async () => { reject(new Error('Save unavailable')) })
+  expect(unloadPrevented()).toBe(false)
+  expect(screen.getByRole('alert').textContent).toContain('Save unavailable')
+})
+
+it.each(['disabled', 'pending', 'both'] as const)('closes a %s category menu and requires a new action after enabling', (reason) => {
   const onChange = vi.fn()
   const props = { id: 'division', value: 'engineering', label: 'Category',
     options: [{ value: 'engineering', label: 'Engineering' }], onChange }
@@ -48,13 +138,16 @@ it('closes a disabled category menu and requires a new action after enabling', (
   const trigger = screen.getByRole('button', { name: 'Category' })
   fireEvent.click(trigger)
   expect(screen.getByRole('menu')).toBeTruthy()
-  view.rerender(<CategorySelect {...props} disabled />)
+  view.rerender(<CategorySelect {...props} disabled={reason !== 'pending'} pending={reason !== 'disabled'} />)
   expect(screen.queryByRole('menu')).toBeNull()
   expect(trigger).toHaveProperty('disabled', true)
   expect(trigger.getAttribute('aria-expanded')).toBe('false')
+  expect(trigger.classList.contains('product-control-pending')).toBe(reason === 'pending')
   fireEvent.click(trigger)
   expect(onChange).not.toHaveBeenCalled()
   view.rerender(<CategorySelect {...props} />)
+  expect(screen.getByRole('button', { name: 'Category' })).toBe(trigger)
+  expect(trigger.classList.contains('product-control-pending')).toBe(false)
   expect(screen.queryByRole('menu')).toBeNull()
   fireEvent.click(trigger)
   fireEvent.click(screen.getByRole('menuitem', { name: 'Engineering' }))
@@ -64,7 +157,8 @@ it('closes a disabled category menu and requires a new action after enabling', (
 for (const dialog of dialogs) {
   it.each(protectedKeys)(`${dialog.name} ignores $name Escape and accepts a plain Escape`, (key) => {
     const close = vi.fn()
-    render(dialog.view(close, focusOpener()))
+    focusOpener()
+    render(dialog.view(close))
     fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape', ...key })
     expect(close).not.toHaveBeenCalled()
     fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' })
@@ -73,7 +167,8 @@ for (const dialog of dialogs) {
 
   it(`${dialog.name} preserves composition and its late closing Escape`, () => {
     const close = vi.fn()
-    render(dialog.view(close, focusOpener()))
+    focusOpener()
+    render(dialog.view(close))
     const target = screen.getByRole('dialog')
     fireEvent.compositionStart(target)
     fireEvent.keyDown(target, { key: 'Escape', isComposing: false })
@@ -87,11 +182,11 @@ for (const dialog of dialogs) {
   })
 }
 
-it('focuses the prompt action and restores the explicit opener after closing', async () => {
+it('focuses the prompt action and restores native entry focus after closing', async () => {
   const opener = focusOpener()
   function Preview() {
     const [open, setOpen] = React.useState(true)
-    return open ? <PromptDialog title="Prompt" value={{ name: 'Review', prompt: 'Review changes' }} closeLabel="Done" returnFocus={opener} onClose={() => { setOpen(false) }} /> : null
+    return open ? <PromptDialog title="Prompt" value={{ name: 'Review', prompt: 'Review changes' }} closeLabel="Done" onClose={() => { setOpen(false) }} /> : null
   }
   render(<Preview />)
   expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Done' }))
@@ -301,4 +396,38 @@ it.each(['unmount', 'employee-change'])('stops local package reads before contac
   await act(async () => { pending.resolve(new ArrayBuffer(0)); await pending.promise })
   expect(secondRead).not.toHaveBeenCalled()
   expect(importExpert).not.toHaveBeenCalled()
+})
+
+it('keeps the complete expert draft and reports a duplicate attachment selection before reading or saving', async () => {
+  const expert = { slug: 'order-expert', name: '订单专家', description: '订单核对', division: 'specialized', prompt: '保留原始说明 {{literal}}',
+    resources: { 'assets/订单模板.bin': 'AAE=' } }
+  const unused = (): Promise<never> => Promise.reject(new Error('Unexpected remote call'))
+  const save = vi.fn<AgencyCatalogRemote['saveCustomExpert']>().mockResolvedValue({ ok: true, value: { experts: [], enabled: [], revision: 2 } })
+  const remote = { getCatalog: unused, importExpert: unused, exportExpert: unused, getCustomExpert: unused,
+    saveCustomExpert: save, deleteCustomExpert: unused }
+  const saved = vi.fn(), dictionary: Readonly<Record<string, string>> = zh
+  render(<CustomExpertEditor expert={expert} enabled={false} revision={1} divisions={['specialized']} locale="zh" t={key => dictionary[key] ?? key}
+    remote={remote}
+    prepareSave={() => saved} onClose={vi.fn()} />)
+  const files = [new File([], '模板.xlsx'), new File([], '模板.xlsx')]
+  const reads = files.map((file) => {
+    const read = vi.fn(async () => new ArrayBuffer(0))
+    Object.defineProperty(file, 'arrayBuffer', { value: read })
+    return read
+  })
+  fireEvent.change(screen.getByLabelText(zh['custom.attachments']), { target: { files } })
+  const alert = await screen.findByRole('alert')
+  expect({ message: alert.textContent, prompt: screen.getByRole<HTMLTextAreaElement>('textbox', { name: zh['custom.prompt'] }).value,
+    attachment: screen.getByText('assets/订单模板.bin').textContent }).toMatchInlineSnapshot(`
+      {
+        "attachment": "assets/订单模板.bin",
+        "message": "专家包无效，请检查 manifest.json、SOUL.md、文件路径及重复文件。",
+        "prompt": "保留原始说明 {{literal}}",
+      }
+    `)
+  for (const read of reads) expect(read).not.toHaveBeenCalled()
+  expect(save).not.toHaveBeenCalled()
+  fireEvent.click(screen.getByRole('button', { name: zh['custom.saveChanges'] }))
+  await waitFor(() => { expect(saved).toHaveBeenCalledOnce() })
+  expect(save).toHaveBeenCalledWith(expect.objectContaining(expert), false, 1, expect.any(AbortSignal))
 })

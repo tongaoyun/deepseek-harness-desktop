@@ -7,6 +7,7 @@ import { DeepSeekHarnessApiClient } from '@deepseek-harness/product'
 import { ConnectorDraftSchema } from '@deepseek-harness/product/connector-draft'
 import { expect, it, onTestFinished, vi } from 'vitest'
 import { PersonalConnectors } from '../src/personal-connectors.ts'
+import { savedConnectorResponse } from './connector-receipt-fixture.ts'
 
 interface ToolPage { tools: Tool[]; nextCursor?: string; ttlMs?: number }
 const tool = (name: string, readOnlyHint = true): Tool => ({ name, inputSchema: { type: 'object' }, annotations: { readOnlyHint } })
@@ -40,7 +41,7 @@ async function fixture(page: (cursor?: string) => ToolPage | Promise<ToolPage>) 
     decryptString: (value: Buffer) => value.toString() }
   const manager = new PersonalConnectors(root, secure, () => 'employee')
   onTestFinished(() => manager.close())
-  const upload = vi.fn<typeof fetch>(async () => Response.json({ success: true, data: {} }))
+  const upload = vi.fn<typeof fetch>(async (_url, init) => savedConnectorResponse(init, 'employee'))
   const api = new DeepSeekHarnessApiClient({ baseUrl: 'https://product.example', getSessionToken: () => 'employee-token', fetch: upload })
   const draft = ConnectorDraftSchema.parse({ kind: 'connector', id: 'discovery-mcp', version: '1.0.0', name: 'Discovery',
     summary: 'Discovery fixture', category: 'other', transport: 'streamable-http', url: `http://127.0.0.1:${address.port}/mcp` })
@@ -69,6 +70,25 @@ it('saves the complete SDK-aggregated tool list including pages after an empty f
   expect(f.upload).toHaveBeenCalledTimes(1)
   expect(f.upload.mock.calls[0]?.[1]?.body).toContain('"toolNames":["orders"]')
   expect(f.methods).not.toContain('tools/call')
+})
+
+it('retains encrypted pending settings until the save receipt or exact catalog version confirms the write', async () => {
+  const f = await fixture(() => ({ tools: [tool('orders')] }))
+  const receipt = { kind: 'connector', id: f.draft.id, version: f.draft.version, creatorEmployeeId: 'employee', status: 'DRAFT' }
+  const invalid = [null, {}, { ...receipt, id: 'another-mcp' }, { ...receipt, version: '2.0.0' },
+    { ...receipt, creatorEmployeeId: 'another-employee' }, { ...receipt, status: 'UNKNOWN' }]
+  let result: unknown
+  f.upload.mockImplementation(async (_url, init) => {
+    if (init?.method !== 'POST') throw new Error('Catalog confirmation unavailable')
+    return Response.json({ success: true, data: result })
+  })
+  for (result of invalid) {
+    await expect(f.save()).rejects.toMatchObject({ code: 'CONNECTOR_SAVE_PENDING', retryable: true })
+    expect(await readdir(f.root)).toEqual([expect.stringMatching(/\.bin\.pending$/u)])
+  }
+  result = receipt
+  await f.save()
+  expect(await readdir(f.root)).toEqual([expect.stringMatching(/\.bin$/u)])
 })
 
 it.each(['tools', 'pages'] as const)('rejects excessive %s without saving configuration or posting a catalog entry', async (limit) => {

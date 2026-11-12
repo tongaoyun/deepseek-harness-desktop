@@ -1,3 +1,81 @@
 // Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
 
+exports[`hands owned action focus to Close after 'inspect' confirms review status (elsewhere=false) 1`] = `
+{
+  "disabled": true,
+  "focus": "footer-close",
+  "status": "这份内容未通过审核。请修改本地内容后重新提交。",
+}
+`;
+
+exports[`hands owned action focus to Close after 'inspect' confirms review status (elsewhere=true) 1`] = `
+{
+  "disabled": true,
+  "focus": "header-close",
+  "status": "这份内容未通过审核。请修改本地内容后重新提交。",
+}
+`;
+
+exports[`hands owned action focus to Close after 'prepare' confirms review status (elsewhere=false) 1`] = `
+{
+  "disabled": true,
+  "focus": "footer-close",
+  "status": "这份内容已通过审核并发布。",
+}
+`;
+
+exports[`hands owned action focus to Close after 'prepare' confirms review status (elsewhere=true) 1`] = `
+{
+  "disabled": true,
+  "focus": "header-close",
+  "status": "这份内容已通过审核并发布。",
+}
+`;
+
+exports[`hands owned action focus to Close after 'submit' confirms review status (elsewhere=false) 1`] = `
+{
+  "disabled": true,
+  "focus": "footer-close",
+  "status": "已提交，等待管理员审核。",
+}
+`;
+
+exports[`hands owned action focus to Close after 'submit' confirms review status (elsewhere=true) 1`] = `
+{
+  "disabled": true,
+  "focus": "header-close",
+  "status": "已提交，等待管理员审核。",
+}
+`;
+
+exports[`keeps the failed submission and its button stable while retrying once > Pending submission retry 1`] = `
+{
+  "action": "正在处理…",
+  "focused": true,
+  "message": "未能确认提交结果，内容已保留，可以重试。",
+}
+`;
+
 exports[`requires confirmation, submits only once and shows durable review status 1`] = `"提交发布订单核对提交当前内容及资源文件，由管理员审核。审核通过后展示在市场，全公司可用；不影响本地使用。请先确认文件中没有密码、令牌或私人资料。包含 1 个文件关闭提交发布"`;
+
+exports[`retries a failed inspect without closing the dialog or submitting unconfirmed content > Pending preparation retry 1`] = `
+{
+  "action": "重试",
+  "focused": true,
+  "message": "未能确认提交结果，内容已保留，可以重试。",
+  "working": false,
+}
+`;
+
+exports[`retries a failed inspect without closing the dialog or submitting unconfirmed content 1`] = `"提交发布订单核对提交当前内容及资源文件，由管理员审核。审核通过后展示在市场，全公司可用；不影响本地使用。请先确认文件中没有密码、令牌或私人资料。未能确认提交结果，内容已保留，可以重试。关闭重试"`;
+
+exports[`retries a failed prepare without closing the dialog or submitting unconfirmed content > Pending preparation retry 1`] = `
+{
+  "action": "重试",
+  "focused": true,
+  "message": "未能确认提交结果，内容已保留，可以重试。",
+  "working": false,
+}
+`;
+
+exports[`retries a failed prepare without closing the dialog or submitting unconfirmed content 1`] = `"提交发布订单核对提交当前内容及资源文件，由管理员审核。审核通过后展示在市场，全公司可用；不影响本地使用。请先确认文件中没有密码、令牌或私人资料。未能确认提交结果，内容已保留，可以重试。关闭重试"`;

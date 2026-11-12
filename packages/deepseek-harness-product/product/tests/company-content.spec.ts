@@ -1,12 +1,24 @@
-import { expertFiles } from './content-fixtures.ts'
+import { contentIndex, expertFiles, versionRef } from './content-fixtures.ts'
 import { describe, expect, it } from 'vitest'
-import { companyContentRelease, contentDigest } from '../src/company-content.ts'
+import { companyContentIndex, companyContentRelease, contentDigest } from '../src/company-content.ts'
 
 const markdown = Buffer.from('---\nname: orders\ndescription: 查询公司订单\n---\n使用现有 MCP 查询订单。').toString('base64')
 const files = { 'skills/orders/SKILL.md': markdown }
 const release = (data: Record<string, string> = files) => ({ version: '1.0.0', sha256: contentDigest(data), files: data })
 
 describe('company native content', () => {
+  it('verifies catalog metadata without rewriting the published digest inputs', () => {
+    const resource = { ...versionRef('experts/orders', expertFiles('orders')), catalog: { name: ' 订单顾问 ', division: '\u00a0operations\u00a0' } }
+    const index = contentIndex('1.0.0', [resource])
+    expect(companyContentIndex(index)).toEqual(index)
+    expect(() => companyContentIndex({ ...index, resources: [{ ...resource, catalog: { name: resource.catalog.name.trim(), division: resource.catalog.division } }] })).toThrow('索引校验失败')
+  })
+  it('keeps skill descriptions within the published resource index limit', () => {
+    const data = (size: number) => ({ 'skills/orders/SKILL.md': Buffer.from(`---\nname: orders\ndescription: ${'中'.repeat(size)}\n---\n核对订单`).toString('base64') })
+    const valid = data(2000)
+    expect(companyContentRelease(release(valid)).files).toEqual(valid)
+    expect(() => companyContentRelease(release(data(2001)))).toThrow()
+  })
   it('rejects deeply nested metadata before converting YAML to objects', () => {
     for (const depth of [64, 10000]) {
       const data = { 'skills/orders/SKILL.md': Buffer.from(`---\nname: orders\ndescription: Orders\nextra: ${'['.repeat(depth)}0${']'.repeat(depth)}\n---\nUse tools.`).toString('base64') }
@@ -38,6 +50,12 @@ describe('company native content', () => {
     expect(companyContentRelease(release())).toEqual(release())
     expect(companyContentRelease(null).files).toEqual({})
   })
+  it('preserves nested SKILL.md examples as resources without parsing them as entry documents', () => {
+    const data = { ...files,
+      'skills/orders/references/示例/SKILL.md': Buffer.from('# 示例\n保留 {{literal}}。').toString('base64'),
+      'skills/orders/assets/template/SKILL.md': Buffer.from('---\nname: another-skill\ndescription: Template\n---\nTemplate instructions.').toString('base64') }
+    expect(companyContentRelease(release(data)).files).toEqual(data)
+  })
   it.each(['orders', 'company-orders'])('preserves AgentSpec identifiers and complete package resources: %s', (name) => {
     const data = { ...expertFiles(name, 'Literal instructions'), [`experts/${name}/references/中文.txt`]: Buffer.from('参考资料').toString('base64'),
       [`experts/${name}/assets/template.bin`]: Buffer.from([0, 255, 17]).toString('base64') }
@@ -48,6 +66,21 @@ describe('company native content', () => {
   it.each(['skills/orders/../../private', 'skills/orders/CON.txt', 'skills/orders/x.', 'skills/orders/.hidden/../x', 'experts/engineering/orders--invalid.md', 'skills/orders--invalid/SKILL.md', 'skills/orders-/SKILL.md'])('rejects unsafe paths: %s', (path) => {
     const data = { ...files, [path]: markdown }
     expect(() => companyContentRelease(release(data))).toThrow()
+  })
+  it.each([
+    'references/订单?.md', 'assets/template*.xlsx', 'assets/"模板".txt', 'references/<订单>.md',
+    'references/订单|库存.md', 'assets/template.xlsx ', 'references /说明.md', 'assets/目录?/模板.bin',
+  ])('rejects nonportable skill and expert resource paths: %s', (path) => {
+    for (const [root, entries] of [['skills/orders', files], ['experts/orders', expertFiles('orders', 'Read resources')]] as const) {
+      const data = { ...entries, [`${root}/${path}`]: markdown }
+      expect(() => companyContentRelease(release(data))).toThrow('非法路径')
+    }
+  })
+  it('preserves Unicode and interior spaces in portable resource names', () => {
+    const data = { ...files, ...expertFiles('orders', 'Read resources'),
+      'skills/orders/references/订单 资料/核对 说明.md': markdown,
+      'experts/orders/assets/订单 模板.xlsx': Buffer.from([0, 255]).toString('base64') }
+    expect(companyContentRelease(release(data)).files).toEqual(data)
   })
   it('rejects corrupted bytes, missing entry documents, and case collisions', () => {
     expect(() => companyContentRelease({ ...release(), sha256: '0'.repeat(64) })).toThrow()

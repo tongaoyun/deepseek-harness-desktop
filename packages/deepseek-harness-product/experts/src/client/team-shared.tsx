@@ -5,7 +5,7 @@ import React from 'react';
 import { IconUsers, IconUser, IconFileText, IconChevronDown, IconPlus, IconArrowRight, IconBulb, IconCopy, IconSend, IconSearch, IconEye, IconCheck, IconTrash, IconRefresh, IconGripVertical, } from '@tabler/icons-react/dist/esm/tabler-icons-react.mjs';
 export { IconUsers, IconUser, IconFileText, IconChevronDown, IconPlus, IconArrowRight, IconBulb, IconCopy, IconSend, IconSearch, IconEye, IconCheck, IconTrash, IconRefresh, IconGripVertical, };
 import type { ExpertSummary } from '../expert-contract.ts';
-import type { ExpertTeam, TeamInput } from '../team-contract.ts';
+import { teamHasPinnedMembers, type ExpertTeam, type TeamInput } from '../team-contract.ts';
 import { EXPERT_AVATAR_URLS } from './avatars.ts';
 import { expertAvatarIndexForDivision } from './index.ts';
 export function Avatar({ expert, size = 40, }: {
@@ -95,6 +95,8 @@ export function MemberList({ team, experts, }: {
 export const teamIssue = (team: ExpertTeam, experts: readonly ExpertSummary[], enabled: readonly string[]): string | undefined => {
     if (team.members.some((m) => !experts.some((e) => e.slug === m.expertSlug && !e.conflict)))
         return "成员失效，需替换";
+    if (!teamHasPinnedMembers(team))
+        return "团队成员需要重新选择并保存。";
     if (team.members.some((m) => !enabled.includes(m.expertSlug)))
         return "有成员未启用";
     return undefined;

@@ -1,20 +1,25 @@
 import type { PropsLocale, PropsRuntime, PropsRenderFactories } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ReactNode } from 'react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Button, IconChevronDownOutlineRegular, IconLinkOutlineRegular, IconPlusOutlineRegular, IconRefreshOutlineRegular, IconSearchOutlineRegular, Menu, Modal, StateDot } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Button, IconChevronDownOutlineRegular, IconLinkOutlineRegular, IconPlusOutlineRegular, IconRefreshOutlineRegular, IconSearchOutlineRegular, Menu, Modal, focusWithoutRing } from '@deepseek-ai/dsh-client-ui-primitives'
 import { ConnectorRefreshResultSchema, ExtensionRemovalResultSchema, ExtensionSubmissionResultSchema } from '@deepseek-harness/product/connector-draft'
 import { NS, type DeepSeekHarnessProductKey } from '../locales.ts'
 import css from '../DeepSeekHarnessProduct.module.css'
 import { invokeProduct, productApi, type ProductApi } from './product-api.ts'
-import { productErrorMessage } from './product-errors.ts'
-import { type Catalog, type ProductItem, type ProductDetail, type DeepSeekHarnessCatalogActions, METHODS, CATEGORY_KEYS, AUTHORIZATION_TIMEOUT_MS, items, normalizedSearch, localizedCategory, itemMetadata, localDetail } from './catalog-shared.tsx'
+import { productErrorMessage, type ProductFailureReport } from './product-errors.ts'
+import { productFailure } from '@deepseek-harness/product/errors'
+import { type Catalog, type ProductItem, type ProductDetail, type DeepSeekHarnessCatalogActions, METHODS, CATEGORY_KEYS, items, normalizedSearch, localizedCategory, itemMetadata, localDetail } from './catalog-shared.tsx'
 import { ConnectorDetailModal } from './ConnectorView.tsx'
 import { ConnectorEditor } from './ConnectorEditor.tsx'
 import { ResourceActionsMenu } from './ResourceActionsMenu.tsx'
 import { KnowledgeWorkspace } from './KnowledgeWorkspace.tsx'
 import { isKnowledgeAccessDenied } from './knowledge-data.ts'
+import { ProductSignIn } from './ProductSignIn.tsx'
+import { ProductLoading } from './ProductLoading.tsx'
+import { useResultFocus } from './useResultFocus.ts'
 export type { DeepSeekHarnessCatalogActions } from './catalog-shared.tsx'
 type CatalogSectionProps = PropsRuntime<'main'> & PropsLocale<typeof NS> & PropsRenderFactories & DeepSeekHarnessCatalogActions & {
+  readonly openEmployeeSignIn: () => void
   readonly catalog: Catalog
   readonly labelKey: DeepSeekHarnessProductKey
 }
@@ -23,7 +28,7 @@ interface ReadScope {
   readonly requests: Set<AbortController>
 }
 
-/** Employee catalogs retain drafts and never mutate the active conversation. */
+/** Employee catalogs retain drafts and recover removed read and management controls without scrolling or changing conversations. */
 export function DeepSeekHarnessCatalogSection(props: CatalogSectionProps): ReactNode {
   const { catalog, labelKey } = props
   const t = useCallback((key: DeepSeekHarnessProductKey): string => props.t(key), [props.t])
@@ -31,12 +36,24 @@ export function DeepSeekHarnessCatalogSection(props: CatalogSectionProps): React
   const [knowledgeRevision, setKnowledgeRevision] = useState(0)
   const [loading, setLoading] = useState(true)
   const [catalogLoaded, setCatalogLoaded] = useState(false)
-  const [authRequired, setAuthRequired] = useState(false)
-  const [authPending, setAuthPending] = useState(false)
-  const [authError, setAuthError] = useState(false)
-  const [error, setError] = useState<string>()
+  const [authRequired, setAuthRequired] = useState<boolean>()
+  const [error, setError] = useState<ProductFailureReport>()
   const [unavailableConnectorIds, setUnavailableConnectorIds] = useState<readonly string[]>([])
   const [query, setQuery] = useState('')
+  const catalogRoot = useRef<HTMLElement>(null)
+  const captureReadFocus = useResultFocus(catalogRoot, catalogRoot)
+  const search = useRef<HTMLInputElement>(null)
+  const managementFocusArea = useRef<HTMLElement | null>(null)
+  const managementClose = useRef<HTMLButtonElement>(null)
+  const captureManagementFocus = useResultFocus(managementFocusArea, () => {
+    const target = managementClose.current ?? search.current ?? catalogRoot.current
+    if (target) focusWithoutRing(target, { preventScroll: true })
+  })
+  const preserveManagementFocus = () => {
+    // Native dialog return and entry removal can displace focus anywhere on the page.
+    managementFocusArea.current = catalogRoot.current?.ownerDocument.body ?? null
+    captureManagementFocus()
+  }
   const [categoryFilter, setCategoryFilter] = useState('all')
   const [connectorFilter, setConnectorFilter] = useState<'market' | 'mine'>('market')
   const [categoryMenuOpen, setCategoryMenuOpen] = useState(false)
@@ -44,8 +61,10 @@ export function DeepSeekHarnessCatalogSection(props: CatalogSectionProps): React
   const [editor, setEditor] = useState<{ connector?: { id: string; version: string } }>()
   const [confirmation, setConfirmation] = useState<{ action: 'submit' | 'delete'; id: string; version: string; name: string }>()
   const [managementPending, setManagementPending] = useState(false)
-  const [managementError, setManagementError] = useState<string>()
-  const catalogReads = useRef<ReadScope>({ generation: 0, requests: new Set() })
+  const [managementError, setManagementError] = useState<ProductFailureReport>()
+  const deletionCommitted = managementError !== undefined
+    && productFailure(managementError.failure).code === 'CONNECTOR_DELETE_CLEANUP_FAILED'
+  const catalogReads = useRef<ReadScope & { pending: boolean }>({ generation: 0, requests: new Set(), pending: false })
   const detailReads = useRef<ReadScope>({ generation: 0, requests: new Set() })
   const writes = useRef(new Set<AbortController>())
   const managementLifetime = useRef(0)
@@ -64,6 +83,8 @@ export function DeepSeekHarnessCatalogSection(props: CatalogSectionProps): React
   }
 
   const synchronizeIdentity = (session: Awaited<ReturnType<ProductApi['getSession']>>, activeScope?: ReadScope): void => {
+    captureReadFocus()
+    setAuthRequired(session.authenticated !== true)
     const identity = session.authenticated === true ? session.employeeId ?? '' : undefined
     if (employee.current === identity) return
     employee.current = identity
@@ -73,6 +94,7 @@ export function DeepSeekHarnessCatalogSection(props: CatalogSectionProps): React
     cancelWrites()
     setIdentityRevision(value => value + 1)
     setEntries([])
+    setError(undefined)
     setCatalogLoaded(false)
     setUnavailableConnectorIds([])
     setSelected(undefined)
@@ -80,16 +102,13 @@ export function DeepSeekHarnessCatalogSection(props: CatalogSectionProps): React
     setManagementPending(false); setManagementError(undefined)
   }
 
-  const read = async (api: ProductApi, method: string, payload?: unknown, timeoutMs?: number,
+  const read = async (api: ProductApi, method: string, payload?: unknown,
     scope: ReadScope = detailReads.current): Promise<unknown> => {
     const controller = new AbortController()
     scope.requests.add(controller)
-    let timer: ReturnType<typeof setTimeout> | undefined
     try {
-      if (timeoutMs !== undefined) timer = setTimeout(() => { controller.abort(new Error('authorization request timed out')) }, timeoutMs)
       return await invokeProduct(api, method, payload, controller.signal)
     } finally {
-      if (timer !== undefined) clearTimeout(timer)
       scope.requests.delete(controller)
     }
   }
@@ -97,16 +116,16 @@ export function DeepSeekHarnessCatalogSection(props: CatalogSectionProps): React
   const refresh = async (reconnect = false): Promise<void> => {
     const scope = catalogReads.current
     const currentGeneration = cancelReads(scope)
+    scope.pending = true
     const api = productApi()
     if (api === undefined) {
-      setError(t('unavailable'))
+      captureReadFocus()
+      setError({ failure: undefined, fallback: 'unavailable' })
+      scope.pending = false
       setLoading(false)
       return
     }
     setLoading(true)
-    setError(undefined)
-    if (reconnect) setUnavailableConnectorIds([])
-    setAuthError(false)
     try {
       const session = await api.getSession()
       if (currentGeneration !== scope.generation) return
@@ -119,11 +138,14 @@ export function DeepSeekHarnessCatalogSection(props: CatalogSectionProps): React
       setAuthRequired(false)
       if (currentGeneration !== scope.generation) return
       const reconnected = reconnect && catalog === 'connectors'
-        ? ConnectorRefreshResultSchema.parse(await read(api, 'connectors.refresh', {}, undefined, scope)) : undefined
+        ? ConnectorRefreshResultSchema.parse(await read(api, 'connectors.refresh', {}, scope)) : undefined
       if (currentGeneration !== scope.generation) return
-      const catalogValue = await read(api, METHODS[catalog], undefined, undefined, scope)
+      const catalogValue = await read(api, METHODS[catalog], undefined, scope)
       if (currentGeneration !== scope.generation) return
-      setEntries(items(catalogValue))
+      const catalogEntries = items(catalogValue)
+      captureReadFocus()
+      setEntries(catalogEntries)
+      setError(undefined)
       setCatalogLoaded(true)
       if (reconnected) setUnavailableConnectorIds(reconnected.unavailableIds)
       if (catalog === 'knowledge') setKnowledgeRevision(value => value + 1)
@@ -131,37 +153,29 @@ export function DeepSeekHarnessCatalogSection(props: CatalogSectionProps): React
       if (currentGeneration !== scope.generation) return
       const session = await api.getSession().catch(() => undefined)
       if (currentGeneration !== scope.generation) return
-      if (session !== undefined) synchronizeIdentity(session)
-      if (session?.authenticated === false) {
-        setAuthRequired(true)
+      captureReadFocus()
+      if (session !== undefined) synchronizeIdentity(session, scope)
+      if (session?.authenticated === false || productFailure(error).code === 'EMPLOYEE_UNAUTHORIZED') {
+        synchronizeIdentity({ authenticated: false }, scope)
         setEntries([])
+        setCatalogLoaded(false)
         setError(undefined)
       } else {
         if (catalog === 'knowledge' && isKnowledgeAccessDenied(error)) setEntries([])
-        setError(productErrorMessage(error, t, 'loadFailed'))
+        setError({ failure: error, fallback: 'loadFailed' })
       }
     } finally {
-      if (currentGeneration === scope.generation) setLoading(false)
+      if (currentGeneration === scope.generation) { scope.pending = false; setLoading(false) }
     }
   }
 
-  const signIn = async (): Promise<void> => {
-    const api = productApi()
-    if (api === undefined || authPending) return
-    setAuthPending(true)
-    setAuthError(false)
-    try {
-      await read(api, 'auth.ensureDingTalk', undefined, AUTHORIZATION_TIMEOUT_MS)
-      await refresh()
-    } catch {
-      setAuthError(true)
-    } finally {
-      setAuthPending(false)
-    }
+  const refreshFromControl = (reconnect = false): void => {
+    if (!catalogReads.current.pending) void refresh(reconnect)
   }
 
   useEffect(() => {
     setCatalogLoaded(false)
+    setError(undefined)
     setQuery('')
     setCategoryFilter('all')
     setConnectorFilter('market')
@@ -207,8 +221,9 @@ export function DeepSeekHarnessCatalogSection(props: CatalogSectionProps): React
   const selectConnectorFilter = (filter: 'market' | 'mine') => {
     setConnectorFilter(filter); setCategoryFilter('all'); setCategoryMenuOpen(false)
   }
-  const closeDetail = () => { cancelReads(); setSelected(undefined) }
-  const refreshConnectorDetails = async (): Promise<void> => {
+  const closeDetail = () => { preserveManagementFocus(); cancelReads(); setSelected(undefined) }
+  const closeEditor = () => { preserveManagementFocus(); setEditor(undefined) }
+  const refreshConnectorDetails = async (beforeCommit: () => void): Promise<void> => {
     const api = productApi()
     if (!api) throw new Error(t('unavailable'))
     const id = selected?.id
@@ -221,6 +236,7 @@ export function DeepSeekHarnessCatalogSection(props: CatalogSectionProps): React
     const item = connectors.find(entry => entry.id === id)
     if (!item) throw new Error(t('referenceUnauthorized'))
     if (catalog === 'connectors') {
+      beforeCommit()
       setEntries(connectors)
       setSelected(previous => previous?.id === id ? localDetail(item) : previous)
       setError(undefined)
@@ -228,30 +244,46 @@ export function DeepSeekHarnessCatalogSection(props: CatalogSectionProps): React
   }
 
   const confirmManagement = (action: 'submit' | 'delete', entry: ProductItem | ProductDetail) => {
-    if (!entry.version || (action === 'submit' ? !entry.canSubmit : !entry.canDelete)) return
+    if (writes.current.size > 0 || !entry.version || (action === 'submit' ? !entry.canSubmit : !entry.canDelete)) return
     setManagementError(undefined)
     setConfirmation({ action, id: entry.id, version: entry.version, name: 'label' in entry ? entry.label : entry.name })
   }
+  const closeManagement = () => {
+    if (writes.current.size > 0) return
+    preserveManagementFocus()
+    setConfirmation(undefined)
+  }
   const manageResource = async () => {
     const api = productApi()
-    if (!api || !confirmation || managementPending) return
+    if (!api || !confirmation || writes.current.size > 0 || deletionCommitted) return
     const target = confirmation
     const lifetime = managementLifetime.current
     const controller = new AbortController()
     writes.current.add(controller)
-    setManagementPending(true); setManagementError(undefined)
+    setManagementPending(true)
     try {
       const value = await invokeProduct(api, target.action === 'submit' ? 'extensions.submit' : 'extensions.connector.delete',
         { kind: 'connector', id: target.id, version: target.version }, controller.signal)
       if (lifetime !== managementLifetime.current) return
       const receipt = (target.action === 'submit' ? ExtensionSubmissionResultSchema : ExtensionRemovalResultSchema).parse(value)
       if (receipt.id !== target.id || ('version' in receipt && receipt.version !== target.version)) throw new Error('Connector receipt mismatch')
+      preserveManagementFocus()
+      setManagementError(undefined)
       setConfirmation(undefined)
       if (target.action === 'delete') { closeDetail(); setEntries(previous => previous.filter(entry => entry.id !== target.id)) }
       else setSelected(previous => previous?.id === target.id ? { ...previous, canSubmit: false, reviewStatus: 'SUBMITTED' } : previous)
       await refresh()
     } catch (error) {
-      if (lifetime === managementLifetime.current) setManagementError(productErrorMessage(error, t, target.action === 'delete' ? 'deleteFailed' : 'saveFailed'))
+      if (lifetime === managementLifetime.current) {
+        const removed = target.action === 'delete' && productFailure(error).code === 'CONNECTOR_DELETE_CLEANUP_FAILED'
+        if (removed) {
+          preserveManagementFocus()
+          closeDetail()
+          setEntries(previous => previous.filter(entry => entry.id !== target.id))
+        }
+        setManagementError({ failure: error, fallback: target.action === 'delete' ? 'deleteFailed' : 'saveFailed' })
+        if (removed) await refresh()
+      }
     } finally {
       writes.current.delete(controller)
       if (lifetime === managementLifetime.current) setManagementPending(false)
@@ -260,14 +292,34 @@ export function DeepSeekHarnessCatalogSection(props: CatalogSectionProps): React
   const managementActions = (resource: ProductItem | ProductDetail) => <ResourceActionsMenu resource={resource} pending={managementPending}
     onEdit={() => { if (resource.version) { closeDetail(); setEditor({ connector: { id: resource.id, version: resource.version } }) } }}
     onSubmit={() => { confirmManagement('submit', resource) }} onDelete={() => { confirmManagement('delete', resource) }} t={t} />
-  if (catalog === 'knowledge') return <KnowledgeWorkspace key={identityRevision} entries={entries} loading={loading} refreshRevision={knowledgeRevision}
-    {...error === undefined ? {} : { error }} renderFactorySlot={props.renderFactorySlot}
-    authRequired={authRequired} authPending={authPending} authError={authError} t={t}
-    onRefresh={() => { void refresh() }} onSignIn={() => { void signIn() }} />
+  if (authRequired === undefined) return <section ref={catalogRoot} tabIndex={-1} className={css.catalogPage} aria-label={t(labelKey)}>
+    <div className={css.catalogScroll}><div className="product-capability-content">
+      <header className={`${css.catalogHeader} product-capability-header`}>
+        <div className="product-capability-heading">
+          <h1 className="product-capability-title">{t(labelKey)}</h1>
+          <p className="product-capability-description">{t(catalog === 'knowledge' ? 'knowledgeDirectoryHint' : 'connectorsDescription')}</p>
+        </div>
+      </header>
+      {error ? <div role="alert" className={css.catalogStatus}>
+        <p>{productErrorMessage(error.failure, t, error.fallback)}</p>
+        <Button variant="outline" size="sm" aria-disabled={loading} aria-busy={loading}
+          className={loading ? 'product-control-pending' : undefined} onClick={() => { refreshFromControl() }}>{t('retry')}</Button>
+      </div> : loading && <div className="product-capability-pending"><ProductLoading label={t('loading')} /></div>}
+    </div></div>
+  </section>
+  if (catalog === 'knowledge') return <KnowledgeWorkspace key={identityRevision} entries={entries} loading={loading} loaded={catalogLoaded} refreshRevision={knowledgeRevision}
+    {...error === undefined ? {} : { error: productErrorMessage(error.failure, t, error.fallback) }}
+    renderFactorySlot={props.renderFactorySlot} workspaceRef={catalogRoot}
+    authRequired={authRequired} t={t}
+    onRefresh={() => { refreshFromControl() }} onSignIn={props.openEmployeeSignIn} />
   const Icon = IconLinkOutlineRegular
-  return <section className={css.catalogPage} aria-label={t(labelKey)}>
-    <div className={css.catalogScroll}><div className={css.catalogContent}>
-      <header className={css.catalogHeader}><div><h1>{t(labelKey)}</h1><p>{t('connectorsDescription')}</p></div>
+  return <section ref={catalogRoot} tabIndex={-1} className={css.catalogPage} aria-label={t(labelKey)}>
+    <div className={css.catalogScroll}><div className="product-capability-content">
+      <header className={`${css.catalogHeader} product-capability-header`}>
+        <div className="product-capability-heading">
+          <h1 className="product-capability-title">{t(labelKey)}</h1>
+          <p className="product-capability-description">{t('connectorsDescription')}</p>
+        </div>
         {!authRequired && <Button variant="primary" onClick={() => { setEditor({}) }}><IconPlusOutlineRegular size={16} />{t('addExtension')}</Button>}
       </header>
       {!authRequired && error === undefined && <div className={css.catalogTabs}
@@ -288,7 +340,7 @@ export function DeepSeekHarnessCatalogSection(props: CatalogSectionProps): React
         </button>)}
       </div>}
       {!authRequired && <div className={css.catalogToolbar}>
-        <label className={css.searchField}><IconSearchOutlineRegular size={16} /><input aria-label={t('search')} type="search"
+        <label className={css.searchField}><IconSearchOutlineRegular size={16} /><input ref={search} aria-label={t('search')} type="search"
           value={query} placeholder={t('searchPlaceholder')} onChange={(event) => { setQuery(event.currentTarget.value) }} /></label>
         <Menu open={categoryMenuOpen} items={[{ id: 'all', label: t('allCategories') }, ...categories.map(id => ({ id, label: localizedCategory(id, t) }))]}
           selectedId={categoryFilter} portal onSelect={(id) => { setCategoryFilter(id); setCategoryMenuOpen(false) }}
@@ -296,22 +348,26 @@ export function DeepSeekHarnessCatalogSection(props: CatalogSectionProps): React
           anchor={<button className={css.categoryButton} type="button" aria-label={t('categoryFilter')} aria-haspopup="menu" aria-expanded={categoryMenuOpen}
             onClick={() => { setCategoryMenuOpen(value => !value) }}>
             {categoryFilter === 'all' ? t('allCategories') : localizedCategory(categoryFilter, t)}<IconChevronDownOutlineRegular size={14} /></button>} />
-        <Button variant="ghost" aria-label={t('refresh')} aria-busy={loading} disabled={loading} onClick={() => { void refresh(true) }}>
-          {loading ? <span role="status" aria-label={t('loading')}><StateDot state="ongoing" size={16} /></span> : <IconRefreshOutlineRegular size={16} />}
+        <Button variant="ghost" className={loading ? 'product-control-pending' : undefined} aria-label={t('refresh')} aria-busy={loading} aria-disabled={loading} onClick={() => { refreshFromControl(true) }}>
+          <IconRefreshOutlineRegular size={16} />
+          {loading && <span className={css.visuallyHidden} role="status" aria-label={t('loading')} />}
         </Button>
       </div>}
-      {authRequired && <Button variant="primary" disabled={authPending} onClick={() => { void signIn() }}>{t('signIn')}</Button>}
-      {authError && <p role="alert">{t('loadFailed')}</p>}
-      {error && <p className={css.catalogError} role="alert">{error}</p>}
+      {authRequired && <ProductSignIn onSignIn={props.openEmployeeSignIn} t={t} />}
+      {error && <p className={css.catalogError} role="alert">{productErrorMessage(error.failure, t, error.fallback)}</p>}
       {!authRequired && !error && unavailableConnectorIds.length > 0 && <p className={css.catalogWarning} role="alert">
         {t('connectorPartialRefreshFailed').replace('{names}', unavailableConnectorIds
           .map(id => entries.find(entry => entry.id === id)?.label ?? id).join('、'))}</p>}
+      {!catalogLoaded && !authRequired && !error && <div className="product-capability-pending"><ProductLoading label={t('loading')} /></div>}
       {catalogLoaded && !authRequired && !error && <div id="deepseek-harness-catalog-results" role="tabpanel" aria-busy={loading}
         aria-labelledby={`product-connectors-tab-${connectorFilter}`}>
-        {filteredEntries.length === 0 && <div className={css.catalogStatus}>
+        {filteredEntries.length === 0 && <div className="product-capability-empty">
           <p>{t(query.trim() || categoryFilter !== 'all' ? 'noSearchResults' : connectorFilter === 'mine' ? 'noPersonalConnectors' : 'noConnectors')}</p>
           {(query.trim() || categoryFilter !== 'all') && <Button variant="ghost" size="sm"
-            onClick={() => { setQuery(''); setCategoryFilter('all') }}>{t('clearConnectorFilters')}</Button>}
+            onClick={() => {
+              setQuery(''); setCategoryFilter('all')
+              if (search.current) focusWithoutRing(search.current)
+            }}>{t('clearConnectorFilters')}</Button>}
         </div>}
         {groupedEntries.map(([group, rows]) => <section className={css.catalogGroup} aria-label={group} key={group}>
           <h2 className={css.groupTitle}>{group}<span>{rows.length}</span></h2>
@@ -333,15 +389,19 @@ export function DeepSeekHarnessCatalogSection(props: CatalogSectionProps): React
       <ConnectorDetailModal detail={selected}
         onClose={closeDetail} onCatalogChanged={refreshConnectorDetails}
         managementActions={selected && managementActions(selected)} t={t} />
-      {editor && <ConnectorEditor key={identityRevision} editing={editor.connector} onClose={() => { setEditor(undefined) }}
-        onSaved={() => { setEditor(undefined); selectConnectorFilter('mine'); void refresh() }}
+      {editor && <ConnectorEditor key={identityRevision} editing={editor.connector} onClose={closeEditor}
+        onSaved={() => { closeEditor(); selectConnectorFilter('mine'); void refresh() }}
         t={t} />}
-      <Modal open={confirmation !== undefined} onClose={() => { if (!managementPending) setConfirmation(undefined) }}
+      <Modal open={confirmation !== undefined} onClose={closeManagement}
         title={confirmation?.action === 'delete' ? t('resourceDeleteTitle').replace('{name}', confirmation.name) : t('submitResourceTitle')} closeLabel={t('close')}
-        footer={<div className={css.detailActions}><Button variant="outline" disabled={managementPending} onClick={() => { setConfirmation(undefined) }}>{t('cancel')}</Button>
-          <Button variant="primary" disabled={managementPending} onClick={() => { void manageResource() }}>{t(confirmation?.action === 'delete' ? managementPending ? 'deletingResource' : 'deleteResource' : 'submitShared')}</Button></div>}>
-        {managementError && <p role="alert">{managementError}</p>}
-        <p>{t(confirmation?.action === 'delete' ? 'resourceDeleteConfirmation' : 'submitResourceConfirmation').replace('{name}', confirmation?.name ?? '')}</p>
+        footer={<div className={css.detailActions}><Button ref={managementClose} variant="outline" aria-disabled={managementPending}
+          className={managementPending ? 'product-control-pending' : undefined}
+          onClick={closeManagement}>{t(deletionCommitted ? 'close' : 'cancel')}</Button>
+        {!deletionCommitted && <Button variant="primary" aria-disabled={managementPending} aria-busy={managementPending}
+          className={managementPending ? 'product-control-pending' : undefined}
+          onClick={() => { void manageResource() }}>{t(confirmation?.action === 'delete' ? managementPending ? 'deletingResource' : 'deleteResource' : 'submitShared')}</Button>}</div>}>
+        {managementError && <p role="alert">{productErrorMessage(managementError.failure, t, managementError.fallback)}</p>}
+        {!deletionCommitted && <p>{t(confirmation?.action === 'delete' ? 'resourceDeleteConfirmation' : 'submitResourceConfirmation').replace('{name}', confirmation?.name ?? '')}</p>}
       </Modal>
     </div></div></section>
 }

@@ -6,7 +6,7 @@ import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { app } from 'electron'
 import { createRequire } from 'node:module'
-import { DesktopUpdateHttpExecutor } from '../../../desktop/lib/types/update-http-executor.js'
+import { DesktopUpdateHttpExecutor } from '../../../desktop/lib/types/updates/electron-updater/http-executor.js'
 import { DesktopUpdateMirrorProvider } from '../../../desktop/lib/types/update-mirror-provider.js'
 
 const require = createRequire(new URL('../../../desktop/package.json', import.meta.url))

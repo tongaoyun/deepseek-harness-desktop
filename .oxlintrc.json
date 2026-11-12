@@ -37,7 +37,7 @@
     "!packages/deepseek-harness-product/experts/src/client/client-state*.ts",
     "!packages/deepseek-harness-product/experts/src/client/catalog.ts",
     "!packages/deepseek-harness-product/experts/src/client/team-cache.ts",
-    "!packages/deepseek-harness-product/skills/src/submission.ts",
+    "!packages/deepseek-harness-product/experts/src/client/team-reference.ts",
     "!packages/deepseek-harness-product/skills/src/skill-body.ts",
     "!packages/deepseek-harness-product/skills/src/native-*.test.ts",
     "!packages/deepseek-harness-product/skills/src/manager.ts",
@@ -46,6 +46,8 @@
     "!packages/deepseek-harness-product/skills/src/remote-client.ts",
     "!packages/deepseek-harness-product/skills/src/skill-document.ts",
     "!packages/deepseek-harness-product/skills/src/response-bytes.ts",
+    "!packages/deepseek-harness-product/skills/src/repositories.ts",
+    "!packages/deepseek-harness-product/skills/src/trash-metadata.ts",
     "packages/experimental/claude-code-mods/examples/*/{hooks,tests,types}/**", // Claude Code's published example mods and their tests keep the upstream style; see the headers.
     "native/**", // The imported landlock-run subtree has its own gates; see native/README.md.
     "**/*.js",

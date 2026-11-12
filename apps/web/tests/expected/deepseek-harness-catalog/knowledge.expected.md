@@ -1,27 +1,251 @@
-- complementary:
-  - button "Knowledge bases"
+- main:
+  - navigation "Current location":
+    - button "Knowledge bases"
+  - heading "Personal notes" [level=1]
+  - text: Personal
+  - button "Search content"
+  - button "Add materials"
   - button "Refresh"
-  - navigation "Knowledge bases":
-    - region "Personal":
-      - heading "Personal New personal knowledge base" [level=2]:
-        - button "Personal" [expanded]
-        - button "New personal knowledge base"
-      - button "Personal notes" [expanded]
-      - button "Actions for “Personal notes”"
-      - navigation "Folders":
-        - text: Folders
-        - button "New folder"
-        - button "Expand Policies"
-        - button "Policies"
-        - button "Folder actions for Policies"
-    - region "Department":
-      - heading "Department" [level=2]:
-        - button "Department" [expanded]
-      - heading "Sales (21)" [level=3]
-      - button "Sales procedures"
-      - heading "Sales (22)" [level=3]
-      - button "Sales playbook"
-    - region "Company":
-      - heading "Company" [level=2]:
-        - button "Company" [expanded]
-      - button "Operations playbook"
+  - button "Actions for “Personal notes”"
+  - tablist "Browse mode":
+    - tab "By folder" [selected]
+    - tab "All files in this library"
+  - text: Search material names…
+  - searchbox "Search material names…"
+  - button "Search"
+  - text: Type
+  - combobox "Type":
+    - option "All types" [selected]
+    - option "Online document"
+    - option "Website"
+    - option "PDF"
+    - option "DOCX"
+    - option "XLSX"
+    - option "MD"
+    - option "TXT"
+  - text: Status
+  - combobox "Status":
+    - option "All statuses" [selected]
+    - option "Searchable"
+    - option "Queued"
+    - option "Processing"
+    - option "Finalizing"
+    - option "Processing failed"
+    - option "Cancelled"
+    - option "Deleting"
+  - tabpanel "By folder":
+    - table:
+      - rowgroup:
+        - row "Select files on this page Name Status Type Size Updated More actions":
+          - columnheader "Select files on this page Name":
+            - checkbox "Select files on this page"
+            - text: Name
+          - columnheader "Status"
+          - columnheader "Type"
+          - columnheader "Size"
+          - columnheader "Updated"
+          - columnheader "More actions"
+      - rowgroup:
+        - row "Policies — Folder — Oct 10, 2026 Folder actions for Policies":
+          - cell "Policies":
+            - button "Policies"
+          - cell "—"
+          - cell "Folder"
+          - cell "—"
+          - cell "Oct 10, 2026"
+          - cell "Folder actions for Policies":
+            - button "Folder actions for Policies"
+        - row "Select “Order review.md” Order review.md Searchable Online document 118B Oct 10, 2026 Actions for “Order review.md”":
+          - cell "Select “Order review.md” Order review.md":
+            - checkbox "Select “Order review.md”"
+            - button "Order review.md"
+          - cell "Searchable"
+          - cell "Online document"
+          - cell "118B"
+          - cell "Oct 10, 2026"
+          - cell "Actions for “Order review.md”":
+            - button "Actions for “Order review.md”"
+        - row "Select “Office policy.docx” Office policy.docx Searchable DOCX 921B Oct 10, 2026 Actions for “Office policy.docx”":
+          - cell "Select “Office policy.docx” Office policy.docx":
+            - checkbox "Select “Office policy.docx”"
+            - button "Office policy.docx"
+          - cell "Searchable"
+          - cell "DOCX"
+          - cell "921B"
+          - cell "Oct 10, 2026"
+          - cell "Actions for “Office policy.docx”":
+            - button "Actions for “Office policy.docx”"
+        - row "Select “Order totals.xlsx” Order totals.xlsx Searchable XLSX 1.4KB Oct 10, 2026 Actions for “Order totals.xlsx”":
+          - cell "Select “Order totals.xlsx” Order totals.xlsx":
+            - checkbox "Select “Order totals.xlsx”"
+            - button "Order totals.xlsx"
+          - cell "Searchable"
+          - cell "XLSX"
+          - cell "1.4KB"
+          - cell "Oct 10, 2026"
+          - cell "Actions for “Order totals.xlsx”":
+            - button "Actions for “Order totals.xlsx”"
+        - row "Select “Policy 5.pdf” Policy 5.pdf Searchable PDF 990B Oct 10, 2026 Actions for “Policy 5.pdf”":
+          - cell "Select “Policy 5.pdf” Policy 5.pdf":
+            - checkbox "Select “Policy 5.pdf”"
+            - button "Policy 5.pdf"
+          - cell "Searchable"
+          - cell "PDF"
+          - cell "990B"
+          - cell "Oct 10, 2026"
+          - cell "Actions for “Policy 5.pdf”":
+            - button "Actions for “Policy 5.pdf”"
+        - row "Select “Policy 6.pdf” Policy 6.pdf Searchable PDF 990B Oct 10, 2026 Actions for “Policy 6.pdf”":
+          - cell "Select “Policy 6.pdf” Policy 6.pdf":
+            - checkbox "Select “Policy 6.pdf”"
+            - button "Policy 6.pdf"
+          - cell "Searchable"
+          - cell "PDF"
+          - cell "990B"
+          - cell "Oct 10, 2026"
+          - cell "Actions for “Policy 6.pdf”":
+            - button "Actions for “Policy 6.pdf”"
+        - row "Select “Policy 7.pdf” Policy 7.pdf Searchable PDF 990B Oct 10, 2026 Actions for “Policy 7.pdf”":
+          - cell "Select “Policy 7.pdf” Policy 7.pdf":
+            - checkbox "Select “Policy 7.pdf”"
+            - button "Policy 7.pdf"
+          - cell "Searchable"
+          - cell "PDF"
+          - cell "990B"
+          - cell "Oct 10, 2026"
+          - cell "Actions for “Policy 7.pdf”":
+            - button "Actions for “Policy 7.pdf”"
+        - row "Select “Policy 8.pdf” Policy 8.pdf Searchable PDF 990B Oct 10, 2026 Actions for “Policy 8.pdf”":
+          - cell "Select “Policy 8.pdf” Policy 8.pdf":
+            - checkbox "Select “Policy 8.pdf”"
+            - button "Policy 8.pdf"
+          - cell "Searchable"
+          - cell "PDF"
+          - cell "990B"
+          - cell "Oct 10, 2026"
+          - cell "Actions for “Policy 8.pdf”":
+            - button "Actions for “Policy 8.pdf”"
+        - row "Select “Policy 9.pdf” Policy 9.pdf Searchable PDF 990B Oct 10, 2026 Actions for “Policy 9.pdf”":
+          - cell "Select “Policy 9.pdf” Policy 9.pdf":
+            - checkbox "Select “Policy 9.pdf”"
+            - button "Policy 9.pdf"
+          - cell "Searchable"
+          - cell "PDF"
+          - cell "990B"
+          - cell "Oct 10, 2026"
+          - cell "Actions for “Policy 9.pdf”":
+            - button "Actions for “Policy 9.pdf”"
+        - row "Select “Policy 10.pdf” Policy 10.pdf Searchable PDF 990B Oct 10, 2026 Actions for “Policy 10.pdf”":
+          - cell "Select “Policy 10.pdf” Policy 10.pdf":
+            - checkbox "Select “Policy 10.pdf”"
+            - button "Policy 10.pdf"
+          - cell "Searchable"
+          - cell "PDF"
+          - cell "990B"
+          - cell "Oct 10, 2026"
+          - cell "Actions for “Policy 10.pdf”":
+            - button "Actions for “Policy 10.pdf”"
+        - row "Select “Policy 11.pdf” Policy 11.pdf Searchable PDF 990B Oct 10, 2026 Actions for “Policy 11.pdf”":
+          - cell "Select “Policy 11.pdf” Policy 11.pdf":
+            - checkbox "Select “Policy 11.pdf”"
+            - button "Policy 11.pdf"
+          - cell "Searchable"
+          - cell "PDF"
+          - cell "990B"
+          - cell "Oct 10, 2026"
+          - cell "Actions for “Policy 11.pdf”":
+            - button "Actions for “Policy 11.pdf”"
+        - row "Select “Policy 12.pdf” Policy 12.pdf Searchable PDF 990B Oct 10, 2026 Actions for “Policy 12.pdf”":
+          - cell "Select “Policy 12.pdf” Policy 12.pdf":
+            - checkbox "Select “Policy 12.pdf”"
+            - button "Policy 12.pdf"
+          - cell "Searchable"
+          - cell "PDF"
+          - cell "990B"
+          - cell "Oct 10, 2026"
+          - cell "Actions for “Policy 12.pdf”":
+            - button "Actions for “Policy 12.pdf”"
+        - row "Select “Policy 13.pdf” Policy 13.pdf Searchable PDF 990B Oct 10, 2026 Actions for “Policy 13.pdf”":
+          - cell "Select “Policy 13.pdf” Policy 13.pdf":
+            - checkbox "Select “Policy 13.pdf”"
+            - button "Policy 13.pdf"
+          - cell "Searchable"
+          - cell "PDF"
+          - cell "990B"
+          - cell "Oct 10, 2026"
+          - cell "Actions for “Policy 13.pdf”":
+            - button "Actions for “Policy 13.pdf”"
+        - row "Select “Policy 14.pdf” Policy 14.pdf Searchable PDF 990B Oct 10, 2026 Actions for “Policy 14.pdf”":
+          - cell "Select “Policy 14.pdf” Policy 14.pdf":
+            - checkbox "Select “Policy 14.pdf”"
+            - button "Policy 14.pdf"
+          - cell "Searchable"
+          - cell "PDF"
+          - cell "990B"
+          - cell "Oct 10, 2026"
+          - cell "Actions for “Policy 14.pdf”":
+            - button "Actions for “Policy 14.pdf”"
+        - row "Select “Policy 15.pdf” Policy 15.pdf Searchable PDF 990B Oct 10, 2026 Actions for “Policy 15.pdf”":
+          - cell "Select “Policy 15.pdf” Policy 15.pdf":
+            - checkbox "Select “Policy 15.pdf”"
+            - button "Policy 15.pdf"
+          - cell "Searchable"
+          - cell "PDF"
+          - cell "990B"
+          - cell "Oct 10, 2026"
+          - cell "Actions for “Policy 15.pdf”":
+            - button "Actions for “Policy 15.pdf”"
+        - row "Select “Policy 16.pdf” Policy 16.pdf Searchable PDF 990B Oct 10, 2026 Actions for “Policy 16.pdf”":
+          - cell "Select “Policy 16.pdf” Policy 16.pdf":
+            - checkbox "Select “Policy 16.pdf”"
+            - button "Policy 16.pdf"
+          - cell "Searchable"
+          - cell "PDF"
+          - cell "990B"
+          - cell "Oct 10, 2026"
+          - cell "Actions for “Policy 16.pdf”":
+            - button "Actions for “Policy 16.pdf”"
+        - row "Select “Policy 17.pdf” Policy 17.pdf Searchable PDF 990B Oct 10, 2026 Actions for “Policy 17.pdf”":
+          - cell "Select “Policy 17.pdf” Policy 17.pdf":
+            - checkbox "Select “Policy 17.pdf”"
+            - button "Policy 17.pdf"
+          - cell "Searchable"
+          - cell "PDF"
+          - cell "990B"
+          - cell "Oct 10, 2026"
+          - cell "Actions for “Policy 17.pdf”":
+            - button "Actions for “Policy 17.pdf”"
+        - row "Select “Policy 18.pdf” Policy 18.pdf Searchable PDF 990B Oct 10, 2026 Actions for “Policy 18.pdf”":
+          - cell "Select “Policy 18.pdf” Policy 18.pdf":
+            - checkbox "Select “Policy 18.pdf”"
+            - button "Policy 18.pdf"
+          - cell "Searchable"
+          - cell "PDF"
+          - cell "990B"
+          - cell "Oct 10, 2026"
+          - cell "Actions for “Policy 18.pdf”":
+            - button "Actions for “Policy 18.pdf”"
+        - row "Select “Policy 19.pdf” Policy 19.pdf Searchable PDF 990B Oct 10, 2026 Actions for “Policy 19.pdf”":
+          - cell "Select “Policy 19.pdf” Policy 19.pdf":
+            - checkbox "Select “Policy 19.pdf”"
+            - button "Policy 19.pdf"
+          - cell "Searchable"
+          - cell "PDF"
+          - cell "990B"
+          - cell "Oct 10, 2026"
+          - cell "Actions for “Policy 19.pdf”":
+            - button "Actions for “Policy 19.pdf”"
+        - row "Select “Policy 20.pdf” Policy 20.pdf Searchable PDF 990B Oct 10, 2026 Actions for “Policy 20.pdf”":
+          - cell "Select “Policy 20.pdf” Policy 20.pdf":
+            - checkbox "Select “Policy 20.pdf”"
+            - button "Policy 20.pdf"
+          - cell "Searchable"
+          - cell "PDF"
+          - cell "990B"
+          - cell "Oct 10, 2026"
+          - cell "Actions for “Policy 20.pdf”":
+            - button "Actions for “Policy 20.pdf”"
+    - text: 21 items
+    - button "Previous page" [disabled]
+    - text: 1 / 2
+    - button "Next page"

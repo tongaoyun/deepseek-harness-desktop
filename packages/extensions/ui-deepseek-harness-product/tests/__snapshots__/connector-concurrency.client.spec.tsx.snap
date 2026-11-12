@@ -1,0 +1,28 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`retains authorization feedback while retrying begin without duplicate requests 1`] = `
+{
+  "busy": "true",
+  "button": "Waiting for browser authorization…",
+  "error": "Authorization did not complete. Try again.",
+  "focused": true,
+}
+`;
+
+exports[`retains authorization feedback while retrying revoke without duplicate requests 1`] = `
+{
+  "busy": "true",
+  "button": "Working…",
+  "error": "Authorization did not complete. Try again.",
+  "focused": true,
+}
+`;
+
+exports[`retains authorization feedback while retrying status without duplicate requests 1`] = `
+{
+  "busy": "true",
+  "button": "Waiting for browser authorization…",
+  "error": "Authorization did not complete. Try again.",
+  "focused": true,
+}
+`;

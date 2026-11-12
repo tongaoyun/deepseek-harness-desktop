@@ -1,0 +1,31 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`asks before discarding connector edits through escape > Retained connector edit 1`] = `
+{
+  "focused": true,
+  "selection": [
+    2,
+    8,
+  ],
+}
+`;
+
+exports[`asks before discarding connector edits through header > Retained connector edit 1`] = `
+{
+  "focused": true,
+  "selection": [
+    2,
+    8,
+  ],
+}
+`;
+
+exports[`asks before discarding connector edits through mask > Retained connector edit 1`] = `
+{
+  "focused": true,
+  "selection": [
+    2,
+    8,
+  ],
+}
+`;

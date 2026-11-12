@@ -1,9 +1,98 @@
 // Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
 
-exports[`retains the original selection after an upload receipt has invalid destination 1`] = `"file-0.md上传结果未确认，可重试原文件；移除前请检查资料列表 (IDEMPOTENCY_OPERATION_UNKNOWN)重试上传移除"`;
+exports[`recovers upload 'queue' focus after its action is removed (elsewhere=false) 1`] = `
+{
+  "focus": "footer-close",
+  "result": "file-0.md保存位置知识库 / 资料已上传，处理状态见资料列表",
+}
+`;
 
-exports[`retains the original selection after an upload receipt has invalid identity 1`] = `"file-0.md上传结果未确认，可重试原文件；移除前请检查资料列表 (IDEMPOTENCY_OPERATION_UNKNOWN)重试上传移除"`;
+exports[`recovers upload 'queue' focus after its action is removed (elsewhere=true) 1`] = `
+{
+  "focus": "header-close",
+  "result": "file-0.md保存位置知识库 / 资料已上传，处理状态见资料列表",
+}
+`;
 
-exports[`retains the original selection after an upload receipt has invalid library 1`] = `"file-0.md上传结果未确认，可重试原文件；移除前请检查资料列表 (IDEMPOTENCY_OPERATION_UNKNOWN)重试上传移除"`;
+exports[`recovers upload 'release-retry' focus after its action is removed (elsewhere=false) 1`] = `
+{
+  "focus": "footer-close",
+  "result": "file-0.md保存位置知识库 / 资料已上传，处理状态见资料列表",
+}
+`;
 
-exports[`retains the original selection after an upload receipt has invalid metadata 1`] = `"file-0.md上传结果未确认，可重试原文件；移除前请检查资料列表 (IDEMPOTENCY_OPERATION_UNKNOWN)重试上传移除"`;
+exports[`recovers upload 'release-retry' focus after its action is removed (elsewhere=true) 1`] = `
+{
+  "focus": "header-close",
+  "result": "file-0.md保存位置知识库 / 资料已上传，处理状态见资料列表",
+}
+`;
+
+exports[`recovers upload 'remove' focus after its action is removed (elsewhere=false) 1`] = `
+{
+  "focus": "footer-close",
+  "result": "file-0.md保存位置知识库 / 资料已移除",
+}
+`;
+
+exports[`recovers upload 'remove' focus after its action is removed (elsewhere=true) 1`] = `
+{
+  "focus": "header-close",
+  "result": "file-0.md保存位置知识库 / 资料已移除",
+}
+`;
+
+exports[`recovers upload 'upload-retry' focus after its action is removed (elsewhere=false) 1`] = `
+{
+  "focus": "footer-close",
+  "result": "file-0.md保存位置知识库 / 资料已上传，处理状态见资料列表",
+}
+`;
+
+exports[`recovers upload 'upload-retry' focus after its action is removed (elsewhere=true) 1`] = `
+{
+  "focus": "header-close",
+  "result": "file-0.md保存位置知识库 / 资料已上传，处理状态见资料列表",
+}
+`;
+
+exports[`retains the original selection after an upload receipt has invalid destination 1`] = `"file-0.md保存位置知识库 / 资料上传结果未确认，可重试原文件；移除前请检查资料列表 (IDEMPOTENCY_OPERATION_UNKNOWN)重试上传移除"`;
+
+exports[`retains the original selection after an upload receipt has invalid identity 1`] = `"file-0.md保存位置知识库 / 资料上传结果未确认，可重试原文件；移除前请检查资料列表 (IDEMPOTENCY_OPERATION_UNKNOWN)重试上传移除"`;
+
+exports[`retains the original selection after an upload receipt has invalid library 1`] = `"file-0.md保存位置知识库 / 资料上传结果未确认，可重试原文件；移除前请检查资料列表 (IDEMPOTENCY_OPERATION_UNKNOWN)重试上传移除"`;
+
+exports[`retains the original selection after an upload receipt has invalid metadata 1`] = `"file-0.md保存位置知识库 / 资料上传结果未确认，可重试原文件；移除前请检查资料列表 (IDEMPOTENCY_OPERATION_UNKNOWN)重试上传移除"`;
+
+exports[`updates discard failures in the current language without changing retry identity 1`] = `"file-0.md保存位置知识库 / 资料移除结果未确认，请重试；不会重新上传文件 (IDEMPOTENCY_OPERATION_UNKNOWN)重试移除"`;
+
+exports[`updates discard failures in the current language without changing retry identity 2`] = `
+{
+  "action": "重试",
+  "busy": "true",
+  "error": "移除结果未确认，请重试；不会重新上传文件 (IDEMPOTENCY_OPERATION_UNKNOWN)",
+  "focused": true,
+}
+`;
+
+exports[`updates release failures in the current language without changing retry identity 1`] = `"file-0.md保存位置知识库 / 资料文件已上传，列表状态更新未完成，请重试 (IDEMPOTENCY_OPERATION_UNKNOWN)重试移除"`;
+
+exports[`updates release failures in the current language without changing retry identity 2`] = `
+{
+  "action": "重试",
+  "busy": "true",
+  "error": "文件已上传，列表状态更新未完成，请重试 (IDEMPOTENCY_OPERATION_UNKNOWN)",
+  "focused": true,
+}
+`;
+
+exports[`updates upload failures in the current language without changing retry identity 1`] = `"file-0.md保存位置知识库 / 资料上传结果未确认，可重试原文件；移除前请检查资料列表 (IDEMPOTENCY_OPERATION_UNKNOWN)重试上传移除"`;
+
+exports[`updates upload failures in the current language without changing retry identity 2`] = `
+{
+  "action": "重试上传",
+  "busy": "true",
+  "error": "上传结果未确认，可重试原文件；移除前请检查资料列表 (IDEMPOTENCY_OPERATION_UNKNOWN)",
+  "focused": true,
+}
+`;

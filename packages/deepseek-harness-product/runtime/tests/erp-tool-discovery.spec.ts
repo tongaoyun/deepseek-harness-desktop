@@ -505,7 +505,7 @@ it('proves scoped discovery over 300 ERP tools with native policy, approval, dur
   await run(parent.handle.agent, parent.model, [discover('订单', 1)])
   const childModel = new ScriptedModel()
   restarted.llm.registerAdapter(['child'], childModel)
-  const child = await restarted.agents.create({ sessionId: SessionId('erp-child'), parentAgent: parent.handle.agent,
+  const child = await restarted.agents.create({ sessionId: SessionId('erp-child'), meta: { parentSession: parent.handle.agent.id, origin: 'subagent', delegationDepth: 1 },
     agentOptions: { provider: 'child', model: 'fixture' }, setup(owner) { owner.tools.restrict({ deny: [DISCOVER] }) } })
   expect(restarted.tools.schemas(child.agent).some(tool => names.includes(tool.name))).toBe(false)
   await run(child.agent, childModel, [discover('库存', 1), call('orders_read_00')])

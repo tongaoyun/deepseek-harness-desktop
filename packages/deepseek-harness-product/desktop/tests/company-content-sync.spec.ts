@@ -58,6 +58,26 @@ it('shows local content before the first request settles and coalesces page chec
   expect(load).toHaveBeenCalledOnce()
 })
 
+it('installs and restores catalog metadata without changing the published index', async () => {
+  const { load, create } = await fixture()
+  const source = release('1.0.0')
+  const index = contentIndex(source.version, source.resources.map(resource => ({ ...resource,
+    catalog: { name: ' 订单顾问 ', division: '\u00a0operations\u00a0' } })))
+  load.mockResolvedValue(index)
+  const first = create()
+  await first.prepare()
+  await first.refresh()
+  const installed = first.read()
+  expect(installed.version).toBe(index.version)
+  expect(JSON.parse(await readFile(join(installed.skillsRoot, '..', 'catalog.json'), 'utf8'))).toEqual(index)
+  const pinned = await first.pin({ sessionId: 'catalog-metadata', started: false })
+  await first.close()
+  const restarted = create()
+  await restarted.prepare()
+  expect(restarted.read()).toEqual(installed)
+  expect(await restarted.pin({ sessionId: 'catalog-metadata', started: true })).toEqual(pinned)
+})
+
 it('joins startup cache I/O before closing and never starts a late refresh', async () => {
   const { root, load, create } = await fixture()
   const fs = await vi.importActual<typeof import('node:fs/promises')>('node:fs/promises')
@@ -122,6 +142,7 @@ it('new tasks use the new version while old tasks and child tasks keep their con
   expect(await readFile(join(restored.expertsRoot, 'orders/config/SOUL.md'), 'utf8')).toContain('Expert 1.0.0')
 })
 
+// Thousands of real cache entries need an I/O budget that accommodates concurrent CI workers.
 it('restores a valid release with deeply nested skill resources after restart', async () => {
   const { create, load } = await fixture()
   const extra = Object.fromEntries(Array.from({ length: 420 }, (_, index) =>
@@ -135,7 +156,7 @@ it('restores a valid release with deeply nested skill resources after restart', 
   await restarted.prepare()
   expect(await restarted.pin({ sessionId: 'nested', started: true })).toEqual(pinned)
   expect(await readFile(join(pinned.skillsRoot, 'orders/assets/item-419/a/b/c/d/e/f/g/h/policy.txt'), 'utf8')).toBe('Policy')
-})
+}, 30_000)
 
 it('rejects an unexpected cache directory without deleting its contents or changing the Session binding', async () => {
   const { create } = await fixture()

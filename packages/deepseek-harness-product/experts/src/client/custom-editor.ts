@@ -1,17 +1,25 @@
 import { PackageTransferError, importPackageFiles, draftPackageFiles, downloadPackage, addPackageResources, base64ByteLength } from './package-files.ts'
-import { LibraryConfirm, LibraryEditorFooter } from './library-ui.tsx'
+import { LibraryConfirm, LibraryEditorFooter, useLibraryUnloadGuard } from './library-ui.tsx'
 import { Button, Input, Modal } from './plugin-ui.ts'
 import React from 'react'
+import { deepEqualJson } from '@deepseek-ai/dsh-util-values'
+import { focusWithoutRing } from '@deepseek-ai/dsh-client-ui-primitives'
 import { CategorySelect } from './category-select.ts'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
 import { customExpertInputSchema, isExpertConflict, DEFAULT_EXPERT_EMOJI, type CatalogSnapshot, type CustomExpertInput } from '../expert-contract.ts'
 import type { AgencyCatalogRemote } from './remote.ts'
 import { EXPERT_AVATAR_URLS } from './avatars.ts'
-import { EN_DIVISION, ZH_DIVISION } from '../names.ts'
+import { resolveContentCategory } from '@deepseek-harness/product/content-categories'
 
 import { loadEditorReview, continueEditorReview, type EditorReview } from "./editor-review.ts";
 
 const h = React.createElement
+type EditorError = { key: 'custom.invalid' | 'custom.conflict' | PackageTransferError['key'] } | { message: string }
+function editorError(cause: unknown): EditorError {
+  if (isExpertConflict(cause)) return { key: 'custom.conflict' }
+  if (cause instanceof PackageTransferError) return { key: cause.key }
+  return { message: cause instanceof Error ? cause.message : String(cause) }
+}
 export interface CustomEditorProps {
   readonly expert?: CustomExpertInput
   readonly importOnly?: boolean
@@ -49,14 +57,25 @@ export function CustomExpertEditor(props: CustomEditorProps): React.ReactElement
   const [enabled, setEnabled] = React.useState(props.enabled);
   const [needsReview, setNeedsReview] = React.useState(false);
   const [review, setReview] = React.useState<EditorReview | null>(null);
-  const [busy, setBusy] = React.useState(false)
+  const [activity, setActivity] = React.useState<'zip' | 'directory' | 'attachments' | 'save' | 'primary' | 'review' | null>(null)
+  const busy = activity !== null
+  const pendingClass = busy ? 'product-control-pending' : undefined
+  const dirty = !deepEqualJson(draft, initial)
+  useLibraryUnloadGuard(dirty || busy)
   const saving = React.useRef(false)
-  const [error, setError] = React.useState<string | null>(null)
+  const [error, setError] = React.useState<EditorError | null>(null)
   const [discard, setDiscard] = React.useState(false)
   const form = React.useRef<HTMLFormElement | null>(null)
+  const reviewArea = React.useRef<HTMLElement | null>(null)
+  const reviewTrigger = React.useRef<HTMLButtonElement | null>(null)
   const zipInput = React.useRef<HTMLInputElement | null>(null)
   const directoryInput = React.useRef<HTMLInputElement | null>(null)
   const attachmentInput = React.useRef<HTMLInputElement | null>(null)
+  const avatarTrigger = React.useRef<HTMLButtonElement | null>(null)
+  const promptInput = React.useRef<HTMLTextAreaElement | null>(null)
+  const attachmentTrigger = React.useRef<HTMLButtonElement | null>(null)
+  const resourceButtons = React.useRef(new Map<string, HTMLButtonElement>())
+  const resources = Object.entries(draft.resources).sort(([a], [b]) => a.localeCompare(b))
   const [avatarExpanded, setAvatarExpanded] = React.useState(false)
   const selectFiles = (action: (files: readonly File[]) => void) => (event: React.ChangeEvent<HTMLInputElement>): void => {
     const files = Array.from(event.currentTarget.files ?? [])
@@ -65,7 +84,7 @@ export function CustomExpertEditor(props: CustomEditorProps): React.ReactElement
   }
   const close = (): void => {
     if (saving.current) return
-    if (JSON.stringify(draft) !== JSON.stringify(initial)) setDiscard(true)
+    if (dirty) setDiscard(true)
     else props.onClose()
   }
   const set = (key: 'name' | 'description' | 'division' | 'prompt' | 'agents', value: string): void => {
@@ -74,17 +93,24 @@ export function CustomExpertEditor(props: CustomEditorProps): React.ReactElement
   }
   const refreshReview = (): void => {
     const signal = readSignal()
-    if (saving.current) return;
+    if (saving.current || signal.aborted) return;
     saving.current = true;
-    setBusy(true);
-    setReview(null);
+    setActivity('review');
     void loadEditorReview(props.remote, draft.slug, props.locale, signal)
       .then((value) => { signal?.throwIfAborted(); setReview(value) })
-      .catch((cause: unknown) => { if (!signal?.aborted) setError(cause instanceof PackageTransferError ? props.t(cause.key) : cause instanceof Error ? cause.message : String(cause)) })
-      .finally(() => { saving.current = false; if (!signal?.aborted) setBusy(false); });
+      .catch((cause: unknown) => {
+        if (lifecycle.current.signal.aborted) return
+        const trigger = reviewTrigger.current
+        if (trigger && reviewArea.current?.contains(trigger.ownerDocument.activeElement)) focusWithoutRing(trigger)
+        setReview(null)
+        if (!signal.aborted) setError(editorError(cause))
+      })
+      .finally(() => { saving.current = false; if (!lifecycle.current.signal.aborted) setActivity(null); });
   };
   const continueReview = (useLatest: boolean): void => {
-    if (review === null) return;
+    if (saving.current || review === null) return;
+    const name = form.current?.querySelector<HTMLInputElement>('input[name="name"]')
+    if (name && reviewArea.current?.contains(name.ownerDocument.activeElement)) focusWithoutRing(name)
     const next = continueEditorReview(review, draft, useLatest);
     setDraft({ ...next.expert, resources: next.expert.resources ?? {}, emoji: next.expert.emoji ?? DEFAULT_EXPERT_EMOJI, avatar: next.expert.avatar ?? 0 });
     if (review.expert !== undefined) setInitial(customExpertInputSchema.parse(review.expert));
@@ -96,10 +122,9 @@ export function CustomExpertEditor(props: CustomEditorProps): React.ReactElement
   };
   const importFiles = (selection: readonly File[]): void => {
     const signal = readSignal()
-    if (saving.current) return
+    if (saving.current || signal.aborted) return
     saving.current = true
-    setBusy(true)
-    setError(null)
+    setActivity(selection.length === 1 && selection[0].name.toLowerCase().endsWith('.zip') ? 'zip' : 'directory')
     void importPackageFiles(selection, signal).then(async files => {
       signal?.throwIfAborted()
       const result = await props.remote.importExpert(files, signal)
@@ -112,52 +137,58 @@ export function CustomExpertEditor(props: CustomEditorProps): React.ReactElement
         if (!('suggested_name' in worker) || worker.suggested_name !== draft.slug) manifest = JSON.stringify({ ...document, worker: { ...worker, suggested_name: draft.slug } })
       }
       setDraft({ ...result.value, manifest, slug: draft.slug, resources: result.value.resources ?? {}, emoji: result.value.emoji ?? DEFAULT_EXPERT_EMOJI, avatar: result.value.avatar ?? 0 })
-    }).catch((cause: unknown) => { if (!signal?.aborted) setError(cause instanceof PackageTransferError ? props.t(cause.key) : cause instanceof Error ? cause.message : String(cause)) })
-      .finally(() => { saving.current = false; if (!signal.aborted) setBusy(false) })
+      setError(null)
+    }).catch((cause: unknown) => { if (!signal?.aborted) setError(editorError(cause)) })
+      .finally(() => { saving.current = false; if (!lifecycle.current.signal.aborted) setActivity(null) })
   }
   const attachments = async (selection: readonly File[]): Promise<void> => {
-    if (saving.current) return
     const signal = readSignal()
-    saving.current = true; setBusy(true); setError(null)
+    if (saving.current || signal.aborted) return
+    saving.current = true; setActivity('attachments')
     try {
       const resources = await addPackageResources(draft, selection, signal)
       signal.throwIfAborted()
       setDraft(current => ({ ...current, resources }))
-    } catch (cause) { if (!signal.aborted) setError(cause instanceof PackageTransferError ? props.t(cause.key) : cause instanceof Error ? cause.message : String(cause)) }
-    finally { saving.current = false; if (!signal.aborted) setBusy(false) }
+      setError(null)
+    } catch (cause) { if (!signal.aborted) setError(editorError(cause)) }
+    finally { saving.current = false; if (!lifecycle.current.signal.aborted) setActivity(null) }
   }
   const submit = (enabled: boolean): void => {
     const signal = readSignal()
-    if (saving.current || needsReview || form.current?.reportValidity() !== true) return
+    if (saving.current || signal.aborted || needsReview || form.current?.reportValidity() !== true) return
     const parsed = customExpertInputSchema.safeParse(draft)
-    if (!parsed.success) { setError(props.t('custom.invalid')); return }
+    if (!parsed.success) {
+      setError({ key: parsed.error.issues.some(issue => issue.path[0] === 'prompt' || issue.path[0] === 'agents')
+        ? 'custom.instructionsInvalid' : parsed.error.issues.some(issue => issue.path[0] === 'manifest') ? 'custom.packageInvalid' : 'custom.invalid' })
+      return
+    }
     // 名称以 Host 当前名册为准；旧本地名册不能拦截已被其他窗口释放的名称。
     saving.current = true
-    setBusy(true)
-    setError(null)
+    setActivity(draft.slug || enabled ? 'primary' : 'save')
     signal?.throwIfAborted()
     const saved = props.prepareSave()
     void props.remote.saveCustomExpert(parsed.data, enabled, revision, signal).then(result => {
       signal?.throwIfAborted()
       if (!result.ok) throw result.error
+      setError(null)
       saved(result.value)
     }).catch((cause: unknown) => {
       if (signal?.aborted) return
-      const message = cause instanceof PackageTransferError ? props.t(cause.key) : cause instanceof Error ? cause.message : String(cause)
       const conflict = isExpertConflict(cause);
       setNeedsReview(conflict);
       if (conflict) setReview(null);
-      setError(conflict ? props.t("custom.conflict") : message);
-    }).finally(() => { saving.current = false; if (!signal?.aborted) setBusy(false) })
+      setError(editorError(cause));
+    }).finally(() => { saving.current = false; if (!lifecycle.current.signal.aborted) setActivity(null) })
   }
   const label = (text: string, control: React.ReactNode, required = false): React.ReactElement => h('label', { className: 'aag-custom-field' },
     h('span', null, text, required ? h('small', null, props.t('custom.required')) : null), control)
   const input = (key: 'name' | 'description', text: string, maxLength: number): React.ReactElement => h(Input, {
-    value: draft[key], maxLength, required: true, disabled: busy,
+    name: key, value: draft[key], maxLength, required: true, disabled: busy,
     'aria-label': text, onChange: (event: React.ChangeEvent<HTMLInputElement>) => set(key, event.currentTarget.value),
     ...(key === 'name' ? { placeholder: props.t('custom.namePlaceholder') } : {}),
   })
   const waitingForImport = props.importOnly === true && draft.prompt.trim() === ''
+  const errorText = error === null ? '' : 'key' in error ? props.t(error.key) : error.message
   return h(Modal, {
     open: true,
     className: 'aag-editor-modal',
@@ -165,10 +196,10 @@ export function CustomExpertEditor(props: CustomEditorProps): React.ReactElement
     title: props.t(props.importOnly ? 'custom.importPackage' : draft.slug ? 'custom.edit' : 'custom.new'),
     closeLabel: props.t('settings.promptClose'),
     onClose: () => { if (discard) setDiscard(false); else close() },
-    footer: waitingForImport ? h(Button, { onClick: close, disabled: busy }, props.t('custom.cancel')) : h(LibraryEditorFooter, {
-      editing: !!draft.slug, busy, blocked: needsReview, inert: discard,
+    footer: waitingForImport ? h(Button, { onClick: close, 'aria-disabled': busy, className: pendingClass }, props.t('custom.cancel')) : h(LibraryEditorFooter, {
+      editing: !!draft.slug, busy, saving: activity === 'save' || activity === 'primary' ? activity : false, blocked: needsReview, inert: discard, error: errorText,
       help: props.t('custom.enableHint'), cancelLabel: props.t('custom.cancel'), saveLabel: props.t('custom.save'),
-      primaryLabel: props.t(busy ? 'custom.saving' : draft.slug ? 'custom.saveChanges' : 'custom.saveEnable'),
+      primaryLabel: props.t(draft.slug ? 'custom.saveChanges' : 'custom.saveEnable'), pendingLabel: props.t('custom.saving'),
       close, save: () => submit(false), primary: () => submit(draft.slug ? enabled : true),
     }),
   },
@@ -177,18 +208,21 @@ export function CustomExpertEditor(props: CustomEditorProps): React.ReactElement
     h('div', { className: 'aag-package-toolbar', role: 'group', 'aria-label': props.t('custom.packageActions') },
       h('input', { ref: zipInput, type: 'file', accept: '.zip', hidden: true, disabled: busy, 'aria-label': props.t('custom.importZip'), onChange: selectFiles(importFiles) }),
       h('input', { ref: directoryInput, type: 'file', multiple: true, webkitdirectory: '', hidden: true, disabled: busy, 'aria-label': props.t('custom.importDirectory'), onChange: selectFiles(importFiles) }),
-      h(Button, { disabled: busy, onClick: () => zipInput.current?.click() }, props.t('custom.importZip')),
-      h(Button, { disabled: busy, onClick: () => directoryInput.current?.click() }, props.t('custom.importDirectory')),
-      h(Button, { className: 'aag-package-export', disabled: busy || !draft.prompt.trim(), onClick: () => { try { downloadPackage(draftPackageFiles(draft)) } catch (cause) { setError(cause instanceof PackageTransferError ? props.t(cause.key) : cause instanceof Error ? cause.message : String(cause)) } } }, props.t('custom.exportZip'))),
+      h(Button, { 'aria-disabled': busy, className: pendingClass, 'aria-busy': activity === 'zip', onClick: () => { if (!saving.current) zipInput.current?.click() } }, props.t('custom.importZip')),
+      h(Button, { 'aria-disabled': busy, className: pendingClass, 'aria-busy': activity === 'directory', onClick: () => { if (!saving.current) directoryInput.current?.click() } }, props.t('custom.importDirectory')),
+      h(Button, { className: `aag-package-export${busy && draft.prompt.trim() ? ' product-control-pending' : ''}`, disabled: busy || !draft.prompt.trim(), onClick: () => { try { downloadPackage(draftPackageFiles(draft)); setError(null) } catch (cause) { setError(editorError(cause)) } } }, props.t('custom.exportZip'))),
     waitingForImport ? null : h(React.Fragment, null,
     h('div', { className: 'aag-custom-identity' },
       h('img', { src: EXPERT_AVATAR_URLS[draft.avatar], width: 44, height: 44, alt: '' }),
-      h(Button, { disabled: busy, 'aria-expanded': avatarExpanded, 'aria-controls': 'aag-custom-avatars', onClick: () => setAvatarExpanded(value => !value) }, props.t('custom.changeAvatar'))),
+      h(Button, { ref: avatarTrigger, disabled: busy, className: pendingClass, 'aria-expanded': avatarExpanded, 'aria-controls': 'aag-custom-avatars', onClick: () => setAvatarExpanded(value => !value) }, props.t('custom.changeAvatar'))),
     avatarExpanded ? h('fieldset', { id: 'aag-custom-avatars', className: 'aag-custom-avatars', disabled: busy }, h('legend', null, props.t('custom.avatar')),
       EXPERT_AVATAR_URLS.map((url, index) => h('button', {
         key: url, type: 'button', 'aria-label': `${props.t('custom.avatar')} ${index + 1}`,
         'aria-pressed': draft.avatar === index, className: draft.avatar === index ? 'is-selected' : '',
-        onClick: () => { setDraft(current => ({ ...current, avatar: index })); setAvatarExpanded(false) },
+        onClick: () => {
+          if (avatarTrigger.current) focusWithoutRing(avatarTrigger.current, { preventScroll: true })
+          setDraft(current => ({ ...current, avatar: index })); setAvatarExpanded(false)
+        },
       }, h('img', { src: url, width: 36, height: 36, alt: '', loading: 'lazy' })))) : null,
     label(props.t('custom.name'), input('name', props.t('custom.name'), 40), true),
     label(props.t('custom.description'), h(Input.TextArea, {
@@ -199,14 +233,19 @@ export function CustomExpertEditor(props: CustomEditorProps): React.ReactElement
     h('div', { className: 'aag-custom-field' },
       h('label', { htmlFor: 'aag-custom-division' }, props.t('custom.division')),
       h(CategorySelect, {
-        id: 'aag-custom-division', value: draft.division, disabled: busy, label: props.t('custom.division'),
+        id: 'aag-custom-division', value: resolveContentCategory(draft.division).id, pending: busy, label: props.t('custom.division'),
         onChange: (value: string) => set('division', value),
-        options: props.divisions.map(division => ({ value: division, label: (props.locale === 'en' ? EN_DIVISION : ZH_DIVISION)[division] ?? division })),
+        options: props.divisions.map(division => ({ value: division, label: resolveContentCategory(division)[props.locale] })),
       })),
     h('div', { className: 'aag-custom-prompt-head' }, h('label', { htmlFor: 'aag-custom-prompt' }, props.t('custom.prompt')),
-      draft.prompt === '' ? h(Button, { disabled: busy, onClick: () => set('prompt', props.t('custom.templateText')) }, props.t('custom.template')) : null),
+      draft.prompt === '' ? h(Button, { disabled: busy, className: pendingClass, onClick: (event) => {
+        if (promptInput.current && event.currentTarget.ownerDocument.activeElement === event.currentTarget) {
+          focusWithoutRing(promptInput.current, { preventScroll: true })
+        }
+        set('prompt', props.t('custom.templateText'))
+      } }, props.t('custom.template')) : null),
     h(Input.TextArea, {
-      id: 'aag-custom-prompt', className: 'aag-custom-prompt', value: draft.prompt, rows: 8, required: true, maxLength: 128 * 1024, disabled: busy,
+      ref: promptInput, id: 'aag-custom-prompt', className: 'aag-custom-prompt', value: draft.prompt, rows: 8, required: true, maxLength: 128 * 1024, disabled: busy,
       'aria-label': props.t('custom.prompt'), placeholder: props.t('custom.promptPlaceholder'),
       onChange: (event: React.ChangeEvent<HTMLTextAreaElement>) => set('prompt', event.currentTarget.value),
     }),
@@ -215,17 +254,28 @@ export function CustomExpertEditor(props: CustomEditorProps): React.ReactElement
       h('div', { className: 'aag-custom-resource-head' },
         h('h3', null, props.t('custom.resources')),
         h('input', { ref: attachmentInput, type: 'file', multiple: true, hidden: true, disabled: busy, 'aria-label': props.t('custom.attachments'), onChange: selectFiles(files => { void attachments(files) }) }),
-        h(Button, { disabled: busy, onClick: () => attachmentInput.current?.click() }, props.t('custom.attachments'))),
-      Object.keys(draft.resources).length === 0
+        h(Button, { ref: attachmentTrigger, 'aria-disabled': busy, className: pendingClass, 'aria-busy': activity === 'attachments', onClick: () => { if (!saving.current) attachmentInput.current?.click() } }, props.t('custom.attachments'))),
+      resources.length === 0
         ? h('p', { className: 'aag-custom-resource-empty' }, props.t('custom.resourcesHint'))
-        : h('ul', { className: 'aag-custom-resource-list' }, Object.entries(draft.resources).sort(([a], [b]) => a.localeCompare(b)).map(([path, value]) => h('li', { key: path },
+        : h('ul', { className: 'aag-custom-resource-list' }, resources.map(([path, value], index) => h('li', { key: path },
           h('span', { className: 'aag-custom-resource-path', title: path }, path),
           h('span', { className: 'aag-custom-resource-size' }, new Intl.NumberFormat(props.locale, { style: 'unit', unit: base64ByteLength(value) < 1024 ? 'byte' : 'kilobyte', maximumFractionDigits: 1 }).format(base64ByteLength(value) / (base64ByteLength(value) < 1024 ? 1 : 1024))),
-          h(Button, { disabled: busy, 'aria-label': `${props.t('custom.removeAttachment')}: ${path}`, onClick: () => { setError(null); setDraft(current => ({ ...current, resources: Object.fromEntries(Object.entries(current.resources).filter(([name]) => name !== path)) })) } }, props.t('custom.removeAttachment')))))),
+          h(Button, {
+            ref: (node: HTMLButtonElement | null) => { if (node) resourceButtons.current.set(path, node); else resourceButtons.current.delete(path) },
+            disabled: busy, className: pendingClass, 'aria-label': `${props.t('custom.removeAttachment')}: ${path}`,
+            onClick: () => {
+              const adjacent = resources[index + 1] ?? resources[index - 1]
+              const target = adjacent ? resourceButtons.current.get(adjacent[0]) : attachmentTrigger.current
+              if (target) focusWithoutRing(target, { preventScroll: true })
+              setError(null)
+              setDraft(current => ({ ...current, resources: Object.fromEntries(Object.entries(current.resources).filter(([name]) => name !== path)) }))
+            },
+          }, props.t('custom.removeAttachment')))))),
     ),
-    error === null ? null : h('div', { className: 'aag-error', role: 'alert' }, error),
-      needsReview ? h("section", { className: "aag-custom-review" },
-        h(Button, { disabled: busy, onClick: refreshReview }, props.t("custom.reviewLatest")),
+    waitingForImport && errorText ? h('div', { className: 'aag-error', role: 'alert' }, errorText) : null,
+      needsReview ? h("section", { ref: reviewArea, className: "aag-custom-review" },
+        h(Button, { ref: reviewTrigger, 'aria-disabled': busy, 'aria-busy': activity === 'review', className: pendingClass,
+          onClick: refreshReview }, props.t("custom.reviewLatest")),
         review === null ? null : h(React.Fragment, null,
           h("h4", null, props.t("custom.latestContent")),
           review.expert === undefined
@@ -233,14 +283,14 @@ export function CustomExpertEditor(props: CustomEditorProps): React.ReactElement
             : h(React.Fragment, null,
                 h("p", null, review.expert.name),
                 h("p", null, review.expert.description),
-                h("p", null, props.locale === "zh" ? ZH_DIVISION[review.expert.division] ?? review.expert.division : EN_DIVISION[review.expert.division] ?? review.expert.division),
+                h("p", null, resolveContentCategory(review.expert.division)[props.locale]),
                 h("img", { src: EXPERT_AVATAR_URLS[review.expert.avatar ?? 0], width: 36, height: 36, alt: props.t("custom.avatar") }),
                 h(Input.TextArea, { readOnly: true, value: review.expert.prompt, "aria-label": props.t("custom.latestContent"), rows: 8 }),
               ),
           h("p", null, props.t("custom.reviewHint")),
           h("div", { className: "aag-custom-review-actions" },
-            h(Button, { disabled: busy, onClick: () => continueReview(false) }, props.t(draft.slug && review.expert === undefined ? "custom.continueAsNew" : "custom.keepDraft")),
-            review.expert === undefined ? null : h(Button, { disabled: busy, onClick: () => continueReview(true) }, props.t("custom.useLatest")),
+            h(Button, { 'aria-disabled': busy, className: pendingClass, onClick: () => continueReview(false) }, props.t(draft.slug && review.expert === undefined ? "custom.continueAsNew" : "custom.keepDraft")),
+            review.expert === undefined ? null : h(Button, { 'aria-disabled': busy, className: pendingClass, onClick: () => continueReview(true) }, props.t("custom.useLatest")),
           ),
         ),
       ) : null,

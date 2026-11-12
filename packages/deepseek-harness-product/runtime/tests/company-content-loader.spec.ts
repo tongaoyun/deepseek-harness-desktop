@@ -47,29 +47,43 @@ async function fixture(bridge: Pick<DeepSeekHarnessProductIpc, 'invoke'>, settle
   return { ctx, company: ctx.companyContent, fiber: entry.fiber }
 }
 
-it('joins catalog reads and refreshes on unload and rejects their late successes', async () => {
+it('joins catalog reads, refreshes and exact versions on unload and rejects their late successes', async () => {
   const response = Promise.withResolvers<unknown>()
   const controls: AbortSignal[] = []
   const { ctx, company, fiber } = await fixture({
-    invoke: async (_method, _payload, signal) => {
+    invoke: async (method, _payload, signal) => {
       if (!signal) throw new Error('Company catalog operation must have a lifetime')
       controls.push(signal)
-      return response.promise
+      const value = await response.promise
+      return method === 'runtime.companyContent.expertVersion' ? '/company/resources/orders' : value
     },
   }, () => { response.resolve(undefined) })
   const read = expect(company.read()).rejects.toThrow('unloaded')
   const refresh = expect(company.refresh()).rejects.toThrow('unloaded')
-  await vi.waitFor(() => { expect(controls).toHaveLength(2) })
+  const exact = expect(company.expertVersion('orders', 'b'.repeat(64))).rejects.toThrow('unloaded')
+  await vi.waitFor(() => { expect(controls).toHaveLength(3) })
   let closed = false
   const closing = fiber.dispose().then(() => { closed = true })
   await vi.waitFor(() => { expect(controls.every(signal => signal.aborted)).toBe(true) })
   expect(closed).toBe(false)
   response.resolve(roots)
-  await Promise.all([read, refresh, closing])
+  await Promise.all([read, refresh, exact, closing])
   expect(closed).toBe(true)
   expect(ctx.get('companyContent')).toBeUndefined()
   await expect(company.read()).rejects.toThrow('unloaded')
-  expect(controls).toHaveLength(2)
+  await expect(company.expertVersion('orders', 'b'.repeat(64))).rejects.toThrow('unloaded')
+  expect(controls).toHaveLength(3)
+})
+
+it('reads an exact version through private IPC and rejects malformed roots', async () => {
+  const invoke = vi.fn<DeepSeekHarnessProductIpc['invoke']>(async () => '/company/resources/orders')
+  const { company } = await fixture({ invoke })
+  const caller = new AbortController()
+  const sha256 = 'b'.repeat(64)
+  await expect(company.expertVersion('orders', sha256, caller.signal)).resolves.toBe('/company/resources/orders')
+  expect(invoke).toHaveBeenCalledWith('runtime.companyContent.expertVersion', { slug: 'orders', sha256 }, expect.any(AbortSignal))
+  invoke.mockResolvedValueOnce({ path: '/unexpected' })
+  await expect(company.expertVersion('orders', sha256)).rejects.toThrow()
 })
 
 it('keeps a native Session observation for remaining readers and cancels it when the last reader leaves', async () => {

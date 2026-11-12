@@ -158,6 +158,33 @@ describe('专家团配置与执行', () => {
     expect(disabled.enabledTeams).toEqual([])
     expect(disabled.enabledExperts).toEqual(enabled.enabledExperts)
   })
+  it.each(['save', 'enable'] as const)('%s 个人团队拒绝公司团队内部成员且不修改配置', async (action) => {
+    const { store } = setup()
+    const bundled: ExpertSummary = { ...experts[0], slug: `team-member-${'b'.repeat(64)}`, company: true, teamMember: true }
+    const team = { ...TEST_TEAMS[0], members: TEST_TEAMS[0].members.map((member, index) =>
+      index === 1 ? { ...member, expertSlug: bundled.slug } : member) }
+    await store.mutate([{ path: ['customTeams'], value: [team] }], 0)
+    const library = createTeamLibrary(async () => ({
+      all: { experts: [...experts, bundled], enabled: [], revision: store.revision() }, shared: [],
+    }), store)
+    const before = store.read()
+    await expect(action === 'save' ? library.save(team, false, 1) : library.setEnabled(team.id, true, 1))
+      .rejects.toThrow('团队成员已删除或名称冲突')
+    expect(store.read()).toEqual(before)
+    expect(store.revision()).toBe(1)
+  })
+  it('个人团队在读取说明和启动成员前拒绝公司团队内部成员', async () => {
+    const bundled: ExpertSummary = { ...experts[0], slug: `team-member-${'b'.repeat(64)}`, company: true, teamMember: true }
+    const team = { ...TEST_TEAMS[0], members: TEST_TEAMS[0].members.map((member, index) =>
+      index === 1 ? { ...member, expertSlug: bundled.slug } : member) }
+    const readPersona = vi.fn(async () => '提示词')
+    const run = vi.fn(async () => '结果')
+    await expect(executeTeam({ team, experts: [...experts, bundled],
+      enabled: team.members.map(member => member.expertSlug), task: '评审', revision: 0, readPersona, run,
+    })).rejects.toThrow('团队成员不存在、冲突或已停用')
+    expect(readPersona).not.toHaveBeenCalled()
+    expect(run).not.toHaveBeenCalled()
+  })
   it('自定义持久化、名称唯一、未知标识拒绝及删除不删成员', async () => {
     const { library } = setup()
     const saved = await library.save(draft(), true, 0)

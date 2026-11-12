@@ -1,7 +1,7 @@
 /** Authorized knowledge originals rendered by the official Host Office provider. */
 import type { Context } from '@deepseek-ai/cordis'
 import { brandString } from '@deepseek-ai/dsh-brand'
-import { OfficeToPdfError, type OfficeExtension, type OfficeSourceKey } from '@deepseek-ai/dsh-office-to-pdf'
+import { OfficeKitError, type OfficeExtension, type OfficeSourceKey } from '@deepseek-ai/dsh-office-kit'
 import { ProductError } from '@deepseek-harness/product/errors'
 import { isKnowledgeResourceId, parseKnowledgeDocumentPreviewMetadata, type KnowledgeFileTransfer } from '@deepseek-harness/product/protocol'
 import type { DeepSeekHarnessProductIpc } from './deepseek-harness-product-ipc.ts'
@@ -21,7 +21,7 @@ export async function renderKnowledgeOffice(ctx: Context, product: Pick<DeepSeek
     throw new ProductError('KNOWLEDGE_REQUEST_INVALID', 'Invalid original file identity', false)
   }
   const identity = { knowledgeBaseId: payload.knowledgeBaseId, documentId: payload.documentId }
-  const files = ctx.get('officeToPdf')
+  const files = ctx.get('officeKit')
   if (files === undefined) throw new ProductError('KNOWLEDGE_OFFICE_PREVIEW_UNAVAILABLE', 'Office preview is unavailable', true)
   const employee = await product.invoke('auth.getSession', undefined, signal)
   if (typeof employee !== 'object' || employee === null || !('authenticated' in employee) || employee.authenticated !== true
@@ -96,7 +96,7 @@ export async function renderKnowledgeOffice(ctx: Context, product: Pick<DeepSeek
     }
   } catch (cause) {
     signal.throwIfAborted()
-    if (!(cause instanceof OfficeToPdfError)) throw cause
+    if (!(cause instanceof OfficeKitError)) throw cause
     const code = cause.code === 'input-too-large' || cause.code === 'output-too-large' ? 'KNOWLEDGE_PREVIEW_TOO_LARGE'
       : cause.code === 'unavailable' ? 'KNOWLEDGE_OFFICE_PREVIEW_UNAVAILABLE'
         : cause.code === 'source-changed' ? 'KNOWLEDGE_PREVIEW_SOURCE_CHANGED'

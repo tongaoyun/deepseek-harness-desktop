@@ -362,7 +362,7 @@ export interface ImportFailure extends Diagnostic {
     source: string;
     error: string;
 }
-/** Import outcome with committed, skipped and failed items. */
+/** Per-item import outcomes, even when all items fail; invalid uploads retain an operation diagnostic. */
 export interface ImportResult extends Diagnostic {
     ok?: boolean;
     kind?: string;
@@ -383,14 +383,16 @@ export interface ManagerScope {
     sessionId?: string;
     workspace?: string;
 }
-/** A skill or category operation in one explicit source. */
+/** A skill or source operation in one explicit source. */
 export interface ManagerTarget extends ManagerScope {
     root: string;
     name?: string;
-    id?: string;
-    category?: string;
-    targetName?: string;
-    position?: 'before' | 'after';
+}
+/** Assign a predefined business category to one existing skill. */
+export interface ManagerCategoryAssignment extends ManagerScope {
+    root: string;
+    name: string;
+    categoryId: string;
 }
 /** Writable user or registered workspace destination. */
 export interface ManagerDestination extends ManagerScope {

@@ -2,7 +2,7 @@ import { expect, it, vi } from 'vitest'
 import { CancellationToken, NsisUpdater } from 'electron-updater'
 import { ElectronHttpExecutor } from 'electron-updater/out/electronHttpExecutor.js'
 import { GenericProvider } from 'electron-updater/out/providers/GenericProvider.js'
-import { DesktopUpdateHttpExecutor } from '../src/update-http-executor.ts'
+import { DesktopUpdateHttpExecutor } from '../src/updates/electron-updater/http-executor.ts'
 import { DesktopUpdateMirrorProvider } from '../src/update-mirror-provider.ts'
 import { canFallbackUpdateMirror, desktopUpdateMirror, mirroredUpdateUrl } from '../src/update-mirror.ts'
 

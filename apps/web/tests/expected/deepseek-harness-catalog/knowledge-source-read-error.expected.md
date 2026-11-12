@@ -1,0 +1,14 @@
+- main:
+  - navigation "Current location":
+    - button "Knowledge bases"
+  - heading "Order knowledge" [level=1]
+  - text: Personal
+  - paragraph: Order checks and dispatch references.
+  - button "Actions for “Order knowledge”"
+  - region "Search content":
+    - heading "Order review.md" [level=2]
+    - button "Back to search results"
+    - region "View file":
+      - paragraph: Extracted content
+      - alert: Content could not be read. Retry.
+      - button "Retry"

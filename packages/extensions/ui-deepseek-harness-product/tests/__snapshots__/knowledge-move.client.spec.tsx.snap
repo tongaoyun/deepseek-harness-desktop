@@ -1,0 +1,23 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`pins a double-clicked move through invalid-receipt failure and keeps its retry controls stable 1`] = `
+{
+  "action": "移动",
+  "busy": "true",
+  "cancelLocked": true,
+  "error": "操作结果尚未确认。请重试原操作，或刷新文件列表核对结果。 (IDEMPOTENCY_OPERATION_UNKNOWN)",
+  "focused": true,
+  "outcome": "invalid-receipt",
+}
+`;
+
+exports[`pins a double-clicked move through network failure and keeps its retry controls stable 1`] = `
+{
+  "action": "移动",
+  "busy": "true",
+  "cancelLocked": true,
+  "error": "操作未完成，请重试。",
+  "focused": true,
+  "outcome": "network",
+}
+`;

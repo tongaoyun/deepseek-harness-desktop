@@ -38,6 +38,7 @@ async function runPersonaScenario(mode: 'expert' | 'team', cancel = false): Prom
   ctx.inject(['systemPrompt', 'tools'], (scope) => { activationContext = scope })
   // Replace only child model execution; expert dispatch and prompt registrations stay real.
   ctx.provide('subagents', {
+    namesOf: () => ({ self: 'lead' }),
     getProvider: () => ({ capabilities: { depthLimit: true } }),
     async startActivation(spec: SubagentActivationSpec) {
       const id = spec.childId ?? SessionId('unexpected-child')

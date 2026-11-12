@@ -1,0 +1,143 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`blocks invalid device environment locally and retains values for correction 1`] = `"环境变量名称不能包含等号或空字符，值不能包含空字符。请检查环境变量。"`;
+
+exports[`blocks invalid device headers locally and retains values for correction 1`] = `"HTTP Header 名称或值无效，或名称大小写重复。请检查私密 Header。"`;
+
+exports[`does not offer to retain masked private fields without a saved device configuration 1`] = `"值"`;
+
+exports[`keeps MCP JSON with an unusable arguments out of connection discovery 1`] = `"配置无法识别。请填写标准 MCP JSON，使用 HTTP 或 STDIO，并检查字段类型。"`;
+
+exports[`keeps MCP JSON with an unusable command out of connection discovery 1`] = `"配置无法识别。请填写标准 MCP JSON，使用 HTTP 或 STDIO，并检查字段类型。"`;
+
+exports[`keeps private input and blocks discovery for HTTP header case-collision 1`] = `"HTTP Header 名称或值无效，或名称大小写重复。请检查私密 Header。"`;
+
+exports[`keeps private input and blocks discovery for HTTP header invalid-name 1`] = `"HTTP Header 名称或值无效，或名称大小写重复。请检查私密 Header。"`;
+
+exports[`keeps stdio configuration focus beside deleted rows and in newly added rows in en 1`] = `
+{
+  "focused": "Add variable",
+  "rows": 0,
+}
+`;
+
+exports[`keeps stdio configuration focus beside deleted rows and in newly added rows in zh 1`] = `
+{
+  "focused": "添加变量",
+  "rows": 0,
+}
+`;
+
+exports[`keeps streamable-http configuration focus beside deleted rows and in newly added rows in en 1`] = `
+{
+  "focused": "Add entry",
+  "rows": 0,
+}
+`;
+
+exports[`keeps streamable-http configuration focus beside deleted rows and in newly added rows in zh 1`] = `
+{
+  "focused": "添加一项",
+  "rows": 0,
+}
+`;
+
+exports[`retains 'stdio' configuration inputs and focus when delayed clipboard 'append' completes 1`] = `
+{
+  "focused": true,
+  "key": "RETAINED_KEY",
+  "selection": [
+    1,
+    4,
+  ],
+  "value": "private-fixture-value",
+}
+`;
+
+exports[`retains 'stdio' configuration inputs and focus when delayed clipboard 'empty' completes 1`] = `
+{
+  "focused": true,
+  "key": "NEW_KEY",
+  "selection": [
+    7,
+    7,
+  ],
+  "value": "new-value",
+}
+`;
+
+exports[`retains 'stdio' configuration inputs and focus when delayed clipboard 'update' completes 1`] = `
+{
+  "focused": true,
+  "key": "RETAINED_KEY",
+  "selection": [
+    1,
+    4,
+  ],
+  "value": "updated-value",
+}
+`;
+
+exports[`retains 'streamable-http' configuration inputs and focus when delayed clipboard 'append' completes 1`] = `
+{
+  "focused": true,
+  "key": "RETAINED_KEY",
+  "selection": [
+    1,
+    4,
+  ],
+  "value": "private-fixture-value",
+}
+`;
+
+exports[`retains 'streamable-http' configuration inputs and focus when delayed clipboard 'empty' completes 1`] = `
+{
+  "focused": true,
+  "key": "NEW_KEY",
+  "selection": [
+    7,
+    7,
+  ],
+  "value": "new-value",
+}
+`;
+
+exports[`retains 'streamable-http' configuration inputs and focus when delayed clipboard 'update' completes 1`] = `
+{
+  "focused": true,
+  "key": "RETAINED_KEY",
+  "selection": [
+    1,
+    4,
+  ],
+  "value": "updated-value",
+}
+`;
+
+exports[`shows retained private values only for the saved stdio target and matching keys 1`] = `
+[
+  "已配置，留空保留",
+  "值",
+  "值",
+]
+`;
+
+exports[`shows retained private values only for the saved streamable-http target and matching keys 1`] = `
+[
+  "已配置，留空保留",
+  "已配置，留空保留",
+  "值",
+]
+`;
+
+exports[`updates an unconfirmed connector save notice without reloading the editing version 1`] = `"The save is not confirmed. Private settings are retained securely. Retry the same configuration or refresh the catalog to confirm the saved version."`;
+
+exports[`updates connector editing read failures without repeating the operation 1`] = `"连接器加载失败，请检查登录和网络后刷新重试。普通对话可继续使用。 (CONNECTOR_STARTUP_FAILED)"`;
+
+exports[`updates connector editing save failures without repeating the operation 1`] = `"连接器加载失败，请检查登录和网络后刷新重试。普通对话可继续使用。 (CONNECTOR_STARTUP_FAILED)"`;
+
+exports[`updates connector validation feedback after a language change while keeping the draft 1`] = `"Enter a complete command with balanced quotes. Set environment variables below; pipes, redirects and variable expansion are unsupported."`;
+
+exports[`updates device configuration read failures without clearing private input 1`] = `"连接器加载失败，请检查登录和网络后刷新重试。普通对话可继续使用。 (CONNECTOR_STARTUP_FAILED)"`;
+
+exports[`updates device configuration save failures without clearing private input 1`] = `"连接器加载失败，请检查登录和网络后刷新重试。普通对话可继续使用。 (CONNECTOR_STARTUP_FAILED)"`;

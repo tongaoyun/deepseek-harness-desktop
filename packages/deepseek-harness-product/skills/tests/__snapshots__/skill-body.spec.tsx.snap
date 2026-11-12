@@ -1,0 +1,9 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`ignores an old clipboard receipt after the displayed body changes > Pending copy 1`] = `
+{
+  "busy": "true",
+  "label": "detail.copyBody",
+  "preservesAppearance": true,
+}
+`;

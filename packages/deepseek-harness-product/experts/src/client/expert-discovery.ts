@@ -2,6 +2,7 @@ import React from 'react'
 import type { ExpertView } from './catalog.ts'
 import type { AgencyKey } from './locales.ts'
 import { Input } from './plugin-ui.ts'
+import { useLibraryRemovalFocus } from './library-ui.tsx'
 
 interface DiscoveryProps {
   readonly experts: readonly ExpertView[]
@@ -16,8 +17,11 @@ interface DiscoveryProps {
   readonly avatarSrc: (expert: ExpertView) => string
 }
 
-/** 按分区排列专家，行首使用头像。 */
+/** 按分区排列专家并保留条目身份；聚焦条目消失时将焦点交还搜索。 */
 export function ExpertDiscovery(props: DiscoveryProps): React.ReactElement {
+  const search = React.useRef<HTMLInputElement>(null)
+  const [focused, setFocused] = React.useState<string | null>(null)
+  const choiceFocus = useLibraryRemovalFocus(() => search.current)
   const groups = new Map<string, ExpertView[]>()
   for (const expert of props.experts) {
     const group = groups.get(expert.division) ?? []
@@ -27,41 +31,46 @@ export function ExpertDiscovery(props: DiscoveryProps): React.ReactElement {
   const name = (expert: ExpertView): string => props.locale === 'en' ? expert.nameEn : expert.name
   return React.createElement(React.Fragment, null,
     React.createElement('div', { className: 'aag-discovery-tools' },
-      React.createElement(Input, { type: 'search', 'data-modal-autofocus': true, value: props.query,
+      React.createElement(Input, { ref: search, type: 'search', 'data-modal-autofocus': true, value: props.query,
         'aria-label': props.t('discovery.search'), placeholder: props.t('discovery.search'),
+        onFocus: () => setFocused(null),
         onChange: (event: React.ChangeEvent<HTMLInputElement>) => props.onQuery(event.target.value) })),
-    React.createElement('div', { className: 'aag-discovery-results', 'aria-busy': props.busy && props.experts.length === 0 },
+    React.createElement('div', { className: 'aag-discovery-results', 'aria-busy': props.busy },
       props.busy && props.experts.length === 0 ? React.createElement('p', { className: 'aag-menu-empty', role: 'status' }, props.t('discovery.working')) : null,
       !props.busy && props.experts.length === 0 ? React.createElement('p', { className: 'aag-menu-empty', role: 'status' },
         props.t(props.query.trim() !== '' ? 'discovery.noResults' : 'discovery.empty')) : null,
       props.hasMore ? React.createElement('p', { className: 'aag-menu-empty' }, props.t('discovery.refine')) : null,
-      [...groups.entries()].map(([division, experts]) => React.createElement('div', { key: division },
-        React.createElement('div', { className: 'aag-menu-title' }, props.locale === 'en' ? experts[0].divisionEn : experts[0].divisionZh),
-        experts.map(expert => {
+      [...groups.entries()].flatMap(([division, experts]) => [
+        React.createElement('div', { key: `division:${division}`, className: 'aag-menu-title' }, props.locale === 'en' ? experts[0].divisionEn : experts[0].divisionZh),
+        ...experts.map(expert => {
           const action = expert.conflict ? props.t('discovery.conflict') : props.enabled.has(expert.slug) ? '' : props.t('discovery.enableSelect')
           return React.createElement('button', {
-            key: expert.slug, type: 'button', className: 'aag-menu-item aag-discovery-row',
+            key: `expert:${expert.slug}`, ref: expert.slug === focused ? choiceFocus : undefined,
+            onFocus: () => setFocused(expert.slug), type: 'button', className: 'aag-menu-item aag-discovery-row',
             'aria-label': action === '' ? name(expert) : `${name(expert)} · ${action}`,
             title: props.locale === 'en' ? expert.descriptionEn || expert.description : expert.description,
-            disabled: props.busy || expert.conflict === true, onClick: () => props.onPick(expert.slug),
+            disabled: expert.conflict === true, 'aria-disabled': props.busy || expert.conflict === true,
+            onClick: () => { if (!props.busy && !expert.conflict) props.onPick(expert.slug) },
           }, React.createElement('img', {
             className: 'aag-discovery-avatar', src: props.avatarSrc(expert), alt: '', width: 22, height: 22, loading: 'lazy', decoding: 'async',
           }),
           React.createElement('span', { className: 'aag-discovery-name' }, name(expert)),
           action === '' ? null : React.createElement('span', { className: 'aag-discovery-action' }, action))
-        })))))
+        })])))
 }
 
 export const DISCOVERY_CSS = `
-.aag-menu.aag-discovery{width:340px;max-width:calc(100vw - 24px);max-height:360px;overflow:hidden;padding:6px;color:var(--dsw-alias-label-primary);font-family:inherit;font-size:13px;line-height:1.5}
+.aag-menu.aag-discovery{width:340px;max-width:calc(100vw - 24px);max-height:min(360px,calc(100dvh - 12px - max(12px,var(--dsh-frame-overlay-top,12px))));overflow:hidden;padding:6px;color:var(--dsw-alias-label-primary);font-family:inherit;font-size:13px;line-height:1.5}
 .aag-discovery-tools{box-sizing:border-box;padding:8px 2px 6px;flex:none}
 .aag-discovery-tools .aag-host-input{box-sizing:border-box;width:100%}
 .aag-discovery button.aag-discovery-row{display:flex;align-items:center;width:100%;gap:10px;padding:8px 10px;border:0;border-radius:var(--dsw-radius-sm,8px);background:transparent;color:inherit;text-align:left;cursor:pointer;transition:background 100ms ease}
 .aag-discovery button.aag-discovery-row:hover:not(:disabled),.aag-discovery button.aag-discovery-row:focus-visible{background:var(--dsw-alias-interactive-bg-hover);outline:none}
 .aag-discovery button:disabled{opacity:.55;cursor:default}
+.aag-discovery button[aria-disabled=true]:not(:disabled){cursor:progress}
 .aag-discovery-results{overflow-y:auto;min-height:0;overscroll-behavior:contain;padding-top:2px}
 .aag-discovery-avatar{flex:none;width:24px;height:24px;border-radius:50%;corner-shape:round;object-fit:cover;object-position:center 20%}
 .aag-discovery-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:500}
 .aag-discovery-action{flex:none;color:var(--dsw-alias-label-secondary);font-size:11px;padding:2px 6px;border-radius:var(--dsw-radius-xs,4px);background:var(--dsw-alias-bg-layer-2)}
-.aag-discovery>.aag-error{padding:8px;flex:none}
+.aag-discovery .aag-error{display:flex;align-items:center;flex-wrap:wrap;gap:8px;padding:8px;flex:none;overflow-wrap:anywhere}
+.aag-discovery .aag-error>span{flex:1;min-width:0}
 `

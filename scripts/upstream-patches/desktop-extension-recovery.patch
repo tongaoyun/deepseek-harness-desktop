@@ -1,8 +1,8 @@
 diff --git a/apps/cli/tests/desktop-host.e2e.ts b/apps/cli/tests/desktop-host.e2e.ts
-index c1f42d812dca0dda4f14cccb152685e07711e67c..11111b1d76d5a7a24a7275c413f0b097877edd53 100644
+index a0e0ab9c92f8f2a376acdee71de9965d8967ab3e..70fa567feb04cfdc382fb155bacbfeb54707b315 100644
 --- a/apps/cli/tests/desktop-host.e2e.ts
 +++ b/apps/cli/tests/desktop-host.e2e.ts
-@@ -38,7 +38,7 @@ it.each([false, true])('settles startup after parent IPC disconnect (boot failur
+@@ -32,7 +32,7 @@ it.each([false, true])('settles startup after parent IPC disconnect (boot failur
    writeFileSync(join(modules, 'dsh', 'profile-boot.js'), `
      import { writeFileSync } from 'node:fs';
      export function runProfile(options) {
@@ -11,7 +11,7 @@ index c1f42d812dca0dda4f14cccb152685e07711e67c..11111b1d76d5a7a24a7275c413f0b097
        return new Promise((resolve, reject) => process.once('disconnect', () => {
          if (${String(fail)}) { reject(new Error('fixture boot failure')); return; }
          resolve({ ctx: { plugin: async () => {}, effect: () => {}, on: () => {}, inject: () => {},
-@@ -51,7 +51,9 @@ it.each([false, true])('settles startup after parent IPC disconnect (boot failur
+@@ -45,7 +45,9 @@ it.each([false, true])('settles startup after parent IPC disconnect (boot failur
    copyFileSync(join(hostDirectory, 'lib', 'index.js'), entry)
    const pnpm = join(root, 'bundled-pnpm.mjs')
    const nodeBin = join(root, 'bin')
@@ -22,7 +22,7 @@ index c1f42d812dca0dda4f14cccb152685e07711e67c..11111b1d76d5a7a24a7275c413f0b097
    let stderr = ''
    child.stderr!.setEncoding('utf8').on('data', (chunk: string) => { stderr += chunk })
    const exited = new Promise<number | null>(resolve => child.once('exit', resolve))
-@@ -63,16 +65,28 @@ it.each([false, true])('settles startup after parent IPC disconnect (boot failur
+@@ -57,16 +59,28 @@ it.each([false, true])('settles startup after parent IPC disconnect (boot failur
    })
    try {
      const boot = await new Promise<{
@@ -53,11 +53,11 @@ index c1f42d812dca0dda4f14cccb152685e07711e67c..11111b1d76d5a7a24a7275c413f0b097
      expect(boot.packageManager.args).toEqual(['--expose-internals', pnpm])
      expect(boot.packageManager.env.ELECTRON_RUN_AS_NODE).toBe('1')
 diff --git a/apps/desktop-host/src/index.ts b/apps/desktop-host/src/index.ts
-index 31bbbffe151c7311b4c593187084971ac7e93113..f8eacf9abc71ad5bfaeea105687988a47b21ffec 100644
+index 966e51a364149c0a00fe33d124aa7f17c88e16d3..b1ad9dc9e50c491087f9ce4dbe97ec4492bf940c 100644
 --- a/apps/desktop-host/src/index.ts
 +++ b/apps/desktop-host/src/index.ts
-@@ -19,6 +19,12 @@ import { installPlatformSessionPublisher } from './platform-session.ts'
- import { installOfficeEngineResolution } from './office-engine.ts'
+@@ -16,6 +16,12 @@ import { installDesktopQuitInspection } from './quit-inspection.ts'
+ import { installPlatformSessionPublisher } from './platform-session.ts'
  import { installOperationDiagnostics } from './operation-diagnostics.ts'
  
 +function desktopProfilePatches(): string[] {
@@ -69,7 +69,7 @@ index 31bbbffe151c7311b4c593187084971ac7e93113..f8eacf9abc71ad5bfaeea105687988a4
  async function main(): Promise<void> {
    const runId = randomUUID() as PluginOperationRunId
    if (process.connected) process.send?.({ type: 'starting', runId }, (error) => { if (error !== null) console.error(error) })
-@@ -32,7 +38,7 @@ async function main(): Promise<void> {
+@@ -30,7 +36,7 @@ async function main(): Promise<void> {
      environment: loadLayeredEnv('dsh'),
      profile: 'desktop',
      resolvedProfile: { profile, installAnchor },
@@ -78,7 +78,7 @@ index 31bbbffe151c7311b4c593187084971ac7e93113..f8eacf9abc71ad5bfaeea105687988a4
      args: ['--no-open', '--host', '127.0.0.1', '--port', '0'],
      ...(process.argv[5] === undefined ? {} : {
        packageManager: {
-@@ -52,6 +58,7 @@ async function main(): Promise<void> {
+@@ -50,6 +56,7 @@ async function main(): Promise<void> {
    const control: {
      updateTasks?: ReturnType<typeof installDesktopUpdateTaskControl>
      quitInspection?: ReturnType<typeof installDesktopQuitInspection>
@@ -86,7 +86,7 @@ index 31bbbffe151c7311b4c593187084971ac7e93113..f8eacf9abc71ad5bfaeea105687988a4
    } = {}
    const send = (message: object): Promise<void> => new Promise((resolve, reject) => {
      if (!process.connected || process.send === undefined) { resolve(); return }
-@@ -97,6 +104,20 @@ async function main(): Promise<void> {
+@@ -95,6 +102,20 @@ async function main(): Promise<void> {
        void task.finally(() => { dragTasks.delete(task) })
        return
      }
@@ -107,16 +107,16 @@ index 31bbbffe151c7311b4c593187084971ac7e93113..f8eacf9abc71ad5bfaeea105687988a4
      if (message.type === 'quit-inspection') {
        if (!('requestId' in message) || !Number.isSafeInteger(message.requestId)) return
        const requestId = message.requestId
-@@ -131,6 +152,7 @@ async function main(): Promise<void> {
+@@ -129,6 +150,7 @@ async function main(): Promise<void> {
    installOperationDiagnostics(ctx, record => send({ type: 'plugin-operation', record }), 32, runId)
    control.updateTasks = installDesktopUpdateTaskControl(ctx)
    control.quitInspection = installDesktopQuitInspection(ctx)
 +  control.indexInjections = () => ctx.webServer.collectIndexInjections(ctx.connection.browserPeer)
-   await ctx.plugin(desktopOffice, {
-     runtimeDir,
-     source: process.argv[4] ?? join(runtimeDir, '..', 'runtime', 'primary-runtime'),
+   installPlatformSessionPublisher(ctx, (session) => {
+     if (process.connected) process.send?.({ type: 'platform-session', session })
+   })
 diff --git a/apps/desktop/README.i18n.yaml b/apps/desktop/README.i18n.yaml
-index 3dfceaccd1dbd65bf2a7c485213321bff16848e8..2d90eeaffb9498aa3ebbf89477ca78ef5d7ce845 100644
+index 7b4f37e1ad44b5e4c629cdf9ed608d2eed4e0bf7..5c68cee07f85f5d32d17df39a9942b08f7791d3c 100644
 --- a/apps/desktop/README.i18n.yaml
 +++ b/apps/desktop/README.i18n.yaml
 @@ -12,23 +12,23 @@
@@ -128,10 +128,10 @@ index 3dfceaccd1dbd65bf2a7c485213321bff16848e8..2d90eeaffb9498aa3ebbf89477ca78ef
 +  en: 661c25f0aa850e2f
 +  zh: 83208f2b4cf4e2c2
  /deepseek-harness-desktop/application-overview:
--  en: 1667e3d6ffddea4a
--  zh: 4661a42b9ef4f673
-+  en: 530bfd3d6ba58126
-+  zh: 2339bb15f654e395
+-  en: 37d36f8d57214336
+-  zh: ceb50c0fa866eb24
++  en: 50d511156cf1f997
++  zh: 180297a83b0e6f02
  /deepseek-harness-desktop/terminal-command:
    en: 5f2d25a1d8472647
    zh: 2acb5c5d7d1917e2
@@ -142,14 +142,14 @@ index 3dfceaccd1dbd65bf2a7c485213321bff16848e8..2d90eeaffb9498aa3ebbf89477ca78ef
 -  en: 3724c53da4f7647b
 -  zh: 76ae549d43c99bb4
 -/deepseek-harness-desktop/key-technical-decisions/bundled-workspace-dependencies:
--  en: 3368ff9b955ada69
--  zh: e9209ef6ad4fd305
+-  en: 9eb34500d71cbc0a
+-  zh: 90e6a98d4c2c0f14
 +/deepseek-harness-desktop/technical-overview:
 +  en: ccf07b204fe1ab2f
 +  zh: fca556e751d6dd6f
 +/deepseek-harness-desktop/technical-overview/bundled-workspace-dependencies:
-+  en: abae31daeaa7b153
-+  zh: 6e51227c0f8e9c01
++  en: 73a31e4c58965cf7
++  zh: 14d9055381f8e786
  /deepseek-harness-desktop/bundled-command-runtime:
    en: 372297005b57a08b
    zh: 074a635ac17e4362
@@ -167,16 +167,16 @@ index 3dfceaccd1dbd65bf2a7c485213321bff16848e8..2d90eeaffb9498aa3ebbf89477ca78ef
 +  en: 4e6a0c7a92b21203
 +  zh: c35712345d691948
  /deepseek-harness-desktop/windows-installer-interface:
-   en: 9b90a2651a6d2b52
-   zh: 86d4d9c4358aad80
+   en: f1302ed4a3ab58bb
+   zh: cb53b9b349815028
 @@ -60,20 +60,17 @@
-   en: 67bf0a18faa7aa76
-   zh: 782e14ce62bb939f
+   en: 8b0b9efeb83727ef
+   zh: 5ee95de48ceab392
  /deepseek-harness-desktop/updates/local-desktop-settings:
--  en: 2e57457c44c85b5f
--  zh: 5b8510a3dc4c6c9d
-+  en: c5f5dae7b38c826a
-+  zh: 1b598cea74461fe5
+-  en: dbe57394894b7368
+-  zh: a3bb788c2ce631a4
++  en: 1b6256fdb3a6bc33
++  zh: 6e2a49a73feb2f96
  /deepseek-harness-desktop/updates/mandatory-update-policy:
    en: 182a9c6705213e13
    zh: 681762f83490f4c6
@@ -199,10 +199,10 @@ index 3dfceaccd1dbd65bf2a7c485213321bff16848e8..2d90eeaffb9498aa3ebbf89477ca78ef
 +  en: 74ebdce7a0b8560a
 +  zh: 8fe929ccb423e3ab
 diff --git a/apps/desktop/package.json b/apps/desktop/package.json
-index 00eee14411214e690d598a60b44a0509d94b7e40..b6a1dc734363d53dc324d61f301e61a38d019087 100644
+index f13ba3178ce659b65d01c4c005ab1ee992c045bd..e2134a0cbcb3c97eb207dcbab2a9955cc8fd6b53 100644
 --- a/apps/desktop/package.json
 +++ b/apps/desktop/package.json
-@@ -47,24 +47,34 @@
+@@ -48,24 +48,34 @@
      "purge:latest": "tsx scripts/upload-target.ts --latest --purge-only"
    },
    "dependencies": {
@@ -240,7 +240,7 @@ index 00eee14411214e690d598a60b44a0509d94b7e40..b6a1dc734363d53dc324d61f301e61a3
      "app-builder-lib": "26.17.0",
      "cos-nodejs-sdk-v5": "3.0.0",
      "electron": "^44.7.0",
-@@ -73,22 +83,13 @@
+@@ -74,22 +84,13 @@
      "js-yaml": "^4.3.2",
      "koffi": "3.1.1",
      "pnpm": "11.28.5",
@@ -260,7 +260,7 @@ index 00eee14411214e690d598a60b44a0509d94b7e40..b6a1dc734363d53dc324d61f301e61a3
 -    "@deepseek-ai/dsh-atomic-write": "workspace:*",
 -    "@deepseek-ai/dsh-client-product-analytics": "workspace:*",
 -    "@deepseek-ai/dsh-plugin-manager": "workspace:*",
-     "zod": "4.4.3",
+     "zod": "4.6.6",
 -    "@deepseek-ai/dsh-util-file-drag": "workspace:*",
 -    "@deepseek-ai/dsh-client-ui-file-actions": "workspace:*",
 -    "tencentcloud-sdk-nodejs-teo": "4.1.330"
@@ -268,7 +268,7 @@ index 00eee14411214e690d598a60b44a0509d94b7e40..b6a1dc734363d53dc324d61f301e61a3
    }
  }
 diff --git a/apps/desktop/src/host-process.ts b/apps/desktop/src/host-process.ts
-index 338f93bda45cf06c6d0924d719595225b8f64841..7ce26ee4e324cbf6f118e8cf7684074ed8e45681 100644
+index 8e26fb8d47489c3be38887d484f84915e9c13b91..03c9fe75136fc900863a09980cc55e37fe9c3315 100644
 --- a/apps/desktop/src/host-process.ts
 +++ b/apps/desktop/src/host-process.ts
 @@ -1,7 +1,9 @@
@@ -366,15 +366,15 @@ index 338f93bda45cf06c6d0924d719595225b8f64841..7ce26ee4e324cbf6f118e8cf7684074e
  
    /**
     * @param node - Absolute Electron executable in Node mode.
-@@ -186,6 +228,7 @@ export class DesktopHostProcess {
-    *   `office-skills` resources fail Host startup.
+@@ -185,6 +227,7 @@ export class DesktopHostProcess {
+    * @param primaryRuntime - Optional bundled dependency payload; the Host exposes it to its profile as `DSH_PRIMARY_RUNTIME`.
     * @param packageManager - Bundled pnpm entry and Node launcher directory, scoped to package operations.
     * @param onPlatformSession - Private credential updates for embedded Platform views.
 +   * @param onExtensionInvoke - Main-owned dispatcher for Host extension calls; absent calls fail safely.
     * @param onPluginOperation - Optional diagnostic sink; malformed records are ignored without failing the Host.
     */
    constructor(
-@@ -200,6 +243,7 @@ export class DesktopHostProcess {
+@@ -199,6 +242,7 @@ export class DesktopHostProcess {
  
      private readonly onPlatformSession?: (session: PlatformSession | null) => void,
      private readonly onPluginOperation?: (record: PluginOperationRecord) => void,
@@ -382,7 +382,7 @@ index 338f93bda45cf06c6d0924d719595225b8f64841..7ce26ee4e324cbf6f118e8cf7684074e
    ) {}
  
    /**
-@@ -208,14 +252,19 @@ export class DesktopHostProcess {
+@@ -207,12 +251,17 @@ export class DesktopHostProcess {
     */
    async start(): Promise<DesktopHostReady> {
      if (this.child !== undefined) return this.readyPromise
@@ -400,11 +400,8 @@ index 338f93bda45cf06c6d0924d719595225b8f64841..7ce26ee4e324cbf6f118e8cf7684074e
 -      this.runtimeDir,
 +      runtimeDir,
        this.projectDir,
--      this.primaryRuntime ?? join(this.runtimeDir, '..', 'runtime', 'primary-runtime'),
-+      this.primaryRuntime ?? join(runtimeDir, '..', 'runtime', 'primary-runtime'),
-       ...this.packageManager === undefined ? [] : [this.packageManager.pnpm, this.packageManager.nodeBin],
-     ], {
-       cwd: this.projectDir,
+       // Empty asks the Host for the payload beside its runtime directory, so that layout has one owner.
+       this.primaryRuntime ?? '',
 @@ -246,6 +295,26 @@ export class DesktopHostProcess {
        if (message.type === 'starting') this.runId = message.runId
        else if (message.type === 'ready') this.readyResolve({ url: message.url, injections: message.injections })
@@ -507,10 +504,10 @@ index 338f93bda45cf06c6d0924d719595225b8f64841..7ce26ee4e324cbf6f118e8cf7684074e
      this.readyReject(error)
      for (const request of this.controlRequests.values()) request.reject(error)
 diff --git a/apps/desktop/src/ipc.ts b/apps/desktop/src/ipc.ts
-index a3c5f5d9352440bf67e40cdb07dde15a57712d3b..ae9ba8217bf3868a53bb5f67d9d4d5742289cad6 100644
+index 83ebe7415a9931f5d1ed769cf68f5f70eb534246..23169b6202df0f4f0bf1a95b2a73e23b2ab9af26 100644
 --- a/apps/desktop/src/ipc.ts
 +++ b/apps/desktop/src/ipc.ts
-@@ -5,6 +5,7 @@ import type { DesktopKeyboardApi, DesktopShortcutsApi } from '@deepseek-ai/dsh-c
+@@ -7,6 +7,7 @@ import type { DesktopKeyboardApi, DesktopShortcutsApi } from '@deepseek-ai/dsh-c
  import type { IpcMainInvokeEvent } from 'electron'
  import type { DesktopBrowserBridge } from '@deepseek-ai/dsh-client-ui-sidebar-browser/types'
  import type { DesktopFileDrag } from '@deepseek-ai/dsh-util-file-drag'
@@ -518,7 +515,7 @@ index a3c5f5d9352440bf67e40cdb07dde15a57712d3b..ae9ba8217bf3868a53bb5f67d9d4d574
  
  /** IPC channel names kept private to the desktop application bundle. */
  export const DESKTOP_IPC = {
-@@ -39,6 +40,9 @@ export const DESKTOP_IPC = {
+@@ -44,6 +45,9 @@ export const DESKTOP_IPC = {
    windowFullscreen: 'dsh-desktop:window-fullscreen',
    windowsAppearance: 'dsh-desktop:windows-appearance',
    windowsMenu: 'dsh-desktop:windows-menu',
@@ -528,7 +525,7 @@ index a3c5f5d9352440bf67e40cdb07dde15a57712d3b..ae9ba8217bf3868a53bb5f67d9d4d574
  } as const
  
  /** Desktop release update state rendered by desktop-owned UI. */
-@@ -95,6 +99,11 @@ export interface DshDesktopProductApi {
+@@ -108,6 +112,11 @@ export interface DshDesktopProductApi {
      open(): Promise<void>
      subscribe(listener: (state: DesktopUpdatePresentation) => void): () => void
    }
@@ -541,10 +538,10 @@ index a3c5f5d9352440bf67e40cdb07dde15a57712d3b..ae9ba8217bf3868a53bb5f67d9d4d574
  
  /** Scheme of Desktop-owned application documents. */
 diff --git a/apps/desktop/src/preload-app.ts b/apps/desktop/src/preload-app.ts
-index 26266b4f1c8a497c3cc5c94d19a06a4b5ee3bf49..d67c5d492e2274dd52374a5bd9264301703188b2 100644
+index 6b4e989614375d5582275fb03c46a9506cea3ba9..caf42ab4400af2ccfa8c2ea7cb291aea1593bb9a 100644
 --- a/apps/desktop/src/preload-app.ts
 +++ b/apps/desktop/src/preload-app.ts
-@@ -11,6 +11,7 @@ import { syncWindowsAppearance } from './preload-windows.ts'
+@@ -12,6 +12,7 @@ import { syncWindowsAppearance } from './preload-windows.ts'
  import { installMandatoryUpdateOverlay } from './preload-mandatory-overlay.ts'
  import { createDesktopBrowserBridge } from './preload-browser.ts'
  import type { FileDragHandle } from '@deepseek-ai/dsh-util-file-drag'
@@ -552,7 +549,7 @@ index 26266b4f1c8a497c3cc5c94d19a06a4b5ee3bf49..d67c5d492e2274dd52374a5bd9264301
  
  function createProductApi(): DshDesktopProductApi {
    return {
-@@ -73,6 +74,19 @@ function createProductApi(): DshDesktopProductApi {
+@@ -83,6 +84,19 @@ function createProductApi(): DshDesktopProductApi {
          return () => { ipcRenderer.off(DESKTOP_IPC.updatesPresentation, handle) }
        },
      },
@@ -572,7 +569,7 @@ index 26266b4f1c8a497c3cc5c94d19a06a4b5ee3bf49..d67c5d492e2274dd52374a5bd9264301
    }
  }
  
-@@ -115,7 +129,13 @@ markDocumentPlatform()
+@@ -125,7 +139,13 @@ markDocumentPlatform()
  syncWindowFullscreen()
  syncNativeTheme()
  // Main-process IPC also verifies the owning window and top frame.
@@ -860,7 +857,7 @@ index 9a72fd2925eb5afdeb73c59ee873623c8c744e20..806c498803c381dd329cc5b48ae45210
  
    it.each([
 diff --git a/apps/desktop/tests/main-startup.spec.ts b/apps/desktop/tests/main-startup.spec.ts
-index 3b1e63e00cf22f69e7849430771fc3fc7ddd4945..531da2b1d7878c9469011969e2769a55c7d889f0 100644
+index 17e16cec09cfcc11a409e21d5b9f85317e0de148..a735bc31c5f8768fde8bc57c942c60a1e5eef570 100644
 --- a/apps/desktop/tests/main-startup.spec.ts
 +++ b/apps/desktop/tests/main-startup.spec.ts
 @@ -16,6 +16,7 @@ import { DesktopUpdatePreparationError } from '../src/update-error.ts'
@@ -871,7 +868,7 @@ index 3b1e63e00cf22f69e7849430771fc3fc7ddd4945..531da2b1d7878c9469011969e2769a55
  type InvokeEvent = { sender?: unknown; senderFrame: { url: string } }
  type InvokeHandler = (event: InvokeEvent, ...args: unknown[]) => unknown
  
-@@ -52,6 +53,7 @@ const harness = await vi.hoisted(async () => {
+@@ -55,6 +56,7 @@ const harness = await vi.hoisted(async () => {
    let prepared = deferred()
    let hostStarted = deferred()
    let navigated = deferred()
@@ -879,7 +876,7 @@ index 3b1e63e00cf22f69e7849430771fc3fc7ddd4945..531da2b1d7878c9469011969e2769a55
    let dialogShown = deferred()
    let quitCompleted = deferred()
    let policyBlocked = deferred()
-@@ -62,6 +64,9 @@ const harness = await vi.hoisted(async () => {
+@@ -65,6 +67,9 @@ const harness = await vi.hoisted(async () => {
    // The native Platform view owns persistent browser storage; Desktop startup tests replace it so
    // each quit can control when that cleanup settles.
    const platformDispose = vi.fn(() => platformDisposeDeferred?.promise ?? Promise.resolve())
@@ -889,7 +886,7 @@ index 3b1e63e00cf22f69e7849430771fc3fc7ddd4945..531da2b1d7878c9469011969e2769a55
    let platformCloseDeferred: ReturnType<typeof deferred> | undefined
    const platformCloseAndWait = vi.fn(() => platformCloseDeferred?.promise ?? Promise.resolve())
    const readLoginShell = async (base: NodeJS.ProcessEnv) => ({
-@@ -123,7 +128,10 @@ const harness = await vi.hoisted(async () => {
+@@ -126,7 +131,10 @@ const harness = await vi.hoisted(async () => {
      async loadURL(url: string) {
        this.urls.push(url)
        this.webContents.mainFrame.url = url
@@ -901,13 +898,13 @@ index 3b1e63e00cf22f69e7849430771fc3fc7ddd4945..531da2b1d7878c9469011969e2769a55
      }
      static getAllWindows() { return windows.filter(window => !window.destroyed) }
      setMenu() {}
-@@ -153,11 +161,16 @@ const harness = await vi.hoisted(async () => {
+@@ -156,11 +164,16 @@ const harness = await vi.hoisted(async () => {
      readonly updateTasks = vi.fn(async (_action: 'inspect' | 'lock' | 'unlock') => false)
      readonly inspectQuit = vi.fn(async () => ({ activeTasks: false, scheduledTasks: false }))
      url = 'http://127.0.0.1:3080/?token=test'
 +    injections: readonly unknown[] = []
 +    readonly readIndexInjections = vi.fn(async () => this.injections)
-     fetch = vi.fn(async () => Response.json({ hasApiKey: true, writable: true, localePreference: null }))
+     fetch = vi.fn(async () => Response.json({ hasApiKey: true, writable: true, localePreference: null, themePreference: 'system' }))
      readonly ready = deferred()
      readonly exited = deferred()
      readonly stopping = deferred()
@@ -919,7 +916,7 @@ index 3b1e63e00cf22f69e7849430771fc3fc7ddd4945..531da2b1d7878c9469011969e2769a55
      readonly stop = vi.fn(() => {
        this.stopping.resolve()
        this.ready.reject(new Error('child stopped'))
-@@ -182,6 +195,7 @@ const harness = await vi.hoisted(async () => {
+@@ -185,6 +198,7 @@ const harness = await vi.hoisted(async () => {
      getAppPath: (): string => 'desktop-test-app',
      setAppLogsPath: vi.fn(),
      getPath: vi.fn<(name: string) => string>(),
@@ -927,18 +924,22 @@ index 3b1e63e00cf22f69e7849430771fc3fc7ddd4945..531da2b1d7878c9469011969e2769a55
      setAboutPanelOptions: vi.fn<(options: Electron.AboutPanelOptionsOptions) => void>(),
      requestSingleInstanceLock: () => true,
      setAsDefaultProtocolClient: vi.fn(),
-@@ -216,7 +230,9 @@ const harness = await vi.hoisted(async () => {
+@@ -223,9 +237,11 @@ const harness = await vi.hoisted(async () => {
+     failWindow(error: Error) { windowFailure = error },
      windows, views, hosts, handlers, app, FakeWindow, FakeView, FakeHost, powerMonitor, nativeTheme, analytics,
      trays, FakeTray, backgroundNotice, shellDialog,
-     menu, popup, socketHeaders: vi.fn(), loginShell, readLoginShell, updateCheck, updateDownload, updateInstall,
+-    menu, popup, socketHeaders: vi.fn(), connectWelcome: vi.fn(), removeLegacyHostCookies: vi.fn(async () => {}), hostCookies: {},
+-    loginShell, readLoginShell, updateCheck, updateDownload, updateInstall,
 -    platformDispose,
++    menu, popup, socketHeaders: vi.fn(), loginShell, readLoginShell, updateCheck, updateDownload, updateInstall,
++    connectWelcome: vi.fn(), removeLegacyHostCookies: vi.fn(async () => {}), hostCookies: {},
 +    platformDispose, extensionClose, extensionInvoke,
 +    disableExtension: () => { extensionEnabled = false },
 +    get extensionEnabled() { return extensionEnabled },
      platformCloseAndWait,
  
      get analyticsEnabled() { return analyticsEnabled },
-@@ -253,12 +269,15 @@ const harness = await vi.hoisted(async () => {
+@@ -263,12 +279,15 @@ const harness = await vi.hoisted(async () => {
      set embeddedPolicy(value: unknown) { embeddedPolicy = value },
      nextNavigation() { navigated = deferred(); return navigated.promise },
      nextHostStart() { hostStarted = deferred(); return hostStarted.promise },
@@ -954,7 +955,7 @@ index 3b1e63e00cf22f69e7849430771fc3fc7ddd4945..531da2b1d7878c9469011969e2769a55
        accountListener = undefined
        windows.length = 0
        views.length = 0; hosts.length = 0; handlers.clear(); app.removeAllListeners()
-@@ -267,6 +286,7 @@ const harness = await vi.hoisted(async () => {
+@@ -277,6 +296,7 @@ const harness = await vi.hoisted(async () => {
        shellDialog.isOpen = false
        powerMonitor.removeAllListeners()
        app.isPackaged = true
@@ -962,7 +963,7 @@ index 3b1e63e00cf22f69e7849430771fc3fc7ddd4945..531da2b1d7878c9469011969e2769a55
        windowFailure = undefined
        pluginsEnabled = false
        closeWindowsOnQuit = false
-@@ -285,6 +305,9 @@ const harness = await vi.hoisted(async () => {
+@@ -296,6 +316,9 @@ const harness = await vi.hoisted(async () => {
        fileDrag.install.mockReset()
        fileDrag.dispose.mockReset().mockResolvedValue(undefined)
        platformDisposeDeferred = undefined
@@ -972,7 +973,7 @@ index 3b1e63e00cf22f69e7849430771fc3fc7ddd4945..531da2b1d7878c9469011969e2769a55
        platformCloseDeferred = undefined
      },
    }
-@@ -324,6 +347,11 @@ vi.mock('electron', () => ({
+@@ -334,6 +357,11 @@ vi.mock('electron', () => ({
    powerMonitor: harness.powerMonitor,
    Tray: harness.FakeTray,
    nativeImage: { createFromPath: (path: string) => ({ path }) },
@@ -984,7 +985,7 @@ index 3b1e63e00cf22f69e7849430771fc3fc7ddd4945..531da2b1d7878c9469011969e2769a55
  }))
  vi.mock('../src/background-notice.ts', () => ({ DesktopBackgroundNotice: class {
    constructor(options: { markerPath: string }) { harness.backgroundNotice.markerPath = options.markerPath }
-@@ -344,6 +372,12 @@ vi.mock('../src/login-shell-environment.ts', async importOriginal => ({
+@@ -354,6 +382,12 @@ vi.mock('../src/login-shell-environment.ts', async importOriginal => ({
    readDesktopLoginShellEnvironment: harness.loginShell,
  }))
  vi.mock('../src/runtime-tree.ts', () => ({ readDesktopRuntime: () => ({ release: { version: '1.0.0' } }) }))
@@ -997,7 +998,7 @@ index 3b1e63e00cf22f69e7849430771fc3fc7ddd4945..531da2b1d7878c9469011969e2769a55
  vi.mock('../src/paths.ts', () => ({ resolveDesktopPaths: () => ({ profile: 'desktop-test-profile' }) }))
  vi.mock('../src/project-manager.ts', () => ({
    DesktopProjectManager: class {
-@@ -534,6 +568,11 @@ describe('desktop main startup', () => {
+@@ -792,6 +826,11 @@ describe('desktop main startup', () => {
      }
    })
  
@@ -1009,7 +1010,7 @@ index 3b1e63e00cf22f69e7849430771fc3fc7ddd4945..531da2b1d7878c9469011969e2769a55
    it('serves shell dialogs and their assets without forwarding them to the Host', async () => {
      await readyForUpdate()
      const { serveWebDocument, forwardWebRequest } = await import('../src/web-document.ts')
-@@ -1220,6 +1259,92 @@ describe('desktop main startup', () => {
+@@ -1569,6 +1608,92 @@ describe('desktop main startup', () => {
      expect(harness.windows[0]!.urls).toEqual(['dsh-app://app/'])
    })
  
@@ -1102,7 +1103,7 @@ index 3b1e63e00cf22f69e7849430771fc3fc7ddd4945..531da2b1d7878c9469011969e2769a55
    it('retains macOS native editing actions on right-click and only copy for selected read-only text', async () => {
      vi.spyOn(process, 'platform', 'get').mockReturnValue('darwin')
      await import('../src/main.ts')
-@@ -1276,6 +1401,22 @@ describe('desktop main startup', () => {
+@@ -1625,6 +1750,22 @@ describe('desktop main startup', () => {
      return harness.hosts[0]!
    }
  
@@ -1125,7 +1126,7 @@ index 3b1e63e00cf22f69e7849430771fc3fc7ddd4945..531da2b1d7878c9469011969e2769a55
    it.each([
      ['win32', ['--updated'], true],
      ['win32', [], false],
-@@ -1630,6 +1771,37 @@ describe('desktop main startup', () => {
+@@ -1979,6 +2120,37 @@ describe('desktop main startup', () => {
      await expect(preparing).resolves.toBe(true)
    })
  
@@ -1163,7 +1164,7 @@ index 3b1e63e00cf22f69e7849430771fc3fc7ddd4945..531da2b1d7878c9469011969e2769a55
    it('finishes quitting when the native window is destroyed before its closed listener clears ownership', async () => {
      const host = await readyForUpdate()
      const window = harness.windows[0]!
-@@ -2561,9 +2733,13 @@ describe('desktop main startup', () => {
+@@ -3002,9 +3174,13 @@ describe('desktop main startup', () => {
        primaryRuntime: join('desktop-test-resources', 'runtime', 'primary-runtime'),
        profile: 'desktop-test-profile',
      })
@@ -1180,7 +1181,7 @@ index 3b1e63e00cf22f69e7849430771fc3fc7ddd4945..531da2b1d7878c9469011969e2769a55
      expect(harness.analytics).toHaveBeenCalledExactlyOnceWith({ eventName: 'desktop_app_launch', timestamp: Date.now(), attributes: {} })
      expect(harness.hosts[0]!.start).toHaveBeenCalledTimes(1)
 diff --git a/apps/desktop/tsconfig.host.json b/apps/desktop/tsconfig.host.json
-index 7078ac819896e8acf57b08e8efd965edef3cbd14..57025ea7d1b642a3c32748c63ea38d25b0e5fe0e 100644
+index 2701caf5a6ba5e633b39f746da25fe4f66c336b4..d92c6e0708367a5e1bdf3915c37fe1cec66fa1c4 100644
 --- a/apps/desktop/tsconfig.host.json
 +++ b/apps/desktop/tsconfig.host.json
 @@ -41,6 +41,9 @@
@@ -1191,28 +1192,13 @@ index 7078ac819896e8acf57b08e8efd965edef3cbd14..57025ea7d1b642a3c32748c63ea38d25
 +      "path": "../../packages/util/crypto"
 +    },
      {
-       "path": "../../packages/client/ui-file-actions"
-     }
-diff --git a/packages/boot/app-boot/README.i18n.yaml b/packages/boot/app-boot/README.i18n.yaml
-index 9ce0beae8e8ee135cc39aaf8e8a2db3b492746da..48d2d2a57c34b6fb70265c311e2bfe38d8f98126 100644
---- a/packages/boot/app-boot/README.i18n.yaml
-+++ b/packages/boot/app-boot/README.i18n.yaml
-@@ -24,8 +24,8 @@
-   en: 65bf2834b81f87da
-   zh: c864ac60a3005b99
- /deepseek-ai-dsh-app-boot/use-this-package/profiles:
--  en: a9c82cd220ae8d59
--  zh: 8c7c1c97efcdfc25
-+  en: 143153123f37b25b
-+  zh: f1f8025077a1fda5
- /deepseek-ai-dsh-app-boot/use-this-package/previewing-the-effective-configuration:
-   en: 646a0ccdd7881ad1
-   zh: e3696acb1573dd7b
+       "path": "../../packages/client/ui-settings-general/tsconfig.host.json"
+     },
 diff --git a/packages/boot/app-boot/README.md b/packages/boot/app-boot/README.md
-index 4d30457f81829edda03dba68d51da13efd55b27e..4ef9c577a6201c5b2bb64875fd900fb669385410 100644
+index f480a5886d206eb18d3c4b6e51213b46a8c057a8..6cb568dee2a027e91d15daa47d6678650b38bdb7 100644
 --- a/packages/boot/app-boot/README.md
 +++ b/packages/boot/app-boot/README.md
-@@ -66,7 +66,7 @@ The enabled `dsh-hmr` plugin watches the profile manifest and both user patch fi
+@@ -68,7 +68,7 @@ The enabled `dsh-hmr` plugin watches the profile manifest and both user patch fi
  
  Inserted plugin names may be absolute filesystem paths, file URLs, or package specifiers. Patch loading converts absolute paths and patch-relative `./` or `../` paths to file URLs within `insert` rows and their nested groups; existing-entry name assertions and replacement `config` values remain literal.
  
@@ -1222,10 +1208,10 @@ index 4d30457f81829edda03dba68d51da13efd55b27e..4ef9c577a6201c5b2bb64875fd900fb6
  `sanitizeProfile(binName, profileDir, bundles)` provides filesystem recovery without loading plugins or parsing patches. Desktop uses it for native fatal recovery. Call it only after stopping the profile and excluding concurrent profile writes. It renames the profile’s `cordis.patch.yml` to a unique `.bak-<timestamp>` sibling and restores the supplied bundle list, preserving installed packages and other manifest fields. The timestamp is Unix time in milliseconds; collisions append an ordinal (`-1`, `-2`, …) without changing it. It returns the backup path, or `undefined` when no patch exists; missing profiles remain absent. Profile initialization recreates an empty patch on the next launch. The home-level patch is unchanged. Invalid profile JSON fails before mutation; later errors propagate and retain completed changes for retry.
  
 diff --git a/packages/boot/app-boot/README.zh.md b/packages/boot/app-boot/README.zh.md
-index a4d8554ca5695153b4c1fb628eb97e11fea4a51e..7188f637cce26e478ce8230a59bcda3eb0342540 100644
+index 2a9c53a38e844c523970728b2931eb1e4e8dc0ca..049648644b22ae09fd7bea0c23c3b40505b51d9e 100644
 --- a/packages/boot/app-boot/README.zh.md
 +++ b/packages/boot/app-boot/README.zh.md
-@@ -66,7 +66,7 @@ profile 导入插件前，DSH 会将其声明的 DSH 版本要求与 `getDshRunt
+@@ -68,7 +68,7 @@ profile 导入插件前，DSH 会将其声明的 DSH 版本要求与 `getDshRunt
  
  插入条目的插件名可以是绝对文件系统路径、文件 URL 或包标识符。patch 加载会把 `insert` 条目及其嵌套分组中的绝对路径以及相对于 patch 文件的 `./` 或 `../` 路径转换为文件 URL；对已有条目名称的断言及替换用的 `config` 值保持原样。
  

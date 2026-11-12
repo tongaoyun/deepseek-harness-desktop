@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "generatedAt": "2026-11-04T19:47:47.825443Z",
+  "generatedAt": "2026-11-05T08:41:06.898Z",
   "title": "Design System: DeepSeek Harness knowledge workspace",
   "extensions": {
     "colorMeta": {
@@ -162,11 +162,11 @@
     "typographyMeta": {
       "headline": {
         "displayName": "Directory heading",
-        "purpose": "Knowledge directory title; compact width uses 24px/32px."
+        "purpose": "专家套件、技能、连接器和知识库目录的统一主标题，所有宽度均为 24px/32px。"
       },
       "title": {
         "displayName": "Materials heading",
-        "purpose": "Library or folder title; compact width uses 20px/28px."
+        "purpose": "Library, folder, and inline-reader headings use 20px/28px at every width."
       },
       "card-title": {
         "displayName": "Library name",
@@ -217,8 +217,12 @@
     ],
     "breakpoints": [
       {
+        "name": "materials-toolbar-align",
+        "value": "900px"
+      },
+      {
         "name": "materials-container-compact",
-        "value": "680px"
+        "value": "840px"
       },
       {
         "name": "workspace-container-compact",
@@ -256,6 +260,14 @@
       "css": ".ds-button-ghost-small{display:inline-flex;align-items:center;justify-content:center;gap:4px;border:0;cursor:pointer;font-family:var(--dsw-font-family);height:28px;padding:0 10px;border-radius:var(--dsw-radius-sm);font-size:12px;line-height:18px;color:var(--dsw-alias-label-primary);background:transparent;}@media(hover:hover){.ds-button-ghost-small:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover);}}.ds-button-ghost-small:focus-visible{outline-color:var(--dsw-alias-state-business-primary);outline-width:2px;}.ds-button-ghost-small:disabled{opacity:.4;cursor:not-allowed;}.ds-button-ghost-small:active:not(:disabled){background:var(--dsw-alias-interactive-bg-active);}"
     },
     {
+      "name": "Header icon action",
+      "kind": "button",
+      "refersTo": "button-icon-header",
+      "description": "Header refresh and overflow use 28px targets matching native small buttons; row icons remain 34px. Native portaled icon hints sit below, end-aligned with a 2px gap, wait 350ms on hover, and appear immediately on keyboard focus. Overflow shows localized More actions while keeping resource-specific accessible names; open menus and disabled actions suppress their hints. Batch reindex retains bottom placement and the native default gap.",
+      "html": "<button type=\"button\" class=\"ds-header-icon\" aria-label=\"Actions for “Personal notes”\" aria-haspopup=\"menu\" aria-expanded=\"false\"><svg width=\"16\" height=\"16\" aria-hidden=\"true\" xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 16 16\" fill=\"none\" stroke-width=\"1\"><path d=\"M3 9C3.55228 9 4 8.55228 4 8C4 7.44772 3.55228 7 3 7C2.44772 7 2 7.44772 2 8C2 8.55228 2.44772 9 3 9Z\" fill=\"currentColor\"></path><path d=\"M8 9C8.55228 9 9 8.55228 9 8C9 7.44772 8.55228 7 8 7C7.44772 7 7 7.44772 7 8C7 8.55228 7.44772 9 8 9Z\" fill=\"currentColor\"></path><path d=\"M13 9C13.5523 9 14 8.55228 14 8C14 7.44772 13.5523 7 13 7C12.4477 7 12 7.44772 12 8C12 8.55228 12.4477 9 13 9Z\" fill=\"currentColor\"></path></svg></button>",
+      "css": ".ds-header-icon{display:inline-flex;flex:0 0 28px;width:28px;height:28px;align-items:center;justify-content:center;padding:0;border:0;border-radius:var(--dsw-radius-sm);background:transparent;color:var(--dsw-alias-label-secondary);cursor:pointer;}@media(hover:hover){.ds-header-icon:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary);}}.ds-header-icon:focus-visible{outline:var(--dsw-focus-ring-width) solid var(--dsw-focus-ring-color,var(--dsw-alias-state-business-primary));}.ds-header-icon:disabled{opacity:.45;cursor:default;}"
+    },
+    {
       "name": "Search field",
       "kind": "input",
       "refersTo": "search-field",
@@ -266,17 +278,24 @@
     {
       "name": "Scope tabs",
       "kind": "nav",
-      "description": "Native SegmentedControl geometry and selected state; runtime keyboard behavior remains native.",
+      "description": "Directory scope selection uses native SegmentedControl geometry and behavior.",
       "html": "<div class=\"ds-scopes\" role=\"tablist\" aria-label=\"Knowledge base scope\"><span aria-hidden=\"true\" class=\"ds-scope-indicator\"></span><button type=\"button\" role=\"tab\" aria-selected=\"true\" tabindex=\"0\">All</button><button type=\"button\" role=\"tab\" aria-selected=\"false\" tabindex=\"-1\">Personal</button><button type=\"button\" role=\"tab\" aria-selected=\"false\" tabindex=\"-1\">Department</button><button type=\"button\" role=\"tab\" aria-selected=\"false\" tabindex=\"-1\">Company</button></div>",
       "css": ".ds-scopes{--dsh-segment-count:4;--dsh-segment-index:0;position:relative;display:inline-grid;grid-auto-flow:column;grid-auto-columns:minmax(0,1fr);gap:2px;padding:4px;border-radius:var(--dsw-radius-md);background:var(--dsw-alias-interactive-bg-hover);}.ds-scope-indicator{position:absolute;top:4px;left:4px;width:calc((100% - 8px - 2px * (var(--dsh-segment-count) - 1)) / var(--dsh-segment-count));height:calc(100% - 8px);border:0;border-radius:var(--dsw-radius-sm);background:var(--dsw-alias-bg-layer-1);box-shadow:var(--dsw-elevation-soft);transform:translateX(calc(var(--dsh-segment-index) * (100% + 2px)));transition:transform 160ms ease;pointer-events:none;}.ds-scopes button{position:relative;z-index:1;height:28px;padding:0 16px;border:0;border-radius:var(--dsw-radius-sm);background:transparent;color:var(--dsw-alias-label-secondary);font:500 13px/20px var(--dsw-font-family);white-space:nowrap;cursor:pointer;transition:color 120ms ease;}.ds-scopes button[aria-selected=\"true\"]{color:var(--dsw-alias-label-primary);}@media(hover:hover){.ds-scopes button:hover:not(:disabled){color:var(--dsw-alias-label-primary);}}.ds-scopes button:disabled{cursor:default;opacity:.4;}.ds-scopes button:focus-visible{outline:var(--dsw-focus-ring-width) solid var(--dsw-focus-ring-color,var(--dsw-alias-state-business-primary));outline-offset:-2px;}@media(prefers-reduced-motion:reduce){.ds-scope-indicator,.ds-scopes button{transition:none;}}"
+    },
+    {
+      "name": "Library browsing control",
+      "kind": "nav",
+      "description": "Library-root folder/all-files selection shares the wrapping search and filter toolbar; folders omit this control.",
+      "html": "<div class=\"ds-browse\" role=\"tablist\" aria-label=\"Browse knowledge base\"><span aria-hidden=\"true\" class=\"ds-browse-indicator\"></span><button type=\"button\" role=\"tab\" aria-selected=\"true\" tabindex=\"0\">Folders</button><button type=\"button\" role=\"tab\" aria-selected=\"false\" tabindex=\"-1\">All files in this knowledge base</button></div>",
+      "css": ".ds-browse{--dsh-segment-count:2;--dsh-segment-index:0;position:relative;display:inline-grid;grid-auto-flow:column;grid-auto-columns:minmax(0,1fr);gap:2px;padding:4px;border-radius:var(--dsw-radius-md);background:var(--dsw-alias-interactive-bg-hover);}.ds-browse-indicator{position:absolute;top:4px;left:4px;width:calc((100% - 8px - 2px * (var(--dsh-segment-count) - 1)) / var(--dsh-segment-count));height:calc(100% - 8px);border:0;border-radius:var(--dsw-radius-sm);background:var(--dsw-alias-bg-layer-1);box-shadow:var(--dsw-elevation-soft);transform:translateX(calc(var(--dsh-segment-index) * (100% + 2px)));transition:transform 160ms ease;pointer-events:none;}.ds-browse button{position:relative;z-index:1;height:28px;padding:0 10px;border:0;border-radius:var(--dsw-radius-sm);background:transparent;color:var(--dsw-alias-label-secondary);font:500 12px/20px var(--dsw-font-family);white-space:nowrap;cursor:pointer;transition:color 120ms ease;}.ds-browse button[aria-selected=\"true\"]{color:var(--dsw-alias-label-primary);}@media(hover:hover){.ds-browse button:hover:not(:disabled){color:var(--dsw-alias-label-primary);}}.ds-browse button:disabled{cursor:default;opacity:.4;}.ds-browse button:focus-visible{outline:var(--dsw-focus-ring-width) solid var(--dsw-focus-ring-color,var(--dsw-alias-state-business-primary));outline-offset:-2px;}@media(prefers-reduced-motion:reduce){.ds-browse-indicator,.ds-browse button{transition:none;}}"
     },
     {
       "name": "Library card",
       "kind": "card",
       "refersTo": "library-card",
-      "description": "Separate open button and scope/owner footer.",
-      "html": "<article class=\"ds-library\"><button class=\"ds-library-open\"><span class=\"ds-library-icon\"><svg width=\"23\" height=\"23\" aria-hidden=\"true\" xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 16 16\" fill=\"none\" stroke-width=\"1\"><path d=\"M13.1967 5.1869C13.7232 4.77378 14.0003 4.30517 14.0001 3.82819C14.0003 3.3512 13.7232 2.88259 13.1967 2.46947C12.6702 2.05635 11.9128 1.71328 11.0006 1.47475C10.0885 1.23621 9.05371 1.11062 8.00039 1.1106C6.94707 1.11057 5.9123 1.23612 5.00009 1.47461C4.08742 1.71301 3.32948 2.05604 2.80249 2.46919C2.2755 2.88235 1.99805 3.35106 1.99805 3.82819C1.99805 4.30531 2.2755 4.77402 2.80249 5.18718C3.32948 5.60033 4.08742 5.94336 5.00009 6.18176C5.9123 6.42025 6.94707 6.5458 8.00039 6.54578C9.05371 6.54575 10.0885 6.42016 11.0006 6.18163C11.9128 5.94309 12.6702 5.60002 13.1967 5.1869Z\" stroke=\"currentColor\"></path><path d=\"M2 3.80371V11.7848\" stroke=\"currentColor\"></path><path d=\"M14 3.80371V11.7848\" stroke=\"currentColor\"></path><path d=\"M2 7.81396C2 8.60524 2.63214 9.36411 3.75736 9.92363C4.88258 10.4832 6.4087 10.7975 8 10.7975C9.5913 10.7975 11.1174 10.4832 12.2426 9.92363C13.3679 9.36411 14 8.60524 14 7.81396\" stroke=\"currentColor\"></path><path d=\"M2 11.7847C2 12.6081 2.63214 13.3977 3.75736 13.98C4.88258 14.5622 6.4087 14.8893 8 14.8893C9.5913 14.8893 11.1174 14.5622 12.2426 13.98C13.3679 13.3977 14 12.6081 14 11.7847\" stroke=\"currentColor\"></path></svg></span><h2>Personal notes</h2><p>Open this library to browse and manage work materials.</p></button><footer>Personal · Library owner</footer></article>",
-      "css": ".ds-library{display:flex;width:min(280px,100%);min-width:0;flex-direction:column;border:1px solid var(--dsw-alias-border-l2);border-radius:12px;background:var(--dsw-alias-bg-base);color:var(--dsw-alias-label-primary);overflow:hidden;font-family:var(--dsw-font-family);}.ds-library-open{display:flex;flex:1;flex-direction:column;align-items:flex-start;gap:12px;width:100%;min-width:0;padding:24px 24px 20px;border:0;background:transparent;color:inherit;text-align:left;font:inherit;cursor:pointer;}.ds-library-icon{display:grid;width:42px;height:42px;margin-bottom:4px;place-items:center;border-radius:10px;background:var(--dsw-alias-bg-module-platform);color:var(--dsw-alias-brand-primary);}.ds-library h2{width:100%;margin:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:16px;line-height:24px;font-weight:600;}.ds-library p{display:-webkit-box;min-height:44px;margin:0;overflow:hidden;-webkit-box-orient:vertical;-webkit-line-clamp:2;color:var(--dsw-alias-label-secondary);font-size:13px;line-height:22px;overflow-wrap:anywhere;}.ds-library footer{display:flex;min-height:44px;align-items:center;margin:0 24px;border-top:1px solid var(--dsw-alias-border-l2);color:var(--dsw-alias-label-secondary);font-size:12px;}.ds-library:focus-within{border-color:var(--dsw-alias-border-l4);}.ds-library-open:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:-3px;border-radius:11px;}@media(hover:hover){.ds-library:hover{border-color:var(--dsw-alias-border-l4);}.ds-library-open:hover{background:var(--dsw-alias-interactive-bg-hover);}}"
+      "description": "Icon/title grid with an optional real description and a separate scope/owner footer.",
+      "html": "<article class=\"ds-library\"><button class=\"ds-library-open\"><span class=\"ds-library-icon\"><svg width=\"23\" height=\"23\" aria-hidden=\"true\" xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 16 16\" fill=\"none\" stroke-width=\"1\"><path d=\"M13.1967 5.1869C13.7232 4.77378 14.0003 4.30517 14.0001 3.82819C14.0003 3.3512 13.7232 2.88259 13.1967 2.46947C12.6702 2.05635 11.9128 1.71328 11.0006 1.47475C10.0885 1.23621 9.05371 1.11062 8.00039 1.1106C6.94707 1.11057 5.9123 1.23612 5.00009 1.47461C4.08742 1.71301 3.32948 2.05604 2.80249 2.46919C2.2755 2.88235 1.99805 3.35106 1.99805 3.82819C1.99805 4.30531 2.2755 4.77402 2.80249 5.18718C3.32948 5.60033 4.08742 5.94336 5.00009 6.18176C5.9123 6.42025 6.94707 6.5458 8.00039 6.54578C9.05371 6.54575 10.0885 6.42016 11.0006 6.18163C11.9128 5.94309 12.6702 5.60002 13.1967 5.1869Z\" stroke=\"currentColor\"></path><path d=\"M2 3.80371V11.7848\" stroke=\"currentColor\"></path><path d=\"M14 3.80371V11.7848\" stroke=\"currentColor\"></path><path d=\"M2 7.81396C2 8.60524 2.63214 9.36411 3.75736 9.92363C4.88258 10.4832 6.4087 10.7975 8 10.7975C9.5913 10.7975 11.1174 10.4832 12.2426 9.92363C13.3679 9.36411 14 8.60524 14 7.81396\" stroke=\"currentColor\"></path><path d=\"M2 11.7847C2 12.6081 2.63214 13.3977 3.75736 13.98C4.88258 14.5622 6.4087 14.8893 8 14.8893C9.5913 14.8893 11.1174 14.5622 12.2426 13.98C13.3679 13.3977 14 12.6081 14 11.7847\" stroke=\"currentColor\"></path></svg></span><h2>Personal notes</h2></button><footer>Personal · Library owner</footer></article>",
+      "css": ".ds-library{display:flex;width:min(280px,100%);min-width:0;flex-direction:column;border:1px solid var(--dsw-alias-border-l2);border-radius:12px;background:var(--dsw-alias-bg-base);color:var(--dsw-alias-label-primary);overflow:hidden;font-family:var(--dsw-font-family);}.ds-library-open{display:grid;flex:1;grid-template-columns:32px minmax(0,1fr);align-content:start;align-items:center;gap:8px 12px;width:100%;min-width:0;padding:18px 20px 14px;border:0;background:transparent;color:inherit;text-align:left;font:inherit;cursor:pointer;}.ds-library-icon{display:grid;width:32px;height:32px;place-items:center;border-radius:6px;background:var(--dsw-alias-bg-module-platform);color:var(--dsw-alias-brand-primary);}.ds-library h2{width:100%;margin:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:16px;line-height:24px;font-weight:600;}.ds-library p{grid-column:2;display:-webkit-box;margin:0;overflow:hidden;-webkit-box-orient:vertical;-webkit-line-clamp:2;color:var(--dsw-alias-label-secondary);font-size:13px;line-height:22px;overflow-wrap:anywhere;}.ds-library footer{display:flex;min-height:44px;align-items:center;margin:0 20px;border-top:1px solid var(--dsw-alias-border-l2);color:var(--dsw-alias-label-secondary);font-size:12px;}.ds-library:focus-within{border-color:var(--dsw-alias-border-l4);}.ds-library-open:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:-3px;border-radius:11px;}@media(hover:hover){.ds-library:hover{border-color:var(--dsw-alias-border-l4);}.ds-library-open:hover{background:var(--dsw-alias-interactive-bg-hover);}}"
     },
     {
       "name": "Folder navigation row",
@@ -297,7 +316,7 @@
   ],
   "narrative": {
     "northStar": "Native Harness resource workspace",
-    "overview": "This reference describes the product knowledge directory, library materials, and inline reader. WorkBuddy informs resource browsing; Harness owns the surrounding shell, theme, system typography, controls, and original-file preview.",
+    "overview": "This reference describes the product knowledge directory, library materials, and inline reader. WorkBuddy informs resource browsing; WeKnora informs adding materials and uploading files. Harness owns the surrounding shell, theme, system typography, controls, and original-file preview.",
     "keyCharacteristics": [
       "Neutral light and dark surfaces with restrained semantic color.",
       "A searchable card directory followed by a separate materials workspace.",

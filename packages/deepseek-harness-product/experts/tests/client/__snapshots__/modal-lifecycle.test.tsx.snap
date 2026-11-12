@@ -1,6 +1,6 @@
 // Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
 
-exports[`focuses the prompt action and restores the explicit opener after closing 1`] = `
+exports[`focuses the prompt action and restores native entry focus after closing 1`] = `
 {
   "focusedAction": "Done",
   "prompt": <textarea

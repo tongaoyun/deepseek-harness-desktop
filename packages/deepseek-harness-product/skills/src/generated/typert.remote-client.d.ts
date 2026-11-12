@@ -4,15 +4,13 @@ import type {
   TypertRemoteInfo,
   TypertRemoteMethod,
 } from '@deepseek-ai/dsh-typert-protocol'
-import type { CatalogIdentity, ManagerCreate, ManagerDestination, ManagerMarketOptions, ManagerScope, ManagerTarget, ManagerUpload, RepositoryInput, SkillManagerResults, SkillRequest } from '@deepseek-harness/product-skills/types'
+import type { CatalogIdentity, ManagerCategoryAssignment, ManagerCreate, ManagerDestination, ManagerMarketOptions, ManagerScope, ManagerTarget, ManagerUpload, RepositoryInput, SkillManagerResults, SkillRequest } from '@deepseek-harness/product-skills/types'
 
 declare module '@deepseek-ai/dsh-typert-protocol' {
   interface TypertRemoteNamespace$736b696c6c734d616e61676572 {
     addRepository: (request: RepositoryInput, signal?: AbortSignal) => Promise<RemoteResult<SkillManagerResults['addRepository']>>
-    assignCategory: (target: ManagerTarget, signal?: AbortSignal) => Promise<RemoteResult<SkillManagerResults['assignCategory']>>
-    createCategory: (target: ManagerTarget, signal?: AbortSignal) => Promise<RemoteResult<SkillManagerResults['createCategory']>>
+    assignCategory: (target: ManagerCategoryAssignment, signal?: AbortSignal) => Promise<RemoteResult<SkillManagerResults['assignCategory']>>
     createSkill: (request: ManagerCreate, signal?: AbortSignal) => Promise<RemoteResult<SkillManagerResults['createSkill']>>
-    deleteCategory: (target: ManagerTarget, signal?: AbortSignal) => Promise<RemoteResult<SkillManagerResults['deleteCategory']>>
     deleteTrash: (id: string, signal?: AbortSignal) => Promise<RemoteResult<SkillManagerResults['deleteTrash']>>
     exportSkill: (target: ManagerTarget, signal?: AbortSignal) => Promise<RemoteResult<SkillManagerResults['exportSkill']>>
     installCatalog: (target: CatalogIdentity, destination: ManagerDestination, signal?: AbortSignal) => Promise<RemoteResult<SkillManagerResults['installCatalog']>>
@@ -20,7 +18,6 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
     listClawHub: (options: ManagerMarketOptions, signal?: AbortSignal) => Promise<RemoteResult<SkillManagerResults['listClawHub']>>
     listRepositories: (signal?: AbortSignal) => Promise<RemoteResult<SkillManagerResults['listRepositories']>>
     listWorkspaces: (signal?: AbortSignal) => Promise<RemoteResult<SkillManagerResults['listWorkspaces']>>
-    moveInCategory: (target: ManagerTarget, signal?: AbortSignal) => Promise<RemoteResult<SkillManagerResults['moveInCategory']>>
     previewUpdate: (request: SkillRequest, signal?: AbortSignal) => Promise<RemoteResult<SkillManagerResults['previewUpdate']>>
     readCatalog: (target: CatalogIdentity, signal?: AbortSignal) => Promise<RemoteResult<SkillManagerResults['readCatalog']>>
     readDetail: (target: ManagerTarget, signal?: AbortSignal) => Promise<RemoteResult<SkillManagerResults['readDetail']>>
@@ -29,12 +26,10 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
     readWorkspace: (workspace: string, signal?: AbortSignal) => Promise<RemoteResult<SkillManagerResults['readWorkspace']>>
     refreshRepository: (request: { id: string; }, signal?: AbortSignal) => Promise<RemoteResult<SkillManagerResults['refreshRepository']>>
     removeRepository: (id: string, signal?: AbortSignal) => Promise<RemoteResult<SkillManagerResults['removeRepository']>>
-    renameCategory: (target: ManagerTarget, signal?: AbortSignal) => Promise<RemoteResult<SkillManagerResults['renameCategory']>>
     restoreTrash: (id: string, scope: ManagerScope, signal?: AbortSignal) => Promise<RemoteResult<SkillManagerResults['restoreTrash']>>
     rollbackRepository: (request: SkillRequest, signal?: AbortSignal) => Promise<RemoteResult<SkillManagerResults['rollbackRepository']>>
     searchClawHub: (query: string, options: ManagerMarketOptions, signal?: AbortSignal) => Promise<RemoteResult<SkillManagerResults['searchClawHub']>>
     searchSkillsSh: (query: string, signal?: AbortSignal) => Promise<RemoteResult<SkillManagerResults['searchSkillsSh']>>
-    setCategoryEnabled: (target: ManagerTarget, enabled: boolean, signal?: AbortSignal) => Promise<RemoteResult<SkillManagerResults['setCategoryEnabled']>>
     setSkillEnabled: (target: ManagerTarget, enabled: boolean, signal?: AbortSignal) => Promise<RemoteResult<SkillManagerResults['setSkillEnabled']>>
     setSourceEnabled: (target: ManagerTarget, enabled: boolean, signal?: AbortSignal) => Promise<RemoteResult<SkillManagerResults['setSourceEnabled']>>
     trashSkill: (target: ManagerTarget, signal?: AbortSignal) => Promise<RemoteResult<SkillManagerResults['trashSkill']>>
@@ -44,10 +39,8 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
   }
   interface TypertRemoteMap {
     'skillsManager/addRepository': (request: RepositoryInput, signal?: AbortSignal) => Promise<RemoteResult<SkillManagerResults['addRepository']>>
-    'skillsManager/assignCategory': (target: ManagerTarget, signal?: AbortSignal) => Promise<RemoteResult<SkillManagerResults['assignCategory']>>
-    'skillsManager/createCategory': (target: ManagerTarget, signal?: AbortSignal) => Promise<RemoteResult<SkillManagerResults['createCategory']>>
+    'skillsManager/assignCategory': (target: ManagerCategoryAssignment, signal?: AbortSignal) => Promise<RemoteResult<SkillManagerResults['assignCategory']>>
     'skillsManager/createSkill': (request: ManagerCreate, signal?: AbortSignal) => Promise<RemoteResult<SkillManagerResults['createSkill']>>
-    'skillsManager/deleteCategory': (target: ManagerTarget, signal?: AbortSignal) => Promise<RemoteResult<SkillManagerResults['deleteCategory']>>
     'skillsManager/deleteTrash': (id: string, signal?: AbortSignal) => Promise<RemoteResult<SkillManagerResults['deleteTrash']>>
     'skillsManager/exportSkill': (target: ManagerTarget, signal?: AbortSignal) => Promise<RemoteResult<SkillManagerResults['exportSkill']>>
     'skillsManager/installCatalog': (target: CatalogIdentity, destination: ManagerDestination, signal?: AbortSignal) => Promise<RemoteResult<SkillManagerResults['installCatalog']>>
@@ -55,7 +48,6 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
     'skillsManager/listClawHub': (options: ManagerMarketOptions, signal?: AbortSignal) => Promise<RemoteResult<SkillManagerResults['listClawHub']>>
     'skillsManager/listRepositories': (signal?: AbortSignal) => Promise<RemoteResult<SkillManagerResults['listRepositories']>>
     'skillsManager/listWorkspaces': (signal?: AbortSignal) => Promise<RemoteResult<SkillManagerResults['listWorkspaces']>>
-    'skillsManager/moveInCategory': (target: ManagerTarget, signal?: AbortSignal) => Promise<RemoteResult<SkillManagerResults['moveInCategory']>>
     'skillsManager/previewUpdate': (request: SkillRequest, signal?: AbortSignal) => Promise<RemoteResult<SkillManagerResults['previewUpdate']>>
     'skillsManager/readCatalog': (target: CatalogIdentity, signal?: AbortSignal) => Promise<RemoteResult<SkillManagerResults['readCatalog']>>
     'skillsManager/readDetail': (target: ManagerTarget, signal?: AbortSignal) => Promise<RemoteResult<SkillManagerResults['readDetail']>>
@@ -64,12 +56,10 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
     'skillsManager/readWorkspace': (workspace: string, signal?: AbortSignal) => Promise<RemoteResult<SkillManagerResults['readWorkspace']>>
     'skillsManager/refreshRepository': (request: { id: string; }, signal?: AbortSignal) => Promise<RemoteResult<SkillManagerResults['refreshRepository']>>
     'skillsManager/removeRepository': (id: string, signal?: AbortSignal) => Promise<RemoteResult<SkillManagerResults['removeRepository']>>
-    'skillsManager/renameCategory': (target: ManagerTarget, signal?: AbortSignal) => Promise<RemoteResult<SkillManagerResults['renameCategory']>>
     'skillsManager/restoreTrash': (id: string, scope: ManagerScope, signal?: AbortSignal) => Promise<RemoteResult<SkillManagerResults['restoreTrash']>>
     'skillsManager/rollbackRepository': (request: SkillRequest, signal?: AbortSignal) => Promise<RemoteResult<SkillManagerResults['rollbackRepository']>>
     'skillsManager/searchClawHub': (query: string, options: ManagerMarketOptions, signal?: AbortSignal) => Promise<RemoteResult<SkillManagerResults['searchClawHub']>>
     'skillsManager/searchSkillsSh': (query: string, signal?: AbortSignal) => Promise<RemoteResult<SkillManagerResults['searchSkillsSh']>>
-    'skillsManager/setCategoryEnabled': (target: ManagerTarget, enabled: boolean, signal?: AbortSignal) => Promise<RemoteResult<SkillManagerResults['setCategoryEnabled']>>
     'skillsManager/setSkillEnabled': (target: ManagerTarget, enabled: boolean, signal?: AbortSignal) => Promise<RemoteResult<SkillManagerResults['setSkillEnabled']>>
     'skillsManager/setSourceEnabled': (target: ManagerTarget, enabled: boolean, signal?: AbortSignal) => Promise<RemoteResult<SkillManagerResults['setSourceEnabled']>>
     'skillsManager/trashSkill': (target: ManagerTarget, signal?: AbortSignal) => Promise<RemoteResult<SkillManagerResults['trashSkill']>>
@@ -84,10 +74,8 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
 /** Native skill management methods generated from the Host service. */
 export declare const TYPERT_REMOTE: TypertRemoteInfo<{
   readonly 'skillsManager/addRepository': TypertRemoteMethod<{ readonly 'request': RepositoryInput }, SkillManagerResults['addRepository']>
-  readonly 'skillsManager/assignCategory': TypertRemoteMethod<{ readonly 'target': ManagerTarget }, SkillManagerResults['assignCategory']>
-  readonly 'skillsManager/createCategory': TypertRemoteMethod<{ readonly 'target': ManagerTarget }, SkillManagerResults['createCategory']>
+  readonly 'skillsManager/assignCategory': TypertRemoteMethod<{ readonly 'target': ManagerCategoryAssignment }, SkillManagerResults['assignCategory']>
   readonly 'skillsManager/createSkill': TypertRemoteMethod<{ readonly 'request': ManagerCreate }, SkillManagerResults['createSkill']>
-  readonly 'skillsManager/deleteCategory': TypertRemoteMethod<{ readonly 'target': ManagerTarget }, SkillManagerResults['deleteCategory']>
   readonly 'skillsManager/deleteTrash': TypertRemoteMethod<{ readonly 'id': string }, SkillManagerResults['deleteTrash']>
   readonly 'skillsManager/exportSkill': TypertRemoteMethod<{ readonly 'target': ManagerTarget }, SkillManagerResults['exportSkill']>
   readonly 'skillsManager/installCatalog': TypertRemoteMethod<{ readonly 'target': CatalogIdentity; readonly 'destination': ManagerDestination }, SkillManagerResults['installCatalog']>
@@ -95,7 +83,6 @@ export declare const TYPERT_REMOTE: TypertRemoteInfo<{
   readonly 'skillsManager/listClawHub': TypertRemoteMethod<{ readonly 'options': ManagerMarketOptions }, SkillManagerResults['listClawHub']>
   readonly 'skillsManager/listRepositories': TypertRemoteMethod<{  }, SkillManagerResults['listRepositories']>
   readonly 'skillsManager/listWorkspaces': TypertRemoteMethod<{  }, SkillManagerResults['listWorkspaces']>
-  readonly 'skillsManager/moveInCategory': TypertRemoteMethod<{ readonly 'target': ManagerTarget }, SkillManagerResults['moveInCategory']>
   readonly 'skillsManager/previewUpdate': TypertRemoteMethod<{ readonly 'request': SkillRequest }, SkillManagerResults['previewUpdate']>
   readonly 'skillsManager/readCatalog': TypertRemoteMethod<{ readonly 'target': CatalogIdentity }, SkillManagerResults['readCatalog']>
   readonly 'skillsManager/readDetail': TypertRemoteMethod<{ readonly 'target': ManagerTarget }, SkillManagerResults['readDetail']>
@@ -104,12 +91,10 @@ export declare const TYPERT_REMOTE: TypertRemoteInfo<{
   readonly 'skillsManager/readWorkspace': TypertRemoteMethod<{ readonly 'workspace': string }, SkillManagerResults['readWorkspace']>
   readonly 'skillsManager/refreshRepository': TypertRemoteMethod<{ readonly 'request': { id: string; } }, SkillManagerResults['refreshRepository']>
   readonly 'skillsManager/removeRepository': TypertRemoteMethod<{ readonly 'id': string }, SkillManagerResults['removeRepository']>
-  readonly 'skillsManager/renameCategory': TypertRemoteMethod<{ readonly 'target': ManagerTarget }, SkillManagerResults['renameCategory']>
   readonly 'skillsManager/restoreTrash': TypertRemoteMethod<{ readonly 'id': string; readonly 'scope': ManagerScope }, SkillManagerResults['restoreTrash']>
   readonly 'skillsManager/rollbackRepository': TypertRemoteMethod<{ readonly 'request': SkillRequest }, SkillManagerResults['rollbackRepository']>
   readonly 'skillsManager/searchClawHub': TypertRemoteMethod<{ readonly 'query': string; readonly 'options': ManagerMarketOptions }, SkillManagerResults['searchClawHub']>
   readonly 'skillsManager/searchSkillsSh': TypertRemoteMethod<{ readonly 'query': string }, SkillManagerResults['searchSkillsSh']>
-  readonly 'skillsManager/setCategoryEnabled': TypertRemoteMethod<{ readonly 'target': ManagerTarget; readonly 'enabled': boolean }, SkillManagerResults['setCategoryEnabled']>
   readonly 'skillsManager/setSkillEnabled': TypertRemoteMethod<{ readonly 'target': ManagerTarget; readonly 'enabled': boolean }, SkillManagerResults['setSkillEnabled']>
   readonly 'skillsManager/setSourceEnabled': TypertRemoteMethod<{ readonly 'target': ManagerTarget; readonly 'enabled': boolean }, SkillManagerResults['setSourceEnabled']>
   readonly 'skillsManager/trashSkill': TypertRemoteMethod<{ readonly 'target': ManagerTarget }, SkillManagerResults['trashSkill']>

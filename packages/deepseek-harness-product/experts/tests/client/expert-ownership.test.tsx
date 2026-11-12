@@ -6,7 +6,7 @@ import { afterEach, expect, it, onTestFinished, vi } from 'vitest'
 import { bindSnapshotSelector } from '@deepseek-ai/dsh-client-test-runtime'
 import { AgencySettingsPanel } from '../../src/client/index.ts'
 import { createExpertClientState } from '../../src/client/client-state.ts'
-import { en } from '../../src/client/locales.ts'
+import { en, zh } from '../../src/client/locales.ts'
 import type { CatalogSnapshot } from '../../src/expert-contract.ts'
 
 const expert = { slug: 'custom-00000000-0000-4000-8000-000000000001', name: 'Personal reviewer', nameEn: 'Personal reviewer',
@@ -32,22 +32,63 @@ async function fixture() {
   const cache = createExpertClientState(remote)
   onTestFinished(() => { cache.catalog.dispose(); cache.teams.dispose() })
   cache.catalog.accept(original)
-  const dictionary: Readonly<Record<string, string>> = en
-  render(<AgencySettingsPanel remote={remote} cache={cache} useExpertCatalog={bindSnapshotSelector(cache.catalog)}
-    useExpertTeams={bindSnapshotSelector(cache.teams)}
-    getActive={() => 'en'} prepareTeamSelection={() => () => false} t={(key, values) => (dictionary[key] ?? key).replace(/\{(\w+)\}/gu,
+  let language: 'zh' | 'en' = 'en'
+  const dictionaries: Readonly<Record<'zh' | 'en', Readonly<Record<string, string>>>> = { zh, en }
+  const props: React.ComponentProps<typeof AgencySettingsPanel> = { remote, cache, useExpertCatalog: bindSnapshotSelector(cache.catalog),
+    useExpertTeams: bindSnapshotSelector(cache.teams),
+    getActive: () => language, prepareTeamSelection: () => () => false,
+    t: (key, values) => (dictionaries[language][key] ?? key).replace(/\{(\w+)\}/gu,
       (_, name: string) => {
         const value = values?.[name]
         return typeof value === 'string' || typeof value === 'number' ? String(value) : name
-      })} />)
+      }) }
+  const view = render(<AgencySettingsPanel {...props} />)
   await act(async () => { await cache.catalog.refresh(true) })
   fireEvent.click(screen.getByRole('tab', { name: en['custom.source'] }))
-  return { cache, getCatalog, remove, save }
+  return { cache, getCatalog, remove, save, changeLanguage: () => {
+    language = language === 'en' ? 'zh' : 'en'
+    view.rerender(<AgencySettingsPanel {...props} />)
+  } }
 }
 
 function confirmDelete() {
   fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: en['custom.delete'] }))
 }
+
+it.each([false, true].flatMap(delayed => [false, true].map(elsewhere => ({ delayed, elsewhere }))))(
+  'returns deleted expert focus to the current search without changing its draft (elsewhere=$elsewhere, delayed=$delayed)', async ({ delayed, elsewhere }) => {
+    const value = await fixture()
+    const reply = Promise.withResolvers<{ ok: true; value: CatalogSnapshot }>()
+    const refreshed = Promise.withResolvers<{ ok: true; value: CatalogSnapshot }>()
+    onTestFinished(() => { reply.resolve({ ok: true, value: original }); refreshed.resolve({ ok: true, value: original }) })
+    value.remove.mockReturnValueOnce(reply.promise)
+    const search = screen.getByRole<HTMLInputElement>('textbox', { name: en['settings.search'] })
+    fireEvent.change(search, { target: { value: 'review' } })
+    search.setSelectionRange(1, 4)
+    render(<input aria-label="Other draft" defaultValue="Unsubmitted" />)
+    const other = screen.getByRole<HTMLInputElement>('textbox', { name: 'Other draft' })
+    other.setSelectionRange(2, 5)
+    const trigger = screen.getByRole<HTMLButtonElement>('button', { name: en['custom.delete'] })
+    trigger.focus(); fireEvent.click(trigger)
+    const confirm = within(screen.getByRole('dialog')).getByRole<HTMLButtonElement>('button', { name: en['custom.delete'] })
+    confirm.focus(); fireEvent.click(confirm)
+    if (elsewhere) other.focus()
+    const updated = { ...company, description: 'Updated company content' }
+    if (delayed) {
+      act(() => { value.cache.catalog.accept({ ...original, experts: [expert, updated] }) })
+      value.getCatalog.mockReturnValueOnce(refreshed.promise)
+    }
+    await act(async () => { reply.resolve({ ok: true, value: { ...original, experts: [company], revision: 2 } }) })
+    expect(screen.queryByRole('dialog')).toBeNull()
+    if (delayed) await act(async () => { refreshed.resolve({ ok: true, value: { ...original, experts: [updated], revision: 2 } }) })
+    expect(trigger.isConnected).toBe(false)
+    expect(document.activeElement).toBe(elsewhere ? other : search)
+    expect(screen.getByRole('textbox', { name: en['settings.search'] })).toBe(search)
+    expect([search.value, search.selectionStart, search.selectionEnd]).toEqual(['review', 1, 4])
+    expect([other.value, other.selectionStart, other.selectionEnd]).toEqual(['Unsubmitted', 2, 5])
+    expect(value.remove).toHaveBeenCalledOnce()
+  },
+)
 
 it.each(['renamed', 'description', 'prompt-revision'] as const)('requires a new delete confirmation after the expert is %s', async (change) => {
   const value = await fixture()
@@ -78,6 +119,25 @@ it('keeps an unchanged delete confirmation valid and retains it after a failed w
   expect(screen.queryByRole('dialog')).toBeNull()
 })
 
+it.each(['save', 'delete'] as const)('translates the confirmed expert %s result without repeating the operation', async (operation) => {
+  const value = await fixture()
+  if (operation === 'save') {
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: en['custom.edit'] })) })
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: en['custom.saveChanges'] })) })
+  } else {
+    fireEvent.click(screen.getByRole('button', { name: en['custom.delete'] }))
+    await act(async () => { confirmDelete() })
+  }
+  const key = operation === 'save' ? 'custom.saved' : 'custom.deleted'
+  expect(screen.getByRole('status').textContent).toBe(en[key])
+  const reads = value.getCatalog.mock.calls.length
+  value.changeLanguage()
+  expect(screen.getByRole('status').textContent).toBe(zh[key])
+  expect(value[operation === 'save' ? 'save' : 'remove']).toHaveBeenCalledOnce()
+  expect(value.getCatalog).toHaveBeenCalledTimes(reads)
+  expect(screen.queryByRole('dialog')).toBeNull()
+})
+
 it.each((['save', 'delete'] as const).flatMap(operation => [1, 2, 3].map(revision => ({ operation, revision }))))(
   'preserves the company directory at revision $revision after a delayed $operation receipt', async ({ operation, revision }) => {
     const value = await fixture()
@@ -101,28 +161,49 @@ it.each((['save', 'delete'] as const).flatMap(operation => [1, 2, 3].map(revisio
   },
 )
 
-it.each(['save', 'delete'] as const)('reports only a directory error when a committed %s needs a read that fails', async (operation) => {
-  const value = await fixture()
-  const reply = Promise.withResolvers<{ ok: true; value: CatalogSnapshot }>()
-  const write = value[operation === 'save' ? 'save' : 'remove']
-  write.mockReturnValueOnce(reply.promise)
-  if (operation === 'save') {
-    await act(async () => { fireEvent.click(screen.getByRole('button', { name: en['custom.edit'] })) })
-    fireEvent.click(screen.getByRole('button', { name: en['custom.saveChanges'] }))
-  } else {
-    fireEvent.click(screen.getByRole('button', { name: en['custom.delete'] }))
-    confirmDelete()
-  }
-  expect(write).toHaveBeenCalledOnce()
-  const latest = { ...original, experts: [expert, { ...company, description: 'Updated company content' }] }
-  act(() => { value.cache.catalog.accept(latest) })
-  value.getCatalog.mockRejectedValueOnce(new Error('Directory unavailable after commit'))
-  await act(async () => { reply.resolve({ ok: true, value: { ...original, revision: 2 } }); await reply.promise })
-  expect(screen.queryByRole('dialog')).toBeNull()
-  expect(screen.getByText(en[operation === 'save' ? 'custom.saved' : 'custom.deleted'])).toBeTruthy()
-  expect(screen.getByRole('alert').textContent).toContain('Directory unavailable after commit')
-  value.getCatalog.mockResolvedValue({ ok: true, value: { ...latest, revision: 2 } })
-  await act(async () => { fireEvent.click(screen.getByRole('button', { name: en['company.retry'] })) })
-  expect(screen.queryByRole('alert')).toBeNull()
-  expect(write).toHaveBeenCalledOnce()
-})
+it.each((['save', 'delete'] as const).flatMap(operation => [false, true].map(elsewhere => ({ operation, elsewhere }))))(
+  'recovers the directory after a committed $operation without repeating it or taking another control (elsewhere=$elsewhere)', async ({ operation, elsewhere }) => {
+    const value = await fixture()
+    const reply = Promise.withResolvers<{ ok: true; value: CatalogSnapshot }>()
+    const write = value[operation === 'save' ? 'save' : 'remove']
+    write.mockReturnValueOnce(reply.promise)
+    if (operation === 'save') {
+      await act(async () => { fireEvent.click(screen.getByRole('button', { name: en['custom.edit'] })) })
+      fireEvent.click(screen.getByRole('button', { name: en['custom.saveChanges'] }))
+    } else {
+      fireEvent.click(screen.getByRole('button', { name: en['custom.delete'] }))
+      confirmDelete()
+    }
+    expect(write).toHaveBeenCalledOnce()
+    const latest = { ...original, experts: [expert, { ...company, description: 'Updated company content' }] }
+    act(() => { value.cache.catalog.accept(latest) })
+    value.getCatalog.mockRejectedValueOnce(new Error('Directory unavailable after commit'))
+    await act(async () => { reply.resolve({ ok: true, value: { ...original, revision: 2 } }); await reply.promise })
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(screen.getByText(en[operation === 'save' ? 'custom.saved' : 'custom.deleted'])).toBeTruthy()
+    expect(screen.getByRole('alert').textContent).toContain('Directory unavailable after commit')
+    const response = Promise.withResolvers<Awaited<ReturnType<typeof value.getCatalog>>>()
+    onTestFinished(() => { response.resolve({ ok: true, value: { ...latest, revision: 2 } }) })
+    value.getCatalog.mockReturnValueOnce(response.promise)
+    const retry = screen.getByRole<HTMLButtonElement>('button', { name: en['company.retry'] })
+    const search = screen.getByRole<HTMLInputElement>('textbox', { name: en['settings.search'] })
+    fireEvent.change(search, { target: { value: 'reviewer' } })
+    search.setSelectionRange(2, 5)
+    const notice = screen.getByRole('alert')
+    const reads = value.getCatalog.mock.calls.length
+    retry.focus()
+    await act(async () => { retry.click(); retry.click() })
+    expect(value.getCatalog).toHaveBeenCalledTimes(reads + 1)
+    expect(screen.getByRole('alert')).toBe(notice)
+    expect(document.activeElement).toBe(retry)
+    expect(retry.getAttribute('aria-busy')).toBe('true')
+    if (elsewhere) search.focus()
+    await act(async () => { response.resolve({ ok: true, value: { ...latest, revision: 2 } }) })
+    expect(screen.queryByRole('alert')).toBeNull()
+    expect(document.activeElement).toBe(search)
+    expect([search.value, search.selectionStart, search.selectionEnd]).toEqual(['reviewer', 2, 5])
+    expect(write).toHaveBeenCalledOnce()
+    if (!elsewhere) expect({ focus: document.activeElement?.getAttribute('aria-label'), query: search.value,
+      selection: [search.selectionStart, search.selectionEnd], errors: screen.queryAllByRole('alert').length }).toMatchSnapshot()
+  },
+)

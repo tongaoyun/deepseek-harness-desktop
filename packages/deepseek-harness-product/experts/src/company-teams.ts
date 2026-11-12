@@ -26,7 +26,7 @@ export async function readCompanyTeams(expertsRoot: string): Promise<{
       const packageRoot = join(expertsRoot, '..', 'expert-versions', member.expertSlug, member.expertSha256)
       const expert = catalog.get(member.expertSlug)
       if (!expert) throw new Error('专家团成员需要重新选择')
-      experts.set(slug(member.expertSlug), { ...expert, slug: slug(member.expertSlug), company: true, teamMember: true,
+      experts.set(slug(member.expertSlug), { ...expert, slug: slug(member.expertSlug), packageSlug: member.expertSlug, company: true, teamMember: true,
         packageVersion: member.expertVersion, packageSha256: member.expertSha256, ...(await readPackagePrompt(packageRoot)) })
     }
   }

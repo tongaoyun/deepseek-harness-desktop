@@ -14,7 +14,7 @@ const nested = { id: 'nested', name: '验收资料', parentId: 'folder-21', upda
 const document = { id: 'document', knowledgeBaseId: 'personal', filename: '验收记录.md',
   folderId: nested.id, mediaType: 'text/markdown', sizeBytes: 20, status: 'READY', chunkCount: 1, updatedAt }
 const props = { entries: items([{ id: 'personal', name: '项目知识库', scope: 'PERSONAL', canManage: true }]),
-  loading: false, authRequired: false, authPending: false, authError: false, onRefresh: vi.fn(), onSignIn: vi.fn(),
+  loading: false, authRequired: false, onRefresh: vi.fn(), onSignIn: vi.fn(),
   renderFactorySlot: () => null, t: (key: DeepSeekHarnessProductKey) => zh[key] }
 
 function transport(paginated = false) {
@@ -32,31 +32,29 @@ function transport(paginated = false) {
 
 function regions(container: HTMLElement) {
   return {
-    navigation: within(container.querySelector<HTMLElement>('[data-knowledge-navigation]')!),
     content: within(container.querySelector<HTMLElement>('[data-knowledge-content]')!),
   }
 }
 
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.clearAllMocks() })
 
-it('uses the library as home and places browsing modes outside the real folder tree', async () => {
+it('uses the library as home and returns through the folder parent path', async () => {
   const invoke = transport()
   const { container } = renderKnowledgeWorkspace(<KnowledgeWorkspace {...props} />)
-  const { navigation, content } = regions(container)
+  const { content } = regions(container)
   await content.findByRole('button', { name: '项目 1' })
-  expect(navigation.queryByRole('button', { name: zh.knowledgeRootFolder })).toBeNull()
-  expect(navigation.queryByRole('tab', { name: zh.knowledgeAllMaterials })).toBeNull()
   expect(content.getByRole('tab', { name: zh.knowledgeFolderView }).getAttribute('aria-selected')).toBe('true')
   expect(within(content.getByRole('tablist', { name: zh.knowledgeBrowseMode })).getAllByRole('tab').map(button => button.textContent))
     .toMatchInlineSnapshot(`
       [
         "按文件夹",
-        "全部文件",
+        "本库全部文件",
       ]
     `)
-  fireEvent.click(navigation.getByRole('button', { name: '项目 1' }))
+  fireEvent.click(content.getByRole('button', { name: '项目 1' }))
   await waitFor(() => { expect(invoke.mock.calls.filter(call => call[1] === 'knowledge.documents.list').at(-1)?.[2].folderId).toBe('folder-1') })
-  fireEvent.click(navigation.getByRole('button', { name: '项目知识库' }))
+  const breadcrumb = within(content.getByRole('navigation', { name: zh.knowledgeLocation }))
+  fireEvent.click(breadcrumb.getByRole('button', { name: '项目知识库' }))
   await content.findByRole('button', { name: '项目 1' })
   expect(invoke.mock.calls.filter(call => call[1] === 'knowledge.documents.list').at(-1)?.[2].folderId).toBeNull()
   expect(invoke.mock.calls.some(call => call[1].startsWith('tasks.'))).toBe(false)
@@ -65,23 +63,28 @@ it('uses the library as home and places browsing modes outside the real folder t
 it('finds a file across folders and locates an unvisited nested destination by its stable ID', async () => {
   const invoke = transport(true)
   const { container } = renderKnowledgeWorkspace(<KnowledgeWorkspace {...props} />)
-  const { navigation, content } = regions(container)
+  const { content } = regions(container)
   fireEvent.click(content.getByRole('tab', { name: zh.knowledgeAllMaterials }))
   await content.findByRole('button', { name: document.filename })
   expect(invoke.mock.calls.filter(call => call[1] === 'knowledge.documents.list').at(-1)?.[2]).not.toHaveProperty('folderId')
   expect(content.getByRole('searchbox').getAttribute('placeholder')).toBe(zh.knowledgeSearchLibrary)
-  expect(content.getByText(zh.knowledgeLibrarySaveLocation)).toBeDefined()
   fireEvent.click(content.getByRole('button', { name: zh.knowledgeDocumentActions.replace('{name}', document.filename) }))
   fireEvent.click(screen.getByRole('menuitem', { name: zh.knowledgeShowInFolder }))
   const breadcrumb = within(content.getByRole('navigation', { name: zh.knowledgeLocation }))
-  await breadcrumb.findByRole('button', { name: nested.name })
+  await content.findByRole('heading', { name: nested.name })
+  expect(breadcrumb.queryByRole('button', { name: nested.name })).toBeNull()
   expect(breadcrumb.getByRole('button', { name: '项目 21' })).toBeDefined()
   await waitFor(() => { expect(invoke.mock.calls.filter(call => call[1] === 'knowledge.documents.list').at(-1)?.[2].folderId).toBe(nested.id) })
-  expect(content.getByRole('tab', { name: zh.knowledgeFolderView }).getAttribute('aria-selected')).toBe('true')
+  expect(content.queryByRole('tablist', { name: zh.knowledgeBrowseMode })).toBeNull()
+  expect(content.getByRole('button', { name: zh.knowledgeAllMaterials })).toBeDefined()
   expect(content.getByRole('searchbox').getAttribute('placeholder')).toBe(zh.knowledgeSearchFolder)
-  fireEvent.click(navigation.getByRole('button', { name: zh.knowledgeCreateFolder }))
+  fireEvent.click(content.getByRole('button', { name: zh.knowledgeAllMaterials }))
+  await content.findByRole('button', { name: document.filename })
+  fireEvent.click(content.getByRole('button', { name: zh.knowledgeAddMaterial }))
+  fireEvent.click(screen.getByRole('menuitem', { name: zh.knowledgeCreateFolder }))
   const dialog = within(await screen.findByRole('dialog', { name: zh.knowledgeCreateFolder }))
   await dialog.findByRole('button', { name: zh.knowledgeRootFolder, current: 'page' })
+  expect(dialog.getByText(zh.knowledgeSaveDestination)).toBeDefined()
   expect(dialog.queryByRole('button', { name: nested.name, current: 'page' })).toBeNull()
   fireEvent.click(dialog.getByRole('button', { name: zh.cancel }))
   expect(invoke.mock.calls.some(call => call[1] === 'knowledge.folders.create')).toBe(false)

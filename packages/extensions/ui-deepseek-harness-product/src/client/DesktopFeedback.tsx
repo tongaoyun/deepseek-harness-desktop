@@ -1,11 +1,13 @@
 /** Explicit employee feedback; failed or cancelled submissions retain the draft and operation ID. */
-import { useEffect, useId, useRef, useState, type ReactNode } from 'react'
-import { Button, IconCloseOutlineRegular, Modal } from '@deepseek-ai/dsh-client-ui-primitives'
+import { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
+import { Button, IconCloseOutlineRegular, Modal, focusWithoutRing } from '@deepseek-ai/dsh-client-ui-primitives'
 import { randomUUID } from '@deepseek-ai/dsh-util-crypto'
 import type { DeepSeekHarnessProductKey } from '../locales.ts'
 import css from '../DeepSeekHarnessProduct.module.css'
 import { productApi } from './product-api.ts'
-import { productErrorMessage } from './product-errors.ts'
+import { productErrorMessage, type ProductFailureReport } from './product-errors.ts'
+
+type FeedbackImage = { readonly id: string; readonly file: File }
 
 /** Enterprise feedback entry; employee and device metadata are supplied only by main. */
 export function DesktopFeedback({ open, onClose, t }: {
@@ -15,22 +17,30 @@ export function DesktopFeedback({ open, onClose, t }: {
 }): ReactNode {
   const [message, setMessage] = useState('')
   const [category, setCategory] = useState('BUG')
-  const [images, setImages] = useState<File[]>([])
-  const [error, setError] = useState('')
+  const [images, setImages] = useState<FeedbackImage[]>([])
+  const [error, setError] = useState<ProductFailureReport>()
   const [receipt, setReceipt] = useState('')
   const [pending, setPending] = useState(false)
   const operationId = useRef(randomUUID())
   const messageId = useId()
   const messageInput = useRef<HTMLTextAreaElement>(null)
+  const sendButton = useRef<HTMLButtonElement>(null)
+  const focusDraft = useRef(false)
+  useLayoutEffect(() => {
+    if (pending || !focusDraft.current) return
+    focusDraft.current = false
+    if (messageInput.current) focusWithoutRing(messageInput.current, { preventScroll: true })
+  }, [pending, receipt])
   const identityKnown = useRef(false)
   const operation = useRef<{ live: boolean; request?: string; employeeId?: string | undefined }>({ live: true })
-  const resetReceipt = () => { operationId.current = randomUUID(); setReceipt(''); setError('') }
+  const resetReceipt = () => { operationId.current = randomUUID(); setReceipt(''); setError(undefined) }
   const addImages = (selected: File[]) => {
     if (pending || !selected.length) return
     if (images.length + selected.length > 4 || selected.some(file => file.size < 1 || file.size > 5 * 1024 * 1024 || !['image/png', 'image/jpeg', 'image/webp'].includes(file.type))) {
-      setError(t('feedbackImagesInvalid')); return
+      setError({ failure: undefined, fallback: 'feedbackImagesInvalid' }); return
     }
-    setImages(current => [...current, ...selected]); resetReceipt()
+    const attachments = selected.map(file => ({ id: randomUUID(), file }))
+    setImages(current => [...current, ...attachments]); resetReceipt()
   }
   useEffect(() => {
     operation.current.live = true
@@ -68,7 +78,7 @@ export function DesktopFeedback({ open, onClose, t }: {
   }, [])
   const close = () => {
     if (operation.current.request) productApi()?.cancel(operation.current.request)
-    if (operation.current.request) setError(t('feedbackSendFailed'))
+    if (operation.current.request) setError({ failure: undefined, fallback: 'feedbackSendFailed' })
     delete operation.current.request
     setPending(false)
     onClose()
@@ -77,9 +87,9 @@ export function DesktopFeedback({ open, onClose, t }: {
     const api = productApi()
     if (!api || operation.current.request || !message.trim()) return
     const request = randomUUID(); operation.current.request = request
-    setPending(true); setError(''); setReceipt('')
+    setPending(true); setReceipt('')
     try {
-      const attachments = await Promise.all(images.map(async file => ({ name: file.name, mediaType: file.type,
+      const attachments = await Promise.all(images.map(async ({ file }) => ({ name: file.name, mediaType: file.type,
         data: new Uint8Array(await file.arrayBuffer()) })))
       if (operation.current.request !== request) return
       const value = await api.invoke('support.feedback.submit', { operationId: operationId.current,
@@ -88,9 +98,10 @@ export function DesktopFeedback({ open, onClose, t }: {
       if (typeof value !== 'object' || value === null || !('id' in value) || typeof value.id !== 'string' || !value.id.trim()) {
         throw new Error('Feedback receipt is missing')
       }
-      setReceipt(value.id); setMessage(''); setImages([]); operationId.current = randomUUID()
+      focusDraft.current = sendButton.current !== null && sendButton.current.ownerDocument.activeElement === sendButton.current
+      setError(undefined); setReceipt(value.id); setMessage(''); setImages([]); operationId.current = randomUUID()
     } catch (reason) {
-      if (operation.current.live && operation.current.request === request) setError(productErrorMessage(reason, t, 'feedbackSendFailed'))
+      if (operation.current.live && operation.current.request === request) setError({ failure: reason, fallback: 'feedbackSendFailed' })
     }
     finally {
       if (operation.current.request === request) {
@@ -100,9 +111,11 @@ export function DesktopFeedback({ open, onClose, t }: {
     }
   }
   return <Modal open={open} onClose={close} title={t('feedbackTitle')} closeLabel={t('close')} className={css.feedbackModal as string} contentClassName={css.feedbackContent as string}
-    footer={<><Button variant="ghost" size="sm" onClick={close}>{t('close')}</Button><Button size="sm" disabled={pending || !message.trim()} onClick={() => { void submit() }}>{t(pending ? 'feedbackSending' : 'feedbackSend')}</Button></>}>
+    footer={<><Button variant="ghost" size="sm" onClick={close}>{t('close')}</Button><Button ref={sendButton} size="sm" disabled={!message.trim()}
+      aria-disabled={pending || !message.trim()} aria-busy={pending} className={pending ? 'product-control-pending' : undefined}
+      onClick={() => { void submit() }}>{t(pending ? 'feedbackSending' : 'feedbackSend')}</Button></>}>
     <div className={css.feedbackBody}>
-      {error && <p role="alert" className={css.catalogError}>{error}</p>}
+      {error && <p role="alert" className={css.catalogError}>{productErrorMessage(error.failure, t, error.fallback)}</p>}
       {receipt && <p role="status" className={css.catalogStatus}>{t('feedbackSent')} <span>{receipt}</span></p>}
       <label>{t('feedbackCategory')}<select disabled={pending} value={category} onChange={(event) => { setCategory(event.target.value); resetReceipt() }}>
         <option value="BUG">{t('feedbackBug')}</option><option value="SUGGESTION">{t('feedbackSuggestion')}</option><option value="QUESTION">{t('feedbackQuestion')}</option><option value="OTHER">{t('feedbackOther')}</option>
@@ -130,7 +143,10 @@ export function DesktopFeedback({ open, onClose, t }: {
         }}>
           <textarea ref={messageInput} id={messageId} data-modal-autofocus disabled={pending} maxLength={2000} rows={7}
             value={message} onChange={(event) => { setMessage(event.target.value); resetReceipt() }} />
-          {images.length > 0 && <div className={css.feedbackImageGrid} aria-label={t('feedbackImages')}>{images.map((file, index) => <FeedbackImagePreview key={`${index}-${file.name}`} file={file} pending={pending} t={t} onRemove={() => { setImages(current => current.filter((_, i) => i !== index)); resetReceipt() }} />)}</div>}
+          {images.length > 0 && <div className={css.feedbackImageGrid} aria-label={t('feedbackImages')}>{images.map(({ id, file }) => <FeedbackImagePreview key={id} file={file} pending={pending} t={t} onRemove={() => {
+            if (messageInput.current) focusWithoutRing(messageInput.current, { preventScroll: true })
+            setImages(current => current.filter(image => image.id !== id)); resetReceipt()
+          }} />)}</div>}
           <div className={css.feedbackEditorMeta}>
             <span>{message.length}/2000</span>{images.length > 0 && <span>{images.length}/4</span>}
           </div>
@@ -155,7 +171,8 @@ function FeedbackImagePreview({ file, pending, t, onRemove }: {
   }, [file])
   return <div className={css.feedbackImageItem}>
     <div className={css.feedbackImageFrame}>{failed ? <span>{t('feedbackImagePreviewFailed')}</span> : url && <img src={url} alt={file.name} onError={() => { setFailed(true) }} />}
-      <button type="button" disabled={pending} title={t('remove')} aria-label={`${t('remove')} ${file.name}`} onClick={onRemove}><IconCloseOutlineRegular size={14} /></button>
+      <button type="button" disabled={pending} className={pending ? 'product-control-pending' : undefined}
+        title={t('remove')} aria-label={`${t('remove')} ${file.name}`} onClick={onRemove}><IconCloseOutlineRegular size={14} /></button>
     </div><small title={file.name}>{file.name}</small>
   </div>
 }

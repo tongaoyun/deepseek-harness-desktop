@@ -22,6 +22,12 @@ import WorkingDirectory from '@deepseek-ai/dsh-working-directory'
 import FileSystem from '@deepseek-ai/dsh-fs-local'
 import Agents from '@deepseek-ai/dsh-agent'
 import AgentLoop from '@deepseek-ai/dsh-agent-loop'
+import Subagents from '@deepseek-ai/dsh-subagent'
+import AgentTeams from '@deepseek-ai/dsh-agent-team'
+import * as TeamTools from '@deepseek-ai/dsh-tool-agent-team'
+import * as SubagentTools from '@deepseek-ai/dsh-tool-subagent'
+import * as SubagentControl from '@deepseek-ai/dsh-tool-subagent-control'
+import * as Spawn from '@deepseek-ai/dsh-subagent-spawn-in-process'
 import Llm, { ToolCallId } from '@deepseek-ai/dsh-llm'
 import WebServer from '@deepseek-ai/dsh-host-webserver'
 import Typert from '@deepseek-ai/dsh-typert-registry'
@@ -97,10 +103,14 @@ it.each([{ published: false, refresh: false, collision: false }, { published: tr
     { id: 'directory', name: 'cordis:directory' }, { id: 'llm', name: 'cordis:llm' },
     { id: 'agents', name: 'cordis:agents' }, { id: 'loop', name: 'cordis:loop', config: { agents: [] } },
     ...lateCompany ? [] : [{ id: 'company', name: 'cordis:company' }],
+    { id: 'subagent', name: 'cordis:subagents' }, { id: 'spawn', name: 'cordis:spawn' },
+    { id: 'agent-team', name: 'cordis:agentTeams' }, { id: 'tool-agent-team', name: 'cordis:teamTools' },
+    { id: 'tool-subagent', name: 'cordis:subagentTools', config: { provider: 'spawn' } },
+    { id: 'tool-subagent-control', name: 'cordis:subagentControl' },
     { id: 'typert', name: 'cordis:typert' }, { id: 'access', name: 'cordis:access' }, { id: 'gateway', name: 'cordis:gateway' },
     { id: 'web', name: 'cordis:web', config: { host: '127.0.0.1', port: 0 } },
   ]
-  const capabilities = builtinCapabilityPatches()
+  const capabilities = builtinCapabilityPatches().filter(patch => 'insert' in patch || patch.id === 'agent-team')
   writeFileSync(join(directory, 'cordis.patch.yml'), JSON.stringify([{ insert: rows }, ...capabilities]))
   writeFileSync(join(directory, 'cordis.yml'), '[]\n')
   const profile: ProfileContext = { name: 'test', startedBundles: [], dir: directory,
@@ -111,10 +121,9 @@ it.each([{ published: false, refresh: false, collision: false }, { published: tr
   const pendingPins: AbortSignal[] = []
   const ctx = await boot('test', join(directory, 'cordis.yml'), readProfilePatches('test', profile), (ctx) => {
     ctx.provide('profileContext', profile)
-    // Cancellation must stop before a delegated task can start.
-    ctx.provide('subagents', { getProvider: () => ({ capabilities: {} }), start: async () => { throw new Error('Unexpected delegated task') } })
     Object.assign(ctx.loader.builtins, { editor: ConfigEditor, settings: Settings, tools: Tools, executor: NativeExecutor,
-      prompt: SystemPrompt,
+      prompt: SystemPrompt, subagents: Subagents, agentTeams: AgentTeams, teamTools: TeamTools,
+      subagentTools: SubagentTools, subagentControl: SubagentControl, spawn: Spawn,
       skills: Skills, sessions: Sessions, web: WebServer, typert: Typert, gateway: Gateway, access: Access,
       query: SessionQuery, persistence: SessionPersistence, projections: SessionProjections, fs: FileSystem, directory: WorkingDirectory,
       llm: Llm, agents: Agents, loop: AgentLoop, company: { inject: ['sessions', 'sessionQuery', 'systemPrompt'], apply(owner: Context) {
@@ -141,7 +150,7 @@ it.each([{ published: false, refresh: false, collision: false }, { published: tr
           throw new Error(`Unexpected company operation: ${method}`)
         } })
       } } })
-  })
+  }, new URL('../', import.meta.url).href)
   onTestFinished(() => ctx.fiber.dispose())
   if (lateCompany) await ctx.plugin(ctx.loader.builtins.company)
   const peer = new Peer(ctx, { principal: { kind: 'owner' } })
@@ -153,7 +162,7 @@ it.each([{ published: false, refresh: false, collision: false }, { published: tr
   expect(ctx.get('agentTeams')).toBeDefined()
   const teamLead = await ctx.agents.create({ sessionId: SessionId('default-native-team'), agentOptions: { provider: 'fixture', model: 'fixture' } })
   onTestFinished(() => teamLead.dispose())
-  for (const name of ['spawn_teammate', 'send_message', 'wait_agent', 'team_task_create', 'team_task_update', 'team_task_list']) {
+  for (const name of ['subagent', 'send_message', 'wait_agent', 'team_task_create', 'team_task_update', 'team_task_list']) {
     expect(ctx.tools.get(name, teamLead.agent), name).toBeDefined()
   }
   await teamLead.dispose()
@@ -297,12 +306,14 @@ it('restores personal experts through the builtin profile and official Settings 
   ]))
   const profile: ProfileContext = { name: 'test', startedBundles: [], dir: directory,
     patchPath: join(directory, 'cordis.patch.yml'), installAnchor: fileURLToPath(new URL('../package.json', import.meta.url)),
-    cwd: home, home, overlays: builtinCapabilityPatches().map(patch => ({ ...patch, insert: patch.insert.filter(entry => entry.id === 'agency-agents') })), telemetryDisabledEnv: undefined }
+    cwd: home, home, overlays: builtinCapabilityPatches().flatMap(patch => 'insert' in patch && patch.insert !== undefined
+      ? [{ ...patch, insert: patch.insert.filter(entry => entry.id === 'agency-agents') }] : []), telemetryDisabledEnv: undefined }
   const start = () => boot('test', join(directory, 'cordis.yml'), readProfilePatches('test', profile), (ctx) => {
     ctx.provide('profileContext', profile)
     ctx.provide('subagents', { getProvider: () => ({ capabilities: {} }) })
     Object.assign(ctx.loader.builtins, { editor: ConfigEditor, settings: Settings, tools: Tools, executor: NativeExecutor,
-      prompt: SystemPrompt, web: WebServer })
+      prompt: SystemPrompt, subagents: Subagents, agentTeams: AgentTeams, teamTools: TeamTools,
+      subagentTools: SubagentTools, subagentControl: SubagentControl, spawn: Spawn, web: WebServer })
   })
   const first = await start()
   onTestFinished(() => first.fiber.dispose())

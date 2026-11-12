@@ -7,7 +7,7 @@ import { items } from '../src/client/catalog-shared.tsx'
 import { zh, type DeepSeekHarnessProductKey } from '../src/locales.ts'
 
 const props = { entries: items([{ id: 'personal', name: '个人库', scope: 'PERSONAL', canManage: true }]),
-  loading: false, authRequired: false, authPending: false, authError: false, onRefresh: vi.fn(), onSignIn: vi.fn(),
+  loading: false, authRequired: false, onRefresh: vi.fn(), onSignIn: vi.fn(),
   renderFactorySlot: () => null, t: (key: DeepSeekHarnessProductKey) => zh[key] }
 const roots = Array.from({ length: 21 }, (_, index) => ({ id: `folder-${index + 1}`, name: `目录${index + 1}`, parentId: null, updatedAt: '2026-10-17T00:00:00Z' }))
 const child = { id: 'child', name: '子目录', parentId: 'folder-21', updatedAt: '2026-10-17T00:00:00Z' }
@@ -35,7 +35,8 @@ function transport(getFailure = false, getFolder?: (folderId: string) => Promise
     } }
     if (method === 'knowledge.documents.save') return { ok: true, result: document }
     if (method === 'knowledge.folders.create') return { ok: true, result: { id: 'created', name: payload.name, parentId: payload.parentId, updatedAt: '2026-10-17T00:00:00Z' } }
-    return { ok: true, result: { items: [document], page: 1, size: 20, total: 1 } }
+    const documents = payload.folderId == null ? [document] : []
+    return { ok: true, result: { items: documents, page: payload.page, size: 20, total: documents.length } }
   })
   vi.stubGlobal('dshDesktop', { extensions: { invoke, cancel } })
   return invoke
@@ -48,24 +49,25 @@ it('cancels a previous location read and ignores its late response after selecti
   const cancel = vi.fn()
   const invoke = transport(false, async id => id === 'folder-1' ? delayed : roots.find(folder => folder.id === id), cancel)
   const view = renderKnowledgeWorkspace(<KnowledgeWorkspace {...props} />)
-  const navigation = within(view.container.querySelector<HTMLElement>('[data-knowledge-navigation]')!)
-  fireEvent.click(await navigation.findByRole('button', { name: '目录1' }))
+  const content = within(view.container.querySelector<HTMLElement>('[data-knowledge-content]')!)
+  fireEvent.click(await content.findByRole('button', { name: '目录1' }))
   await waitFor(() => { expect(invoke.mock.calls.some(call => call[1] === 'knowledge.folders.get' && call[2].folderId === 'folder-1')).toBe(true) })
   const requestId = invoke.mock.calls.find(call => call[1] === 'knowledge.folders.get' && call[2].folderId === 'folder-1')![3]
-  fireEvent.click(navigation.getByRole('button', { name: '目录2' }))
   const breadcrumb = within(view.container.querySelector<HTMLElement>('nav[aria-label="当前位置"]')!)
-  await breadcrumb.findByRole('button', { name: '目录2' })
+  fireEvent.click(breadcrumb.getByRole('button', { name: '个人库' }))
+  fireEvent.click(await content.findByRole('button', { name: '目录2' }))
+  await content.findByRole('heading', { name: '目录2' })
   expect(cancel).toHaveBeenCalledWith('product', requestId)
   await act(async () => { resolve(roots[0]); await delayed })
-  expect(breadcrumb.queryByRole('button', { name: '目录1' })).toBeNull()
-  expect(breadcrumb.getByRole('button', { name: '目录2' })).toBeTruthy()
+  expect(content.queryByRole('heading', { name: '目录1' })).toBeNull()
+  expect(content.getByRole('heading', { name: '目录2' })).toBeTruthy()
 })
 
-it('moves to another page and an unexpanded nested destination without preloading the sidebar', async () => {
+it('moves to a nested destination on another page without changing the materials location', async () => {
   const invoke = transport()
   const view = renderKnowledgeWorkspace(<KnowledgeWorkspace {...props} />)
-  const navigation = within(view.container.querySelector<HTMLElement>('[data-knowledge-navigation]')!)
-  await navigation.findByRole('button', { name: '目录1' })
+  const content = within(view.container.querySelector<HTMLElement>('[data-knowledge-content]')!)
+  await content.findByRole('button', { name: '目录1' })
   fireEvent.click(screen.getByRole('tab', { name: zh.knowledgeAllMaterials }))
   await screen.findByRole('button', { name: document.filename })
   fireEvent.click(screen.getByRole('button', { name: zh.knowledgeDocumentActions.replace('{name}', document.filename) }))
@@ -77,7 +79,7 @@ it('moves to another page and an unexpanded nested destination without preloadin
   await dialog.findByRole('button', { name: '子目录', current: 'page' })
   await waitFor(() => { expect(dialog.getByRole<HTMLButtonElement>('button', { name: zh.knowledgeMove }).disabled).toBe(false) })
   expect(dialog.getByRole('navigation').textContent).toMatchInlineSnapshot('"知识库首页目录21子目录"')
-  expect(navigation.queryByRole('button', { name: '目录21' })).toBeNull()
+  expect(content.queryByRole('button', { name: '目录21' })).toBeNull()
   fireEvent.click(dialog.getByRole('button', { name: zh.knowledgeMove }))
   await waitFor(() => { expect(invoke.mock.calls.some(call => call[1] === 'knowledge.documents.move' && call[2].folderId === 'child')).toBe(true) })
   expect(invoke.mock.calls.find(call => call[1] === 'knowledge.documents.move')?.[2]).toMatchObject({
@@ -110,25 +112,22 @@ it('retries a lost move receipt with the original destination and operation iden
   expect(typeof calls[0]?.[2].operationId).toBe('string')
 })
 
-it('retains the selected path and create location after the sidebar changes pages', async () => {
+it('creates inside a folder opened from a later materials page', async () => {
   const invoke = transport()
   const view = renderKnowledgeWorkspace(<KnowledgeWorkspace {...props} />)
-  const navigation = within(view.container.querySelector<HTMLElement>('[data-knowledge-navigation]')!)
-  fireEvent.click(await navigation.findByRole('button', { name: '目录1' }))
-  const breadcrumb = within(view.container.querySelector<HTMLElement>('nav[aria-label="当前位置"]')!)
-  await breadcrumb.findByRole('button', { name: '目录1' })
-  fireEvent.click(navigation.getByRole('button', { name: zh.nextPage }))
-  await navigation.findByRole('button', { name: '目录21' })
-  expect(breadcrumb.getByRole('button', { name: '目录1' })).toBeTruthy()
   const content = within(view.container.querySelector<HTMLElement>('[data-knowledge-content]')!)
+  await content.findByRole('button', { name: '目录1' })
+  fireEvent.click(content.getByRole('button', { name: zh.nextPage }))
+  fireEvent.click(await content.findByRole('button', { name: '目录21' }))
+  await content.findByRole('heading', { name: '目录21' })
   fireEvent.click(content.getByRole('button', { name: zh.knowledgeAddMaterial }))
   fireEvent.click(screen.getByRole('menuitem', { name: zh.knowledgeCreateFolder }))
   const dialog = within(screen.getByRole('dialog'))
-  await dialog.findByRole('button', { name: '目录1', current: 'page' })
+  await dialog.findByRole('button', { name: '目录21', current: 'page' })
   fireEvent.change(dialog.getByRole('textbox', { name: zh.knowledgeFolderName }), { target: { value: '新子目录' } })
   await waitFor(() => { expect(dialog.getByRole<HTMLButtonElement>('button', { name: zh.knowledgeSave }).disabled).toBe(false) })
   fireEvent.click(dialog.getByRole('button', { name: zh.knowledgeSave }))
-  await waitFor(() => { expect(invoke.mock.calls.some(call => call[1] === 'knowledge.folders.create' && call[2].parentId === 'folder-1')).toBe(true) })
+  await waitFor(() => { expect(invoke.mock.calls.some(call => call[1] === 'knowledge.folders.create' && call[2].parentId === 'folder-21')).toBe(true) })
 })
 
 it('loads title and content from the same document revision before saving', async () => {
@@ -146,18 +145,13 @@ it('loads title and content from the same document revision before saving', asyn
     && call[2].title === '他人新标题' && call[2].expectedUpdatedAt === '2026-10-14T00:00:00Z')).toBe(true) })
 })
 
-it('paginates folders and documents together without following navigation pagination', async () => {
+it('paginates folders and documents in one materials list', async () => {
   const invoke = transport()
   const view = renderKnowledgeWorkspace(<KnowledgeWorkspace {...props} />)
-  const navigation = within(view.container.querySelector<HTMLElement>('[data-knowledge-navigation]')!)
   const content = within(view.container.querySelector<HTMLElement>('[data-knowledge-content]')!)
   await content.findByRole('button', { name: '目录1' })
   expect(content.queryByRole('button', { name: document.filename })).toBeNull()
   expect(content.getByText(zh.itemCount.replace('{count}', '22'))).toBeTruthy()
-  fireEvent.click(navigation.getByRole('button', { name: zh.nextPage }))
-  await navigation.findByRole('button', { name: '目录21' })
-  expect(content.getByRole('button', { name: '目录1' })).toBeTruthy()
-  expect(content.queryByRole('button', { name: '目录21' })).toBeNull()
   fireEvent.click(content.getByRole('button', { name: zh.nextPage }))
   await content.findByRole('button', { name: document.filename })
   expect(content.getByRole('button', { name: '目录21' })).toBeTruthy()
@@ -168,9 +162,9 @@ it('paginates folders and documents together without following navigation pagina
 it('blocks creation in a missing folder and preserves the entered name without submitting to root', async () => {
   const invoke = transport(true)
   const view = renderKnowledgeWorkspace(<KnowledgeWorkspace {...props} />)
-  const navigation = within(view.container.querySelector<HTMLElement>('[data-knowledge-navigation]')!)
-  await navigation.findByRole('button', { name: '目录1' })
-  fireEvent.click(navigation.getByRole('button', { name: zh.knowledgeFolderActions.replace('{name}', '目录1') }))
+  const content = within(view.container.querySelector<HTMLElement>('[data-knowledge-content]')!)
+  await content.findByRole('button', { name: '目录1' })
+  fireEvent.click(content.getByRole('button', { name: zh.knowledgeFolderActions.replace('{name}', '目录1') }))
   fireEvent.click(screen.getByRole('menuitem', { name: zh.knowledgeCreateSubfolder }))
   const dialog = within(screen.getByRole('dialog'))
   const name = dialog.getByRole<HTMLInputElement>('textbox', { name: zh.knowledgeFolderName })

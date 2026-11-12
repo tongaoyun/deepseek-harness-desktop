@@ -8,6 +8,8 @@ export interface KnowledgeUpload {
   /** Retain native-selected files with fixed destinations; return names and independent operation IDs. */
   choose(baseId: string, pdfParseMode: KnowledgePdfParseMode, folderId: string | null | undefined,
     signal?: AbortSignal): Promise<readonly KnowledgeUploadPending[]>
+  /** Replace an unsent PDF selection with a new identity and parsing choice. */
+  configure(baseId: string, operationId: string, pdfParseMode: KnowledgePdfParseMode): KnowledgeUploadPending
   /** Upload a retained file with its original request identity and destination. */
   send(baseId: string, operationId: string, pdfParseMode: KnowledgePdfParseMode,
     folderId: string | null | undefined, api: DeepSeekHarnessApiClient, signal?: AbortSignal): Promise<unknown>
@@ -23,6 +25,8 @@ export interface KnowledgeUploadPending {
   readonly filename: string
   readonly pdfParseMode: KnowledgePdfParseMode
   readonly folderId?: string | null | undefined
+  /** Present only while a PDF can be configured before its first upload attempt. */
+  readonly canConfigure?: true
 }
 
 /** Dispatch knowledge management without exposing upstream URLs or credentials.
@@ -36,6 +40,16 @@ export interface KnowledgeUploadPending {
 export async function invokeKnowledge(api: DeepSeekHarnessApiClient, method: string,
   input: Readonly<Record<string, unknown>>, upload?: KnowledgeUpload, signal?: AbortSignal): Promise<unknown> {
   const options = signal === undefined ? {} : { signal }
+  if (method === 'knowledge.destinations.list') {
+    if (Object.keys(input).some(key => !['query', 'page', 'size'].includes(key))) invalid('destination query')
+    const page = integer(input.page ?? 1, 1, 1_000_000, 'page')
+    const size = integer(input.size ?? 20, 1, 100, 'size')
+    const query = input.query ?? ''
+    if (typeof query !== 'string' || query.length > 200 || query.includes('\0')) invalid('query')
+    const params = new URLSearchParams({ query: query.trim() })
+    const result = await api.list<unknown>(`/api/v1/knowledge-destinations?${params.toString()}`, page, size, signal)
+    return { items: result.data, page: result.pageIndex, size: result.pageSize, total: result.totalCount }
+  }
   if (method === 'knowledge.files.limits') {
     if (Object.keys(input).length > 0) invalid('file limits payload')
     return api.request('/api/v1/knowledge-file-limits', options)
@@ -64,6 +78,20 @@ export async function invokeKnowledge(api: DeepSeekHarnessApiClient, method: str
   const baseId = resource(input, 'knowledgeBaseId')
   const base = `/api/v1/knowledge-bases/${baseId}`
   const documents = `${base}/documents`
+  if (method === 'knowledge.bases.get') {
+    if (Object.keys(input).some(key => key !== 'knowledgeBaseId')) invalid('library details payload')
+    return api.request(base, options)
+  }
+  if (method === 'knowledge.bases.update') {
+    if (Object.keys(input).some(key => !['knowledgeBaseId', 'name', 'description', 'expectedUpdatedAt', 'operationId'].includes(key))) invalid('library details payload')
+    const name = field(input, 'name', 120)
+    const description = input.description
+    if (typeof description !== 'string' || description.length > 1_000 || description.includes('\0')) invalid('description')
+    const expectedUpdatedAt = field(input, 'expectedUpdatedAt', 80)
+    if (!Number.isFinite(Date.parse(expectedUpdatedAt))) invalid('expectedUpdatedAt')
+    return api.request(base, { ...options, method: 'PATCH', headers: writeHeaders(input),
+      body: JSON.stringify({ name, description: description.trim(), expectedUpdatedAt }) })
+  }
   if (method === 'knowledge.documents.upload.pending') {
     if (Object.keys(input).some(key => key !== 'knowledgeBaseId')) invalid('pending upload payload')
     return upload?.pending(decodeURIComponent(baseId)) ?? []
@@ -96,6 +124,22 @@ export async function invokeKnowledge(api: DeepSeekHarnessApiClient, method: str
     return { items: result.data, page: result.pageIndex, size: result.pageSize, total: result.totalCount }
   }
   if (method === 'knowledge.documents.get') return api.request(`${documents}/${resource(input, 'documentId')}`, options)
+  if (method === 'knowledge.documents.processing') {
+    const identity = knowledgePreviewIdentity(input)
+    return api.request(`${documents}/${encodeURIComponent(identity.documentId)}/processing`, options)
+  }
+  if (method === 'knowledge.documents.summary.refresh') {
+    if (Object.keys(input).some(key => !['knowledgeBaseId', 'documentId', 'operationId'].includes(key))) invalid('summary job payload')
+    return api.request(`${documents}/${resource(input, 'documentId')}/summary-jobs`, {
+      ...options, method: 'POST', headers: writeHeaders(input),
+    })
+  }
+  if (method === 'knowledge.documents.upload.configure') {
+    if (Object.keys(input).some(key => !['knowledgeBaseId', 'operationId', 'pdfParseMode'].includes(key))) invalid('upload configuration payload')
+    if (input.pdfParseMode !== 'STANDARD' && input.pdfParseMode !== 'TEXT') invalid('pdfParseMode')
+    if (upload === undefined) throw new ProductError('KNOWLEDGE_UPLOAD_UNAVAILABLE', 'File selection is unavailable', false)
+    return upload.configure(decodeURIComponent(baseId), operation(input), input.pdfParseMode)
+  }
   if (method === 'knowledge.documents.upload' || method === 'knowledge.documents.upload.select') {
     const allowed = method === 'knowledge.documents.upload' ? ['knowledgeBaseId', 'operationId', 'pdfParseMode', 'folderId'] : ['knowledgeBaseId', 'pdfParseMode', 'folderId']
     if (Object.keys(input).some(key => !allowed.includes(key))) invalid('upload payload')

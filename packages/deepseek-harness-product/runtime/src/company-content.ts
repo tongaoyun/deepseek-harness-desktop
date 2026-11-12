@@ -77,6 +77,17 @@ export class CompanyContent extends Service implements CompanyContentSource {
     await this.track(signal, control => this.product.invoke('runtime.companyContent.refresh', undefined, control))
   }
 
+  /** Resolve a personal team's pinned company expert through the main-owned version cache.
+   * @param slug - Expert package identifier.
+   * @param sha256 - Full immutable package digest saved with the team.
+   * @param signal - Caller cancellation, combined with the plugin lifetime.
+   * @returns Verified package root; missing versions and damaged caches fail without using the latest expert.
+   */
+  expertVersion(slug: string, sha256: string, signal?: AbortSignal): Promise<string> {
+    return this.track(signal, async control => z.string().min(1).parse(
+      await this.product.invoke('runtime.companyContent.expertVersion', { slug, sha256 }, control)))
+  }
+
   private async track<T>(signal: AbortSignal | undefined, operation: (signal: AbortSignal) => Promise<T>): Promise<T> {
     const control = signal === undefined ? this.lifecycle.signal : AbortSignal.any([signal, this.lifecycle.signal])
     const pending = Promise.resolve().then(async () => {

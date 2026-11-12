@@ -1,23 +1,33 @@
+import { CONTENT_CATEGORIES, resolveContentCategory } from '@deepseek-harness/product/content-categories';
 import { zh, en, ja, es, fr, de, ru, pt } from "./client-locales.ts";
 import * as React from "react";
 import { bytesToBase64 } from '@deepseek-ai/dsh-util-crypto';
+import { assertNever } from '@deepseek-ai/dsh-util-values';
+import { remoteErrorOf } from '@deepseek-ai/dsh-typert-protocol';
 import type { Translate, SkillMethod, SkillInput, SkillOutput, ModalProps, SectionProps, ViewProps, Filters, ClientContext, ManagerSnapshot, Detail, TrashItem } from './client-types.ts';
 import type { SkillView, RootView, SkillRoot, CodedError, ImportResult, Diagnostic } from './types.ts';
 type SearchSkill = Partial<SkillView> & {kindLabel?: string; statusLabel?: string; rootKey?: string; rootLabel?: string};
 type UploadFile = File & {_dssmPath?: string};
 type UploadSelection = {kind: string; name: string; files: UploadFile[]; count: number; size: number; error?: never};
 type SelectionResult = UploadSelection | {error: Diagnostic};
-type ResultMessage = {ok: boolean; text: string; warning?: boolean; scope?: string};
-type ConfirmModal = {type: 'trash-confirm'; root: string; name: string; workspace?: string} | {type: 'delete-confirm'; id: string; name: string} | {type: 'category-create'; root: string; workspace?: string} | {type: 'category-rename'; root: string; id: string; name: string; workspace?: string} | {type: 'category-delete'; root: string; id: string; name: string; workspace?: string} | {type: 'category-add'; root: string; id: string; name: string; workspace?: string; skills: {name: string; declaredName?: string; description?: string; currentCatName: string}[]};
+type ResultParams = object | ((t: Translate) => object);
+type ResultMessage = {ok: boolean; warning?: boolean; scope?: string} & (
+  | {kind: 'message'; key: string; params?: ResultParams}
+  | {kind: 'failure'; cause: unknown; key?: string}
+  | {kind: 'import'; value: ImportResult}
+);
+type ConfirmModal = {type: 'trash-confirm'; root: string; name: string; workspace?: string} | {type: 'delete-confirm'; id: string; name: string};
 type ModalState = 'detail' | 'import' | ConfirmModal | null;
+type DetailRead = { target: SkillInput<'readDetail'>['target']; loading: boolean; value?: Detail; error?: unknown };
 import { createRepositoryUI } from "./repository-ui.ts";
 import { createDestinationKit, defaultDestination, destinationPayload, destinationReady, destinationCss, type DestinationValue } from "./destination-picker.ts";
 import { createSourceSelect } from "./source-select.ts";
 import { createSkillApi, TYPERT_REMOTE } from "./remote-client.ts";
 import type {} from "@deepseek-ai/dsh-api-gateway/client";
-import { Input, Button as PrimitiveButton, Modal as PrimitiveModal, SegmentedTabs, StateDot, Switch, IconChevronDownOutlineRegular, IconEllipsisOutlineRegular, IconPlusOutlineRegular, IconEditOutlineRegular, IconTrashOutlineRegular, IconRefreshOutlineRegular, IconUnarchiveOutlineRegular, IconFolderCloseRegular, IconFolderOpenRegular, IconGlobeOutlineRegular, IconBrowseOutlineRegular, fileSizeText, observeComposition, type SegmentedTab } from "@deepseek-ai/dsh-client-ui-primitives";
+import { Input, Button as PrimitiveButton, Modal as PrimitiveModal, SegmentedTabs, StateDot, Switch, IconChevronDownOutlineRegular, IconEllipsisOutlineRegular, IconPlusOutlineRegular, IconTrashOutlineRegular, IconRefreshOutlineRegular, IconUnarchiveOutlineRegular, IconFolderCloseRegular, IconGlobeOutlineRegular, IconBrowseOutlineRegular, focusWithoutRing, fileSizeText, type SegmentedTab } from "@deepseek-ai/dsh-client-ui-primitives";
 import type {} from "@deepseek-ai/dsh-client-ui-workspace/client";
 import { SkillBody } from "./skill-body.ts";
+import { useRetryFocus } from './retry-focus.ts';
 
 // dsh-skills-manager client half：按全局与项目作用域切换的多 Agent Skills 管理面板。
     var react = React;
@@ -33,19 +43,30 @@ function createSkillsPage(localeService: ClientContext["locale"]) {
     var SourceSelect = createSourceSelect(react);
     var destinationKit = createDestinationKit({ react, SourceSelect, translateError });
     var DestinationPicker = destinationKit.DestinationPicker;
-    var CSS = destinationCss + `.dssm-library-panel{display:flex;flex-direction:column;gap:14px}.dssm-sources{display:flex;flex-direction:column;gap:9px}.dssm-scope-tabs{display:grid!important;box-sizing:border-box!important;width:100%;height:32px!important;min-height:32px!important;max-height:32px!important;padding:2px!important;border-radius:var(--dsw-radius-sm,8px)!important;border:0.5px solid var(--dsw-alias-border-l2)!important;background:var(--dsw-alias-bg-layer-1)!important}.dssm-scope-tabs>span[aria-hidden="true"],.dssm-scope-tabs>[class*="indicator"]{width:calc((100% - 4px)/4)!important;inset:2px auto 2px 2px!important;border-radius:6px!important;border:0.5px solid var(--dsw-alias-border-l3,rgba(255,255,255,.12))!important;background:var(--dsw-alias-bg-layer-3,rgba(255,255,255,.08))!important;box-shadow:none!important}.dssm-scope-tabs [role=tab]{display:inline-flex!important;align-items:center!important;justify-content:center!important;gap:6px!important;height:28px!important;padding:0 12px!important;border-radius:6px!important;font-size:13px!important;line-height:20px!important;color:var(--dsw-alias-label-secondary)!important;text-align:center!important;box-sizing:border-box!important;transition:color 150ms ease!important}.dssm-scope-tabs [role=tab]:hover{color:var(--dsw-alias-label-primary)!important}.dssm-scope-tabs [role=tab][aria-selected="true"]{color:var(--dsw-alias-label-primary)!important;font-weight:600!important}.dssm-scope-tabs [role=tab] svg{flex:none;display:block}.dssm-source-head{display:flex;align-items:center;gap:8px;min-width:0;padding:8px 12px}.dssm-source-toggle{display:flex;align-items:center;gap:8px;flex:1;min-width:0;overflow:hidden;padding:0;border:0;background:transparent;color:inherit;font:inherit;text-align:left;cursor:pointer}.dssm-source-toggle:focus-visible{outline:var(--dsw-focus-ring-width,1px) solid var(--dsw-focus-ring-color,var(--dsw-alias-brand-primary));outline-offset:2px}.dssm-fold-chevron{flex:none;color:var(--dsw-alias-label-tertiary);transform:rotate(-90deg);transition:transform 160ms ease}.dssm-fold-chevron.is-open{transform:rotate(0deg)}@media (prefers-reduced-motion:reduce){.dssm-fold-chevron{transition:none}}.dssm-source-label{display:flex;align-items:center;gap:10px;min-width:0;flex:1}.dssm-drag-handle{cursor:grab;color:var(--dsw-alias-label-tertiary,#888);font-size:13px;line-height:1;display:inline-flex;align-items:center;justify-content:center;width:16px;height:22px;border-radius:var(--dsw-radius-sm,8px);flex-shrink:0;user-select:none;transition:color 0.15s}.dssm-skill-row:hover .dssm-drag-handle{color:var(--dsw-alias-label-secondary,#b9b9b9)}.dssm-drag-handle:active{cursor:grabbing}.dssm-cat.drag-over{border-color:var(--dsw-alias-brand-primary,#3b82f6);box-shadow:0 0 0 1px var(--dsw-alias-brand-primary,#3b82f6)}.dssm-skill-row.dragging{opacity:0.4;background:var(--dsw-alias-bg-layer-2,var(--dsw-alias-interactive-bg-hover,transparent))}.dssm-skill-row.drop-before{box-shadow:inset 0 2px 0 var(--dsw-alias-brand-primary,#3b82f6)}.dssm-skill-row.drop-after{box-shadow:inset 0 -2px 0 var(--dsw-alias-brand-primary,#3b82f6)}.dssm-skill-row{display:flex;align-items:center;gap:8px;margin:0;padding:11px 13px;border:0;border-top:0.5px solid var(--dsw-alias-border-l1,#3a3a3a);border-radius:0;background:transparent}.dssm-skill-copy{display:flex;flex-direction:column;gap:3px;min-width:0;flex:1}.dssm-skill-actions{display:flex;align-items:center;gap:8px;flex:none;flex-wrap:nowrap}.dssm-skill-desc{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--dsw-alias-label-tertiary,#a0a0a0);font-size:12px;line-height:18px}.dssm-icon-danger{color:var(--dsw-alias-state-error-primary,#ef7272)}.dssm-skill-row .dssm-name{font-size:14px;font-weight:650;color:var(--dsw-alias-label-primary,#eeeeee)}.dssm-skill-actions{display:flex;align-items:center;gap:8px;flex:none}.dssm-source{overflow:hidden;border:0.5px solid var(--dsw-alias-border-l2,#494949);border-radius:var(--dsw-radius-xl,20px);background:transparent}.dssm-textarea{box-sizing:border-box;display:block;width:100%;min-height:160px;margin:0;padding:8px 12px;border:0.5px solid var(--dsw-alias-border-l4);border-radius:var(--dsw-radius-md,12px);background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-primary);font:inherit;font-size:14px;line-height:22px;resize:vertical}.dssm-textarea:focus,.dssm-textarea:focus-visible{outline:none;border-color:var(--dsw-alias-state-business-primary)}.dssm-textarea[readonly]{resize:none}.dssm-source-title{font-size:14px;font-weight:650;white-space:nowrap;flex:none}.dssm-source-path{min-width:0;max-width:50%;margin-left:auto;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--dsw-alias-label-tertiary,#a0a0a0);font-size:11px}.dssm-source-actions{display:flex;flex:none;align-items:center;gap:8px;margin-left:12px}.dssm-cat{margin:0 10px 8px;border:0.5px solid var(--dsw-alias-border-l1,#3a3a3a);border-radius:var(--dsw-radius-lg,16px)}.dssm-cat-head{display:flex;align-items:center;gap:8px;min-height:40px;padding:0 8px 0 6px}.dssm-cat-main{display:flex;align-items:center;gap:8px;flex:1;min-width:0;min-height:36px;padding:4px;border:0;background:transparent;color:inherit;font:inherit;text-align:left;cursor:pointer}.dssm-cat-title{font-size:14px;font-weight:700;display:inline-flex;align-items:center}.dssm-cat-note{margin:2px 16px 8px}.dssm-fallback{margin-top:4px;color:var(--dsw-alias-label-secondary,#b9b9b9)}.dssm-section{box-sizing:border-box;display:flex;width:100%;min-width:0;padding:2px 0 36px;container-type:inline-size;flex-direction:column;gap:14px;color:var(--dsw-alias-label-primary,#eeeeee);font-family:inherit}.dssm-head{display:flex;flex-direction:column;align-items:stretch;gap:16px}.dssm-title-block{min-width:0}.dssm-title-row{display:flex;align-items:center;gap:8px 12px;min-width:0;flex-wrap:wrap}.dssm-feedback-links{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.dssm-feedback-links>span[data-mpi-check]{display:inline-flex;align-items:center}.dssm-title{margin:0;font-size:24px;line-height:32px;font-weight:600;letter-spacing:-.4px;white-space:nowrap}.dssm-desc{margin:12px 0 0;color:var(--dsw-alias-label-tertiary,#a0a0a0);font-size:14px;line-height:22px}.dssm-actions{display:flex;flex-wrap:wrap;gap:8px;margin-left:0;flex:none}.dssm-upload-link:focus-visible,.dssm-file-remove:focus-visible{outline:2px solid var(--dsw-alias-brand-primary,var(--dsw-alias-label-primary,#f2f2f2));outline-offset:2px}.dssm-summary{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));overflow:hidden;border:0.5px solid var(--dsw-alias-border-l2,#494949);border-radius:var(--dsw-radius-lg,16px);background:var(--dsw-alias-bg-layer-1)}.dssm-stat{padding:4px 10px;border-right:0.5px solid var(--dsw-alias-border-l1,#3a3a3a);font-size:12px;line-height:18px;color:var(--dsw-alias-label-secondary,#b9b9b9)}.dssm-stat:last-child{border-right:0}.dssm-stat strong{margin-right:4px;color:var(--dsw-alias-label-primary,#eeeeee);font-size:14px;font-weight:650}.dssm-filters{display:flex;align-items:center;gap:8px;flex-wrap:nowrap;width:100%!important;min-width:0;box-sizing:border-box}.dssm-filter-actions{display:flex;align-items:center;gap:8px;flex:none;margin-left:auto}.dssm-filters .dssm-search{flex:1 1 0;min-width:160px;max-width:none}.dssm-filters .dssm-source-filter,.dssm-filters .dssm-status-filter,.dssm-filters .dssm-project-filter,.dssm-filters .dssm-menu-select-wrap,.dssm-filters span[class*="_root_"],.dssm-filters .dssm-source-select-menu,.dssm-filters .dssm-menu-select-trigger{width:auto!important;min-width:0!important;display:inline-flex!important;flex:none}.dssm-field .dssm-menu-select-wrap,.dssm-destination-pair .dssm-menu-select-wrap,.dssm-destination-pair span[class*="_root_"]{display:flex!important;width:100%!important;min-width:0!important;height:auto!important;padding:0!important;margin:0!important;border:0!important;background:transparent!important}.dssm-destination-pair .dssm-menu-select-trigger,.dssm-form .dssm-menu-select-trigger{display:flex!important;width:100%!important;height:36px!important;border-radius:var(--dsw-radius-md,10px)!important;padding:0 12px!important;box-sizing:border-box!important}.dssm-source-select-menu{min-width:130px;max-width:280px}.dssm-menu-select-trigger{display:inline-flex;align-items:center;justify-content:space-between;gap:6px;height:32px;padding:0 10px;border:0.5px solid var(--dsw-alias-border-l2);border-radius:var(--dsw-radius-sm,8px);background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-primary);font:inherit;font-size:13px;line-height:20px;cursor:pointer;user-select:none;width:max-content;min-width:8em;transition:border-color 120ms ease,background 120ms ease}.dssm-menu-select-trigger:hover:not(:disabled){border-color:var(--dsw-alias-border-l3,#555)}.dssm-menu-select-trigger.is-open,.dssm-menu-select-trigger:focus-visible{border-color:var(--dsw-alias-brand-primary)!important;outline:var(--dsw-focus-ring-width,1px) solid var(--dsw-focus-ring-color,var(--dsw-alias-brand-primary))!important;outline-offset:0!important}.dssm-menu-select-trigger:disabled{opacity:.5;cursor:default}.dssm-menu-select-label{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1;text-align:left}.dssm-menu-select-arrow{color:var(--dsw-alias-label-secondary);flex-shrink:0;margin-left:4px;transition:transform 150ms ease}.dssm-menu-select-trigger[aria-expanded=true] .dssm-menu-select-arrow{transform:rotate(180deg)}.dssm-count{color:var(--dsw-alias-label-tertiary,#a0a0a0);font-size:12px;white-space:nowrap;flex:none}.dssm-name{overflow-wrap:anywhere;font-size:13px;font-weight:570}.dssm-note{overflow-wrap:anywhere;margin-top:2px;color:var(--dsw-alias-label-secondary,#b9b9b9);font-size:11px;line-height:17px}.dssm-enabled{color:var(--dsw-alias-state-success-primary,#51b976);font-size:12px;white-space:nowrap}.dssm-disabled{color:var(--dsw-alias-state-warn-primary,#d49245);font-size:12px;white-space:nowrap}.dssm-shadowed{color:var(--dsw-alias-label-tertiary,#a0a0a0);font-size:12px;white-space:nowrap}.dssm-trash-count{padding:2px 7px;border-radius:999px;corner-shape:round;background:var(--dsw-alias-interactive-bg-hover,rgba(128,128,128,.12));color:var(--dsw-alias-label-secondary,#b9b9b9);font-size:11px}.dssm-empty{padding:25px 14px;color:var(--dsw-alias-label-tertiary,#a0a0a0);font-size:12px;text-align:center}.dssm-feedback{padding:9px 11px;border:0.5px solid var(--dsw-alias-border-l2,#494949);border-radius:var(--dsw-radius-lg,16px);color:var(--dsw-alias-label-secondary,#b9b9b9);font-size:12px}.dssm-warning{border-color:var(--dsw-alias-state-warn-primary,#d49245);color:var(--dsw-alias-state-warn-primary,#d49245)}.dssm-error{border-color:var(--dsw-alias-state-error-primary,#ef7272);color:var(--dsw-alias-state-error-primary,#ef7272)}.dssm-form,.dssm-field,.dssm-detail-section{display:flex;flex-direction:column}.dssm-form{gap:12px}.dssm-detail{display:flex;flex-direction:column;gap:12px;min-width:0}.dssm-detail .dssm-desc{margin:0}.dssm-field{gap:6px}.dssm-label{font-size:12px;color:var(--dsw-alias-label-secondary,#b9b9b9)}.dssm-detail-title{font-size:14px;line-height:22px;font-weight:650}.dssm-help{margin:0;color:var(--dsw-alias-label-tertiary,#a0a0a0);font-size:11px;line-height:18px}.dssm-batch-list{display:flex;flex-direction:column;gap:6px;max-height:360px;overflow-y:auto;margin:12px 0;padding:2px}.dssm-batch-item{display:flex;align-items:center;gap:10px;padding:8px 12px;border:0.5px solid var(--dsw-alias-border-l1,#3a3a3a);border-radius:var(--dsw-radius-lg,16px);background:var(--dsw-alias-bg-layer-1,var(--dsw-alias-interactive-bg-hover,transparent));cursor:pointer;user-select:none;transition:background 0.15s,border-color 0.15s}.dssm-batch-item:hover{background:var(--dsw-alias-bg-layer-2,var(--dsw-alias-interactive-bg-hover,transparent));border-color:var(--dsw-alias-border-l2,#494949)}.dssm-batch-item.selected{border-color:var(--dsw-alias-brand-primary,#3b82f6);background:var(--dsw-alias-state-business-tertiary)}.dssm-batch-item input[type="checkbox"]{cursor:pointer;margin:0;flex-shrink:0;width:15px;height:15px}.dssm-batch-info{display:flex;flex-direction:column;gap:2px;min-width:0;flex:1}.dssm-batch-name-row{display:flex;align-items:center;justify-content:space-between;gap:8px;min-width:0}.dssm-batch-name{font-size:13px;font-weight:600;color:var(--dsw-alias-label-primary,#eee);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.dssm-batch-cat-tag{font-size:10px;padding:1px 6px;border-radius:var(--dsw-radius-xs,4px);background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-secondary,#b9b9b9);white-space:nowrap;flex-shrink:0}.dssm-batch-desc{font-size:12px;line-height:16px;color:var(--dsw-alias-label-tertiary,#a0a0a0);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-top:2px}.dssm-modal-actions{display:flex;justify-content:flex-end;flex-wrap:wrap;gap:8px}.dssm-hidden-input{display:none}.dssm-dropzone{box-sizing:border-box;display:flex;width:100%;min-height:170px;flex-direction:column;align-items:center;justify-content:center;gap:7px;padding:22px;border:1px dashed var(--dsw-alias-border-l3,#555555);border-radius:var(--dsw-radius-lg,16px);background:var(--dsw-alias-bg-layer-1,var(--dsw-alias-interactive-bg-hover,transparent));color:var(--dsw-alias-label-secondary,#b9b9b9);transition:border-color 180ms ease,background 180ms ease}.dssm-dropzone:hover,.dssm-dropzone-active{border-color:var(--dsw-alias-brand-primary,var(--dsw-alias-label-primary,#f2f2f2));background:var(--dsw-alias-interactive-bg-hover,rgba(128,128,128,.12))}.dssm-dropzone-title{color:var(--dsw-alias-label-primary,#eeeeee);font-size:14px;font-weight:620}.dssm-dropzone-copy{font-size:12px;line-height:18px;text-align:center}.dssm-upload-choices{display:flex;align-items:center;gap:7px}.dssm-upload-link,.dssm-file-remove{padding:0;border:0;background:transparent;font:inherit;font-size:12px;cursor:pointer}.dssm-upload-link{color:var(--dsw-alias-label-secondary,#b9b9b9)}.dssm-upload-link:hover{color:var(--dsw-alias-label-primary,#eeeeee);text-decoration:underline}.dssm-upload-link:disabled{opacity:.45;cursor:default}.dssm-upload-divider{color:var(--dsw-alias-label-tertiary,#a0a0a0);font-size:11px}.dssm-file{display:flex;align-items:center;gap:9px;padding:10px 11px;border:0.5px solid var(--dsw-alias-border-l2,#494949);border-radius:var(--dsw-radius-lg,16px);background:var(--dsw-alias-bg-layer-1,var(--dsw-alias-interactive-bg-hover,transparent));color:var(--dsw-alias-label-primary,#eeeeee);font-size:12px}.dssm-file-kind{display:inline-flex;min-width:30px;height:24px;align-items:center;justify-content:center;border-radius:var(--dsw-radius-sm,8px);background:var(--dsw-alias-interactive-bg-hover,rgba(128,128,128,.12));color:var(--dsw-alias-label-secondary,#b9b9b9);font-size:9px;font-weight:700}.dssm-file-name{min-width:0;overflow:hidden;flex:1;text-overflow:ellipsis;white-space:nowrap}.dssm-file-meta{color:var(--dsw-alias-label-tertiary,#a0a0a0);font-size:11px;white-space:nowrap}.dssm-file-remove{width:24px;height:24px;color:var(--dsw-alias-label-secondary,#b9b9b9);font-size:18px}.dssm-upload-requirements{padding:1px 1px 0}.dssm-upload-requirements ul{display:flex;margin:7px 0 0;padding-left:18px;flex-direction:column;gap:5px;color:var(--dsw-alias-label-tertiary,#a0a0a0);font-size:11px;line-height:17px}.dssm-detail-section{gap:7px}.dssm-detail-path{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:14px;line-height:22px}.dssm-detail-section .dssm-note,.dssm-diag{font-size:14px;line-height:22px}.dssm-detail-path{padding:8px 10px;border-radius:var(--dsw-radius-lg,16px);background:var(--dsw-alias-bg-layer-1,var(--dsw-alias-interactive-bg-hover,transparent));color:var(--dsw-alias-label-secondary,#b9b9b9);word-break:break-all}.dssm-diag{padding:8px 10px;border-left:2px solid var(--dsw-alias-state-warn-primary,#d49245);background:var(--dsw-alias-bg-layer-1,var(--dsw-alias-interactive-bg-hover,transparent));color:var(--dsw-alias-label-secondary,#b9b9b9)}.dssm-trash-panel{display:flex;flex-direction:column;gap:10px}.dssm-trash-item{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:8px;padding:11px 13px;border:0.5px solid var(--dsw-alias-border-l2,rgba(128,128,128,.2));border-radius:var(--dsw-radius-xl,20px);background:transparent}.dssm-trash-main{min-width:0;display:flex;flex-direction:column;gap:6px}.dssm-trash-item .dssm-name{font-size:14px;line-height:20px;color:var(--dsw-alias-label-primary,inherit)}.dssm-trash-meta{display:flex;align-items:center;flex-wrap:wrap;gap:6px 12px;font-size:11px;line-height:17px;color:var(--dsw-alias-label-tertiary,#909090);overflow-wrap:anywhere}.dssm-trash-source{min-width:0;background:transparent;color:var(--dsw-alias-label-tertiary,#a0a0a0)}.dssm-trash-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
-@container(max-width:400px){.dssm-source-path{display:none}}@media(max-width:760px){.dssm-summary{grid-template-columns:repeat(2,minmax(0,1fr))}}@media(max-width:720px){.dssm-title-row{flex-wrap:wrap}}@container(max-width:520px){.dssm-trash-item{grid-template-columns:minmax(0,1fr)}.dssm-skill-row{flex-wrap:wrap}.dssm-skill-actions{width:100%;margin-inline-start:0;justify-content:flex-end}.dssm-trash-actions{justify-content:flex-end}.dssm-head{flex-direction:column}.dssm-actions{width:100%;margin-left:0}.dssm-actions button{flex:1}.dssm-summary{grid-template-columns:1fr}}.dssm-row-state{display:flex;align-items:center;justify-content:flex-end;gap:8px}
-.dssm-icon-action{width:22px;min-width:22px;height:22px;padding:0;border-radius:var(--dsw-radius-sm,8px);background:transparent;color:var(--dsw-alias-label-secondary,#b9b9b9);border-color:var(--dsw-alias-border-l2,#494949)}.dssm-icon-action:not(:disabled):not(.dssm-icon-danger):hover{color:var(--dsw-alias-link,#4176e6)!important;border-color:var(--dsw-alias-link,#4176e6)!important}.dssm-icon-action.dssm-icon-danger{color:var(--dsw-alias-state-error-primary,#ef7272);border-color:var(--dsw-alias-state-error-primary,#ef7272)}.dssm-btn-danger:not(:disabled){color:var(--dsw-alias-state-error-primary,#ef7272)}
-.dssm-category-icon{flex-shrink:0;margin-inline-end:6px;vertical-align:-2px}
+    var CSS = destinationCss + `.dssm-library-panel{display:flex;flex-direction:column;gap:14px}.dssm-sources{display:flex;flex-direction:column;gap:9px}.dssm-scope-tabs{display:grid!important;box-sizing:border-box!important;width:100%;height:32px!important;min-height:32px!important;max-height:32px!important;padding:2px!important;border-radius:var(--dsw-radius-sm,8px)!important;border:0.5px solid var(--dsw-alias-border-l2)!important;background:var(--dsw-alias-bg-layer-1)!important}.dssm-scope-tabs>span[aria-hidden="true"],.dssm-scope-tabs>[class*="indicator"]{width:calc((100% - 4px)/4)!important;inset:2px auto 2px 2px!important;border-radius:6px!important;border:0.5px solid var(--dsw-alias-border-l3,rgba(255,255,255,.12))!important;background:var(--dsw-alias-bg-layer-3,rgba(255,255,255,.08))!important;box-shadow:none!important}.dssm-scope-tabs [role=tab]{display:inline-flex!important;align-items:center!important;justify-content:center!important;gap:6px!important;height:28px!important;padding:0 12px!important;border-radius:6px!important;font-size:13px!important;line-height:20px!important;color:var(--dsw-alias-label-secondary)!important;text-align:center!important;box-sizing:border-box!important;transition:color 150ms ease!important}.dssm-scope-tabs [role=tab]:hover{color:var(--dsw-alias-label-primary)!important}.dssm-scope-tabs [role=tab][aria-selected="true"]{color:var(--dsw-alias-label-primary)!important;font-weight:600!important}.dssm-scope-tabs [role=tab] svg{flex:none;display:block}.dssm-source-head{display:flex;align-items:center;gap:8px;min-width:0;padding:8px 12px}.dssm-source-toggle{display:flex;align-items:center;gap:8px;flex:1;min-width:0;overflow:hidden;padding:0;border:0;background:transparent;color:inherit;font:inherit;text-align:left;cursor:pointer}.dssm-source-toggle:focus-visible{outline:var(--dsw-focus-ring-width,1px) solid var(--dsw-focus-ring-color,var(--dsw-alias-brand-primary));outline-offset:2px}.dssm-fold-chevron{flex:none;color:var(--dsw-alias-label-tertiary);transform:rotate(-90deg);transition:transform 160ms ease}.dssm-fold-chevron.is-open{transform:rotate(0deg)}@media (prefers-reduced-motion:reduce){.dssm-fold-chevron{transition:none}}.dssm-source-label{display:flex;align-items:center;gap:10px;min-width:0;flex:1}.dssm-skill-row{display:flex;align-items:center;gap:8px;margin:0;padding:11px 13px;border:0;border-top:0.5px solid var(--dsw-alias-border-l1,#3a3a3a);border-radius:0;background:transparent}.dssm-skill-copy{display:flex;flex-direction:column;gap:3px;min-width:0;flex:1}.dssm-skill-actions{display:flex;align-items:center;gap:8px;flex:none;flex-wrap:nowrap}.dssm-skill-desc{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--dsw-alias-label-tertiary,#a0a0a0);font-size:12px;line-height:18px}.dssm-icon-danger{color:var(--dsw-alias-state-error-primary,#ef7272)}.dssm-skill-row .dssm-name{font-size:14px;font-weight:650;color:var(--dsw-alias-label-primary,#eeeeee)}.dssm-skill-actions{display:flex;align-items:center;gap:8px;flex:none}.dssm-source{overflow:hidden;border:0.5px solid var(--dsw-alias-border-l2,#494949);border-radius:var(--dsw-radius-xl,20px);background:transparent}.dssm-textarea{box-sizing:border-box;display:block;width:100%;min-height:160px;margin:0;padding:8px 12px;border:0.5px solid var(--dsw-alias-border-l4);border-radius:var(--dsw-radius-md,12px);background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-primary);font:inherit;font-size:14px;line-height:22px;resize:vertical}.dssm-textarea:focus,.dssm-textarea:focus-visible{outline:none;border-color:var(--dsw-alias-state-business-primary)}.dssm-textarea[readonly]{resize:none}.dssm-source-title{font-size:14px;font-weight:650;white-space:nowrap;flex:none}.dssm-source-path{min-width:0;max-width:50%;margin-left:auto;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--dsw-alias-label-tertiary,#a0a0a0);font-size:11px}.dssm-source-actions{display:flex;flex:none;align-items:center;gap:8px;margin-left:12px}.dssm-fallback{margin-top:4px;color:var(--dsw-alias-label-secondary,#b9b9b9)}.dssm-section{box-sizing:border-box;display:flex;width:100%;min-width:0;padding:0 0 36px;container-type:inline-size;flex-direction:column;gap:16px;color:var(--dsw-alias-label-primary,#eeeeee);font-family:inherit}.dssm-feedback-links{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.dssm-feedback-links>span[data-mpi-check]{display:inline-flex;align-items:center}.dssm-desc{margin:12px 0 0;color:var(--dsw-alias-label-tertiary,#a0a0a0);font-size:14px;line-height:22px}.dssm-actions{display:flex;flex-wrap:wrap;gap:8px;margin-left:0;flex:none}.dssm-upload-link:focus-visible,.dssm-file-remove:focus-visible{outline:2px solid var(--dsw-alias-brand-primary,var(--dsw-alias-label-primary,#f2f2f2));outline-offset:2px}.dssm-summary{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));overflow:hidden;border:0.5px solid var(--dsw-alias-border-l2,#494949);border-radius:var(--dsw-radius-lg,16px);background:var(--dsw-alias-bg-layer-1)}.dssm-stat{padding:4px 10px;border-right:0.5px solid var(--dsw-alias-border-l1,#3a3a3a);font-size:12px;line-height:18px;color:var(--dsw-alias-label-secondary,#b9b9b9)}.dssm-stat:last-child{border-right:0}.dssm-stat strong{margin-right:4px;color:var(--dsw-alias-label-primary,#eeeeee);font-size:14px;font-weight:650}.dssm-filters{display:flex;align-items:center;gap:8px;flex-wrap:nowrap;width:100%!important;min-width:0;box-sizing:border-box}.dssm-filter-actions{display:flex;align-items:center;gap:8px;flex:none;margin-left:auto}.dssm-filters .dssm-search{flex:1 1 0;min-width:160px;max-width:none}.dssm-filters .dssm-source-filter,.dssm-filters .dssm-status-filter,.dssm-filters .dssm-project-filter,.dssm-filters .dssm-menu-select-wrap,.dssm-filters span[class*="_root_"],.dssm-filters .dssm-source-select-menu,.dssm-filters .dssm-menu-select-trigger{width:auto!important;min-width:0!important;display:inline-flex!important;flex:none}.dssm-field .dssm-menu-select-wrap,.dssm-destination-pair .dssm-menu-select-wrap,.dssm-destination-pair span[class*="_root_"]{display:flex!important;width:100%!important;min-width:0!important;height:auto!important;padding:0!important;margin:0!important;border:0!important;background:transparent!important}.dssm-destination-pair .dssm-menu-select-trigger,.dssm-form .dssm-menu-select-trigger{display:flex!important;width:100%!important;height:36px!important;border-radius:var(--dsw-radius-md,10px)!important;padding:0 12px!important;box-sizing:border-box!important}.dssm-source-select-menu{min-width:130px;max-width:280px}.dssm-menu-select-trigger{display:inline-flex;align-items:center;justify-content:space-between;gap:6px;height:32px;padding:0 10px;border:0.5px solid var(--dsw-alias-border-l2);border-radius:var(--dsw-radius-sm,8px);background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-primary);font:inherit;font-size:13px;line-height:20px;cursor:pointer;user-select:none;width:max-content;min-width:8em;transition:border-color 120ms ease,background 120ms ease}.dssm-menu-select-trigger:hover:not(:disabled){border-color:var(--dsw-alias-border-l3,#555)}.dssm-menu-select-trigger.is-open,.dssm-menu-select-trigger:focus-visible{border-color:var(--dsw-alias-brand-primary)!important;outline:var(--dsw-focus-ring-width,1px) solid var(--dsw-focus-ring-color,var(--dsw-alias-brand-primary))!important;outline-offset:0!important}.dssm-menu-select-trigger:disabled{opacity:.5;cursor:default}.dssm-menu-select-label{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1;text-align:left}.dssm-menu-select-arrow{color:var(--dsw-alias-label-secondary);flex-shrink:0;margin-left:4px;transition:transform 150ms ease}.dssm-menu-select-trigger[aria-expanded=true] .dssm-menu-select-arrow{transform:rotate(180deg)}.dssm-count{color:var(--dsw-alias-label-tertiary,#a0a0a0);font-size:12px;white-space:nowrap;flex:none}.dssm-name{overflow-wrap:anywhere;font-size:13px;font-weight:570}.dssm-note{overflow-wrap:anywhere;margin-top:2px;color:var(--dsw-alias-label-secondary,#b9b9b9);font-size:11px;line-height:17px}.dssm-enabled{color:var(--dsw-alias-state-success-primary,#51b976);font-size:12px;white-space:nowrap}.dssm-disabled{color:var(--dsw-alias-state-warn-primary,#d49245);font-size:12px;white-space:nowrap}.dssm-shadowed{color:var(--dsw-alias-label-tertiary,#a0a0a0);font-size:12px;white-space:nowrap}.dssm-trash-count{padding:2px 7px;border-radius:999px;corner-shape:round;background:var(--dsw-alias-interactive-bg-hover,rgba(128,128,128,.12));color:var(--dsw-alias-label-secondary,#b9b9b9);font-size:11px}.dssm-empty{padding:25px 14px;color:var(--dsw-alias-label-tertiary,#a0a0a0);font-size:12px;text-align:center}.dssm-feedback{padding:9px 11px;border:0.5px solid var(--dsw-alias-border-l2,#494949);border-radius:var(--dsw-radius-lg,16px);color:var(--dsw-alias-label-secondary,#b9b9b9);font-size:12px}.dssm-warning{border-color:var(--dsw-alias-state-warn-primary,#d49245);color:var(--dsw-alias-state-warn-primary,#d49245)}.dssm-error{border-color:var(--dsw-alias-state-error-primary,#ef7272);color:var(--dsw-alias-state-error-primary,#ef7272)}.dssm-form,.dssm-field,.dssm-detail-section{display:flex;flex-direction:column}.dssm-form{gap:12px}.dssm-detail{display:flex;flex-direction:column;gap:12px;min-width:0}.dssm-detail .dssm-desc{margin:0}.dssm-field{gap:6px}.dssm-label{font-size:12px;color:var(--dsw-alias-label-secondary,#b9b9b9)}.dssm-detail-title{font-size:14px;line-height:22px;font-weight:650}.dssm-help{margin:0;color:var(--dsw-alias-label-tertiary,#a0a0a0);font-size:11px;line-height:18px}.dssm-modal-actions{display:flex;justify-content:flex-end;flex-wrap:wrap;gap:8px}.dssm-hidden-input{display:none}.dssm-dropzone{box-sizing:border-box;display:flex;width:100%;min-height:170px;flex-direction:column;align-items:center;justify-content:center;gap:7px;padding:22px;border:1px dashed var(--dsw-alias-border-l3,#555555);border-radius:var(--dsw-radius-lg,16px);background:var(--dsw-alias-bg-layer-1,var(--dsw-alias-interactive-bg-hover,transparent));color:var(--dsw-alias-label-secondary,#b9b9b9);transition:border-color 180ms ease,background 180ms ease}.dssm-dropzone:hover,.dssm-dropzone-active{border-color:var(--dsw-alias-brand-primary,var(--dsw-alias-label-primary,#f2f2f2));background:var(--dsw-alias-interactive-bg-hover,rgba(128,128,128,.12))}.dssm-dropzone-title{color:var(--dsw-alias-label-primary,#eeeeee);font-size:14px;font-weight:620}.dssm-dropzone-copy{font-size:12px;line-height:18px;text-align:center}.dssm-upload-choices{display:flex;align-items:center;gap:7px}.dssm-upload-link,.dssm-file-remove{padding:0;border:0;background:transparent;font:inherit;font-size:12px;cursor:pointer}.dssm-upload-link{color:var(--dsw-alias-label-secondary,#b9b9b9)}.dssm-upload-link:hover{color:var(--dsw-alias-label-primary,#eeeeee);text-decoration:underline}.dssm-upload-link:disabled{opacity:.45;cursor:default}.dssm-upload-divider{color:var(--dsw-alias-label-tertiary,#a0a0a0);font-size:11px}.dssm-file{display:flex;align-items:center;gap:9px;padding:10px 11px;border:0.5px solid var(--dsw-alias-border-l2,#494949);border-radius:var(--dsw-radius-lg,16px);background:var(--dsw-alias-bg-layer-1,var(--dsw-alias-interactive-bg-hover,transparent));color:var(--dsw-alias-label-primary,#eeeeee);font-size:12px}.dssm-file-kind{display:inline-flex;min-width:30px;height:24px;align-items:center;justify-content:center;border-radius:var(--dsw-radius-sm,8px);background:var(--dsw-alias-interactive-bg-hover,rgba(128,128,128,.12));color:var(--dsw-alias-label-secondary,#b9b9b9);font-size:9px;font-weight:700}.dssm-file-name{min-width:0;overflow:hidden;flex:1;text-overflow:ellipsis;white-space:nowrap}.dssm-file-meta{color:var(--dsw-alias-label-tertiary,#a0a0a0);font-size:11px;white-space:nowrap}.dssm-file-remove{width:24px;height:24px;color:var(--dsw-alias-label-secondary,#b9b9b9);font-size:18px}.dssm-upload-requirements{padding:1px 1px 0}.dssm-upload-requirements ul{display:flex;margin:7px 0 0;padding-left:18px;flex-direction:column;gap:5px;color:var(--dsw-alias-label-tertiary,#a0a0a0);font-size:11px;line-height:17px}.dssm-detail-section{gap:7px}.dssm-detail-path{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:14px;line-height:22px}.dssm-detail-section .dssm-note,.dssm-diag{font-size:14px;line-height:22px}.dssm-detail-path{padding:8px 10px;border-radius:var(--dsw-radius-lg,16px);background:var(--dsw-alias-bg-layer-1,var(--dsw-alias-interactive-bg-hover,transparent));color:var(--dsw-alias-label-secondary,#b9b9b9);word-break:break-all}.dssm-diag{padding:8px 10px;border-left:2px solid var(--dsw-alias-state-warn-primary,#d49245);background:var(--dsw-alias-bg-layer-1,var(--dsw-alias-interactive-bg-hover,transparent));color:var(--dsw-alias-label-secondary,#b9b9b9)}.dssm-trash-panel{display:flex;flex-direction:column;gap:10px}.dssm-trash-item{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:8px;padding:11px 13px;border:0.5px solid var(--dsw-alias-border-l2,rgba(128,128,128,.2));border-radius:var(--dsw-radius-xl,20px);background:transparent}.dssm-trash-main{min-width:0;display:flex;flex-direction:column;gap:6px}.dssm-trash-item .dssm-name{font-size:14px;line-height:20px;color:var(--dsw-alias-label-primary,inherit)}.dssm-trash-meta{display:flex;align-items:center;flex-wrap:wrap;gap:6px 12px;font-size:11px;line-height:17px;color:var(--dsw-alias-label-tertiary,#909090);overflow-wrap:anywhere}.dssm-trash-source{min-width:0;background:transparent;color:var(--dsw-alias-label-tertiary,#a0a0a0)}.dssm-trash-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+@container(max-width:400px){.dssm-source-path{display:none}}@media(max-width:760px){.dssm-summary{grid-template-columns:repeat(2,minmax(0,1fr))}}@container(max-width:520px){.dssm-trash-item{grid-template-columns:minmax(0,1fr)}.dssm-skill-row{flex-wrap:wrap}.dssm-skill-actions{width:100%;margin-inline-start:0;justify-content:flex-end}.dssm-trash-actions{justify-content:flex-end}.dssm-actions{width:100%;margin-left:0}.dssm-actions button{flex:1}.dssm-summary{grid-template-columns:1fr}}.dssm-row-state{display:flex;align-items:center;justify-content:flex-end;gap:8px}
+.dssm-icon-action{width:22px;min-width:22px;height:22px;padding:0;border-radius:var(--dsw-radius-sm,8px);background:transparent;color:var(--dsw-alias-label-secondary,#b9b9b9);border-color:var(--dsw-alias-border-l2,#494949)}.dssm-icon-action:not(:disabled):not(.dssm-icon-danger):hover{color:var(--dsw-alias-link,#4176e6)!important;border-color:var(--dsw-alias-link,#4176e6)!important}.dssm-icon-action.dssm-icon-danger{color:var(--dsw-alias-state-error-primary,#ef7272);border-color:var(--dsw-alias-state-error-primary,#ef7272)}.dssm-btn-danger:not(:disabled),.dssm-btn-danger.product-control-pending{color:var(--dsw-alias-state-error-primary,#ef7272)}
 .dssm-read-loading{display:flex;align-items:center;min-height:40px;color:var(--dsw-alias-label-tertiary)}
 .dssm-stat strong{display:inline-block;min-width:2ch;font-variant-numeric:tabular-nums}
 .dssm-market-source{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--dsw-alias-label-secondary)}
 .dssm-category-filters{display:flex;flex-wrap:wrap;gap:8px;margin-block:4px 20px}
 .dssm-category-filters button[aria-pressed=true]{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary);font-weight:600}
+@container(max-width:640px){
+  .dssm-library-panel .dssm-filters{flex-wrap:wrap}
+  .dssm-library-panel .dssm-filters .dssm-search{flex-basis:100%;min-width:0;order:1}
+  .dssm-library-panel .dssm-filters .dssm-filter-actions{flex-basis:100%;min-width:0;flex-wrap:wrap;margin-left:0;order:2}
+}
+@container(max-width:520px){
+  .dssm-scope-tabs{height:auto!important;min-height:40px!important;max-height:none!important}
+  .dssm-scope-tabs [role=tab]{height:auto!important;min-height:36px;padding:4px!important;line-height:16px!important;overflow-wrap:anywhere}
+  .dssm-scope-tabs [role=tab] svg{display:none}
+}
 .dssm-skill-category{display:block;margin-top:6px;color:var(--dsw-alias-label-secondary);font-size:12px;line-height:18px}
 .dssm-modal{max-height:100%}
 .dssm-modal.dssm-modal-wide{width:min(760px,100%)}
-.dssm-detail-actions{display:flex;justify-content:flex-end;margin:8px 0}
+.dssm-detail-actions{display:flex;align-items:center;justify-content:flex-end;gap:8px;margin:8px 0}
+.dssm-detail-actions>span{font-size:12px;line-height:18px;color:var(--dsw-alias-label-secondary)}
+.dssm-detail-actions>button{flex-shrink:0}
 .dssm-detail-body{min-height:0;font-family:ui-monospace,SFMono-Regular,Consolas,monospace;line-height:1.6}
 .dssm-detail-body[readonly]{resize:vertical}
 .dssm-modal-content{flex:1;min-height:0;overflow:hidden}
@@ -55,6 +76,7 @@ function createSkillsPage(localeService: ClientContext["locale"]) {
 
     function translateOrFallback(t: Translate, key: string, fallback: string, params?: object) { var value = t(key, params); return typeof value === "string" && value !== key ? value : fallback; }
     function translateError(t: Translate, payload: unknown): string {
+      if (remoteErrorOf(payload)?.code.startsWith('gateway/')) return t('error.remoteUnavailable');
       if (payload instanceof Error && !(payload as CodedError).code) return payload.message;
       if (payload && typeof payload === "object") {
         const item = payload as Diagnostic & {message?: unknown};
@@ -87,7 +109,26 @@ function createSkillsPage(localeService: ClientContext["locale"]) {
         summary.warning = true;
         summary.text = t("result.importWarnings", { result: summary.text, warnings: warnings.join(t("format.warningSeparator")) });
       }
-      return summary;
+      const failures = (data.failed || []).map(item => {
+        const name = item.source.replace(/\\/g, "/").split("/").filter(Boolean).at(-1) || item.source;
+        return name + ": " + translateError(t, item);
+      });
+      if (failures.length) {
+        summary.warning = summary.imported;
+        summary.text = t("result.importFailures", { result: summary.text, failures: failures.join(t("format.warningSeparator")) });
+      }
+      return { ...summary, failed: failures.length > 0 };
+    }
+    function resultText(t: Translate, result: ResultMessage): string {
+      switch (result.kind) {
+        case 'message': return t(result.key, typeof result.params === 'function' ? result.params(t) : result.params);
+        case 'failure': {
+          const error = translateError(t, result.cause);
+          return result.key ? t(result.key, { error }) : error;
+        }
+        case 'import': return summarizeImportResult(t, result.value).text;
+        default: return assertNever(result);
+      }
     }
     function normalizeSkillQuery(query: unknown) { return String(query == null ? "" : query).trim().toLowerCase(); }
     function matchSkillQuery(skill: SearchSkill, query: unknown) { var q = normalizeSkillQuery(query); if (!q) return true; return [skill.name, skill.declaredName, skill.description, skill.kind, skill.kindLabel, skill.statusLabel, skill.rootKey, skill.rootLabel].some(function (value) { return String(value == null ? "" : value).toLowerCase().includes(q); }); }
@@ -129,50 +170,70 @@ function createSkillsPage(localeService: ClientContext["locale"]) {
       if (lower.endsWith(".zip")) return size > MAX_UPLOAD_ARCHIVE_BYTES ? { error: { code: "error.upload.archiveTooLarge", params: { limit: MAX_UPLOAD_ARCHIVE_BYTES } } } : { kind: "zip", name: name, files: list, count: 1, size: size };
       return { error: { code: "select.file.invalid" } };
     }
-    function buildUploadPayload(selection: UploadSelection) { return Promise.all(selection.files.map(function (file) { return file.arrayBuffer().then(function (buffer) { return { path: uploadFilePath(file), data: bytesToBase64(new Uint8Array(buffer)) }; }); })).then(function (entries) { return selection.kind === "zip" ? { name: selection.name, zip: entries[0].data } : { name: selection.name, entries: entries }; }); }
-    async function readDroppedEntry(entry: FileSystemEntry, prefix: string, output: UploadFile[], signal: AbortSignal): Promise<void> {
-      signal.throwIfAborted();
-      if (entry.isFile) {
-        const file = await new Promise<UploadFile>((resolve, reject) => { (entry as FileSystemFileEntry).file(resolve, reject); });
+    async function buildUploadPayload(selection: UploadSelection, signal: AbortSignal) {
+      const entries: { path: string; data: string }[] = [];
+      for (const file of selection.files) {
         signal.throwIfAborted();
-        file._dssmPath = prefix + file.name;
-        output.push(file);
-        return;
-      }
-      if (!entry.isDirectory) return;
-      const reader = (entry as FileSystemDirectoryEntry).createReader(), children: FileSystemEntry[] = [];
-      while (true) {
-        const batch = await new Promise<FileSystemEntry[]>((resolve, reject) => { reader.readEntries(resolve, reject); });
+        const buffer = await file.arrayBuffer();
         signal.throwIfAborted();
-        if (!batch.length) break;
-        children.push(...batch);
+        entries.push({ path: uploadFilePath(file), data: bytesToBase64(new Uint8Array(buffer)) });
       }
-      await Promise.all(children.map(child => readDroppedEntry(child, prefix + entry.name + "/", output, signal)));
+      return selection.kind === "zip" ? { name: selection.name, zip: entries[0].data } : { name: selection.name, entries };
     }
     async function droppedFiles(dataTransfer: DataTransfer, signal: AbortSignal) {
       signal.throwIfAborted();
       var items = Array.from(dataTransfer && dataTransfer.items || []), entries = items.map(function (item) { return item.webkitGetAsEntry && item.webkitGetAsEntry(); }).filter((entry): entry is FileSystemEntry => !!entry);
       if (!entries.length) return Array.from(dataTransfer && dataTransfer.files || []);
-      var files: UploadFile[] = [];
-      await Promise.all(entries.map(entry => readDroppedEntry(entry, "", files, signal)));
+      const files: UploadFile[] = [];
+      let directories = 0, total = 0;
+      const failure = (code: string, params: Record<string, string | number>) => Object.assign(new Error(code), { code, params });
+      // Bound directory enumeration before collecting files; no content is read until installation.
+      const readEntry = async (entry: FileSystemEntry, prefix: string, depth: number): Promise<void> => {
+        signal.throwIfAborted();
+        const path = prefix + entry.name;
+        if (depth > 64 || path.length > 512) throw failure("error.upload.path", { path });
+        if (entry.isFile) {
+          if (files.length >= MAX_UPLOAD_ENTRIES) throw failure("error.upload.tooMany", { limit: MAX_UPLOAD_ENTRIES });
+          const file = await new Promise<UploadFile>((resolve, reject) => { (entry as FileSystemFileEntry).file(resolve, reject); });
+          signal.throwIfAborted();
+          if (file.size > MAX_UPLOAD_ENTRY_BYTES) throw failure("error.upload.tooLarge", { limit: MAX_UPLOAD_ENTRY_BYTES });
+          if ((total += file.size) > MAX_UPLOAD_TOTAL_BYTES) throw failure("error.upload.tooLarge", { limit: MAX_UPLOAD_TOTAL_BYTES });
+          file._dssmPath = prefix + file.name;
+          files.push(file);
+          return;
+        }
+        if (!entry.isDirectory) return;
+        if (++directories > MAX_UPLOAD_ENTRIES) throw failure("error.upload.tooMany", { limit: MAX_UPLOAD_ENTRIES });
+        const reader = (entry as FileSystemDirectoryEntry).createReader();
+        while (true) {
+          const batch = await new Promise<FileSystemEntry[]>((resolve, reject) => { reader.readEntries(resolve, reject); });
+          signal.throwIfAborted();
+          if (!batch.length) return;
+          for (const child of batch) await readEntry(child, path + "/", depth + 1);
+        }
+      };
+      for (const entry of entries) await readEntry(entry, "", 1);
       return files;
     }
-    function hostButton(label: React.ReactNode, onClick: () => void, kind: "primary" | "outline" | "danger" = "primary", disabled?: boolean) {
-          const variant = kind === "primary" ? "primary" : "outline";
-          const className = kind === "danger" ? "dssm-btn-danger" : undefined;
-          return h(PrimitiveButton, { variant: variant, className: className, disabled: disabled, onClick: onClick }, label);
-        }
-    function iconButton(label: string, icon: React.ReactNode, onClick: () => void, danger?: boolean, disabled?: boolean) {
+    function hostButton(label: React.ReactNode, onClick: () => void, kind: "primary" | "outline" | "danger", state: { disabled?: boolean; pending?: boolean; busy?: boolean } = {}) {
+      const className = [kind === "danger" ? "dssm-btn-danger" : "", state.pending && !state.disabled ? "product-control-pending" : ""].filter(Boolean).join(" ");
+      return h(PrimitiveButton, { variant: kind === "primary" ? "primary" : "outline", className,
+        disabled: state.disabled, "aria-disabled": state.disabled || state.pending || false, "aria-busy": state.busy,
+        onClick: () => { if (!state.disabled && !state.pending) onClick(); } }, label);
+    }
+    function iconButton(label: string, icon: React.ReactNode, onClick: () => void, danger?: boolean, disabled?: boolean, pending?: boolean) {
       const props: React.ComponentProps<typeof PrimitiveButton> = {
         variant: "outline",
         size: "sm",
-        className: "dssm-icon-action" + (danger ? " dssm-icon-danger" : ""),
+        className: "dssm-icon-action" + (danger ? " dssm-icon-danger" : "") + (pending && !disabled ? " product-control-pending" : ""),
         disabled,
+        "aria-disabled": disabled || pending || false,
+        "aria-busy": pending,
         "aria-label": label,
         title: label,
         icon,
         style: { width: 22, minWidth: 22, height: 22, padding: 0, display: "inline-flex", alignItems: "center", justifyContent: "center", borderRadius: "var(--dsw-radius-sm, 8px)" },
-        onClick,
+        onClick: () => { if (!disabled && !pending) onClick(); },
       };
       return h(PrimitiveButton, props);
     }
@@ -291,26 +352,6 @@ function createSkillsPage(localeService: ClientContext["locale"]) {
             }, props.children ? h("div", null, props.children) : undefined);
     }
 
-    /** Category writes require a plain Enter after the native composition lifetime ends. */
-    function CategoryNameInput(props: { label: string; value: string; onChange(value: string): void; submit(): void }) {
-      const composition = react.useRef<ReturnType<typeof observeComposition> | null>(null);
-      react.useLayoutEffect(() => {
-        const observer = observeComposition(document);
-        composition.current = observer;
-        return () => { observer.dispose(); composition.current = null; };
-      }, []);
-      return h(Input, {
-        value: props.value, maxLength: 24, "aria-label": props.label,
-        onChange: event => props.onChange(event.target.value),
-        onKeyDown: (event: React.KeyboardEvent<HTMLInputElement>) => {
-          const composing = composition.current?.guards(event.nativeEvent);
-          if (event.key !== "Enter" || composing || event.repeat || event.ctrlKey || event.altKey || event.metaKey || event.shiftKey) return;
-          event.preventDefault();
-          props.submit();
-        },
-      });
-    }
-
     function SkillManagerSection(props: SectionProps) {
       const sessionId = props.useSessions(snapshot => Object.values(snapshot.byId)
         .find(session => (session.retainedBy.mainView ?? 0) > 0)?.id);
@@ -318,8 +359,8 @@ function createSkillsPage(localeService: ClientContext["locale"]) {
       // 按会话重挂载请求和表单状态，旧会话的异步响应不能覆盖新会话页面。
       return h(SkillManagerView, Object.assign({}, props, { key: sessionId || "no-session", sessionId: sessionId, scope: scopes[0], setScope: scopes[1], savedFilters: filtersState[0], setSavedFilters: filtersState[1], expanded: expandedState[0], setExpanded: expandedState[1] }));
     }
-    function readLoading(label: string) {
-      return h("div", { key: "loading", role: "status", "aria-label": label, className: "dssm-read-loading" }, h(StateDot, { state: "ongoing", size: 14 }));
+    function readLoading(label: string, directory = false) {
+      return h("div", { key: "loading", role: "status", "aria-label": label, className: directory ? "product-capability-pending" : "dssm-read-loading" }, h(StateDot, { state: "ongoing", size: 14, className: "product-read-indicator" }));
     }
 
     function SkillManagerView(props: ViewProps) {
@@ -327,39 +368,69 @@ function createSkillsPage(localeService: ClientContext["locale"]) {
       const sessionApi = react.useMemo(() => props.apiForSession(props.sessionId), [props.apiForSession, props.sessionId]);
       const callApi = props.api;
       const useRepositoryUI = react.useMemo(() => createRepositoryUI({ react, Modal, SourceSelect, destination: destinationKit, api: callApi, translateError, getLocale: hostLocale }), [callApi]);
-      var ss = react.useState<{loading: boolean; error: string | null; data: ManagerSnapshot | null}>({ loading: true, error: null, data: null }), snapshot = ss[0], setSnapshot = ss[1];
+      var ss = react.useState<{loading: boolean; error: unknown; data: ManagerSnapshot | null}>({ loading: true, error: null, data: null }), snapshot = ss[0], setSnapshot = ss[1];
       var bs = react.useState(false), busy = bs[0], setBusy = bs[1];
       var scope = props.scope;
-      function setScope(value: React.SetStateAction<string>) { setModal(null); props.setScope(value); }
+      function setScope(value: React.SetStateAction<string>) { if (setModal(null)) props.setScope(value); }
       var expanded = props.expanded, setExpanded = props.setExpanded, savedFilters = props.savedFilters, setSavedFilters = props.setSavedFilters;
       var ms = react.useState<ModalState>(null), modal = ms[0];
       function setModal(value: ModalState) {
+        if (formWriting()) return false;
+        if (modal !== null && value === null) captureActionFocus();
         if (value !== "import") cancelRead("upload");
-        if (value !== "detail" && readRequests.current.has("detail")) {
+        if (value !== "detail") {
           cancelRead("detail");
-          setBusy(false);
           setDetail(null);
         }
         ms[1](value);
+        return true;
       }
-      var asState = react.useState(""), addSearch = asState[0], setAddSearch = asState[1];
-      var aselState = react.useState<Record<string, boolean>>({}), addSelection = aselState[0], setAddSelection = aselState[1];
       var rs = react.useState<ResultMessage | null>(null), result = rs[0] && rs[0].scope === scope ? rs[0] : null;
       // 异步操作保留发起时的页签，完成提示不能泄漏到后来切换的页面。
       function setResult(value: ResultMessage | null) { rs[1](value ? Object.assign({}, value, { scope: scope }) : null); }
-      var cns = react.useState(""), categoryName = cns[0], setCategoryName = cns[1];
       var ids = react.useState<DestinationValue>(defaultDestination()), importDestination = ids[0], setImportDestination = ids[1];
       var wss = react.useState<SkillOutput<"listWorkspaces">["items"]>([]), workspaceRows = wss[0], setWorkspaceRows = wss[1];
       var wps = react.useState(""), selectedWorkspace = wps[0], setSelectedWorkspace = wps[1];
       var selectedWorkspaceRef = react.useRef("");
-      var wls = react.useState<{ loading: boolean; loaded: boolean; error: string | null }>({ loading: false, loaded: false, error: null }), workspaceList = wls[0], setWorkspaceList = wls[1];
-      var wds = react.useState<Record<string, { loading: boolean; loaded: boolean; error: string | null; roots: RootView[] }>>({}), workspaceDetails = wds[0], setWorkspaceDetails = wds[1];
+      var wls = react.useState<{ loading: boolean; loaded: boolean; error: unknown }>({ loading: false, loaded: false, error: null }), workspaceList = wls[0], setWorkspaceList = wls[1];
+      var wds = react.useState<Record<string, { loading: boolean; loaded: boolean; error: unknown; roots: RootView[] }>>({}), workspaceDetails = wds[0], setWorkspaceDetails = wds[1];
       var us = react.useState<UploadSelection | null>(null), upload = us[0], setUpload = us[1];
-      var ds = react.useState<Detail | null>(null), detail = ds[0], setDetail = ds[1];
+      var ds = react.useState<DetailRead | null>(null), detailRead = ds[0], setDetail = ds[1];
+      var detail = detailRead?.value;
+      const detailArea = react.useRef<HTMLDivElement>(null);
+      const detailRetry = useRetryFocus(() => detailArea.current?.querySelector<HTMLTextAreaElement>('textarea') ?? detailArea.current);
+      const directorySearch = react.useRef<HTMLInputElement>(null);
+      const directoryArea = react.useRef<HTMLDivElement>(null);
+      const directoryRetry = useRetryFocus(() => directorySearch.current ?? directoryArea.current);
+      const actionFocus = react.useRef<{ element: HTMLElement; scope: string }>();
+      const focusScope = react.useRef(scope);
+      focusScope.current = scope;
+      react.useLayoutEffect(() => {
+        const previous = actionFocus.current;
+        if (busy || !previous) return;
+        actionFocus.current = undefined;
+        const { element } = previous;
+        if (previous.scope !== scope || element.ownerDocument.activeElement !== element.ownerDocument.body) return;
+        const target = element !== element.ownerDocument.body && element.isConnected && !element.matches(':disabled') && !element.closest('[hidden]')
+          ? element : directorySearch.current ?? directoryArea.current;
+        if (target) focusWithoutRing(target, { preventScroll: true });
+      });
+      function captureActionFocus() {
+        const element = directoryArea.current?.ownerDocument.activeElement;
+        if (element instanceof HTMLElement) actionFocus.current = { element, scope };
+      }
       var inflightRef = react.useRef(false);
-      var draggingRef = react.useRef<{ root: string; name: string; currentCategoryId: string } | null>(null);
+      function captureReadFocus() {
+        if (inflightRef.current) return;
+        const area = directoryArea.current;
+        const element = area?.ownerDocument.activeElement;
+        if (element instanceof HTMLElement && area?.contains(element)) actionFocus.current = { element, scope: focusScope.current };
+      }
+      function formWriting() { return inflightRef.current && modal !== null && modal !== "detail"; }
       var importInputRef = react.useRef<HTMLInputElement>(null);
       var folderInputRef = react.useRef<HTMLInputElement>(null);
+      const importChoiceRef = react.useRef<HTMLButtonElement>(null);
+      const folderChoiceRef = react.useRef<HTMLButtonElement>(null);
       var pickerOpenRef = react.useRef(false);
       react.useEffect(function () {
         if (modal !== "import") return;
@@ -398,37 +469,41 @@ function createSkillsPage(localeService: ClientContext["locale"]) {
       function refresh(silent: boolean, checkCompany = false) {
         const request = beginRead("catalog");
         if (request.signal.aborted) return Promise.resolve();
-        if (!silent) setSnapshot(previous => ({ ...previous, loading: true, error: null }));
+        setSnapshot(previous => !silent || previous.error ? { ...previous, loading: true } : previous);
         return sessionApi("readState", { scope: {}, refreshCompany: checkCompany }, request.signal).then(function (data) {
           if (request.signal.aborted) return;
+          captureReadFocus();
           setSnapshot({ loading: false, error: null, data: data });
           return data;
         }).catch(function (error) {
-          if (!request.signal.aborted) setSnapshot(previous => ({ ...previous, loading: false, error: translateError(t, error) }));
+          if (request.signal.aborted) return;
+          captureReadFocus();
+          setSnapshot(previous => ({ ...previous, loading: false, error }));
         }).finally(() => { finishRead("catalog", request); });
       }
       react.useEffect(function () {
         void refresh(false).then(value => { if (value !== undefined) return refresh(true, true); });
         return () => { cancelRead("catalog"); };
       }, []);
-      async function post<K extends SkillMethod>(path: K, body: SkillInput<K> | (() => Promise<SkillInput<K>>), successKey?: string | null, successParams?: object): Promise<SkillOutput<K>> {
+      async function post<K extends SkillMethod>(path: K, body: SkillInput<K> | ((signal: AbortSignal) => Promise<SkillInput<K>>), successKey?: string, successParams?: ResultParams): Promise<SkillOutput<K>> {
         const signal = lifetime.current.signal;
         signal.throwIfAborted();
         if (inflightRef.current) throw { error: "operation already in progress" };
+        captureActionFocus();
         inflightRef.current = true;
         setBusy(true);
-        setResult(null);
+        rs[1](previous => previous && previous.scope === scope && (!previous.ok || previous.warning) ? previous : null);
         try {
-          const input = typeof body === "function" ? await body() : body;
+          const input = typeof body === "function" ? await body(signal) : body;
           signal.throwIfAborted();
           const data = await sessionApi(path, input, signal);
-          if (!signal.aborted) setResult({ ok: true, text: successKey ? t(successKey, successParams || data || {}) : t("result.updated") });
+          if (!signal.aborted) setResult(successKey ? { ok: true, kind: 'message', key: successKey, params: successParams || data || {} } : null);
           var operationScope = "target" in input ? input.target : "request" in input ? input.request : "scope" in input ? input.scope : undefined;
           var scopedWorkspace = operationScope && "workspace" in operationScope && typeof operationScope.workspace === "string" ? operationScope.workspace : "";
           await Promise.all([refresh(true), scopedWorkspace ? loadWorkspaceDetail(scopedWorkspace) : null]);
           return data;
         } catch (error) {
-          if (!signal.aborted) setResult({ ok: false, text: t("error.action", { error: translateError(t, error) }) });
+          if (!signal.aborted) setResult({ ok: false, kind: 'failure', key: "error.action", cause: error });
           throw error;
         } finally {
           inflightRef.current = false;
@@ -436,22 +511,25 @@ function createSkillsPage(localeService: ClientContext["locale"]) {
         }
       }
       function openDetail(root: RootView, skill: SkillView, workspacePath?: string) {
+        readDetail({ root: root.key, name: skill.name, ...workspacePath ? { workspace: workspacePath } : {} });
+      }
+      function readDetail(target: DetailRead['target']) {
+        if (formWriting() || readRequests.current.has("detail")) return;
         const request = beginRead("detail");
         if (request.signal.aborted) return;
-        setBusy(true); setDetail(null); setModal("detail");
-        void sessionApi("readDetail", { target: { root: root.key, name: skill.name, ...workspacePath ? { workspace: workspacePath } : {} } }, request.signal)
-          .then(value => { if (!request.signal.aborted) setDetail(value); })
+        setDetail(previous => previous?.target === target ? { ...previous, loading: true } : { target, loading: true });
+        setModal("detail");
+        void sessionApi("readDetail", { target }, request.signal)
+          .then(value => { if (!request.signal.aborted) setDetail({ target, loading: false, value }); })
           .catch(error => {
             if (request.signal.aborted) return;
-            setResult({ ok: false, text: t("error.action", { error: translateError(t, error) }) });
-            setModal(null);
+            setDetail({ target, loading: false, error });
           }).finally(() => {
-            if (!request.signal.aborted) setBusy(false);
             finishRead("detail", request);
           });
       }
-      function dismissForm() { if (inflightRef.current) return; if (modal === "import") { pickerOpenRef.current = false; setUpload(null); setResult(null); } setModal(null); }
-      function selectUploadFiles(files: ArrayLike<UploadFile> | null) { if (inflightRef.current || lifetime.current.signal.aborted) return; cancelRead("upload"); pickerOpenRef.current = false; var selected = inspectUploadSelection(files); if (!selected) return; if (selected.error) { setUpload(null); setResult({ ok: false, text: translateError(t, selected.error) }); return; } setUpload(selected); setResult(null); }
+      function dismissForm() { if (inflightRef.current) return; if (modal === "import") { pickerOpenRef.current = false; setUpload(null); } setResult(null); setModal(null); }
+      function selectUploadFiles(files: ArrayLike<UploadFile> | null) { if (inflightRef.current || lifetime.current.signal.aborted) return; cancelRead("upload"); pickerOpenRef.current = false; var selected = inspectUploadSelection(files); if (!selected) return; if (selected.error) { setUpload(null); setResult({ ok: false, kind: 'failure', cause: selected.error }); return; } setUpload(selected); setResult(null); }
       async function selectDroppedFiles(dataTransfer: DataTransfer) {
         if (inflightRef.current) return;
         const request = beginRead("upload");
@@ -461,31 +539,41 @@ function createSkillsPage(localeService: ClientContext["locale"]) {
           finishRead("upload", request);
           selectUploadFiles(files);
         } catch (error) {
-          if (!request.signal.aborted && !inflightRef.current) setResult({ ok: false, text: translateError(t, error) });
+          if (!request.signal.aborted && !inflightRef.current) setResult({ ok: false, kind: 'failure', cause: error });
         } finally {
           finishRead("upload", request);
         }
       }
-      function clearUploadFiles() { if (inflightRef.current) return; cancelRead("upload"); setUpload(null); }
-      function openNativePicker(ref: React.RefObject<HTMLInputElement>) { if (busy || pickerOpenRef.current || !ref.current) return; pickerOpenRef.current = true; ref.current.value = ""; try { ref.current.click(); } catch (error) { pickerOpenRef.current = false; setResult({ ok: false, text: t("error.upload.picker", { error: translateError(t, error) }) }); } }
-      function submitImport() { const selection = upload; if (!selection || !destinationReady(importDestination, workspaceRows, userDestinations)) return; cancelRead("upload"); post("uploadSkill", async function () { return { request: Object.assign({}, await buildUploadPayload(selection), destinationPayload(importDestination)) }; }, null).then(function (data) { var summary = summarizeImportResult(t, data); setResult({ ok: summary.ok, warning: summary.warning, text: summary.text }); if (summary.imported) { setModal(null); setUpload(null); } }).catch(function () {}); }
-      var data = snapshot.data || { roots: [], writeDestinations: [], projects: [], trash: [], warnings: [] }, allRoots = data.roots || [];
+      function clearUploadFiles(event: React.MouseEvent<HTMLButtonElement>) {
+        if (inflightRef.current) return;
+        cancelRead("upload");
+        const target = upload?.kind === "folder" ? folderChoiceRef.current : importChoiceRef.current;
+        if (target && event.currentTarget.ownerDocument.activeElement === event.currentTarget) {
+          focusWithoutRing(target, { preventScroll: true });
+        }
+        setUpload(null);
+      }
+      function openNativePicker(ref: React.RefObject<HTMLInputElement>) { if (inflightRef.current || pickerOpenRef.current || !ref.current) return; pickerOpenRef.current = true; ref.current.value = ""; try { ref.current.click(); } catch (error) { pickerOpenRef.current = false; setResult({ ok: false, kind: 'failure', key: "error.upload.picker", cause: error }); } }
+      function submitImport() { const selection = upload; if (!selection || !destinationReady(importDestination, workspaceRows, userDestinations)) return; cancelRead("upload"); post("uploadSkill", async function (signal) { return { request: Object.assign({}, await buildUploadPayload(selection, signal), destinationPayload(importDestination)) }; }).then(function (data) { var summary = summarizeImportResult(t, data); setResult({ ok: summary.ok, warning: summary.warning, kind: 'import', value: data }); if (summary.imported && !summary.failed) { setModal(null); setUpload(null); } }).catch(function (_error) { /* post displays the structured failure. */ }); }
+      var data = snapshot.data || { roots: [], writeDestinations: [], projects: [], trash: [], warnings: [] }, allRoots = snapshot.error ? [] : data.roots || [];
       var filterKey = scope === "market" ? "market" : scope === "project" ? "project" : "user", filters = savedFilters[filterKey] || { query: "", source: "", status: "" }, query = filters.query, source = filters.source;
       function updateFilter(key: string, value: string) { setSavedFilters(function (previous) { return Object.assign({}, previous, { [filterKey]: Object.assign({}, filters, { [key]: value }) }); }); }
       function setQuery(value: string) { updateFilter("query", value); }
-      function setSource(value: string) { setModal(null); updateFilter("source", value); }
+      function setSource(value: string) { if (setModal(null)) updateFilter("source", value); }
       var selectedDetail = workspaceDetails[selectedWorkspace];
       var roots = scope === "trash" ? [] : scope === "project" ? visibleSkillRoots(selectedDetail?.roots || []) : scopeSkillRoots(allRoots).filter(function (root) { return scope === "market" ? root.key === "company" : root.key !== "company"; });
       var filteredOptionsRoots = roots.filter(function (r) { return r.key === "company" || (r.skills || []).length > 0; });
       var activeSource = scope === "user" && filteredOptionsRoots.some(function (root) { return root.key === source; }) ? source : "";
-      var categoryNames = [...new Set(roots.filter(root => !activeSource || root.key === activeSource).flatMap(root => root.categories.map(category => category.name)))];
-      var categoryFilters = [{ value: '', label: t('category.all') }, ...categoryNames.map(name => ({ value: 'name:' + name, label: name })), { value: 'uncategorized', label: t('category.uncategorized') }];
+      function categoryLabel(name: string) { var preset = CONTENT_CATEGORIES.find(category => category.zh === name); return preset ? preset[hostLocale() === 'zh' ? 'zh' : 'en'] : name; }
+      var categoryFilters = [{ value: '', label: t('category.all') }, ...CONTENT_CATEGORIES.map(category => ({ value: 'name:' + category.zh, label: categoryLabel(category.zh) }))];
       var activeCategory = categoryFilters.some(item => item.value === filters.category) ? filters.category || '' : '';
-      function skillCategoryName(root: RootView, skill: SkillView) { return root.categories.find(category => category.id === skill.categoryId)?.name; }
+      function skillCategoryName(root: RootView, skill: SkillView) {
+        return resolveContentCategory(root.categories.find(category => category.id === skill.categoryId)?.name).zh;
+      }
       function workspacePath(row: SkillOutput<"listWorkspaces">["items"][number]) { return row.registeredPaths[0] || ""; }
       function selectWorkspace(path: string) {
         if (!workspaceRows.some(function (row) { return row.available && workspacePath(row) === path; })) return;
-        setModal(null);
+        if (!setModal(null)) return;
         selectedWorkspaceRef.current = path;
         setSelectedWorkspace(path);
         if (!workspaceDetails[path]) loadWorkspaceDetail(path);
@@ -493,10 +581,11 @@ function createSkillsPage(localeService: ClientContext["locale"]) {
       function loadWorkspaces(readSelected = scope === "project", forceDetail = false) {
         const request = beginRead("workspaces");
         if (request.signal.aborted) return Promise.resolve([]);
-        setWorkspaceList(previous => ({ ...previous, loading: true, error: null }));
+        setWorkspaceList(previous => ({ ...previous, loading: true }));
         return callApi("listWorkspaces", {}, request.signal).then(function (listed) {
           if (request.signal.aborted) return [];
           var items = listed.items || [];
+          captureReadFocus();
           setWorkspaceRows(items);
           setWorkspaceList({ loading: false, loaded: true, error: null });
           var selected = items.find(function (row) { return row.available && workspacePath(row) === selectedWorkspaceRef.current; }) || items.find(function (row) { return row.available && workspacePath(row); });
@@ -507,10 +596,11 @@ function createSkillsPage(localeService: ClientContext["locale"]) {
           return items;
         }).catch(function (error) {
           if (request.signal.aborted) return [];
+          captureReadFocus();
           setWorkspaceRows([]);
           selectedWorkspaceRef.current = "";
           setSelectedWorkspace("");
-          setWorkspaceList({ loading: false, loaded: true, error: translateError(t, error) });
+          setWorkspaceList({ loading: false, loaded: true, error });
           return [];
         }).finally(() => { finishRead("workspaces", request); });
       }
@@ -519,11 +609,15 @@ function createSkillsPage(localeService: ClientContext["locale"]) {
         const key = "workspace:" + path;
         const request = beginRead(key);
         if (request.signal.aborted) return Promise.resolve();
-        setWorkspaceDetails(previous => ({ ...previous, [path]: { loading: true, loaded: previous[path]?.loaded ?? false, error: null, roots: previous[path]?.roots ?? [] } }));
+        setWorkspaceDetails(previous => ({ ...previous, [path]: { loading: true, loaded: previous[path]?.loaded ?? false, error: previous[path]?.error ?? null, roots: previous[path]?.roots ?? [] } }));
         return callApi("readWorkspace", { workspace: path }, request.signal).then(value => {
-          if (!request.signal.aborted) setWorkspaceDetails(previous => ({ ...previous, [path]: { loading: false, loaded: true, error: null, roots: value.roots } }));
+          if (request.signal.aborted) return;
+          captureReadFocus();
+          setWorkspaceDetails(previous => ({ ...previous, [path]: { loading: false, loaded: true, error: null, roots: value.roots } }));
         }).catch(error => {
-          if (!request.signal.aborted) setWorkspaceDetails(previous => ({ ...previous, [path]: { loading: false, loaded: true, error: translateError(t, error), roots: [] } }));
+          if (request.signal.aborted) return;
+          captureReadFocus();
+          setWorkspaceDetails(previous => ({ ...previous, [path]: { loading: false, loaded: true, error, roots: [] } }));
         }).finally(() => { finishRead(key, request); });
       }
       function refreshWorkspaceDetails() {
@@ -536,8 +630,18 @@ function createSkillsPage(localeService: ClientContext["locale"]) {
         });
         return loadWorkspaces(true, true);
       }
-      function openCreate() { props.startCreation(); }
-      function openImport() { setResult(null); setUpload(null); setImportDestination(defaultDestination()); setModal("import"); loadWorkspaces(); }
+      function refreshPage() {
+        if (readRequests.current.has("catalog")) return;
+        void refresh(false, true);
+        if (scope === "project") void refreshWorkspaceDetails();
+      }
+      function retryDirectory() {
+        if (readRequests.current.has("catalog")) return;
+        refreshPage();
+      }
+      function openCreate() { if (!formWriting()) props.startCreation(); }
+      function openImport() { if (inflightRef.current) return; setResult(null); setUpload(null); setImportDestination(defaultDestination()); setModal("import"); loadWorkspaces(); }
+      function openConfirmation(value: ConfirmModal) { if (inflightRef.current) return; setResult(null); setModal(value); }
       var userDestinations = (data.writeDestinations || []).filter(function (item) { return item.key === "dsh" || item.key === "agents"; });
       // 项目条目用原项目的登记路径恢复：不依赖当前会话。找不到登记路径时不编造，交给服务端按会话判断。
       function trashRestoreBody(item: TrashItem) {
@@ -592,204 +696,52 @@ function createSkillsPage(localeService: ClientContext["locale"]) {
         var scoped = function <T extends object>(extra: T) { return workspacePath ? Object.assign({}, extra, { workspace: workspacePath }) : extra; };
         var enabled = isSkillEnabled(skill);
         var showSwitch = root.toggleable !== false;
+        var toggleLocked = root.enabled === false || (skill.loadable === false && !(enabled && skill.managerOverride === true));
         var statusKey = skill.shadowedBy ? "status.shadowed" : skill.loadable === false ? "status.invalid" : enabled ? "status.enabled" : "status.disabled";
         var cls = skill.shadowedBy ? "dssm-shadowed" : enabled ? "dssm-enabled" : "dssm-disabled";
         var showStatus = !showSwitch || !!skill.shadowedBy || skill.loadable === false;
         var menu: { value: string; label: string; danger?: boolean }[] = [{ value: "detail", label: t("btn.detail") }];
         if (root.key !== "company" && "dshDesktop" in globalThis && skill.loadable) menu.push({ value: "submit-company", label: t("btn.submitCompany") });
-        var categories = root.key === "company" ? [] : root.categories || [];
-        var currentCatId = skill.categoryId || "";
-        categories.forEach(function (category) {
-          if (category.id !== currentCatId) {
-            menu.push({ value: "category:" + category.id, label: t("category.assign", { name: category.name }) });
-          }
+        if (root.key !== 'company') CONTENT_CATEGORIES.forEach(function (category) {
+          menu.push({ value: 'preset-category:' + category.id, label: t('category.assign', { name: categoryLabel(category.zh) }) });
         });
-        if (categories.length && currentCatId !== "") {
-          menu.push({ value: "category:", label: t("category.assign", { name: t("category.uncategorized") }) });
-        }
         if (skill.installSource && skill.linked !== true) menu.push({ value: "update", label: t("repo.manageUpdate") });
         if (root.mutable && skill.linked !== true) menu.push({ value: "trash", label: t("btn.trash"), danger: true });
         var statusTitle = skill.shadowedBy ? t("status.shadowedBy", { source: (function () { var winner = allRoots.find(function (item) { return item.key === skill.shadowedBy!.root; }); return winner ? rootDisplayName(t, winner) : skill.shadowedBy!.root; })() }) : undefined;
         var skillActions: React.ReactNode[] = [
-          h(SourceSelect, { action: true, icon: h(IconEllipsisOutlineRegular, { size: 16 }), label: t("btn.more"), disabled: busy, options: menu, onChange: function (action) {
+          h(SourceSelect, { action: true, icon: h(IconEllipsisOutlineRegular, { size: 16 }), label: t("btn.more"), options: menu.map(item => ({ ...item, disabled: busy && item.value !== "detail" })), onChange: function (action) {
           if (action === "detail") openDetail(root, skill, workspacePath);
           if (action === "submit-company") document.dispatchEvent(new CustomEvent("dsh:company-content-submit", { cancelable: true,
             detail: { name: skill.declaredName || skill.name, prepare: (signal: AbortSignal) => sessionApi("exportSkill", { target: scoped({ root: root.key, name: skill.name }) }, signal) } }));
-          if (action.indexOf("category:") === 0) {
-            var categoryId = action.slice("category:".length);
-            var category = categories.find(function (item) { return item.id === categoryId; });
-            post("assignCategory", { target: scoped({ root: root.key, name: skill.name, category: categoryId }) }, "category.assigned", { name: skill.name, category: category ? category.name : t("category.uncategorized") }).catch(function (_error) { /* post displays the localized failure. */ });
+          if (action.startsWith('preset-category:')) {
+            var presetCategory = CONTENT_CATEGORIES.find(category => category.id === action.slice('preset-category:'.length));
+            if (presetCategory) post('assignCategory', { target: scoped({ root: root.key, name: skill.name, categoryId: presetCategory.id }) }, 'category.assigned', () => ({ name: skill.name, category: categoryLabel(presetCategory.zh) })).catch(function (_error) { /* post displays the localized failure. */ });
           }
           if (action === "update") { repositoryUI.focusSource(skill.installSource!, skill.name); setScope("repositories"); }
-          if (action === "trash") setModal({ type: "trash-confirm", root: root.key, name: skill.name, workspace: workspacePath });
+          if (action === "trash") openConfirmation({ type: "trash-confirm", root: root.key, name: skill.name, workspace: workspacePath });
         } }),
         ];
-        skillActions.push(h("div", { className: "dssm-row-state" }, showStatus ? renderSkillStatusIcon(statusKey, statusTitle, cls) : null, showSwitch ? h(Switch, { checked: enabled, label: t("skill.toggle") + " " + skill.name, disabled: busy || root.enabled === false || (skill.loadable === false && !(enabled && skill.managerOverride === true)), onChange: function (enabled) { post("setSkillEnabled", { target: scoped({ root: root.key, name: skill.name }), enabled }).catch(function (_error) { /* post displays the localized failure. */ }); } }) : null));
+        skillActions.push(h("div", { className: "dssm-row-state" }, showStatus ? renderSkillStatusIcon(statusKey, statusTitle, cls) : null, showSwitch ? h(Switch, { checked: enabled, label: t("skill.toggle") + " " + skill.name, disabled: busy || toggleLocked, className: busy && !toggleLocked ? "product-control-pending" : undefined, onChange: function (enabled) { post("setSkillEnabled", { target: scoped({ root: root.key, name: skill.name }), enabled }).catch(function (_error) { /* post displays the localized failure. */ }); } }) : null));
         var skillName = skill.declaredName || skill.name;
         var description = skill.description || t("note.missing");
-        var canDrag = root.key !== "company" && (root.mutable === true || !!(root.categories && root.categories.length));
-        return h("div", {
-          key: root.key + ":" + skill.name,
-          className: "dssm-skill-row",
-          draggable: canDrag,
-          onDragStart: function (e: React.DragEvent) {
-            if (!canDrag) return;
-            var dragInfo = { root: root.key, name: skill.name, currentCategoryId: skill.categoryId || "" };
-            draggingRef.current = dragInfo;
-            e.dataTransfer.setData("text/plain", JSON.stringify(dragInfo));
-            e.dataTransfer.effectAllowed = "move";
-            (e.currentTarget as HTMLElement).classList.add("dragging");
-          },
-          onDragEnd: function (e: React.DragEvent) {
-            draggingRef.current = null;
-            (e.currentTarget as HTMLElement).classList.remove("dragging");
-            clearDragHighlights(e.currentTarget as HTMLElement);
-          },
-          onDragOver: function (e: React.DragEvent) {
-            if (!draggingRef.current || draggingRef.current.root !== root.key || draggingRef.current.name === skill.name) return;
-            e.preventDefault();
-            e.stopPropagation();
-            var rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-            (e.currentTarget as HTMLElement).classList.toggle("drop-before", e.clientY < rect.top + rect.height / 2);
-            (e.currentTarget as HTMLElement).classList.toggle("drop-after", e.clientY >= rect.top + rect.height / 2);
-          },
-          onDragLeave: function (e: React.DragEvent) {
-            (e.currentTarget as HTMLElement).classList.remove("drop-before", "drop-after");
-          },
-          onDrop: function (e: React.DragEvent) {
-            e.preventDefault();
-            e.stopPropagation();
-            (e.currentTarget as HTMLElement).classList.remove("drop-before", "drop-after");
-            var dragInfo = draggingRef.current;
-            draggingRef.current = null;
-            clearDragHighlights(e.currentTarget as HTMLElement);
-            if (!dragInfo || dragInfo.root !== root.key || dragInfo.name === skill.name) return;
-            var rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-            post("moveInCategory", { target: scoped({ root: root.key, name: dragInfo.name, category: skill.categoryId || "", targetName: skill.name, position: e.clientY < rect.top + rect.height / 2 ? "before" : "after" }) }, "category.moved", { name: dragInfo.name }).catch(function (_error) { /* post displays the localized failure. */ });
-          }
-        },
-        canDrag ? h("div", { className: "dssm-drag-handle", title: t("category.dragTip") }, "⋮⋮") : null,
+        return h("div", { key: root.key + ":" + skill.name, className: "dssm-skill-row" },
         h("div", { className: "dssm-skill-copy" }, h("div", { className: "dssm-name" }, skillName), h("div", { className: "dssm-skill-desc", title: skill.description || undefined }, description),
-          h('span', { className: 'dssm-skill-category' }, skillCategoryName(root, skill) || t('category.uncategorized')),
+          h('span', { className: 'dssm-skill-category' }, categoryLabel(skillCategoryName(root, skill))),
           skill.shadowedBy ? h("div", { className: "dssm-note" }, statusTitle) : null,
           skill.loadable === false ? h("div", { className: "dssm-note" }, t("skill.unavailable")) : null,
           renderLinkedNote(skill), renderFallback(skill)), h("div", { className: "dssm-skill-actions" }, ...skillActions));
       }
       var rows = roots.flatMap(function (root) { return (root.skills || []).map(function (skill) { return { root: root, skill: skill }; }); });
-      var filteredRows = rows.filter(function (row) { return (!activeSource || row.root.key === activeSource) && (!activeCategory || (skillCategoryName(row.root, row.skill) ? 'name:' + skillCategoryName(row.root, row.skill) : 'uncategorized') === activeCategory) && (!filters.status || isSkillEnabled(row.skill) === (filters.status === "enabled")) && matchSkillQuery(Object.assign({}, row.skill, { rootLabel: rootDisplayName(t, row.root) }), query); });
+      var filteredRows = rows.filter(function (row) { return (!activeSource || row.root.key === activeSource) && (!activeCategory || 'name:' + skillCategoryName(row.root, row.skill) === activeCategory) && (!filters.status || isSkillEnabled(row.skill) === (filters.status === "enabled")) && matchSkillQuery(Object.assign({}, row.skill, { rootLabel: rootDisplayName(t, row.root) }), query); });
       var summary = countSkillEnablement(rows);
       function sourceExtra(root: RootView, workspacePath: string | undefined, displayName: string) {
         var scoped = workspacePath ? { root: root.key, workspace: workspacePath } : { root: root.key };
         var actions: React.ReactNode[] = [];
-        actions.push(iconButton(t("category.create"), h(IconPlusOutlineRegular, { size: 16 }), function () { setCategoryName(""); setModal({ type: "category-create", root: root.key, workspace: workspacePath }); }, false, busy));
-        if (canToggleSource(root)) actions.push(h(Switch, { checked: root.enabled, disabled: busy, label: t("source.toggle") + " " + displayName, onChange: function (enabled) { post("setSourceEnabled", { target: scoped, enabled }).catch(function (_error) { /* post displays the localized failure. */ }); } }));
+        if (canToggleSource(root)) actions.push(h(Switch, { checked: root.enabled, disabled: busy, className: busy ? "product-control-pending" : undefined, label: t("source.toggle") + " " + displayName, onChange: function (enabled) { post("setSourceEnabled", { target: scoped, enabled }).catch(function (_error) { /* post displays the localized failure. */ }); } }));
         return h("span", { className: "dssm-source-actions", onClick: function (event: React.MouseEvent) { event.stopPropagation(); } }, ...actions);
       }
-      function clearDragHighlights(element: HTMLElement) {
-        var section = element.closest(".dssm-section");
-        if (!section) return;
-        Array.prototype.forEach.call(section.querySelectorAll(".dssm-cat.drag-over, .dssm-skill-row.drop-before, .dssm-skill-row.drop-after"), function (target: HTMLElement) {
-          target.classList.remove("drag-over", "drop-before", "drop-after");
-        });
-      }
-      function renderCategory(root: RootView, bucket: { id: string; name: string; locked: boolean; skills: { root: RootView; skill: SkillView }[]; scope?: { root: RootView; skill: SkillView }[] }, workspacePath?: string, keyPrefix?: string, allRootRows?: { root: RootView; skill: SkillView }[]) {
-        var expansionKey = JSON.stringify(["category", keyPrefix || "", root.key, bucket.id || "none"]);
-        expansionKey += '|' + activeCategory;
-        var open = expanded[expansionKey] === undefined ? !!(query || filters.status || activeCategory) : expanded[expansionKey];
-        var counted = bucket.scope || bucket.skills;
-        var usable = counted.filter(function (row) { return row.skill.loadable !== false; });
-        var enabledCount = usable.filter(function (row) { return isSkillEnabled(row.skill); }).length;
-        var allOn = usable.length > 0 && enabledCount === usable.length;
-        var scoped = function <T extends object>(extra: T) { return workspacePath ? Object.assign({}, extra, { workspace: workspacePath }) : extra; };
-        return h("section", {
-          key: root.key + ":" + (bucket.id || "none"),
-          className: "dssm-cat",
-          "aria-label": bucket.name,
-          onDragOver: function (e: React.DragEvent) {
-            e.preventDefault();
-            if (draggingRef.current && draggingRef.current.root === root.key && draggingRef.current.currentCategoryId !== bucket.id) {
-              (e.currentTarget as HTMLElement).classList.add("drag-over");
-            } else {
-              (e.currentTarget as HTMLElement).classList.remove("drag-over");
-            }
-          },
-          onDragLeave: function (e: React.DragEvent) {
-            var related = e.relatedTarget as Node | null;
-            if (related && (e.currentTarget as HTMLElement).contains(related)) return;
-            (e.currentTarget as HTMLElement).classList.remove("drag-over");
-          },
-          onDrop: function (e: React.DragEvent) {
-            e.preventDefault();
-            draggingRef.current = null;
-            (e.currentTarget as HTMLElement).classList.remove("drag-over");
-            clearDragHighlights(e.currentTarget as HTMLElement);
-            try {
-              var dragData = JSON.parse(e.dataTransfer.getData("text/plain") || "{}");
-              if (dragData && dragData.name && dragData.root === root.key) {
-                if (dragData.currentCategoryId !== bucket.id) {
-                  post("assignCategory", { target: scoped({ root: root.key, name: dragData.name, category: bucket.id }) }, "category.assigned", { name: dragData.name, category: bucket.name }).catch(function (_error) { /* post displays the localized failure. */ });
-                }
-              }
-            } catch (_err) {
-              // 忽略非法的外部或非本插件拖拽载荷
-            }
-          }
-        },
-          h("div", { className: "dssm-cat-head" },
-            h("button", { type: "button", className: "dssm-cat-main", "aria-expanded": open, onClick: function () { setExpanded(function (previous) { var next: Record<string, boolean> = {}; next[expansionKey] = !open; return Object.assign({}, previous, next); }); } },
-              h("span", { className: "dssm-cat-title" }, h(open ? IconFolderOpenRegular : IconFolderCloseRegular, { size: 16, className: "dssm-category-icon" }), bucket.name),
-              h("span", { className: "dssm-count" }, t("category.progress", { count: counted.length, enabled: enabledCount, usable: usable.length }))),
-            h("span", { className: "dssm-source-actions", onClick: function (event: React.MouseEvent) { event.stopPropagation(); } },
-              bucket.locked ? null : iconButton(t("category.addSkills"), h(IconPlusOutlineRegular, { size: 16 }), function () {
-                var catMap: Record<string, string> = {};
-                (root.categories || []).forEach(function (c) { catMap[c.id] = c.name; });
-                var sourceList = allRootRows || bucket.scope || bucket.skills;
-                var candidates = sourceList.filter(function (row) { return row.skill.categoryId !== bucket.id; }).map(function (row) {
-                  return {
-                    name: row.skill.name,
-                    declaredName: row.skill.declaredName,
-                    description: row.skill.description,
-                    currentCatName: row.skill.categoryId && catMap[row.skill.categoryId] || t("category.uncategorized")
-                  };
-                });
-                setAddSelection({}); setAddSearch("");
-                setModal({ type: "category-add", root: root.key, id: bucket.id, name: bucket.name, workspace: workspacePath, skills: candidates });
-              }, false, busy),
-              bucket.locked ? null : iconButton(t("category.rename"), h(IconEditOutlineRegular, { size: 16 }), function () { setCategoryName(bucket.name); setModal({ type: "category-rename", root: root.key, id: bucket.id, name: bucket.name, workspace: workspacePath }); }, false, busy),
-              bucket.locked ? null : iconButton(t("category.delete"), h(IconTrashOutlineRegular, { size: 16 }), function () { setModal({ type: "category-delete", root: root.key, id: bucket.id, name: bucket.name, workspace: workspacePath }); }, true, busy),
-              h(Switch, { checked: allOn, label: t("category.toggle") + " " + bucket.name, disabled: busy || root.enabled === false || usable.length === 0, onChange: function (enabled) {
-                post("setCategoryEnabled", { target: scoped({ root: root.key, category: bucket.id }), enabled }).catch(function (_error) { /* post displays the localized failure. */ });
-              } }))),
-          open ? (bucket.skills.length ? h("div", { className: "dssm-skill-list" }, bucket.skills.map(function (row) { return renderSkill(root, row.skill, workspacePath); })) : h("div", { className: "dssm-empty" }, t("category.empty"))) : null);
-      }
-      function renderSourceBody(root: RootView, filtered: { root: RootView; skill: SkillView }[], workspacePath?: string, keyPrefix?: string, scopeRows?: { root: RootView; skill: SkillView }[]) {
-        var categories = root.categories || [];
-        var orderRows = function (list: { root: RootView; skill: SkillView }[], id: string) {
-          var savedOrder = root.categoryOrder && root.categoryOrder[id] || [];
-          var ranks: Record<string, number> = Object.create(null);
-          savedOrder.forEach(function (name, index) { ranks[name] = index; });
-          return list.map(function (row, index) { return { row: row, index: index, rank: ranks[row.skill.name] }; }).sort(function (a, b) {
-            if (a.rank !== undefined && b.rank !== undefined) return a.rank - b.rank;
-            if (a.rank !== undefined) return -1;
-            if (b.rank !== undefined) return 1;
-            return a.index - b.index;
-          }).map(function (item) { return item.row; });
-        };
-        if (!categories.length) return filtered.length ? h("div", { className: "dssm-skill-list" }, orderRows(filtered, "").map(function (row) { return renderSkill(root, row.skill, workspacePath); })) : h("div", { className: "dssm-empty" }, t(root.key === "company" && !root.skills.length ? "empty.company" : "empty.source"));
-        var known: Record<string, boolean> = {};
-        var allRows = scopeRows || filtered;
-        categories.forEach(function (item) { known[item.id] = true; });
-        var inCategory = function (list: { root: RootView; skill: SkillView }[], id: string) {
-          return orderRows(list.filter(function (row) { return id ? row.skill.categoryId === id : !row.skill.categoryId || !known[row.skill.categoryId]; }), id);
-        };
-        var buckets = categories.map(function (item) { return { id: item.id, name: item.name, locked: false, skills: inCategory(filtered, item.id), scope: inCategory(allRows, item.id) }; });
-        buckets.push({ id: "", name: t("category.uncategorized"), locked: true, skills: inCategory(filtered, ""), scope: inCategory(allRows, "") });
-        var searching = !!(query || filters.status || activeCategory);
-        return h("div", null, h("p", { className: "dssm-note dssm-cat-note" }, t("category.note")), buckets.filter(function (bucket) { return !searching || bucket.skills.length; }).map(function (bucket) { return renderCategory(root, bucket, workspacePath, keyPrefix, allRows); }));
-      }
-      function renderRoot(root: RootView, workspacePath?: string, rowsForRoot?: { root: RootView; skill: SkillView }[], keyPrefix?: string) {
-        var scopeRows = (rowsForRoot || rows).filter(function (row) { return row.root.key === root.key; });
-        var filtered = (rowsForRoot || filteredRows).filter(function (row) { return row.root.key === root.key; });
+      function renderRoot(root: RootView, workspacePath?: string, keyPrefix?: string) {
+        var filtered = filteredRows.filter(function (row) { return row.root.key === root.key; });
         if (activeSource && root.key !== activeSource || (query || filters.status || activeCategory) && !filtered.length) return null;
         var expansionKey = JSON.stringify([filterKey, keyPrefix || "", root.key, query, activeSource, filters.status, activeCategory]);
         // 选中工作区的来源默认展开，直接显示技能；全局来源默认行为保持不变。
@@ -799,21 +751,23 @@ function createSkillsPage(localeService: ClientContext["locale"]) {
           h("div", { className: "dssm-source-head" },
             h("button", { type: "button", className: "dssm-source-toggle", "aria-expanded": open, onClick: function () { setExpanded(function (previous) { var next: Record<string, boolean> = {}; next[expansionKey] = !open; return Object.assign({}, previous, next); }); } }, h(IconChevronDownOutlineRegular, { size: 12, className: "dssm-fold-chevron" + (open ? " is-open" : "") }), h("div", { className: "dssm-source-label" }, renderRootIcon(root.key), h("span", { className: "dssm-source-title" }, displayName), h("span", { className: "dssm-count" }, t(countKey("summary.group", filtered.length), { count: filtered.length })), h("span", { className: "dssm-source-path", title: root.path }, root.path))),
             sourceExtra(root, workspacePath, displayName)),
-          open ? h("div", { className: "dssm-source-body", role: "region" }, renderSourceBody(root, filtered, workspacePath, keyPrefix, scopeRows)) : null);
+          open ? h("div", { className: "dssm-source-body", role: "region" }, filtered.length
+            ? h("div", { className: "dssm-skill-list" }, filtered.map(function (row) { return renderSkill(root, row.skill, workspacePath); }))
+            : h("div", { className: "dssm-empty" }, t("empty.source"))) : null);
       }
       function renderList() {
-        if (scope === "market") return h("div", { key: "market-skills", className: filteredRows.length ? "dssm-skill-list" : "dssm-empty" }, filteredRows.length
+        if (scope === "market") return h("div", { key: "market-skills", className: filteredRows.length ? "dssm-skill-list" : "product-capability-empty" }, filteredRows.length
           ? filteredRows.map(function (row) { return renderSkill(row.root, row.skill); })
           : t(query || filters.status || activeCategory ? "empty.search" : "empty.company"));
         var project = scope === "project", path = project ? selectedWorkspace : undefined;
-        var groups = roots.map(function (root) { return renderRoot(root, path, undefined, path ? path + "|" : undefined); }).filter(Boolean);
-        var body: React.ReactNode = groups.length ? groups : h("div", { className: "dssm-empty" }, t(query || filters.status || activeCategory ? "empty.search" : "empty.source"));
+        var groups = roots.map(function (root) { return renderRoot(root, path, path ? path + "|" : undefined); }).filter(Boolean);
+        var body: React.ReactNode = groups.length ? groups : h("div", { className: "product-capability-empty" }, t(query || filters.status || activeCategory ? "empty.search" : "empty.source"));
         if (project) {
-          if (workspaceList.error) body = h("div", { className: "dssm-feedback dssm-error", role: "alert" }, t("workspace.listFailed", { error: workspaceList.error }));
-          else if (workspaceList.loading && !workspaceList.loaded || selectedWorkspace && (!selectedDetail || selectedDetail.loading && !selectedDetail.loaded)) body = readLoading(t("workspace.loading"));
-          else if (!selectedWorkspace) body = h("div", { className: "dssm-empty" }, t(workspaceRows.length ? "workspace.unavailable" : "project.empty"));
-          else if (selectedDetail?.error) body = h("div", { className: "dssm-feedback dssm-error", role: "alert" }, t("workspace.loadFailed", { error: selectedDetail.error }));
-          else if (!rows.length && !query && !filters.status) body = h("div", { className: "dssm-empty" }, t("workspace.noSkills"));
+          if (workspaceList.error) body = h("div", { className: "dssm-feedback dssm-error", role: "alert" }, t("workspace.listFailed", { error: translateError(t, workspaceList.error) }));
+          else if (workspaceList.loading && !workspaceList.loaded || selectedWorkspace && (!selectedDetail || selectedDetail.loading && !selectedDetail.loaded)) body = readLoading(t("workspace.loading"), true);
+          else if (!selectedWorkspace) body = h("div", { className: "product-capability-empty" }, t(workspaceRows.length ? "workspace.unavailable" : "project.empty"));
+          else if (selectedDetail?.error) body = h("div", { className: "dssm-feedback dssm-error", role: "alert" }, t("workspace.loadFailed", { error: translateError(t, selectedDetail.error) }));
+          else if (!rows.length && !query && !filters.status) body = h("div", { className: "product-capability-empty" }, t("workspace.noSkills"));
         }
         return h("div", { key: "sources", id: "dssm-scope-panel", "aria-busy": workspaceList.loading || selectedDetail?.loading || false, role: "tabpanel", "aria-labelledby": "dssm-tab-" + scope, className: "dssm-sources" }, body);
       }
@@ -827,9 +781,9 @@ function createSkillsPage(localeService: ClientContext["locale"]) {
                   h("time", { dateTime: item.deletedAt }, t("trash.deletedAt", { time: formatTrashTime(t, item.deletedAt) })),
                   h("span", { className: "dssm-trash-source" }, t("trash.source", { source: trashRootLabel(item) })))),
               h("div", { className: "dssm-trash-actions" },
-                iconButton(t("btn.restore"), h(IconUnarchiveOutlineRegular, { size: 16 }), function () { post("restoreTrash", { id: (trashRestoreBody(item)).id, scope: trashRestoreBody(item) }, "result.restored", { name: item.name }).catch(function () {}); }, false, busy),
-                iconButton(t("btn.delete.forever"), h(IconTrashOutlineRegular, { size: 16 }), function () { setModal({ type: "delete-confirm", id: item.id, name: item.name }); }, true, busy)));
-          }) : h("div", { className: "dssm-empty" }, t("trash.empty")));
+                iconButton(t("btn.restore"), h(IconUnarchiveOutlineRegular, { size: 16 }), function () { post("restoreTrash", { id: (trashRestoreBody(item)).id, scope: trashRestoreBody(item) }, "result.restored", { name: item.name }).catch(function () {}); }, false, false, busy),
+                iconButton(t("btn.delete.forever"), h(IconTrashOutlineRegular, { size: 16 }), function () { openConfirmation({ type: "delete-confirm", id: item.id, name: item.name }); }, true, false, busy)));
+          }) : h("div", { className: "product-capability-empty" }, t("trash.empty")));
       }
       var repositoryUI = useRepositoryUI({ active: scope === "repositories", t: t, getSignal: () => lifetime.current.signal, onInstalled: function () { return Promise.all([refresh(false), refreshWorkspaceDetails()]); } });
       function getTabIcon(value: string) {
@@ -838,7 +792,7 @@ function createSkillsPage(localeService: ClientContext["locale"]) {
       }
       function scopeTab(value: string): SegmentedTab<string> {
         var text = t("scope." + value);
-        var count = value === "trash" ? (data.trash || []).length : 0;
+        var count = value === "trash" && !snapshot.error ? (data.trash || []).length : 0;
         var icon = getTabIcon(value);
         return {
           value: value,
@@ -849,20 +803,27 @@ function createSkillsPage(localeService: ClientContext["locale"]) {
       }
       var tabItems: readonly [SegmentedTab<string>, ...SegmentedTab<string>[]] = [scopeTab("user"), scopeTab("project"), scopeTab("repositories"), scopeTab("trash")];
       var tabs = scope === "market" ? null : h(SegmentedTabs, { key: "tabs", className: "dssm-scope-tabs", label: t("scope.label"), value: scope, onChange: function (next: string) { setScope(next); if (next === "project" || next === "trash") loadWorkspaces(next === "project"); if (next === "trash") refresh(true); }, items: tabItems });
-      var skillControls = [ scope === "project" ? null : h("div", { key: "summary", className: "dssm-summary", "aria-busy": !snapshot.data }, ([["total", "summary.total"], ["enabled", "summary.enabled"], ["disabled", "summary.disabled"]] as const).map(function (item) { return h("div", { key: item[1], className: "dssm-stat" }, h("strong", null, snapshot.data ? summary[item[0]] : "—"), t(countKey(item[1], summary[item[0]]), { count: summary[item[0]] }).replace(String(summary[item[0]]), "")); })), h("div", { key: "filters", className: "dssm-filters" }, scope === "project" || scope === "market" ? null : h("div", { className: "dssm-source-filter" }, h(SourceSelect, { value: activeSource, label: t("filter.source"), options: options, onChange: setSource })), h("div", { className: "dssm-status-filter" }, h(SourceSelect, { value: filters.status, label: t("filter.status"), options: [{ value: "", label: t("filter.statusAll") }].concat(["enabled", "disabled"].map(function (value) { return { value: value, label: t("status." + value) }; })), onChange: function (value) { updateFilter("status", value); } })), scope === "project" ? h("div", { className: "dssm-project-filter" }, h(SourceSelect, { value: selectedWorkspace, label: t("filter.workspace"), disabled: workspaceList.loading || !workspaceRows.length, options: workspaceRows.map(function (row) { return { value: workspacePath(row), label: row.name + (!row.available ? " · " + t("workspace.unavailable") : "") + (workspaceRows.filter(function (other) { return other.name === row.name; }).length > 1 ? " · " + workspacePath(row) : ""), disabled: !row.available || !workspacePath(row) }; }), onChange: selectWorkspace })) : null, h(Input, { className: "dssm-search", value: query, "aria-label": t("search"), placeholder: t("search.placeholder"), onChange: function (e) { setQuery(e.target.value); } }),
+      var skillControls = [ scope === "project" ? null : h("div", { key: "summary", className: "dssm-summary", "aria-busy": snapshot.loading }, ([["total", "summary.total"], ["enabled", "summary.enabled"], ["disabled", "summary.disabled"]] as const).map(function (item) { return h("div", { key: item[1], className: "dssm-stat" }, h("strong", null, snapshot.data && !snapshot.error ? summary[item[0]] : "—"), t(countKey(item[1], summary[item[0]]), { count: summary[item[0]] }).replace(String(summary[item[0]]), "")); })), h("div", { key: "filters", className: "dssm-filters" }, scope === "project" || scope === "market" ? null : h("div", { className: "dssm-source-filter" }, h(SourceSelect, { value: activeSource, label: t("filter.source"), options: options, onChange: setSource })), h("div", { className: "dssm-status-filter" }, h(SourceSelect, { value: filters.status, label: t("filter.status"), options: [{ value: "", label: t("filter.statusAll") }].concat(["enabled", "disabled"].map(function (value) { return { value: value, label: t("status." + value) }; })), onChange: function (value) { updateFilter("status", value); } })), scope === "project" ? h("div", { className: "dssm-project-filter" }, h(SourceSelect, { value: selectedWorkspace, label: t("filter.workspace"), disabled: !workspaceRows.length, pending: workspaceList.loading, options: workspaceRows.map(function (row) { return { value: workspacePath(row), label: row.name + (!row.available ? " · " + t("workspace.unavailable") : "") + (workspaceRows.filter(function (other) { return other.name === row.name; }).length > 1 ? " · " + workspacePath(row) : ""), disabled: !row.available || !workspacePath(row) }; }), onChange: selectWorkspace })) : null, h(Input, { ref: directorySearch, className: "dssm-search", value: query, "aria-label": t("search"), placeholder: t("search.placeholder"), onChange: function (e) { setQuery(e.target.value); } }),
         scope !== "trash" ? h("div", { className: "dssm-filter-actions" },
-          scope === "market" ? roots.filter(canToggleSource).map(function (root) { return h("div", { key: root.key, className: "dssm-market-source" }, h("span", null, t("market.source")), h(Switch, { checked: root.enabled, disabled: busy, label: t("market.source"), onChange: function (enabled) { post("setSourceEnabled", { target: { root: root.key }, enabled }).catch(function (_error) { /* post displays the localized failure. */ }); } })); }) : null,
-          iconButton(t("btn.refresh"), h(IconRefreshOutlineRegular, { size: 16 }), function () { refresh(false, true); if (scope === "project") refreshWorkspaceDetails(); }, false, busy || snapshot.loading),
-          scope === "market" ? null : h(PrimitiveButton, { variant: "outline", size: "sm", icon: h("svg", { viewBox: "0 0 16 16", width: 16, height: 16, "aria-hidden": true, focusable: "false" }, h("path", { d: "M2.5 10.5v2a1 1 0 001 1h9a1 1 0 001-1v-2M8 2.5v7M5 5.5l3-3 3 3", fill: "none", stroke: "currentColor", strokeWidth: 1.5, strokeLinecap: "round", strokeLinejoin: "round" })), onClick: openImport, disabled: busy }, t("import.global")),
-          h(PrimitiveButton, { variant: "primary", size: "sm", icon: h(IconPlusOutlineRegular, { size: 16 }), onClick: openCreate, disabled: busy }, t("btn.create"))
+          scope === "market" ? roots.filter(canToggleSource).map(function (root) { return h("div", { key: root.key, className: "dssm-market-source" }, h("span", null, t("market.source")), h(Switch, { checked: root.enabled, disabled: busy, className: busy ? "product-control-pending" : undefined, label: t("market.source"), onChange: function (enabled) { post("setSourceEnabled", { target: { root: root.key }, enabled }).catch(function (_error) { /* post displays the localized failure. */ }); } })); }) : null,
+          iconButton(t("btn.refresh"), h(IconRefreshOutlineRegular, { size: 16 }), refreshPage, false, false, snapshot.loading),
+          scope === "market" ? null : h(PrimitiveButton, { variant: "outline", size: "sm", icon: h("svg", { viewBox: "0 0 16 16", width: 16, height: 16, "aria-hidden": true, focusable: "false" }, h("path", { d: "M2.5 10.5v2a1 1 0 001 1h9a1 1 0 001-1v-2M8 2.5v7M5 5.5l3-3 3 3", fill: "none", stroke: "currentColor", strokeWidth: 1.5, strokeLinecap: "round", strokeLinejoin: "round" })), onClick: openImport, disabled: busy, className: busy ? "product-control-pending" : undefined }, t("import.global")),
+          h(PrimitiveButton, { variant: "primary", size: "sm", icon: h(IconPlusOutlineRegular, { size: 16 }), onClick: openCreate }, t("btn.create"))
         ) : null), h('div', { key: 'categories', className: 'dssm-category-filters', role: 'group', 'aria-label': t('category.filter') }, categoryFilters.map(item => h(PrimitiveButton, { key: item.value, size: 'sm', variant: 'ghost', 'aria-pressed': activeCategory === item.value, onClick: () => updateFilter('category', item.value) }, item.label)))];
-      var bodyContent: React.ReactNode[] = ([h("style", { key: "css" }, CSS), h("div", { key: "head", className: "dssm-head" }, h("div", { className: "dssm-title-block" }, h("div", { className: "dssm-title-row" }, h("h2", { className: "dssm-title" }, t("title"))), h("p", { className: "dssm-desc" }, t("desc"))))] as React.ReactNode[]).concat(scope === "trash" || scope === "repositories" ? [] : skillControls, [result && modal !== "import" ? h("div", { key: "result", className: "dssm-feedback" + (result.warning ? " dssm-warning" : result.ok ? "" : " dssm-error") }, result.text) : null], (data.warnings || []).map(function (warning, index) { return h("div", { key: "warning-" + index, className: "dssm-feedback dssm-warning", role: "alert" }, translateError(t, warning)); }), [snapshot.error ? h("div", { key: "error", className: "dssm-feedback dssm-error" }, snapshot.error) : null, !snapshot.data ? (snapshot.error ? null : readLoading(t("loading"))) : scope === "repositories" ? repositoryUI.content : scope === "trash" ? renderTrash() : renderList()]);
+      var directoryError = snapshot.error ? h("div", { key: "error", className: "dssm-feedback dssm-error", role: "alert" },
+        h("p", null, t("error.catalogRead", { error: translateError(t, snapshot.error) })),
+        h(PrimitiveButton, { ref: directoryRetry, variant: "outline", "aria-disabled": snapshot.loading, "aria-busy": snapshot.loading,
+          className: snapshot.loading ? "product-control-pending" : undefined, onClick: retryDirectory }, t("btn.retry"))) : null;
+      var directoryContent = !snapshot.data ? (snapshot.error ? null : readLoading(t("loading"), true))
+        : scope === "repositories" ? repositoryUI.content : scope === "project" ? renderList()
+          : snapshot.error ? null : scope === "trash" ? renderTrash() : renderList();
+      var bodyContent: React.ReactNode[] = ([h("style", { key: "css" }, CSS), h("header", { key: "head", className: "product-capability-header" }, h("div", { className: "product-capability-heading" }, h("h1", { className: "product-capability-title" }, t("title")), h("p", { className: "product-capability-description" }, t("desc"))))] as React.ReactNode[]).concat(scope === "trash" || scope === "repositories" ? [] : skillControls, [result && (modal === null || modal === "detail") ? h("div", { key: "result", className: "dssm-feedback" + (result.warning ? " dssm-warning" : result.ok ? "" : " dssm-error") }, resultText(t, result)) : null], (data.warnings || []).map(function (warning, index) { return h("div", { key: "warning-" + index, className: "dssm-feedback dssm-warning", role: "alert" }, translateError(t, warning)); }), [directoryError, directoryContent]);
       var market = scope === "market";
       var primaryTabs = h(SegmentedTabs, { key: "catalog-tabs", className: "dssm-catalog-tabs", label: t("scope.catalog"), value: market ? "market" : "mine", onChange: function (next: string) { setScope(next === "market" ? "market" : "user"); }, items: [
         { value: "market", id: "dssm-library-tab-market", panelId: "dssm-library-panel", label: t("scope.market") },
         { value: "mine", id: "dssm-library-tab-mine", panelId: "dssm-library-panel", label: t("scope.mine") }
       ] });
-      var content: React.ReactNode[] = [bodyContent[0], bodyContent[1], primaryTabs, h("div", { key: "catalog-panel", id: "dssm-library-panel", role: "tabpanel", "aria-labelledby": "dssm-library-tab-" + (market ? "market" : "mine"), className: "dssm-library-panel" }, tabs, ...bodyContent.slice(2))];
+      var content: React.ReactNode[] = [bodyContent[0], bodyContent[1], primaryTabs, h("div", { key: "catalog-panel", id: "dssm-library-panel", ref: directoryArea, tabIndex: -1, role: "tabpanel", "aria-labelledby": "dssm-library-tab-" + (market ? "market" : "mine"), "aria-busy": busy || snapshot.loading, className: "dssm-library-panel" }, tabs, ...bodyContent.slice(2))];
 
       if (modal === "import") content.push(h(Modal, { key: "import", className: "dssm-modal-import", title: t("import.title"), closeLabel: t("btn.close"), onClose: dismissForm },
         h("input", { ref: importInputRef, className: "dssm-hidden-input", type: "file", disabled: busy, accept: ".zip,.md", onChange: function (event) { selectUploadFiles(event.target.files); event.target.value = ""; } }),
@@ -870,88 +831,38 @@ function createSkillsPage(localeService: ClientContext["locale"]) {
         h("div", { className: "dssm-dropzone", onDragOver: function (event: React.DragEvent<HTMLDivElement>) { event.preventDefault(); event.currentTarget.classList.add("dssm-dropzone-active"); }, onDragLeave: function (event: React.DragEvent<HTMLDivElement>) { event.currentTarget.classList.remove("dssm-dropzone-active"); }, onDrop: function (event: React.DragEvent<HTMLDivElement>) { event.preventDefault(); event.currentTarget.classList.remove("dssm-dropzone-active"); void selectDroppedFiles(event.dataTransfer); } },
           h("span", { className: "dssm-dropzone-title" }, t("upload.drop.title")),
           h("span", { className: "dssm-dropzone-copy" }, t("upload.drop.copy")),
-          h("div", { className: "dssm-upload-choices" }, h("button", { type: "button", className: "dssm-upload-link", disabled: busy, onClick: function (event: React.MouseEvent<HTMLButtonElement>) { event.stopPropagation(); openNativePicker(folderInputRef); } }, t("btn.folder.pick")), h("span", { className: "dssm-upload-divider" }, "/"), h("button", { type: "button", className: "dssm-upload-link", disabled: busy, onClick: function (event: React.MouseEvent<HTMLButtonElement>) { event.stopPropagation(); openNativePicker(importInputRef); } }, t("btn.file.pick")))
+          h("div", { className: "dssm-upload-choices" }, h("button", { ref: folderChoiceRef, type: "button", className: "dssm-upload-link" + (busy ? " product-control-pending" : ""), disabled: busy, onClick: function (event: React.MouseEvent<HTMLButtonElement>) { event.stopPropagation(); openNativePicker(folderInputRef); } }, t("btn.folder.pick")), h("span", { className: "dssm-upload-divider" }, "/"), h("button", { ref: importChoiceRef, type: "button", className: "dssm-upload-link" + (busy ? " product-control-pending" : ""), disabled: busy, onClick: function (event: React.MouseEvent<HTMLButtonElement>) { event.stopPropagation(); openNativePicker(importInputRef); } }, t("btn.file.pick")))
         ),
-        upload ? h("div", { className: "dssm-file", title: upload.name }, h("span", { className: "dssm-file-kind", "aria-hidden": "true" }, upload.kind === "zip" ? "ZIP" : upload.kind === "folder" ? "DIR" : "MD"), h("span", { className: "dssm-file-name" }, upload.name), h("span", { className: "dssm-file-meta" }, t(countKey("upload.selected", upload.count), { count: upload.count, size: fileSizeText(upload.size) })), h("button", { type: "button", className: "dssm-file-remove", "aria-label": t("upload.remove"), disabled: busy, onClick: clearUploadFiles }, "×")) : null,
-        h(DestinationPicker, { t: t, value: importDestination, disabled: busy, allowAgents: true, workspaces: workspaceRows, loading: workspaceList.loading, workspaceError: workspaceList.error, onRetryWorkspaces: function () { void loadWorkspaces(false); }, userDestinations: userDestinations, onChange: function (next: Partial<DestinationValue>) { setImportDestination(Object.assign({}, importDestination, next)); } }),
-        result ? h("div", { className: "dssm-feedback" + (result.warning ? " dssm-warning" : result.ok ? "" : " dssm-error"), role: "alert" }, result.text) : null,
+        upload ? h("div", { className: "dssm-file", title: upload.name }, h("span", { className: "dssm-file-kind", "aria-hidden": "true" }, upload.kind === "zip" ? "ZIP" : upload.kind === "folder" ? "DIR" : "MD"), h("span", { className: "dssm-file-name" }, upload.name), h("span", { className: "dssm-file-meta" }, t(countKey("upload.selected", upload.count), { count: upload.count, size: fileSizeText(upload.size) })), h("button", { type: "button", className: "dssm-file-remove" + (busy ? " product-control-pending" : ""), "aria-label": t("upload.remove"), disabled: busy, onClick: clearUploadFiles }, "×")) : null,
+        h(DestinationPicker, { t: t, value: importDestination, disabled: busy, allowAgents: true, workspaces: workspaceRows, loading: workspaceList.loading, workspaceError: workspaceList.error ? translateError(t, workspaceList.error) : null, onRetryWorkspaces: function () { if (!inflightRef.current && !readRequests.current.has("workspaces")) void loadWorkspaces(false); }, userDestinations: userDestinations, onChange: function (next: Partial<DestinationValue>) { if (inflightRef.current) return; setImportDestination(Object.assign({}, importDestination, next)); } }),
+        result ? h("div", { className: "dssm-feedback" + (result.warning ? " dssm-warning" : result.ok ? "" : " dssm-error"), role: "alert" }, resultText(t, result)) : null,
         h("div", { className: "dssm-upload-requirements" }, h("div", { className: "dssm-label" }, t("upload.requirements")), h("ul", null, h("li", null, t("upload.requirement.skill")), h("li", null, t("upload.requirement.frontmatter")), h("li", null, t("upload.requirement.copy")))),
-        h("div", { className: "dssm-modal-actions" }, hostButton(t("btn.cancel"), dismissForm, "outline", busy), hostButton(busy ? t("upload.importing") : t("btn.import.now"), submitImport, "primary", busy || !upload || !destinationReady(importDestination, workspaceRows, userDestinations)))
-      ));      if (modal === "detail") content.push(h(Modal, { key: "detail", className: "dssm-modal-wide", title: t("detail.title"), closeLabel: t("btn.close"), onClose: function () { setModal(null); } }, detail ? h("div", { className: "dssm-detail" }, h("div", { className: "dssm-name" }, detail.declaredName || detail.name), detail.description ? h("p", { className: "dssm-desc" }, detail.description) : null, h("div", { className: "dssm-detail-path" }, detail.path), detail.diagnostics.length ? detail.diagnostics.map(function (item, index) { return h("div", { key: index, className: "dssm-diag" }, t(item.code!, item.params || {})); }) : null, h(SkillBody, { body: detail.body || "", t })) : readLoading(t("loading"))));
-      if (modal && typeof modal === "object" && modal.type === "trash-confirm") content.push(h(Modal, { key: "trash-confirm", title: t("confirm.trash.title"), description: t("confirm.trash.desc", { name: modal.name }), closeLabel: t("btn.close"), onClose: function () { setModal(null); }, footer: h(React.Fragment, null, hostButton(t("btn.cancel"), function () { setModal(null); }, "outline"), hostButton(t("btn.trash"), function () { post("trashSkill", { target: Object.assign({ root: (modal as Extract<ConfirmModal, {type: "trash-confirm"}>).root, name: (modal as Extract<ConfirmModal, {name: string}>).name }, (modal as { workspace?: string }).workspace ? { workspace: (modal as { workspace?: string }).workspace } : {}) }, "result.trashed", { name: (modal as Extract<ConfirmModal, {name: string}>).name }).then(function () { setModal(null); }).catch(function () {}); }, "danger", busy)) }));
-      if (modal && typeof modal === "object" && modal.type === "delete-confirm") content.push(h(Modal, { key: "delete-confirm", title: t("confirm.delete.title"), description: t("confirm.delete.desc", { name: modal.name }), closeLabel: t("btn.close"), onClose: function () { setModal(null); }, footer: h(React.Fragment, null, hostButton(t("btn.cancel"), function () { setModal(null); }, "outline"), hostButton(t("btn.delete.forever"), function () { post("deleteTrash", { id: ({ id: (modal as Extract<ConfirmModal, {type: "delete-confirm"}>).id }).id }, "result.deleted", { name: (modal as Extract<ConfirmModal, {name: string}>).name }).then(function () { setModal(null); }).catch(function () {}); }, "danger", busy)) }));
-      if (modal && typeof modal === "object" && (modal.type === "category-create" || modal.type === "category-rename")) {
-        var renaming = modal.type === "category-rename";
-        var categoryModal = modal;
-        var nameTrimmed = categoryName.trim();
-        var canSubmit = !!nameTrimmed && (categoryModal.type !== "category-rename" || nameTrimmed !== categoryModal.name);
-        var submitCategory = function () {
-          if (busy || !canSubmit) return;
-          var request = categoryModal.type === "category-rename"
-            ? post("renameCategory", { target: { root: categoryModal.root, id: categoryModal.id, name: nameTrimmed, workspace: categoryModal.workspace } }, "category.renamed")
-            : post("createCategory", { target: { root: categoryModal.root, name: nameTrimmed, workspace: categoryModal.workspace } }, "category.created", { name: nameTrimmed });
-          request.then(function () { setModal(null); }).catch(function () {});
+        h("div", { className: "dssm-modal-actions" }, hostButton(t("btn.cancel"), dismissForm, "outline", { pending: busy }), hostButton(t("btn.import.now"), submitImport, "primary", { pending: busy, busy, disabled: !upload || !destinationReady(importDestination, workspaceRows, userDestinations) }))
+      ));
+      if (modal === "detail") content.push(h(Modal, { key: "detail", className: "dssm-modal-wide", title: t("detail.title"), closeLabel: t("btn.close"), onClose: function () { setModal(null); } },
+        h('div', { ref: detailArea, role: 'region', 'aria-label': t('detail.title'), tabIndex: -1 },
+        detailRead?.error !== undefined ? h("div", { className: "dssm-detail", "aria-busy": detailRead.loading },
+          h("div", { className: "dssm-feedback dssm-error", role: "alert" }, t("error.action", { error: translateError(t, detailRead.error) })),
+          h(PrimitiveButton, { ref: detailRetry, variant: "outline", "aria-disabled": detailRead.loading, "aria-busy": detailRead.loading,
+            className: detailRead.loading ? "product-control-pending" : undefined,
+            onClick: () => { readDetail(detailRead.target); } }, t("btn.retry")))
+          : detail ? h("div", { className: "dssm-detail" }, h("div", { className: "dssm-name" }, detail.declaredName || detail.name), detail.description ? h("p", { className: "dssm-desc" }, detail.description) : null, h("div", { className: "dssm-detail-path" }, detail.path), detail.diagnostics.length ? detail.diagnostics.map(function (item, index) { return h("div", { key: index, className: "dssm-diag" }, t(item.code!, item.params || {})); }) : null, h(SkillBody, { body: detail.body || "", t })) : readLoading(t("loading")))));
+      if (modal && typeof modal === "object") {
+        const confirmation = modal;
+        const trash = confirmation.type === "trash-confirm";
+        const submit = () => {
+          if (inflightRef.current) return;
+          const operation = confirmation.type === "trash-confirm"
+            ? post("trashSkill", { target: { root: confirmation.root, name: confirmation.name, ...confirmation.workspace ? { workspace: confirmation.workspace } : {} } }, "result.trashed", { name: confirmation.name })
+            : post("deleteTrash", { id: confirmation.id }, "result.deleted", { name: confirmation.name });
+          void operation.then(() => { setModal(null); }).catch((_error) => { /* post displays the structured failure in this confirmation. */ });
         };
-        content.push(h(Modal, { key: modal.type, title: renaming ? t("category.rename") : t("category.create"), closeLabel: t("btn.close"), onClose: function () { setModal(null); } },
-          h("div", { className: "dssm-form" },
-            h("label", { className: "dssm-field" }, h("span", { className: "dssm-label" }, t("category.name")), h(CategoryNameInput, { value: categoryName, label: t("category.name"), onChange: setCategoryName, submit: submitCategory })),
-            h("p", { className: "dssm-help" }, t("category.note"))
-          ),
-          h("div", { className: "dssm-modal-actions" },
-            hostButton(t("btn.cancel"), function () { setModal(null); }, "outline"),
-            hostButton(renaming ? t("btn.confirm") : t("category.create"), submitCategory, "primary", busy || !canSubmit)
-          )));
+        content.push(h(Modal, { key: confirmation.type, title: t(trash ? "confirm.trash.title" : "confirm.delete.title"),
+          description: t(trash ? "confirm.trash.desc" : "confirm.delete.desc", { name: confirmation.name }), closeLabel: t("btn.close"), onClose: dismissForm,
+          footer: h(React.Fragment, null, hostButton(t("btn.cancel"), dismissForm, "outline", { pending: busy }),
+            hostButton(t(trash ? "btn.trash" : "btn.delete.forever"), submit, "danger", { pending: busy, busy })) },
+          result ? h("div", { className: "dssm-feedback" + (result.warning ? " dssm-warning" : result.ok ? "" : " dssm-error"), role: "alert" }, resultText(t, result)) : null));
       }
-      if (modal && typeof modal === "object" && modal.type === "category-add") {
-        var addModal = modal as Extract<ConfirmModal, {type: "category-add"}>;
-        var kw = addSearch.trim().toLowerCase();
-        var availableList = addModal.skills.filter(function (s) {
-          return !kw || s.name.toLowerCase().includes(kw) || (s.declaredName && s.declaredName.toLowerCase().includes(kw)) || (s.description && s.description.toLowerCase().includes(kw));
-        });
-        var candidateNames = new Set(addModal.skills.map(function (s) { return s.name; }));
-        var chosenCount = Object.keys(addSelection).filter(function (k) { return addSelection[k] && candidateNames.has(k); }).length;
-        content.push(h(Modal, { key: "category-add", title: t("category.selectSkills", { name: addModal.name }), closeLabel: t("btn.close"), onClose: function () { setAddSelection({}); setAddSearch(""); setModal(null); } },
-          h(Input, { placeholder: t("search.placeholder"), value: addSearch, onChange: function (e) { setAddSearch(e.target.value); } }),
-          h("div", { className: "dssm-batch-list" },
-            availableList.length ? availableList.map(function (item) {
-              var isChecked = !!addSelection[item.name];
-              return h("div", { key: item.name, className: "dssm-batch-item" + (isChecked ? " selected" : ""), onClick: function () { var next = Object.assign({}, addSelection); if (isChecked) delete next[item.name]; else next[item.name] = true; setAddSelection(next); } },
-                h("input", { type: "checkbox", checked: isChecked, readOnly: true }),
-                h("div", { className: "dssm-batch-info" },
-                  h("div", { className: "dssm-batch-name-row" },
-                    h("span", { className: "dssm-batch-name" }, item.declaredName || item.name),
-                    item.currentCatName ? h("span", { className: "dssm-batch-cat-tag" }, item.currentCatName) : null
-                  ),
-                  item.description ? h("div", { className: "dssm-batch-desc", title: item.description }, item.description) : null)
-              );
-            }) : h("div", { className: "dssm-empty" }, t("category.noAvailableSkills"))
-          ),
-          h("div", { className: "dssm-modal-actions" },
-            hostButton(t("btn.cancel"), function () { setAddSelection({}); setAddSearch(""); setModal(null); }, "outline"),
-            hostButton(t("category.addSkills") + (chosenCount ? " (" + chosenCount + ")" : ""), function () {
-              var names = Object.keys(addSelection).filter(function (k) { return addSelection[k] && candidateNames.has(k); });
-              if (!names.length) { setAddSelection({}); setAddSearch(""); setModal(null); return; }
-              if (inflightRef.current) return;
-              var scoped = function <T extends object>(extra: T) { return addModal.workspace ? Object.assign({}, extra, { workspace: addModal.workspace }) : extra; };
-              inflightRef.current = true;
-              setBusy(true); setAddSelection({}); setAddSearch(""); setModal(null);
-              names.reduce<Promise<unknown>>(function (p, name) {
-                return p.then(function () { return sessionApi("assignCategory", { target: scoped({ root: addModal.root, name: name, category: addModal.id }) }, lifetime.current.signal); });
-              }, Promise.resolve()).then(function () {
-                setResult({ ok: true, text: t("category.batchAssigned", { count: names.length, category: addModal.name }) });
-              }).catch(function (err: unknown) {
-                setResult({ ok: false, text: translateError(t, err) });
-              }).finally(function () {
-                inflightRef.current = false;
-                setBusy(false);
-                var ws = addModal.workspace;
-                Promise.all([refresh(true), ws ? loadWorkspaceDetail(ws) : null]).catch(function () {});
-              });
-            }, "primary", busy || !chosenCount)
-          )
-        ));
-      }
-      if (modal && typeof modal === "object" && modal.type === "category-delete") content.push(h(Modal, { key: "category-delete", title: t("confirm.category.title"), description: t("confirm.category.desc", { name: modal.name }), closeLabel: t("btn.close"), onClose: function () { setModal(null); }, footer: h(React.Fragment, null, hostButton(t("btn.cancel"), function () { setModal(null); }, "outline"), hostButton(t("category.delete"), function () { post("deleteCategory", { target: { root: (modal as Extract<ConfirmModal, {type: "category-delete"}>).root, id: (modal as Extract<ConfirmModal, {type: "category-delete"}>).id, workspace: (modal as Extract<ConfirmModal, {type: "category-delete"}>).workspace } }, "category.deleted", { name: (modal as Extract<ConfirmModal, {type: "category-delete"}>).name }).then(function () { setModal(null); }).catch(function () {}); }, "danger", busy)) }));
       return h("section", { className: "dssm-section" }, content);
     }
 

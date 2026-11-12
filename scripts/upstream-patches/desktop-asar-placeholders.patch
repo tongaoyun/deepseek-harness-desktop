@@ -11,7 +11,7 @@ index 14b0e2a18640bd211411583b8cba5cc2b5e5ec02..f8321222524a3a6a64f93a05f915372f
    if (/\.d\.[cm]?ts$/u.test(file)) return 'TypeScript declaration'
    if (/\.tsbuildinfo$/u.test(file)) return 'TypeScript build cache'
 diff --git a/apps/desktop/tests/runtime-file-policy.spec.ts b/apps/desktop/tests/runtime-file-policy.spec.ts
-index ed478b42f683d1288dc2fba4f6002c672187cc76..48172cc67899ed363c36669f4d0467ea7e71ca9a 100644
+index 08007542fe82981f949962da8ddd8d2d81ab922e..ba418fee06e70fe82512b6e4809766389316d9b3 100644
 --- a/apps/desktop/tests/runtime-file-policy.spec.ts
 +++ b/apps/desktop/tests/runtime-file-policy.spec.ts
 @@ -13,6 +13,7 @@ it('omits development artifacts while preserving executable modules, assets and
@@ -28,5 +28,5 @@ index ed478b42f683d1288dc2fba4f6002c672187cc76..48172cc67899ed363c36669f4d0467ea
      'example/.yarn/runtime.cjs', '@mixmark-io/domino/.yarn-data.json',
 +    'example/.gitkeep.json', 'example/.hidden-runtime',
      '@img/sharp-win32-x64/lib/libvips-42.dll',
-     '@deepseek-ai/libreoffice-kit-win32-x64/bin/libreoffice-kit.exe',
+     '@deepseek-ai/libreoffice-kit-win32-x64/bin/dsoffice.exe',
      '@deepseek-ai/libreoffice-kit-win32-x64/sources/core-source.json',

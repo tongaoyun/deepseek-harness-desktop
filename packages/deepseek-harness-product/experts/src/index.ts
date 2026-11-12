@@ -174,6 +174,7 @@ interface Expert {
   readonly slug: string
   readonly packageVersion?: string
   readonly packageSha256?: string
+  readonly packageSlug?: string
   readonly company?: boolean
   readonly teamMember?: boolean
   readonly name: string
@@ -476,7 +477,7 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
       let files: Record<string, string>
       if (expert.custom) {
         if (expert.packageSha256 === undefined) throw new Error('Expert package is unavailable')
-        files = await packages.readFiles(slug, expert.packageSha256)
+        files = await packages.readFiles(slug, expert.packageSha256, signal)
       } else {
         const root = expert.company ? companyDirectory : catalogRoot
         if (root === undefined) throw new Error('Expert package is unavailable')
@@ -498,10 +499,10 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
   registerCreationTools(ctx, library, teamLibrary, activeLocale)
   ctx.systemPrompt.section({ name: 'agency:creation', order: 119, text: 'Creation requests do not invoke summon tools. For a new personal expert or team, clarify the user’s goal in conversation and generate the complete content yourself. Use list_creation_experts for category IDs and available team members. Show the design and invite revisions, then call create_custom_expert or create_expert_team to request native approval and save directly. Never send the user to an editor or ask them to fill name, description or Markdown fields. Expert files become an AgentSpec package with literal SOUL.md, optional AGENTS.md and references/assets. Team members must already exist; create missing experts with approval before saving the team. Only report success after the tool succeeds. Company publication is a separate explicit action; never publish or write substitute files.' })
   ctx.reflect.provide(AGENCY_TEAM_SERVICE, teamLibrary)
-  ctx.reflect.provide('agencyAgentsTeamEngine', () => resolveTeamEngine(ctx, undefined, maxDepth).status)
+  ctx.reflect.provide('agencyAgentsTeamEngine', () => resolveTeamEngine(ctx).status)
   const teamDelegationGuard: ToolGuard = exec => delegationTools.has(exec.name)
     ? teamTx('专家团成员不能继续创建子代理或扩展专家团，请将缺口交给主理人。') : undefined
-  ctx.tools.guard(exec => blocksNativeDelegation(ctx.get('agentTeams'), exec.agent, exec.name)
+  ctx.tools.guard(exec => blocksNativeDelegation(ctx.get('subagents'), exec.agent, exec.name)
     ? teamDelegationGuard(exec) : undefined)
   if (!isLiveValue((config as { enabled?: unknown }).enabled)) {
     throw new Error(formatHost(activeLocale(), 'error.settingsLiveUnsupported'))
@@ -513,8 +514,8 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
     async getPrompt(slug, division, locale, sessionId, signal, sha256) {
       await ensureReady()
       await ensurePersonal()
-      if (settingsSource().customExperts?.some(item => item.slug === slug)) {
-        const expert = await library.getCustom(slug)
+      const expert = settingsSource().customExperts?.find(item => item.slug === slug)
+      if (expert) {
         if (expert.division !== division) throw new Error(formatHost(locale, 'error.expertMissing', { query: slug }))
         return { prompt: await library.getPrompt(slug, sha256) }
       }
@@ -531,7 +532,12 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
           return { prompt: member.prompt }
         }
         if (company.experts.has(slug)) {
-          return sha256 && company.experts.get(slug)?.packageSha256 !== sha256 ? readPackagePrompt(join(root, '..', 'expert-versions', slug, sha256)) : readExpertPrompt(root, slug)
+          if (sha256 && company.experts.get(slug)?.packageSha256 !== sha256) {
+            const source = ctx.get('companyContent') as CompanyContentSource | undefined
+            if (!source) throw new PersonaError('PERSONA_NOT_FOUND', locale)
+            return readPackagePrompt(await source.expertVersion(slug, sha256, signal))
+          }
+          return readExpertPrompt(root, slug)
         }
       }
       if (basePersonaSource === undefined) throw new PersonaError('PERSONA_NOT_FOUND', locale)
@@ -658,11 +664,9 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
         provider: providerName,
         label: label ?? providerName,
         childId,
-        request: {
-          parent,
-          prompt,
-          ...(maxDepth === undefined ? {} : { maxDepth }),
-        },
+        parent,
+        prompt,
+        ...(maxDepth === undefined ? {} : { maxDepth }),
         signal: runSignal,
         delivery: 'caller',
       })
@@ -783,7 +787,7 @@ ctx.tools.register(localizeTeamTool(defineTool({ name: 'get_expert_team', descri
         requireParent(exec);
         const snapshot = await teamLibrary.snapshot(exec.agent?.id, exec.signal);
         const team = resolveEnabledTeam(snapshot, String(args.team), activeLocale());
-        const engine = resolveTeamEngine(ctx, exec.agent, maxDepth).status;
+        const engine = resolveTeamEngine(ctx, exec.agent).status;
         return { report: JSON.stringify({ ...team, engine, coordinator: effectiveCoordinator(team, activeLocale()), collaboration: teamCollaboration(team, activeLocale()), revision: snapshot.revision, instruction: teamTx("确认目标与评审范围后立即将简报传给 summon_expert_team，相关资料路径可直接交给专家阅读，主理人不要预先读完整个项目。只有确实无法确定评审对象时才询问；用户已明确整体评审后不再反复确认。若 engine.recommendation 非空，简短建议开启 Agent Team，但不阻断普通调用、不自行修改配置。原生模式返回的是启动确认，必须等待实际成员结论后才汇总。") }) };
     },
 }), activeLocale));
@@ -795,11 +799,11 @@ ctx.tools.register(localizeTeamTool(defineTool({ name: 'summon_expert_team', des
         if (snapshot.revision !== catalog.revision)
             throw new Error(teamTx("名册已更新，请重新读取专家团。"));
         const team = resolveEnabledTeam(snapshot, String(args.team), activeLocale());
-        const engine = resolveTeamEngine(ctx, exec.agent, maxDepth);
+        const engine = resolveTeamEngine(ctx, exec.agent);
         const locale = activeLocale();
         if (engine.status.mode === 'native' && engine.service) {
             const result = await dispatchNativeTeam({ team, locale, experts: catalog.experts, enabled: catalog.enabled, task: String(args.task ?? ''), revision: snapshot.revision,
-                signal: exec.signal, agent: exec.agent!, service: engine.service, provider: config.provider,
+                signal: exec.signal, agent: exec.agent!, service: engine.service, subagents: ctx.subagents, maxDepth, provider: config.provider,
                 readPersona: async (expert) => (await personaSource.getPrompt(expert.slug, expert.division, locale, exec.agent!.id, exec.signal, expert.packageSha256)).prompt });
             return { report: JSON.stringify({ ...result, engine: engine.status }) };
         }

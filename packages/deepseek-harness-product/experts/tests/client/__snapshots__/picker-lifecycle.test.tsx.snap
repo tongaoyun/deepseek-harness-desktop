@@ -1,0 +1,17 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`keeps a failed expert choice stable through a locked retry with inserted=false 1`] = `
+{
+  "choice": "评审专家启用并选择",
+  "error": "Enable unavailable刷新",
+  "unavailable": "true",
+}
+`;
+
+exports[`keeps a failed expert choice stable through a locked retry with inserted=true 1`] = `
+{
+  "choice": "评审专家启用并选择",
+  "error": "Enable unavailable刷新",
+  "unavailable": "true",
+}
+`;

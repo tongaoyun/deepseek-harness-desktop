@@ -8,7 +8,7 @@
 
 import { existsSync, globSync, readFileSync } from 'node:fs'
 import { resolve, sep } from 'node:path'
-import { markdownHeadingLines, markdownProseLines, parseMarkdown } from './markdown.ts'
+import { markdownHeadingLines, markdownProseLines, markdownValidationSource, parseMarkdown } from './markdown.ts'
 
 const root = resolve(import.meta.dirname, '..')
 
@@ -18,6 +18,7 @@ const CANONICAL = '## Known Limitations and Deferred Work'
 /** Packages audited as having no limitations section, keyed by repo-relative directory. */
 const NO_LIMITATIONS: Readonly<Record<string, string>> = {
   'packages/util/brand': 'Stateless nominal-string and canonical-key helpers have no deferred work.',
+  'packages/util/error': 'A single base class with no behavior beyond its constructor has no deferred work.',
 }
 
 /** A heading that reads as a limitations section — canonical or drifted. */
@@ -50,7 +51,7 @@ for (const pkg of scannedPackages) {
     failures.push(`${readme}: package manifest has no sibling README with the \`${CANONICAL}\` section`)
     continue
   }
-  const source = readFileSync(resolve(root, readme), 'utf8')
+  const source = markdownValidationSource(readFileSync(resolve(root, readme), 'utf8'))
   const tree = parseMarkdown(source)
   const lines = markdownProseLines(source, tree)
   const headings = markdownHeadingLines(source, tree)

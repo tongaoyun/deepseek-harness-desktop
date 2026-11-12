@@ -50,5 +50,6 @@ export async function emptyCompanySource() {
   onTestFinished(() => rm(root, { recursive: true, force: true }))
   const { installCompanyContent } = await import('../../desktop/src/company-content.ts')
   const roots = await installCompanyContent(root, 'employee-test', null, new AbortController().signal)
-  return { read: async () => roots, forSession: async () => roots, refresh: async () => {} }
+  return { read: async () => roots, forSession: async () => roots, refresh: async () => {},
+    expertVersion: async () => { throw new Error('Unexpected exact expert version read') } }
 }

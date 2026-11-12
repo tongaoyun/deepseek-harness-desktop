@@ -6,6 +6,80 @@ import { isProductRuntimeMethod } from '../src/protocol.ts'
 
 const operationId = 'knowledge-operation-0001'
 
+it('reads and updates library details through employee-only methods without trusting client ownership', async () => {
+  const receipt = { id: 'base', name: 'New name', description: '', updatedAt: '2026-11-05T00:01:00Z' }
+  const transport = vi.fn<typeof fetch>(async (input) => {
+    if (requestUrl(input) === 'https://product.test/api/v1/knowledge-bases/base') {
+      return Response.json({ success: true, data: receipt })
+    }
+    throw new Error('Catalog offline')
+  })
+  const bridge = new DeepSeekHarnessProductBridge({ serverUrl: 'https://product.test', fetch: transport,
+    sessionToken: 'main-only-token', initialSession: { authenticated: true, employeeId: 'employee' } })
+  const input = { knowledgeBaseId: 'base', name: ' New name ', description: '', expectedUpdatedAt: '2026-11-05T00:00:00Z', operationId }
+  try {
+    await expect(bridge.invoke('knowledge.bases.get', { knowledgeBaseId: 'base' })).resolves.toEqual(receipt)
+    await expect(bridge.invoke('knowledge.bases.update', input)).resolves.toEqual(receipt)
+    const update = transport.mock.calls.find(call => call[1]?.method === 'PATCH')
+    const body = update?.[1]?.body
+    if (typeof body !== 'string') throw new Error('Missing library update body')
+    expect(JSON.parse(body)).toEqual({ name: 'New name', description: '', expectedUpdatedAt: input.expectedUpdatedAt })
+    expect(new Headers(update?.[1]?.headers).get('idempotency-key')).toBe(operationId)
+    expect(new Headers(update?.[1]?.headers).get('x-deepseek-harness-employee-id')).toBe('employee')
+    for (const method of ['knowledge.bases.get', 'knowledge.bases.update']) expect(isProductRuntimeMethod(method)).toBe(false)
+    for (const change of [{ employeeId: 'forged' }, { scope: 'COMPANY' }, { description: null }, { expectedUpdatedAt: 'invalid' }]) {
+      await expect(bridge.invoke('knowledge.bases.update', { ...input, ...change })).rejects.toMatchObject({ code: 'KNOWLEDGE_REQUEST_INVALID' })
+    }
+    expect(transport.mock.calls.filter(call => call[1]?.method === 'PATCH')).toHaveLength(1)
+  } finally { await bridge.dispose() }
+})
+
+it('routes processing reads and explicit summary jobs without granting the model either operation', async () => {
+  const transport = vi.fn<typeof fetch>(async () => Response.json({ success: true, data: { documentId: 'doc' } }))
+  const api = client(transport)
+  try {
+    const identity = { knowledgeBaseId: 'base', documentId: 'doc' }
+    await invokeKnowledge(api, 'knowledge.documents.processing', identity)
+    await invokeKnowledge(api, 'knowledge.documents.summary.refresh', { ...identity, operationId })
+    expect(transport.mock.calls.map(call => requestUrl(call[0]))).toEqual([
+      'https://product.test/api/v1/knowledge-bases/base/documents/doc/processing',
+      'https://product.test/api/v1/knowledge-bases/base/documents/doc/summary-jobs',
+    ])
+    expect(transport.mock.calls[1]?.[1]?.method).toBe('POST')
+    expect(new Headers(transport.mock.calls[1]?.[1]?.headers).get('idempotency-key')).toBe(operationId)
+    for (const method of ['knowledge.documents.processing', 'knowledge.documents.summary.refresh']) {
+      expect(isProductRuntimeMethod(method)).toBe(false)
+      await expect(invokeKnowledge(api, method, { ...identity, operationId, employeeId: 'forged' })).rejects.toMatchObject({ code: 'KNOWLEDGE_REQUEST_INVALID' })
+    }
+    await expect(invokeKnowledge(api, 'knowledge.documents.summary.refresh', { ...identity, operationId: '' })).rejects.toMatchObject({ code: 'KNOWLEDGE_REQUEST_INVALID' })
+    expect(transport).toHaveBeenCalledTimes(2)
+  } finally { api.close() }
+})
+
+it('pages writable destinations through the authenticated query endpoint without reading the complete catalog', async () => {
+  const transport = vi.fn<typeof fetch>(async (input) => {
+    const url = new URL(requestUrl(input))
+    expect(url.pathname).toBe('/api/v1/knowledge-destinations')
+    expect(Object.fromEntries(url.searchParams)).toEqual({ query: '销售 %_资料', page: '2', size: '20' })
+    return Response.json({ success: true, data: [{ id: 'sales', name: 'Sales', scope: 'DEPARTMENT', ownerName: '销售' }],
+      pageIndex: 2, pageSize: 20, totalCount: 21, totalPages: 2 })
+  })
+  const bridge = new DeepSeekHarnessProductBridge({ serverUrl: 'https://product.test', fetch: transport,
+    sessionToken: 'main-only-token', initialSession: { authenticated: true, employeeId: 'employee' } })
+  try {
+    expect(isProductRuntimeMethod('knowledge.destinations.list')).toBe(true)
+    await expect(bridge.invoke('knowledge.destinations.list', { query: '  销售 %_资料  ', page: 2, size: 20 }))
+      .resolves.toEqual({ items: [{ id: 'sales', name: 'Sales', scope: 'DEPARTMENT', ownerName: '销售' }], page: 2, size: 20, total: 21 })
+    const init = transport.mock.calls[0]?.[1]
+    expect(new Headers(init?.headers).get('authorization')).toBe('Bearer main-only-token')
+    expect(new Headers(init?.headers).get('x-deepseek-harness-employee-id')).toBe('employee')
+    for (const input of [{ employeeId: 'other' }, { page: 0 }, { size: 101 }, { query: 'x'.repeat(201) }, { query: '\0' }]) {
+      await expect(bridge.invoke('knowledge.destinations.list', input)).rejects.toMatchObject({ code: 'KNOWLEDGE_REQUEST_INVALID' })
+    }
+    expect(transport).toHaveBeenCalledOnce()
+  } finally { await bridge.dispose() }
+})
+
 it('pins document moves to the read location, revision and operation key', async () => {
   const transport = vi.fn<typeof fetch>(async () => Response.json({ success: true, data: { moved: true } }))
   const api = client(transport)
@@ -232,7 +306,7 @@ it('returns asynchronous deletion state instead of treating it as completion', a
 it('only lets the main-owned picker supply an upload file', async () => {
   const api = client(async () => { throw new Error('Unexpected HTTP') })
   const send = vi.fn(async () => ({ id: 'document' }))
-  const upload = { send, choose: vi.fn(async () => []), discard: vi.fn(), pending: vi.fn(() => [{ operationId, filename: 'policy.md', pdfParseMode: 'STANDARD' as const, folderId: 'folder' }]) }
+  const upload = { send, configure: vi.fn(() => ({ operationId: 'replacement-operation-1', filename: 'policy.pdf', pdfParseMode: 'TEXT' as const, canConfigure: true as const })), choose: vi.fn(async () => []), discard: vi.fn(), pending: vi.fn(() => [{ operationId, filename: 'policy.md', pdfParseMode: 'STANDARD' as const, folderId: 'folder' }]) }
   try {
     await expect(invokeKnowledge(api, 'knowledge.documents.upload', { knowledgeBaseId: 'base', operationId }, upload))
       .resolves.toEqual({ id: 'document' })
@@ -266,6 +340,15 @@ it('only lets the main-owned picker supply an upload file', async () => {
       await expect(invokeKnowledge(api, 'knowledge.documents.upload.select', { knowledgeBaseId: 'base', ...extra }, upload))
         .rejects.toMatchObject({ code: 'KNOWLEDGE_REQUEST_INVALID' })
     }
+    await expect(invokeKnowledge(api, 'knowledge.documents.upload.configure', { knowledgeBaseId: 'base', operationId, pdfParseMode: 'TEXT' }, upload))
+      .resolves.toMatchObject({ operationId: 'replacement-operation-1', pdfParseMode: 'TEXT' })
+    expect(upload.configure).toHaveBeenCalledExactlyOnceWith('base', operationId, 'TEXT')
+    for (const extra of [{ path: '/private/file' }, { folderId: 'other' }, { employeeId: 'forged' }, { pdfParseMode: 'OCR' }]) {
+      await expect(invokeKnowledge(api, 'knowledge.documents.upload.configure', { knowledgeBaseId: 'base', operationId, pdfParseMode: 'TEXT', ...extra }, upload))
+        .rejects.toMatchObject({ code: 'KNOWLEDGE_REQUEST_INVALID' })
+    }
+    expect(upload.configure).toHaveBeenCalledOnce()
+    expect(isProductRuntimeMethod('knowledge.documents.upload.configure')).toBe(false)
     expect(isProductRuntimeMethod('knowledge.documents.upload.select')).toBe(false)
     expect(upload.pending).toHaveBeenCalledExactlyOnceWith('base')
     await expect(invokeKnowledge(api, 'knowledge.documents.upload.pending', { knowledgeBaseId: 'base', employeeId: 'forged' }, upload))

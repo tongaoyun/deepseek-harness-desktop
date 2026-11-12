@@ -1,6 +1,6 @@
 import { readFile, writeFile } from 'node:fs/promises'
 import { Context } from '@deepseek-ai/cordis'
-import OfficeToPdf, { OfficeSourceKey } from '@deepseek-ai/dsh-office-to-pdf'
+import OfficeKit, { OfficeSourceKey } from '@deepseek-ai/dsh-office-kit'
 import { ProductError } from '@deepseek-harness/product/errors'
 import { expect, it, onTestFinished, vi } from 'vitest'
 import { renderKnowledgeOffice } from '../src/knowledge-preview.ts'
@@ -17,7 +17,7 @@ const outputTransfer = { ...inputTransfer, transferId: '20000000-0000-0000-0000-
 async function fixture() {
   const ctx = new Context()
   onTestFinished(() => ctx.fiber.dispose())
-  await ctx.plugin(OfficeToPdf, { maxConcurrentConversions: 1, maxInputBytes: 1024, maxOutputBytes: 1024 })
+  await ctx.plugin(OfficeKit, { maxConcurrentConversions: 1, maxInputBytes: 1024, maxOutputBytes: 1024 })
   let employeeId = 'employee-a'
   let denied = false
   let version = 'v1'
@@ -167,7 +167,7 @@ it('does not prefetch original bytes while waiting for official conversion admis
     await writeFile(outputPath, pdf)
     return { backend: 'native', missingFonts: [] }
   })
-  const first = ctx.officeToPdf.convert({ extension: 'docx', priority: 'foreground', source: {
+  const first = ctx.officeKit.convert({ extension: 'docx', priority: 'foreground', source: {
     key: OfficeSourceKey('queue-occupant'), version: 'v1', bytes: original.length,
     read: async () => ({ bytes: original, version: 'v1' }),
   } })

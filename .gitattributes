@@ -20,3 +20,12 @@ scripts/upstream-patches/*.patch whitespace=-blank-at-eol
 # Imported community documents retain upstream Markdown hard breaks and ASCII separators.
 # This applies only to the fixed data payload; plugin source keeps normal whitespace checks.
 vendor/product-expert-fixtures/** -whitespace conflict-marker-size=128
+
+# Review layers of the forge changes view (dsh-review-layer), for this repository's own conventions:
+# plugin locale dictionaries and the session snapshot tree hide with test files, generated bilingual
+# pairing records join them, and a package's types-only module is part of its interface.
+packages/*/*/locale/*.json dsh-review-layer=test
+locales.ts dsh-review-layer=test
+snapshots/** dsh-review-layer=test
+*.i18n.yaml dsh-review-layer=test
+packages/*/*/src/types.ts dsh-review-layer=interface

@@ -30,6 +30,7 @@ import { createHarnessActions } from './harness-actions.ts'
 import { TaskKnowledgeInput } from './TaskKnowledgeInput.tsx'
 import { registerKnowledgeToolResults } from './KnowledgeToolResult.tsx'
 import type {} from '@deepseek-ai/dsh-client-ui-agent-preset/client'
+import { createEmployeeSignInActions } from './employee-sign-in.ts'
 
 export const inject = [
   'slots', 'locale', 'sessions', 'workspaces', 'uiWorkspace', 'conversation', 'layout', 'remote', 'remote.agentPresets', 'commandUi',
@@ -48,12 +49,13 @@ export function apply(ctx: ClientContext): void {
   registerKnowledgeToolResults(ctx)
   const carrier = (globalThis as { dshDesktop?: { protocolVersion?: number; updates?: Pick<DesktopUpdateBridge, 'open'> } }).dshDesktop
   const updates = carrier?.protocolVersion === 1 ? carrier.updates : undefined
+  const employeeSignIn = createEmployeeSignInActions(ctx)
   ctx.slots.inject('settings.launcher', () => ctx.slots.register({
     // The browser slot facade assigns the product's shadowing rank. Supplying
     // a fixed value here bypasses that rank and can leave the official account
     // launcher as the winner when the product package is reloaded.
     name: 'settings.launcher', locale: NS,
-    inject: () => updates === undefined ? {} : { openSoftwareUpdate: () => updates.open() },
+    inject: () => ({ ...employeeSignIn, ...updates === undefined ? {} : { openSoftwareUpdate: () => updates.open() } }),
   }, DeepSeekHarnessSettingsMenu))
   const t = ctx.locale.bind(NS)
   const actions = createHarnessActions(ctx)
@@ -64,13 +66,18 @@ export function apply(ctx: ClientContext): void {
     available: session => knowledgeOpeners.has(session.sessionId) && ctx.sessions.subagentAddress(session.sessionId) === undefined,
     ui: { kind: 'action', run: (session) => { knowledgeOpeners.get(session.sessionId)?.() } },
   }), 'product-knowledge: Add menu')
-  ctx.slots.inject('conversation.input.left', () => ctx.slots.register({
-    name: 'conversation.input.left', id: 'product-knowledge', order: 10, locale: NS,
+  ctx.slots.inject('conversation.input.references', () => ctx.slots.register({
+    name: 'conversation.input.references', id: 'product-knowledge', order: 10, locale: NS,
     inject: sessionId => ({
-      readMode: actions.readMode, readKnowledgeCatalog: actions.readKnowledgeCatalog,
+      readCapabilities: actions.readCapabilities, readKnowledgeCatalog: actions.readKnowledgeCatalog,
       setKnowledgeSelection: actions.setKnowledgeSelection, recoverCapabilities: actions.recoverCapabilities,
       retryCapabilities: actions.retryCapabilities,
       openCatalog: actions.openCatalog,
+      openEmployeeSignIn: employeeSignIn.openEmployeeSignIn,
+      focusInput: () => {
+        const binding = ctx.sessions.binding(sessionId)
+        if (binding) ctx.conversation.input.for(binding.ctx).focus()
+      },
       subscribeOpen: (listener: () => void) => {
         knowledgeOpeners.set(sessionId, listener)
         return () => { if (knowledgeOpeners.get(sessionId) === listener) knowledgeOpeners.delete(sessionId) }
@@ -92,7 +99,7 @@ export function apply(ctx: ClientContext): void {
     const Component = PANEL_COMPONENTS[panel.labelKey]
     const ChildIcon = createCapabilityChildIcon(panel.icon)
     ctx.slots.inject('main', () => ctx.slots.register({
-      name: 'main', key: panel.id, locale: NS, inject: () => actions,
+      name: 'main', key: panel.id, locale: NS, inject: () => ({ ...actions, openEmployeeSignIn: employeeSignIn.openEmployeeSignIn }),
     }, Component))
     ctx.slots.inject('sidebar.panellist', () => ctx.slots.register({
       name: 'sidebar.panellist', id: panel.id, order: -37 + index, locale: NS,
