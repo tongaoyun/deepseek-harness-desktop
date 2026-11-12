@@ -58,6 +58,9 @@ describe('runtime identifier preservation', () => {
   it.each([
     'packages/client/ui-agent-preset/src/client/CreatePluginMenuItem.tsx',
     'apps/web/tests/agent-preset-selection.e2e.ts',
+    'apps/web/tests/creator-persona.e2e.ts',
+    'docs/upgrade-guide/v0.2.2-rc.1/subagent-interrupt-default/guide.md',
+    'docs/upgrade-guide/v0.2.2-rc.1/subagent-interrupt-default/guide.zh.md',
     'packages/bundle/web-app/cordis.patch.yml',
     'docs/subsystems/schedule.md',
     'docs/upgrade-guide/v0.2.0-rc.2/schedule-bundle-retired/guide.md',
@@ -122,6 +125,9 @@ describe('exactEditState', () => {
 
 describe('product identifiers', () => {
   it.each([
+    'apps/web/tests/creator-persona.e2e.ts',
+    'docs/upgrade-guide/v0.2.2-rc.1/subagent-interrupt-default/guide.md',
+    'docs/upgrade-guide/v0.2.2-rc.1/subagent-interrupt-default/guide.zh.md',
     'apps/cli/tests/optional-bundle-transitions.e2e.ts',
     'apps/web/tests/agent-preset-selection.e2e.ts',
     'apps/web/tests/developer-tools-settings.e2e.ts',

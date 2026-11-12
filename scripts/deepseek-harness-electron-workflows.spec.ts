@@ -37,10 +37,15 @@ describe('DeepSeekHarness Electron workflows', () => {
     expect(files).toEqual(['desktop-release-retention.yml', 'electron-ci.yml', 'github-desktop-sync.yml'])
   })
 
-  it('builds product and bundled plugin artifacts before their contract checks', () => {
+  it('checks source dependencies before building product artifacts and their types', () => {
     const command = workflow('electron-ci.yml').jobs.desktop?.steps
       .find(step => step.name === 'Verify upstream and product contracts')?.run ?? ''
     expect(command).toContain('pnpm run build:artifacts\n')
+    for (const check of ['rescope-vendor:check', 'verify-package-dependencies', 'verify-no-unknown-casts']) {
+      const position = command.indexOf(`pnpm run ${check}\n`)
+      expect(position).toBeGreaterThanOrEqual(0)
+      expect(position).toBeLessThan(command.indexOf('pnpm run build:artifacts\n'))
+    }
     expect(command).not.toContain('packages/deepseek-harness-product/experts/tsconfig.json')
     expect(command).not.toContain('packages/deepseek-harness-product/skills run typecheck')
     expect(command).toMatch(/pnpm exec vitest run --maxWorkers=4 \\\n\s+packages\/deepseek-harness-product/u)

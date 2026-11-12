@@ -74,6 +74,9 @@ jobs:
       - name: Verify upstream and product contracts
         run: |
           pnpm run verify:upstream
+          pnpm run rescope-vendor:check
+          pnpm run verify-package-dependencies
+          pnpm run verify-no-unknown-casts
           node --test apps/product-desktop/tests/github-delivery.test.mjs
           node --test apps/product-desktop/tests/desktop-release.test.mjs
           node --test apps/product-desktop/tests/product-updates.test.mjs apps/product-desktop/tests/internal-updates.test.mjs apps/product-desktop/tests/native-update-integrity.test.mjs apps/product-desktop/tests/packaging-assembly.test.mjs apps/product-desktop/tests/package-mirror.test.mjs
@@ -85,9 +88,6 @@ jobs:
           pnpm run build:check
           # Expert Host/Client sources and owner-local tests have a separate no-emit program.
           pnpm --filter @deepseek-harness/product-experts run typecheck
-          pnpm run rescope-vendor:check
-          pnpm run verify-package-dependencies
-          pnpm run verify-no-unknown-casts
           # Bound the aggregate pool on the shared runner; keep the lane's test deadlines.
           # The aggregate product run below owns product/experts/skills behavior tests.
           pnpm exec vitest run --maxWorkers=4 \
