@@ -22,7 +22,7 @@ export function createTeamAgent(ctx = new Context()): Agent {
 }
 
 /** Build one native catalog row with its parent-owned identity. */
-export function nativeTeamMember(name: string, parentId: SessionId, activity: 'running' | 'inactive' = 'running'): SubagentDescendantListEntry {
+export function nativeTeamMember(name: string, parentId: SessionId, activity: 'running' | 'inactive' = 'running'): Extract<SubagentDescendantListEntry, { kind: 'child'; mode: 'continuable' }> {
   return { kind: 'child', id: SessionId(name), name, parentId, activity, depth: 1, mode: 'continuable', label: name, hasChildren: false }
 }
 

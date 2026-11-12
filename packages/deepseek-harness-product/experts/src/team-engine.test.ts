@@ -1,5 +1,6 @@
 import { TEST_TEAMS } from './fixtures/teams.ts'
 import { describe, expect, it, vi } from 'vitest'
+import { MessageId } from '@deepseek-ai/dsh-llm/brand'
 import { detectTeamEngine, resolveTeamEngine, dispatchNativeTeam, blocksNativeDelegation, nativeTeamMemberName } from './team-engine.ts'
 
 import { createNativeTeam as native, createTeamAgent, nativeTeamMember } from '../tests/native-team.ts'
@@ -121,6 +122,20 @@ describe('原生专家团启动语义', () => {
     expect(subagents.startActivation).toHaveBeenCalledTimes(3)
     expect(subagents.sendMessage).toHaveBeenCalledTimes(3)
   })
+  it.each(['one-shot', 'external'] as const)('区分原生 %s 目录成员与可恢复专家队友', async (mode) => {
+    const { service, subagents, members } = native()
+    const args = input()
+    const name = nativeTeamMemberName(team.id, team.members[0].expertSlug)
+    const { name: _name, mode: _mode, ...member } = nativeTeamMember(name, args.agent.id, 'inactive')
+    members.push(mode === 'one-shot' ? { ...member, mode } : { ...member, mode, name })
+    const result = await dispatchNativeTeam({ ...args, service, subagents })
+    expect(result.dispatch.started).toBe(mode === 'one-shot' ? 3 : 2)
+    expect(subagents.sendMessage).not.toHaveBeenCalled()
+    if (mode === 'external') {
+      expect(result.dispatch.members[0]).toMatchObject({ status: 'failed', error: expect.stringContaining('不可恢复') })
+      expect(subagents.startActivation.mock.calls.some(([request]) => request.name === name)).toBe(false)
+    }
+  })
   it('清理失败时保留任务编号，方便用户定位任务板', async () => {
     const { service, subagents } = native()
     subagents.startActivation.mockRejectedValue(new Error('创建失败'))
@@ -140,7 +155,7 @@ describe('原生专家团启动语义', () => {
       await Promise.resolve()
       controller.abort()
       const member = nativeTeamMember(request.name!, request.parent.id)
-      return { childId: member.id, name: request.name!, messageId: undefined, result: Promise.resolve({ stopReason: 'completed' as const, output: [] }), dispose: async () => {} }
+      return { childId: member.id, name: request.name!, messageId: MessageId('native-message'), result: Promise.resolve({ stopReason: 'completed' as const, output: [] }), dispose: async () => {} }
     })
     await expect(dispatchNativeTeam({ ...input(), service, subagents, signal: controller.signal })).rejects.toThrow()
     expect(subagents.interrupt.mock.calls.length).toBe(subagents.startActivation.mock.calls.length)

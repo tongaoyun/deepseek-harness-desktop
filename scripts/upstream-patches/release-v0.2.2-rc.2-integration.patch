@@ -11947,7 +11947,7 @@ index c8a5e781aea0a5776f345581310f414fed96b13b..eaac0a4b6be2cc93465015ee282049f3
        if (options.awaitConnected !== false) {
          await awaitConnected(ctx, mock, options.connectTimeoutMs ?? DEFAULT_CONNECT_TIMEOUT_MS)
 diff --git a/pnpm-lock.yaml b/pnpm-lock.yaml
-index 65f0388b77b80367931010b8b4ace90d446b7703..2416756fd7b987b255f27358b7f990bc00b00707 100644
+index 65f0388b77b80367931010b8b4ace90d446b7703..0b9e1d5cfb894216de224a8c0200631b48e8540a 100644
 --- a/pnpm-lock.yaml
 +++ b/pnpm-lock.yaml
 @@ -773,6 +773,9 @@ importers:
@@ -12006,7 +12006,7 @@ index 65f0388b77b80367931010b8b4ace90d446b7703..2416756fd7b987b255f27358b7f990bc
        '@deepseek-ai/dsh-util-values':
          specifier: workspace:*
          version: link:../../util/values
-@@ -8187,70 +8215,795 @@ importers:
+@@ -8187,70 +8215,798 @@ importers:
          specifier: workspace:~
          version: link:../../../vendor/cordis
  
@@ -12132,6 +12132,9 @@ index 65f0388b77b80367931010b8b4ace90d446b7703..2416756fd7b987b255f27358b7f990bc
 +      '@deepseek-ai/dsh-experimental-voice-input-bundle':
 +        specifier: workspace:*
 +        version: link:../../experimental/voice-input-bundle
++      '@deepseek-ai/dsh-home-paths':
++        specifier: workspace:*
++        version: link:../../util/home-paths
 +      '@deepseek-ai/dsh-host-webserver':
 +        specifier: workspace:*
 +        version: link:../../host/webserver
@@ -12838,7 +12841,7 @@ index 65f0388b77b80367931010b8b4ace90d446b7703..2416756fd7b987b255f27358b7f990bc
  
    packages/deliverables/deliverable-file-references:
      devDependencies:
-@@ -12118,6 +12871,90 @@ importers:
+@@ -12118,6 +12874,90 @@ importers:
          specifier: ^18.2.0
          version: 18.3.1
  
@@ -12929,7 +12932,7 @@ index 65f0388b77b80367931010b8b4ace90d446b7703..2416756fd7b987b255f27358b7f990bc
    packages/feedback/command-feedback:
      dependencies:
        zod:
-@@ -20685,10 +21522,18 @@ packages:
+@@ -20685,10 +21525,18 @@ packages:
    '@mixmark-io/domino@2.2.0':
      resolution: {integrity: sha512-Y28PR25bHXUg88kCV7nivXrP2Nj2RueZ3/l/jdx6J9f8J4nsEGcgX0Qe6lt7Pa+J79+kPiJU3LguR6O/6zrLOw==}
  
@@ -12948,7 +12951,7 @@ index 65f0388b77b80367931010b8b4ace90d446b7703..2416756fd7b987b255f27358b7f990bc
    '@modelcontextprotocol/core@2.2.0':
      resolution: {integrity: sha512-iLhmprRmWI8EcosOA3wVvww22z02NkgqhV4fBH6f/odQBsi7xnJc0HGmi21yWO+/iKw2yzqVE127Zhna5/+JXw==}
      engines: {node: '>=20'}
-@@ -20721,6 +21566,10 @@ packages:
+@@ -20721,6 +21569,10 @@ packages:
      resolution: {integrity: sha512-kKaFkyAh6oipvc9+EAbJ552JafnMnOq5nzmzWkp1jJdBhTAAGpmIpWihUG1+rfNhmEFM98gUZDdCHCDD4v6a7Q==}
      hasBin: true
  
@@ -12959,7 +12962,7 @@ index 65f0388b77b80367931010b8b4ace90d446b7703..2416756fd7b987b255f27358b7f990bc
    '@modelcontextprotocol/server@2.2.0':
      resolution: {integrity: sha512-qFnltjus6Gk8Lx6J1w2RXmr3YPN22MNT6qD6zjAkaiWIlFIFxWClz0rXHNuJF/KSUyn5YGhkSvXkWDbQHVLFEQ==}
      engines: {node: '>=20'}
-@@ -21729,6 +22578,14 @@ packages:
+@@ -21729,6 +22581,14 @@ packages:
      resolution: {integrity: sha512-4BAffykYOgO+5nzBWYwE3W90sBgLJoUPRWWcL8wlyiM8IB8ipJz3UMJ9KXQd1RKQXpKp8Tutn80HZtWsu2u76w==}
      engines: {node: '>=10'}
  
@@ -12974,7 +12977,7 @@ index 65f0388b77b80367931010b8b4ace90d446b7703..2416756fd7b987b255f27358b7f990bc
    '@tanstack/react-virtual@3.14.10':
      resolution: {integrity: sha512-SRyoUbdFMRHuYXMijV5H4ZarQWpXkj3iANq8OFre+pybeVap8ZJjZ3Nz9bVjx4d8PfobVUQUdKyyyHYk3E+djw==}
      peerDependencies:
-@@ -28380,6 +29237,16 @@ snapshots:
+@@ -28380,6 +29240,16 @@ snapshots:
  
    '@mixmark-io/domino@2.2.0': {}
  
@@ -12991,7 +12994,7 @@ index 65f0388b77b80367931010b8b4ace90d446b7703..2416756fd7b987b255f27358b7f990bc
    '@modelcontextprotocol/client@2.2.0':
      dependencies:
        '@modelcontextprotocol/core': 2.2.0
-@@ -28390,10 +29257,21 @@ snapshots:
+@@ -28390,10 +29260,21 @@ snapshots:
        pkce-challenge: 5.0.1
        zod: 4.6.6
  
@@ -13013,7 +13016,7 @@ index 65f0388b77b80367931010b8b4ace90d446b7703..2416756fd7b987b255f27358b7f990bc
    '@modelcontextprotocol/node@2.0.0(@modelcontextprotocol/server@2.2.0)(hono@4.13.7)':
      dependencies:
        '@hono/node-server': 1.19.17(hono@4.13.7)
-@@ -28445,6 +29323,11 @@ snapshots:
+@@ -28445,6 +29326,11 @@ snapshots:
        - supports-color
        - zod
  
@@ -13025,7 +13028,7 @@ index 65f0388b77b80367931010b8b4ace90d446b7703..2416756fd7b987b255f27358b7f990bc
    '@modelcontextprotocol/server@2.2.0':
      dependencies:
        '@modelcontextprotocol/core': 2.2.0
-@@ -29152,6 +30035,13 @@ snapshots:
+@@ -29152,6 +30038,13 @@ snapshots:
      dependencies:
        defer-to-connect: 2.0.1
  
@@ -13090,8 +13093,33 @@ index d18d157e26cbb542b1a29832c883a29058ce2cef..1a11b814d6577fd8116087115ffcddb2
          env,
        })
      }
+diff --git a/scripts/check-workspace-constraints.spec.ts b/scripts/check-workspace-constraints.spec.ts
+index a06ff702c2c25bdd528632a2b7e0572a2f8dcac1..a772230606c65ad90bf34f792cf9fe4a7f706b19 100644
+--- a/scripts/check-workspace-constraints.spec.ts
++++ b/scripts/check-workspace-constraints.spec.ts
+@@ -232,6 +232,20 @@ describe('experimental workspace constraints', () => {
+     },
+   )
+ 
++  it('allows experimental opt-ins in declared product assemblies while rejecting undeclared product consumers', () => {
++    const dependencies = { '@deepseek-ai/dsh-experimental-prototype': 'workspace:*' }
++    expect(checkExperimentalDependencyIsolation([experimental, {
++      dir: 'packages/deepseek-harness-product/desktop',
++      manifest: { name: '@deepseek-harness/product-desktop', private: true, dependencies },
++    }])).toEqual([])
++    expect(checkExperimentalDependencyIsolation([experimental, {
++      dir: 'packages/deepseek-harness-product/undeclared',
++      manifest: { name: '@deepseek-harness/undeclared', private: true, dependencies },
++    }])).toEqual([
++      '@deepseek-harness/undeclared: dependencies.@deepseek-ai/dsh-experimental-prototype must not reference an experimental package',
++    ])
++  })
++
+   it('allows the dsh installation to ship the optional bundles the launcher names, and nothing else experimental', () => {
+     const listed = { '@deepseek-ai/dsh-experimental-prototype': 'workspace:^' }
+     const installation = { dir: 'apps/cli', manifest: { name: '@deepseek-ai/dsh', dependencies: listed } } satisfies WorkspaceManifest
 diff --git a/scripts/check-workspace-constraints.ts b/scripts/check-workspace-constraints.ts
-index f759eca7ecbc6d9d0f376feef07fcdb3a73def03..0cb36701e903cbb2b0d5741e405dd399509980fa 100644
+index f759eca7ecbc6d9d0f376feef07fcdb3a73def03..1639e7abe337d1163dee059a11c9b57ea9550a15 100644
 --- a/scripts/check-workspace-constraints.ts
 +++ b/scripts/check-workspace-constraints.ts
 @@ -29,6 +29,7 @@ import {
@@ -13124,6 +13152,15 @@ index f759eca7ecbc6d9d0f376feef07fcdb3a73def03..0cb36701e903cbb2b0d5741e405dd399
    return standardReleaseMemberDirectory.test(dir) || isPublicExperimentalPackageDirectory(dir)
  }
  
+@@ -670,6 +679,8 @@ export function checkExperimentalDependencyIsolation(
+   const errors: string[] = []
+   for (const { dir, manifest } of manifests) {
+     if (!standardReleaseMemberDirectory.test(dir) && dir !== 'python/sdk-runtime') continue
++    // Private product assemblies choose their own opt-ins; official release members remain isolated.
++    if (PRODUCT_PACKAGE_POLICY[dir]?.category === 'product') continue
+     const offered = manifest.name === '@deepseek-ai/dsh' ? new Set(optionalBundles) : new Set<string>()
+     for (const section of runtimeDependencySections) {
+       for (const [name, range] of Object.entries(manifest[section] ?? {})) {
 diff --git a/scripts/client-tsconfig.spec.ts b/scripts/client-tsconfig.spec.ts
 index 694a947202e4999ac82d6e278fa5e6277721d6f0..a8f50373a6ca1075720cd221b04b6d260f6843ff 100644
 --- a/scripts/client-tsconfig.spec.ts

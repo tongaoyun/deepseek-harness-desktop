@@ -1305,7 +1305,7 @@
         {
           "path": "pnpm-lock.yaml",
           "before": "be2834e3ef72341b8874a4b8c5359957449973585f0a49bc4fb4526298bca6a7",
-          "after": "a7019cb085b37fc914d3731422a727f79e09519693ad9df43afcde551daf1db8"
+          "after": "43997061716886eacf5aa4bd5a2ba9a91758b72cccdb5165a6f5c61078974e91"
         },
         {
           "path": "scripts/build.spec.ts",
@@ -1318,9 +1318,14 @@
           "after": "09b74a1e01e0e6316524a8037417898de91730ff351f06167b433d9e36bc4ada"
         },
         {
+          "path": "scripts/check-workspace-constraints.spec.ts",
+          "before": "6edce4bba8ea3267ffdda8df70d0aeab4d5c0fc45b905369801f189492f387ea",
+          "after": "89fd5597db6261bc3edbefee6d6f1614f134967c6720b51f356ce1b9dcbdbe0a"
+        },
+        {
           "path": "scripts/check-workspace-constraints.ts",
           "before": "1a286c91faf2ed559e7b3b389a6db818d15ea0aa5be00cce334be5571f1fc26c",
-          "after": "8bf9982b59fd883e4109dfef2553fe08c7cfc9eca684af634a555bd7e1f41a93"
+          "after": "1effa1cc92217af00112aed9db11abae14fc915055a2fff6e06ef4ee69db4d3e"
         },
         {
           "path": "scripts/client-tsconfig.spec.ts",

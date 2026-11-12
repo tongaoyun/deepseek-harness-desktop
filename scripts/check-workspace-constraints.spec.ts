@@ -232,6 +232,20 @@ describe('experimental workspace constraints', () => {
     },
   )
 
+  it('allows experimental opt-ins in declared product assemblies while rejecting undeclared product consumers', () => {
+    const dependencies = { '@deepseek-ai/dsh-experimental-prototype': 'workspace:*' }
+    expect(checkExperimentalDependencyIsolation([experimental, {
+      dir: 'packages/deepseek-harness-product/desktop',
+      manifest: { name: '@deepseek-harness/product-desktop', private: true, dependencies },
+    }])).toEqual([])
+    expect(checkExperimentalDependencyIsolation([experimental, {
+      dir: 'packages/deepseek-harness-product/undeclared',
+      manifest: { name: '@deepseek-harness/undeclared', private: true, dependencies },
+    }])).toEqual([
+      '@deepseek-harness/undeclared: dependencies.@deepseek-ai/dsh-experimental-prototype must not reference an experimental package',
+    ])
+  })
+
   it('allows the dsh installation to ship the optional bundles the launcher names, and nothing else experimental', () => {
     const listed = { '@deepseek-ai/dsh-experimental-prototype': 'workspace:^' }
     const installation = { dir: 'apps/cli', manifest: { name: '@deepseek-ai/dsh', dependencies: listed } } satisfies WorkspaceManifest

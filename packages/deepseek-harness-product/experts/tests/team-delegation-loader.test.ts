@@ -88,13 +88,13 @@ class WorkflowProgram extends PtcRuntime {
 }
 
 describe.each(['global', 'preset', 'shadow'] as const)('%s native tool registration', (registration) => {
-  const cases = [
+  const cases: [mode: 'team' | 'expert' | 'native-team', tool: 'subagent' | 'subagent_fork' | 'workflow'][] = [
     ['team', 'subagent'], ['team', 'subagent_fork'],
     ['expert', 'subagent'], ['expert', 'subagent_fork'],
-  ] as const
-  it.each(registration === 'preset'
-    ? [...cases, ['team', 'workflow'] as const, ['expert', 'workflow'] as const]
-    : registration === 'global' ? [...cases, ['native-team', 'subagent'] as const, ['native-team', 'subagent_fork'] as const] : cases)('%s enforces its delegation policy for native %s at depth 2', async (mode: 'team' | 'expert' | 'native-team', tool: 'subagent' | 'subagent_fork' | 'workflow') => {
+  ]
+  if (registration === 'preset') cases.push(['team', 'workflow'], ['expert', 'workflow'])
+  if (registration === 'global') cases.push(['native-team', 'subagent'], ['native-team', 'subagent_fork'])
+  it.each(cases)('%s enforces its delegation policy for native %s at depth 2', async (mode, tool) => {
     const nativeTeam = mode === 'native-team'
     const isTeam = mode !== 'expert'
     const root = await mkdtemp(join(tmpdir(), 'expert-delegation-loader-'))

@@ -85,7 +85,7 @@ export async function dispatchNativeTeam(args: NativeDispatchArgs) {
                 // 队友名持久保留，复用同团同专家，避免每次召唤耗尽宿主名额。
                 const name = nativeTeamMemberName(team.id, member.slug);
                 const descendants = await args.subagents.listDescendants(args.agent.id, args.signal);
-                const existing = descendants.find(item => item.parentId === args.agent.id && item.kind === 'child' && item.name === name);
+                const existing = descendants.find(item => item.parentId === args.agent.id && item.kind === 'child' && item.mode !== 'one-shot' && item.name === name);
                 if (existing && (existing.kind !== 'child' || existing.activity !== 'inactive' || existing.mode !== 'continuable'))
                     throw new Error(tx("专家队友仍在运行或不可恢复：{0}", [existing.kind === 'child' ? existing.activity : existing.reason]));
                 const task = await args.service.createTask(args.agent, {

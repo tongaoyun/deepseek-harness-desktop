@@ -26,7 +26,7 @@ it.each((['zh', 'en'] as const).flatMap(language => [-1, 1].flatMap(direction =>
     const text = (key: string) => teamText(language, key)
     const experts: ExpertSummary[] = Array.from({ length: 4 }, (_, index) => ({
       slug: `candidate-${index}`, name: `候选专家 ${index}`, nameEn: `Candidate ${index}`,
-      description: '分析资料', descriptionEn: 'Analyze sources', emoji: '🔎', division: 'research', custom: true,
+      description: '分析资料', descriptionEn: 'Analyze sources', emoji: '🔎', division: 'research', divisionZh: '研究', custom: true,
     }))
     const props = { initial: { ...TEST_TEAMS[0], members: experts.map(expert => ({
       expertSlug: expert.slug, duty: expert.slug, instructions: `分工 ${expert.slug}`,
@@ -34,7 +34,7 @@ it.each((['zh', 'en'] as const).flatMap(language => [-1, 1].flatMap(direction =>
     render(<TeamLocaleContext.Provider value={language}><TeamEditor {...props} experts={experts} /></TeamLocaleContext.Provider>)
     const start = direction === -1 ? experts.length - 1 : 0
     const duty = screen.getAllByRole<HTMLInputElement>('textbox', { name: text('职责摘要') })[start]
-    const row = duty.closest('.agt-edit-member')!
+    const row = duty.closest<HTMLElement>('.agt-edit-member')!
     fireEvent.change(duty, { target: { value: '保留的职责草稿' } })
     fireEvent.click(within(row).getByText(text('展开详细分工')))
     const instructions = within(row).getByRole<HTMLTextAreaElement>('textbox', { name: text('详细分工') })
@@ -66,7 +66,7 @@ it.each((['zh', 'en'] as const).flatMap(language => [-1, 1].flatMap(direction =>
 it.each(['add', 'eighth', 'replace'] as const)('continues editing the selected member after %s without saving', (action) => {
   const experts: ExpertSummary[] = Array.from({ length: 9 }, (_, index) => ({
     slug: `candidate-${index}`, name: `候选专家 ${index}`, nameEn: `Candidate ${index}`,
-    description: `分析资料 ${index}`, descriptionEn: `Analyze sources ${index}`, emoji: '🔎', division: 'research', custom: true,
+    description: `分析资料 ${index}`, descriptionEn: `Analyze sources ${index}`, emoji: '🔎', division: 'research', divisionZh: '研究', custom: true,
   }))
   const count = action === 'eighth' ? 7 : 2
   const props = { initial: { ...TEST_TEAMS[0], members: experts.slice(0, count).map(expert => ({
@@ -151,7 +151,7 @@ it.each((['zh', 'en'] as const).flatMap(language => (['removed', 'disabled'] as 
     const text = (key: string) => teamText(language, key)
     const experts: ExpertSummary[] = Array.from({ length: 4 }, (_, index) => ({
       slug: `candidate-${index}`, name: `候选专家 ${index}`, nameEn: `Candidate ${index}`,
-      description: '分析资料', descriptionEn: 'Analyze sources', emoji: '🔎', division: 'research', custom: true,
+      description: '分析资料', descriptionEn: 'Analyze sources', emoji: '🔎', division: 'research', divisionZh: '研究', custom: true,
     }))
     const props = { initial: TEST_TEAMS[0], enabled: false, enabledExperts: experts.map(expert => expert.slug),
       save: vi.fn(), refresh: vi.fn(), close: vi.fn() }

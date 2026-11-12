@@ -415,7 +415,7 @@ export function createExtension(context: ExtensionContext): ProductDesktopExtens
         const sync = await ensureCompanyContent(employeeId, identitySignal)
         const roots = sync.read()
         identitySignal.throwIfAborted()
-        await prepareNativeCapabilities(profile.directory)
+        await prepareNativeCapabilities(profile, { signal: identitySignal })
         identitySignal.throwIfAborted()
         reportDevice()
         if (supportTimer === undefined) {
