@@ -21,6 +21,7 @@ interface WorkflowJob {
 }
 
 interface Workflow {
+  readonly env?: Readonly<Record<string, string>>
   readonly concurrency?: { readonly group: string; readonly 'cancel-in-progress': boolean }
   readonly jobs: Record<string, WorkflowJob>
 }
@@ -161,6 +162,9 @@ describe('DeepSeekHarness Electron workflows', () => {
       expect(source).not.toContain('registry.npmjs.org')
       expect(source).not.toContain('/data/ci-cache/')
       expect(source).toContain('store-dir /tmp/ci-pnpm-store')
+      expect(source).toContain('pnpm config set registry http://192.168.2.9:4873/')
+      expect(source).toContain('pnpm install --frozen-lockfile')
+      expect(workflow(name).env?.pnpm_config_verify_deps_before_run).toBe('false')
     }
   })
 

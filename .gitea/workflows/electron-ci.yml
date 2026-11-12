@@ -2,6 +2,8 @@ name: 桌面持续集成
 
 # Download from the internal repositories; temporary files belong to this job only.
 env:
+  # Frozen installation is explicit; restoring portable tarball URLs must not trigger another install.
+  pnpm_config_verify_deps_before_run: 'false'
   NPM_CONFIG_REGISTRY: http://192.168.2.9:4873/
   NPM_CONFIG_REPLACE_REGISTRY_HOST: always
   NPM_CONFIG_CACHE: /tmp/ci-npm-cache
@@ -61,6 +63,7 @@ jobs:
           npm install -g pnpm@11.28.5 --no-audit --fund=false \
             --registry=http://192.168.2.9:4873/
           pnpm config set store-dir /tmp/ci-pnpm-store
+          pnpm config set registry http://192.168.2.9:4873/
           # This pinned package is distributed as a CDN tarball, outside the npm registry.
           sed -i 's#https://cdn.sheetjs.com/#http://192.168.2.9:8082/repository/sheetjs-proxy/#g' \
             packages/client/ui-sidebar-documentpreview/package.json pnpm-lock.yaml
