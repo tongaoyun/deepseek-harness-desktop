@@ -2,6 +2,7 @@ export { agentSpecManifest, agentSpecManifestSchema, agentSpecPrompt, type Agent
 import { agentSpecManifest } from './agent-spec.ts'
 /** Company releases contain data for native plugins, never plugin executables or credentials. */
 import { publishedTeamDocument } from './company-team.ts'
+import { createArchivePathValidator } from './content-paths.ts'
 import { z } from 'zod'
 import { createHash } from 'node:crypto'
 import { isCollection, parseDocument, visit } from 'yaml'
@@ -37,7 +38,9 @@ export function companyContentRelease(value: unknown): CompanyContentRelease {
     /^(?:experts\/[a-z0-9]+(?:-[a-z0-9]+)*|expert-versions\/[a-z0-9]+(?:-[a-z0-9]+)*\/[a-f0-9]{64})\/[^\\\u0000-\u001f:"<>|?*]+$/u
   const skillPath = /^skills\/[a-z0-9]+(?:-[a-z0-9]+)*\/[^\\\u0000-\u001f:"<>|?*]+$/u
   const files: Record<string, string> = {}
-  const paths = new Set<string>()
+  const validatePath = createArchivePathValidator((kind) => {
+    throw new Error(kind === 'duplicate' ? '公司内容包含非法路径或文件' : '公司内容存在文件或目录名称冲突')
+  })
   let bytes = 0
   if (Object.keys(value.files).length > COMPANY_CONTENT_MAX_FILES) throw new Error('公司内容文件过多')
   for (const [path, encoded] of Object.entries(value.files)) {
@@ -45,9 +48,8 @@ export function companyContentRelease(value: unknown): CompanyContentRelease {
       || path.length > COMPANY_CONTENT_MAX_PATH_LENGTH
       || !(path === 'catalog.json' || expertRe.test(path) || skillPath.test(path) || /^teams\/[a-z0-9]+(?:-[a-z0-9]+)*\.json$/u.test(path))
       || path.split('/').some(part => ['', '.', '..'].includes(part) || /[. ]$/u.test(part)
-        || /^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\..*)?$/iu.test(part))
-      || paths.has(path.toLowerCase())) throw new Error('公司内容包含非法路径或文件')
-    paths.add(path.toLowerCase())
+        || /^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\..*)?$/iu.test(part))) throw new Error('公司内容包含非法路径或文件')
+    validatePath({ path, directory: false })
     const data = Buffer.from(encoded, 'base64')
     bytes += data.byteLength
     if (bytes > COMPANY_CONTENT_MAX_BYTES || data.toString('base64') !== encoded) throw new Error('公司内容大小或编码无效')
@@ -103,17 +105,6 @@ export function companyContentRelease(value: unknown): CompanyContentRelease {
       const data = Buffer.from(encoded, 'base64')
       const text = new TextDecoder('utf-8', { fatal: true }).decode(data)
       if (data.length > 128 * 1024 || text.includes('\0') || path.endsWith('/SOUL.md') && !text.trim()) throw new Error('专家说明无效')
-    }
-  }
-  const directories = new Map<string, string>()
-  for (const path of Object.keys(files)) {
-    const parts = path.split('/')
-    for (let index = 1; index < parts.length; index++) {
-      const parent = parts.slice(0, index).join('/')
-      const key = parent.toLowerCase()
-      if (paths.has(key)) throw new Error('公司内容存在文件与目录路径冲突')
-      if (directories.has(key) && directories.get(key) !== parent) throw new Error('公司内容存在目录大小写冲突')
-      directories.set(key, parent)
     }
   }
   if (contentDigest(files) !== value.sha256) throw new Error('公司内容校验失败')

@@ -31,7 +31,7 @@ function packagePaths(entries: Record<string, Uint8Array>): Record<string, strin
     if (!path.startsWith(prefix)) throw new PackageTransferError('custom.packageInvalid')
     files[`experts/${manifest.worker.suggested_name}/${path.slice(prefix.length)}`] = bytesToBase64(entries[path])
   }
-  portableFilePaths(Object.keys(files))
+  portableFilePaths([...Object.keys(files), `experts/${manifest.worker.suggested_name}/.package-index.json`])
   return files
 }
 function safePath(path: string): void {

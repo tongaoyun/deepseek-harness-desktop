@@ -20,7 +20,8 @@ export function expertPackageFiles(slug: string, input: CustomExpertInput): Reco
     [`experts/${slug}/config/SOUL.md`]: Buffer.from(value.prompt).toString('base64') }
   if (value.agents !== undefined) files[`experts/${slug}/config/AGENTS.md`] = Buffer.from(value.agents).toString('base64')
   for (const [path, encoded] of Object.entries(value.resources)) {
-    if (['manifest.json', 'config/SOUL.md', 'config/AGENTS.md', '.package-index.json'].includes(path)) throw new Error('附件路径与专家说明冲突')
+    if (['manifest.json', 'config/SOUL.md', 'config/AGENTS.md'].includes(path)
+      || path.split('/')[0].toLowerCase() === '.package-index.json') throw new Error('附件路径与专家说明冲突')
     files[`experts/${slug}/${path}`] = encoded
   }
   return { ...companyContentRelease({ version: '1.0.0', sha256: contentDigest(files), files }).files }

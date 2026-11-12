@@ -82,6 +82,23 @@ describe('company native content', () => {
       'experts/orders/assets/订单 模板.xlsx': Buffer.from([0, 255]).toString('base64') }
     expect(companyContentRelease(release(data)).files).toEqual(data)
   })
+  it.each([
+    ['assets/caf\u00e9.txt', 'assets/cafe\u0301.txt'],
+    ['assets/caf\u00e9/one.txt', 'assets/cafe\u0301/two.txt'],
+    ['assets/caf\u00e9', 'assets/cafe\u0301/two.txt'],
+  ])('rejects canonically equivalent file and directory names: %s, %s', (left, right) => {
+    for (const [root, entries] of [['skills/orders', files], ['experts/orders', expertFiles('orders', 'Read resources')]] as const) {
+      for (const paths of [[left, right], [right, left]]) {
+        const data = { ...entries, ...Object.fromEntries(paths.map(path => [`${root}/${path}`, markdown])) }
+        expect(() => companyContentRelease(release(data))).toThrow()
+      }
+    }
+  })
+  it.each(['caf\u00e9', 'cafe\u0301'])('preserves an unambiguous Unicode spelling and its digest: %s', (name) => {
+    const data = { ...files, [`skills/orders/assets/${name}/one.txt`]: markdown,
+      [`skills/orders/assets/${name}/two.txt`]: markdown }
+    expect(companyContentRelease(release(data))).toEqual(release(data))
+  })
   it('rejects corrupted bytes, missing entry documents, and case collisions', () => {
     expect(() => companyContentRelease({ ...release(), sha256: '0'.repeat(64) })).toThrow()
     expect(() => companyContentRelease(release({ 'skills/orders/file.txt': markdown }))).toThrow()
@@ -92,7 +109,7 @@ describe('company native content', () => {
     'rejects a file that is also a resource directory before installation: %s', (parent) => {
       const data = { ...files, [parent]: Buffer.from('file').toString('base64'),
         'skills/orders/assets/policy.txt': Buffer.from('policy').toString('base64') }
-      expect(() => companyContentRelease(release(data))).toThrow('文件与目录路径冲突')
+      expect(() => companyContentRelease(release(data))).toThrow('文件或目录名称冲突')
     },
   )
   it.each([
@@ -100,7 +117,7 @@ describe('company native content', () => {
     ['Assets/one.txt', 'assets/two.txt'],
   ])('rejects differently cased aliases of the same resource directory: %s, %s', (left, right) => {
     const data = { ...files, [`skills/orders/${left}`]: markdown, [`skills/orders/${right}`]: markdown }
-    expect(() => companyContentRelease(release(data))).toThrow('目录大小写冲突')
+    expect(() => companyContentRelease(release(data))).toThrow('文件或目录名称冲突')
   })
   it('accepts consistently cased shared resource directories', () => {
     const data = { ...files, 'skills/orders/Assets/one.txt': markdown, 'skills/orders/Assets/two.txt': markdown }

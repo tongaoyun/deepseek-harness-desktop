@@ -521,6 +521,28 @@ it('keeps committed skills and refreshes the native catalog while cancelling lat
   } finally { probe.mockRestore() }
 }, 30000)
 
+it.each(['zip', 'entries'] as const)('rejects Unicode path aliases before replacing a skill through %s upload', async (kind) => {
+  const { ctx, root, invoke } = await boot()
+  const name = 'unicode-orders', target = join(root, '.dsh/skills', name)
+  await invoke('createSkill', { request: { name, description: 'Original', category: '企业协作', body: 'Original body' } })
+  const entries = {
+    'SKILL.md': strToU8(`---\nname: ${name}\ndescription: Replacement\n---\nReplacement body`),
+    'references/caf\u00e9/one.md': strToU8('First reference'),
+    'references/cafe\u0301/two.md': strToU8('Second reference'),
+  }
+  const changed = vi.fn()
+  ctx.on('skills/change', changed)
+  const payload = kind === 'zip' ? { zip: Buffer.from(zipSync(entries)).toString('base64') }
+    : { entries: Object.entries(entries).map(([path, bytes]) => ({ path, data: Buffer.from(bytes).toString('base64') })) }
+  await expect(invoke('uploadSkill', { request: { ...payload, conflict: 'overwrite' } }))
+    .rejects.toMatchObject({ code: 'skills/operation', details: { code: 'error.upload.pathConflict' } })
+  expect(await readFile(join(target, 'SKILL.md'), 'utf8')).toContain('Original body')
+  expect(await readdir(target)).toEqual(['SKILL.md'])
+  expect(await readdir(join(root, '.dsh/skills-manager/uploads'))).toEqual([])
+  expect((await ctx.skills.get(name))?.content).toBe('Original body')
+  expect(changed).not.toHaveBeenCalled()
+})
+
 it('rejects duplicate ZIP entries before an archive reader can overwrite a skill resource', async () => {
   const { ctx, root, invoke } = await boot()
   const bytes = zipSync({

@@ -248,14 +248,23 @@ it.each(['references/订单?.md', 'assets/目录 /模板.xlsx', 'assets/目录*/
   },
 )
 
-it('round trips attachments with Unicode and interior spaces through immutable personal storage', async () => {
+it.each(['订单 模板.xlsx', 'caf\u00e9.xlsx', 'cafe\u0301.xlsx'])('round trips an unambiguous attachment through immutable personal storage: %s', async (name) => {
   const { packages } = await fixture()
-  const resources = await addPackageResources(draft, [new File([new Uint8Array([0, 255])], '订单 模板.xlsx')],
+  const resources = await addPackageResources(draft, [new File([new Uint8Array([0, 255])], name)],
     new AbortController().signal)
   const input = { ...draft, resources }
   const ref = await packages.save('order-expert', input)
   expect(await packages.readFiles('order-expert', ref.packageSha256)).toEqual(expertPackageFiles('order-expert', input))
 })
+
+it.each(['.package-index.json', '.PACKAGE-INDEX.JSON', '.package-index.json/one.txt', '.PACKAGE-INDEX.JSON/one.txt'])(
+  'rejects attachments shadowing private package metadata before creating a version: %s', async (path) => {
+    const { root, packages } = await fixture()
+    await expect(packages.save(draft.slug, { ...draft, resources: { ...draft.resources, [path]: 'AA==' } }))
+      .rejects.toThrow('附件路径与专家说明冲突')
+    expect(await readdir(root)).toEqual([])
+  },
+)
 
 it.each(['same-name', 'case-alias', 'oversized-shadowed'] as const)(
   'rejects ambiguous attachment selections before reading either file: %s', async (kind) => {
@@ -295,6 +304,33 @@ it.each(['file-directory', 'directory-case'] as const)('rejects conflicting dire
   await expect(importPackageFiles(files, new AbortController().signal)).rejects.toThrow('custom.packageInvalid')
   for (const read of reads) expect(read).not.toHaveBeenCalled()
 })
+
+const conflictingPackages: readonly { name: string; resources: Record<string, string>; beforeRead: boolean }[] = [
+  { name: 'Unicode directory aliases', resources: { 'assets/caf\u00e9/one.txt': 'AA==', 'assets/cafe\u0301/two.txt': 'AQ==' }, beforeRead: true },
+  { name: 'private index file alias', resources: { '.PACKAGE-INDEX.JSON': 'AA==' }, beforeRead: false },
+  { name: 'private index directory alias', resources: { '.PACKAGE-INDEX.JSON/one.txt': 'AA==' }, beforeRead: false },
+]
+it.each(conflictingPackages.flatMap(value => (['zip', 'directory'] as const).map(kind => ({ ...value, kind }))))(
+  'rejects $name before importing or saving an expert package via $kind', async ({ kind, resources, beforeRead }) => {
+    const { root, packages } = await fixture()
+    const input = { ...draft, resources: { ...draft.resources, ...resources } }
+    const files = { ...expertPackageFiles(draft.slug, draft),
+      ...Object.fromEntries(Object.entries(input.resources).map(([path, value]) => [`experts/${draft.slug}/${path}`, value])) }
+    const entries = Object.fromEntries(Object.entries(files).map(([path, value]) =>
+      [path.slice('experts/'.length), new Uint8Array(Buffer.from(value, 'base64'))]))
+    const selection = kind === 'zip' ? [new File([new Uint8Array(zipSync(entries))], 'order-expert.zip')]
+      : Object.entries(entries).map(([path, value]) => {
+        const file = new File([new Uint8Array(value)], path.split('/').at(-1)!)
+        Object.defineProperty(file, 'webkitRelativePath', { value: path })
+        return file
+      })
+    const reads = selection.map(file => vi.spyOn(file, 'arrayBuffer'))
+    await expect(importPackageFiles(selection, new AbortController().signal)).rejects.toThrow('custom.packageInvalid')
+    if (kind === 'directory' && beforeRead) for (const read of reads) expect(read).not.toHaveBeenCalled()
+    await expect(packages.save(draft.slug, input)).rejects.toThrow()
+    expect(await readdir(root)).toEqual([])
+  },
+)
 
 it.each(['zip', 'directory'] as const)('keeps nested template manifests as resources during %s import', async (kind) => {
   const { packages } = await fixture()

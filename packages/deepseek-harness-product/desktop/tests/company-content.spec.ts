@@ -47,7 +47,7 @@ it('rejects directory case aliases before creating employee content on disk', as
   const files = { ...release().files, 'skills/orders/Assets/one.txt': Buffer.from('one').toString('base64'),
     'skills/orders/assets/two.txt': Buffer.from('two').toString('base64') }
   await expect(installCompanyContent(root, 'employee-a', { version: '1.0.0', sha256: contentDigest(files), files },
-    new AbortController().signal)).rejects.toThrow('目录大小写冲突')
+    new AbortController().signal)).rejects.toThrow('文件或目录名称冲突')
   expect(await readdir(root)).toEqual([])
 })
 
