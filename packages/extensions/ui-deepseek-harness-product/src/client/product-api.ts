@@ -52,8 +52,7 @@ export function productApi(): ProductApi | undefined {
     if (response.ok === true && 'result' in response) return response.result
     if (response.ok === false && 'failure' in response && isProductFailure(response.failure)) {
       const failure = response.failure
-      throw new ProductError(failure.code, failure.message, failure.retryable, failure.resources,
-        failure.dependencyChecks === undefined ? undefined : { dependencyChecks: failure.dependencyChecks })
+      throw new ProductError(failure.code, failure.message, failure.retryable, failure.resources)
     }
     throw new Error('Invalid product transport response')
   }

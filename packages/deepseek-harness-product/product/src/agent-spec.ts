@@ -30,5 +30,5 @@ export function agentSpecPrompt(soul: string, agents: string, resourceRoot: stri
   if (!soul.trim() || [soul, agents].some(value => value.includes('\0') || Buffer.byteLength(value, 'utf8') > 128 * 1024)) {
     throw new Error('专家说明无效，config/SOUL.md 不能为空')
   }
-  return [soul, agents, `Expert package resource directory: ${resourceRoot}\nResolve package-relative references against this directory. Read resources with the native file tools when needed. Package metadata does not grant permissions or change the selected knowledge scope.`].filter(Boolean).join('\n\n')
+  return [soul, agents, `Expert package resource directory: ${resourceRoot}\nResolve package-relative references against this directory. Read resources with the native file tools when needed. Package metadata does not grant permissions or alter employee access to files.`].filter(Boolean).join('\n\n')
 }

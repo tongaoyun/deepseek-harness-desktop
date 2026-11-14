@@ -1,0 +1,17 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`retains shared login feedback and keyboard focus during a 'en' retry until 'failed' > Shared sign-in retry 1`] = `
+{
+  "busy": "false",
+  "feedback": "DingTalk sign-in did not complete. Try again.",
+  "focused": true,
+}
+`;
+
+exports[`retains shared login feedback and keyboard focus during a 'zh' retry until 'failed' > Shared sign-in retry 1`] = `
+{
+  "busy": "false",
+  "feedback": "钉钉登录未完成，请重试。",
+  "focused": true,
+}
+`;

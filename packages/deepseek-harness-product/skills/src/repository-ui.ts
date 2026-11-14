@@ -94,6 +94,9 @@ const CSS = `
 .dssm-catalog-sentinel{height:1px}.dssm-catalog-loading{display:flex;align-items:center;justify-content:center;gap:8px;padding:12px 13px;color:var(--dsw-alias-label-tertiary,#a0a0a0);font-size:12px;border-top:0.5px solid var(--dsw-alias-border-l1,#3a3a3a)}.dssm-catalog-loading .dssm-repo-spinner{margin-right:0}
 .dssm-meta-origin{color:var(--dsw-alias-label-secondary,#8e8e8e);font-size:11px;margin-top:2px}
 .dssm-btn-danger:not(:disabled){color:var(--dsw-alias-state-error-primary,#ef7272)}
+.dssm-action-label{display:inline-grid}
+.dssm-action-label>span{grid-area:1/1}
+.dssm-action-label>[aria-hidden=true]{visibility:hidden}
 .dssm-status-badge{display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:var(--dsw-radius-sm,8px)}
 .dssm-repo-row .dssm-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:14px;font-weight:650;color:var(--dsw-alias-label-primary,#eeeeee)}.dssm-repo-row{display:flex;flex-direction:column;gap:6px;padding:11px 13px;border-top:0.5px solid var(--dsw-alias-border-l1,#3a3a3a);background:transparent}.dssm-repo-head{display:flex;align-items:center;gap:8px;min-width:0;flex-wrap:nowrap}.dssm-repo-actions{display:flex;align-items:center;gap:8px;flex:none;flex-wrap:nowrap}.dssm-repo-actions button{flex:none}.dssm-repo-actions .dssm-repo-copy-actions{gap:8px;margin-left:0}.dssm-repo-main{flex:1;min-width:0}.dssm-repo-main>.dssm-repo-metadata{margin-top:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.dssm-repo-description{margin-top:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--dsw-alias-label-tertiary,#a0a0a0);font-size:12px;line-height:18px}.dssm-repo-copies{display:flex;flex-direction:column;gap:2px;min-width:0}.dssm-repo-copy{display:flex;align-items:center;gap:8px;min-width:0;padding:0;border:0;background:transparent}.dssm-repo-copy .dssm-repo-metadata{font-size:12px;line-height:18px}.dssm-repo-copy-actions{display:flex;align-items:center;gap:8px;margin-left:auto;flex:none}.dssm-repo-spinner{margin-right:6px}.dssm-repo-commit-badge{font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,\"Liberation Mono\",\"Courier New\",monospace;font-size:11px;line-height:16px;padding:1px 6px;border-radius:var(--dsw-radius-xs,4px);background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-secondary,#b9b9b9);border:0.5px solid var(--dsw-alias-border-l1,#3a3a3a);margin-left:12px;white-space:nowrap;user-select:all}.dssm-repo-panel{display:flex;flex-direction:column;gap:12px;min-width:0}.dssm-repo-panel .dssm-desc{margin:0}.dssm-repo-metadata{font-size:11px;color:var(--dsw-alias-label-tertiary,#a0a0a0);overflow-wrap:anywhere}.dssm-repo-panel .dssm-source{flex-shrink:0;overflow:hidden;border:0.5px solid var(--dsw-alias-border-l2,#494949);border-radius:var(--dsw-radius-xl,20px);background:transparent}.dssm-repo-panel .dssm-source-title{font-size:14px;font-weight:650;overflow-wrap:anywhere;display:inline-flex;align-items:center;gap:7px}.dssm-repo-panel .dssm-source-brand{display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;flex-shrink:0;color:var(--dsw-alias-label-secondary,#b9b9b9)}.dssm-repo-panel .dssm-source-brand svg{width:16px;height:16px;display:block}.dssm-repo-panel .dssm-source-path{min-width:0;margin-left:auto;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--dsw-alias-label-tertiary,#a0a0a0);font-size:11px}.dssm-repo-panel .dssm-count{padding:1px 6px;border-radius:999px;corner-shape:round;background:var(--dsw-alias-bg-layer-2,rgba(255,255,255,0.08));font-size:11px;color:var(--dsw-alias-label-secondary,#b9b9b9)}.dssm-repo-manage-row{flex-direction:row;align-items:center;justify-content:space-between;gap:12px}.dssm-repo-manage-row .dssm-repo-main{flex:1}.dssm-repo-manage-row .dssm-repo-actions{margin-left:auto}.dssm-repo-manage-row .dssm-repo-actions button{width:auto;flex:none}.dssm-repo-head .dssm-repo-actions{gap:8px}.dssm-repo-actions>.dssm-repo-copy-actions{display:contents}.dssm-icon-action{width:22px;min-width:22px;height:22px;padding:0;border-radius:var(--dsw-radius-sm,8px);background:transparent;color:var(--dsw-alias-label-secondary,#b9b9b9);border-color:var(--dsw-alias-border-l2,#494949)}.dssm-icon-action:not(:disabled):not(.dssm-icon-danger):hover{color:var(--dsw-alias-link,#4176e6)!important;border-color:var(--dsw-alias-link,#4176e6)!important}.dssm-icon-action.dssm-icon-danger{color:var(--dsw-alias-state-error-primary,#ef7272);border-color:var(--dsw-alias-state-error-primary,#ef7272)}.dssm-repo-copies{display:flex;flex-direction:column;gap:4px;width:100%;margin-top:2px}.dssm-repo-copy{display:flex;align-items:center;gap:8px;width:100%;min-width:0;box-sizing:border-box;padding:4px 4px 4px 8px;border-radius:var(--dsw-radius-md,12px);background:var(--dsw-alias-bg-layer-1,rgba(255,255,255,0.04))}.dssm-repo-copy .dssm-repo-metadata{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.dssm-repo-copy .dssm-repo-copy-actions{margin-left:0}.dssm-repo-copy .dssm-icon-action.dssm-icon-danger{border-color:var(--dsw-alias-border-l2,#494949)}.dssm-repo-copy .dssm-icon-action.dssm-icon-danger:not(:disabled):hover{color:var(--dsw-alias-state-error-primary,#ef7272)!important;border-color:var(--dsw-alias-state-error-primary,#ef7272)!important}.dssm-repo-copy .dssm-repo-metadata{display:flex;align-items:center;min-width:0;flex:1;overflow:hidden;white-space:nowrap}.dssm-location-lead{flex:0 1 auto;max-width:50%;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.dssm-location-path{margin-left:auto;min-width:0;max-width:50%;flex:0 1 auto;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:right}`;
 
@@ -208,7 +211,7 @@ export function createRepositoryUI({ react, Modal, SourceSelect, destination, ap
     const skillshRetry = useRetryFocus(() => skillshSearch.current);
     const catalogRevealFocus = react.useRef<ReadonlySet<string>>();
     const [form, setForm] = react.useState<Record<string, string>>({ url: "", ref: "", subdirectory: "" });
-    const locked = react.useRef<AbortSignal | null>(null);
+    const locked = react.useRef<{ signal: AbortSignal; kind: 'read' | 'write' } | null>(null);
     const mounted = react.useRef(true);
     const updateDestination = (next: Partial<DestinationValue>) => {
       if (!locked.current) setDestination(previous => ({ ...previous, ...next }));
@@ -307,9 +310,10 @@ export function createRepositoryUI({ react, Modal, SourceSelect, destination, ap
       const summary = (value.key ? t(value.key) : value.text || "") + (value.name ? " · " + value.name : "");
       return [summary, value.payload ? message(value.payload) : ""].filter(Boolean).join(" · ");
     }
-    async function perform(task: () => Promise<unknown>, signal = getSignal()) {
-      if (signal.aborted || locked.current && !locked.current.aborted) return;
-      locked.current = signal;
+    async function perform(task: () => Promise<unknown>, signal = getSignal(), kind: 'read' | 'write' = 'write') {
+      if (signal.aborted || locked.current && !locked.current.signal.aborted) return;
+      const operation = { signal, kind };
+      locked.current = operation;
       setBusy(true);
       setFeedback(previous => previous?.error ? previous : null);
       try {
@@ -319,7 +323,7 @@ export function createRepositoryUI({ react, Modal, SourceSelect, destination, ap
         if (mounted.current && !signal.aborted) setFeedback({ error: true, payload: error });
       } finally {
         // 被取消的读取不能解除后来操作的锁定。
-        if (locked.current === signal) {
+        if (locked.current === operation) {
           locked.current = null;
           if (mounted.current) setBusy(false);
         }
@@ -397,7 +401,6 @@ export function createRepositoryUI({ react, Modal, SourceSelect, destination, ap
       const controller = new AbortController();
       clawhubSearchAbort.current?.abort();
       clawhubSearchAbort.current = controller;
-      setClawhubSearchItems([]);
       setClawhubSearchLoading(true);
       try {
 
@@ -416,6 +419,7 @@ export function createRepositoryUI({ react, Modal, SourceSelect, destination, ap
           };
         });
         if (clawhubSearchAbort.current === controller && mounted.current) {
+          captureRepositoryFocus();
           setClawhubSearchItems(items);
           setClawhubSearchError(false);
         }
@@ -459,11 +463,11 @@ export function createRepositoryUI({ react, Modal, SourceSelect, destination, ap
       const controller = new AbortController();
       skillshAbort.current?.abort();
       skillshAbort.current = controller;
-      setSkillshItems([]);
       setSkillshLoading(true);
       try {
         const result = await api("searchSkillsSh", { query }, controller.signal);
         if (skillshAbort.current === controller && mounted.current) {
+          captureRepositoryFocus();
           setSkillshItems(result.skills);
           setSkillshError(false);
         }
@@ -492,7 +496,7 @@ export function createRepositoryUI({ react, Modal, SourceSelect, destination, ap
       }, 300);
     }
     function selectSubsource(next: 'github' | 'skillsh' | 'clawhub') {
-      if (locked.current) return;
+      if (locked.current?.kind === 'write') return;
       cancelRepositoryRead();
       setModal(null);
       setSubsource(next);
@@ -634,7 +638,7 @@ export function createRepositoryUI({ react, Modal, SourceSelect, destination, ap
       if (!active) return;
       const controller = new AbortController();
       const signal = AbortSignal.any([getSignal(), controller.signal]);
-      void perform(async () => { await load(signal); signal.throwIfAborted(); if (mounted.current) setFeedback(null); }, signal);
+      void perform(async () => { await load(signal); signal.throwIfAborted(); if (mounted.current) setFeedback(null); }, signal, 'read');
       return () => { controller.abort(); };
     }, [active]);
     react.useEffect(() => {
@@ -660,10 +664,13 @@ export function createRepositoryUI({ react, Modal, SourceSelect, destination, ap
         if (mounted.current) setCatalogLoading(false);
       };
     }, [active, subsource]);
-    function button(key: string, action: () => unknown, secondary = true, disabled = false, danger = false) {
+    function button(key: string, action: () => unknown, secondary = true, disabled = false, danger = false, pendingKey?: string) {
           const className = [danger ? "dssm-btn-danger" : "", busy && !disabled ? "product-control-pending" : ""].filter(Boolean).join(" ");
+          // Both localized labels size the button; only the current label is visible and announced.
+          const label = pendingKey ? h('span', { className: 'dssm-action-label' },
+            h('span', { 'aria-hidden': busy }, t(key)), h('span', { 'aria-hidden': !busy }, t(pendingKey))) : t(key);
           return h(PrimitiveButton, { variant: secondary ? "outline" : "primary", className: className, disabled, "aria-disabled": busy || disabled,
-            "aria-busy": busy && !disabled && key !== "repo.cancel", onClick: () => { if (!locked.current && !disabled) action(); } }, t(key));
+            "aria-busy": busy && !disabled && key !== "repo.cancel", onClick: () => { if (!locked.current && !disabled) action(); } }, label);
         }
     function rowGlyph(d: string) {
       return h("svg", { viewBox: "0 0 16 16", width: 16, height: 16, "aria-hidden": true, focusable: "false" }, h("path", { d: d, fill: "none", stroke: "currentColor", strokeWidth: 1.5, strokeLinecap: "round", strokeLinejoin: "round" }));
@@ -886,27 +893,34 @@ export function createRepositoryUI({ react, Modal, SourceSelect, destination, ap
     }
     const feedbackNode = feedback ? h("div", { className: "dssm-feedback" + (feedback.error ? " dssm-error" : ""), role: feedback.error ? "alert" : "status" }, feedbackText(feedback)) : null;
     const refreshProgress = refreshing ? h("div", { className: "dssm-note", role: "status", "aria-live": "polite" }, t("repo.refreshing") + " " + refreshing.index + "/" + refreshing.total + " · " + refreshing.name) : null;
+    // Reserve feedback space so pending and failed writes do not move the dialog actions.
+    function writeFeedback(progressKey?: string) {
+      return h('div', { className: 'dssm-write-feedback', tabIndex: feedback?.error ? 0 : undefined },
+        feedbackNode ?? (busy && progressKey ? h('div', { role: 'status', 'aria-live': 'polite' }, t(progressKey)) : null));
+    }
     let dialog;
     if (modal) {
       let body: React.ReactNode;
             let description: string | undefined;
             let footer: React.ReactNode;
-            if (modal.type === 'install') body = h('div', { className: 'dssm-repo-panel', 'aria-busy': busy },
+            if (modal.type === 'install') {
+              body = h('div', { className: 'dssm-repo-panel', 'aria-busy': busy },
               h('div', { className: 'dssm-name' }, modal.skill.name),
               h(DestinationPicker, { t, value: destination, disabled: busy, allowAgents: true, workspaces, loading: workspacesLoading, workspaceError: workspacesError, onRetryWorkspaces: () => { void loadWorkspaces(); }, userDestinations: installRoots,
                 onChange: updateDestination }),
               h('p', { className: 'dssm-note' }, t('repo.installLocationsHint')),
               h('p', { className: 'dssm-note' }, t('repo.installHint')),
-              busy ? h('div', { role: 'status', 'aria-live': 'polite' }, t('repo.installProgress')) : null, feedbackNode,
-              h('div', { className: 'dssm-modal-actions' }, button('repo.cancel', close), button(busy ? 'repo.installing' : 'repo.install', changeInstallation, false, !destinationReady(destination, workspaces, installRoots))));
+              writeFeedback('repo.installProgress'));
+              footer = h(react.Fragment, null, button('repo.cancel', close), button('repo.install', changeInstallation, false, !destinationReady(destination, workspaces, installRoots), false, 'repo.installing'));
+            }
             if (modal.type === 'uninstall') {
               description = t('repo.uninstallHint');
               body = h('div', { className: 'dssm-repo-panel', 'aria-busy': busy },
                 h('div', { className: 'dssm-name' }, modal.skill.name),
                 modal.copy ? h('div', { className: 'dssm-repo-metadata' }, copyName(modal.copy)) : null,
                 modal.copy?.installedRoot === 'agents' && !modal.copy.installedWorkspace ? h('p', { className: 'dssm-feedback dssm-warning', role: 'alert' }, t('repo.uninstallExternalWarning')) : null,
-                busy ? h('div', { role: 'status', 'aria-live': 'polite' }, t('repo.uninstallProgress')) : null, feedbackNode);
-              footer = h(react.Fragment, null, button('repo.cancel', close), button(busy ? 'repo.uninstalling' : 'repo.confirmUninstall', changeInstallation, true, !modal.copy || !copyTarget(modal.copy), true));
+                writeFeedback('repo.uninstallProgress'));
+              footer = h(react.Fragment, null, button('repo.cancel', close), button('repo.confirmUninstall', changeInstallation, true, !modal.copy || !copyTarget(modal.copy), true, 'repo.uninstalling'));
             }
             if (modal.type === "review" || modal.type === "rollback") {
               body = modal.detail ? h("div", { className: "dssm-repo-panel" },
@@ -915,35 +929,37 @@ export function createRepositoryUI({ react, Modal, SourceSelect, destination, ap
                 h("div", { className: "dssm-repo-metadata" }, modal.repo.owner + "/" + modal.repo.name + " · " + modal.detail.commit?.slice(0, 7)),
                 modal.detail.localModified ? h("p", { className: "dssm-feedback dssm-warning", role: "alert" }, t("repo.modified")) : null,
                 modal.detail.changes.length ? h("ul", { style: { maxHeight: "240px", overflow: "auto", overflowWrap: "anywhere", paddingLeft: "20px" } }, modal.detail.changes.map(change => h("li", { key: change.path }, t("repo." + (change.kind === "modified" ? "modifiedFile" : change.kind)) + " · " + change.path))) : h("p", null, t("repo.noChanges")),
-                busy ? h("div", { role: "status" }, t("repo.updateProgress")) : null, feedbackNode) : readFeedback(modal, t("repo.previewLoading"));
-              footer = h(react.Fragment, null, button("repo.cancel", close), modal.detail ? button(modal.detail.localModified ? "repo.overwrite" : modal.type === "rollback" ? "repo.confirmRollback" : "repo.confirmUpdate", update, false, !modal.detail.changes.length || !copyTarget(modal.copy)) : null);
+                writeFeedback('repo.updateProgress')) : readFeedback(modal, t("repo.previewLoading"));
+              footer = h(react.Fragment, null, button("repo.cancel", close), modal.detail ? button(modal.detail.localModified ? "repo.overwrite" : modal.type === "rollback" ? "repo.confirmRollback" : "repo.confirmUpdate", update, false, !modal.detail.changes.length || !copyTarget(modal.copy), false, 'repo.updating') : null);
             }
       if (modal.type === "add") body = h("form", { className: "dssm-form", onSubmit: (e: React.FormEvent<HTMLFormElement>) => { e.preventDefault(); void addRepository(); } },
         [["url", "repo.url", "https://github.com/owner/repo"], ["ref", "repo.ref", t("repo.defaultBranch")], ["subdirectory", "repo.directory", t("repo.directoryHint")]].map(([key, label, placeholder]) => h("label", { className: "dssm-field", key }, h("span", { className: "dssm-label" }, t(label)), h(Input, { "aria-label": t(label), value: form[key], placeholder, maxLength: key === "url" ? 2048 : 512, required: key === "url", disabled: busy, onChange: (e: { target: { value: string } }) => setForm(previous => ({ ...previous, [key]: e.target.value })) }))),
-        feedbackNode, h("div", { className: "dssm-modal-actions" }, button("repo.cancel", close), button("repo.save", addRepository, false, !form.url.trim())));
+        writeFeedback(), h("div", { className: "dssm-modal-actions" }, button("repo.cancel", close), button("repo.save", addRepository, false, !form.url.trim())));
       if (modal.type === "manage") body = h("div", { className: "dssm-repo-panel" }, h("p", { className: "dssm-desc" }, t("repo.removeHint")), refreshProgress, feedbackNode, manageRows());
       if (modal.type === "remove") {
               description = t("repo.removeHint");
-              body = h("div", null, h("div", { className: "dssm-name" }, modal.repo.owner + "/" + modal.repo.name), feedbackNode);
+              body = h("div", null, h("div", { className: "dssm-name" }, modal.repo.owner + "/" + modal.repo.name), writeFeedback());
               footer = h(react.Fragment, null, button("repo.cancel", () => setModal({ type: "manage" })), button("repo.removeConfirm", removeRepository, true, false, true));
             }
       if (modal.type === "catalog-detail" && modal.detail) body = h("div", { className: "dssm-repo-panel" }, h("div", { className: "dssm-name" }, modal.detail.name), h("p", { className: "dssm-desc" }, modal.detail.description), h("div", { className: "dssm-detail-path" }, modal.detail.origin), h("p", { className: "dssm-note" }, t("repo.installHint")), h(TextArea, { "aria-label": t("detail.body"), readOnly: true, value: modal.detail.body || "", rows: 6 }));
       if (modal.type === "catalog-detail" && !modal.detail) body = readFeedback(modal, t("repo.detailLoading"));
-      if (modal.type === "catalog-install") body = h("div", { className: "dssm-repo-panel", "aria-busy": busy },
+      if (modal.type === "catalog-install") {
+        body = h("div", { className: "dssm-repo-panel", "aria-busy": busy },
         h("div", { className: "dssm-name" }, modal.target.name),
         h(DestinationPicker, { t, value: destination, disabled: busy, allowAgents: true, workspaces, loading: workspacesLoading, workspaceError: workspacesError, onRetryWorkspaces: () => { void loadWorkspaces(); }, userDestinations: installRoots, onChange: updateDestination }),
         h("p", { className: "dssm-note" }, t("repo.installLocationsHint")),
         h("p", { className: "dssm-note" }, t("repo.installHint")),
-        busy ? h("div", { role: "status", "aria-live": "polite" }, t("repo.installProgress")) : null, feedbackNode,
-        h("div", { className: "dssm-modal-actions" }, button("repo.cancel", close), button(busy ? "repo.installing" : "repo.install", confirmCatalogInstall, false, !destinationReady(destination, workspaces, installRoots))));
+        writeFeedback('repo.installProgress'));
+        footer = h(react.Fragment, null, button("repo.cancel", close), button("repo.install", confirmCatalogInstall, false, !destinationReady(destination, workspaces, installRoots), false, 'repo.installing'));
+      }
       if (modal.type === "catalog-uninstall") {
         description = t('repo.uninstallHint');
         body = h('div', { className: 'dssm-repo-panel', 'aria-busy': busy },
           h('div', { className: 'dssm-name' }, modal.copy.name),
           h('div', { className: 'dssm-repo-metadata' }, catalogCopyName(modal.copy)),
           modal.copy.installedRoot === "agents" && !modal.copy.installedWorkspace ? h('p', { className: 'dssm-feedback dssm-warning', role: 'alert' }, t('repo.uninstallExternalWarning')) : null,
-          busy ? h('div', { role: 'status', 'aria-live': 'polite' }, t('repo.uninstallProgress')) : null, feedbackNode);
-        footer = h(react.Fragment, null, button('repo.cancel', close), button(busy ? 'repo.uninstalling' : 'repo.confirmUninstall', confirmCatalogUninstall, true, false, true));
+          writeFeedback('repo.uninstallProgress'));
+        footer = h(react.Fragment, null, button('repo.cancel', close), button('repo.confirmUninstall', confirmCatalogUninstall, true, false, true, 'repo.uninstalling'));
       }
       if (modal.type === "detail" && modal.detail) body = h("div", { className: "dssm-repo-panel" }, h("div", { className: "dssm-name" }, modal.detail.name), h("p", { className: "dssm-desc" }, modal.detail.description), h("div", { className: "dssm-detail-path" }, modal.repo.owner + "/" + modal.repo.name + " · " + modal.detail.path), h("div", { className: "dssm-repo-metadata" }, t("repo.commit") + " · " + modal.detail.commit), h("p", { className: "dssm-note" }, t("repo.installHint")), h(TextArea, { "aria-label": t("detail.body"), readOnly: true, value: modal.detail.body || "", rows: 6 }));
       if (modal.type === "detail" && !modal.detail) body = readFeedback(modal, t("repo.detailLoading"));
@@ -1036,10 +1052,10 @@ export function createRepositoryUI({ react, Modal, SourceSelect, destination, ap
       }, t(catalogError ? "repo.catalog.retry" : "repo.catalog.loadMore"))) : null,
       subsource === "clawhub" && !catalogQuery.trim() && catalogHasMore && !catalogError ? h("div", { className: "dssm-catalog-sentinel", ref: catalogSentinel, "aria-hidden": true }) : null
     );
-    const clawhubSearchView = h("div", { className: "dssm-catalog-list" },
+    const clawhubSearchView = h("div", { className: "dssm-catalog-list", 'aria-busy': clawhubSearchLoading },
       clawhubSearchItems.map(renderCatalogItem),
       catalogQuery.trim() && !clawhubSearchItems.length && !clawhubSearchLoading && !clawhubSearchError ? h("div", { className: "product-capability-empty" }, t("repo.catalog.searchEmpty")) : null,
-      clawhubSearchLoading && !clawhubSearchError ? readLoading(t("repo.catalog.searchLoading"), !clawhubSearchItems.length) : null,
+      clawhubSearchLoading && !clawhubSearchError && !clawhubSearchItems.length ? readLoading(t("repo.catalog.searchLoading"), true) : null,
       clawhubSearchError ? h("div", { className: "dssm-feedback dssm-error", role: "alert" }, t("repo.catalog.searchError"), h(PrimitiveButton, {
         ref: clawhubRetry, variant: "ghost", size: "sm", 'aria-disabled': clawhubSearchLoading, 'aria-busy': clawhubSearchLoading,
         className: clawhubSearchLoading ? 'product-control-pending' : undefined,
@@ -1052,7 +1068,7 @@ export function createRepositoryUI({ react, Modal, SourceSelect, destination, ap
           const installed = catalogInstalled(`skillsh:${item.source}/${item.skillId}`);
           return skillshStatus === "installed" ? installed : !installed;
         });
-        const skillshView = h("div", { className: "dssm-catalog-list" },
+        const skillshView = h("div", { className: "dssm-catalog-list", 'aria-busy': skillshLoading },
           skillshVisible.map(item => {
             const skillshId = `skillsh:${item.source}/${item.skillId}`;
             const metadata = [item.source, item.installs === undefined ? null : item.installs.toLocaleString() + " " + t("repo.catalog.installs")].filter(Boolean).join(" · ");
@@ -1068,7 +1084,7 @@ export function createRepositoryUI({ react, Modal, SourceSelect, destination, ap
             );
           }),
           skillshQuery.trim() && !skillshVisible.length && !skillshLoading && !skillshError ? h("div", { className: "product-capability-empty" }, t("repo.catalog.skillshEmpty")) : null,
-          skillshLoading && !skillshError ? readLoading(t("repo.catalog.skillshLoading"), !skillshVisible.length) : null,
+          skillshLoading && !skillshError && !skillshItems.length ? readLoading(t("repo.catalog.skillshLoading"), true) : null,
           skillshError ? h("div", { className: "dssm-feedback dssm-error", role: "alert" }, t("repo.catalog.skillshError"), h(PrimitiveButton, {
             ref: skillshRetry, variant: "ghost", size: "sm", 'aria-disabled': skillshLoading, 'aria-busy': skillshLoading,
             className: skillshLoading ? 'product-control-pending' : undefined,

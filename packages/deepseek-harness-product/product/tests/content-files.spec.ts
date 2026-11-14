@@ -37,8 +37,9 @@ it('rejects a file one byte over the limit before starting a stream', async () =
   expect(handles.map(handle => handle.fd)).toEqual([-1])
 })
 
-it.each(['grow', 'shrink'] as const)('rejects %s after the size check without reading subsequent growth', async (change) => {
+it.each(['grow', 'shrink', 'rewrite', 'rewrite-preserving-mtime'] as const)('rejects %s after the size check without reading subsequent growth', async (change) => {
   const { file, content, handles, open } = await fixture()
+  if (change === 'rewrite-preserving-mtime') await fs.utimes(file, new Date(1000), new Date(1000))
   let readBytes = 0
   const probe = vi.spyOn(fs, 'open').mockImplementation(async (...args) => {
     const handle = await open(...args)
@@ -46,7 +47,10 @@ it.each(['grow', 'shrink'] as const)('rejects %s after the size check without re
     const stat = handle.stat.bind(handle), createStream = handle.createReadStream.bind(handle)
     vi.spyOn(handle, 'stat').mockImplementationOnce(async () => {
       const info = await stat()
-      await writeFile(file, change === 'grow' ? Buffer.alloc(1024 * 1024) : content.subarray(0, 1))
+      await writeFile(file, change === 'grow' ? Buffer.alloc(1024 * 1024)
+        : change === 'shrink' ? content.subarray(0, 1) : Buffer.alloc(content.length, 42))
+      if (change === 'rewrite') await fs.utimes(file, info.atime, new Date(info.mtimeMs + 2000))
+      if (change === 'rewrite-preserving-mtime') await fs.utimes(file, info.atime, info.mtime)
       return info
     })
     vi.spyOn(handle, 'createReadStream').mockImplementation((options) => {
@@ -58,9 +62,30 @@ it.each(['grow', 'shrink'] as const)('rejects %s after the size check without re
   })
   try {
     await expect(readContentFile(file, 1024 * 1024)).rejects.toMatchObject({ code: 'error.contentFile.changed' })
-    expect(readBytes).toBe(change === 'grow' ? content.length + 1 : 1)
+    expect(readBytes).toBe(change === 'grow' ? content.length + 1 : change === 'shrink' ? 1 : content.length)
     expect(handles.map(handle => handle.fd)).toEqual([-1])
   } finally { probe.mockRestore() }
+  if (change.startsWith('rewrite')) expect(await readContentFile(file, content.length)).toEqual(Buffer.alloc(content.length, 42))
+})
+
+it('honors cancellation during the final file check and releases the handle for retry', async () => {
+  const { file, content, handles, open } = await fixture()
+  const controller = new AbortController(), reason = new Error('Content view closed')
+  const probe = vi.spyOn(fs, 'open').mockImplementation(async (...args) => {
+    const handle = await open(...args), stat = handle.stat.bind(handle)
+    handles.push(handle)
+    vi.spyOn(handle, 'stat').mockImplementationOnce(() => stat()).mockImplementationOnce(async () => {
+      const info = await stat()
+      controller.abort(reason)
+      return info
+    })
+    return handle
+  })
+  try {
+    await expect(readContentFile(file, content.length, controller.signal)).rejects.toBe(reason)
+    expect(handles.map(handle => handle.fd)).toEqual([-1])
+  } finally { probe.mockRestore() }
+  expect(await readContentFile(file, content.length)).toEqual(content)
 })
 
 it('cancels an active stream, closes its handle and permits a complete retry', async () => {

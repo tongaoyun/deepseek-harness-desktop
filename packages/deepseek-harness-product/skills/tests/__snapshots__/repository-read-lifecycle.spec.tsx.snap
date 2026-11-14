@@ -58,15 +58,15 @@ exports[`retains one 'catalog-install' confirmation and its failure through a lo
     },
     {
       "busy": "true",
-      "disabled": true,
+      "disabled": false,
       "label": "dest.scope.user",
-      "unavailable": null,
+      "unavailable": "true",
     },
     {
       "busy": "true",
-      "disabled": true,
+      "disabled": false,
       "label": "dest.location.dsh",
-      "unavailable": null,
+      "unavailable": "true",
     },
     {
       "busy": "false",
@@ -77,12 +77,12 @@ exports[`retains one 'catalog-install' confirmation and its failure through a lo
     {
       "busy": "true",
       "disabled": false,
-      "label": "repo.installing",
+      "label": "repo.installrepo.installing",
       "unavailable": "true",
     },
   ],
-  "focused": "repo.installing",
-  "text": "repo.installCatalog ordersdest.scopedest.scope.userdest.locationdest.location.dsh/skillsrepo.installLocationsHintrepo.installHintrepo.installProgressMutation rejectedrepo.cancelrepo.installing",
+  "focused": "repo.installrepo.installing",
+  "text": "repo.installCatalog ordersdest.scopedest.scope.userdest.locationdest.location.dsh/skillsrepo.installLocationsHintrepo.installHintMutation rejectedrepo.cancelrepo.installrepo.installing",
 }
 `;
 
@@ -107,12 +107,12 @@ exports[`retains one 'catalog-uninstall' confirmation and its failure through a 
     {
       "busy": "true",
       "disabled": false,
-      "label": "repo.uninstalling",
+      "label": "repo.confirmUninstallrepo.uninstalling",
       "unavailable": "true",
     },
   ],
-  "focused": "repo.uninstalling",
-  "text": "repo.uninstallrepo.uninstallHintordersrepo.scope.user · repo.source.dsh /skillsrepo.uninstallProgressMutation rejectedrepo.cancelrepo.uninstalling",
+  "focused": "repo.confirmUninstallrepo.uninstalling",
+  "text": "repo.uninstallrepo.uninstallHintordersrepo.scope.user · repo.source.dsh /skillsMutation rejectedrepo.cancelrepo.confirmUninstallrepo.uninstalling",
 }
 `;
 
@@ -130,15 +130,15 @@ exports[`retains one 'install' confirmation and its failure through a locked ret
     },
     {
       "busy": "true",
-      "disabled": true,
+      "disabled": false,
       "label": "dest.scope.user",
-      "unavailable": null,
+      "unavailable": "true",
     },
     {
       "busy": "true",
-      "disabled": true,
+      "disabled": false,
       "label": "dest.location.dsh",
-      "unavailable": null,
+      "unavailable": "true",
     },
     {
       "busy": "false",
@@ -149,12 +149,12 @@ exports[`retains one 'install' confirmation and its failure through a locked ret
     {
       "busy": "true",
       "disabled": false,
-      "label": "repo.installing",
+      "label": "repo.installrepo.installing",
       "unavailable": "true",
     },
   ],
-  "focused": "repo.installing",
-  "text": "repo.installordersdest.scopedest.scope.userdest.locationdest.location.dsh/skillsrepo.installLocationsHintrepo.installHintrepo.installProgressMutation rejectedrepo.cancelrepo.installing",
+  "focused": "repo.installrepo.installing",
+  "text": "repo.installordersdest.scopedest.scope.userdest.locationdest.location.dsh/skillsrepo.installLocationsHintrepo.installHintMutation rejectedrepo.cancelrepo.installrepo.installing",
 }
 `;
 
@@ -209,12 +209,12 @@ exports[`retains one 'rollback' confirmation and its failure through a locked re
     {
       "busy": "true",
       "disabled": false,
-      "label": "repo.confirmRollback",
+      "label": "repo.confirmRollbackrepo.updating",
       "unavailable": "true",
     },
   ],
-  "focused": "repo.confirmRollback",
-  "text": "repo.rollbackordersrepo.scope.user · repo.source.dsh /skillscompany/skills · newrepo.modifiedFile · SKILL.mdrepo.updateProgressMutation rejectedrepo.cancelrepo.confirmRollback",
+  "focused": "repo.confirmRollbackrepo.updating",
+  "text": "repo.rollbackordersrepo.scope.user · repo.source.dsh /skillscompany/skills · newrepo.modifiedFile · SKILL.mdMutation rejectedrepo.cancelrepo.confirmRollbackrepo.updating",
 }
 `;
 
@@ -239,12 +239,12 @@ exports[`retains one 'uninstall' confirmation and its failure through a locked r
     {
       "busy": "true",
       "disabled": false,
-      "label": "repo.uninstalling",
+      "label": "repo.confirmUninstallrepo.uninstalling",
       "unavailable": "true",
     },
   ],
-  "focused": "repo.uninstalling",
-  "text": "repo.uninstallrepo.uninstallHintordersrepo.scope.user · repo.source.dsh /skillsrepo.uninstallProgressMutation rejectedrepo.cancelrepo.uninstalling",
+  "focused": "repo.confirmUninstallrepo.uninstalling",
+  "text": "repo.uninstallrepo.uninstallHintordersrepo.scope.user · repo.source.dsh /skillsMutation rejectedrepo.cancelrepo.confirmUninstallrepo.uninstalling",
 }
 `;
 
@@ -269,12 +269,12 @@ exports[`retains one 'update' confirmation and its failure through a locked retr
     {
       "busy": "true",
       "disabled": false,
-      "label": "repo.confirmUpdate",
+      "label": "repo.confirmUpdaterepo.updating",
       "unavailable": "true",
     },
   ],
-  "focused": "repo.confirmUpdate",
-  "text": "repo.reviewordersrepo.scope.user · repo.source.dsh /skillscompany/skills · newrepo.modifiedFile · SKILL.mdrepo.updateProgressMutation rejectedrepo.cancelrepo.confirmUpdate",
+  "focused": "repo.confirmUpdaterepo.updating",
+  "text": "repo.reviewordersrepo.scope.user · repo.source.dsh /skillscompany/skills · newrepo.modifiedFile · SKILL.mdMutation rejectedrepo.cancelrepo.confirmUpdaterepo.updating",
 }
 `;
 

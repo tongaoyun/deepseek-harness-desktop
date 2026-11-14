@@ -46,9 +46,9 @@ export interface ProductFileStream {
 /** Typed failure returned when a product API request is not successful. */
 export class DeepSeekHarnessApiError extends ProductError {
   constructor(readonly status: number, code: string, message: string, resources: ProductError['resources'] = [],
-    diagnostic?: Pick<ProductFailure, 'retryable' | 'dependencyChecks'>) {
+    diagnostic?: Pick<ProductFailure, 'retryable'>) {
     super(code, message, diagnostic?.retryable ?? (status >= 500 || status === 429 || code === 'ORGANIZATION_SYNC_EXPIRED'),
-      resources, diagnostic)
+      resources)
     this.name = 'DeepSeekHarnessApiError'
   }
 }
@@ -171,7 +171,7 @@ export class DeepSeekHarnessApiClient {
   async streamBytes(path: string, maxBytes: number, write: (chunk: Uint8Array) => Promise<void>,
     signal?: AbortSignal, timeoutMs?: number): Promise<ProductFileStream> {
     if (!path.startsWith('/api/') || path.startsWith('//') || !Number.isSafeInteger(maxBytes) || maxBytes < 1) {
-      throw new ProductError('KNOWLEDGE_REQUEST_INVALID', 'Invalid original file request', false)
+      throw new ProductError('LIBRARY_REQUEST_INVALID', 'Invalid original file request', false)
     }
     const headers = new Headers({ accept: '*/*' })
     const token = this.options.getSessionToken()
@@ -181,7 +181,7 @@ export class DeepSeekHarnessApiClient {
       if (employeeId) headers.set('x-deepseek-harness-employee-id', employeeId)
     }
     if (timeoutMs !== undefined && (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 2 ** 31 - 1)) {
-      throw new ProductError('KNOWLEDGE_REQUEST_INVALID', 'Invalid original file timeout', false)
+      throw new ProductError('LIBRARY_REQUEST_INVALID', 'Invalid original file timeout', false)
     }
     const lifetime = AbortSignal.any([this.lifecycle.signal, AbortSignal.timeout(timeoutMs ?? this.options.requestTimeoutMs ?? 60_000),
       ...signal ? [signal] : []])
@@ -206,7 +206,7 @@ export class DeepSeekHarnessApiClient {
       throw serverError(response.status, body)
     }
     const byteLength = await streamResponseBody(response, maxBytes, lifetime, write,
-      new ProductError('KNOWLEDGE_PREVIEW_TOO_LARGE', 'Original file exceeds the file size limit', false))
+      new ProductError('LIBRARY_PREVIEW_TOO_LARGE', 'Original file exceeds the file size limit', false))
     return { mediaType: response.headers.get('content-type') ?? 'application/octet-stream', byteLength }
   }
 
@@ -317,7 +317,7 @@ function serverError(status: number, body: ColaResponse<unknown>): DeepSeekHarne
 async function readBoundedBody(response: Response, maxBytes: number, signal: AbortSignal): Promise<Uint8Array> {
   const chunks: Uint8Array[] = []
   const length = await streamResponseBody(response, maxBytes, signal, (chunk) => { chunks.push(chunk) },
-    new ProductError('KNOWLEDGE_PREVIEW_TOO_LARGE', 'Original file exceeds the preview size limit', false))
+    new ProductError('PRODUCT_RESPONSE_TOO_LARGE', 'Product response exceeds the response size limit', false))
   const data = new Uint8Array(length)
   let offset = 0
   for (const chunk of chunks) { data.set(chunk, offset); offset += chunk.byteLength }

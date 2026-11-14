@@ -5,6 +5,7 @@ import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import { NS } from '../locales.ts'
 import { invokeProduct, productApi } from './product-api.ts'
 import { productErrorMessage, type ProductFailureReport } from './product-errors.ts'
+import { ProductActionLabel } from './ProductActionLabel.tsx'
 import css from '../DeepSeekHarnessProduct.module.css'
 
 interface Candidate { resourceKey: string; files: Record<string, string> }
@@ -17,7 +18,9 @@ function statusOf(value: unknown): Status {
   return { status: value.status, reviewNote: value.reviewNote }
 }
 
-/** Confirm content before submission; retries retain focus and confirmed review status hands owned action focus to Close. */
+/** Confirm content before submission; preparation and submission retries retain control geometry and focus.
+ * Confirmed review status hands owned action focus to Close.
+ */
 export function CompanyContentSubmission({ t }: PropsLocale<typeof NS>) {
   const [intent, setIntent] = useState<Intent>()
   const [candidate, setCandidate] = useState<Candidate>()
@@ -107,21 +110,27 @@ export function CompanyContentSubmission({ t }: PropsLocale<typeof NS>) {
     finally { if (operation.current === controller) { writing.current = false; if (!controller.signal.aborted) setWorking(false) } }
   }
   if (!intent) return null
+  const retryPreparation = error !== null && candidate === undefined
+  const unavailable = !retryPreparation && (!candidate || status !== null)
   return <Modal open onClose={close} title={t('companySubmitTitle')} closeLabel={t('close')}
-    className={css.feedbackModal as string} footer={<>
+    className={css.feedbackModal as string} contentClassName={css.detailModalContent as string} footer={<>
       <Button ref={closeRef} onClick={close} aria-disabled={writing.current} className={writing.current ? 'product-control-pending' : undefined}>{t('close')}</Button>
-      {error && !candidate ? <Button ref={actionRef} variant="primary" aria-disabled={working} aria-busy={working}
-        className={working ? 'product-control-pending' : undefined} onClick={() => { prepare(intent, true) }}>{t('retry')}</Button>
-        : <Button ref={actionRef} variant="primary" disabled={!candidate || status !== null} aria-disabled={working || !candidate || status !== null} aria-busy={working}
-          className={working && candidate && status === null ? 'product-control-pending' : undefined}
-          onClick={() => void submit()}>{working ? t('companySubmitWorking') : t('companySubmitTitle')}</Button>}
+      <Button ref={actionRef} variant="primary" disabled={unavailable} aria-disabled={working || unavailable} aria-busy={working}
+        className={working && !unavailable ? 'product-control-pending' : undefined}
+        onClick={() => { if (retryPreparation) prepare(intent, true); else void submit() }}>
+        <ProductActionLabel pending={working && !retryPreparation} label={t(retryPreparation ? 'retry' : 'companySubmitTitle')}
+          pendingLabel={t('companySubmitWorking')} reserveLabels={[t('retry'), t('companySubmitTitle')]} />
+      </Button>
     </>}>
     <div className={css.feedbackBody}>
       <strong>{intent.name}</strong><p>{t('companySubmitHint')}</p>
       {candidate && <p>{t('companySubmitFiles', { count: Object.keys(candidate.files).length })}</p>}
       {status && <p role="status">{t(status.status === 'SUBMITTED' ? 'companySubmitted' : status.status === 'PUBLISHED' ? 'companyPublished' : 'companyRejected')}</p>}
       {status?.reviewNote && <p>{status.reviewNote}</p>}
-      {error && <p role="alert">{productErrorMessage(error.failure, t, error.fallback)}</p>}
+      <div className={css.feedbackResult}>
+        <span aria-hidden="true">{t('companySubmitFailed')}</span>
+        {error && <p role="alert" className={css.catalogError}>{productErrorMessage(error.failure, t, error.fallback)}</p>}
+      </div>
     </div>
   </Modal>
 }

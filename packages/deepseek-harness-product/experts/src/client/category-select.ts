@@ -7,7 +7,7 @@ export interface CategoryOption {
   readonly label: string
 }
 
-/** 分类选择沿用原生菜单；等待时保留外观并关闭菜单，恢复后需重新打开。 */
+/** 分类选择沿用原生菜单；等待时保留外观和焦点并关闭菜单，恢复后需重新打开。 */
 export function CategorySelect(props: {
   readonly id: string
   readonly value: string
@@ -54,11 +54,12 @@ export function CategorySelect(props: {
         'aria-label': props.label,
         'aria-expanded': open,
         'aria-haspopup': 'menu',
-        disabled,
+        disabled: props.disabled,
+        'aria-disabled': disabled,
         'aria-busy': props.pending,
         className: 'aag-menu-select-trigger' + (props.pending && !props.disabled ? ' product-control-pending' : ''),
         onClick: () => {
-          setOpen((prev) => !prev)
+          if (!disabled) setOpen((prev) => !prev)
         },
       },
       React.createElement('span', { className: 'aag-select-label' }, currentText),

@@ -6,9 +6,10 @@ import { join } from 'node:path'
 import { chromium, type Locator, type Page } from 'playwright'
 import { expect, it, onTestFinished, vi } from 'vitest'
 import type { SkillsManager } from '../../../packages/deepseek-harness-product/skills/lib/index.js'
+import { RemoteError } from '@deepseek-ai/dsh-typert-protocol'
 import { builtinCapabilityPatches } from '../../../packages/deepseek-harness-product/desktop/src/builtin-capabilities.ts'
 import { captureStableAria, compareOrRefreshGolden, launchWebScaffold, watchConsole, webSnapshotMode } from './scaffold.ts'
-import { newEnglishPage, REPO_ROOT } from './support.ts'
+import { controlIsUnclipped, newEnglishPage, REPO_ROOT } from './support.ts'
 
 async function bootSkillFocus() {
   const root = await mkdtemp(join(tmpdir(), 'skill-read-focus-'))
@@ -177,6 +178,156 @@ it.each((['clawhub', 'skillsh'] as const).flatMap(source =>
   if (filtered) await captureSkillFocus(page, `catalog-close-${source}-${action}`, area, target)
 })
 
+it.each([ ...(['github', 'clawhub'] as const).flatMap(source =>
+  (['install', 'uninstall'] as const).map(action => ({ source, action })),
+), ...(['update', 'rollback'] as const).map(action => ({ source: 'github' as const, action })),
+])('retains $source $action controls through failure and retry without moving adjacent buttons', async ({ source, action }) => {
+  const { root, scaffold, skills, page } = await bootSkillFocus()
+  const gates = [Promise.withResolvers<undefined>(), Promise.withResolvers<undefined>()]
+  let installed = action !== 'install'
+  let writes = 0
+  const catalogId = 'clawhub:fixture/orders'
+  const repo = { id: 'stable-repository', owner: 'fixture', name: 'skills', ref: '', subdirectory: '', commit: 'revision',
+    refreshedAt: null, error: null }
+  const copy = { installedRoot: 'dsh' as const, tracked: true as const, status: 'installed',
+    updateAvailable: action === 'update', canRollback: action === 'rollback', canUninstall: true }
+  const repositories = vi.spyOn(skills, 'listRepositories').mockImplementation(async () => ({
+    repositories: [{ ...repo, skills: [{ path: 'orders', name: 'orders', description: 'Order review', valid: true,
+      documentHash: 'hash', body: 'Read-only instructions', status: installed ? 'installed' : 'available',
+      installations: installed ? [copy] : [] }] }],
+    installRoots: [{ key: 'dsh', path: join(root, 'skills'), label: 'DSH', available: true }],
+    catalogInstalls: installed ? [catalogId] : [],
+    catalogCopies: installed ? [{ id: catalogId, name: 'orders', installedRoot: 'dsh', canUninstall: true }] : [],
+    catalogWarnings: [],
+  }))
+  const ranking = vi.spyOn(skills, 'listClawHub').mockResolvedValue({
+    items: [{ ownerHandle: 'fixture', slug: 'orders', displayName: 'Order review', summary: '' }], nextCursor: null,
+  })
+  const commit = async () => {
+    const gate = gates[writes++]
+    if (!gate) throw new Error('Unexpected duplicate skill write')
+    await gate.promise
+    if (writes === 1) throw new RemoteError('skills/operation', 'Skill write temporarily unavailable', {
+      code: 'error.repo.conflict', error: 'Skill write temporarily unavailable',
+      ...(source === 'github' && action === 'uninstall' ? { params: { path: '/fixture/' + 'unavailable-segment/'.repeat(40) } } : {}),
+    })
+    if (action === 'install' || action === 'uninstall') installed = !installed
+  }
+  const installRepo = vi.spyOn(skills, 'installRepository').mockImplementation(async () => {
+    await commit(); return { name: 'orders', root: 'dsh', commit: 'revision' }
+  })
+  const installCatalog = vi.spyOn(skills, 'installCatalog').mockImplementation(async () => {
+    await commit(); return { name: 'orders', root: 'dsh' }
+  })
+  const trashReceipt = { id: 'trashed', name: 'orders', deletedAt: '2026-11-12T00:00:00Z', root: { key: 'dsh', scope: 'user', label: 'DSH' } }
+  const uninstallRepo = vi.spyOn(skills, 'uninstallRepository').mockImplementation(async () => {
+    await commit(); return trashReceipt
+  })
+  const uninstallCatalog = vi.spyOn(skills, 'trashSkill').mockImplementation(async () => {
+    await commit(); return trashReceipt
+  })
+  const preview = vi.spyOn(skills, 'previewUpdate').mockResolvedValue({ token: 'current', commit: 'new', localModified: false,
+    changes: [{ path: 'SKILL.md', kind: 'modified' }], rollback: action === 'rollback' })
+  const update = vi.spyOn(skills, 'updateRepository').mockImplementation(async () => {
+    await commit(); return { name: 'orders', commit: 'new' }
+  })
+  const rollback = vi.spyOn(skills, 'rollbackRepository').mockImplementation(async () => {
+    await commit(); return { name: 'orders', commit: 'old' }
+  })
+  onTestFinished(() => {
+    gates.forEach((gate) => { gate.resolve(undefined) })
+    repositories.mockRestore(); ranking.mockRestore(); installRepo.mockRestore(); installCatalog.mockRestore()
+    uninstallRepo.mockRestore(); uninstallCatalog.mockRestore()
+    preview.mockRestore(); update.mockRestore(); rollback.mockRestore()
+  })
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await page.emulateMedia({ colorScheme: 'light' })
+  await page.goto(scaffold.authenticatedUrl)
+  await page.getByRole('button', { name: 'Skills', exact: true }).click()
+  await page.getByRole('tab', { name: 'Mine', exact: true }).click()
+  await page.getByRole('tab', { name: 'Discover Skills', exact: true }).click()
+  const area = page.locator('.dssm-section')
+  if (source === 'clawhub') await area.getByRole('button', { name: 'ClawHub', exact: true }).click()
+  else await area.getByRole('button', { name: /fixture\/skills/, expanded: false }).click()
+  const search = area.getByRole('textbox', { name: source === 'github' ? 'Search repository skills' : 'Search ClawHub skills', exact: true })
+  const originalSearch = await search.elementHandle()
+  const title = { install: 'Install', uninstall: 'Uninstall', update: 'Review update', rollback: 'Restore previous version' }[action]
+  const trigger = area.getByRole('button', { name: title, exact: true })
+  await trigger.click()
+  const dialog = page.getByRole('dialog', { name: title, exact: true })
+  const submit = dialog.getByRole('button', { name: /^(Install|Installing…|Move to Trash|Uninstalling…|Back up and update|Back up and restore|Updating…)$/ })
+  const cancel = dialog.getByRole('button', { name: 'Cancel', exact: true })
+  const originalSubmit = await submit.elementHandle(), originalCancel = await cancel.elementHandle()
+  const screenshots = join(REPO_ROOT, '.artifacts/deepseek-harness-skill-pagination')
+  await mkdir(screenshots, { recursive: true })
+  const geometry = (control: Locator) => control.evaluate((node) => {
+    const { x, y, width, height } = node.getBoundingClientRect()
+    return { x, y, width, height }
+  })
+  const before = [await geometry(submit), await geometry(cancel)]
+  await submit.press('Enter')
+  await expect.poll(() => writes).toBe(1)
+  await expect.poll(() => submit.getAttribute('aria-busy')).toBe('true')
+  expect(await geometry(submit)).toEqual(before[0])
+  expect(await geometry(cancel)).toEqual(before[1])
+  expect(await submit.evaluate((node, previous) => node === previous && node === document.activeElement, originalSubmit)).toBe(true)
+  await page.screenshot({ path: join(screenshots, `${source}-${action}-pending-light-1440.png`), animations: 'disabled' })
+  await page.keyboard.press('Enter')
+  await page.keyboard.press(' ')
+  await cancel.dispatchEvent('click')
+  await page.keyboard.press('Escape')
+  expect(writes).toBe(1)
+  expect(await dialog.count()).toBe(1)
+  gates[0]!.resolve(undefined)
+  const alert = dialog.getByRole('alert')
+  await alert.waitFor()
+  const originalError = await alert.elementHandle()
+  expect(await geometry(submit)).toEqual(before[0])
+  expect(await geometry(cancel)).toEqual(before[1])
+  await page.emulateMedia({ colorScheme: 'dark' })
+  await page.setViewportSize({ width: 390, height: 560 })
+  await submit.scrollIntoViewIfNeeded()
+  const beforeRetry = [await geometry(submit), await geometry(cancel)]
+  const content = dialog.locator('.dssm-modal-content > div:last-child')
+  await content.evaluate((node) => { node.scrollTop = Math.min(40, node.scrollHeight - node.clientHeight) })
+  const scrollTop = await content.evaluate(node => node.scrollTop)
+  if (action === 'install') expect(scrollTop).toBeGreaterThan(0)
+  const failure = dialog.locator('.dssm-write-feedback')
+  if (source === 'github' && action === 'uninstall') {
+    expect(await alert.textContent()).toContain('/fixture/' + 'unavailable-segment/'.repeat(40))
+    expect(await failure.evaluate(node => node.scrollHeight > node.clientHeight)).toBe(true)
+    await failure.focus()
+    await page.keyboard.press('End')
+    await expect.poll(() => failure.evaluate(node => node.scrollTop === node.scrollHeight - node.clientHeight)).toBe(true)
+    expect(await failure.evaluate(node => node === document.activeElement)).toBe(true)
+    expect(await geometry(submit)).toEqual(beforeRetry[0])
+    expect(await geometry(cancel)).toEqual(beforeRetry[1])
+  }
+  const failureScrollTop = await failure.evaluate(node => node.scrollTop)
+  await submit.press('Enter')
+  await expect.poll(() => writes).toBe(2)
+  await expect.poll(() => submit.getAttribute('aria-busy')).toBe('true')
+  expect(await geometry(submit)).toEqual(beforeRetry[0])
+  expect(await geometry(cancel)).toEqual(beforeRetry[1])
+  expect(await submit.evaluate((node, previous) => node === previous && node === document.activeElement, originalSubmit)).toBe(true)
+  expect(await cancel.evaluate((node, previous) => node === previous, originalCancel)).toBe(true)
+  expect(await alert.evaluate((node, previous) => node === previous, originalError)).toBe(true)
+  expect(await content.evaluate(node => node.scrollTop)).toBe(scrollTop)
+  expect(await failure.evaluate(node => node.scrollTop)).toBe(failureScrollTop)
+  expect(await controlIsUnclipped(submit)).toBe(true)
+  expect(await controlIsUnclipped(cancel)).toBe(true)
+  expect(await dialog.evaluate(node => node.scrollWidth <= node.clientWidth)).toBe(true)
+  await page.screenshot({ path: join(screenshots, `${source}-${action}-retry-dark-390.png`), animations: 'disabled' })
+  gates[1]!.resolve(undefined)
+  await dialog.waitFor({ state: 'hidden' })
+  await expect.poll(() => area.locator('#dssm-scope-panel').getAttribute('aria-busy')).toBe('false')
+  expect(writes).toBe(2)
+  expect(await search.evaluate((node, previous) => node === previous, originalSearch)).toBe(true)
+  const target = action === 'update' || action === 'rollback' ? trigger
+    : action === 'install' ? area.getByRole('button', { name: 'Install elsewhere', exact: true }) : search
+  await expect.poll(() => target.evaluate(node => node === document.activeElement)).toBe(true)
+})
+
 it.each(['success', 'failure'] as const)('returns add repository focus during a pending scan and its %s result', async (result) => {
   const { scaffold, skills, page } = await bootSkillFocus()
   const response = Promise.withResolvers<undefined>()
@@ -229,10 +380,17 @@ it.each(['cancel', 'remove'] as const)('keeps repository management focus across
   const repo = { id: 'focus-repository', owner: 'fixture', name: 'orders', ref: '', subdirectory: '', commit: 'revision',
     refreshedAt: null, error: null, skills: [] }
   let removed = false
+  const pending = Promise.withResolvers<undefined>()
   const repositories = vi.spyOn(skills, 'listRepositories').mockImplementation(async () => ({ repositories: removed ? [] : [repo],
     installRoots: [], catalogInstalls: [], catalogCopies: [], catalogWarnings: [] }))
-  const remove = vi.spyOn(skills, 'removeRepository').mockImplementation(async () => { removed = true; return { id: repo.id } })
-  onTestFinished(() => { repositories.mockRestore(); remove.mockRestore() })
+  const remove = vi.spyOn(skills, 'removeRepository').mockImplementation(async () => {
+    if (remove.mock.calls.length === 1) throw new RemoteError('skills/operation', 'Repository removal rejected', {
+      code: 'error.state.invalid', error: 'Repository removal rejected', params: { path: '资料/模板/'.repeat(80) + 'ERROR-END' },
+    })
+    await pending.promise
+    removed = true; return { id: repo.id }
+  })
+  onTestFinished(() => { pending.resolve(undefined); repositories.mockRestore(); remove.mockRestore() })
   await page.goto(scaffold.authenticatedUrl)
   await page.getByRole('button', { name: 'Skills', exact: true }).click()
   await page.getByRole('tab', { name: 'Mine', exact: true }).click()
@@ -240,16 +398,36 @@ it.each(['cancel', 'remove'] as const)('keeps repository management focus across
   const area = page.locator('.dssm-section')
   const trigger = area.getByRole('button', { name: 'Manage repositories', exact: true })
   await trigger.click()
-  const dialog = page.getByRole('dialog')
+  const dialog = page.locator('[role="dialog"][aria-modal="true"]')
   const close = dialog.getByRole('button', { name: 'Close', exact: true })
   const originalClose = await close.elementHandle()
   await dialog.getByRole('button', { name: 'Remove repository', exact: true }).click()
   await expect.poll(() => close.evaluate(node => node === document.activeElement)).toBe(true)
-  await dialog.getByRole('button', { name: action === 'cancel' ? 'Cancel' : 'Confirm removal', exact: true }).press('Enter')
+  const submit = dialog.getByRole('button', { name: action === 'cancel' ? 'Cancel' : 'Confirm removal', exact: true })
+  const bounds = await dialog.boundingBox()
+  const submitBounds = await submit.boundingBox()
+  await submit.press('Enter')
+  if (action === 'remove') {
+    const alert = await dialog.getByRole('alert').elementHandle()
+    expect(await dialog.boundingBox()).toEqual(bounds)
+    expect(await submit.boundingBox()).toEqual(submitBounds)
+    expect(await submit.evaluate(node => node === document.activeElement)).toBe(true)
+    await captureSkillFocus(page, 'repository-remove-failure', dialog, submit)
+    const feedback = dialog.locator('.dssm-write-feedback')
+    await feedback.focus()
+    await page.keyboard.press('End')
+    await expect.poll(() => feedback.evaluate(node => node.scrollTop)).toBeGreaterThan(0)
+    await submit.press('Enter')
+    await expect.poll(() => remove.mock.calls.length).toBe(2)
+    expect(await dialog.getByRole('alert').evaluate((node, previous) => node === previous, alert)).toBe(true)
+    await page.keyboard.press('Enter')
+    expect(remove).toHaveBeenCalledTimes(2)
+    pending.resolve(undefined)
+  }
   await page.getByRole('dialog', { name: 'Manage repositories', exact: true }).waitFor()
   await expect.poll(() => close.evaluate(node => node === document.activeElement)).toBe(true)
   expect(await close.evaluate((node, previous) => node === previous, originalClose)).toBe(true)
-  expect(remove).toHaveBeenCalledTimes(action === 'remove' ? 1 : 0)
+  expect(remove).toHaveBeenCalledTimes(action === 'remove' ? 2 : 0)
   await expect.poll(() => trigger.isEnabled()).toBe(true)
   await close.click()
   await dialog.waitFor({ state: 'hidden' })
@@ -443,8 +621,10 @@ it.each((['market', 'mine', 'project', 'trash'] as const).flatMap(surface =>
     if (surface !== 'trash') await search.evaluate((node) => { if (node instanceof HTMLInputElement) node.setSelectionRange(1, 3) })
   }
   response.resolve(undefined)
-  await trigger.waitFor({ state: 'hidden' })
-  const target = elsewhere ? other : surface === 'trash' ? page.locator('#dssm-library-panel') : search
+  const retained = surface === 'project' && result === 'failed'
+  if (retained) await area.getByRole('alert').waitFor()
+  else await trigger.waitFor({ state: 'hidden' })
+  const target = elsewhere ? other : retained ? trigger : surface === 'trash' ? page.locator('#dssm-library-panel') : search
   await expect.poll(() => target.evaluate(node => node === document.activeElement)).toBe(true)
   if (result === 'failed') {
     const notice = area.getByRole('alert')
@@ -471,6 +651,7 @@ it.each((['trash', 'delete', 'restore'] as const).flatMap(operation => [false, t
   'recovers skill $operation focus after its row is removed (elsewhere=$elsewhere)', async ({ operation, elsewhere }) => {
     const { root, scaffold, skills, page } = await bootSkillFocus()
     const pending = Promise.withResolvers<undefined>()
+    const rejected = Promise.withResolvers<undefined>()
     let writes = 0
     const item = { name: 'focus-skill', declaredName: 'focus-skill', description: 'Read-only skill fixture', kind: 'directory' as const,
       path: join(root, 'focus-skill'), modelInvocable: true, userInvocable: true, invocationPolicyValid: true, hasFrontmatter: true,
@@ -484,7 +665,14 @@ it.each((['trash', 'delete', 'restore'] as const).flatMap(operation => [false, t
     trash: operation === 'trash' ? [] : [trash], warnings: [] }
     const directory = vi.spyOn(skills, 'readState').mockResolvedValue(state)
     const complete = async () => {
-      writes++; await pending.promise
+      writes++
+      if (operation !== 'restore' && writes === 1) {
+        await rejected.promise
+        throw new RemoteError('skills/operation', 'Skill removal rejected', {
+          code: 'error.state.invalid', error: 'Skill removal rejected', params: { path: '资料/模板/'.repeat(80) + 'ERROR-END' },
+        })
+      }
+      await pending.promise
       state.roots[0]!.skills = operation === 'restore' ? [item] : []
       state.trash = operation === 'trash' ? [trash] : []
     }
@@ -492,7 +680,8 @@ it.each((['trash', 'delete', 'restore'] as const).flatMap(operation => [false, t
     const removed = vi.spyOn(skills, 'deleteTrash').mockImplementation(async () => { await complete(); return { id: trash.id, name: item.name } })
     const restored = vi.spyOn(skills, 'restoreTrash').mockImplementation(async () => { await complete(); return trash })
     onTestFinished(() => {
-      pending.resolve(undefined); directory.mockRestore(); moved.mockRestore(); removed.mockRestore(); restored.mockRestore()
+      rejected.resolve(undefined); pending.resolve(undefined)
+      directory.mockRestore(); moved.mockRestore(); removed.mockRestore(); restored.mockRestore()
     })
     await page.goto(scaffold.authenticatedUrl)
     await page.getByRole('button', { name: 'Skills', exact: true }).click()
@@ -513,16 +702,36 @@ it.each((['trash', 'delete', 'restore'] as const).flatMap(operation => [false, t
       await trigger.click()
     }
     if (operation !== 'restore') {
-      const dialog = page.getByRole('dialog')
-      await dialog.getByRole('button', { name: operation === 'trash' ? 'Move to trash' : 'Delete forever', exact: true }).press('Enter')
+      const dialog = page.locator('[role="dialog"][aria-modal="true"]')
+      await page.setViewportSize({ width: elsewhere ? 390 : 1440, height: elsewhere ? 560 : 900 })
+      const submit = dialog.getByRole('button', { name: operation === 'trash' ? 'Move to trash' : 'Delete forever', exact: true })
+      const bounds = await dialog.boundingBox()
+      const submitBounds = await submit.boundingBox()
+      const control = await submit.elementHandle()
+      await submit.press('Enter')
+      await expect.poll(() => writes).toBe(1)
+      await page.keyboard.press('Enter')
+      expect(writes).toBe(1)
+      rejected.resolve(undefined)
+      await dialog.getByRole('alert').waitFor()
+      expect(await dialog.boundingBox()).toEqual(bounds)
+      expect(await submit.boundingBox()).toEqual(submitBounds)
+      expect(await submit.evaluate((node, previous) => node === previous && node === document.activeElement, control)).toBe(true)
+      if (!elsewhere) await captureSkillFocus(page, `skill-${operation}-failure`, dialog, submit)
+      const feedback = dialog.locator('.dssm-write-feedback')
+      await feedback.focus()
+      await page.keyboard.press('End')
+      await expect.poll(() => feedback.evaluate(node => node.scrollTop)).toBeGreaterThan(0)
+      await submit.press('Enter')
     }
-    await expect.poll(() => writes).toBe(1)
+    const expectedWrites = operation === 'restore' ? 1 : 2
+    await expect.poll(() => writes).toBe(expectedWrites)
     await page.keyboard.press('Enter')
-    expect(writes).toBe(1)
+    expect(writes).toBe(expectedWrites)
     const other = area.locator('.dssm-scope-tabs [role="tab"]').first()
     if (elsewhere) await other.focus()
     pending.resolve(undefined)
-    await page.getByRole('dialog').waitFor({ state: 'hidden' })
+    await page.locator('[role="dialog"][aria-modal="true"]').waitFor({ state: 'hidden' })
     const target = elsewhere ? other : operation === 'trash' ? search : page.locator('#dssm-library-panel')
     await expect.poll(() => target.evaluate(node => node === document.activeElement)).toBe(true)
     if (original) {
@@ -650,6 +859,94 @@ it.each((['file', 'folder'] as const).flatMap(kind => [false, true].map(elsewher
     expect(upload).not.toHaveBeenCalled()
     await cancel.click()
     await dialog.waitFor({ state: 'hidden' })
+  },
+)
+
+it.each((['clawhub', 'skillsh'] as const).flatMap(source =>
+  (['retained', 'removed', 'failure'] as const).map(outcome => ({ source, outcome }))))(
+  'retains confirmed skill $source search through a background $outcome refresh', async ({ source, outcome }) => {
+    const { scaffold, skills, page } = await bootSkillFocus()
+    const response = Promise.withResolvers<undefined>()
+    const retryResponse = Promise.withResolvers<undefined>()
+    const directoryReady = Promise.withResolvers<undefined>()
+    const repositories = vi.spyOn(skills, 'listRepositories').mockImplementation(async () => {
+      await directoryReady.promise
+      return { repositories: [], installRoots: [], catalogInstalls: [], catalogCopies: [], catalogWarnings: [] }
+    })
+    let reads = 0
+    const read = async () => {
+      const current = ++reads
+      if (current === 2) {
+        await response.promise
+        if (outcome === 'failure') throw new Error('Background search unavailable')
+      }
+      if (current === 3) await retryResponse.promise
+      return current === 2 && outcome === 'removed' ? 'Replacement review' : 'Order review'
+    }
+    const ranking = vi.spyOn(skills, 'listClawHub').mockResolvedValue({ items: [], nextCursor: null })
+    const search = source === 'clawhub' ? vi.spyOn(skills, 'searchClawHub').mockImplementation(async () => {
+      const name = await read()
+      return { results: [{ source: 'clawhub', ownerHandle: 'fixture', slug: name === 'Order review' ? 'orders' : 'replacement', displayName: name, summary: '' }] }
+    }) : vi.spyOn(skills, 'searchSkillsSh').mockImplementation(async () => {
+      const name = await read(), id = name === 'Order review' ? 'orders' : 'replacement'
+      return { skills: [{ id: `fixture/skills/${id}`, source: 'fixture/skills', skillId: id, name }] }
+    })
+    onTestFinished(() => {
+      response.resolve(undefined); retryResponse.resolve(undefined); directoryReady.resolve(undefined)
+      repositories.mockRestore(); ranking.mockRestore(); search.mockRestore()
+    })
+    await page.goto(scaffold.authenticatedUrl)
+    await expect.poll(() => page.getByRole('button', { name: 'Choose workspace', exact: true }).textContent()).toBe('Default workspace')
+    await page.getByRole('button', { name: 'Skills', exact: true }).click()
+    await page.getByRole('tab', { name: 'Mine', exact: true }).click()
+    await page.getByRole('tab', { name: 'Discover Skills', exact: true }).click()
+    const sourceButton = page.getByRole('button', { name: source === 'clawhub' ? 'ClawHub' : 'skills.sh', exact: true })
+    await sourceButton.click()
+    const input = page.getByRole('textbox', { name: source === 'clawhub' ? 'Search ClawHub skills' : 'Search skills.sh', exact: true })
+    await input.fill('orders')
+    directoryReady.resolve(undefined)
+    await page.getByText('Order review', { exact: true }).waitFor()
+    await page.getByRole('button', { name: /^GitHub/ }).click()
+    await sourceButton.click()
+    await expect.poll(() => reads).toBe(2)
+    const panel = page.locator('.dssm-repo-panel').first()
+    const row = panel.locator('.dssm-repo-row').filter({ hasText: 'Order review' })
+    expect(await row.count()).toBe(1)
+    const node = await row.elementHandle()
+    const action = row.getByRole('button', { name: 'Details', exact: true })
+    await input.evaluate((element) => { (element as HTMLInputElement).setSelectionRange(1, 4) })
+    await action.focus()
+    expect(await panel.getByRole('status').count()).toBe(0)
+    const geometry = await action.boundingBox()
+    response.resolve(undefined)
+    if (outcome === 'failure') {
+      const retry = panel.getByRole('button', { name: 'Retry', exact: true })
+      await retry.waitFor()
+      expect(await node?.evaluate(element => element.isConnected)).toBe(true)
+      expect(await action.evaluate(element => element === document.activeElement)).toBe(true)
+      await retry.press('Enter')
+      await expect.poll(() => reads).toBe(3)
+      await retry.press('Enter')
+      expect(reads).toBe(3)
+      expect(await node?.evaluate(element => element.isConnected)).toBe(true)
+      retryResponse.resolve(undefined)
+      await retry.waitFor({ state: 'hidden' })
+      await expect.poll(() => input.evaluate(element => element === document.activeElement)).toBe(true)
+    } else if (outcome === 'retained') {
+      await expect.poll(() => row.locator('..').getAttribute('aria-busy')).toBe('false')
+      expect(await node?.evaluate(element => element.isConnected)).toBe(true)
+      expect(await action.boundingBox()).toEqual(geometry)
+      expect(await action.evaluate(element => element === document.activeElement)).toBe(true)
+    } else {
+      await panel.getByText('Replacement review', { exact: true }).waitFor()
+      expect(await node?.evaluate(element => element.isConnected)).toBe(false)
+      await expect.poll(() => input.evaluate(element => element === document.activeElement)).toBe(true)
+    }
+    expect(await input.evaluate((element) => {
+      const field = element as HTMLInputElement
+      return [field.value, field.selectionStart, field.selectionEnd]
+    })).toEqual(['orders', 1, 4])
+    if (outcome !== 'retained') await captureSkillFocus(page, `search-refresh-${source}-${outcome}`, panel, input)
   },
 )
 
@@ -900,7 +1197,7 @@ it.each([
   expect(tripwire.pageErrors).toEqual([])
 })
 
-it.each(['import', 'repository'] as const)('retains %s submission focus, form and errors while retrying', async (action) => {
+it.each((['import', 'repository'] as const).flatMap(action => [1440, 390].map(width => ({ action, width }))))('retains $action submission focus, form and errors while retrying ($width)', async ({ action, width }) => {
   const root = await mkdtemp(join(tmpdir(), 'skill-write-focus-'))
   onTestFinished(() => rm(root, { recursive: true, force: true }))
   const overlay = join(root, 'skills.patch.yml')
@@ -918,7 +1215,10 @@ it.each(['import', 'repository'] as const)('retains %s submission focus, form an
     const gate = gates[writes++]
     if (!gate) throw new Error('Unexpected duplicate skill write')
     await gate.promise
-    throw new Error('Skill write temporarily unavailable')
+    throw new RemoteError('skills/operation', 'Skill write rejected', {
+      code: action === 'import' ? 'error.upload.pathConflict' : 'error.state.invalid',
+      error: 'Skill write rejected', params: { path: '资料/模板/'.repeat(80) + 'ERROR-END' },
+    })
   }
   const delay = action === 'import' ? vi.spyOn(skills, 'uploadSkill').mockImplementation(failWrite)
     : vi.spyOn(skills, 'addRepository').mockImplementation(failWrite)
@@ -931,7 +1231,9 @@ it.each(['import', 'repository'] as const)('retains %s submission focus, form an
   const screenshots = join(REPO_ROOT, '.artifacts/deepseek-harness-skill-pagination')
   await mkdir(screenshots, { recursive: true })
   onTestFinished(async ({ task }) => {
-    if (task.result?.state === 'fail') await page.screenshot({ path: join(screenshots, `${action}-focus-failure.png`) })
+    if (task.result?.state !== 'fail') return
+    await page.screenshot({ path: join(screenshots, `${action}-focus-failure.png`) })
+    await writeFile(join(screenshots, `${action}-focus-failure.txt`), await page.evaluate(() => document.activeElement?.outerHTML ?? 'No active element'))
   })
   await page.goto(scaffold.authenticatedUrl)
   await page.getByRole('button', { name: 'Skills', exact: true }).click()
@@ -946,19 +1248,59 @@ it.each(['import', 'repository'] as const)('retains %s submission focus, form an
     await page.getByRole('textbox', { name: 'Repository URL', exact: true }).fill('fixture/focus-skills')
   }
   const dialog = page.getByRole('dialog', { name: action === 'import' ? 'Import skill' : 'Add repository', exact: true })
+  const entry = page.getByRole('button', { name: action === 'import' ? 'Import skill' : 'Add repository', exact: true })
+  const originalEntry = await entry.elementHandle()
   const submit = dialog.getByRole('button', { name: action === 'import' ? 'Install' : 'Add and scan', exact: true })
   const control = await submit.elementHandle()
+  const cancel = dialog.getByRole('button', { name: 'Cancel', exact: true })
+  const originalCancel = await cancel.elementHandle()
+  await page.setViewportSize({ width, height: width === 390 ? 560 : 900 })
+  await expect.poll(() => submit.getAttribute('aria-disabled')).toBe('false')
+  await submit.scrollIntoViewIfNeeded()
+  expect(await controlIsUnclipped(submit)).toBe(true)
+  const submitBounds = await submit.boundingBox()
+  const cancelBounds = await cancel.boundingBox()
+  const dialogBounds = await dialog.boundingBox()
+  const feedback = dialog.locator('.dssm-write-feedback')
+  const originalFeedback = await feedback.elementHandle()
+  const feedbackBounds = await feedback.boundingBox()
+  const content = dialog.locator('.dssm-modal-content > div:last-child')
+  const contentBounds = await content.boundingBox()
+  const contentScroll = await content.evaluate(node => node.scrollTop)
+  const draft = action === 'import' ? dialog.getByText('SKILL.md', { exact: true })
+    : dialog.getByRole('textbox', { name: 'Repository URL', exact: true })
+  const originalDraft = await draft.elementHandle()
+  if (action === 'repository') await draft.evaluate((node) => { if (node instanceof HTMLInputElement) node.setSelectionRange(2, 8) })
   await submit.press('Enter')
   await expect.poll(() => writes).toBe(1)
   expect(await submit.evaluate(node => node === document.activeElement)).toBe(true)
   expect(await submit.getAttribute('aria-disabled')).toBe('true')
+  if (action === 'import') {
+    expect(await entry.evaluate(node => node instanceof HTMLButtonElement && node.disabled)).toBe(false)
+    expect(await entry.getAttribute('aria-disabled')).toBe('true')
+    await entry.dispatchEvent('click')
+    expect(await dialog.getByText('SKILL.md', { exact: true }).count()).toBe(1)
+  }
   await page.keyboard.press('Enter')
   await page.keyboard.press(' ')
   expect(writes).toBe(1)
   gates[0]!.resolve(undefined)
   await dialog.getByRole('alert').waitFor()
+  expect.soft(await submit.boundingBox()).toEqual(submitBounds)
+  expect.soft(await cancel.boundingBox()).toEqual(cancelBounds)
+  expect.soft(await dialog.boundingBox()).toEqual(dialogBounds)
+  expect.soft(await feedback.boundingBox()).toEqual(feedbackBounds)
+  expect.soft(await content.boundingBox()).toEqual(contentBounds)
+  expect(await content.evaluate(node => node.scrollTop)).toBe(contentScroll)
+  expect(await feedback.evaluate((node, original) => node === original, originalFeedback)).toBe(true)
+  expect(await draft.evaluate((node, original) => node === original, originalDraft)).toBe(true)
+  if (action === 'repository') expect(await draft.evaluate(node => node instanceof HTMLInputElement && [node.selectionStart, node.selectionEnd])).toEqual([2, 8])
+  expect(await feedback.evaluate(node => node.scrollHeight > node.clientHeight)).toBe(true)
   const alert = await dialog.getByRole('alert').elementHandle()
   expect(await submit.evaluate(node => node === document.activeElement)).toBe(true)
+  expect(await controlIsUnclipped(submit)).toBe(true)
+  expect(await controlIsUnclipped(cancel)).toBe(true)
+  expect(await cancel.evaluate((node, original) => node === original, originalCancel)).toBe(true)
   await submit.press('Enter')
   await expect.poll(() => writes).toBe(2)
   expect(await dialog.getByRole('alert').evaluate((node, prior) => node === prior, alert)).toBe(true)
@@ -973,6 +1315,11 @@ it.each(['import', 'repository'] as const)('retains %s submission focus, form an
       await page.screenshot({ path: join(screenshots, `${action}-focus-${theme}-${size.width}.png`), animations: 'disabled' })
     }
   }
+  await feedback.focus()
+  await page.keyboard.press('End')
+  await expect.poll(() => feedback.evaluate(node => node.scrollTop)).toBeGreaterThan(0)
+  expect(await feedback.evaluate(node => node === document.activeElement)).toBe(true)
+  await submit.focus()
   await dialog.getByRole('button', { name: 'Cancel', exact: true }).dispatchEvent('click')
   await page.keyboard.press('Escape')
   expect(await dialog.count()).toBe(1)
@@ -982,8 +1329,26 @@ it.each(['import', 'repository'] as const)('retains %s submission focus, form an
   expect(await submit.evaluate(node => node === document.activeElement)).toBe(true)
   if (action === 'import') expect(await dialog.getByText('SKILL.md', { exact: true }).count()).toBe(1)
   else expect(await dialog.getByRole('textbox', { name: 'Repository URL', exact: true }).inputValue()).toBe('fixture/focus-skills')
-  await dialog.getByRole('button', { name: 'Cancel', exact: true }).click()
+  if (action === 'import') {
+    vi.spyOn(skills, 'uploadSkill').mockImplementation(async () => {
+      writes++
+      return { imported: [{ name: 'focus-review', overwritten: false, warnings: [] }], skipped: [], failed: [] }
+    })
+    await submit.press('Enter')
+  } else await cancel.click()
   await dialog.waitFor({ state: 'hidden' })
+  expect(writes).toBe(action === 'import' ? 3 : 2)
+  expect(await entry.evaluate((node, original) => node === original, originalEntry)).toBe(true)
+  await expect.poll(() => entry.evaluate(node => node === document.activeElement)).toBe(true)
+  if (action === 'import') {
+    await entry.press('Enter')
+    await dialog.waitFor()
+    expect(await dialog.getByText('SKILL.md', { exact: true }).count()).toBe(0)
+    await dialog.getByRole('button', { name: 'Cancel', exact: true }).press('Enter')
+    await dialog.waitFor({ state: 'hidden' })
+    expect(await entry.evaluate(node => node === document.activeElement)).toBe(true)
+    expect(writes).toBe(3)
+  }
   expect(tripwire.pageErrors).toEqual([])
 })
 
@@ -1233,4 +1598,87 @@ it('retains ClawHub pagination and detail focus across loading, overlap, retry a
   expect(await finalDetail.evaluate(node => node === document.activeElement)).toBe(true)
   expect(tripwire.pageErrors).toEqual([])
   expect(tripwire.warnings).toEqual([])
+})
+
+it.each(['listWorkspaces', 'readWorkspace'] as const)('retains project rows, viewport and focus through a failed %s refresh and retry', async (method) => {
+  const { root, scaffold, skills, page } = await bootSkillFocus()
+  const failed = Promise.withResolvers<undefined>(), retried = Promise.withResolvers<undefined>()
+  let phase: 'initial' | 'failure' | 'retry' = 'initial', reads = 0
+  const read = async () => {
+    reads++
+    if (phase === 'failure') { await failed.promise; throw new Error('Workspace refresh unavailable') }
+    if (phase === 'retry') await retried.promise
+  }
+  const items = Array.from({ length: 35 }, (_, index) => ({ name: `retained-skill-${index}`, declaredName: `retained-skill-${index}`,
+    description: 'Confirmed project instructions', kind: 'directory' as const, path: join(root, `retained-skill-${index}`),
+    modelInvocable: true, userInvocable: true, invocationPolicyValid: true, hasFrontmatter: true, loadable: true,
+    diagnostics: [], managerEnabled: true, managerOverride: null, effectiveModelInvocable: true, effectiveUserInvocable: true }))
+  const source = { key: 'dsh', path: root, label: 'DSH', rank: 0, mutable: true, native: true, toggleable: true,
+    exists: true, truncated: false, enabled: true, skills: items, categories: [] }
+  const state = { roots: [source], writeDestinations: [], projects: [],
+    summary: { total: items.length, enabled: items.length, disabled: 0, issues: 0 }, trash: [], warnings: [] }
+  const directory = vi.spyOn(skills, 'readState').mockResolvedValue(state)
+  const workspaces = vi.spyOn(skills, 'listWorkspaces').mockImplementation(async () => {
+    if (method === 'listWorkspaces') await read()
+    return { items: [{ name: 'Retained workspace', path: root, registeredPaths: [root], available: true, skillCount: items.length }] }
+  })
+  const workspace = vi.spyOn(skills, 'readWorkspace').mockImplementation(async () => {
+    if (method === 'readWorkspace') await read()
+    return { project: { root, name: 'Retained workspace', workspaceCwds: [root] }, roots: [source], warnings: [] }
+  })
+  onTestFinished(() => {
+    failed.resolve(undefined); retried.resolve(undefined)
+    directory.mockRestore(); workspaces.mockRestore(); workspace.mockRestore()
+  })
+  await page.goto(scaffold.authenticatedUrl)
+  await page.getByRole('button', { name: 'Skills', exact: true }).click()
+  await expect.poll(() => directory.mock.calls.length).toBe(2)
+  await page.getByRole('tab', { name: 'Mine', exact: true }).click()
+  await page.getByRole('tab', { name: 'Project skills', exact: true }).click()
+  const area = page.locator('.dssm-section')
+  const search = area.getByRole('textbox', { name: 'Search', exact: true })
+  await search.fill('retained')
+  await search.evaluate((node) => { if (node instanceof HTMLInputElement) node.setSelectionRange(1, 3) })
+  const refresh = area.getByRole('button', { name: 'Refresh', exact: true })
+  const toggle = area.getByRole('switch', { name: 'Toggle skill retained-skill-20', exact: true })
+  await toggle.waitFor()
+  const toggleNode = await toggle.elementHandle(), searchNode = await search.elementHandle(), refreshNode = await refresh.elementHandle()
+  phase = 'failure'
+  await refresh.click()
+  await expect.poll(() => reads).toBe(2)
+  await toggle.scrollIntoViewIfNeeded()
+  await toggle.focus()
+  const scrollOwner = await toggle.evaluateHandle((node) => {
+    for (let owner = node.parentElement; owner; owner = owner.parentElement) {
+      if (['auto', 'scroll'].includes(getComputedStyle(owner).overflowY) && owner.scrollHeight > owner.clientHeight) return owner
+    }
+    throw new Error('Missing skill page scroll owner')
+  })
+  const scroll = await scrollOwner.evaluate(node => node.scrollTop), bounds = await toggle.boundingBox()
+  expect(scroll).toBeGreaterThan(0)
+  failed.resolve(undefined)
+  const notice = area.getByRole('alert')
+  await notice.waitFor()
+  expect(await toggle.evaluate((node, original) => node === original && node === document.activeElement, toggleNode)).toBe(true)
+  expect(await toggle.boundingBox()).toEqual(bounds)
+  expect(await scrollOwner.evaluate(node => node.scrollTop)).toBe(scroll)
+  phase = 'retry'
+  const noticeNode = await notice.elementHandle()
+  await refresh.evaluate((node) => {
+    if (!(node instanceof HTMLButtonElement)) throw new Error('Missing refresh button')
+    node.click(); node.click()
+  })
+  await expect.poll(() => reads).toBe(3)
+  expect(await notice.evaluate((node, original) => node === original, noticeNode)).toBe(true)
+  expect(await toggle.evaluate((node, original) => node === original && node === document.activeElement, toggleNode)).toBe(true)
+  retried.resolve(undefined)
+  await notice.waitFor({ state: 'detached' })
+  expect(await toggle.evaluate((node, original) => node === original && node === document.activeElement, toggleNode)).toBe(true)
+  expect(await search.evaluate((node, original) => node === original && node instanceof HTMLInputElement
+    && node.value === 'retained' && node.selectionStart === 1 && node.selectionEnd === 3, searchNode)).toBe(true)
+  expect(await refresh.evaluate((node, original) => node === original, refreshNode)).toBe(true)
+  expect(await toggle.boundingBox()).toEqual(bounds)
+  expect(await scrollOwner.evaluate(node => node.scrollTop)).toBe(scroll)
+  await refresh.focus()
+  await captureSkillFocus(page, `project-refresh-${method}`, area, refresh)
 })

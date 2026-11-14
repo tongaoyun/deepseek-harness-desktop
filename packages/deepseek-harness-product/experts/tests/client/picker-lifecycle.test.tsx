@@ -92,12 +92,12 @@ it('reopens a dismissed picker during the shared catalog read and reports its cu
   expect(screen.getByRole('alert').textContent).toContain('Catalog unavailable')
   expect({ expanded: trigger.getAttribute('aria-expanded'), notice: screen.getByRole('alert').textContent,
     retryDisabled: screen.getByRole<HTMLButtonElement>('button', { name: zh['btn.refresh'] }).disabled }).toMatchInlineSnapshot(`
-    {
-      "expanded": "true",
-      "notice": "Catalog unavailable刷新",
-      "retryDisabled": false,
-    }
-  `)
+      {
+        "expanded": "true",
+        "notice": "Catalog unavailable",
+        "retryDisabled": false,
+      }
+    `)
   read.mockResolvedValue({ ok: true, value: { experts: [], enabled: [], revision: 2 } })
   await act(async () => { fireEvent.click(screen.getByRole('button', { name: zh['btn.refresh'] })); await cache.catalog.refresh() })
   expect(screen.queryByRole('alert')).toBeNull()
@@ -123,6 +123,56 @@ it.each([false, true])('returns recovered expert directory focus to search only 
   expect(screen.queryByRole('alert')).toBeNull()
   expect(document.activeElement).toBe(elsewhere ? tab : search)
   expect(cache.catalog.getSnapshot().revision).toBe(2)
+})
+
+it('shows a shared directory failure only in the currently selected picker tab', async () => {
+  const { trigger, remote } = await fixture(false)
+  const pending = Promise.withResolvers<Awaited<ReturnType<typeof remote.getCatalog>>>()
+  vi.spyOn(remote, 'getCatalog').mockReturnValue(pending.promise)
+  onTestFinished(() => { pending.resolve({ ok: true, value: { experts: [], enabled: [], revision: 2 } }) })
+  await act(async () => { fireEvent.click(trigger) })
+  await act(async () => { fireEvent.click(screen.getByRole('tab', { name: '专家团' })) })
+  const search = screen.getByRole<HTMLInputElement>('textbox', { name: '搜索专家团' })
+  fireEvent.change(search, { target: { value: 'team draft' } })
+  search.setSelectionRange(1, 4)
+  search.focus()
+  await act(async () => { pending.reject(new Error('Catalog unavailable')); await pending.promise.catch(() => undefined) })
+  expect(screen.getAllByRole('alert')).toHaveLength(1)
+  expect(screen.getAllByRole('button', { name: '刷新' })).toHaveLength(1)
+  expect(document.activeElement).toBe(search)
+  expect(screen.getByRole('textbox', { name: '搜索专家团' })).toBe(search)
+  expect([search.value, search.selectionStart, search.selectionEnd]).toEqual(['team draft', 1, 4])
+  fireEvent.click(screen.getByRole('tab', { name: '专家' }))
+  expect(screen.getAllByRole('alert')).toHaveLength(1)
+  expect(screen.getByRole('alert').textContent).toBe('Catalog unavailable')
+})
+
+it.each([false, true])('distinguishes an unread directory from a confirmed empty catalog through refresh failure (cached=%s)', async (cached) => {
+  const { trigger, cache, remote, view } = await fixture(false)
+  if (!cached) act(() => { cache.catalog.reset() })
+  const first = Promise.withResolvers<Awaited<ReturnType<typeof remote.getCatalog>>>()
+  const retry = Promise.withResolvers<Awaited<ReturnType<typeof remote.getCatalog>>>()
+  const empty = { experts: [], enabled: [], revision: 2 }
+  const read = vi.spyOn(remote, 'getCatalog').mockReturnValueOnce(first.promise).mockReturnValueOnce(retry.promise)
+  onTestFinished(() => { view.unmount(); first.resolve({ ok: true, value: empty }); retry.resolve({ ok: true, value: empty }) })
+  fireEvent.click(trigger)
+  const status = screen.getByRole('status')
+  expect(status.textContent).toBe(zh[cached ? 'discovery.empty' : 'discovery.working'])
+  await act(async () => { first.reject(new Error('Directory unavailable')); await first.promise.catch(() => undefined) })
+  const notice = screen.getByRole('alert')
+  expect(screen.queryByText(zh['discovery.working'])).toBeNull()
+  expect(screen.queryByText(zh['discovery.empty'])).toBe(cached ? status : null)
+  if (!cached) expect(screen.queryByRole('status')).toBeNull()
+  const refresh = screen.getByRole('button', { name: zh['btn.refresh'] })
+  act(() => { refresh.focus(); refresh.click(); refresh.click() })
+  expect(read).toHaveBeenCalledTimes(2)
+  expect(screen.getByRole('alert')).toBe(notice)
+  expect(screen.queryByText(zh['discovery.working'])).toBeNull()
+  expect(screen.queryByText(zh['discovery.empty'])).toBe(cached ? status : null)
+  await act(async () => { retry.resolve({ ok: true, value: empty }) })
+  expect(screen.queryByRole('alert')).toBeNull()
+  expect(screen.getByRole('status').textContent).toBe(zh['discovery.empty'])
+  expect(document.activeElement).toBe(screen.getByRole('searchbox'))
 })
 
 const reviewer = { slug: 'reviewer', name: '评审专家', nameEn: 'Reviewer', description: '检查代码',

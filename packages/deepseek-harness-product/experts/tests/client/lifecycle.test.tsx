@@ -103,6 +103,70 @@ async function fixture(renderMain: boolean | 'picker' = false, personal = false)
     getCustomExpert, getPrompt, setEnabled, unmount, slots, sources, startSession, scope, inputFor }
 }
 
+it.each([false, true])('preserves personal expert filters after saving (leaves results=%s)', async (leavesResults) => {
+  const { ctx, slots, cache, saveCustomExpert } = await fixture(true, true)
+  ctx.locale.setLocale('zh')
+  const t = ctx.locale.bind('agency')
+  render(slots.renderSlot('root', {}))
+  fireEvent.click(screen.getByRole('tab', { name: t('custom.source') }))
+  const search = screen.getByRole<HTMLInputElement>('textbox', { name: t('settings.search') })
+  fireEvent.change(search, { target: { value: 'Reviewer' } })
+  fireEvent.click(screen.getByRole('button', { name: '研发与集成' }))
+  const status = screen.getByRole('button', { name: t('settings.filter.status') })
+  fireEvent.click(status)
+  fireEvent.click(screen.getByRole('menuitem', { name: t('settings.disabled') }))
+  fireEvent.click(screen.getByRole('button', { name: t('custom.edit') }))
+  const editor = within(await screen.findByRole('dialog', { name: t('custom.edit') }))
+  const nextName = leavesResults ? 'Updated expert' : 'Reviewer updated'
+  fireEvent.change(editor.getByRole('textbox', { name: t('custom.name') }), { target: { value: nextName } })
+  saveCustomExpert.mockResolvedValue({ ok: true, value: { experts: cache.catalog.getSnapshot().experts.map(expert => ({
+    ...expert, name: nextName, nameEn: nextName,
+  })), enabled: [], revision: 9 } })
+  await act(async () => { fireEvent.click(editor.getByRole('button', { name: t('custom.saveChanges') })) })
+  expect(screen.queryByRole('dialog')).toBeNull()
+  expect(screen.getByRole('textbox', { name: t('settings.search') })).toBe(search)
+  expect(search.value).toBe('Reviewer')
+  expect(screen.getByRole('button', { name: '研发与集成' }).getAttribute('aria-pressed')).toBe('true')
+  expect(screen.getByRole('button', { name: t('settings.filter.status') })).toBe(status)
+  expect(status.textContent).toBe(t('settings.disabled'))
+  expect(screen.queryByRole('button', { name: t('custom.edit') }) === null).toBe(leavesResults)
+  expect({ search: search.value, status: status.textContent, leavesResults }).toMatchSnapshot()
+})
+
+it.each([false, true])('recovers focus after a delayed saved expert leaves results without stealing focus (elsewhere=%s)', async (elsewhere) => {
+  const { ctx, slots, cache, saveCustomExpert } = await fixture(true, true)
+  ctx.locale.setLocale('zh')
+  const t = ctx.locale.bind('agency')
+  render(slots.renderSlot('root', {}))
+  fireEvent.click(screen.getByRole('tab', { name: t('custom.source') }))
+  const search = screen.getByRole<HTMLInputElement>('textbox', { name: t('settings.search') })
+  fireEvent.change(search, { target: { value: 'Reviewer' } })
+  const edit = screen.getByRole('button', { name: t('custom.edit') })
+  const status = screen.getByRole('button', { name: t('settings.filter.status') })
+  edit.focus()
+  fireEvent.click(edit)
+  const editor = within(await screen.findByRole('dialog', { name: t('custom.edit') }))
+  fireEvent.change(editor.getByRole('textbox', { name: t('custom.name') }), { target: { value: 'Updated' } })
+  const gate = Promise.withResolvers<undefined>()
+  onTestFinished(() => { gate.resolve(undefined) })
+  const accept = cache.catalog.acceptMutation.bind(cache.catalog)
+  vi.spyOn(cache.catalog, 'acceptMutation').mockImplementation(async (...args) => {
+    await gate.promise
+    return accept(...args)
+  })
+  saveCustomExpert.mockResolvedValue({ ok: true, value: { experts: cache.catalog.getSnapshot().experts.map(expert => ({
+    ...expert, name: 'Updated', nameEn: 'Updated',
+  })), enabled: [], revision: 9 } })
+  await act(async () => { fireEvent.click(editor.getByRole('button', { name: t('custom.saveChanges') })) })
+  expect(screen.queryByRole('dialog')).toBeNull()
+  expect(document.activeElement).toBe(edit)
+  if (elsewhere) status.focus()
+  await act(async () => { gate.resolve(undefined) })
+  expect(screen.queryByRole('button', { name: t('custom.edit') })).toBeNull()
+  expect(search.value).toBe('Reviewer')
+  expect(document.activeElement).toBe(elsewhere ? status : search)
+})
+
 it.each(['edit', 'prompt'] as const)('retains expert %s read feedback until the detail retry succeeds', async (action) => {
   const { ctx, slots, getCustomExpert, getPrompt } = await fixture(true, true)
   ctx.locale.setLocale('zh')
@@ -181,6 +245,8 @@ it.each([
     manifest: JSON.stringify({ worker: { suggested_name: 'shared-reviewer' }, description: 'Review code' }), resources: { 'references/中文.txt': 'cmVmZXJlbmNl' } } })
   saveCustomExpert.mockResolvedValue({ ok: true, value: { ...catalog, revision: 9 } })
   render(slots.renderSlot('root', {}))
+  const search = screen.getByRole<HTMLInputElement>('textbox', { name: t('settings.search') })
+  fireEvent.change(search, { target: { value: name } })
   await act(async () => { fireEvent.click(screen.getByRole('button', { name: t('custom.copy') })) })
   const editor = within(await screen.findByRole('dialog', { name: t('custom.new') }))
   const input = editor.getByRole<HTMLInputElement>('textbox', { name: t('custom.name') })
@@ -189,6 +255,9 @@ it.each([
   expect(saveCustomExpert).toHaveBeenCalledWith(expect.objectContaining({ name: expected, slug: undefined,
     prompt: 'Read the reference', resources: { 'references/中文.txt': 'cmVmZXJlbmNl' } }), false, catalog.revision, expect.any(AbortSignal))
   expect(source.name).toBe(name)
+  expect(screen.getByRole('textbox', { name: t('settings.search') })).toBe(search)
+  expect(search.value).toBe('')
+  expect(screen.getByRole('tab', { name: t('custom.source') }).getAttribute('aria-selected')).toBe('true')
   expect({ name: input.value, enabled: saveCustomExpert.mock.calls[0]?.[1] }).toMatchSnapshot()
 })
 
@@ -451,7 +520,8 @@ it('closes the Loader-mounted editor category menu while saving and preserves th
     expect(screen.getByRole('menu')).toBeTruthy()
     fireEvent.click(editor.getByRole('button', { name: t('custom.saveChanges') }))
     expect(saveCustomExpert).toHaveBeenCalledOnce()
-    expect(category.disabled).toBe(true)
+    expect(category.disabled).toBe(false)
+    expect(category.getAttribute('aria-disabled')).toBe('true')
     expect(category.classList.contains('product-control-pending')).toBe(true)
     expect(screen.queryByRole('menu')).toBeNull()
     await act(async () => { pending.reject(new Error('Save unavailable')); await pending.promise.catch(() => {}) })
@@ -503,7 +573,7 @@ it.each(['success', 'failure', 'closed'] as const)('keeps expert picker retry fe
   const trigger = view.container.querySelector<HTMLButtonElement>('button[aria-haspopup="dialog"]')!
   fireEvent.click(trigger)
   const notice = await screen.findByRole('alert')
-  const retry = within(notice).getByRole<HTMLButtonElement>('button', { name: zh['btn.refresh'] })
+  const retry = screen.getByRole<HTMLButtonElement>('button', { name: zh['btn.refresh'] })
   const pending = Promise.withResolvers<Awaited<ReturnType<AgencyCatalogRemote['getCatalog']>>>()
   onTestFinished(() => { view.unmount(); pending.resolve({ ok: true, value: { experts: [], enabled: [], revision: 9 } }) })
   getCatalog.mockReturnValue(pending.promise)
@@ -511,7 +581,7 @@ it.each(['success', 'failure', 'closed'] as const)('keeps expert picker retry fe
   retry.focus()
   act(() => { retry.click(); retry.click() })
   expect(screen.getByRole('alert')).toBe(notice)
-  expect(within(notice).getByRole('button', { name: zh['btn.refresh'] })).toBe(retry)
+  expect(screen.getByRole('button', { name: zh['btn.refresh'] })).toBe(retry)
   expect(retry.disabled).toBe(false)
   expect(retry.getAttribute('aria-disabled')).toBe('true')
   expect(retry.getAttribute('aria-busy')).toBe('true')
@@ -522,7 +592,7 @@ it.each(['success', 'failure', 'closed'] as const)('keeps expert picker retry fe
     {
       "busy": "true",
       "focused": true,
-      "notice": "Catalog unavailable刷新",
+      "notice": "Catalog unavailable",
     }
   `)
   if (outcome === 'closed') fireEvent.click(trigger)
@@ -980,4 +1050,42 @@ it('keeps market and personal categories fixed while imported category aliases r
   expect(screen.getByText('Unlisted expert')).toBeTruthy()
   expect(screen.queryByText('Imported expert')).toBeNull()
   expect(screen.queryByText('shared')).toBeNull()
+})
+
+it.each(['reset', 'dispose'] as const)('does not report cancelled expert preloads as failures on %s', async (change) => {
+  const { ctx, owner, cache, getCatalog, getTeams } = await fixture()
+  const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+  onTestFinished(() => { warn.mockRestore() })
+  const catalog = Promise.withResolvers<Awaited<ReturnType<AgencyCatalogRemote['getCatalog']>>>()
+  const teams = Promise.withResolvers<Awaited<ReturnType<AgencyTeamsRemote['getTeams']>>>()
+  getCatalog.mockReturnValueOnce(catalog.promise)
+  getTeams.mockReturnValueOnce(teams.promise)
+  ctx.emit('connection/reset')
+  if (change === 'reset') {
+    ctx.emit('connection/reset')
+    await cache.catalog.refresh()
+    await cache.teams.refresh()
+  } else await owner.dispose()
+  catalog.resolve({ ok: true, value: { experts: [], enabled: [], revision: 9 } })
+  teams.resolve({ ok: true, value: { teams: [], enabledTeams: [], enabledExperts: [], revision: 9 } })
+  await act(async () => { await Promise.resolve() })
+  expect(warn).not.toHaveBeenCalled()
+})
+
+it('reports genuine expert preload failures and allows reloading the current connection', async () => {
+  const { ctx, cache, getCatalog, getTeams } = await fixture()
+  const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+  onTestFinished(() => { warn.mockRestore() })
+  const failure = new Error('catalog offline')
+  getCatalog.mockRejectedValueOnce(failure)
+  getTeams.mockRejectedValueOnce(failure)
+  ctx.emit('connection/reset')
+  await vi.waitFor(() => { expect(warn).toHaveBeenCalledTimes(2) })
+  expect(warn.mock.calls.every(([, cause]) => cause === failure)).toBe(true)
+  ctx.emit('connection/reset')
+  await cache.catalog.refresh()
+  await cache.teams.refresh()
+  expect(cache.catalog.getSnapshot().revision).toBe(8)
+  expect(cache.teams.getSnapshot()?.revision).toBe(8)
+  expect(warn).toHaveBeenCalledTimes(2)
 })

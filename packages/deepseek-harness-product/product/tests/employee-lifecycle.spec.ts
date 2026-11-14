@@ -36,7 +36,7 @@ it('continues browser sign-in after the shared refresh rejects a stored session'
       }
       if (url.endsWith('/authorization-requests')) return authorization()
       if (url.includes('/authorization-requests/')) return authorized()
-      return Response.json({ success: true, data: [], pageIndex: 1, pageSize: 100, totalCount: 0, totalPages: 0 })
+      return Response.json({ success: true, data: 52428800, pageIndex: 1, pageSize: 100, totalCount: 0, totalPages: 0 })
     } })
   try {
     await expect(ensureDingTalkSession(bridge, opened, { pollMs: 0 })).resolves.toMatchObject({ authenticated: true, employeeId: 'employee-a' })
@@ -53,7 +53,7 @@ it.each(['employee-changed', 'superseded', 'cancelled'] as const)('rejects an ob
     const url = new Request(input).url
     if (url.endsWith('/authorization-requests')) return authorization(++begins === 1 ? 'state-1234567890' : 'state-2222222222')
     if (url.includes('/authorization-requests/')) { started.resolve(true); return response.promise }
-    return Response.json({ success: true, data: [], pageIndex: 1, pageSize: 100, totalCount: 0, totalPages: 0 })
+    return Response.json({ success: true, data: 52428800, pageIndex: 1, pageSize: 100, totalCount: 0, totalPages: 0 })
   } })
   const controller = new AbortController()
   try {
@@ -121,7 +121,7 @@ it.each(['success', 'unauthorized'] as const)('discards a previous employee refr
         if (request.headers.get('authorization') === 'Bearer token-b') return refreshed('employee-b', 'new-b')
         started.resolve(true); return response.promise
       }
-      return Response.json({ success: true, data: [], pageIndex: 1, pageSize: 100, totalCount: 0, totalPages: 0 })
+      return Response.json({ success: true, data: 52428800, pageIndex: 1, pageSize: 100, totalCount: 0, totalPages: 0 })
     } })
   try {
     const pending = bridge.invoke('auth.refresh')
@@ -146,7 +146,7 @@ it.each(['connectors.authorization.status', 'bootstrap'] as const)('cancels an o
       if (new Request(input).url.endsWith(method === 'bootstrap' ? '/bootstrap' : '/connectors/connector-test/authorization')) {
         started.resolve(true); return response.promise
       }
-      return Response.json({ success: true, data: [], pageIndex: 1, pageSize: 100, totalCount: 0, totalPages: 0 })
+      return Response.json({ success: true, data: 52428800, pageIndex: 1, pageSize: 100, totalCount: 0, totalPages: 0 })
     } })
   try {
     const pending = method === 'bootstrap' ? bridge.loadRuntimeBootstrap() : bridge.invoke(method, { id: 'connector-test' })
@@ -168,7 +168,7 @@ it('does not sign out a renewed session when an older token returns unauthorized
       const url = new Request(input).url
       if (url.endsWith('/connectors/connector-test/authorization')) { started.resolve(true); return response.promise }
       if (url.endsWith('/session/refresh')) return refreshed('employee-a', 'new-token')
-      return Response.json({ success: true, data: [], pageIndex: 1, pageSize: 100, totalCount: 0, totalPages: 0 })
+      return Response.json({ success: true, data: 52428800, pageIndex: 1, pageSize: 100, totalCount: 0, totalPages: 0 })
     } })
   try {
     const pending = bridge.invoke('connectors.authorization.status', { id: 'connector-test' })
@@ -198,21 +198,21 @@ it.each(['success', 'failure'] as const)('cancels one waiter without cancelling 
         started.resolve(true)
         return response.promise
       }
-      if (url.endsWith('/knowledge-references/resolve')) {
+      if (url.endsWith('/libraries/file-policy')) {
         requests++
-        return Response.json({ success: true, data: [] })
+        return Response.json({ success: true, data: 52428800 })
       }
-      return Response.json({ success: true, data: [], pageIndex: 1, pageSize: 100, totalCount: 0, totalPages: 0 })
+      return Response.json({ success: true, data: 52428800, pageIndex: 1, pageSize: 100, totalCount: 0, totalPages: 0 })
     } })
   const controller = new AbortController()
   const reason = new Error('Cancel only this employee request')
   let cancelledReason: unknown
   let liveSettled = false
-  const cancelled = bridge.invoke('knowledge.references.resolve', {}, controller.signal).catch((error: unknown) => {
+  const cancelled = bridge.invoke('library.files.policy', {}, controller.signal).catch((error: unknown) => {
     cancelledReason = error
   })
-  const live = bridge.invoke('knowledge.references.resolve', {}).finally(() => { liveSettled = true })
-  const liveResult = outcome === 'success' ? expect(live).resolves.toEqual([])
+  const live = bridge.invoke('library.files.policy', {}).finally(() => { liveSettled = true })
+  const liveResult = outcome === 'success' ? expect(live).resolves.toEqual(52428800)
     : expect(live).rejects.toMatchObject({ code: 'ORGANIZATION_UNAVAILABLE' })
   try {
     await started.promise
@@ -249,13 +249,13 @@ it.each(['employee-change', 'disposal'] as const)('releases session refresh wait
         started.resolve(true)
         return response.promise
       }
-      if (url.endsWith('/knowledge-references/resolve')) requests++
-      return Response.json({ success: true, data: [], pageIndex: 1, pageSize: 100, totalCount: 0, totalPages: 0 })
+      if (url.endsWith('/libraries/file-policy')) requests++
+      return Response.json({ success: true, data: 52428800, pageIndex: 1, pageSize: 100, totalCount: 0, totalPages: 0 })
     } })
   let reason: unknown
   let disposed = false
   let disposal: Promise<void> | undefined
-  const pending = bridge.invoke('knowledge.references.resolve', {}).catch((error: unknown) => { reason = error })
+  const pending = bridge.invoke('library.files.policy', {}).catch((error: unknown) => { reason = error })
   try {
     await started.promise
     if (event === 'employee-change') bridge.setSession({ authenticated: true, employeeId: 'employee-b' }, 'token-b')

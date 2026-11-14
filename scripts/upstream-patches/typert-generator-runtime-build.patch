@@ -1,5 +1,5 @@
 diff --git a/packages/typert/generator/package.json b/packages/typert/generator/package.json
-index 246c4b7cd8d123866c5ab5a6d6eb2fc607ff7377..4940b35aa536851e9fe2feebe82daa3b87b54d6b 100644
+index 0e9ecc407cb4b4607b2ea04858a24d1b4b61d921..630bbb558ced3ca95194a329cba89d762e8f0560 100644
 --- a/packages/typert/generator/package.json
 +++ b/packages/typert/generator/package.json
 @@ -47,5 +47,9 @@

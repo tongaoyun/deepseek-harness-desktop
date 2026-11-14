@@ -11,6 +11,7 @@ import { type ProductDetail, AUTHORIZATION_TIMEOUT_MS, AUTHORIZATION_POLL_INTERV
 import { ConnectorTools } from './ConnectorTools.tsx'
 import { useEditorCloseGuard } from './useEditorCloseGuard.ts'
 import { useResultFocus } from './useResultFocus.ts'
+import { ProductActionLabel } from './ProductActionLabel.tsx'
 
 export function ConnectorDetailModal({ detail: product, onCatalogChanged, managementActions, onClose, t }: {
   readonly managementActions?: ReactNode
@@ -34,6 +35,8 @@ export function ConnectorDetailModal({ detail: product, onCatalogChanged, manage
 }
 
 /** Refresh connector authorization and capabilities without losing retained browsing state or focus.
+ * The device entry stays focusable while refresh blocks opening its configuration.
+ * Confirmed device saves return focus to configuration or its refresh retry after closing the nested dialog.
  * @param props Product version, catalog refresh action and localized labels;
  * the refresh action calls beforeCommit before replacing confirmed details.
  * @returns Authorization, device configuration and searchable capabilities for this version.
@@ -52,8 +55,14 @@ export function ConnectorDetail({ product, onCatalogChanged, t }: {
   const authorizationOperation = useRef(false)
   const refreshOperation = useRef(false)
   const configurationArea = useRef<HTMLElement>(null)
-  const configurationAction = useRef<HTMLButtonElement>(null)
+  const configurationAction = useRef<HTMLButtonElement | null>(null)
+  const deviceConfigurationAction = useRef<HTMLButtonElement | null>(null)
   const preserveRefreshFocus = useResultFocus(configurationArea, configurationAction)
+  const configurationCloseArea = useRef<HTMLElement | null>(null)
+  const preserveConfigurationCloseFocus = useResultFocus(configurationCloseArea, () => {
+    const target = deviceConfigurationAction.current ?? configurationAction.current
+    if (target) focusWithoutRing(target, { preventScroll: true })
+  })
   const toolsArea = useRef<HTMLElement>(null)
   const toolsHeading = useRef<HTMLHeadingElement>(null)
   const preserveToolsFocus = useResultFocus(toolsArea, () => {
@@ -145,31 +154,39 @@ export function ConnectorDetail({ product, onCatalogChanged, t }: {
         <Button ref={configurationAction} variant="outline" size="sm" aria-disabled={refreshing} aria-busy={refreshing}
           className={refreshing ? 'product-control-pending' : undefined} onClick={() => { void refreshCatalog() }}>{t('refresh')}</Button>
       </div>}
-      {managedAuthorization && !refreshFailed && <div className={css.detailActions}>
-        {product.authorizationStatus === 'AUTHORIZED'
-          ? <Button ref={configurationAction} variant="outline" size="sm" className={authorizationPending || refreshing ? 'product-control-pending' : undefined}
-            aria-disabled={authorizationPending || refreshing} aria-busy={authorizationPending || refreshing}
-            onClick={() => { void revoke() }}>
-            {authorizationPending ? t('authorizationWorking') : t('revokeAuthorization')}
-          </Button>
-          : <Button ref={configurationAction} variant="primary" size="sm" className={authorizationPending || refreshing ? 'product-control-pending' : undefined}
-            aria-disabled={authorizationPending || refreshing} aria-busy={authorizationPending || refreshing}
-            onClick={() => { void authorize() }}>
-            {authorizationPending ? t('authorizationWaiting')
-              : product.authorizationStatus === 'EXPIRED' ? t('reauthorize') : t('authorize')}
-          </Button>}
-        {authorizationError && <span className={css.catalogError} role="alert">{t('authorizationFailed')}</span>}
+      {managedAuthorization && !refreshFailed && <div className={`${css.detailActions} ${css.connectorAuthorizationActions}`}>
+        <Button ref={configurationAction} variant={product.authorizationStatus === 'AUTHORIZED' ? 'outline' : 'primary'} size="sm"
+          className={authorizationPending || refreshing ? 'product-control-pending' : undefined}
+          aria-disabled={authorizationPending || refreshing} aria-busy={authorizationPending || refreshing}
+          onClick={() => { void (product.authorizationStatus === 'AUTHORIZED' ? revoke() : authorize()) }}>
+          <ProductActionLabel pending={authorizationPending}
+            label={t(product.authorizationStatus === 'AUTHORIZED' ? 'revokeAuthorization' : product.authorizationStatus === 'EXPIRED' ? 'reauthorize' : 'authorize')}
+            pendingLabel={t(product.authorizationStatus === 'AUTHORIZED' ? 'authorizationWorking' : 'authorizationWaiting')}
+            reserveLabels={[t('authorize'), t('reauthorize'), t('revokeAuthorization'), t('authorizationWorking'), t('authorizationWaiting')]} />
+        </Button>
+        <span className={css.catalogError} aria-hidden={!authorizationError}
+          role={authorizationError ? 'alert' : undefined}>{t('authorizationFailed')}</span>
       </div>}
       {product.canConfigure === true && !refreshFailed && <div className={css.detailActions}>
-        <Button ref={managedAuthorization ? undefined : configurationAction} variant="outline" size="sm" className={refreshing ? 'product-control-pending' : undefined}
-          disabled={refreshing} onClick={() => { setConfiguring(true) }}><IconLinkOutlineRegular size={14} />{t('configureDevice')}</Button>
+        <Button ref={(element) => {
+          deviceConfigurationAction.current = element
+          if (!managedAuthorization) configurationAction.current = element
+        }} variant="outline" size="sm" className={refreshing ? 'product-control-pending' : undefined}
+        aria-disabled={refreshing} onClick={() => {
+          if (!refreshOperation.current && refreshState === 'idle') setConfiguring(true)
+        }}><IconLinkOutlineRegular size={14} />{t('configureDevice')}</Button>
       </div>}
     </section>}
     {configuring && <ConnectorDeviceConfiguration product={product} onClose={() => { setConfiguring(false) }}
       onSaved={async () => {
         const signal = lifecycle.current.signal
         await refreshCatalog()
-        if (!signal.aborted) setConfiguring(false)
+        if (!signal.aborted) {
+          // The nested portal's return target can be disabled or removed by the refresh.
+          configurationCloseArea.current = configurationArea.current?.ownerDocument.body ?? null
+          preserveConfigurationCloseFocus()
+          setConfiguring(false)
+        }
       }} t={t} />}
     <section ref={toolsArea} hidden={refreshFailed} className={css.connectorSection} aria-busy={refreshing}>
       <h2 ref={toolsHeading} tabIndex={-1}>{t('connectorTools')}</h2>
@@ -243,6 +260,7 @@ function ConnectorDeviceConfiguration({ product, onClose, onSaved, t }: {
     if (!ConnectorDraftFields.shape.headers.safeParse(headers).success) { setError('connectorHeadersInvalid'); return }
     if (!ConnectorDraftFields.shape.environment.safeParse(environment).success) { setError('connectorEnvironmentInvalid'); return }
     const signal = lifecycle.current.signal
+    close.clearBlocked()
     saving.current = true
     setPending(true)
     try {
@@ -262,18 +280,23 @@ function ConnectorDeviceConfiguration({ product, onClose, onSaved, t }: {
         onChange={(event) => { set({ ...values, [key]: event.currentTarget.value }) }} /></label>)}
   </section>
   return <Modal open onClose={close.requestClose} title={t('configureDevice')} closeLabel={t('close')}
-    className={css.connectorDeviceModal as string} contentClassName={css.connectorEditorContent as string}
+    className={css.connectorDeviceModal as string} contentClassName={css.detailModalContent as string}
     footer={<div className={css.connectorFooter}>
-      {!close.confirming && error && <p className={css.catalogError} role="alert">{typeof error === 'string' ? t(error)
-        : productErrorMessage(error.failure, t, error.fallback)}</p>}
-      {close.confirming ? <><Button ref={close.keepEditingRef} variant="ghost" onClick={close.keepEditing}>{t('knowledgeKeepEditing')}</Button>
-        <Button variant="primary" onClick={close.discard}>{t('knowledgeDiscardDraft')}</Button></>
+      {!close.confirming && <><div className={css.feedbackResult}>
+        <span aria-hidden="true">{t('libraryWait')}</span>
+        {close.blocked && pending && <p role="status" className={css.catalogStatus}>{t('libraryWait')}</p>}
+      </div><div className={css.feedbackResult}>
+        <span aria-hidden="true">{t('connectorDiscoveryFailed')}</span>
+        {error && <p className={css.catalogError} role="alert">{typeof error === 'string' ? t(error)
+          : productErrorMessage(error.failure, t, error.fallback)}</p>}
+      </div></>}
+      {close.confirming ? <><Button ref={close.keepEditingRef} variant="ghost" onClick={close.keepEditing}>{t('libraryKeepEditing')}</Button>
+        <Button variant="primary" onClick={close.discard}>{t('libraryDiscard')}</Button></>
         : <Button variant="primary" disabled={!configuration} aria-disabled={!configuration || pending} aria-busy={pending}
           className={pending && configuration ? 'product-control-pending' : undefined} onClick={() => { void save() }}>
           {pending ? t('connectingConnector') : t('saveConnector')}</Button>}</div>}>
-    {close.confirming && <p>{t('knowledgeDiscardDraftConfirmation')}</p>}
+    {close.confirming && <p>{t('libraryDiscardConfirm')}</p>}
     <div hidden={close.confirming} {...close.editorProps}>
-      {close.blocked && pending && <p role="status" className={css.catalogStatus}>{t('knowledgeWaitForSave')}</p>}
       {!configuration && (error ? <Button variant="outline" aria-disabled={loading} aria-busy={loading}
         className={loading ? 'product-control-pending' : undefined} onClick={() => { void load() }}>{t('retry')}</Button> : <ProductLoading label={t('loading')} />)}
       {configuration && <div className={`${css.editorForm} ${css.connectorForm}`}>

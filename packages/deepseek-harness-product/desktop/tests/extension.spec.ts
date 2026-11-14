@@ -16,9 +16,9 @@ const fixture = vi.hoisted(() => ({ authenticate: vi.fn<typeof import('@deepseek
   companyContent: vi.fn(async () => null),
   bootstrap: vi.fn(async () => ({ modelApiKey: 'model-key', endpoints: { litellm: 'https://example.test/v1' }, models: ['deepseek-v4-flash', 'gpt-example'] })),
   connectorsClose: vi.fn(async () => {}), dispose: vi.fn(),
-  knowledgePrepare: vi.fn(async () => {}), knowledgeClose: vi.fn(async () => {}), writeFile: vi.fn(), removeFile: vi.fn(),
+  libraryPrepare: vi.fn(async () => {}), libraryClose: vi.fn(async () => {}), writeFile: vi.fn(), removeFile: vi.fn(),
   encryptionAvailable: vi.fn(() => false),
-  knowledgeReset: vi.fn(async () => {}),
+  libraryReset: vi.fn(async () => {}),
   companyPrepare: vi.fn(async () => {}), companyClose: vi.fn(async () => {}),
   expertVersion: vi.fn(async (_slug: string, _sha256: string, _signal?: AbortSignal) => '/company/resources/orders'),
   bridgeOptions: vi.fn<(options: ProductBridgeOptions) => void>(),
@@ -48,12 +48,12 @@ vi.mock('../src/deepseek-harness-product-config.ts', () => ({ resolveDeepSeekHar
   companyContentRefreshIntervalMs: 60000,
   connectorProxy: { responseTimeoutMs: 30000, streamIdleTimeoutMs: 120000 },
   support: { heartbeatIntervalMs: 300000, reportIntervalMs: 86400000 },
-  knowledgeFiles: { previewMaxBytes: 1024, spreadsheetMaxBytes: 1024, officeInputMaxBytes: 1024,
+  libraryFiles: { previewMaxBytes: 1024, spreadsheetMaxBytes: 1024, officeInputMaxBytes: 1024,
     officeOutputMaxBytes: 1024, downloadMaxBytes: 1024, uploadMaxBytes: 1024, transferLifetimeMs: 60_000,
     fileRequestTimeoutMs: 60_000, maxTransfers: 8 } }) }))
 vi.mock('@deepseek-ai/dsh-anonymous-user-id', () => ({ getOrCreateAnonymousUserId: () => '00000000-0000-4000-8000-000000000001' }))
-vi.mock('../src/knowledge-files.ts', () => ({ KnowledgeFiles: class {
-  prepare = fixture.knowledgePrepare; close = fixture.knowledgeClose; resetIdentity = fixture.knowledgeReset; invoke = async () => ({})
+vi.mock('../src/library-files.ts', () => ({ LibraryFiles: class {
+  prepare = fixture.libraryPrepare; close = fixture.libraryClose; resetIdentity = fixture.libraryReset; invoke = async () => ({})
 } }))
 vi.mock('@deepseek-harness/product/dingtalk-auth', async original => ({
   ...await original<typeof import('@deepseek-harness/product/dingtalk-auth')>(), ensureDingTalkSession: fixture.authenticate,
@@ -75,19 +75,19 @@ beforeEach(() => {
   fixture.companyContent.mockReset().mockResolvedValue(null)
   fixture.authenticate.mockResolvedValue({ authenticated: true })
   fixture.invoke.mockReset().mockResolvedValue({}); fixture.refreshCatalog.mockReset().mockResolvedValue()
-  fixture.dispose.mockReset(); fixture.knowledgeClose.mockReset().mockResolvedValue()
+  fixture.dispose.mockReset(); fixture.libraryClose.mockReset().mockResolvedValue()
   fixture.connectorsClose.mockReset().mockResolvedValue()
-  fixture.knowledgePrepare.mockReset().mockResolvedValue()
+  fixture.libraryPrepare.mockReset().mockResolvedValue()
   fixture.companyPrepare.mockReset().mockResolvedValue(); fixture.companyClose.mockReset().mockResolvedValue()
   fixture.expertVersion.mockReset().mockResolvedValue('/company/resources/orders')
-  fixture.knowledgeReset.mockReset().mockResolvedValue()
+  fixture.libraryReset.mockReset().mockResolvedValue()
   fixture.writeFile.mockReset(); fixture.removeFile.mockReset(); fixture.encryptionAvailable.mockReset().mockReturnValue(false)
 })
 
 it.each(['files', 'company'] as const)('joins startup during %s preparation and rejects late startup effects on close', async (phase) => {
   const entered = Promise.withResolvers<undefined>()
   const release = Promise.withResolvers<undefined>()
-  const delayed = phase === 'files' ? fixture.knowledgePrepare : fixture.companyPrepare
+  const delayed = phase === 'files' ? fixture.libraryPrepare : fixture.companyPrepare
   delayed.mockImplementationOnce(async () => { entered.resolve(undefined); await release.promise })
   const cleaned = Promise.withResolvers<undefined>()
   fixture.connectorsClose.mockImplementationOnce(async () => { cleaned.resolve(undefined) })
@@ -123,7 +123,7 @@ it('coalesces concurrent Host preparation instead of replacing the company sync 
     expect(second).toBe(first)
     release.resolve(undefined)
     await expect(first).resolves.toMatchObject({ DSH_PRODUCT_MODEL_API_KEY: 'model-key' })
-    expect(fixture.knowledgePrepare).toHaveBeenCalledOnce()
+    expect(fixture.libraryPrepare).toHaveBeenCalledOnce()
     expect(fixture.companyPrepare).toHaveBeenCalledOnce()
   } finally {
     release.resolve(undefined)
@@ -151,7 +151,7 @@ it('releases remaining resources and joins in-flight requests before reporting c
   const bridgeFailure = new Error('Bridge cleanup failed')
   const filesFailure = new Error('Files cleanup failed')
   fixture.dispose.mockRejectedValueOnce(bridgeFailure)
-  fixture.knowledgeClose.mockRejectedValueOnce(filesFailure)
+  fixture.libraryClose.mockRejectedValueOnce(filesFailure)
   const entered = Promise.withResolvers<undefined>()
   const release = Promise.withResolvers<undefined>()
   const stopped = Promise.withResolvers<undefined>()
@@ -164,7 +164,7 @@ it('releases remaining resources and joins in-flight requests before reporting c
   const closing = extension.close().then(() => { settled = true; return undefined }, (error: unknown) => { settled = true; return error })
   try {
     expect(await Promise.race([stopped.promise.then(() => 'stopped'), closing.then(() => 'closed')])).toBe('stopped')
-    expect(fixture.knowledgeClose).toHaveBeenCalledOnce()
+    expect(fixture.libraryClose).toHaveBeenCalledOnce()
     expect(settled).toBe(false)
   } finally {
     release.resolve(undefined)
@@ -362,7 +362,7 @@ it('keeps a Host bound to its startup employee while allowing the same employee 
     fixture.session = { authenticated: true, employeeId: 'second' }
     await persist(fixture.session, 'other-token')
     await expect(extension.invokeRuntime('connectors.list')).rejects.toMatchObject({ code: 'PRODUCT_HOST_IDENTITY_CHANGED' })
-    await expect(extension.invokeRuntime('knowledge.search', { query: 'orders' })).rejects.toMatchObject({ code: 'PRODUCT_HOST_IDENTITY_CHANGED' })
+    await expect(extension.invokeRuntime('runtime.library.preview.policy')).rejects.toMatchObject({ code: 'PRODUCT_HOST_IDENTITY_CHANGED' })
     await expect(extension.prepareHost({ directory: '/unused-profile', installAnchor: '/unused-runtime/package.json' }))
       .rejects.toMatchObject({ code: 'PRODUCT_HOST_IDENTITY_CHANGED' })
     expect(fixture.invokeRuntime).toHaveBeenCalledOnce()
@@ -567,9 +567,9 @@ it('invalidates employee resources in session order before awaiting an old compa
     release.resolve(undefined)
     await first
     expect(resets.mock.calls.map(call => call[0])).toEqual(['second', 'third'])
-    expect(fixture.knowledgeReset).toHaveBeenCalledTimes(2)
+    expect(fixture.libraryReset).toHaveBeenCalledTimes(2)
     await persist({ authenticated: true, employeeId: 'third' }, 'refreshed-token')
-    expect(fixture.knowledgeReset).toHaveBeenCalledTimes(2)
+    expect(fixture.libraryReset).toHaveBeenCalledTimes(2)
   } finally {
     release.resolve(undefined)
     await Promise.allSettled(pending)
@@ -622,7 +622,7 @@ it.each(['save', 'remove'] as const)('invalidates employee resources and joins c
     if (!persist) throw new Error('Missing employee resource cleanup')
     await persist({ authenticated: true, employeeId: 'fixture' }, 'initial-token')
     await extension.prepareHost({ directory: '/unused-profile', installAnchor: '/unused-runtime/package.json' })
-    resets.mockClear(); fixture.knowledgeReset.mockClear()
+    resets.mockClear(); fixture.libraryReset.mockClear()
     fixture.companyClose.mockImplementationOnce(async () => { entered.resolve(undefined); await release.promise })
     fixture.encryptionAvailable.mockReturnValue(true)
     const storage = operation === 'save' ? fixture.writeFile : fixture.removeFile
@@ -636,7 +636,7 @@ it.each(['save', 'remove'] as const)('invalidates employee resources and joins c
     }).not.toThrow()
     await entered.promise
     expect(resets).toHaveBeenCalledWith(session.employeeId)
-    expect(fixture.knowledgeReset).toHaveBeenCalledOnce()
+    expect(fixture.libraryReset).toHaveBeenCalledOnce()
     await setImmediate()
     expect(settled).toBe(false)
     release.resolve(undefined)

@@ -1,7 +1,7 @@
 {
   "schemaVersion": 2,
   "generatedAt": "2026-11-05T08:41:06.898Z",
-  "title": "Design System: DeepSeek Harness knowledge workspace",
+  "title": "DeepSeek Harness 资料库设计参考",
   "extensions": {
     "colorMeta": {
       "primary-fill": {
@@ -304,50 +304,37 @@
       "description": "Current folder uses neutral hover fill and an explicit current-page attribute.",
       "html": "<nav aria-label=\"Folders\"><button class=\"ds-folder\" aria-current=\"page\"><span>Policies</span></button><button class=\"ds-folder\"><span>Reference</span></button></nav>",
       "css": ".ds-folder{display:flex;width:100%;min-height:38px;min-width:0;align-items:center;gap:8px;padding:8px;border:0;border-radius:5px;background:transparent;color:var(--dsw-alias-label-secondary);font:13px/20px var(--dsw-font-family);text-align:left;cursor:pointer;}.ds-folder span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}.ds-folder[aria-current=\"page\"]{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary);}.ds-folder:focus-visible{outline:2px solid var(--dsw-alias-border-l4);outline-offset:-2px;}.ds-folder:disabled{color:var(--dsw-alias-label-tertiary);cursor:default;}@media(hover:hover){.ds-folder:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary);}}"
-    },
-    {
-      "name": "Document status",
-      "kind": "custom",
-      "refersTo": "status-ready",
-      "description": "Textual status with a small semantic dot; the ready text keeps primary-label contrast.",
-      "html": "<span class=\"ds-status\" data-status=\"READY\">Searchable</span>",
-      "css": ".ds-status{display:inline-flex;align-items:center;gap:6px;white-space:nowrap;font-family:var(--dsw-font-family);font-size:12px;color:var(--dsw-alias-label-secondary);}.ds-status::before{width:5px;height:5px;flex:none;border-radius:50%;background:currentColor;content:\"\";}.ds-status[data-status=\"READY\"]{color:var(--dsw-alias-label-primary);}.ds-status[data-status=\"READY\"]::before{background:var(--dsw-alias-state-success-primary);}.ds-status[data-status=\"FAILED\"]{color:var(--dsw-alias-state-error-primary);}"
     }
   ],
   "narrative": {
-    "northStar": "Native Harness resource workspace",
-    "overview": "This reference describes the product knowledge directory, library materials, and inline reader. WorkBuddy informs resource browsing; WeKnora informs adding materials and uploading files. Harness owns the surrounding shell, theme, system typography, controls, and original-file preview.",
+    "northStar": "复用原生 Harness 的资料库工作区",
+    "overview": "资料库管理文件、文件夹及收藏。选中文件后交给原生附件与文件能力使用，预览复用 document.preview；不提供向量检索或解析处理状态。",
     "keyCharacteristics": [
-      "Neutral light and dark surfaces with restrained semantic color.",
-      "A searchable card directory followed by a separate materials workspace.",
-      "Compact controls, generous document rows, and visible keyboard state."
+      "沿用原生深浅色语义变量与字体。",
+      "先浏览资料库，再进入文件目录。",
+      "操作状态就近展示，保留搜索、滚动和键盘焦点。"
     ],
     "rules": [
       {
-        "name": "The Theme Alias Rule",
-        "body": "Use the native semantic aliases in both themes; primary controls and selected navigation remain neutral.",
+        "name": "原生主题",
+        "body": "主操作与选中导航使用原生中性色和语义变量。",
         "section": "colors"
       },
       {
-        "name": "The Readable Status Rule",
-        "body": "Ready status uses primary label text and a green dot; color supplements the localized status label.",
-        "section": "colors"
-      },
-      {
-        "name": "The Overlay Depth Rule",
-        "body": "Keep directory cards and document rows flat; native menus and dialogs own overlay elevation.",
+        "name": "浮层层级",
+        "body": "卡片和文件列表保持平面布局，菜单和弹窗复用原生组件。",
         "section": "elevation"
       }
     ],
     "dos": [
-      "Do reuse native Button, SegmentedControl, Menu, Modal, Tooltip, icons, MarkdownText, and document.preview.",
-      "Do keep search, format, status, refresh, and clear-filter controls usable when the workspace narrows.",
-      "Do preserve localized names, explicit loading/error/empty states, permission-dependent actions, and library transition focus."
+      "复用原生 Button、SegmentedControl、Menu、Modal、Tooltip、图标与 document.preview。",
+      "窄窗口下保留搜索、上传、新建文件夹和刷新操作。",
+      "明确区分首次加载、后台刷新、空目录、请求失败与权限变化。"
     ],
     "donts": [
-      "Don't hardcode a separate light/dark palette or replace the Harness text family.",
-      "Don't turn the ready label green or communicate processing state through color alone.",
-      "Don't create parallel native controls, document viewers, retrieval engines, or configuration systems."
+      "不另建配色、字体、预览器或配置系统。",
+      "不展示已移除的解析、索引和可检索状态。",
+      "不实现重复的检索或模型执行引擎。"
     ]
   }
 }

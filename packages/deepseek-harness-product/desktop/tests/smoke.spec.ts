@@ -10,8 +10,8 @@ describe('packaged runtime smoke product bridge', () => {
   })
 
   it('fails closed when Host startup adds an unmodeled product operation', async () => {
-    await expect(invokeSmokeProduct('knowledge.bases.list')).rejects.toThrow(
-      'desktop runtime: unexpected product operation knowledge.bases.list',
+    await expect(invokeSmokeProduct('library.entries.get')).rejects.toThrow(
+      'desktop runtime: unexpected product operation library.entries.get',
     )
   })
 })

@@ -11,10 +11,17 @@ interface DiscoveryProps {
   readonly t: (key: AgencyKey) => string
   readonly query: string
   readonly busy: boolean
+  readonly ready: boolean
   readonly hasMore: boolean
   readonly onQuery: (query: string) => void
   readonly onPick: (slug: string) => void
   readonly avatarSrc: (expert: ExpertView) => string
+}
+
+function discoveryEmptyMessage(props: DiscoveryProps): string {
+  if (props.busy) return props.t('discovery.working')
+  if (!props.ready) return ''
+  return props.t(props.query.trim() !== '' ? 'discovery.noResults' : 'discovery.empty')
 }
 
 /** 按分区排列专家并保留条目身份；聚焦条目消失时将焦点交还搜索。 */
@@ -29,6 +36,7 @@ export function ExpertDiscovery(props: DiscoveryProps): React.ReactElement {
     groups.set(expert.division, group)
   }
   const name = (expert: ExpertView): string => props.locale === 'en' ? expert.nameEn : expert.name
+  const emptyMessage = discoveryEmptyMessage(props)
   return React.createElement(React.Fragment, null,
     React.createElement('div', { className: 'aag-discovery-tools' },
       React.createElement(Input, { ref: search, type: 'search', 'data-modal-autofocus': true, value: props.query,
@@ -36,9 +44,8 @@ export function ExpertDiscovery(props: DiscoveryProps): React.ReactElement {
         onFocus: () => setFocused(null),
         onChange: (event: React.ChangeEvent<HTMLInputElement>) => props.onQuery(event.target.value) })),
     React.createElement('div', { className: 'aag-discovery-results', 'aria-busy': props.busy },
-      props.busy && props.experts.length === 0 ? React.createElement('p', { className: 'aag-menu-empty', role: 'status' }, props.t('discovery.working')) : null,
-      !props.busy && props.experts.length === 0 ? React.createElement('p', { className: 'aag-menu-empty', role: 'status' },
-        props.t(props.query.trim() !== '' ? 'discovery.noResults' : 'discovery.empty')) : null,
+      props.experts.length === 0 ? React.createElement('p', { className: 'aag-menu-empty',
+        role: emptyMessage === '' ? undefined : 'status', 'aria-hidden': emptyMessage === '' || undefined }, emptyMessage) : null,
       props.hasMore ? React.createElement('p', { className: 'aag-menu-empty' }, props.t('discovery.refine')) : null,
       [...groups.entries()].flatMap(([division, experts]) => [
         React.createElement('div', { key: `division:${division}`, className: 'aag-menu-title' }, props.locale === 'en' ? experts[0].divisionEn : experts[0].divisionZh),
@@ -68,9 +75,11 @@ export const DISCOVERY_CSS = `
 .aag-discovery button:disabled{opacity:.55;cursor:default}
 .aag-discovery button[aria-disabled=true]:not(:disabled){cursor:progress}
 .aag-discovery-results{overflow-y:auto;min-height:0;overscroll-behavior:contain;padding-top:2px}
+.aag-discovery-results>.aag-menu-empty{min-height:1lh}
 .aag-discovery-avatar{flex:none;width:24px;height:24px;border-radius:50%;corner-shape:round;object-fit:cover;object-position:center 20%}
 .aag-discovery-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:500}
 .aag-discovery-action{flex:none;color:var(--dsw-alias-label-secondary);font-size:11px;padding:2px 6px;border-radius:var(--dsw-radius-xs,4px);background:var(--dsw-alias-bg-layer-2)}
-.aag-discovery .aag-error{display:flex;align-items:center;flex-wrap:wrap;gap:8px;padding:8px;flex:none;overflow-wrap:anywhere}
-.aag-discovery .aag-error>span{flex:1;min-width:0}
+.aag-discovery-feedback{display:flex;align-items:center;gap:8px;flex:none;min-height:48px;padding:4px 2px;box-sizing:border-box}
+.aag-discovery-feedback>.aag-editor-feedback{flex:1;height:auto;min-height:40px}
+.aag-discovery-feedback>.aag-editor-feedback>.aag-error{position:static;box-sizing:border-box;max-height:120px;padding:8px}
 `

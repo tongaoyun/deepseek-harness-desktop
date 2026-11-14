@@ -71,6 +71,8 @@ function createSkillsPage(localeService: ClientContext["locale"]) {
 .dssm-detail-body[readonly]{resize:vertical}
 .dssm-modal-content{flex:1;min-height:0;overflow:hidden}
 .dssm-modal-content>div:last-child{flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain;scrollbar-gutter:stable}
+.dssm-write-feedback{box-sizing:border-box;block-size:calc(3lh + 20px);flex:none;overflow-y:auto;overflow-wrap:anywhere;overscroll-behavior:contain;scrollbar-gutter:stable;font-size:12px;line-height:18px}
+.dssm-write-feedback:focus-visible{outline:var(--dsw-focus-ring-width,1px) solid var(--dsw-focus-ring-color,var(--dsw-alias-brand-primary));outline-offset:-1px}
 
 `;
 
@@ -485,7 +487,7 @@ function createSkillsPage(localeService: ClientContext["locale"]) {
         void refresh(false).then(value => { if (value !== undefined) return refresh(true, true); });
         return () => { cancelRead("catalog"); };
       }, []);
-      async function post<K extends SkillMethod>(path: K, body: SkillInput<K> | ((signal: AbortSignal) => Promise<SkillInput<K>>), successKey?: string, successParams?: ResultParams): Promise<SkillOutput<K>> {
+      async function post<K extends SkillMethod>(path: K, body: SkillInput<K> | ((signal: AbortSignal) => Promise<SkillInput<K>>), success?: string | ((data: SkillOutput<K>) => ResultMessage), successParams?: ResultParams): Promise<SkillOutput<K>> {
         const signal = lifetime.current.signal;
         signal.throwIfAborted();
         if (inflightRef.current) throw { error: "operation already in progress" };
@@ -497,7 +499,7 @@ function createSkillsPage(localeService: ClientContext["locale"]) {
           const input = typeof body === "function" ? await body(signal) : body;
           signal.throwIfAborted();
           const data = await sessionApi(path, input, signal);
-          if (!signal.aborted) setResult(successKey ? { ok: true, kind: 'message', key: successKey, params: successParams || data || {} } : null);
+          if (!signal.aborted) setResult(typeof success === 'function' ? success(data) : success ? { ok: true, kind: 'message', key: success, params: successParams || data || {} } : null);
           var operationScope = "target" in input ? input.target : "request" in input ? input.request : "scope" in input ? input.scope : undefined;
           var scopedWorkspace = operationScope && "workspace" in operationScope && typeof operationScope.workspace === "string" ? operationScope.workspace : "";
           await Promise.all([refresh(true), scopedWorkspace ? loadWorkspaceDetail(scopedWorkspace) : null]);
@@ -554,7 +556,7 @@ function createSkillsPage(localeService: ClientContext["locale"]) {
         setUpload(null);
       }
       function openNativePicker(ref: React.RefObject<HTMLInputElement>) { if (inflightRef.current || pickerOpenRef.current || !ref.current) return; pickerOpenRef.current = true; ref.current.value = ""; try { ref.current.click(); } catch (error) { pickerOpenRef.current = false; setResult({ ok: false, kind: 'failure', key: "error.upload.picker", cause: error }); } }
-      function submitImport() { const selection = upload; if (!selection || !destinationReady(importDestination, workspaceRows, userDestinations)) return; cancelRead("upload"); post("uploadSkill", async function (signal) { return { request: Object.assign({}, await buildUploadPayload(selection, signal), destinationPayload(importDestination)) }; }).then(function (data) { var summary = summarizeImportResult(t, data); setResult({ ok: summary.ok, warning: summary.warning, kind: 'import', value: data }); if (summary.imported && !summary.failed) { setModal(null); setUpload(null); } }).catch(function (_error) { /* post displays the structured failure. */ }); }
+      function submitImport() { const selection = upload; if (!selection || !destinationReady(importDestination, workspaceRows, userDestinations)) return; cancelRead("upload"); post("uploadSkill", async function (signal) { return { request: Object.assign({}, await buildUploadPayload(selection, signal), destinationPayload(importDestination)) }; }, function (data) { var summary = summarizeImportResult(t, data); return { ok: summary.ok, warning: summary.warning, kind: 'import', value: data }; }).then(function (data) { var summary = summarizeImportResult(t, data); if (summary.imported && !summary.failed) { setModal(null); setUpload(null); } }).catch(function (_error) { /* post displays the structured failure. */ }); }
       var data = snapshot.data || { roots: [], writeDestinations: [], projects: [], trash: [], warnings: [] }, allRoots = snapshot.error ? [] : data.roots || [];
       var filterKey = scope === "market" ? "market" : scope === "project" ? "project" : "user", filters = savedFilters[filterKey] || { query: "", source: "", status: "" }, query = filters.query, source = filters.source;
       function updateFilter(key: string, value: string) { setSavedFilters(function (previous) { return Object.assign({}, previous, { [filterKey]: Object.assign({}, filters, { [key]: value }) }); }); }
@@ -597,10 +599,7 @@ function createSkillsPage(localeService: ClientContext["locale"]) {
         }).catch(function (error) {
           if (request.signal.aborted) return [];
           captureReadFocus();
-          setWorkspaceRows([]);
-          selectedWorkspaceRef.current = "";
-          setSelectedWorkspace("");
-          setWorkspaceList({ loading: false, loaded: true, error });
+          setWorkspaceList(previous => ({ ...previous, loading: false, error }));
           return [];
         }).finally(() => { finishRead("workspaces", request); });
       }
@@ -617,7 +616,8 @@ function createSkillsPage(localeService: ClientContext["locale"]) {
         }).catch(error => {
           if (request.signal.aborted) return;
           captureReadFocus();
-          setWorkspaceDetails(previous => ({ ...previous, [path]: { loading: false, loaded: true, error, roots: [] } }));
+          setWorkspaceDetails(previous => ({ ...previous, [path]: { loading: false,
+            loaded: previous[path]?.loaded ?? false, error, roots: previous[path]?.roots ?? [] } }));
         }).finally(() => { finishRead(key, request); });
       }
       function refreshWorkspaceDetails() {
@@ -626,7 +626,7 @@ function createSkillsPage(localeService: ClientContext["locale"]) {
         }
         setWorkspaceDetails(previous => {
           var path = selectedWorkspaceRef.current, current = previous[path];
-          return current?.loaded ? { [path]: { ...current, loading: false } } : {};
+          return current ? { [path]: { ...current, loading: false } } : {};
         });
         return loadWorkspaces(true, true);
       }
@@ -762,14 +762,16 @@ function createSkillsPage(localeService: ClientContext["locale"]) {
         var project = scope === "project", path = project ? selectedWorkspace : undefined;
         var groups = roots.map(function (root) { return renderRoot(root, path, path ? path + "|" : undefined); }).filter(Boolean);
         var body: React.ReactNode = groups.length ? groups : h("div", { className: "product-capability-empty" }, t(query || filters.status || activeCategory ? "empty.search" : "empty.source"));
+        var projectError = project && (workspaceList.error || selectedDetail?.error)
+          ? h("div", { key: "workspace-error", className: "dssm-feedback dssm-error", role: "alert" },
+            t(workspaceList.error ? "workspace.listFailed" : "workspace.loadFailed", { error: translateError(t, workspaceList.error || selectedDetail?.error) })) : null;
         if (project) {
-          if (workspaceList.error) body = h("div", { className: "dssm-feedback dssm-error", role: "alert" }, t("workspace.listFailed", { error: translateError(t, workspaceList.error) }));
+          if (projectError && !selectedDetail?.loaded) body = null;
           else if (workspaceList.loading && !workspaceList.loaded || selectedWorkspace && (!selectedDetail || selectedDetail.loading && !selectedDetail.loaded)) body = readLoading(t("workspace.loading"), true);
           else if (!selectedWorkspace) body = h("div", { className: "product-capability-empty" }, t(workspaceRows.length ? "workspace.unavailable" : "project.empty"));
-          else if (selectedDetail?.error) body = h("div", { className: "dssm-feedback dssm-error", role: "alert" }, t("workspace.loadFailed", { error: translateError(t, selectedDetail.error) }));
           else if (!rows.length && !query && !filters.status) body = h("div", { className: "product-capability-empty" }, t("workspace.noSkills"));
         }
-        return h("div", { key: "sources", id: "dssm-scope-panel", "aria-busy": workspaceList.loading || selectedDetail?.loading || false, role: "tabpanel", "aria-labelledby": "dssm-tab-" + scope, className: "dssm-sources" }, body);
+        return h("div", { key: "sources", id: "dssm-scope-panel", "aria-busy": workspaceList.loading || selectedDetail?.loading || false, role: "tabpanel", "aria-labelledby": "dssm-tab-" + scope, className: "dssm-sources" }, body, projectError);
       }
       function renderTrash() {
         return h("div", { key: "trash", id: "dssm-scope-panel", role: "tabpanel", "aria-labelledby": "dssm-tab-trash", className: "dssm-trash-panel" },
@@ -807,7 +809,7 @@ function createSkillsPage(localeService: ClientContext["locale"]) {
         scope !== "trash" ? h("div", { className: "dssm-filter-actions" },
           scope === "market" ? roots.filter(canToggleSource).map(function (root) { return h("div", { key: root.key, className: "dssm-market-source" }, h("span", null, t("market.source")), h(Switch, { checked: root.enabled, disabled: busy, className: busy ? "product-control-pending" : undefined, label: t("market.source"), onChange: function (enabled) { post("setSourceEnabled", { target: { root: root.key }, enabled }).catch(function (_error) { /* post displays the localized failure. */ }); } })); }) : null,
           iconButton(t("btn.refresh"), h(IconRefreshOutlineRegular, { size: 16 }), refreshPage, false, false, snapshot.loading),
-          scope === "market" ? null : h(PrimitiveButton, { variant: "outline", size: "sm", icon: h("svg", { viewBox: "0 0 16 16", width: 16, height: 16, "aria-hidden": true, focusable: "false" }, h("path", { d: "M2.5 10.5v2a1 1 0 001 1h9a1 1 0 001-1v-2M8 2.5v7M5 5.5l3-3 3 3", fill: "none", stroke: "currentColor", strokeWidth: 1.5, strokeLinecap: "round", strokeLinejoin: "round" })), onClick: openImport, disabled: busy, className: busy ? "product-control-pending" : undefined }, t("import.global")),
+          scope === "market" ? null : h(PrimitiveButton, { variant: "outline", size: "sm", icon: h("svg", { viewBox: "0 0 16 16", width: 16, height: 16, "aria-hidden": true, focusable: "false" }, h("path", { d: "M2.5 10.5v2a1 1 0 001 1h9a1 1 0 001-1v-2M8 2.5v7M5 5.5l3-3 3 3", fill: "none", stroke: "currentColor", strokeWidth: 1.5, strokeLinecap: "round", strokeLinejoin: "round" })), onClick: openImport, "aria-disabled": busy, className: busy ? "product-control-pending" : undefined }, t("import.global")),
           h(PrimitiveButton, { variant: "primary", size: "sm", icon: h(IconPlusOutlineRegular, { size: 16 }), onClick: openCreate }, t("btn.create"))
         ) : null), h('div', { key: 'categories', className: 'dssm-category-filters', role: 'group', 'aria-label': t('category.filter') }, categoryFilters.map(item => h(PrimitiveButton, { key: item.value, size: 'sm', variant: 'ghost', 'aria-pressed': activeCategory === item.value, onClick: () => updateFilter('category', item.value) }, item.label)))];
       var directoryError = snapshot.error ? h("div", { key: "error", className: "dssm-feedback dssm-error", role: "alert" },
@@ -825,7 +827,12 @@ function createSkillsPage(localeService: ClientContext["locale"]) {
       ] });
       var content: React.ReactNode[] = [bodyContent[0], bodyContent[1], primaryTabs, h("div", { key: "catalog-panel", id: "dssm-library-panel", ref: directoryArea, tabIndex: -1, role: "tabpanel", "aria-labelledby": "dssm-library-tab-" + (market ? "market" : "mine"), "aria-busy": busy || snapshot.loading, className: "dssm-library-panel" }, tabs, ...bodyContent.slice(2))];
 
-      if (modal === "import") content.push(h(Modal, { key: "import", className: "dssm-modal-import", title: t("import.title"), closeLabel: t("btn.close"), onClose: dismissForm },
+      function writeFeedback() {
+        return h("div", { className: "dssm-write-feedback", tabIndex: result ? 0 : undefined },
+          result ? h("div", { className: "dssm-feedback" + (result.warning ? " dssm-warning" : result.ok ? "" : " dssm-error"), role: "alert" }, resultText(t, result)) : null);
+      }
+      if (modal === "import") content.push(h(Modal, { key: "import", className: "dssm-modal-import", title: t("import.title"), closeLabel: t("btn.close"), onClose: dismissForm,
+        footer: h(react.Fragment, null, hostButton(t("btn.cancel"), dismissForm, "outline", { pending: busy }), hostButton(t("btn.import.now"), submitImport, "primary", { pending: busy, busy, disabled: !upload || !destinationReady(importDestination, workspaceRows, userDestinations) })) },
         h("input", { ref: importInputRef, className: "dssm-hidden-input", type: "file", disabled: busy, accept: ".zip,.md", onChange: function (event) { selectUploadFiles(event.target.files); event.target.value = ""; } }),
         h("input", { ref: folderInputRef, className: "dssm-hidden-input", type: "file", disabled: busy, multiple: true, webkitdirectory: "", directory: "", onChange: function (event) { selectUploadFiles(event.target.files); event.target.value = ""; } }),
         h("div", { className: "dssm-dropzone", onDragOver: function (event: React.DragEvent<HTMLDivElement>) { event.preventDefault(); event.currentTarget.classList.add("dssm-dropzone-active"); }, onDragLeave: function (event: React.DragEvent<HTMLDivElement>) { event.currentTarget.classList.remove("dssm-dropzone-active"); }, onDrop: function (event: React.DragEvent<HTMLDivElement>) { event.preventDefault(); event.currentTarget.classList.remove("dssm-dropzone-active"); void selectDroppedFiles(event.dataTransfer); } },
@@ -835,9 +842,8 @@ function createSkillsPage(localeService: ClientContext["locale"]) {
         ),
         upload ? h("div", { className: "dssm-file", title: upload.name }, h("span", { className: "dssm-file-kind", "aria-hidden": "true" }, upload.kind === "zip" ? "ZIP" : upload.kind === "folder" ? "DIR" : "MD"), h("span", { className: "dssm-file-name" }, upload.name), h("span", { className: "dssm-file-meta" }, t(countKey("upload.selected", upload.count), { count: upload.count, size: fileSizeText(upload.size) })), h("button", { type: "button", className: "dssm-file-remove" + (busy ? " product-control-pending" : ""), "aria-label": t("upload.remove"), disabled: busy, onClick: clearUploadFiles }, "×")) : null,
         h(DestinationPicker, { t: t, value: importDestination, disabled: busy, allowAgents: true, workspaces: workspaceRows, loading: workspaceList.loading, workspaceError: workspaceList.error ? translateError(t, workspaceList.error) : null, onRetryWorkspaces: function () { if (!inflightRef.current && !readRequests.current.has("workspaces")) void loadWorkspaces(false); }, userDestinations: userDestinations, onChange: function (next: Partial<DestinationValue>) { if (inflightRef.current) return; setImportDestination(Object.assign({}, importDestination, next)); } }),
-        result ? h("div", { className: "dssm-feedback" + (result.warning ? " dssm-warning" : result.ok ? "" : " dssm-error"), role: "alert" }, resultText(t, result)) : null,
-        h("div", { className: "dssm-upload-requirements" }, h("div", { className: "dssm-label" }, t("upload.requirements")), h("ul", null, h("li", null, t("upload.requirement.skill")), h("li", null, t("upload.requirement.frontmatter")), h("li", null, t("upload.requirement.copy")))),
-        h("div", { className: "dssm-modal-actions" }, hostButton(t("btn.cancel"), dismissForm, "outline", { pending: busy }), hostButton(t("btn.import.now"), submitImport, "primary", { pending: busy, busy, disabled: !upload || !destinationReady(importDestination, workspaceRows, userDestinations) }))
+        writeFeedback(),
+        h("div", { className: "dssm-upload-requirements" }, h("div", { className: "dssm-label" }, t("upload.requirements")), h("ul", null, h("li", null, t("upload.requirement.skill")), h("li", null, t("upload.requirement.frontmatter")), h("li", null, t("upload.requirement.copy"))))
       ));
       if (modal === "detail") content.push(h(Modal, { key: "detail", className: "dssm-modal-wide", title: t("detail.title"), closeLabel: t("btn.close"), onClose: function () { setModal(null); } },
         h('div', { ref: detailArea, role: 'region', 'aria-label': t('detail.title'), tabIndex: -1 },
@@ -861,7 +867,7 @@ function createSkillsPage(localeService: ClientContext["locale"]) {
           description: t(trash ? "confirm.trash.desc" : "confirm.delete.desc", { name: confirmation.name }), closeLabel: t("btn.close"), onClose: dismissForm,
           footer: h(React.Fragment, null, hostButton(t("btn.cancel"), dismissForm, "outline", { pending: busy }),
             hostButton(t(trash ? "btn.trash" : "btn.delete.forever"), submit, "danger", { pending: busy, busy })) },
-          result ? h("div", { className: "dssm-feedback" + (result.warning ? " dssm-warning" : result.ok ? "" : " dssm-error"), role: "alert" }, resultText(t, result)) : null));
+          writeFeedback()));
       }
       return h("section", { className: "dssm-section" }, content);
     }

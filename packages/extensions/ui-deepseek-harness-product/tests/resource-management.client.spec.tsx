@@ -189,8 +189,8 @@ it.each(cases)('retains $action feedback and locks confirmation before rendering
   expect(retry.getAttribute('aria-disabled')).toBe('true')
   expect(cancel.getAttribute('aria-disabled')).toBe('true')
   expect(document.activeElement).toBe(retry)
-  expect({ error: error.textContent, action: retry.textContent, busy: retry.getAttribute('aria-busy'),
-    focused: document.activeElement?.textContent }).toMatchSnapshot()
+  expect(within(dialog).getByRole('button', { name: operation.action === 'delete' ? zh.deletingResource : zh.submitShared })).toBe(retry)
+  expect({ error: error.textContent, busy: retry.getAttribute('aria-busy'), focused: document.activeElement === retry }).toMatchSnapshot()
   await act(async () => { view.commit(); pending.resolve(receipt(operation)) })
   await waitFor(() => { expect(screen.queryByRole('dialog')).toBeNull() })
   expect(view.invoke.mock.calls.filter(call => call[1] === operation.method)).toHaveLength(2)

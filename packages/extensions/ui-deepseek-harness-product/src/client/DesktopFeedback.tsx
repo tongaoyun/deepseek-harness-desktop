@@ -6,10 +6,13 @@ import type { DeepSeekHarnessProductKey } from '../locales.ts'
 import css from '../DeepSeekHarnessProduct.module.css'
 import { productApi } from './product-api.ts'
 import { productErrorMessage, type ProductFailureReport } from './product-errors.ts'
+import { ProductActionLabel } from './ProductActionLabel.tsx'
 
 type FeedbackImage = { readonly id: string; readonly file: File }
 
-/** Enterprise feedback entry; employee and device metadata are supplied only by main. */
+/** Enterprise feedback retains form geometry through submission results and native paste selection.
+ * Employee and device metadata are supplied only by main.
+ */
 export function DesktopFeedback({ open, onClose, t }: {
   readonly open: boolean
   readonly onClose: () => void
@@ -113,10 +116,16 @@ export function DesktopFeedback({ open, onClose, t }: {
   return <Modal open={open} onClose={close} title={t('feedbackTitle')} closeLabel={t('close')} className={css.feedbackModal as string} contentClassName={css.feedbackContent as string}
     footer={<><Button variant="ghost" size="sm" onClick={close}>{t('close')}</Button><Button ref={sendButton} size="sm" disabled={!message.trim()}
       aria-disabled={pending || !message.trim()} aria-busy={pending} className={pending ? 'product-control-pending' : undefined}
-      onClick={() => { void submit() }}>{t(pending ? 'feedbackSending' : 'feedbackSend')}</Button></>}>
+      onClick={() => { void submit() }}>
+      <ProductActionLabel pending={pending} label={t('feedbackSend')} pendingLabel={t('feedbackSending')} />
+    </Button></>}>
     <div className={css.feedbackBody}>
-      {error && <p role="alert" className={css.catalogError}>{productErrorMessage(error.failure, t, error.fallback)}</p>}
-      {receipt && <p role="status" className={css.catalogStatus}>{t('feedbackSent')} <span>{receipt}</span></p>}
+      <div className={css.feedbackResult}>
+        <span aria-hidden="true">{t('feedbackSendFailed')}</span>
+        <span aria-hidden="true">{t('feedbackImagesInvalid')}</span>
+        {error && <p role="alert" className={css.catalogError}>{productErrorMessage(error.failure, t, error.fallback)}</p>}
+        {receipt && <p role="status" className={css.catalogStatus}>{t('feedbackSent')} <span>{receipt}</span></p>}
+      </div>
       <label>{t('feedbackCategory')}<select disabled={pending} value={category} onChange={(event) => { setCategory(event.target.value); resetReceipt() }}>
         <option value="BUG">{t('feedbackBug')}</option><option value="SUGGESTION">{t('feedbackSuggestion')}</option><option value="QUESTION">{t('feedbackQuestion')}</option><option value="OTHER">{t('feedbackOther')}</option>
       </select></label>
@@ -133,7 +142,8 @@ export function DesktopFeedback({ open, onClose, t }: {
             resetReceipt()
             const start = input.selectionStart, end = input.selectionEnd
             const inserted = text.slice(0, Math.max(0, 2000 - message.length + end - start))
-            setMessage(message.slice(0, start) + inserted + message.slice(end))
+            input.setRangeText(inserted, start, end, 'end')
+            setMessage(input.value)
           }
           addImages(files)
         }} onDragOver={(event) => {

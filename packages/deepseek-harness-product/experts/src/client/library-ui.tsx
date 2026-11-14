@@ -4,12 +4,14 @@ import React from 'react'
 
 /** 控件移除后，将其仍持有的焦点交还当前内容，不滚动或抢占其他控件。
  * @param getTarget 结果提交后仍存在的焦点目标。
- * @returns 当前焦点按钮使用的稳定 ref。
+ * @returns 当前焦点控件使用的稳定 ref。
  */
-export function useLibraryRemovalFocus(getTarget: () => HTMLElement | null | undefined): React.RefCallback<HTMLButtonElement> {
-  const control = React.useRef<HTMLButtonElement | null>(null)
-  const removed = React.useRef<HTMLButtonElement>()
-  const ref = React.useCallback((node: HTMLButtonElement | null) => {
+export function useLibraryRemovalFocus<T extends HTMLElement = HTMLButtonElement>(
+  getTarget: () => HTMLElement | null | undefined,
+): React.RefCallback<T> {
+  const control = React.useRef<T | null>(null)
+  const removed = React.useRef<T>()
+  const ref = React.useCallback((node: T | null) => {
     const previous = control.current
     if (!node && previous && previous.ownerDocument.activeElement === previous) removed.current = previous
     control.current = node
@@ -24,32 +26,56 @@ export function useLibraryRemovalFocus(getTarget: () => HTMLElement | null | und
   return ref
 }
 
+/** 目录错误与重试复用固定反馈区；长提示支持键盘滚动，清除提示后恢复丢失的焦点。 */
+export function LibraryReadFeedback(props: {
+  error?: string | null
+  busy: boolean
+  retryLabel: string
+  retryRef: React.Ref<HTMLButtonElement>
+  focusTarget(): HTMLElement | null | undefined
+  onRetry(): void
+}) {
+  const messageId = React.useId()
+  const errorFocus = useLibraryRemovalFocus<HTMLDivElement>(props.focusTarget)
+  return <div className="aag-directory-feedback">
+    <div className="aag-editor-feedback">
+      {props.error && <div ref={errorFocus} className="aag-error" role="region" aria-labelledby={messageId} tabIndex={0}>
+        <p id={messageId} role="alert">{props.error}</p>
+      </div>}
+    </div>
+    {props.error && <Button ref={props.retryRef} aria-disabled={props.busy} aria-busy={props.busy}
+      className={props.busy ? 'product-control-pending' : undefined}
+      onClick={() => { if (!props.busy) props.onRetry() }}>{props.retryLabel}</Button>}
+  </div>
+}
+
 /** 写入结束或弹窗移除后恢复当前目录丢失的焦点，控件移除时进入搜索，不抢占其他控件。
  * @param pending 写入及结果确认是否仍在等待。
  * @param scope 当前可见目录；切换目录后不恢复旧焦点。
  * @param area 动作所属目录，用于确定当前文档。
  * @param getTarget 条目移除后的搜索入口。
- * @returns 写入前或弹窗移除前捕获当前焦点的函数。
+ * @returns 写入前或弹窗移除前捕获焦点的函数；可传入确认弹窗打开前的入口。
  */
 export function useLibraryActionFocus(
   pending: boolean, scope: string, area: React.RefObject<HTMLElement>, getTarget: () => HTMLElement | null | undefined,
-): () => void {
+): (origin?: HTMLElement | null) => void {
   const captured = React.useRef<{ element: HTMLElement; scope: string }>()
   React.useLayoutEffect(() => {
     const previous = captured.current
     if (pending || !previous) return
-    captured.current = undefined
     const { element } = previous
+    if (previous.scope === scope && element.ownerDocument.activeElement === element) return
+    captured.current = undefined
     if (previous.scope !== scope || element.ownerDocument.activeElement !== element.ownerDocument.body) return
     const target = element !== element.ownerDocument.body && element.isConnected && !element.matches(':disabled') && !element.closest('[hidden]') ? element : getTarget()
     if (target && !target.closest('[hidden]')) focusWithoutRing(target, { preventScroll: true })
   })
-  return () => {
-    const element = area.current?.ownerDocument.activeElement
+  return React.useCallback((origin?: HTMLElement | null) => {
+    const element = origin ?? area.current?.ownerDocument.activeElement
     if (element instanceof HTMLElement) {
       captured.current = { element, scope }
     }
-  }
+  }, [area, scope])
 }
 
 export interface LibraryMenuItem {
@@ -97,19 +123,31 @@ export function LibraryEditorFooter(props: {
       className="aag-custom-footer"
       {...(props.inert ? { inert: '' } : {})}
     >
-      {props.error && <p className="aag-error" role="alert">{props.error}</p>}
-      <p className="aag-note">{props.help}</p>
-      <div>
+      <div className="aag-editor-feedback">
+        <p className="aag-note" aria-hidden={!!props.error}>{props.help}</p>
+        {props.error && <p className="aag-error" role="alert">{props.error}</p>}
+      </div>
+      <div className="aag-editor-actions">
         <Button aria-disabled={props.busy} className={props.busy ? 'product-control-pending' : undefined}
           onClick={() => { if (!props.busy) props.close() }}>{props.cancelLabel}</Button>
         {!props.editing && (
           <Button disabled={props.blocked} aria-disabled={props.busy || props.blocked} aria-busy={props.saving === 'save'}
             className={props.busy && !props.blocked ? 'product-control-pending' : undefined}
-            onClick={() => { if (!props.busy && !props.blocked) props.save() }}>{props.saving === 'save' ? props.pendingLabel : props.saveLabel}</Button>
+            onClick={() => { if (!props.busy && !props.blocked) props.save() }}>
+            <span className="aag-editor-action-label">
+              <span aria-hidden={props.saving === 'save'}>{props.saveLabel}</span>
+              <span aria-hidden={props.saving !== 'save'}>{props.pendingLabel}</span>
+            </span>
+          </Button>
         )}
         <Button variant="primary" disabled={props.blocked} aria-disabled={props.busy || props.blocked} aria-busy={props.saving === 'primary'}
           className={props.busy && !props.blocked ? 'product-control-pending' : undefined}
-          onClick={() => { if (!props.busy && !props.blocked) props.primary() }}>{props.saving === 'primary' ? props.pendingLabel : props.primaryLabel}</Button>
+          onClick={() => { if (!props.busy && !props.blocked) props.primary() }}>
+          <span className="aag-editor-action-label">
+            <span aria-hidden={props.saving === 'primary'}>{props.primaryLabel}</span>
+            <span aria-hidden={props.saving !== 'primary'}>{props.pendingLabel}</span>
+          </span>
+        </Button>
       </div>
     </footer>
   )
@@ -179,6 +217,7 @@ export function LibraryConfirm(props: {
   description?: string
   children?: React.ReactNode
   confirmLabel: string
+  pendingLabel?: string
   cancelLabel: string
   busy?: boolean
   error?: string | null
@@ -191,6 +230,8 @@ export function LibraryConfirm(props: {
   return (
     <Modal
       open
+      className="aag-confirm-modal"
+      contentClassName="aag-confirm-content"
       title={props.title}
       description={props.description}
       onClose={() => { if (!props.busy) props.close() }}
@@ -199,7 +240,10 @@ export function LibraryConfirm(props: {
           onClick={() => { if (!props.busy) props.close() }}>{props.cancelLabel}</Button>,
         <Button key="confirm" variant={props.danger ? 'outline' : 'primary'} danger={props.danger} aria-disabled={props.busy}
           aria-busy={props.busy} className={props.busy ? 'product-control-pending' : undefined}
-          onClick={() => { if (!props.busy) props.confirm() }}>{props.confirmLabel}</Button>,
+          onClick={() => { if (!props.busy) props.confirm() }}>{props.pendingLabel ? <span className="aag-editor-action-label">
+            <span aria-hidden={props.busy === true}>{props.confirmLabel}</span>
+            <span aria-hidden={props.busy !== true}>{props.pendingLabel}</span>
+          </span> : props.confirmLabel}</Button>,
       ]}
     >
       {body}

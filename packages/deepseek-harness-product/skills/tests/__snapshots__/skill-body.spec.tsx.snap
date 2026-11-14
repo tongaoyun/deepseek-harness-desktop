@@ -7,3 +7,15 @@ exports[`ignores an old clipboard receipt after the displayed body changes > Pen
   "preservesAppearance": true,
 }
 `;
+
+exports[`retains 'body' focus when native clipboard fallback is 'accepted' > Native fallback result 1`] = `
+{
+  "feedback": "detail.copied",
+  "focused": true,
+  "label": "detail.copyBody",
+  "selection": [
+    2,
+    9,
+  ],
+}
+`;

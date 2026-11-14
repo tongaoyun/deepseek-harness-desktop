@@ -58,6 +58,10 @@
     "./content-files": {
       "types": "./lib/types/content-files.d.ts",
       "default": "./lib/content-files.js"
+    },
+    "./library": {
+      "types": "./lib/types/library.d.ts",
+      "default": "./lib/library.js"
     }
   },
   "scripts": {

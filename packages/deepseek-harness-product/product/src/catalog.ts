@@ -49,5 +49,5 @@ export const ProductCatalogSchema = z.array(item).superRefine((entries, context)
 
 /** Public tool metadata; the tool name supplies an absent business display name. */
 export type ProductConnectorTool = Readonly<z.output<typeof ConnectorCatalogToolSchema>>
-/** Validated connector or knowledge-base display data with an explicit resource identity. */
+/** Validated connector display data with an explicit resource identity. */
 export type ProductCatalogItem = Readonly<z.output<typeof item>>

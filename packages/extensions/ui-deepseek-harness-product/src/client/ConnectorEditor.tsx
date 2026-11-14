@@ -69,9 +69,10 @@ export function ConnectorEditor({ onClose, onSaved, editing, t }: {
   const close = useEditorCloseGuard(values !== baseline.current, () => saving.current, onClose)
   const transportField = useRef<HTMLSelectElement>(null)
   const preserveReadFocus = useResultFocus(close.editorProps.ref, transportField)
-  const inputs = [draft, headers, environment, command, timeout, json, mode, pending, close.confirming]
-  const clipboardInputs = useRef<readonly unknown[]>(inputs)
-  if (inputs.some((value, index) => value !== clipboardInputs.current[index])) clipboardInputs.current = inputs
+  const clipboardInputs = useRef<readonly unknown[]>([])
+  useLayoutEffect(() => {
+    clipboardInputs.current = [draft, headers, environment, command, timeout, json, mode, pending, close.confirming]
+  }, [draft, headers, environment, command, timeout, json, mode, pending, close.confirming])
   const clipboardRequest = useRef(0)
   const lifecycle = useRef(new AbortController())
   const editorRead = useRef<AbortSignal>()
@@ -176,6 +177,7 @@ export function ConnectorEditor({ onClose, onSaved, editing, t }: {
       setError(fields.includes('headers') ? 'connectorHeadersInvalid' : fields.includes('environment') ? 'connectorEnvironmentInvalid' : 'connectorFieldsInvalid')
       return
     }
+    close.clearBlocked()
     saving.current = true
     setPending(true)
     try {
@@ -194,7 +196,7 @@ export function ConnectorEditor({ onClose, onSaved, editing, t }: {
   const field = (key: 'name' | 'url', label: DeepSeekHarnessProductKey, placeholder?: string, required = false): ReactNode =>
     <label className={css.editorField}><span>{t(label)}{required && <span className={css.requiredMark} aria-hidden="true">*</span>}</span><input aria-label={t(label)} required={required} disabled={pending} value={draft[key] ?? ''}
       placeholder={placeholder} onChange={(event) => { update(key, event.currentTarget.value) }} /></label>
-  const paste = async (set: (rows: Pair[]) => void, rows: Pair[]): Promise<void> => {
+  const paste = async (set: (rows: Pair[]) => void, rows: Pair[], caseInsensitive: boolean): Promise<void> => {
     const signal = lifecycle.current.signal
     const captured = clipboardInputs.current, request = ++clipboardRequest.current
     const current = () => !signal.aborted && request === clipboardRequest.current && captured === clipboardInputs.current
@@ -202,14 +204,17 @@ export function ConnectorEditor({ onClose, onSaved, editing, t }: {
       const text = await navigator.clipboard.readText()
       if (!current()) return
       const value = connectorVariables(text)
-      configuration(rows)
-      const remaining = new Map(Object.entries(value))
+      const normalizedKey = (key: string) => caseInsensitive ? key.trim().toLowerCase() : key.trim()
+      const existing = Object.keys(configuration(rows)).map(normalizedKey)
+      const entries = Object.entries(value)
+      const remaining = new Map(entries.map(([key, value]) => [normalizedKey(key), { key: key.trim(), value }]))
+      if (new Set(existing).size !== existing.length || remaining.size !== entries.length) throw new Error('Duplicate configuration keys')
       const merged = rows.map((row) => {
-        const key = row.key.trim(), value = remaining.get(key)
+        const key = normalizedKey(row.key), value = remaining.get(key)
         remaining.delete(key)
-        return value === undefined ? row : { ...row, value }
+        return value === undefined ? row : { ...row, value: value.value }
       })
-      for (const [key, value] of remaining) {
+      for (const { key, value } of remaining.values()) {
         const index = merged.findIndex(row => !row.key.trim() && !row.value)
         const empty = merged[index]
         if (empty) merged[index] = { ...empty, key, value }
@@ -221,7 +226,8 @@ export function ConnectorEditor({ onClose, onSaved, editing, t }: {
   const privateRows = (rows: Pair[], set: (rows: Pair[]) => void, label: DeepSeekHarnessProductKey): ReactNode =>
     <section className={css.configurationSection} aria-label={t(label)}>
       <div className={css.configurationHeading}><h3>{t(label)} <span>{t('optionalField')}</span></h3>
-        <Button variant="ghost" size="sm" disabled={pending} className={pending ? 'product-control-pending' : undefined} onClick={() => { void paste(set, rows) }}>
+        <Button variant="ghost" size="sm" disabled={pending} className={pending ? 'product-control-pending' : undefined}
+          onClick={() => { void paste(set, rows, label === 'privateHeaders') }}>
           <IconDeliverDocRegular size={14} />{t('pasteConfiguration')}</Button></div>
       {rows.map((row, index) => <div className={css.configurationRow} key={row.id}>
         <input ref={(node) => { if (node) configurationKeys.current.set(row.id, node); else configurationKeys.current.delete(row.id) }}
@@ -251,21 +257,26 @@ export function ConnectorEditor({ onClose, onSaved, editing, t }: {
     </section>
   const oauthProviders = providers.status === 'ready' ? providers.items : []
   return <Modal open onClose={close.requestClose} title={t(editing ? 'editConnector' : 'addMcpServer')} closeLabel={t('close')} className={css.connectorEditorModal as string}
-    contentClassName={css.connectorEditorContent as string} footer={<div className={css.connectorFooter}>
-      {!close.confirming && error && <p role="alert" className={css.catalogError}>{typeof error === 'string' ? t(error)
-        : productErrorMessage(error.failure, t, error.fallback)}</p>}
-      {close.confirming ? <><Button ref={close.keepEditingRef} variant="ghost" onClick={close.keepEditing}>{t('knowledgeKeepEditing')}</Button>
-        <Button variant="primary" onClick={close.discard}>{t('knowledgeDiscardDraft')}</Button></> : <Button variant="primary" disabled={!ready} aria-disabled={pending || !ready}
+    contentClassName={css.detailModalContent as string} footer={<div className={css.connectorFooter}>
+      {!close.confirming && <><div className={css.feedbackResult}>
+        <span aria-hidden="true">{t('libraryWait')}</span>
+        {close.blocked && pending && <p role="status" className={css.catalogStatus}>{t('libraryWait')}</p>}
+      </div><div className={css.feedbackResult}>
+        <span aria-hidden="true">{t('connectorDiscoveryFailed')}</span>
+        {error && <p role="alert" className={css.catalogError}>{typeof error === 'string' ? t(error)
+          : productErrorMessage(error.failure, t, error.fallback)}</p>}
+      </div></>}
+      {close.confirming ? <><Button ref={close.keepEditingRef} variant="ghost" onClick={close.keepEditing}>{t('libraryKeepEditing')}</Button>
+        <Button variant="primary" onClick={close.discard}>{t('libraryDiscard')}</Button></> : <Button variant="primary" disabled={!ready} aria-disabled={pending || !ready}
         aria-busy={pending} className={pending && ready ? 'product-control-pending' : undefined} onClick={() => {
           if (saving.current || !ready) return
           if (mode === 'manual') void save()
           else if (parsed.length > 1 && parsed[selected]) applyJson(parsed[selected])
           else parse()
         }}>{pending ? t('connectingConnector') : mode === 'json' ? t('applyConfiguration') : t(editing ? 'saveConnector' : 'addMcp')}</Button>}</div>}>
-    {close.confirming && <p>{t('knowledgeDiscardDraftConfirmation')}</p>}
+    {close.confirming && <p>{t('libraryDiscardConfirm')}</p>}
     <div hidden={close.confirming} {...close.editorProps}>
       {loading && !error && <ProductLoading label={t('loading')} />}
-      {close.blocked && pending && <p role="status" className={css.catalogStatus}>{t('knowledgeWaitForSave')}</p>}
       {!ready && error && <Button variant="outline" aria-disabled={loading} aria-busy={loading}
         className={loading ? 'product-control-pending' : undefined} onClick={() => { void load() }}>{t('retry')}</Button>}
       {ready && <>

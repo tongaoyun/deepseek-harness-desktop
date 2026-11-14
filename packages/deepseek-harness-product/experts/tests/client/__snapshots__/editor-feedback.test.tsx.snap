@@ -92,29 +92,29 @@ exports[`keeps the editor and its draft usable after ZIP export fails: Error: cu
 
 exports[`marks only the submitted expert save action as busy (enable: false) > pending expert save actions 1`] = `
 {
-  "focused": "Saving…",
-  "footer": "Once enabled, select this expert with @. No restart needed.CancelSaving…Save and enable",
+  "focused": "SaveSaving…",
+  "footer": "Once enabled, select this expert with @. No restart needed.CancelSaveSaving…Save and enableSaving…",
 }
 `;
 
 exports[`marks only the submitted expert save action as busy (enable: true) > pending expert save actions 1`] = `
 {
-  "focused": "Saving…",
-  "footer": "Once enabled, select this expert with @. No restart needed.CancelSaveSaving…",
+  "focused": "Save and enableSaving…",
+  "footer": "Once enabled, select this expert with @. No restart needed.CancelSaveSaving…Save and enableSaving…",
 }
 `;
 
 exports[`marks only the submitted team save action as busy (enable: false) > pending team save actions 1`] = `
 {
-  "focused": "Saving…",
-  "footer": "Saving settings does not send a task.CancelSaving…Save and enable",
+  "focused": "SaveSaving…",
+  "footer": "Saving settings does not send a task.CancelSaveSaving…Save and enableSaving…",
 }
 `;
 
 exports[`marks only the submitted team save action as busy (enable: true) > pending team save actions 1`] = `
 {
-  "focused": "Saving…",
-  "footer": "Saving settings does not send a task.CancelSaveSaving…",
+  "focused": "Save and enableSaving…",
+  "footer": "Saving settings does not send a task.CancelSaveSaving…Save and enableSaving…",
 }
 `;
 
@@ -130,7 +130,7 @@ exports[`reports only attachments as busy while reading files and preserves the 
 {
   "action": "Add references or templates",
   "focused": "Add references or templates",
-  "primary": "Save and enable",
+  "primary": "Save and enableSaving…",
   "saving": "false",
 }
 `;
@@ -139,7 +139,7 @@ exports[`reports only importDirectory as busy while reading files and preserves 
 {
   "action": "Import directory",
   "focused": "Import directory",
-  "primary": "Save and enable",
+  "primary": "Save and enableSaving…",
   "saving": "false",
 }
 `;
@@ -148,8 +148,32 @@ exports[`reports only importZip as busy while reading files and preserves the sa
 {
   "action": "Import ZIP",
   "focused": "Import ZIP",
-  "primary": "Save and enable",
+  "primary": "Save and enableSaving…",
   "saving": "false",
+}
+`;
+
+exports[`retains Delete confirmation labels, controls and errors through retry 1`] = `
+{
+  "busy": "true",
+  "cancel": "Cancel",
+  "disabled": false,
+  "error": "Write temporarily unavailable",
+  "hidden": "true",
+  "label": "Delete",
+  "pending": "Working…",
+}
+`;
+
+exports[`retains Enable team and required experts confirmation labels, controls and errors through retry 1`] = `
+{
+  "busy": "true",
+  "cancel": "Cancel",
+  "disabled": false,
+  "error": "Write temporarily unavailable",
+  "hidden": "true",
+  "label": "Enable team and required experts",
+  "pending": "Working…",
 }
 `;
 

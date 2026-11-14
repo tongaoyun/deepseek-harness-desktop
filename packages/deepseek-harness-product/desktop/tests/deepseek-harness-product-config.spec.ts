@@ -59,10 +59,10 @@ describe('DeepSeekHarness product configuration', () => {
 
   it('keeps independent file and connector policy defaults when their sections are omitted', () => {
     const defaults = resolveDeepSeekHarnessProductConfig({ ...options, readFile: read() })
-    const changed = resolveDeepSeekHarnessProductConfig({ ...options, readFile: read({ knowledgeFiles: { maxTransfers: 2 } }) })
-    expect(changed.knowledgeFiles).toEqual({ ...defaults.knowledgeFiles, maxTransfers: 2 })
+    const changed = resolveDeepSeekHarnessProductConfig({ ...options, readFile: read({ libraryFiles: { maxTransfers: 2 } }) })
+    expect(changed.libraryFiles).toEqual({ ...defaults.libraryFiles, maxTransfers: 2 })
     expect(changed.connectorProxy).toEqual(defaults.connectorProxy)
-    expect(() => resolveDeepSeekHarnessProductConfig({ ...options, readFile: read({ knowledgeFiles: null }) })).toThrow()
+    expect(() => resolveDeepSeekHarnessProductConfig({ ...options, readFile: read({ libraryFiles: null }) })).toThrow()
   })
 
   it.each(['missing', 'malformed'])('reports an unreadable %s resource before starting the workspace', (kind) => {

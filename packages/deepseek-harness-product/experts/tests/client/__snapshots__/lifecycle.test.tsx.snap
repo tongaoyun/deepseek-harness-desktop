@@ -1,5 +1,21 @@
 // Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
 
+exports[`preserves personal expert filters after saving (leaves results=false) 1`] = `
+{
+  "leavesResults": false,
+  "search": "Reviewer",
+  "status": "已停用",
+}
+`;
+
+exports[`preserves personal expert filters after saving (leaves results=true) 1`] = `
+{
+  "leavesResults": true,
+  "search": "Reviewer",
+  "status": "已停用",
+}
+`;
+
 exports[`preserves the editable expert draft and ignores its save result after Host reset 1`] = `
 {
   "canSave": true,
@@ -43,14 +59,14 @@ exports[`retains expert delete feedback and confirmation controls throughout a r
 exports[`retains expert edit read feedback until the detail retry succeeds 1`] = `
 {
   "action": "编辑",
-  "notice": "Read unavailable重试加载",
+  "notice": "Read unavailable",
 }
 `;
 
 exports[`retains expert prompt read feedback until the detail retry succeeds 1`] = `
 {
   "action": "查看",
-  "notice": "Read unavailable重试加载",
+  "notice": "Read unavailable",
 }
 `;
 
@@ -75,4 +91,4 @@ exports[`saves the Loader-mounted company expert copy named 'QA 副本 3' 1`] = 
 }
 `;
 
-exports[`translates a Loader-mounted team directory failure without issuing another read 1`] = `"Could not read the expert catalog. Refresh and try again.Refresh and retry"`;
+exports[`translates a Loader-mounted team directory failure without issuing another read 1`] = `"Could not read the expert catalog. Refresh and try again."`;

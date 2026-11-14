@@ -2,6 +2,7 @@
 import { isDeepStrictEqual } from 'node:util'
 import { addAbortListener } from 'node:events'
 import type { Context } from '@deepseek-ai/cordis'
+import type {} from '@deepseek-ai/cordis-plugin-loader'
 import type {} from '@deepseek-ai/dsh-agent-default-model'
 import type {} from '@deepseek-ai/dsh-agent'
 import type {} from '@deepseek-ai/dsh-cmdline'

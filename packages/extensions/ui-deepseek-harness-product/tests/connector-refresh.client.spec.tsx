@@ -15,6 +15,79 @@ const template = { id: 'erp', version: '1.0.0', transport: 'streamable-http', ur
   arguments: [], headers: ['Authorization'], environment: [], configured: false, timeoutSeconds: 60 }
 afterEach(() => { cleanup(); vi.useRealTimers(); vi.unstubAllGlobals() })
 
+it.each((['resolve', 'reject'] as const).flatMap(outcome => [false, true].map(elsewhere => ({ outcome, elsewhere }))))(
+  'retains the device entry during authorization refresh ($outcome, elsewhere=$elsewhere)', async ({ outcome, elsewhere }) => {
+    const revoked = Promise.withResolvers<unknown>(), refreshed = Promise.withResolvers<undefined>()
+    const refresh = vi.fn(() => refreshed.promise)
+    const invoke = vi.fn(async (_namespace: string, method: string) => ({ ok: true,
+      result: method === 'connectors.authorization.revoke' ? await revoked.promise : template }))
+    vi.stubGlobal('dshDesktop', { extensions: { invoke, cancel: vi.fn() } })
+    const view = render(<><ConnectorDetail product={localDetail(items([descriptor])[0]!)} onCatalogChanged={refresh} t={t} />
+      <button>Elsewhere</button></>)
+    onTestFinished(() => { view.unmount(); revoked.resolve({ connectorId: descriptor.id, status: 'REQUIRED' }); refreshed.resolve(undefined) })
+    fireEvent.click(screen.getByRole('button', { name: zh.revokeAuthorization }))
+    const configure = screen.getByRole<HTMLButtonElement>('button', { name: zh.configureDevice })
+    const other = screen.getByRole('button', { name: 'Elsewhere' })
+    const target = elsewhere ? other : configure
+    target.focus()
+    await act(async () => { revoked.resolve({ connectorId: descriptor.id, status: 'REQUIRED' }) })
+    expect(refresh).toHaveBeenCalledOnce()
+    expect(screen.getByRole('button', { name: zh.configureDevice })).toBe(configure)
+    expect(configure.disabled).toBe(false)
+    expect(configure.getAttribute('aria-disabled')).toBe('true')
+    expect(document.activeElement).toBe(target)
+    if (outcome === 'resolve' && !elsewhere) expect({ label: configure.textContent, disabled: configure.disabled,
+      unavailable: configure.getAttribute('aria-disabled'), focused: document.activeElement === configure,
+      preservesAppearance: configure.classList.contains('product-control-pending') }).toMatchSnapshot('Device entry waiting for refresh')
+    act(() => { fireEvent.click(configure); fireEvent.click(configure) })
+    expect(screen.queryByRole('dialog', { name: zh.configureDevice })).toBeNull()
+    expect(invoke).toHaveBeenCalledOnce()
+    await act(async () => {
+      if (outcome === 'resolve') refreshed.resolve(undefined)
+      else refreshed.reject(new Error('Directory unavailable'))
+    })
+    expect(document.activeElement).toBe(elsewhere ? other : outcome === 'resolve' ? configure : screen.getByRole('button', { name: zh.refresh }))
+    expect(screen.queryByRole('alert')?.textContent).toBe(outcome === 'reject' ? zh.connectorRefreshFailed : undefined)
+    if (outcome === 'resolve') {
+      expect(configure.getAttribute('aria-disabled')).toBe('false')
+      fireEvent.click(configure)
+      await screen.findByLabelText('Authorization')
+      expect(invoke).toHaveBeenCalledTimes(2)
+    }
+  },
+)
+
+it.each((['none', 'oauth'] as const).flatMap(mode => (['resolve', 'reject'] as const).map(outcome => ({ mode, outcome }))))(
+  'returns $mode device save focus after its catalog refresh will $outcome', async ({ mode, outcome }) => {
+    const pending = Promise.withResolvers<undefined>()
+    const refresh = vi.fn(() => pending.promise)
+    const invoke = vi.fn(async (_namespace: string, method: string) => ({ ok: true,
+      result: method.endsWith('.read') ? template : { id: descriptor.id, version: descriptor.version, configured: true } }))
+    vi.stubGlobal('dshDesktop', { extensions: { invoke, cancel: vi.fn() } })
+    const product = localDetail(items([{ ...descriptor, authMode: mode }])[0]!)
+    const view = render(<ConnectorDetail product={product} onCatalogChanged={refresh} t={t} />)
+    onTestFinished(() => { view.unmount(); pending.resolve(undefined) })
+    const configure = screen.getByRole('button', { name: zh.configureDevice })
+    configure.focus(); fireEvent.click(configure)
+    fireEvent.change(await screen.findByLabelText('Authorization'), { target: { value: 'synthetic-fixture' } })
+    const save = screen.getByRole('button', { name: zh.saveConnector })
+    save.focus(); fireEvent.click(save)
+    await act(async () => {})
+    expect(refresh).toHaveBeenCalledOnce()
+    expect(document.activeElement).toBe(save)
+    fireEvent.click(save)
+    expect(invoke).toHaveBeenCalledTimes(2)
+    await act(async () => {
+      if (outcome === 'resolve') pending.resolve(undefined)
+      else pending.reject(new Error('Directory unavailable'))
+    })
+    expect(screen.queryByRole('dialog', { name: zh.configureDevice })).toBeNull()
+    expect(document.activeElement).toBe(outcome === 'resolve' ? configure : screen.getByRole('button', { name: zh.refresh }))
+    expect(screen.queryByRole('alert')?.textContent).toBe(outcome === 'reject' ? zh.connectorRefreshFailed : undefined)
+    expect(invoke).toHaveBeenCalledTimes(2)
+  },
+)
+
 it('restores capability browsing after a failed authorization refresh without rebuilding its controls', async () => {
   const response = Promise.withResolvers<undefined>()
   const refresh = vi.fn<() => Promise<void>>().mockRejectedValueOnce(new Error('Directory unavailable')).mockReturnValue(response.promise)
@@ -110,7 +183,8 @@ it.each((['oauth', 'device'] as const).flatMap(mode => [false, true].map(elsewhe
     expect(document.activeElement).toBe(elsewhere ? other : target)
     expect(screen.queryByRole('button', { name: zh.refresh })).toBeNull()
     expect(refresh).toHaveBeenCalledTimes(2)
-    expect({ mode, elsewhere, focused: document.activeElement?.textContent }).toMatchSnapshot()
+    expect({ mode, elsewhere, focused: document.activeElement?.querySelector('[aria-hidden="false"]')?.textContent
+      ?? document.activeElement?.textContent }).toMatchSnapshot()
   },
 )
 
@@ -203,7 +277,11 @@ it.each(['resolve', 'reject'] as const)('ignores a late refresh %s after the con
   expect(screen.queryByRole('status', { name: zh.loading })).toBeNull()
   expect(screen.getByRole('button', { name: zh.authorizationWorking })).toBe(revoke)
   expect(revoke.getAttribute('aria-disabled')).toBe('true')
-  expect(screen.getByRole('button', { name: zh.configureDevice })).toHaveProperty('disabled', true)
+  const configure = screen.getByRole<HTMLButtonElement>('button', { name: zh.configureDevice })
+  expect(configure.disabled).toBe(false)
+  expect(configure.getAttribute('aria-disabled')).toBe('true')
+  fireEvent.click(configure)
+  expect(screen.queryByRole('dialog', { name: zh.configureDevice })).toBeNull()
   expect(screen.getByRole('heading', { name: zh.connectorTools })).toBeTruthy()
   view.unmount()
   await act(async () => { if (outcome === 'resolve') pending.resolve(undefined); else pending.reject(new Error('Late failure')) })

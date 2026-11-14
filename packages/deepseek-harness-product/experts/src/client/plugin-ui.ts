@@ -90,6 +90,13 @@ export const PLUGIN_UI_CSS = `
 .aag-theme .is-danger{color:var(--dsw-alias-state-error-primary,#ef4444)!important;border:0.5px solid var(--dsw-alias-state-error-primary,#ef4444)!important;background:transparent!important}
 .aag-theme .is-danger:hover:not(:disabled){background:var(--dsw-alias-state-error-tertiary,rgba(239,68,68,0.15))!important;color:var(--dsw-alias-state-error-primary,#ef4444)!important;border-color:var(--dsw-alias-state-error-primary,#ef4444)!important}
 .aag-host-input{box-sizing:border-box}
+.aag-confirm-modal{max-height:100%;overflow-wrap:anywhere}
+.aag-confirm-modal>div:last-child{flex-shrink:0;flex-wrap:wrap}
+.aag-confirm-modal .aag-editor-action-label{white-space:nowrap}
+.aag-confirm-content{flex:1;min-height:0;overflow:hidden}
+.aag-confirm-content>div:first-child{flex-shrink:0}
+.aag-confirm-content>p,.aag-confirm-content>div:not(:first-child){min-height:0;overflow:auto;overscroll-behavior:contain;scrollbar-gutter:stable}
+.aag-confirm-content>p+div{flex-shrink:0}
 .aag-textarea{box-sizing:border-box;width:100%;min-width:0;padding:8px 12px;font:inherit;font-size:13px;line-height:20px;border-radius:var(--dsw-radius-sm,8px);background:var(--dsw-alias-bg-layer-1);border:0.5px solid var(--dsw-alias-border-l2);color:var(--dsw-alias-label-primary);resize:vertical;transition:border-color 120ms ease}
 .aag-textarea:focus,.aag-textarea:focus-visible{outline:var(--dsw-focus-ring-width,1px) solid var(--dsw-focus-ring-color,var(--dsw-alias-brand-primary));outline-offset:0;border-color:var(--dsw-alias-brand-primary)}
 .aag-host-modal.aag-editor-modal,.aag-host-modal.agt-editor-modal,.aag-host-modal.agt-picker,.aag-host-modal.agt-detail{width:min(760px,100%)!important;max-height:100%!important}

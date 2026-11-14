@@ -959,9 +959,7 @@
     "4ec86027febf1f06ad42c7759a1145c0e4163c72ba77a5e6047d70c43c6e48a7": 1,
     "5e9a0c9cbc5ec8cd167153b0b222ffad3e8ff65968e4e6a1210a6c5be8e7a1e1": 1,
     "62c32a460fd4fbcd82004245cdbf9c956e344358451565dcfac99c689f747e57": 1,
-    "6e6346ff4cc26f28fcea5c71093216c3198e3394a5d3061a2b9826f5d3172b10": 1,
-    "95f8cb27369bc8e0c7fdb2ab159fd183edae314b249ee6d4be765be2d0fecd4d": 1,
-    "bead6a2ecc175e323a32298c0de57db2a02faed9d4aa5ab36f9a5f3648af80eb": 1
+    "95f8cb27369bc8e0c7fdb2ab159fd183edae314b249ee6d4be765be2d0fecd4d": 1
   },
   "packages/deepseek-harness-product/experts/src/index.test.ts": {
     "04378fab636fce05ea5c3ab2aa7f99d500eaa6589688c3fdcf6d7d46d8cdf9f6": 1,

@@ -56,7 +56,7 @@ exports[`keeps the failed submission and its button stable while retrying once >
 }
 `;
 
-exports[`requires confirmation, submits only once and shows durable review status 1`] = `"提交发布订单核对提交当前内容及资源文件，由管理员审核。审核通过后展示在市场，全公司可用；不影响本地使用。请先确认文件中没有密码、令牌或私人资料。包含 1 个文件关闭提交发布"`;
+exports[`requires confirmation, submits only once and shows durable review status 1`] = `"提交发布订单核对提交当前内容及资源文件，由管理员审核。审核通过后展示在市场，全公司可用；不影响本地使用。请先确认文件中没有密码、令牌或私人资料。包含 1 个文件未能确认提交结果，内容已保留，可以重试。关闭提交发布正在处理…重试"`;
 
 exports[`retries a failed inspect without closing the dialog or submitting unconfirmed content > Pending preparation retry 1`] = `
 {
@@ -67,7 +67,7 @@ exports[`retries a failed inspect without closing the dialog or submitting uncon
 }
 `;
 
-exports[`retries a failed inspect without closing the dialog or submitting unconfirmed content 1`] = `"提交发布订单核对提交当前内容及资源文件，由管理员审核。审核通过后展示在市场，全公司可用；不影响本地使用。请先确认文件中没有密码、令牌或私人资料。未能确认提交结果，内容已保留，可以重试。关闭重试"`;
+exports[`retries a failed inspect without closing the dialog or submitting unconfirmed content 1`] = `"提交发布订单核对提交当前内容及资源文件，由管理员审核。审核通过后展示在市场，全公司可用；不影响本地使用。请先确认文件中没有密码、令牌或私人资料。未能确认提交结果，内容已保留，可以重试。未能确认提交结果，内容已保留，可以重试。关闭重试正在处理…提交发布"`;
 
 exports[`retries a failed prepare without closing the dialog or submitting unconfirmed content > Pending preparation retry 1`] = `
 {
@@ -78,4 +78,4 @@ exports[`retries a failed prepare without closing the dialog or submitting uncon
 }
 `;
 
-exports[`retries a failed prepare without closing the dialog or submitting unconfirmed content 1`] = `"提交发布订单核对提交当前内容及资源文件，由管理员审核。审核通过后展示在市场，全公司可用；不影响本地使用。请先确认文件中没有密码、令牌或私人资料。未能确认提交结果，内容已保留，可以重试。关闭重试"`;
+exports[`retries a failed prepare without closing the dialog or submitting unconfirmed content 1`] = `"提交发布订单核对提交当前内容及资源文件，由管理员审核。审核通过后展示在市场，全公司可用；不影响本地使用。请先确认文件中没有密码、令牌或私人资料。未能确认提交结果，内容已保留，可以重试。未能确认提交结果，内容已保留，可以重试。关闭重试正在处理…提交发布"`;

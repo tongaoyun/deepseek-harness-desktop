@@ -18,7 +18,7 @@ import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { IconDatabaseOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives'
 import { de, en, es, fr, ja, NS, pt, ru, zh } from '../locales.ts'
 import {
-  ConnectorsPanel, KnowledgePanel,
+  ConnectorsPanel,
 } from './DeepSeekHarnessCatalogSection.tsx'
 import {
   CAPABILITY_PANELS, EXTENSION_PANELS, CapabilitiesHeading, createCapabilityChildIcon,
@@ -27,8 +27,9 @@ import * as Experts from '@deepseek-harness/product-experts/client'
 import * as Skills from '@deepseek-harness/product-skills/client'
 import { DeepSeekHarnessSettingsMenu } from './DeepSeekHarnessSettingsMenu.tsx'
 import { createHarnessActions } from './harness-actions.ts'
-import { TaskKnowledgeInput } from './TaskKnowledgeInput.tsx'
-import { registerKnowledgeToolResults } from './KnowledgeToolResult.tsx'
+import { TaskLibraryInput } from './TaskLibraryInput.tsx'
+import { LibraryArchive } from './LibraryArchive.tsx'
+import { LibraryPanel } from './LibraryPanel.tsx'
 import type {} from '@deepseek-ai/dsh-client-ui-agent-preset/client'
 import { createEmployeeSignInActions } from './employee-sign-in.ts'
 
@@ -38,7 +39,7 @@ export const inject = [
 
 const PANEL_COMPONENTS = {
   connectors: ConnectorsPanel,
-  knowledge: KnowledgePanel,
+  library: LibraryPanel,
 } as const
 
 /** Register DeepSeekHarness capability navigation in the official Harness sidebar. */
@@ -46,7 +47,6 @@ export function apply(ctx: ClientContext): void {
   ctx.effect(() => ctx.locale.register(NS, { zh, en, ja, es, fr, de, ru, pt }), 'deepseek-harness-product: dictionaries')
   ctx.plugin(Experts)
   ctx.plugin(Skills)
-  registerKnowledgeToolResults(ctx)
   const carrier = (globalThis as { dshDesktop?: { protocolVersion?: number; updates?: Pick<DesktopUpdateBridge, 'open'> } }).dshDesktop
   const updates = carrier?.protocolVersion === 1 ? carrier.updates : undefined
   const employeeSignIn = createEmployeeSignInActions(ctx)
@@ -59,31 +59,31 @@ export function apply(ctx: ClientContext): void {
   }, DeepSeekHarnessSettingsMenu))
   const t = ctx.locale.bind(NS)
   const actions = createHarnessActions(ctx)
-  const knowledgeOpeners = new Map<SessionId, () => void>()
-  ctx.effect(() => () => { knowledgeOpeners.clear() }, 'product-knowledge: input openers')
+  const libraryOpeners = new Map<SessionId, () => void>()
+  ctx.effect(() => () => { libraryOpeners.clear() }, 'product-library: input openers')
   ctx.effect(() => ctx.commandUi.register({
-    name: 'knowledge', label: () => t('referenceKnowledge'), icon: IconDatabaseOutlineRegular,
-    available: session => knowledgeOpeners.has(session.sessionId) && ctx.sessions.subagentAddress(session.sessionId) === undefined,
-    ui: { kind: 'action', run: (session) => { knowledgeOpeners.get(session.sessionId)?.() } },
-  }), 'product-knowledge: Add menu')
+    name: 'library', label: () => t('libraryChooseFiles'), icon: IconDatabaseOutlineRegular,
+    available: session => libraryOpeners.has(session.sessionId) && ctx.sessions.subagentAddress(session.sessionId) === undefined,
+    ui: { kind: 'action', run: (session) => { libraryOpeners.get(session.sessionId)?.() } },
+  }), 'product-library: Add menu')
   ctx.slots.inject('conversation.input.references', () => ctx.slots.register({
-    name: 'conversation.input.references', id: 'product-knowledge', order: 10, locale: NS,
+    name: 'conversation.input.references', id: 'product-library', order: 10, locale: NS,
     inject: sessionId => ({
-      readCapabilities: actions.readCapabilities, readKnowledgeCatalog: actions.readKnowledgeCatalog,
-      setKnowledgeSelection: actions.setKnowledgeSelection, recoverCapabilities: actions.recoverCapabilities,
-      retryCapabilities: actions.retryCapabilities,
-      openCatalog: actions.openCatalog,
+      attachLibraryFiles: (id, entries, signal) => actions.attachLibraryFiles(id, entries, signal),
       openEmployeeSignIn: employeeSignIn.openEmployeeSignIn,
       focusInput: () => {
         const binding = ctx.sessions.binding(sessionId)
         if (binding) ctx.conversation.input.for(binding.ctx).focus()
       },
       subscribeOpen: (listener: () => void) => {
-        knowledgeOpeners.set(sessionId, listener)
-        return () => { if (knowledgeOpeners.get(sessionId) === listener) knowledgeOpeners.delete(sessionId) }
+        libraryOpeners.set(sessionId, listener)
+        return () => { if (libraryOpeners.get(sessionId) === listener) libraryOpeners.delete(sessionId) }
       },
     }),
-  }, TaskKnowledgeInput))
+  }, TaskLibraryInput))
+  ctx.slots.inject('deliverables.file.actions', () => ctx.slots.register({
+    name: 'deliverables.file.actions', id: 'product-library-archive', order: 10, locale: NS,
+  }, LibraryArchive))
   ctx.slots.inject('sidebar.panelheading', () => ctx.slots.register({
     name: 'sidebar.panelheading', id: 'deepseek-harness-capabilities', order: -40, locale: NS,
   }, CapabilitiesHeading))
@@ -99,7 +99,15 @@ export function apply(ctx: ClientContext): void {
     const Component = PANEL_COMPONENTS[panel.labelKey]
     const ChildIcon = createCapabilityChildIcon(panel.icon)
     ctx.slots.inject('main', () => ctx.slots.register({
-      name: 'main', key: panel.id, locale: NS, inject: () => ({ ...actions, openEmployeeSignIn: employeeSignIn.openEmployeeSignIn }),
+      name: 'main', key: panel.id, locale: NS, inject: () => ({ openEmployeeSignIn: employeeSignIn.openEmployeeSignIn,
+        ...(panel.labelKey === 'library' ? {
+          startLibraryCreation: (kind: 'document' | 'presentation' | 'spreadsheet' | 'html') => {
+            const prompt = { document: 'libraryPromptDocument', presentation: 'libraryPromptPresentation', spreadsheet: 'libraryPromptSpreadsheet', html: 'libraryPromptHtml' } as const
+            ctx.uiWorkspace.startSession(undefined, { prompt: t(prompt[kind]), whenDraftExists: 'append' })
+          },
+          openLibrarySource: (sessionId: string) => { ctx.uiWorkspace.openSession(sessionId as SessionId) },
+        } : {}),
+      }),
     }, Component))
     ctx.slots.inject('sidebar.panellist', () => ctx.slots.register({
       name: 'sidebar.panellist', id: panel.id, order: -37 + index, locale: NS,

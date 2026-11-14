@@ -2,7 +2,7 @@
 import { Context } from '@deepseek-ai/cordis'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
 import { RemoteError } from '@deepseek-ai/dsh-typert-protocol'
-import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import React from 'react'
 import { zipSync } from 'fflate'
 import { afterAll, afterEach, expect, it, onTestFinished, vi } from 'vitest'
@@ -10,6 +10,7 @@ import { CustomExpertEditor } from '../../src/client/custom-editor.ts'
 import { en, zh } from '../../src/client/locales.ts'
 import type { AgencyCatalogRemote } from '../../src/client/remote.ts'
 import { TeamEditor } from '../../src/client/team-editor.tsx'
+import { TeamConfirm } from '../../src/client/team-shared.tsx'
 import { TeamLocaleContext } from '../../src/client/team-locale.ts'
 import { TEAM_CSS } from '../../src/client/team-style.ts'
 import { TEST_TEAMS } from '../../src/fixtures/teams.ts'
@@ -116,7 +117,8 @@ it.each([false, true])('marks only the submitted expert save action as busy (ena
   active.focus()
   act(() => { fireEvent.click(active); fireEvent.click(sibling); fireEvent.click(active) })
   expect(save).toHaveBeenCalledOnce()
-  expect(category.disabled).toBe(true)
+  expect(category.disabled).toBe(false)
+  expect(category.getAttribute('aria-disabled')).toBe('true')
   expect(category.classList.contains('product-control-pending')).toBe(true)
   expect(category.textContent).toBe(categoryLabel)
   expect(category.getAttribute('aria-busy')).toBe('true')
@@ -140,7 +142,7 @@ it.each([false, true])('marks only the submitted expert save action as busy (ena
   const notice = screen.getByRole('alert')
   fireEvent.click(active)
   expect(screen.getByRole('alert')).toBe(notice)
-  expect(sibling.textContent).toBe(en[other])
+  expect(within(sibling).getByText(en[other]).getAttribute('aria-hidden')).toBe('false')
   expect(active.getAttribute('aria-busy')).toBe('true')
   expect(sibling.getAttribute('aria-busy')).toBe('false')
   await act(async () => { retry.resolve({ ok: true, value: { experts: [], enabled: [], revision: 2 } }) })
@@ -151,6 +153,43 @@ it.each([false, true])('marks only the submitted expert save action as busy (ena
   expect(category.disabled).toBe(false)
   expect(category.classList.contains('product-control-pending')).toBe(false)
   expect(save).toHaveBeenCalledTimes(2)
+})
+
+it.each(['Delete', 'Enable team and required experts'])('retains %s confirmation labels, controls and errors through retry', (label) => {
+  const confirm = vi.fn(), close = vi.fn()
+  const content = (busy: boolean, error?: string) => <TeamLocaleContext.Provider value="en">
+    <TeamConfirm title="Confirm team action" label={label} busy={busy} error={error} onConfirm={confirm} onCancel={close} />
+  </TeamLocaleContext.Provider>
+  const view = render(content(false))
+  const action = screen.getByRole<HTMLButtonElement>('button', { name: label })
+  const cancel = screen.getByRole('button', { name: 'Cancel' })
+  const normal = within(action).getByText(label), pending = within(action).getByText('Working…')
+  action.focus()
+  view.rerender(content(true, 'Write temporarily unavailable'))
+  const error = screen.getByRole('alert')
+  expect(screen.getByRole('button', { name: 'Working…' })).toBe(action)
+  expect(screen.getByRole('button', { name: 'Cancel' })).toBe(cancel)
+  expect(within(action).getByText(label)).toBe(normal)
+  expect(within(action).getByText('Working…')).toBe(pending)
+  expect(normal.getAttribute('aria-hidden')).toBe('true')
+  expect(pending.getAttribute('aria-hidden')).toBe('false')
+  expect(document.activeElement).toBe(action)
+  fireEvent.click(action); fireEvent.click(cancel); fireEvent.keyDown(action, { key: 'Escape' })
+  expect(confirm).not.toHaveBeenCalled()
+  expect(close).not.toHaveBeenCalled()
+  view.rerender(content(false, 'Write temporarily unavailable'))
+  expect(screen.getByRole('button', { name: label })).toBe(action)
+  expect(screen.getByRole('alert')).toBe(error)
+  view.rerender(content(true, 'Write temporarily unavailable'))
+  expect(screen.getByRole('alert')).toBe(error)
+  expect(document.activeElement).toBe(action)
+  expect({ label, busy: action.getAttribute('aria-busy'), disabled: action.disabled,
+    hidden: normal.getAttribute('aria-hidden'), pending: pending.textContent, cancel: cancel.textContent, error: error.textContent }).toMatchSnapshot()
+  view.rerender(content(false))
+  expect(screen.queryByRole('alert')).toBeNull()
+  expect(screen.getByRole('button', { name: label })).toBe(action)
+  fireEvent.click(action)
+  expect(confirm).toHaveBeenCalledOnce()
 })
 
 it.each(['importZip', 'importDirectory', 'attachments'] as const)('reports only %s as busy while reading files and preserves the save controls', async (action) => {
@@ -180,7 +219,8 @@ it.each(['importZip', 'importDirectory', 'attachments'] as const)('reports only 
   fireEvent.click(button)
   expect(picker).not.toHaveBeenCalled()
   expect(button.classList.contains('product-control-pending')).toBe(true)
-  expect(category.disabled).toBe(true)
+  expect(category.disabled).toBe(false)
+  expect(category.getAttribute('aria-disabled')).toBe('true')
   expect(category.classList.contains('product-control-pending')).toBe(true)
   expect(category.getAttribute('aria-busy')).toBe('true')
   expect(cancel.classList.contains('product-control-pending')).toBe(true)
@@ -223,11 +263,15 @@ it('keeps an expert save error in place until the retry succeeds', async () => {
   onTestFinished(() => { view.unmount(); response.resolve({ ok: true, value: { experts: [], enabled: [], revision: 2 } }) })
   fireEvent.click(screen.getByRole('button', { name: zh['custom.save'] }))
   const notice = await screen.findByRole('alert')
+  const help = notice.parentElement!.querySelector('.aag-note')!
+  expect(help.getAttribute('aria-hidden')).toBe('true')
   fireEvent.click(screen.getByRole('button', { name: zh['custom.save'] }))
   expect(screen.getByRole('alert')).toBe(notice)
   expect(screen.getByRole('textbox', { name: zh['custom.prompt'] })).toHaveProperty('value', expert.prompt)
   await act(async () => { response.resolve({ ok: true, value: { experts: [], enabled: [], revision: 2 } }) })
   expect(screen.queryByRole('alert')).toBeNull()
+  expect(help.isConnected).toBe(true)
+  expect(help.getAttribute('aria-hidden')).toBe('false')
   expect(save).toHaveBeenCalledTimes(2)
 })
 
@@ -609,7 +653,7 @@ it.each([false, true])('marks only the submitted team save action as busy (enabl
   const notice = screen.getByRole('alert')
   fireEvent.click(active)
   expect(screen.getByRole('alert')).toBe(notice)
-  expect(sibling.textContent).toBe(teamText('en', other))
+  expect(within(sibling).getByText(teamText('en', other)).getAttribute('aria-hidden')).toBe('false')
   expect(active.getAttribute('aria-busy')).toBe('true')
   expect(sibling.getAttribute('aria-busy')).toBe('false')
   await act(async () => { retry.resolve(undefined) })
@@ -630,12 +674,16 @@ it('keeps a team save error in place until the retry succeeds', async () => {
   onTestFinished(() => { view.unmount(); response.resolve(undefined) })
   fireEvent.click(screen.getByRole('button', { name: '保存修改' }))
   const notice = await screen.findByRole('alert')
+  const help = notice.parentElement!.querySelector('.aag-note')!
+  expect(help.getAttribute('aria-hidden')).toBe('true')
   fireEvent.click(screen.getByRole('button', { name: '保存修改' }))
   expect(screen.getByRole('alert')).toBe(notice)
   view.changeLanguage()
   expect(notice.textContent).toBe(teamText('en', '保存失败，请重试。'))
   await act(async () => { response.resolve(undefined) })
   expect(screen.queryByRole('alert')).toBeNull()
+  expect(help.isConnected).toBe(true)
+  expect(help.getAttribute('aria-hidden')).toBe('false')
   expect(save).toHaveBeenCalledTimes(2)
 })
 
@@ -791,4 +839,33 @@ it.each(['success', 'failure', 'cancellation'] as const)('retains team compariso
   expect(document.activeElement).toBe(screen.getByRole('textbox', { name: teamText('en', '团队名称') }))
   await act(async () => { fireEvent.click(screen.getByRole('button', { name: teamText('en', '保存修改') })) })
   expect(save).toHaveBeenLastCalledWith(expect.objectContaining({ name: '保留的团队草稿' }), false, latest.revision)
+})
+
+it.each(['deleted', 'renamed'] as const)('preserves a new expert draft after another window %s the conflicting name', async (change) => {
+  const catalog = { experts: change === 'deleted' ? [] : [{ slug: 'renamed-expert', name: 'Renamed expert', nameEn: '',
+    description: '', descriptionEn: '', division: 'specialized', divisionZh: '其他', custom: true, emoji: '🔎', avatar: 0 }],
+  enabled: [], revision: 3 }
+  const save = vi.fn<AgencyCatalogRemote['saveCustomExpert']>()
+    .mockResolvedValueOnce({ ok: false, error: new RemoteError('experts/conflict', 'Stale revision', {}) })
+    .mockResolvedValueOnce({ ok: true, value: { ...catalog, revision: 4 } })
+  const view = editor(save)
+  view.remote.getCatalog.mockResolvedValue({ ok: true, value: catalog })
+  const prompt = screen.getByRole<HTMLTextAreaElement>('textbox', { name: zh['custom.prompt'] })
+  fireEvent.change(prompt, { target: { value: 'Keep this unsaved draft.' } })
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: zh['custom.saveEnable'] })) })
+  expect(save).toHaveBeenCalledOnce()
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: zh['custom.reviewLatest'] })) })
+  const keep = screen.getByRole('button', { name: zh['custom.keepDraft'] })
+  keep.focus()
+  fireEvent.click(keep)
+  expect(screen.getByRole('textbox', { name: zh['custom.prompt'] })).toBe(prompt)
+  expect(prompt.value).toBe('Keep this unsaved draft.')
+  expect(view.remote.getCustomExpert).not.toHaveBeenCalled()
+  expect(save).toHaveBeenCalledOnce()
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: zh['custom.saveEnable'] })) })
+  expect(save).toHaveBeenCalledTimes(2)
+  expect(save.mock.calls[1]).toEqual([
+    expect.objectContaining({ name: expert.name, prompt: prompt.value }), true, 3, expect.any(AbortSignal),
+  ])
+  expect(save.mock.calls[1]?.[0]).not.toHaveProperty('slug')
 })

@@ -85,14 +85,21 @@ it('blocks dismissal in the same event batch that starts a connector save', asyn
     : method === 'extensions.connector.update' ? pending.promise : [])
   const onClose = vi.fn()
   render(<ConnectorEditor editing={editing} onClose={onClose} onSaved={vi.fn()} t={t} />)
-  await screen.findByLabelText(zh.mcpServerName)
+  const field = await screen.findByLabelText<HTMLInputElement>(zh.mcpServerName)
+  const save = screen.getByRole('button', { name: zh.saveConnector })
+  field.setSelectionRange(0, 2)
   act(() => {
-    fireEvent.click(screen.getByRole('button', { name: zh.saveConnector }))
+    fireEvent.click(save)
     fireEvent.keyDown(document, { key: 'Escape' })
   })
   expect(onClose).not.toHaveBeenCalled()
-  expect(screen.getByRole('status').textContent).toBe(zh.knowledgeWaitForSave)
+  expect(screen.getByRole('status').textContent).toBe(zh.libraryWait)
+  expect(save.parentElement?.contains(screen.getByRole('status'))).toBe(true)
+  expect(screen.getByLabelText(zh.mcpServerName)).toBe(field)
+  expect([field.selectionStart, field.selectionEnd]).toEqual([0, 2])
   await act(async () => { pending.reject(new Error('Connection unavailable')) })
+  expect(screen.queryByRole('status')).toBeNull()
+  expect(save.parentElement?.contains(screen.getByRole('alert'))).toBe(true)
   fireEvent.keyDown(document, { key: 'Escape' })
   expect(onClose).toHaveBeenCalledOnce()
 })
@@ -114,9 +121,12 @@ it('deduplicates device saves, blocks immediate dismissal and preserves secrets 
   expect(screen.getByRole('button', { name: zh.connectingConnector })).toBe(save)
   expect(save.getAttribute('aria-busy')).toBe('true')
   expect(save.classList.contains('product-control-pending')).toBe(true)
-  expect(screen.queryByText(zh.knowledgeDiscardDraftConfirmation)).toBeNull()
-  expect(screen.getByRole('status').textContent).toBe(zh.knowledgeWaitForSave)
+  expect(screen.queryByText(zh.libraryDiscardConfirm)).toBeNull()
+  expect(screen.getByRole('status').textContent).toBe(zh.libraryWait)
+  expect(save.parentElement?.contains(screen.getByRole('status'))).toBe(true)
   await act(async () => { pending.reject(new Error('Connection unavailable')) })
+  expect(screen.queryByRole('status')).toBeNull()
+  expect(save.parentElement?.contains(screen.getByRole('alert'))).toBe(true)
   expect(screen.getByLabelText<HTMLInputElement>('Authorization').value).toBe('device-secret')
   expect(refreshed).not.toHaveBeenCalled()
   fail = false
@@ -144,6 +154,9 @@ it.each(['begin', 'status', 'revoke'] as const)('retains authorization feedback 
   onTestFinished(() => { view.unmount(); retry.resolve(undefined); pending.resolve(undefined) })
   const label = phase === 'revoke' ? zh.revokeAuthorization : zh.authorize
   const button = screen.getByRole<HTMLButtonElement>('button', { name: label })
+  const feedback = screen.getByText(zh.authorizationFailed)
+  expect(feedback.getAttribute('aria-hidden')).toBe('true')
+  expect(screen.queryByRole('alert')).toBeNull()
   button.focus()
   // Settle jsdom's selectionchange notification before measuring authorization timers.
   vi.advanceTimersByTime(0)
@@ -152,6 +165,7 @@ it.each(['begin', 'status', 'revoke'] as const)('retains authorization feedback 
   expect(api.invoke.mock.calls.filter(call => call[1] === method)).toHaveLength(1)
   await act(async () => { pending.reject(new Error('Authorization unavailable')) })
   const notice = screen.getByRole('alert')
+  expect(notice).toBe(feedback)
   expect(notice.textContent).toBe(zh.authorizationFailed)
   expect(refreshed).not.toHaveBeenCalled()
   fail = false
@@ -170,12 +184,14 @@ it.each(['begin', 'status', 'revoke'] as const)('retains authorization feedback 
   expect(screen.getByRole('alert')).toBe(notice)
   expect(notice.textContent).toBe(en.authorizationFailed)
   expect(api.invoke).toHaveBeenCalledTimes(requests)
-  expect({ button: button.textContent, busy: button.getAttribute('aria-busy'), error: notice.textContent,
+  expect({ button: button.querySelector('[aria-hidden="false"]')?.textContent, busy: button.getAttribute('aria-busy'), error: notice.textContent,
     focused: document.activeElement === button }).toMatchSnapshot()
   await act(async () => { retry.resolve(undefined) })
   if (phase === 'begin') await act(async () => { await vi.advanceTimersByTimeAsync(AUTHORIZATION_POLL_INTERVAL_MS) })
   expect(refreshed).toHaveBeenCalledOnce()
   expect(screen.queryByRole('alert')).toBeNull()
+  expect(feedback.isConnected).toBe(true)
+  expect(feedback.getAttribute('aria-hidden')).toBe('true')
   expect(api.invoke.mock.calls.filter(call => call[1] === method)).toHaveLength(2)
   view.unmount()
   expect(vi.getTimerCount()).toBe(0)
@@ -198,4 +214,48 @@ it('retries a confirmed revocation refresh once without revoking again', async (
   await act(async () => { retry.resolve(undefined) })
   expect(screen.queryByRole('alert')).toBeNull()
   expect(api.invoke.mock.calls.map(call => call[1])).toEqual(['connectors.authorization.revoke'])
+})
+
+it.each(['edit', 'device'] as const)('does not reuse a previous blocked-close notice during the next %s save', async (surface) => {
+  const first = Promise.withResolvers<unknown>(), retried = Promise.withResolvers<unknown>()
+  let writes = 0
+  const method = surface === 'edit' ? 'extensions.connector.update' : 'extensions.connector.configuration.save'
+  const api = transport(async (name) => {
+    if (name === 'extensions.connector.read') return loaded
+    if (name === 'extensions.connector.configuration.read') return configured
+    if (name === method) return ++writes === 1 ? first.promise : retried.promise
+    return []
+  })
+  const onClose = vi.fn(), onSaved = vi.fn()
+  if (surface === 'edit') render(<ConnectorEditor editing={editing} onClose={onClose} onSaved={onSaved} t={t} />)
+  else {
+    const product = localDetail(items([{ ...editing, name: 'Shared MCP', authMode: 'none', canConfigure: true,
+      status: 'needs-configuration', visibility: 'COMPANY', tools: [] }])[0]!)
+    render(<ConnectorDetail product={product} onCatalogChanged={async () => { onSaved() }} t={t} />)
+    fireEvent.click(screen.getByRole('button', { name: zh.configureDevice }))
+  }
+  const field = await screen.findByLabelText<HTMLInputElement>(surface === 'edit' ? zh.mcpServerName : 'Authorization')
+  fireEvent.change(field, { target: { value: surface === 'edit' ? 'Retained name' : 'retained-secret' } })
+  const save = screen.getByRole('button', { name: zh.saveConnector })
+  save.focus(); fireEvent.click(save); fireEvent.keyDown(save, { key: 'Escape' })
+  expect(screen.getByRole('status').textContent).toBe(zh.libraryWait)
+  await act(async () => { first.reject(new Error('save unavailable')) })
+  const alert = screen.getByRole('alert')
+  expect(screen.queryByRole('status')).toBeNull()
+  fireEvent.click(save); fireEvent.click(save)
+  expect(screen.queryByRole('status')).toBeNull()
+  expect(screen.getByRole('alert')).toBe(alert)
+  expect(screen.getByRole('button', { name: zh.connectingConnector })).toBe(save)
+  expect(document.activeElement).toBe(save)
+  expect(api.invoke.mock.calls.filter(call => call[1] === method)).toHaveLength(2)
+  fireEvent.keyDown(save, { key: 'Escape' })
+  expect(screen.getByRole('status').textContent).toBe(zh.libraryWait)
+  expect(screen.queryByText(zh.libraryDiscardConfirm)).toBeNull()
+  expect(onClose).not.toHaveBeenCalled()
+  expect(screen.getByLabelText(surface === 'edit' ? zh.mcpServerName : 'Authorization')).toBe(field)
+  await act(async () => { retried.resolve(surface === 'edit' ? {
+    kind: 'connector', id: draft.id, version: draft.version, visibility: 'PERSONAL',
+  } : { ...editing, configured: true }) })
+  expect(onSaved).toHaveBeenCalledOnce()
+  expect(screen.queryByRole('status')).toBeNull()
 })

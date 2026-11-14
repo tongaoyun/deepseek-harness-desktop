@@ -67,7 +67,7 @@ exports[`keeps the enable team confirmation and failure through one locked retry
 exports[`keeps the menu retry error and selection until the directory recovers 1`] = `
 {
   "busy": "true",
-  "error": "Team directory unavailable刷新",
+  "error": "Team directory unavailable",
   "label": "刷新",
   "query": "team",
 }
@@ -86,9 +86,27 @@ exports[`keeps the menu-enable team confirmation and failure through one locked 
 exports[`keeps the panel retry error and selection until the directory recovers 1`] = `
 {
   "busy": "true",
-  "error": "Team directory unavailable刷新重试",
+  "error": "Team directory unavailable",
   "label": "刷新重试",
   "query": "team",
+}
+`;
+
+exports[`recovers a cleared scrollable team read error without taking another control (elsewhere=false) 1`] = `
+{
+  "errorRemoved": true,
+  "focused": "search",
+  "query": "team",
+  "searchRetained": true,
+}
+`;
+
+exports[`recovers a cleared scrollable team read error without taking another control (elsewhere=true) 1`] = `
+{
+  "errorRemoved": true,
+  "focused": "other",
+  "query": "team",
+  "searchRetained": true,
 }
 `;
 
@@ -103,6 +121,24 @@ exports[`retains a focused task example when the panel team directory removes an
 {
   "example": "“复核订单资料”",
   "focused": true,
+}
+`;
+
+exports[`retains a newer 'menu' selection failure when an earlier directory read ends with 'success' (repeated=false) 1`] = `
+{
+  "busy": "false",
+  "error": "无法插入团队，请确认当前聊天草稿后重试。",
+  "query": "team",
+  "retry": "刷新",
+}
+`;
+
+exports[`retains a newer 'panel' selection failure when an earlier directory read ends with 'success' (repeated=false) 1`] = `
+{
+  "busy": "false",
+  "error": "团队已启用，但无法写入当前聊天草稿。请关闭设置后，在聊天的专家团入口选择。",
+  "query": "team",
+  "retry": "刷新重试",
 }
 `;
 
@@ -179,6 +215,6 @@ exports[`saves a usable 'zh' company-team copy named '团团团团团团团团�
 exports[`shows the first team directory failure without an idle or retry loading placeholder 1`] = `
 {
   "loading": false,
-  "notice": "Team directory unavailable刷新",
+  "notice": "Team directory unavailable",
 }
 `;

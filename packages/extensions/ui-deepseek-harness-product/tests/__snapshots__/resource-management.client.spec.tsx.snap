@@ -4,18 +4,16 @@ exports[`removes a confirmed deletion from the catalog and prevents repeating it
 
 exports[`retains 'delete' feedback and locks confirmation before rendering a retry 1`] = `
 {
-  "action": "删除中…",
   "busy": "true",
   "error": "删除未完成，请重试。",
-  "focused": "删除中…",
+  "focused": true,
 }
 `;
 
 exports[`retains 'submit' feedback and locks confirmation before rendering a retry 1`] = `
 {
-  "action": "提交发布",
   "busy": "true",
   "error": "保存失败，请重试。",
-  "focused": "提交发布",
+  "focused": true,
 }
 `;

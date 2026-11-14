@@ -132,7 +132,7 @@ export const TEAM_EN = {
   '专家团加载失败': 'Could not load teams', '无法插入团队，请确认当前聊天草稿后重试。': 'Could not insert the team. Check the current draft and retry.',
   '选择失败。': 'Selection failed.', '搜索团队或工作目标': 'Search teams or goals', '人': ' experts', ' · 启用并选择': ' · Enable and select',
   '查看{0}详情': 'View {0} details', '搜索并启用一个专家团。': 'Search for a team to enable.', '正在加载…': 'Loading…', '启用专家团': 'Enable team',
-  '启用“': 'Enable “', '”及所需成员：': '” and required experts: ', '关闭{0}': 'Close {0}', '关闭': 'Close', '正在处理…': 'Working…',
+  '启用“{0}”及所需成员：{1}': 'Enable “{0}” and required experts: {1}', '关闭{0}': 'Close {0}', '关闭': 'Close', '正在处理…': 'Working…',
   '成员失效，需替换': 'Unavailable members need replacement', '有成员未启用': 'Some members are disabled', '@专家团：{0}\u00a0': '@Team: {0}\u00a0',
   '草稿已有专家团，请先移除原团队再通过 @ 选择。': 'A team is already selected. Remove it before choosing another with @.',
   '草稿已有专家团，是否替换为当前团队？正文和附件将保留。': 'Replace the team already in this draft? Text and attachments will be preserved.',
