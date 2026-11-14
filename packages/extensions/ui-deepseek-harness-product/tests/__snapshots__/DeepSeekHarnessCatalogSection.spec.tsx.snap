@@ -9,15 +9,6 @@ exports[`DeepSeekHarness capability navigation > keeps a failed connectors catal
 }
 `;
 
-exports[`DeepSeekHarness capability navigation > keeps a failed knowledge catalog and its retry control mounted until a read succeeds 1`] = `
-{
-  "canRetry": false,
-  "loadingIndicator": false,
-  "message": "钉钉组织同步已过期，请联系管理员完成同步后重试。 (ORGANIZATION_SYNC_EXPIRED)",
-  "retry": "重试",
-}
-`;
-
 exports[`DeepSeekHarness capability navigation > recovers 'connectors' focus after 'failed' with elsewhere=false 1`] = `
 {
   "cards": false,
@@ -72,64 +63,47 @@ exports[`DeepSeekHarness capability navigation > recovers 'connectors' focus aft
 }
 `;
 
-exports[`DeepSeekHarness capability navigation > recovers 'knowledge' focus after 'identity' with elsewhere=false 1`] = `
+exports[`DeepSeekHarness capability navigation > retains confirmed connector cards and tabs after a refresh failure (removed=false, elsewhere=false) 1`] = `
 {
-  "cards": false,
-  "catalog": "知识库",
-  "error": false,
-  "focus": "知识库",
+  "elsewhere": false,
+  "focused": "retained",
+  "query": "订单",
+  "removed": false,
+  "retainedCard": true,
+  "retainedTab": true,
 }
 `;
 
-exports[`DeepSeekHarness capability navigation > recovers 'knowledge' focus after 'identity' with elsewhere=true 1`] = `
+exports[`DeepSeekHarness capability navigation > retains confirmed connector cards and tabs after a refresh failure (removed=false, elsewhere=true) 1`] = `
 {
-  "cards": false,
-  "catalog": "知识库",
-  "error": false,
-  "focus": "其他操作",
+  "elsewhere": true,
+  "focused": "retained",
+  "query": "订单",
+  "removed": false,
+  "retainedCard": true,
+  "retainedTab": true,
 }
 `;
 
-exports[`DeepSeekHarness capability navigation > recovers 'knowledge' focus after 'removed' with elsewhere=false 1`] = `
+exports[`DeepSeekHarness capability navigation > retains confirmed connector cards and tabs after a refresh failure (removed=true, elsewhere=false) 1`] = `
 {
-  "cards": false,
-  "catalog": "知识库",
-  "error": false,
-  "focus": "知识库",
+  "elsewhere": false,
+  "focused": "directory",
+  "query": "订单",
+  "removed": true,
+  "retainedCard": false,
+  "retainedTab": true,
 }
 `;
 
-exports[`DeepSeekHarness capability navigation > recovers 'knowledge' focus after 'removed' with elsewhere=true 1`] = `
+exports[`DeepSeekHarness capability navigation > retains confirmed connector cards and tabs after a refresh failure (removed=true, elsewhere=true) 1`] = `
 {
-  "cards": false,
-  "catalog": "知识库",
-  "error": false,
-  "focus": "其他操作",
-}
-`;
-
-exports[`DeepSeekHarness capability navigation > recovers 'knowledge' focus after 'retry' with elsewhere=false 1`] = `
-{
-  "cards": false,
-  "catalog": "知识库",
-  "error": false,
-  "focus": "知识库",
-}
-`;
-
-exports[`DeepSeekHarness capability navigation > recovers 'knowledge' focus after 'retry' with elsewhere=true 1`] = `
-{
-  "cards": false,
-  "catalog": "知识库",
-  "error": false,
-  "focus": "其他操作",
-}
-`;
-
-exports[`DeepSeekHarness capability navigation > rejects malformed knowledge identities and recovers to server-issued resources on retry 1`] = `
-{
-  "failure": "产品目录暂时无法加载，请稍后重试。",
-  "recovered": "Company policy",
+  "elsewhere": true,
+  "focused": "retained",
+  "query": "订单",
+  "removed": true,
+  "retainedCard": false,
+  "retainedTab": true,
 }
 `;
 

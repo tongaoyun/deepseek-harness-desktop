@@ -3,7 +3,7 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { resolveKnowledgeFilePolicy, type KnowledgeFilePolicy } from './knowledge-file-policy.ts'
+import { resolveLibraryFilePolicy, type LibraryFilePolicy } from './library-file-policy.ts'
 import type { DesktopSupportPolicy } from './desktop-support.ts'
 import { resolveConnectorProxyPolicy, type ConnectorProxyPolicy } from './connector-proxy.ts'
 
@@ -18,7 +18,7 @@ export interface DeepSeekHarnessProductConfigOptions {
 /** Validated deployment settings shared by one desktop extension lifetime. */
 export interface DeepSeekHarnessProductConfig {
   readonly serverUrl: string
-  readonly knowledgeFiles: KnowledgeFilePolicy
+  readonly libraryFiles: LibraryFilePolicy
   readonly support: DesktopSupportPolicy
   readonly connectorProxy: ConnectorProxyPolicy
   readonly companyContentRefreshIntervalMs: number
@@ -80,7 +80,7 @@ export function resolveDeepSeekHarnessProductConfig(options: DeepSeekHarnessProd
   }
   return {
     serverUrl,
-    knowledgeFiles: resolveKnowledgeFilePolicy('knowledgeFiles' in document ? document.knowledgeFiles : undefined),
+    libraryFiles: resolveLibraryFilePolicy('libraryFiles' in document ? document.libraryFiles : undefined),
     support: { heartbeatIntervalMs: support.heartbeatIntervalMs, reportIntervalMs: support.reportIntervalMs },
     connectorProxy: resolveConnectorProxyPolicy('connectorProxy' in document ? document.connectorProxy : undefined),
     companyContentRefreshIntervalMs: document.companyContentRefreshIntervalMs,

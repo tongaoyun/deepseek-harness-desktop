@@ -2,7 +2,7 @@ import type * as React from "react";
 import type { SourceSelectProps } from "./client-types.ts";
 import { Menu, Button, IconChevronDownOutlineRegular, focusWithoutRing, type MenuEntry } from "@deepseek-ai/dsh-client-ui-primitives";
 
-/** 筛选与操作沿用原生菜单；禁用关闭菜单，恢复后须重新打开；操作弹窗关闭后焦点返回原按钮。 */
+/** 筛选与操作沿用原生菜单；忙碌保留按钮焦点并关闭菜单，恢复后须重新打开。 */
 export function createSourceSelect(react: typeof React) {
   const h = react.createElement;
   return function SourceSelect(props: SourceSelectProps) {
@@ -43,7 +43,8 @@ export function createSourceSelect(react: typeof React) {
             ref: trigger,
             variant: "outline",
             size: "sm",
-            disabled,
+            disabled: props.disabled,
+            "aria-disabled": disabled,
             "aria-busy": props.pending,
             className: (props.icon ? "dssm-icon-action" : "") + pendingClass,
             style: props.icon ? { width: 22, minWidth: 22, height: 22, padding: 0, display: "inline-flex", alignItems: "center", justifyContent: "center", borderRadius: "var(--dsw-radius-sm, 8px)" } : undefined,
@@ -51,7 +52,7 @@ export function createSourceSelect(react: typeof React) {
             "aria-haspopup": "menu",
             "aria-expanded": open,
             title: props.label,
-            onClick: function () { setOpen(prev => !prev); },
+            onClick: function () { if (!disabled) setOpen(prev => !prev); },
             icon: props.icon,
           }, props.icon ? null : props.label),
           items: items,
@@ -78,10 +79,11 @@ export function createSourceSelect(react: typeof React) {
           "aria-label": props.label,
           "aria-haspopup": "menu",
           "aria-expanded": open,
-          disabled,
+          disabled: props.disabled,
+          "aria-disabled": disabled,
           "aria-busy": props.pending,
           className: "dssm-menu-select-trigger" + (open ? " is-open" : "") + pendingClass,
-          onClick: function () { setOpen(prev => !prev); },
+          onClick: function () { if (!disabled) setOpen(prev => !prev); },
         },
           h("span", { className: "dssm-menu-select-label" }, currentText),
           h(IconChevronDownOutlineRegular, {

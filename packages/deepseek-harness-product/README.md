@@ -1,5 +1,5 @@
 ---
-description: "企业桌面的身份、连接器、知识库、专家和技能集成。"
+description: "企业桌面的身份、连接器、资料库、专家和技能集成。"
 kind: "package-group"
 ---
 
@@ -7,7 +7,7 @@ kind: "package-group"
 
 ## 概述
 
-本包组将公司服务接入 Harness，提供钉钉登录、连接器、知识库、专家和技能。对话、执行、审批、文档预览及 Session 持久化使用官方能力。
+本包组将公司服务接入 Harness，提供钉钉登录、连接器、资料库、专家和技能。对话、执行、审批、文档预览及 Session 持久化使用官方能力。
 
 ## 目录
 
@@ -23,7 +23,7 @@ kind: "package-group"
 | 包 | 职责 |
 | --- | --- |
 | [product](product/README.md) | 产品协议、服务端访问和员工会话 |
-| [runtime](runtime/README.md) | 连接器工具、知识库范围与任务快照 |
+| [runtime](runtime/README.md) | 连接器工具、资料文件处理与公司内容版本 |
 | [desktop](desktop/README.md) | 主进程凭据、原生文件、设备上报与启动准备 |
 | [experts](experts/README.md) | 专家、专家团及原生委派 |
 | [skills](skills/README.md) | 技能管理与原生 Skill Provider 接入 |

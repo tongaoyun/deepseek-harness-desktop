@@ -21,7 +21,8 @@ export class ContentFileReadError extends Error {
  * @param path Local resource path already selected by the content module.
  * @param maxBytes Inclusive limit for the complete file.
  * @param signal Checked before and after opening, applied to the stream and checked before returning.
- * @returns Complete bytes; replaced files, changed byte counts, invalid files and size limits reject with ContentFileReadError.
+ * @returns Complete bytes; replaced files, changed size, modification or change times,
+ * invalid files and size limits reject with ContentFileReadError.
  * All outcomes close the handle.
  */
 export async function readContentFile(path: string, maxBytes: number, signal?: AbortSignal): Promise<Buffer> {
@@ -49,6 +50,10 @@ export async function readContentFile(path: string, maxBytes: number, signal?: A
     }
     signal?.throwIfAborted()
     if (length !== info.size) throw new ContentFileReadError('changed')
+    const after = await handle.stat()
+    signal?.throwIfAborted()
+    if (after.size !== info.size || after.mtimeMs !== info.mtimeMs || after.ctimeMs !== info.ctimeMs)
+      throw new ContentFileReadError('changed')
     return Buffer.concat(chunks, length)
   } finally { await handle.close() }
 }

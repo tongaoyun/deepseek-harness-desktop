@@ -25,7 +25,7 @@ it('establishes a token-only employee identity for concurrent startup and explic
         started.resolve(undefined)
         return response.promise
       }
-      return Response.json({ success: true, data: [], pageIndex: 1, pageSize: 100, totalCount: 0, totalPages: 0 })
+      return Response.json({ success: true, data: 52428800, pageIndex: 1, pageSize: 100, totalCount: 0, totalPages: 0 })
     } })
   const signIn = ensureDingTalkSession(bridge, opened)
   const explicit = bridge.invoke('auth.refresh')
@@ -69,7 +69,7 @@ it('shares the background token rotation with startup sign-in without reopening 
         data: { state: 'state-1234567890', authorizationUrl: 'https://login.test/dingtalk' } })
       if (url.includes('/authorization-requests/')) return Response.json({ success: true,
         data: { status: 'completed', session: { sessionToken: 'oauth-token', employee: { employeeId: '10001' } } } })
-      return Response.json({ success: true, data: [], pageIndex: 1, pageSize: 100, totalCount: 0, totalPages: 0 })
+      return Response.json({ success: true, data: 52428800, pageIndex: 1, pageSize: 100, totalCount: 0, totalPages: 0 })
     } })
   let signIn: Promise<ProductSession> | undefined
   try {
@@ -107,11 +107,11 @@ it.each([false, true])('retains the token rotation after a sign-in waiter cancel
         started.resolve(true)
         return response.promise
       }
-      if (url.endsWith('/knowledge-references/resolve')) {
+      if (url.endsWith('/libraries/file-policy')) {
         requestToken = new Headers(init?.headers).get('authorization')
-        return Response.json({ success: true, data: [] })
+        return Response.json({ success: true, data: 52428800 })
       }
-      return Response.json({ success: true, data: [], pageIndex: 1, pageSize: 100, totalCount: 0, totalPages: 0 })
+      return Response.json({ success: true, data: 52428800, pageIndex: 1, pageSize: 100, totalCount: 0, totalPages: 0 })
     } })
   const caller = new AbortController()
   const reason = new Error('Caller cancelled sign-in')
@@ -129,7 +129,7 @@ it.each([false, true])('retains the token rotation after a sign-in waiter cancel
     response.resolve(refreshed())
     await expect(persisted.promise).resolves.toBe('rotated-token')
     if (live) await expect(live).resolves.toMatchObject({ authenticated: true, employeeId: '10001' })
-    await expect(bridge.invoke('knowledge.references.resolve', {})).resolves.toEqual([])
+    await expect(bridge.invoke('library.files.policy', {})).resolves.toEqual(52428800)
     expect(requestToken).toBe('Bearer rotated-token')
     expect(tokens).toHaveLength(1)
   } finally {
@@ -157,7 +157,7 @@ it.each([
         started.resolve(true)
         return response.promise
       }
-      return Response.json({ success: true, data: [], pageIndex: 1, pageSize: 100, totalCount: 0, totalPages: 0 })
+      return Response.json({ success: true, data: 52428800, pageIndex: 1, pageSize: 100, totalCount: 0, totalPages: 0 })
     } })
   const pending = bridge.invoke('auth.refresh', undefined, new AbortController().signal)
   const rejected = expect(pending).rejects.toMatchObject({ message: event === 'employee-change'

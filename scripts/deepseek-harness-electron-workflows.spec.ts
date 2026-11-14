@@ -136,7 +136,7 @@ describe('DeepSeekHarness Electron workflows', () => {
 
   it('confines the mock keychain to isolated macOS UI acceptance', () => {
     const root = resolve(import.meta.dirname, '..')
-    const smoke = readFileSync(resolve(root, 'apps/web/tests/deepseek-harness-catalog.e2e.ts'), 'utf8')
+    const smoke = readFileSync(resolve(root, 'apps/web/tests/deepseek-harness-desktop.e2e.ts'), 'utf8')
     expect(smoke).toContain("process.env.DSH_DESKTOP_SMOKE !== '1'")
     expect(smoke).toContain("...process.platform === 'darwin' ? ['--use-mock-keychain'] : []")
     const paths = ['apps/desktop/electron-builder.config.mjs',
@@ -152,12 +152,13 @@ describe('DeepSeekHarness Electron workflows', () => {
 
   it('passes built product extension file URLs and startup diagnostics to UI acceptance', () => {
     const root = resolve(import.meta.dirname, '..')
-    const smoke = readFileSync(resolve(root, 'apps/web/tests/deepseek-harness-catalog.e2e.ts'), 'utf8')
+    const smoke = readFileSync(resolve(root, 'apps/web/tests/deepseek-harness-desktop.e2e.ts'), 'utf8')
     expect(smoke).toContain("DSH_DESKTOP_EXTENSION: pathToFileURL(join(REPO_ROOT, 'packages/deepseek-harness-product/desktop/lib/index.js')).href")
     expect(smoke).toContain('DSH_DESKTOP_DIAGNOSTIC_FILE: startupDiagnostic')
     expect(smoke).toContain("if (task.result?.state !== 'fail') return")
     const hosted = readFileSync(resolve(root, '.github/workflows/product-desktop-package.yml'), 'utf8')
     expect(hosted).toContain('.artifacts/deepseek-harness-catalog/electron-*-startup.txt')
+    expect(hosted).toContain('verify-ui-acceptance.mjs .artifacts/desktop-ui-${{ matrix.target }}.json built')
   })
 
   it('downloads packages from the internal registry with job-local storage', () => {

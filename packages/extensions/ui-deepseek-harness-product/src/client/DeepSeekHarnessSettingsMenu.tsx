@@ -10,16 +10,29 @@ import css from '../DeepSeekHarnessProduct.module.css'
 import { DesktopFeedback } from './DesktopFeedback.tsx'
 import { invokeProduct, productApi, type ProductApi } from './product-api.ts'
 import type { EmployeeSignInActions } from './employee-sign-in.ts'
+import { ProductActionLabel } from './ProductActionLabel.tsx'
+import { useResultFocus } from './useResultFocus.ts'
 
 type EmployeeStatus = { readonly phase: 'checking' | 'unavailable' }
   | { readonly phase: 'ready'; readonly session: Awaited<ReturnType<ProductApi['getSession']>> }
 
-/** The persistent sidebar owns employee status, DingTalk authorization, and product settings. */
+/** The persistent sidebar owns employee status, DingTalk authorization, and product settings.
+ * A missing or expired employee session opens one login prompt until authorization succeeds; cancellation suppresses repeated notices.
+ * Authorization retries retain their feedback, focused action and reserved label width.
+ * If sign-in removes its directory entry, lost return focus uses the employee button or its page when the sidebar is inert.
+ */
 export function DeepSeekHarnessSettingsMenu({ wide, settingsShortcut, openSettings, openSoftwareUpdate,
   openEmployeeSignIn, subscribeEmployeeSignIn, t }:
 PropsRuntime<'settings.launcher'> & PropsLocale<typeof NS> & EmployeeSignInActions & { readonly openSoftwareUpdate?: () => Promise<void> }) {
   const [open, setOpen] = useState(false)
   const employeeButton = useRef<HTMLButtonElement>(null)
+  const authorizationFocusArea = useRef<HTMLElement | null>(null)
+  const authorizationReturn = useRef<() => void>()
+  const preserveAuthorizationFocus = useResultFocus(authorizationFocusArea, () => {
+    const employee = employeeButton.current
+    if (employee?.isConnected && !employee.closest('[hidden], [inert]')) focusWithoutRing(employee, { preventScroll: true })
+    else authorizationReturn.current?.()
+  })
   const [feedbackOpen, setFeedbackOpen] = useState(false)
   const feedbackAfterSignIn = useRef(false)
   const [updateError, setUpdateError] = useState(false)
@@ -31,21 +44,32 @@ PropsRuntime<'settings.launcher'> & PropsLocale<typeof NS> & EmployeeSignInActio
   const [authError, setAuthError] = useState(false)
   const authorization = useRef<AbortController>()
   const sessionRevision = useRef(0)
+  const signInRequested = useRef(false)
+  const requireSignIn = useCallback(() => {
+    if (signInRequested.current) return
+    signInRequested.current = true
+    setOpen(false)
+    setFeedbackOpen(false)
+    setLoginVisible(true)
+  }, [])
   const cancelAuthorization = useCallback(() => {
+    preserveAuthorizationFocus()
     authorization.current?.abort()
     authorization.current = undefined
     setAuthPending(false)
     setAuthError(false)
     feedbackAfterSignIn.current = false
-  }, [])
+  }, [preserveAuthorizationFocus])
   const finishAuthorization = useCallback(() => {
+    signInRequested.current = false
+    preserveAuthorizationFocus()
     setLoginVisible(false)
     setAuthError(false)
     if (feedbackAfterSignIn.current) {
       feedbackAfterSignIn.current = false
       setFeedbackOpen(true)
     }
-  }, [])
+  }, [preserveAuthorizationFocus])
   const signIn = useCallback(async (): Promise<void> => {
     if (authorization.current !== undefined) return
     const api = productApi()
@@ -53,7 +77,6 @@ PropsRuntime<'settings.launcher'> & PropsLocale<typeof NS> & EmployeeSignInActio
     const controller = new AbortController()
     authorization.current = controller
     setAuthPending(true)
-    setAuthError(false)
     try {
       await invokeProduct(api, 'auth.ensureDingTalk', undefined, controller.signal, DINGTALK_AUTHORIZATION_TIMEOUT_MS + 10_000)
       controller.signal.throwIfAborted()
@@ -73,7 +96,9 @@ PropsRuntime<'settings.launcher'> & PropsLocale<typeof NS> & EmployeeSignInActio
       }
     }
   }, [finishAuthorization])
-  useEffect(() => subscribeEmployeeSignIn(() => {
+  useEffect(() => subscribeEmployeeSignIn((returnFocus) => {
+    signInRequested.current = true
+    authorizationReturn.current = returnFocus
     setOpen(false)
     setLoginVisible(true)
     void signIn()
@@ -84,6 +109,12 @@ PropsRuntime<'settings.launcher'> & PropsLocale<typeof NS> & EmployeeSignInActio
     const revision = sessionRevision.current
     const unsubscribe = api?.subscribe((event) => {
       const value = event.payload
+      if (event.type === 'auth.required') {
+        sessionRevision.current += 1
+        setEmployee({ phase: 'ready', session: { authenticated: false } })
+        requireSignIn()
+        return
+      }
       if (event.type !== 'session.changed' || typeof value !== 'object' || value === null
         || !('authenticated' in value) || typeof value.authenticated !== 'boolean') return
       sessionRevision.current += 1
@@ -91,11 +122,15 @@ PropsRuntime<'settings.launcher'> & PropsLocale<typeof NS> & EmployeeSignInActio
         ...'employeeId' in value && typeof value.employeeId === 'string' ? { employeeId: value.employeeId } : {},
         ...'displayName' in value && typeof value.displayName === 'string' ? { displayName: value.displayName } : {} } })
       if (value.authenticated) finishAuthorization()
-      else setFeedbackOpen(false)
+      else { setFeedbackOpen(false); requireSignIn() }
     })
     if (api === undefined) setEmployee({ phase: 'unavailable' })
     else void api.getSession().then((session) => {
-      if (live && revision === sessionRevision.current) setEmployee({ phase: 'ready', session })
+      if (live && revision === sessionRevision.current) {
+        setEmployee({ phase: 'ready', session })
+        if (session.authenticated) signInRequested.current = false
+        else requireSignIn()
+      }
     }).catch(() => {
       if (live && revision === sessionRevision.current) setEmployee({ phase: 'unavailable' })
     })
@@ -105,7 +140,7 @@ PropsRuntime<'settings.launcher'> & PropsLocale<typeof NS> & EmployeeSignInActio
       authorization.current?.abort()
       authorization.current = undefined
     }
-  }, [finishAuthorization])
+  }, [finishAuthorization, requireSignIn])
   useEffect(() => {
     operation.current.live = true
     return () => { operation.current.live = false }
@@ -155,14 +190,18 @@ PropsRuntime<'settings.launcher'> & PropsLocale<typeof NS> & EmployeeSignInActio
         }
         if (id === 'software-update') void update()
       }} />
-    <Modal open={loginVisible} title={t(authPending ? 'authWaiting' : 'authTitle')} closeLabel={t('close')}
-      description={t(authPending ? 'authBrowserHint' : 'authRequired')}
+    <Modal open={loginVisible} title={t('authTitle')} closeLabel={t('close')}
+      description={t('authBrowserHint')}
       onClose={() => { cancelAuthorization(); setLoginVisible(false) }}
-      footer={<div className={css.detailActions}>
+      footer={<div ref={(node) => { authorizationFocusArea.current = node?.closest<HTMLElement>('[role="dialog"]') ?? null }} className={css.detailActions}>
         <Button variant="outline" size="sm" onClick={() => { cancelAuthorization(); setLoginVisible(false) }}>{t('cancel')}</Button>
-        <Button variant="primary" size="sm" disabled={authPending} onClick={() => { void signIn() }}>{t(authPending ? 'signingIn' : 'signIn')}</Button>
+        <Button variant="primary" size="sm" aria-disabled={authPending} aria-busy={authPending}
+          className={authPending ? 'product-control-pending' : undefined} onClick={() => { void signIn() }}>
+          <ProductActionLabel pending={authPending} label={t('signIn')} pendingLabel={t('signingIn')} />
+        </Button>
       </div>}>
-      {authError && <p role="alert" className={css.catalogError}>{t('signInFailed')}</p>}
+      <p role={authError ? 'alert' : undefined} aria-hidden={!authError}
+        className={`${css.catalogError} ${css.employeeAuthorizationError}`}>{t('signInFailed')}</p>
     </Modal>
     <DesktopFeedback open={feedbackOpen} onClose={() => { setFeedbackOpen(false) }} t={t} />
   </div>

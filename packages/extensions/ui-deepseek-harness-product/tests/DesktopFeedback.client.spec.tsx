@@ -40,7 +40,7 @@ it('keeps failed feedback and the send button stable while retrying once', async
   expect(send.getAttribute('aria-busy')).toBe('true')
   expect(send.classList.contains('product-control-pending')).toBe(true)
   await waitFor(() => { expect(invoke.mock.calls.filter(call => call[1] === 'support.feedback.submit')).toHaveLength(2) })
-  expect({ error: error.textContent, action: send.textContent, busy: send.getAttribute('aria-busy'),
+  expect({ error: error.textContent, action: send.querySelector('[aria-hidden="false"]')?.textContent, busy: send.getAttribute('aria-busy'),
     focused: document.activeElement === send }).toMatchSnapshot()
   await act(async () => { response.resolve({ ok: true, result: { id: 'confirmed' } }) })
   await screen.findByText('confirmed')
@@ -202,11 +202,13 @@ it('inserts mixed clipboard text at the selection and keeps images within the me
   input.setSelectionRange(2, 2)
   fireEvent.paste(input, { clipboardData: { files: [new File(['png'], 'mixed.png', { type: 'image/png' })], getData: () => '截图说明' } })
   expect(input.value).toBe('前文截图说明后文')
+  expect([input.selectionStart, input.selectionEnd]).toEqual([6, 6])
   expect(await screen.findByAltText('mixed.png')).toBeTruthy()
   fireEvent.change(input, { target: { value: '文'.repeat(1999) } })
   input.setSelectionRange(1999, 1999)
   fireEvent.paste(input, { clipboardData: { files: [new File(['png'], 'limit.png', { type: 'image/png' })], getData: () => '末尾' } })
   expect(input.value).toBe('文'.repeat(1999) + '末')
+  expect([input.selectionStart, input.selectionEnd]).toEqual([2000, 2000])
   expect(await screen.findByAltText('limit.png')).toBeTruthy()
 })
 

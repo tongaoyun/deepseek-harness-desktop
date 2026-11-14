@@ -57,3 +57,13 @@ exports[`restores capability browsing after a failed authorization refresh witho
   "visible": 40,
 }
 `;
+
+exports[`retains the device entry during authorization refresh ('resolve', elsewhere=false) > Device entry waiting for refresh 1`] = `
+{
+  "disabled": false,
+  "focused": true,
+  "label": "配置本机连接",
+  "preservesAppearance": true,
+  "unavailable": "true",
+}
+`;

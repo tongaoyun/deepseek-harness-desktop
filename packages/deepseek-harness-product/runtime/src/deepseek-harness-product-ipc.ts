@@ -36,7 +36,7 @@ export class DeepSeekHarnessProductIpc {
    */
   invoke(method: ProductRuntimeMethod, payload?: unknown, signal?: AbortSignal, timeoutMs?: number): Promise<unknown> {
     if (timeoutMs !== undefined && (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 1_800_000)) {
-      return Promise.reject(new ProductError('KNOWLEDGE_REQUEST_INVALID', 'Invalid file request timeout', false))
+      return Promise.reject(new ProductError('LIBRARY_REQUEST_INVALID', 'Invalid file request timeout', false))
     }
     if (this.closed || !process.connected || process.send === undefined) {
       return Promise.reject(new Error('deepseek-harness product: Electron main is unavailable'))
@@ -76,8 +76,7 @@ export class DeepSeekHarnessProductIpc {
     this.pending.delete(message.requestId)
     if (message.error === undefined) pending.resolve(message.result)
     else pending.reject(message.failure === undefined ? new Error(message.error)
-      : new ProductError(message.failure.code, message.failure.message, message.failure.retryable, message.failure.resources,
-        { dependencyChecks: message.failure.dependencyChecks }))
+      : new ProductError(message.failure.code, message.failure.message, message.failure.retryable, message.failure.resources))
     return true
   }
 

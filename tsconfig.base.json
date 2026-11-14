@@ -62,7 +62,7 @@
       "@deepseek-harness/product-desktop/*": ["./packages/deepseek-harness-product/desktop/src/*.ts"],
       "@deepseek-harness/product": ["./packages/deepseek-harness-product/product/src/index.ts"],
             "@deepseek-harness/product/connector-draft": ["./packages/deepseek-harness-product/product/src/connector-draft.ts"],
-      "@deepseek-harness/product/capabilities": ["./packages/deepseek-harness-product/product/src/capabilities.ts"],
+      "@deepseek-harness/product/library": ["./packages/deepseek-harness-product/product/src/library.ts"],
       "@deepseek-harness/product/company-team": ["./packages/deepseek-harness-product/product/src/company-team.ts"],
       "@deepseek-harness/product/content-categories": ["./packages/deepseek-harness-product/product/src/content-categories.ts"],
       "@deepseek-harness/product/content-paths": ["./packages/deepseek-harness-product/product/src/content-paths.ts"],
@@ -434,6 +434,8 @@
       // session-log-export lives under session-query/, so the generated aliases map only its
       // bare name; the browser half needs this explicit subpath for source-mode dynamic imports.
       "@deepseek-ai/dsh-session-log-export/client": ["./packages/session-query/session-log-export/src/client"],
+      "@deepseek-ai/dsh-deepseek-chat-import/client": ["./packages/experimental/deepseek-chat-import/src/client/index.ts"],
+      "@deepseek-ai/dsh-deepseek-chat-import/types": ["./packages/experimental/deepseek-chat-import/src/types.ts"],
       "@deepseek-ai/dsh-compaction-image-offload/projection": ["./packages/compaction/compaction-image-offload/src/projection.ts"],
       "@deepseek-ai/dsh-session-format-catalog/message-projections": ["./packages/session/session-format-catalog/src/message-projections.ts"],
       "@deepseek-ai/dsh-native-command/types": ["./packages/util/native-command/src/types.ts"],
@@ -481,6 +483,7 @@
       "@deepseek-ai/dsh-credentials": ["./packages/credentials/credentials/src"],
       "@deepseek-ai/dsh-credentials-local": ["./packages/credentials/credentials-local/src"],
       "@deepseek-ai/dsh-cua-bundle": ["./packages/experimental/cua-bundle/src"],
+      "@deepseek-ai/dsh-deepseek-chat-import": ["./packages/experimental/deepseek-chat-import/src"],
       "@deepseek-ai/dsh-deepseek-llm-api-extensions": ["./packages/llm/deepseek-llm-api-extensions/src"],
       "@deepseek-ai/dsh-deliverable-file-references": ["./packages/deliverables/deliverable-file-references/src"],
       "@deepseek-ai/dsh-deque": ["./packages/util/deque/src"],

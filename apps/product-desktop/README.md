@@ -7,6 +7,8 @@
 
 开发入口加载已构建的产品扩展。完成仓库构建和原生运行时准备后，在仓库根目录执行 `pnpm run start:product-desktop` 打开当前产品装配；`pnpm run dev:product-desktop` 会先构建再启动。钉钉登录和企业目录使用这些入口，官方 `dev:desktop` 和 `start:desktop` 不选择产品扩展。
 
+完整重建前退出开发桌面，构建完成后重新启动；原生客户端的启动模块不支持热替换。
+
 产品启动器在 `apps/desktop/.desktop-build/product-development/` 下使用独立 home 和 Electron 用户数据目录，可通过 `DSH_PRODUCT_HOME` 和 `DSH_PRODUCT_USER_DATA` 显式覆盖。继承的官方 `DSH_HOME` 和 `DSH_DESKTOP_USER_DATA_DIR` 不决定产品状态目录。开发时可用 `DEEPSEEK_HARNESS_SERVER_URL` 覆盖服务端 origin，安装版读取打包资源。已保存的员工会话过期时需正常钉钉登录，不在 profile 之间复制令牌。
 
 Host 沿用官方 CLI 包作为安装清单入口，插件管理页据此发现随附的实验插件。自定义插件市场在“插件 → 实验性插件 → 更多”中启用；市场源由用户配置，产品不预置市场源。
@@ -39,4 +41,4 @@ Gitea CI 和同步任务使用内网依赖源，执行一次锁定依赖安装�
 <a id="local-checks"></a>
 ## 本地检查
 
-专家和技能测试由根 Vitest 配置统一收集，包含导入模块的 `.test` 和产品 `.spec` 用例；CI 使用同一入口，不维护独立测试配置。按改动选择产品回归、真实 Loader/profile 或安装后验收；只改文档不重跑安装流程。完整构建中的 Host 总检查等待产品 bundle 声明生成，避免读取正在重建的文件。[验收说明](docs/acceptance.md)列出入口、结果和限制，仓库级检查见[测试文档](../../docs/testing.zh.md)。
+专家和技能测试由根 Vitest 配置统一收集，包含导入模块的 `.test` 和产品 `.spec` 用例；CI 使用同一入口，不维护独立测试配置。启动真实 Host 的浏览器回归登记在根 `tsconfig.host.json`，并从 `apps/web/tsconfig.json` 排除。按改动选择产品回归、真实 Loader/profile 或安装后验收；只改文档不重跑安装流程。完整构建中的 Host 总检查等待产品 bundle 声明生成，避免读取正在重建的文件。[验收说明](docs/acceptance.md)列出入口、结果和限制，仓库级检查见[测试文档](../../docs/testing.zh.md)。

@@ -395,8 +395,11 @@ it.each(['trash', 'delete'] as const)('keeps a failed skill %s confirmation visi
   if (operation === 'trash') mock.unary('skillsManager/trashSkill', () => failure)
   else mock.unary('skillsManager/deleteTrash', () => failure)
   const dialog = screen.getByRole('dialog')
+  const feedback = dialog.querySelector('.dssm-write-feedback')
+  expect(feedback?.textContent).toBe('')
   fireEvent.click(within(dialog).getByRole('button', { name: action }))
   const notice = await within(dialog).findByRole('alert')
+  expect(notice.closest('.dssm-write-feedback')).toBe(feedback)
   expect(notice.textContent).toContain(zh['error.proto.forbidden'])
   expect(document.querySelectorAll('.dssm-feedback')).toHaveLength(1)
   const retry = deferred<undefined>()
@@ -420,6 +423,7 @@ it.each(['trash', 'delete'] as const)('keeps a failed skill %s confirmation visi
     expect(screen.getByRole('dialog')).toBe(dialog)
     expect(marketTab.getAttribute('aria-selected')).toBe('false')
     expect(within(dialog).getByRole('alert')).toBe(notice)
+    expect(notice.closest('.dssm-write-feedback')).toBe(feedback)
     expect(within(dialog).getByRole('button', { name: action })).toBe(confirm)
     expect(confirm.getAttribute('aria-busy')).toBe('true')
     expect(confirm.classList.contains('product-control-pending')).toBe(true)
@@ -450,12 +454,15 @@ it.each(['failure', 'partial'] as const)('keeps import %s feedback, selection an
   const dialog = screen.getByRole('dialog')
   const form = within(dialog)
   fireEvent.change(dialog.querySelector('input[type="file"][accept]')!, { target: { files: [uploadFile('skill.zip', 'content')] } })
+  const feedback = dialog.querySelector('.dssm-write-feedback')
+  expect(feedback?.textContent).toBe('')
   mock.unary('skillsManager/uploadSkill', () => outcome === 'failure'
     ? { ok: false, error: new RemoteError('skills/operation', 'Import unavailable', { code: 'error.proto.forbidden' }) }
     : ok({ imported: [{ name: 'ready-skill', overwritten: false, warnings: [] }], skipped: [],
       failed: [{ source: '/temporary/import/broken-skill', error: 'Duplicate name', code: 'error.import.duplicateName', params: { name: 'broken-skill' } }] }))
   fireEvent.click(form.getByRole('button', { name: zh['btn.import.now'] }))
   const notice = await form.findByRole('alert')
+  expect(notice.closest('.dssm-write-feedback')).toBe(feedback)
   const pending = deferred<SkillOutput<'uploadSkill'>>()
   mock.unary('skillsManager/uploadSkill', async () => ok(await pending.promise))
   const confirm = form.getByRole('button', { name: zh['btn.import.now'] })
@@ -467,6 +474,7 @@ it.each(['failure', 'partial'] as const)('keeps import %s feedback, selection an
     act(() => { fireEvent.click(confirm); fireEvent.click(pick); fireEvent.click(cancel); fireEvent.click(confirm) })
     expect(screen.getByRole('dialog')).toBe(dialog)
     expect(form.getByRole('alert')).toBe(notice)
+    expect(notice.closest('.dssm-write-feedback')).toBe(feedback)
     expect(form.getByText('skill.zip')).toBeTruthy()
     expect(form.getByRole('button', { name: zh['btn.import.now'] })).toBe(confirm)
     expect(confirm.getAttribute('aria-busy')).toBe('true')
@@ -484,6 +492,42 @@ it.each(['failure', 'partial'] as const)('keeps import %s feedback, selection an
   } finally {
     await act(async () => { pending.resolve({ imported: [], skipped: [], failed: [] }); await pending.promise })
   }
+})
+
+it('retains partial import feedback and its scroll position while refreshing the directory after a retry', async () => {
+  const { data, mock } = await setup(false)
+  data.writeDestinations.push({ key: 'dsh', path: '/skills/dsh', label: 'DSH skills', available: true })
+  await screen.findByText(zh['empty.company'])
+  fireEvent.click(screen.getByRole('tab', { name: zh['scope.mine'] }))
+  fireEvent.click(screen.getByRole('button', { name: zh['import.title'] }))
+  const dialog = screen.getByRole('dialog'), form = within(dialog)
+  fireEvent.change(dialog.querySelector('input[type="file"][accept]')!, { target: { files: [uploadFile('skill.zip', 'content')] } })
+  const partial: SkillOutput<'uploadSkill'> = { imported: [{ name: 'ready-skill', overwritten: false, warnings: [] }], skipped: [],
+    failed: [{ source: '/temporary/import/broken-skill', error: 'Duplicate name', code: 'error.import.duplicateName', params: { name: 'broken-skill' } }] }
+  mock.unary('skillsManager/uploadSkill', () => ok(partial))
+  const confirm = form.getByRole('button', { name: zh['btn.import.now'] })
+  fireEvent.click(confirm)
+  const notice = await form.findByRole('alert')
+  await waitFor(() => { expect(confirm.getAttribute('aria-busy')).toBe('false') })
+  const feedback = notice.closest<HTMLElement>('.dssm-write-feedback')!
+  feedback.scrollTop = 40
+  const readback = deferred<undefined>()
+  const reading = vi.fn()
+  mock.unary('skillsManager/readState', async () => { reading(); await readback.promise; return ok(data) })
+  onTestFinished(async () => { readback.resolve(undefined); await readback.promise })
+  confirm.focus()
+  fireEvent.click(confirm)
+  await waitFor(() => { expect(reading).toHaveBeenCalledOnce() })
+  expect(form.queryByRole('alert')).toBe(notice)
+  expect(feedback.scrollTop).toBe(40)
+  expect(document.activeElement).toBe(confirm)
+  expect(confirm.getAttribute('aria-busy')).toBe('true')
+  await act(async () => { readback.resolve(undefined); await readback.promise })
+  await waitFor(() => { expect(confirm.getAttribute('aria-busy')).toBe('false') })
+  expect(form.getByRole('alert')).toBe(notice)
+  expect(feedback.scrollTop).toBe(40)
+  expect(form.getByText('skill.zip')).toBeTruthy()
+  expect(mock.remote.skillsManager.uploadSkill).toHaveBeenCalledTimes(2)
 })
 
 it('retains the skill refresh focus and rejects repeated activation until the directory read settles', async () => {
@@ -1753,7 +1797,10 @@ it.each([false, true])('preserves loaded project skills and empty results while 
   refreshing = true
   fireEvent.click(screen.getByRole('button', { name: '刷新' }))
   expect(screen.queryByRole('menu')).toBeNull()
-  expect(workspace).toHaveProperty('disabled', true)
+  expect(workspace).toHaveProperty('disabled', false)
+  expect(workspace.getAttribute('aria-disabled')).toBe('true')
+  fireEvent.click(workspace)
+  expect(screen.queryByRole('menu')).toBeNull()
   expect(workspace.classList.contains('product-control-pending')).toBe(true)
   expect(workspace.getAttribute('aria-busy')).toBe('true')
   expect(workspace.querySelector('svg')).toBe(workspaceGlyph)
@@ -2044,4 +2091,46 @@ it('cancels a superseded workspace read and retains the refreshed skill list', a
     expect(screen.queryByText('stale-skill')).toBeNull()
     expect(screen.getByText('refreshed-skill')).toBeTruthy()
   } finally { pending.resolve(data) }
+})
+
+it.each(['listWorkspaces', 'readWorkspace'] as const)('retains confirmed project skills through a failed %s refresh and retry', async (method) => {
+  const { data, mock, requests } = await setup(true)
+  await screen.findByText('共享技能')
+  const listed = { items: [{ name: '项目', available: true, registeredPaths: ['/workspace'] }] }
+  const project = { ...data, roots: [root('dsh', [skill('项目审核技能')])] }
+  mock.unary('skillsManager/listWorkspaces', () => ok(listed))
+  mock.unary('skillsManager/readWorkspace', () => ok(project))
+  fireEvent.click(screen.getByRole('tab', { name: zh['scope.mine'] }))
+  fireEvent.click(screen.getByRole('tab', { name: zh['scope.project'] }))
+  const name = await screen.findByText('项目审核技能')
+  const row = name.closest('.dssm-skill-row')
+  const toggle = screen.getByRole('switch', { name: '启停技能 项目审核技能' })
+  const search = screen.getByRole<HTMLInputElement>('textbox', { name: zh.search })
+  fireEvent.change(search, { target: { value: '项目' } })
+  search.setSelectionRange(0, 1)
+  mock.unary(`skillsManager/${method}`, () => ({ ok: false, error: new RemoteError('skills/operation', 'Workspace unavailable', {
+    code: 'error.workspace.registryUnavailable',
+  }) }))
+  const refresh = screen.getByRole('button', { name: zh['btn.refresh'] })
+  refresh.focus(); fireEvent.click(refresh)
+  const notice = await screen.findByRole('alert')
+  expect(screen.getByText('项目审核技能').closest('.dssm-skill-row')).toBe(row)
+  expect(screen.getByRole('switch', { name: '启停技能 项目审核技能' })).toBe(toggle)
+  expect(screen.getByRole('textbox', { name: zh.search })).toBe(search)
+  expect([search.selectionStart, search.selectionEnd]).toEqual([0, 1])
+  expect(document.activeElement).toBe(refresh)
+  const retry = deferred<SkillOutput<typeof method>>()
+  mock.unary(`skillsManager/${method}`, async () => ok(await retry.promise))
+  const reads = requests(method).length
+  fireEvent.click(refresh); fireEvent.click(refresh)
+  await waitFor(() => { expect(requests(method)).toHaveLength(reads + 1) })
+  expect(screen.getByRole('alert')).toBe(notice)
+  expect(screen.getByText('项目审核技能').closest('.dssm-skill-row')).toBe(row)
+  expect(document.activeElement).toBe(refresh)
+  await act(async () => { retry.resolve(method === 'listWorkspaces' ? listed : project); await retry.promise })
+  await waitFor(() => { expect(screen.queryByRole('alert')).toBeNull() })
+  expect(screen.getByText('项目审核技能').closest('.dssm-skill-row')).toBe(row)
+  expect(screen.getByRole('switch', { name: '启停技能 项目审核技能' })).toBe(toggle)
+  expect([search.selectionStart, search.selectionEnd]).toEqual([0, 1])
+  expect(document.activeElement).toBe(refresh)
 })

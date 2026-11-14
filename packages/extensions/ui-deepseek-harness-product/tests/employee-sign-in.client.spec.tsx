@@ -1,16 +1,19 @@
 // @vitest-environment jsdom
+import type { ReactNode } from 'react'
 import { Context } from '@deepseek-ai/cordis'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
-import { afterEach, expect, it, vi } from 'vitest'
+import { afterEach, expect, it, onTestFinished, vi } from 'vitest'
 import { contextMenuHook, makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import { zh as commonZh } from '@deepseek-ai/dsh-client-locale/src/locales/zh.ts'
 import { ProductError, productFailure } from '@deepseek-harness/product/errors'
 import { DINGTALK_AUTHORIZATION_TIMEOUT_MS } from '@deepseek-harness/product/protocol'
-import { ConnectorsPanel, KnowledgePanel } from '../src/client/DeepSeekHarnessCatalogSection.tsx'
+import { LibraryPanel } from '../src/client/LibraryPanel.tsx'
+import { TaskLibraryInput } from '../src/client/TaskLibraryInput.tsx'
+import { SessionId } from '@deepseek-ai/dsh-session/types'
+import { ConnectorsPanel } from '../src/client/DeepSeekHarnessCatalogSection.tsx'
 import { DeepSeekHarnessSettingsMenu } from '../src/client/DeepSeekHarnessSettingsMenu.tsx'
 import { createEmployeeSignInActions } from '../src/client/employee-sign-in.ts'
 import { en, zh } from '../src/locales.ts'
-import { renderKnowledgePreview } from './knowledge-preview-fixture.client.tsx'
 
 const contexts: Context[] = []
 afterEach(async () => {
@@ -19,12 +22,20 @@ afterEach(async () => {
   vi.unstubAllGlobals()
 })
 const t = makeTranslate(zh, commonZh)
+
+async function renderAfterInitialPrompt(node: ReactNode) {
+  const view = render(node)
+  await act(async () => {})
+  const prompt = screen.queryByRole('dialog', { name: zh.authTitle })
+  if (prompt) fireEvent.click(within(prompt).getByRole('button', { name: zh.cancel }))
+  return view
+}
 function unusedSlot(): never { throw new Error('Employee sign-in does not read this slot') }
 const actions = {
   useContextMenu: contextMenuHook(),
   usePanelInfo: unusedSlot, useRemoteAccess: unusedSlot, useSessionAccess: unusedSlot, useWorkspaceAccess: unusedSlot,
   useSessions: unusedSlot, useSessionStatus: unusedSlot, useSessionRetainInfo: unusedSlot,
-  useWorkspaces: unusedSlot, useResource: unusedSlot, useAccess: unusedSlot, renderFactorySlot: renderKnowledgePreview,
+  useWorkspaces: unusedSlot, useResource: unusedSlot, useAccess: unusedSlot, renderFactorySlot: (() => null),
 }
 
 function fixture() {
@@ -34,7 +45,8 @@ function fixture() {
   const requests: { id: string; timeout?: number }[] = []
   const cancel = vi.fn()
   const getSession = vi.fn(async () => session)
-  const resources = vi.fn(async (_method: string): Promise<unknown> => [])
+  const resources = vi.fn(async (method: string): Promise<unknown> => method === 'library.list'
+    ? { data: [], pageIndex: 1, pageSize: 20, totalCount: 0, totalPages: 0 } : [])
   const changeSession = (value: Session) => {
     session = value
     for (const listener of listeners) listener({ type: 'session.changed', payload: value })
@@ -63,25 +75,72 @@ function fixture() {
   const ctx = new Context()
   contexts.push(ctx)
   const employeeSignIn = createEmployeeSignInActions(ctx)
-  const tree = (catalog?: 'connectors' | 'knowledge', translate = t, wide = true) => <>
+  const tree = (catalog?: 'connectors' | 'library', translate = t, wide = true) => <>
     <DeepSeekHarnessSettingsMenu {...actions} {...employeeSignIn} t={translate} wide={wide}
       settingsOpen={false} openSettings={vi.fn()} openOnboarding={vi.fn()} />
-    {catalog === 'knowledge' ? <KnowledgePanel {...actions} {...employeeSignIn} t={translate} />
+    {catalog === 'library' ? <LibraryPanel {...actions} {...employeeSignIn} t={translate} />
       : catalog === 'connectors' ? <ConnectorsPanel {...actions} {...employeeSignIn} t={translate} /> : null}
   </>
   return { tree, requests, cancel, getSession, resources, authorize, changeSession, employeeSignIn,
+    requireSignIn: () => { for (const listener of listeners) listener({ type: 'auth.required' }) },
     refreshCatalog: () => { for (const listener of listeners) listener({ type: 'catalog.changed' }) } }
 }
 
-it.each(['connectors', 'knowledge'] as const)('routes signed-out %s through the persistent sidebar login', async (catalog) => {
+it('automatically shows one shared login prompt before starting browser authorization', async () => {
   const f = fixture()
-  render(f.tree(catalog))
+  const view = render(f.tree('library'))
+  const dialog = await screen.findByRole('dialog', { name: zh.authTitle })
+  expect(f.authorize).not.toHaveBeenCalled()
+  expect(f.resources).not.toHaveBeenCalled()
+  act(() => { f.requireSignIn(); f.changeSession({ authenticated: false }) })
+  expect(screen.getByRole('dialog')).toBe(dialog)
+  expect(f.authorize).not.toHaveBeenCalled()
+  fireEvent.click(within(dialog).getByRole('button', { name: zh.cancel }))
+  view.rerender(f.tree('connectors'))
+  act(() => { f.requireSignIn(); f.changeSession({ authenticated: false }) })
+  await act(async () => {})
+  expect(screen.queryByRole('dialog')).toBeNull()
+  fireEvent.click(screen.getByRole('button', { name: zh.signIn }))
+  await screen.findByRole('button', { name: '测试员工' })
+  expect(f.authorize).toHaveBeenCalledOnce()
+  act(() => { f.changeSession({ authenticated: false }); f.requireSignIn() })
+  expect(screen.getAllByRole('dialog')).toHaveLength(1)
+  expect(f.authorize).toHaveBeenCalledOnce()
+})
+
+it('opens the shared prompt on expiration and ignores an older authenticated identity read', async () => {
+  const f = fixture(), identity = Promise.withResolvers<Awaited<ReturnType<typeof f.getSession>>>()
+  f.getSession.mockReturnValue(identity.promise)
+  const view = render(f.tree())
+  onTestFinished(() => { view.unmount(); identity.resolve({ authenticated: true, employeeId: 'previous' }) })
+  act(() => { f.requireSignIn() })
+  const dialog = await screen.findByRole('dialog', { name: zh.authTitle })
+  await act(async () => { identity.resolve({ authenticated: true, employeeId: 'previous', displayName: '旧员工' }) })
+  expect(screen.getByRole('dialog')).toBe(dialog)
+  expect(screen.queryByRole('button', { name: '旧员工' })).toBeNull()
+  expect(f.authorize).not.toHaveBeenCalled()
+  fireEvent.click(within(dialog).getByRole('button', { name: zh.cancel }))
+  expect(screen.getByRole('button', { name: zh.employeeSignedOut })).toBeTruthy()
+})
+
+it('keeps an unavailable identity distinct from a signed-out employee', async () => {
+  const f = fixture()
+  f.getSession.mockRejectedValue(new Error('Employee status offline'))
+  render(f.tree())
+  await screen.findByRole('button', { name: zh.employeeStatusUnavailable })
+  expect(screen.queryByRole('dialog')).toBeNull()
+  expect(f.authorize).not.toHaveBeenCalled()
+})
+
+it.each(['connectors', 'library'] as const)('routes signed-out %s through the persistent sidebar login', async (catalog) => {
+  const f = fixture()
+  await renderAfterInitialPrompt(f.tree(catalog))
   await screen.findByRole('button', { name: zh.employeeSignedOut })
   expect(screen.getByRole('heading', { level: 1, name: zh[catalog] })).toBeDefined()
   expect(screen.queryByRole('status')).toBeNull()
   expect(screen.queryByText(zh.authTitle)).toBeNull()
   expect(screen.queryByRole('button', { name: zh.addExtension })).toBeNull()
-  expect(screen.queryByRole('button', { name: zh.knowledgeCreatePersonalBase })).toBeNull()
+  expect(screen.queryByRole('button', { name: zh.libraryCreate })).toBeNull()
   expect(f.resources).not.toHaveBeenCalled()
   fireEvent.click(screen.getByRole('button', { name: zh.signIn }))
   await screen.findByRole('button', { name: '测试员工' })
@@ -90,9 +149,82 @@ it.each(['connectors', 'knowledge'] as const)('routes signed-out %s through the 
   expect(document.body.textContent).not.toContain('private-employee')
 })
 
+it('routes the signed-out composer library action through shared login without querying private files', async () => {
+  const f = fixture(), login = Promise.withResolvers<unknown>()
+  f.authorize.mockImplementationOnce(() => login.promise)
+  let open!: () => void
+  const focusInput = vi.fn(), signIn = vi.spyOn(f.employeeSignIn, 'openEmployeeSignIn')
+  await renderAfterInitialPrompt(<>{f.tree()}<TaskLibraryInput sessionId={SessionId('library-login')} t={t} renderFactorySlot={actions.renderFactorySlot}
+    subscribeOpen={(callback) => { open = callback; return () => {} }} attachLibraryFiles={vi.fn()}
+    openEmployeeSignIn={f.employeeSignIn.openEmployeeSignIn} focusInput={focusInput} /></>)
+  await screen.findByRole('button', { name: zh.employeeSignedOut })
+  act(() => { open() })
+  await screen.findByRole('dialog', { name: zh.authTitle })
+  expect(screen.queryByRole('dialog', { name: zh.libraryChooseFiles })).toBeNull()
+  expect(f.resources).not.toHaveBeenCalled()
+  expect(signIn).toHaveBeenCalledWith(focusInput)
+  fireEvent.click(screen.getByRole('button', { name: zh.cancel }))
+  await act(async () => { login.resolve({ authenticated: false }) })
+  expect(screen.queryByRole('dialog')).toBeNull()
+  expect(f.cancel).toHaveBeenCalledOnce()
+  act(() => { f.changeSession({ authenticated: true, employeeId: 'alice', displayName: '员工甲' }) })
+  act(() => { open() })
+  await screen.findByRole('dialog', { name: zh.libraryChooseFiles })
+  await waitFor(() => { expect(f.resources).toHaveBeenCalledWith('library.list') })
+  expect(signIn).toHaveBeenCalledOnce()
+})
+
+it('retains composer verification failure and retry focus until employee verification succeeds', async () => {
+  const f = fixture(), initial = Promise.withResolvers<Awaited<ReturnType<typeof f.getSession>>>()
+  f.getSession.mockReturnValueOnce(initial.promise)
+  let open!: () => void
+  render(<TaskLibraryInput sessionId={SessionId('library-verification')} t={t} renderFactorySlot={actions.renderFactorySlot}
+    subscribeOpen={(callback) => { open = callback; return () => {} }} attachLibraryFiles={vi.fn()}
+    openEmployeeSignIn={f.employeeSignIn.openEmployeeSignIn} focusInput={vi.fn()} />)
+  act(() => { open() })
+  const dialog = screen.getByRole('dialog')
+  expect(screen.getByRole('status')).toBeDefined()
+  expect(f.resources).not.toHaveBeenCalled()
+  await act(async () => { initial.reject(new Error('verification offline')) })
+  const alert = await screen.findByRole('alert'), retry = screen.getByRole('button', { name: zh.retry })
+  const verified = Promise.withResolvers<Awaited<ReturnType<typeof f.getSession>>>()
+  f.getSession.mockReturnValueOnce(verified.promise)
+  retry.focus(); fireEvent.click(retry); fireEvent.click(retry)
+  expect(screen.getByRole('dialog')).toBe(dialog)
+  expect(screen.getByRole('alert')).toBe(alert)
+  expect(screen.getByRole('button', { name: zh.retry })).toBe(retry)
+  expect(document.activeElement).toBe(retry)
+  expect(f.getSession).toHaveBeenCalledTimes(2)
+  expect(f.resources).not.toHaveBeenCalled()
+  await act(async () => { verified.resolve({ authenticated: true, employeeId: 'alice' }) })
+  await waitFor(() => { expect(f.resources).toHaveBeenCalledOnce() })
+  expect(screen.queryByRole('alert')).toBeNull()
+  expect(document.activeElement).toBe(screen.getByRole('button', { name: zh.cancel }))
+})
+
+it('clears private library rows before loading the new employee directory and retains its failure for retry', async () => {
+  const f = fixture()
+  f.changeSession({ authenticated: true, employeeId: 'alice', displayName: '员工甲' })
+  const library = { id: '11111111-1111-4111-8111-111111111111', name: '甲的私人资料', description: '', scope: 'PERSONAL',
+    ownerId: 'alice', managerEmployeeId: 'alice', canManage: true, version: 1,
+    createdAt: '2026-11-13T01:00:00Z', updatedAt: '2026-11-13T01:00:00Z' }
+  f.resources.mockResolvedValue({ data: [library], pageIndex: 1, pageSize: 20, totalCount: 1, totalPages: 1 })
+  await renderAfterInitialPrompt(f.tree('library'))
+  await screen.findByRole('button', { name: /甲的私人资料/ })
+  f.resources.mockRejectedValueOnce(new Error('New employee directory unavailable'))
+  act(() => { f.changeSession({ authenticated: true, employeeId: 'bob', displayName: '员工乙' }) })
+  await screen.findByRole('alert')
+  await waitFor(() => { expect(screen.queryByRole('button', { name: /甲的私人资料/ })).toBeNull() })
+  f.resources.mockResolvedValue({ data: [], pageIndex: 1, pageSize: 20, totalCount: 0, totalPages: 0 })
+  fireEvent.click(screen.getByRole('button', { name: zh.retry }))
+  await screen.findByRole('button', { name: zh.libraryCreate })
+  expect(screen.queryByRole('alert')).toBeNull()
+  expect(screen.queryByRole('button', { name: /甲的私人资料/ })).toBeNull()
+})
+
 it('shows the same signed-out label in wide and collapsed sidebars and reacts to employee events', async () => {
   const f = fixture()
-  const view = render(f.tree())
+  const view = await renderAfterInitialPrompt(f.tree())
   await screen.findByRole('button', { name: zh.employeeSignedOut })
   view.rerender(f.tree(undefined, t, false))
   expect(screen.getByRole('button', { name: zh.employeeSignedOut }).title).toBe(zh.employeeSignedOut)
@@ -106,7 +238,7 @@ it('shows the same signed-out label in wide and collapsed sidebars and reacts to
 it.each([true, false])('uses one employee button to toggle the menu with sidebar wide=%s', async (wide) => {
   const f = fixture()
   f.changeSession({ authenticated: true, employeeId: 'employee', displayName: '测试员工' })
-  render(f.tree(undefined, t, wide))
+  await renderAfterInitialPrompt(f.tree(undefined, t, wide))
   const employee = await screen.findByRole('button', { name: '测试员工' })
   expect(screen.getAllByRole('button')).toEqual([employee])
   fireEvent.click(employee)
@@ -119,7 +251,7 @@ it.each([true, false])('uses one employee button to toggle the menu with sidebar
 
 it.each([true, false])('keeps settings and explicit sign-in in one signed-out menu with sidebar wide=%s', async (wide) => {
   const f = fixture()
-  render(f.tree(undefined, t, wide))
+  await renderAfterInitialPrompt(f.tree(undefined, t, wide))
   const employee = await screen.findByRole('button', { name: zh.employeeSignedOut })
   expect(screen.getAllByRole('button')).toEqual([employee])
   fireEvent.click(employee)
@@ -134,7 +266,7 @@ it.each([true, false])('keeps settings and explicit sign-in in one signed-out me
 it('returns keyboard focus to the employee name after dismissing its menu', async () => {
   const f = fixture()
   f.changeSession({ authenticated: true, employeeId: 'employee', displayName: '测试员工' })
-  render(f.tree())
+  await renderAfterInitialPrompt(f.tree())
   const employee = await screen.findByRole('button', { name: '测试员工' })
   employee.focus()
   fireEvent.click(employee)
@@ -149,7 +281,7 @@ it.each(['feedback', 'signin'] as const)('returns keyboard focus to the employee
   const authorization = Promise.withResolvers<unknown>()
   if (entry === 'feedback') f.changeSession({ authenticated: true, employeeId: 'employee', displayName: '测试员工' })
   else f.authorize.mockImplementation(() => authorization.promise)
-  render(f.tree())
+  await renderAfterInitialPrompt(f.tree())
   const employee = await screen.findByRole('button', { name: entry === 'feedback' ? '测试员工' : zh.employeeSignedOut })
   employee.focus()
   fireEvent.click(employee)
@@ -167,7 +299,7 @@ it.each([true, false])('opens feedback after shared sign-in, with a successful e
   const f = fixture()
   const pending = Promise.withResolvers<unknown>()
   f.authorize.mockImplementation(() => pending.promise)
-  render(f.tree())
+  await renderAfterInitialPrompt(f.tree())
   fireEvent.click(await screen.findByRole('button', { name: zh.employeeSignedOut }))
   fireEvent.click(screen.getByRole('menuitem', { name: zh.feedbackTitle }))
   await screen.findByText(zh.authBrowserHint)
@@ -185,11 +317,57 @@ it.each([true, false])('opens feedback after shared sign-in, with a successful e
   expect(f.authorize).toHaveBeenCalledOnce()
 })
 
+it.each((['connectors', 'library'] as const).flatMap(catalog => [false, true].map(inert => ({ catalog, inert }))))(
+  'recovers login return focus when the $catalog opener disappears and sidebar inert=$inert', async ({ catalog, inert }) => {
+    const f = fixture()
+    const pending = Promise.withResolvers<unknown>()
+    f.authorize.mockImplementation(() => pending.promise)
+    const view = await renderAfterInitialPrompt(f.tree(catalog))
+    onTestFinished(() => { view.unmount(); pending.resolve({ authenticated: false }) })
+    const employee = await screen.findByRole('button', { name: zh.employeeSignedOut })
+    if (inert) employee.parentElement!.setAttribute('inert', '')
+    const opener = await screen.findByRole('button', { name: zh.signIn })
+    const region = screen.getByRole('heading', { level: 1, name: zh[catalog] }).closest('section')!
+    opener.focus(); fireEvent.click(opener)
+    const dialog = await screen.findByRole('dialog')
+    const waiting = within(dialog).getByRole('button', { name: zh.signingIn })
+    waiting.focus()
+    await act(async () => {
+      f.changeSession({ authenticated: true, employeeId: 'employee', displayName: '测试员工' })
+      pending.resolve({ authenticated: true })
+    })
+    expect(opener.isConnected).toBe(false)
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(screen.getByRole('heading', { level: 1, name: zh[catalog] }).closest('section')).toBe(region)
+    expect(document.activeElement).toBe(inert ? catalog === 'library'
+      ? screen.getByRole('searchbox', { name: zh.librarySearch }) : region : employee)
+  },
+)
+
+it.each(['connectors'] as const)('returns cancelled login focus to the retained %s opener and ignores a late failure', async (catalog) => {
+  const f = fixture()
+  const pending = Promise.withResolvers<unknown>()
+  f.authorize.mockImplementation(() => pending.promise)
+  const view = await renderAfterInitialPrompt(f.tree(catalog))
+  onTestFinished(() => { view.unmount(); pending.resolve({ authenticated: false }) })
+  const opener = await screen.findByRole('button', { name: zh.signIn })
+  opener.focus(); fireEvent.click(opener)
+  const dialog = await screen.findByRole('dialog')
+  within(dialog).getByRole('button', { name: zh.cancel }).focus()
+  fireEvent.keyDown(document.activeElement!, { key: 'Escape' })
+  expect(screen.queryByRole('dialog')).toBeNull()
+  expect(document.activeElement).toBe(opener)
+  expect(f.cancel).toHaveBeenCalledExactlyOnceWith(f.requests[0]!.id)
+  await act(async () => { pending.reject(new Error('Private cancelled failure')) })
+  expect(screen.queryByRole('alert')).toBeNull()
+  expect(document.activeElement).toBe(opener)
+})
+
 it('discards the pending feedback entry when authorization is cancelled', async () => {
   const f = fixture()
   const pending = Promise.withResolvers<unknown>()
   f.authorize.mockImplementation(() => pending.promise)
-  render(f.tree())
+  await renderAfterInitialPrompt(f.tree())
   fireEvent.click(await screen.findByRole('button', { name: zh.employeeSignedOut }))
   fireEvent.click(screen.getByRole('menuitem', { name: zh.feedbackTitle }))
   fireEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: zh.cancel }))
@@ -205,18 +383,20 @@ it('discards the pending feedback entry when authorization is cancelled', async 
 it('closes feedback on sign-out and does not expose the previous employee draft on reopening', async () => {
   const f = fixture()
   f.changeSession({ authenticated: true, employeeId: 'employee', displayName: '测试员工' })
-  render(f.tree())
+  await renderAfterInitialPrompt(f.tree())
   fireEvent.click(await screen.findByRole('button', { name: '测试员工' }))
   fireEvent.click(screen.getByRole('menuitem', { name: zh.feedbackTitle }))
   fireEvent.change(screen.getByRole('textbox', { name: zh.feedbackMessage }), { target: { value: '员工的私密草稿' } })
   act(() => { f.changeSession({ authenticated: false }) })
-  expect(screen.queryByRole('dialog')).toBeNull()
+  const login = screen.getByRole('dialog', { name: zh.authTitle })
+  expect(screen.queryByRole('textbox', { name: zh.feedbackMessage })).toBeNull()
+  fireEvent.click(within(login).getByRole('button', { name: zh.cancel }))
   fireEvent.click(screen.getByRole('button', { name: zh.employeeSignedOut }))
   fireEvent.click(screen.getByRole('menuitem', { name: zh.feedbackTitle }))
   expect(await screen.findByRole('textbox', { name: zh.feedbackMessage })).toHaveProperty('value', '')
 })
 
-it.each(['connectors', 'knowledge'] as const)('waits for identity verification before showing %s enterprise actions', async (catalog) => {
+it.each(['connectors'] as const)('waits for identity verification before showing %s enterprise actions', async (catalog) => {
   const f = fixture()
   const initial = Promise.withResolvers<{ authenticated: boolean }>()
   f.getSession.mockImplementation(() => initial.promise)
@@ -224,7 +404,7 @@ it.each(['connectors', 'knowledge'] as const)('waits for identity verification b
   expect(screen.getByRole('button', { name: zh.loading })).toHaveProperty('disabled', true)
   expect(screen.queryByRole('button', { name: zh.signIn })).toBeNull()
   expect(screen.queryByRole('button', { name: zh.addExtension })).toBeNull()
-  expect(screen.queryByRole('button', { name: zh.knowledgeCreatePersonalBase })).toBeNull()
+  expect(screen.queryByRole('button', { name: zh.libraryCreate })).toBeNull()
   await act(async () => { initial.resolve({ authenticated: false }) })
   await screen.findByRole('button', { name: zh.employeeSignedOut })
   expect(f.resources).not.toHaveBeenCalled()
@@ -246,13 +426,13 @@ it('keeps authorization alive across resource navigation and the successful empl
   const f = fixture()
   const pending = Promise.withResolvers<unknown>()
   f.authorize.mockImplementation(() => pending.promise)
-  const view = render(f.tree('connectors'))
+  const view = await renderAfterInitialPrompt(f.tree('connectors'))
   fireEvent.click(await screen.findByRole('button', { name: zh.employeeSignedOut }))
   fireEvent.click(screen.getByRole('menuitem', { name: zh.signIn }))
   await screen.findByText(zh.authBrowserHint)
   expect(f.requests[0]?.timeout).toBeGreaterThan(DINGTALK_AUTHORIZATION_TIMEOUT_MS)
-  view.rerender(f.tree('knowledge'))
-  await screen.findByRole('heading', { level: 1, name: zh.knowledge })
+  view.rerender(f.tree('library'))
+  await screen.findByRole('heading', { level: 1, name: zh.library })
   expect(screen.getAllByRole('dialog')).toHaveLength(1)
   expect(f.cancel).not.toHaveBeenCalledWith(f.requests[0]!.id)
   act(() => { f.changeSession({ authenticated: true, employeeId: 'employee', displayName: '测试员工' }) })
@@ -267,7 +447,7 @@ it('cancels authorization and ignores a late failure while a new login is waitin
   const first = Promise.withResolvers<unknown>()
   const second = Promise.withResolvers<unknown>()
   f.authorize.mockImplementationOnce(() => first.promise).mockImplementationOnce(() => second.promise)
-  render(f.tree())
+  await renderAfterInitialPrompt(f.tree())
   fireEvent.click(await screen.findByRole('button', { name: zh.employeeSignedOut }))
   fireEvent.click(screen.getByRole('menuitem', { name: zh.signIn }))
   fireEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: zh.cancel }))
@@ -276,7 +456,10 @@ it('cancels authorization and ignores a late failure while a new login is waitin
   fireEvent.click(screen.getByRole('button', { name: zh.employeeSignedOut }))
   fireEvent.click(screen.getByRole('menuitem', { name: zh.signIn }))
   await act(async () => { first.reject(new Error('Private cancelled diagnostic')) })
-  expect(within(screen.getByRole('dialog')).getByRole('button', { name: zh.signingIn })).toHaveProperty('disabled', true)
+  const waiting = within(screen.getByRole('dialog')).getByRole('button', { name: zh.signingIn })
+  expect(waiting).toHaveProperty('disabled', false)
+  expect(waiting.getAttribute('aria-disabled')).toBe('true')
+  expect(waiting.getAttribute('aria-busy')).toBe('true')
   expect(screen.queryByRole('alert')).toBeNull()
   await act(async () => {
     f.changeSession({ authenticated: true, employeeId: 'employee' })
@@ -288,7 +471,7 @@ it('cancels authorization and ignores a late failure while a new login is waitin
 it('keeps a failed login retryable and translates its message without starting another request', async () => {
   const f = fixture()
   f.authorize.mockRejectedValueOnce(new Error('Private browser failure'))
-  const view = render(f.tree())
+  const view = await renderAfterInitialPrompt(f.tree())
   fireEvent.click(await screen.findByRole('button', { name: zh.employeeSignedOut }))
   fireEvent.click(screen.getByRole('menuitem', { name: zh.signIn }))
   expect((await screen.findByRole('alert')).textContent).toBe(zh.signInFailed)
@@ -301,11 +484,56 @@ it('keeps a failed login retryable and translates its message without starting a
   expect(document.body.textContent).not.toContain('Private browser failure')
 })
 
+it.each((['zh', 'en'] as const).flatMap(language => (['accepted', 'failed'] as const).map(outcome => ({ language, outcome }))))(
+  'retains shared login feedback and keyboard focus during a $language retry until $outcome', async ({ language, outcome }) => {
+    const f = fixture()
+    const retry = Promise.withResolvers<unknown>()
+    f.authorize.mockRejectedValueOnce(new Error('Private initial failure')).mockImplementationOnce(() => retry.promise)
+    const labels = language === 'zh' ? zh : en
+    const view = await renderAfterInitialPrompt(f.tree(undefined, makeTranslate(labels, commonZh)))
+    onTestFinished(() => { view.unmount(); retry.resolve({ authenticated: false }) })
+    fireEvent.click(await screen.findByRole('button', { name: labels.employeeSignedOut }))
+    fireEvent.click(screen.getByRole('menuitem', { name: labels.signIn }))
+    const notice = await screen.findByRole('alert')
+    const dialog = screen.getByRole('dialog')
+    const action = within(dialog).getByRole<HTMLButtonElement>('button', { name: labels.signIn })
+    const cancel = within(dialog).getByRole('button', { name: labels.cancel })
+    action.focus()
+    fireEvent.click(action)
+    fireEvent.click(action)
+    expect(f.authorize).toHaveBeenCalledTimes(2)
+    expect(screen.getByRole('alert')).toBe(notice)
+    expect(within(dialog).getByRole('button', { name: labels.signingIn })).toBe(action)
+    expect(action.disabled).toBe(false)
+    expect(action.getAttribute('aria-disabled')).toBe('true')
+    expect(action.getAttribute('aria-busy')).toBe('true')
+    expect(document.activeElement).toBe(action)
+    expect(within(dialog).getByRole('button', { name: labels.cancel })).toBe(cancel)
+    if (outcome === 'accepted') {
+      await act(async () => {
+        f.getSession.mockResolvedValue({ authenticated: true, employeeId: 'employee', displayName: '测试员工' })
+        retry.resolve({ authenticated: true })
+      })
+      expect(screen.queryByRole('dialog')).toBeNull()
+      expect(screen.queryByRole('alert')).toBeNull()
+    } else {
+      await act(async () => { retry.reject(new Error('Private retry failure')) })
+      expect(screen.getByRole('dialog')).toBe(dialog)
+      expect(screen.getByRole('alert')).toBe(notice)
+      expect(within(dialog).getByRole('button', { name: labels.signIn })).toBe(action)
+      expect(document.activeElement).toBe(action)
+      expect(action.getAttribute('aria-busy')).toBe('false')
+      expect({ feedback: notice.textContent, focused: document.activeElement === action,
+        busy: action.getAttribute('aria-busy') }).toMatchSnapshot('Shared sign-in retry')
+    }
+  },
+)
+
 it('cancels waiting authorization and releases its event subscription with the launcher', async () => {
   const f = fixture()
   const pending = Promise.withResolvers<unknown>()
   f.authorize.mockImplementation(() => pending.promise)
-  const view = render(f.tree())
+  const view = await renderAfterInitialPrompt(f.tree())
   fireEvent.click(await screen.findByRole('button', { name: zh.employeeSignedOut }))
   fireEvent.click(screen.getByRole('menuitem', { name: zh.signIn }))
   await screen.findByText(zh.authBrowserHint)
@@ -318,11 +546,11 @@ it('cancels waiting authorization and releases its event subscription with the l
   expect(f.getSession).toHaveBeenCalledTimes(reads)
 })
 
-it.each(['connectors', 'knowledge'] as const)('closes the %s editor after definitive authorization failure despite a stale local snapshot', async (catalog) => {
+it.each(['connectors'] as const)('closes the %s editor after definitive authorization failure despite a stale local snapshot', async (catalog) => {
   const f = fixture()
   f.changeSession({ authenticated: true, employeeId: 'employee' })
-  render(f.tree(catalog))
-  fireEvent.click(await screen.findByRole('button', { name: catalog === 'knowledge' ? zh.knowledgeCreatePersonalBase : zh.addExtension }))
+  await renderAfterInitialPrompt(f.tree(catalog))
+  fireEvent.click(await screen.findByRole('button', { name: zh.addExtension }))
   await screen.findByRole('dialog')
   f.resources.mockRejectedValue(new ProductError('EMPLOYEE_UNAUTHORIZED', 'Private server diagnostic'))
   act(() => { f.refreshCatalog() })

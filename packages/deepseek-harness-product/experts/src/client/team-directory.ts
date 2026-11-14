@@ -5,6 +5,11 @@ import type { TeamSnapshot } from '../team-contract.ts'
 import type { AgencyTeamsRemote } from './remote.ts'
 import { useTeamLocale, localizedExperts } from './team-locale.ts'
 
+interface TeamDirectoryFeedback {
+  onError?(cause: unknown): void
+  onSuccess?(): void
+}
+
 /**
  * Shared lifecycle for team and expert catalog data.
  *
@@ -14,17 +19,18 @@ import { useTeamLocale, localizedExperts } from './team-locale.ts'
  * this mounted view. Concurrent refreshes share one request and report busy
  * until both teams and their member catalog are confirmed.
  */
-export function useTeamDirectory(options: {
+export function useTeamDirectory(options: TeamDirectoryFeedback & {
   cache: ExpertClientState
   /** Rebind the lifecycle when the native Remote instance changes. */
   remote: AgencyTeamsRemote
-  onError?(cause: unknown): void
-  onSuccess?(): void
+  /** Capture feedback ownership once per shared refresh. */
+  onStart?(): TeamDirectoryFeedback
 }): {
   snapshot: TeamSnapshot | null
   experts: ExpertSummary[]
   refreshing: boolean
-  refresh(): Promise<void>
+  /** A preceding member read can supply feedback captured before that read. */
+  refresh(feedback?: TeamDirectoryFeedback): Promise<void>
   getSignal(): AbortSignal | undefined
 } {
   const { cache, remote } = options
@@ -35,25 +41,26 @@ export function useTeamDirectory(options: {
   const refreshRequest = React.useRef<{ signal: AbortSignal; promise: Promise<void> }>()
   const [pending, setPending] = React.useState<AbortSignal>()
   const callbacks = React.useRef(options)
-  callbacks.current = options
+  React.useLayoutEffect(() => { callbacks.current = options })
   const getSignal = React.useCallback(() => {
     const signal = lifetime.current?.signal
     return signal && AbortSignal.any([signal, cache.teams.signal, cache.catalog.signal])
   }, [cache])
 
-  const refresh = React.useCallback((): Promise<void> => {
+  const refresh = React.useCallback((feedback?: TeamDirectoryFeedback): Promise<void> => {
     const signal = getSignal()
     if (!signal || signal.aborted) return Promise.resolve()
     if (refreshRequest.current && !refreshRequest.current.signal.aborted) return refreshRequest.current.promise
+    const completion = feedback ?? callbacks.current.onStart?.() ?? callbacks.current
     const request = { signal, promise: Promise.resolve().then(async () => {
       try {
         signal.throwIfAborted()
         await cache.teams.refresh()
         if (signal.aborted) return
         await cache.catalog.refresh()
-        if (!signal.aborted) callbacks.current.onSuccess?.()
+        if (!signal.aborted) completion.onSuccess?.()
       } catch (cause) {
-        if (!signal.aborted) callbacks.current.onError?.(cause)
+        if (!signal.aborted) completion.onError?.(cause)
       } finally {
         if (refreshRequest.current === request) {
           refreshRequest.current = undefined
@@ -85,7 +92,7 @@ export function useTeamDirectory(options: {
   }), [snapshot, experts, pending, refresh, getSignal])
 }
 
-/** Shared localized view model for the compact menu and full team library. */
+/** Shared localized feedback; directory reads cannot replace later operation feedback. */
 export function useTeamDirectoryView(options: {
   cache: ExpertClientState
   remote: AgencyTeamsRemote
@@ -96,24 +103,45 @@ export function useTeamDirectoryView(options: {
   locale: ReturnType<typeof useTeamLocale>['locale']
   tx: ReturnType<typeof useTeamLocale>['tx']
   error: string
-  setError: React.Dispatch<React.SetStateAction<string>>
+  setError(message: string): void
+  /** Retain feedback ownership across member and team directory reads. */
+  captureFeedback(): TeamDirectoryFeedback
   directory: ReturnType<typeof useTeamDirectory>
   snapshot: TeamSnapshot | null
   experts: ExpertSummary[]
 } {
   const { locale, tx } = useTeamLocale()
-  const [error, setError] = React.useState('')
-  const directory = useTeamDirectory({
-    cache: options.cache,
-    remote: options.remote,
-    onError: cause => setError(cause instanceof Error ? cause.message : options.fallback),
-    onSuccess: () => { options.onRefreshSuccess?.(); setError('') },
-  })
+  const [error, updateError] = React.useState({ message: '', cache: options.cache, remote: options.remote })
+  const currentError = React.useRef(error)
+  const viewOptions = React.useRef(options)
+  React.useLayoutEffect(() => { viewOptions.current = options })
+  const setError = React.useCallback((message: string) => {
+    const { cache, remote } = viewOptions.current
+    if (!message && !currentError.current.message && currentError.current.cache === cache && currentError.current.remote === remote) return
+    const next = { message, cache, remote }
+    currentError.current = next
+    updateError(next)
+  }, [])
+  const captureFeedback = React.useCallback((): TeamDirectoryFeedback => {
+    const started = currentError.current
+    return {
+      onError: cause => {
+        if (started === currentError.current) setError(cause instanceof Error ? cause.message : viewOptions.current.fallback)
+      },
+      onSuccess: () => {
+        if (started !== currentError.current) return
+        viewOptions.current.onRefreshSuccess?.()
+        setError('')
+      },
+    }
+  }, [setError])
+  const directory = useTeamDirectory({ cache: options.cache, remote: options.remote, onStart: captureFeedback })
   return {
     locale,
     tx,
-    error: tx(error),
+    error: error.cache === options.cache && error.remote === options.remote ? tx(error.message) : '',
     setError,
+    captureFeedback,
     directory,
     snapshot: directory.snapshot,
     experts: localizedExperts(directory.experts, locale),

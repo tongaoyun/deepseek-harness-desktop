@@ -8,18 +8,42 @@
     "src"
   ],
   "references": [
-    { "path": "../../../packages/credentials/credentials" },
-    { "path": "../../../packages/credentials/credentials-local" },
-    { "path": "../../../packages/core/scope" },
-    { "path": "../../../packages/util/atomic-write" },
-    { "path": "../../../packages/util/brand" },
-    { "path": "../../../packages/document/office-kit" },
-    { "path": "../../../vendor/schemastery" },
-    { "path": "../../../packages/core/agent-default-model" },
-    { "path": "../../../packages/boot/cmdline" },
-    { "path": "../../../packages/skill/skill" },
-    { "path": "../../../packages/llm/llm" },
-    { "path": "../../../packages/session/session-projection" },
+    {
+      "path": "../../../packages/credentials/credentials"
+    },
+    {
+      "path": "../../../packages/credentials/credentials-local"
+    },
+    {
+      "path": "../../../packages/core/scope"
+    },
+    {
+      "path": "../../../packages/util/atomic-write"
+    },
+    {
+      "path": "../../../packages/util/brand"
+    },
+    {
+      "path": "../../../packages/document/office-kit"
+    },
+    {
+      "path": "../../../vendor/schemastery"
+    },
+    {
+      "path": "../../../packages/core/agent-default-model"
+    },
+    {
+      "path": "../../../packages/boot/cmdline"
+    },
+    {
+      "path": "../../../packages/skill/skill"
+    },
+    {
+      "path": "../../../packages/llm/llm"
+    },
+    {
+      "path": "../../../packages/session/session-projection"
+    },
     {
       "path": "../../../vendor/cordis"
     },
@@ -80,7 +104,20 @@
     {
       "path": "../../../packages/deepseek-harness-product/product"
     },
-    { "path": "../../../packages/llm/llm-deepseek" },
-    { "path": "../../../packages/util/launch-environment" }
+    {
+      "path": "../../../packages/llm/llm-deepseek"
+    },
+    {
+      "path": "../../../packages/util/launch-environment"
+    },
+    {
+      "path": "../../../packages/client/ui-deliverables/tsconfig.host.json"
+    },
+    {
+      "path": "../../../packages/api/workspace-files/tsconfig.host.json"
+    },
+    {
+      "path": "../../../packages/sandbox/sandbox-policy"
+    }
   ]
 }

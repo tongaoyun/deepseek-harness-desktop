@@ -1,200 +1,43 @@
-/** The only product client adapter to Harness Sessions, Presets, Workspaces, and drafts. */
+/** File-library selection enters the upstream composer through its attachment admission API. */
 import type { Context } from '@deepseek-ai/cordis'
-import { SessionId } from '@deepseek-ai/dsh-session/types'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type {} from '@deepseek-ai/dsh-api-session-controller/client'
-import type {} from '@deepseek-ai/dsh-api-workspace-controller/client'
-import type {} from '@deepseek-ai/dsh-api-remotes/client'
-import type { DraftInput, DraftSnapshot } from '@deepseek-ai/dsh-client-ui-conversation/client'
-import type {} from '@deepseek-ai/dsh-client-ui-workspace/client'
-import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
-import { parseTaskCapabilities, parseTaskCapabilityResult, type ProductTaskCapabilityRequest, type ProductTaskCapabilities } from '@deepseek-harness/product/protocol'
-import type { DeepSeekHarnessCatalogActions } from './DeepSeekHarnessCatalogSection.tsx'
-import { invokeProduct, productApi, type ProductApi } from './product-api.ts'
-import { items, type Catalog, type ProductItem } from './catalog-shared.tsx'
-import { CAPABILITY_PANELS } from './DeepSeekHarnessCapabilitiesNavigation.tsx'
-
-/** Adapt product selection to official task services.
- * @param ctx Client plugin context.
- * @returns Serialized actions with cancellable Session acquisition and owned input focus; failures preserve drafts and native details.
+import { ConversationController } from '@deepseek-ai/dsh-client-ui-conversation/client'
+import { LIBRARY_ATTACHMENT_LIMITS, type LibraryEntry } from '@deepseek-harness/product/library'
+import { invokeLibraryRequest, readLibraryFile } from './library-data.ts'
+/** Prepare ordinary files for the original upload, retry, card and Session persistence implementation.
+ * @param ctx Native client services.
+ * @returns An attachment action that admits the complete selection or leaves the current draft unchanged.
  */
-export function createHarnessActions(ctx: Context): DeepSeekHarnessCatalogActions & TaskModeActions {
-  let pending: Promise<unknown> = Promise.resolve()
-  const lifecycle = new AbortController()
-  let identityLifecycle = new AbortController()
-  ctx.effect(() => {
-    const api = productApi()
-    let live = true
-    let identity: string | undefined
-    const key = (session: Awaited<ReturnType<ProductApi['getSession']>>) =>
-      JSON.stringify([session.authenticated, session.employeeId])
-    const unsubscribe = api?.subscribe((event) => {
-      if (event.type !== 'session.changed') return
-      const session = event.payload
-      if (typeof session !== 'object' || session === null || !('authenticated' in session)
-        || typeof session.authenticated !== 'boolean') return
-      const next = key({ authenticated: session.authenticated,
-        ...'employeeId' in session && typeof session.employeeId === 'string' ? { employeeId: session.employeeId } : {} })
-      if (next === identity) return
-      identity = next
-      identityLifecycle.abort(new Error('Product employee identity changed'))
-      identityLifecycle = new AbortController()
-    })
-    void api?.getSession().then((session) => { if (live && identity === undefined) identity = key(session) }).catch(() => {
-      // Main still authenticates each request; identity events cancel work queued before a change.
-    })
-    return () => { live = false; unsubscribe?.() }
-  }, 'product-task.identity')
-  ctx.effect(() => async () => {
-    lifecycle.abort(new Error('Product task actions were released'))
-    await pending
-  }, 'product-task.actions')
-  const operationSignal = () => AbortSignal.any([lifecycle.signal, identityLifecycle.signal])
-  const serialize = (signal: AbortSignal, operation: (signal: AbortSignal) => Promise<void>) => {
-    const result = pending.then(() => operation(signal))
-    pending = result.catch((error: unknown) => { console.warn('Product task preparation failed', error) })
-    return result
-  }
-  const currentSession = () => Object.values(ctx.sessions.list.getSnapshot().byId)
-    .find(session => (session.retainedBy.mainView ?? 0) > 0)?.id
-  const invoke = (method: string, payload?: unknown, signal?: AbortSignal) => {
-    const api = productApi()
-    if (api === undefined) throw new Error('Product bridge is unavailable')
-    const combined = AbortSignal.any([lifecycle.signal, ...signal === undefined ? [] : [signal]])
-    return invokeProduct(api, method, payload, combined)
-  }
-  const workspace = async (signal: AbortSignal, sessionId?: SessionId) => {
-    signal.throwIfAborted()
-    const items = ctx.workspaces.list.getSnapshot().items
-    const selected = sessionId === undefined ? undefined : items.find(item => item.sessionIds.includes(sessionId))
-    const result = selected ?? items[0] ?? await ctx.workspaces.initializeDefault(signal)
-    signal.throwIfAborted()
-    if (result !== undefined) return result
-    const choice = await ctx.remote.directoryPicker.pick(signal)
-    signal.throwIfAborted()
-    if (!choice.ok) throw choice.error
-    const path = choice.value
-    if (path === null) throw new Error('Workspace selection was canceled')
-    return ctx.workspaces.create({ path })
-  }
-  const draft = (sessionId?: SessionId): DraftSnapshot => {
-    const binding = sessionId === undefined ? undefined : ctx.sessions.binding(sessionId)
-    if (binding === undefined) return { text: '', references: [] }
-    return ctx.conversation.input.for(binding.ctx).draftSnapshot
-  }
-  const initializeDraft = (binding: Parameters<typeof ctx.conversation.input.requestDraftInitialization>[0], prompt: DraftInput) => {
-    const result = ctx.conversation.input.requestDraftInitialization(binding, { prompt, clearPreviousDraft: true })
-    if (result === 'blocked') throw new Error('Task draft initialization is blocked by a pending submission')
-  }
-  const readCapabilities = async (sessionId = currentSession()): Promise<ProductTaskCapabilities> => {
-    const value = await invoke('tasks.capabilities.read', sessionId === undefined ? {} : { sessionId })
-    return parseTaskCapabilities(value)
-  }
-  const prepare = async (request: ProductTaskCapabilityRequest, signal: AbortSignal,
-    options: { navigation: AbortSignal; focusOrigin: Element | null }) => {
-    const current = request.sessionId as SessionId | undefined
-    const value = await invoke('tasks.capabilities.prepare', {
-      ...request, ...current === undefined ? {} : { sessionId: current },
-    }, signal)
-    const result = parseTaskCapabilityResult(value, request)
-    const newSession = async () => {
-      const item = await workspace(signal, current)
-      signal.throwIfAborted()
-      return ctx.sessions.create({ workspaceId: item.workspaceId })
-    }
-    let sessionId = result.kind === 'CURRENT_SESSION' && current !== undefined
-      ? current : await newSession()
-    signal.throwIfAborted()
-    let selected = await ctx.remote.agentPresets.select(sessionId, result.presetId)
-    signal.throwIfAborted()
-    if (!selected.ok && selected.error.code === 'agent-preset/locked') {
-      sessionId = await newSession()
-      selected = await ctx.remote.agentPresets.select(sessionId, result.presetId)
-      signal.throwIfAborted()
-    }
-    if (!selected.ok) throw selected.error
-    await ctx.sessions.using(sessionId, { source: 'gateway', signal }, (reference) => {
-      signal.throwIfAborted()
-      const input = ctx.conversation.input.for(reference.binding.ctx)
-      if (sessionId !== current) {
-        initializeDraft(reference.binding, draft(current))
-      }
-      if (currentSession() === current && !options.navigation.aborted) {
-        const origin = options.focusOrigin
-        const focused = document.activeElement
-        const ownsFocus = focused === origin || origin !== null && !origin.isConnected && focused === document.body
-        ctx.uiWorkspace.openSession(sessionId)
-        if (sessionId === current && ownsFocus) input.focus()
-      }
-      return Promise.resolve()
-    })
-  }
-  const enqueue = (request: ProductTaskCapabilityRequest, sessionId = currentSession()) => {
-    const focusOrigin = document.activeElement
-    const signal = operationSignal()
-    const source = sessionId === undefined ? undefined : ctx.sessions.retain(sessionId, { source: 'gateway', signal })
-    let navigation: AbortSignal
-    try { navigation = ctx.layout.beginNavigation() }
-    catch (error) { source?.release(); throw error }
-    const captured = structuredClone({ ...request, ...sessionId === undefined ? {} : { sessionId } })
-    return serialize(signal, async (signal) => {
-      try { await source?.ready; await prepare(captured, signal, { navigation, focusOrigin }) }
-      finally { source?.release() }
-    })
-  }
+export function createHarnessActions(ctx: Context): {
+  attachLibraryFiles(sessionId: SessionId, entries: readonly LibraryEntry[], signal: AbortSignal): Promise<void>
+} {
   return {
-    readKnowledgeCatalog: signal => invoke('knowledge.bases.list', undefined, signal).then(items),
-    openCatalog: (catalog) => {
-      const panel = CAPABILITY_PANELS.find(value => value.labelKey === catalog)
-      if (panel === undefined) throw new Error('Task capability panel is unavailable')
-      ctx.layout.selectPanel(panel.id)
-    },
-    setKnowledgeSelection: (ids, sessionId) => enqueue({ knowledgeBaseIds: ids }, sessionId),
-    recoverCapabilities: sessionId => enqueue({ recoverCapabilities: true }, sessionId),
-    retryCapabilities: (sessionId = currentSession()) => {
-      if (sessionId === undefined) return Promise.reject(new Error('Task retry requires a Session'))
-      const signal = operationSignal()
-      const source = ctx.sessions.retain(sessionId, { source: 'gateway', signal })
-      return serialize(signal, async (signal) => {
-        try {
-          await source.ready
-          const presetId = ctx.sessions.list.getSnapshot().byId[sessionId]?.projectionValues?.agentPreset
-          if (typeof presetId !== 'string' || !presetId.startsWith('product-task-')) throw new Error('Task retry requires a pinned capability snapshot')
-          const value = parseTaskCapabilityResult(await invoke('tasks.capabilities.prepare', { sessionId }, signal))
-          if (value.presetId !== presetId
-            || ctx.sessions.list.getSnapshot().byId[sessionId]?.projectionValues?.agentPreset !== presetId) {
-            throw new Error('Task composition changed during retry; refresh the task')
-          }
-        } finally { source.release() }
-      })
-    },
-    readCapabilities,
-    subscribeTaskSelection: (listener) => {
-      const selection = () => {
-        const id = currentSession()
-        return JSON.stringify([id, id === undefined ? undefined : ctx.sessions.list.getSnapshot().byId[id]?.projectionValues?.agentPreset])
+    async attachLibraryFiles(sessionId: SessionId, entries: readonly LibraryEntry[], signal: AbortSignal): Promise<void> {
+      if (entries.length < 1 || entries.length > LIBRARY_ATTACHMENT_LIMITS.files
+        || entries.reduce((total, entry) => total + entry.sizeBytes, 0) > LIBRARY_ATTACHMENT_LIMITS.bytes) throw new Error('Invalid attachment selection')
+      const files: File[] = []
+      for (const entry of entries) {
+        const value = await readLibraryFile(invokeLibraryRequest,
+          { libraryId: entry.libraryId, entryId: entry.id, attachment: true, ...(entry.sha256 ? { sha256: entry.sha256 } : {}) }, signal)
+        signal.throwIfAborted()
+        files.push(new File([value.data], entry.name, { type: value.mediaType ?? 'application/octet-stream' }))
       }
-      let previous = selection()
-      return ctx.sessions.list.subscribe(() => {
-        const current = selection()
-        if (current === previous) return
-        previous = current
-        listener()
+      await ctx.sessions.using(sessionId, { source: 'gateway', signal }, (reference) => {
+        signal.throwIfAborted()
+        const conversation = ctx.conversation
+        if (!(conversation instanceof ConversationController)) throw new Error('Native attachment admission unavailable')
+        const drafts = conversation.createDrafts(sessionId, files, reference.binding.session.getSnapshot().subagent === null)
+        try {
+          if (!conversation.input.for(reference.binding.ctx).addAttachments(drafts.map(value => value.id))) {
+            throw new Error('The composer is busy; try again')
+          }
+        } catch (error) {
+          conversation.releaseDraftAttachments(drafts)
+          throw error
+        }
+        return Promise.resolve()
       })
     },
   }
-}
-
-/** Task selectors use product catalogs and the official Session selection guard. */
-export interface TaskModeActions {
-  /** Read knowledge identities and references available to the employee. */
-  readonly readKnowledgeCatalog: (signal?: AbortSignal) => Promise<readonly ProductItem[]>
-  /** Open a capability directory without changing the current Session or draft. */
-  readonly openCatalog: (catalog: Catalog) => void
-  /** Read one Session's knowledge selection, or the current task when omitted. */
-  readonly readCapabilities: (sessionId?: SessionId) => Promise<ProductTaskCapabilities>
-  /** Apply a complete knowledge selection once, retaining other task configuration. */
-  readonly setKnowledgeSelection: (ids: readonly string[], sessionId?: SessionId) => Promise<void>
-  readonly recoverCapabilities: (sessionId?: SessionId) => Promise<void>
-  /** Restore the pinned snapshot registration without selecting a Preset, navigating, or changing drafts. */
-  readonly retryCapabilities: (sessionId?: SessionId) => Promise<void>
 }

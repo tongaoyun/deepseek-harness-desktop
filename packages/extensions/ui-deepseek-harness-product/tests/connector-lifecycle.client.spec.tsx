@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { StrictMode } from 'react'
+import { StrictMode, Suspense, startTransition } from 'react'
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, expect, it, vi } from 'vitest'
 import { ConnectorDraftSchema } from '@deepseek-harness/product/connector-draft'
@@ -95,8 +95,8 @@ it.each(['header', 'escape', 'mask'] as const)('asks before discarding connector
   name.setSelectionRange(2, 8)
   closeDialog(action)
   expect(onClose).not.toHaveBeenCalled()
-  expect(screen.getByText(zh.knowledgeDiscardDraftConfirmation)).toBeTruthy()
-  const keep = screen.getByRole('button', { name: zh.knowledgeKeepEditing })
+  expect(screen.getByText(zh.libraryDiscardConfirm)).toBeTruthy()
+  const keep = screen.getByRole('button', { name: zh.libraryKeepEditing })
   expect(document.activeElement).toBe(keep)
   expect(screen.queryByRole('textbox', { name: zh.mcpServerName })).toBeNull()
   expect(name.isConnected).toBe(true)
@@ -107,7 +107,7 @@ it.each(['header', 'escape', 'mask'] as const)('asks before discarding connector
   expect([name.selectionStart, name.selectionEnd]).toEqual([2, 8])
   expect({ focused: document.activeElement === name, selection: [name.selectionStart, name.selectionEnd] }).toMatchSnapshot('Retained connector edit')
   closeDialog(action)
-  fireEvent.click(screen.getByRole('button', { name: zh.knowledgeDiscardDraft }))
+  fireEvent.click(screen.getByRole('button', { name: zh.libraryDiscard }))
   expect(onClose).toHaveBeenCalledOnce()
 })
 
@@ -121,7 +121,7 @@ it('returns to the same private device field and selection after cancelling disc
   field.focus()
   field.setSelectionRange(2, 7)
   closeDialog('escape')
-  const keep = screen.getByRole('button', { name: zh.knowledgeKeepEditing })
+  const keep = screen.getByRole('button', { name: zh.libraryKeepEditing })
   expect(document.activeElement).toBe(keep)
   expect(field.isConnected).toBe(true)
   expect(field.closest('[hidden]')).not.toBeNull()
@@ -150,7 +150,7 @@ it('protects unapplied MCP JSON and browser reload without treating a loaded con
   expect(unload.defaultPrevented).toBe(true)
   closeDialog('header')
   expect(onClose).toHaveBeenCalledOnce()
-  expect(screen.getByText(zh.knowledgeDiscardDraftConfirmation)).toBeTruthy()
+  expect(screen.getByText(zh.libraryDiscardConfirm)).toBeTruthy()
 })
 
 it('does not let a delayed clipboard read overwrite newer private configuration', async () => {
@@ -177,6 +177,105 @@ it('uses the latest clipboard request when reads complete out of order', async (
   await act(async () => { second.resolve('LATEST=value') })
   await act(async () => { first.resolve('OLD=value') })
   expect(screen.getByLabelText<HTMLInputElement>(`${zh.configurationKey} 1`).value).toBe('LATEST')
+})
+
+it('keeps a pending clipboard read valid when an editor render has not committed', async () => {
+  const clipboard = deferred<string>(), suspended = deferred<undefined>()
+  let suspend = false, attempts = 0
+  const translate = (key: keyof typeof zh) => {
+    if (suspend) { attempts++; throw suspended.promise }
+    return t(key)
+  }
+  vi.stubGlobal('navigator', { clipboard: { readText: () => clipboard.promise } })
+  vi.stubGlobal('dshDesktop', { extensions: { invoke: vi.fn(async () => ({ ok: true, result: [] })), cancel: vi.fn() } })
+  render(<Suspense><ConnectorEditor onClose={vi.fn()} onSaved={vi.fn()} t={translate} /></Suspense>)
+  await act(async () => {})
+  const field = screen.getByLabelText<HTMLInputElement>(`${zh.configurationKey} 1`)
+  fireEvent.click(screen.getByRole('button', { name: zh.pasteConfiguration }))
+  try {
+    await act(async () => {
+      startTransition(() => {
+        suspend = true
+        fireEvent.change(screen.getByLabelText(zh.mcpServerName), { target: { value: 'Pending name' } })
+      })
+    })
+    expect(attempts).toBeGreaterThan(0)
+    expect(screen.getByLabelText(`${zh.configurationKey} 1`)).toBe(field)
+    suspend = false
+    await act(async () => { clipboard.resolve('LIVE_KEY=live-value') })
+    expect(field.value).toBe('LIVE_KEY')
+    expect(screen.getByLabelText<HTMLInputElement>(`${zh.configurationValue} 1`).value).toBe('live-value')
+  } finally {
+    suspend = false
+    await act(async () => { suspended.resolve(undefined) })
+  }
+})
+
+it.each((['streamable-http', 'stdio'] as const).flatMap(transport =>
+  (['lines', 'json'] as const).map(format => ({ transport, format })),
+))('pastes $format using $transport key identity while retaining existing rows and focus', async ({ transport, format }) => {
+  const http = transport === 'streamable-http'
+  const keys = http ? ['Authorization', 'X-Trace'] : ['TOKEN', 'TRACE']
+  const privateValues = Object.fromEntries(keys.map(key => [key, '']))
+  const configured = ConnectorDraftSchema.parse({ ...draft, transport,
+    ...(http ? { headers: privateValues } : { command: 'npx', url: undefined, environment: privateValues }) })
+  const clipboard = deferred<string>(), saved = vi.fn()
+  vi.stubGlobal('navigator', { clipboard: { readText: () => clipboard.promise } })
+  const invoke = vi.fn(async (_namespace: string, method: string, _payload?: unknown) => ({ ok: true,
+    result: method === 'extensions.connector.read' ? { ...loaded, draft: configured }
+      : method === 'extensions.connector.update' ? receipt : [] }))
+  vi.stubGlobal('dshDesktop', { extensions: { invoke, cancel: vi.fn() } })
+  render(<ConnectorEditor editing={editing} onClose={vi.fn()} onSaved={saved} t={t} />)
+  const first = await screen.findByLabelText<HTMLInputElement>(`${zh.configurationKey} 1`)
+  const retained = screen.getByLabelText<HTMLInputElement>(`${zh.configurationKey} 2`)
+  const value = screen.getByLabelText<HTMLInputElement>(`${zh.configurationValue} 1`)
+  const secondValue = screen.getByLabelText<HTMLInputElement>(`${zh.configurationValue} 2`)
+  fireEvent.change(value, { target: { value: 'original-token' } })
+  fireEvent.change(secondValue, { target: { value: 'retained-trace' } })
+  fireEvent.click(screen.getByRole('button', { name: zh.pasteConfiguration }))
+  retained.focus(); retained.setSelectionRange(1, 3)
+  const key = keys[0]!.toLowerCase()
+  await act(async () => { clipboard.resolve(format === 'json' ? JSON.stringify({ [key]: 'pasted-token' }) : `${key}=pasted-token`) })
+  expect(screen.getByLabelText(`${zh.configurationKey} 1`)).toBe(first)
+  expect(screen.getByLabelText(`${zh.configurationKey} 2`)).toBe(retained)
+  expect(screen.getByLabelText(`${zh.configurationValue} 1`)).toBe(value)
+  expect(document.activeElement).toBe(retained)
+  expect([retained.selectionStart, retained.selectionEnd]).toEqual([1, 3])
+  expect(screen.getAllByLabelText(new RegExp(`^${zh.configurationKey} `))).toHaveLength(http ? 2 : 3)
+  expect(value.value).toBe(http ? 'pasted-token' : 'original-token')
+  expect(secondValue.value).toBe('retained-trace')
+  fireEvent.click(screen.getByRole('button', { name: zh.saveConnector }))
+  await act(async () => {})
+  expect(saved).toHaveBeenCalledOnce()
+  const write = invoke.mock.calls.find(([, method]) => method === 'extensions.connector.update')
+  expect(write?.[2]).toMatchObject({ draft: http ? { headers: { Authorization: 'pasted-token', 'X-Trace': 'retained-trace' } }
+    : { environment: { TOKEN: 'original-token', TRACE: 'retained-trace', token: 'pasted-token' } } })
+})
+
+it.each(['lines', 'json'] as const)('rejects case-duplicate headers in pasted %s atomically and permits correction', async (format) => {
+  const readText = vi.fn().mockResolvedValueOnce(format === 'json'
+    ? '{"authorization":"first","Authorization":"second"}' : 'authorization=first\nAuthorization=second')
+    .mockResolvedValueOnce('authorization=corrected-token')
+  vi.stubGlobal('navigator', { clipboard: { readText } })
+  vi.stubGlobal('dshDesktop', { extensions: { invoke: vi.fn(async (_namespace: string, method: string) => ({ ok: true,
+    result: method === 'extensions.connector.read' ? { ...loaded, draft: { ...draft, headers: { Authorization: '' } } } : [] })),
+  cancel: vi.fn() } })
+  render(<ConnectorEditor editing={editing} onClose={vi.fn()} onSaved={vi.fn()} t={t} />)
+  const key = await screen.findByLabelText<HTMLInputElement>(`${zh.configurationKey} 1`)
+  const value = screen.getByLabelText<HTMLInputElement>(`${zh.configurationValue} 1`)
+  fireEvent.change(value, { target: { value: 'retained-token' } })
+  const paste = screen.getByRole('button', { name: zh.pasteConfiguration })
+  paste.focus(); fireEvent.click(paste)
+  expect((await screen.findByRole('alert')).textContent).toBe(zh.connectorPasteFailed)
+  expect(value.value).toBe('retained-token')
+  expect(screen.getAllByLabelText(new RegExp(`^${zh.configurationKey} `))).toHaveLength(1)
+  fireEvent.click(paste)
+  await act(async () => {})
+  expect(screen.queryByRole('alert')).toBeNull()
+  expect(screen.getByLabelText(`${zh.configurationKey} 1`)).toBe(key)
+  expect(screen.getByLabelText(`${zh.configurationValue} 1`)).toBe(value)
+  expect(document.activeElement).toBe(paste)
+  expect(value.value).toBe('corrected-token')
 })
 
 it.each(['stdio', 'streamable-http'] as const)('preserves remaining %s inputs when an earlier configuration row is removed', async (transport) => {
@@ -212,7 +311,7 @@ it('closes without a discard prompt after replacing an empty configuration row',
   fireEvent.click(screen.getByRole('button', { name: `${zh.remove} 1` }))
   closeDialog('header')
   expect(onClose).toHaveBeenCalledOnce()
-  expect(screen.queryByText(zh.knowledgeDiscardDraftConfirmation)).toBeNull()
+  expect(screen.queryByText(zh.libraryDiscardConfirm)).toBeNull()
   await act(async () => {})
 })
 
@@ -223,11 +322,11 @@ it.each(['header', 'escape', 'mask'] as const)('protects device secrets before %
   fireEvent.change(await screen.findByLabelText('Authorization'), { target: { value: 'unsaved-secret' } })
   closeDialog(action)
   expect(screen.getByRole('dialog', { name: zh.configureDevice })).toBeTruthy()
-  expect(screen.getByText(zh.knowledgeDiscardDraftConfirmation)).toBeTruthy()
-  fireEvent.click(screen.getByRole('button', { name: zh.knowledgeKeepEditing }))
+  expect(screen.getByText(zh.libraryDiscardConfirm)).toBeTruthy()
+  fireEvent.click(screen.getByRole('button', { name: zh.libraryKeepEditing }))
   expect(screen.getByLabelText<HTMLInputElement>('Authorization').value).toBe('unsaved-secret')
   closeDialog(action)
-  fireEvent.click(screen.getByRole('button', { name: zh.knowledgeDiscardDraft }))
+  fireEvent.click(screen.getByRole('button', { name: zh.libraryDiscard }))
   expect(screen.queryByRole('dialog', { name: zh.configureDevice })).toBeNull()
 })
 
@@ -505,7 +604,7 @@ it.each([
   try {
     closeDialog(action)
     expect(screen.getByRole('dialog', { name: mode === 'device' ? zh.configureDevice : zh.addMcpServer })).toBeTruthy()
-    expect(screen.getByRole('status').textContent).toBe(zh.knowledgeWaitForSave)
+    expect(screen.getByRole('status').textContent).toBe(zh.libraryWait)
   } finally { await act(async () => { pending.resolve(mode === 'device' ? { ...editing, configured: true }
     : { ...receipt, id: savingDraft.id, version: savingDraft.version }) }) }
   expect(onCatalogChanged).toHaveBeenCalledOnce()

@@ -179,7 +179,7 @@ it.each(['invalid-name', 'case-collision'] as const)('keeps private input and bl
   }
   fireEvent.click(screen.getByRole('button', { name: zh.addMcp }))
   expect(screen.getByRole('alert').textContent).toBe(zh.connectorHeadersInvalid)
-  expect(screen.getByRole('alert').parentElement?.contains(screen.getByRole('button', { name: zh.addMcp }))).toBe(true)
+  expect(screen.getByRole('button', { name: zh.addMcp }).parentElement?.contains(screen.getByRole('alert'))).toBe(true)
   expect(screen.getByRole('alert').textContent).toMatchSnapshot()
   locale.setLocale('en')
   view.rerender(<ConnectorEditor {...props} />)
@@ -300,7 +300,7 @@ it.each(['read', 'save'] as const)('updates device configuration %s failures wit
   expect(api.invoke).toHaveBeenCalledTimes(phase === 'read' ? 1 : 2)
   expect(api.cancel).not.toHaveBeenCalled()
   if (phase === 'save') expect(screen.getByLabelText<HTMLInputElement>('Authorization').value).toBe('device-only-value')
-  expect(screen.getByRole('alert').parentElement?.contains(screen.getByRole('button', { name: zh.saveConnector }))).toBe(true)
+  expect(screen.getByRole('button', { name: zh.saveConnector }).parentElement?.contains(screen.getByRole('alert'))).toBe(true)
   fail = false
   const notice = screen.getByRole('alert')
   const retry = screen.getByRole<HTMLButtonElement>('button', { name: phase === 'read' ? zh.retry : zh.saveConnector })
@@ -335,7 +335,7 @@ it.each(['headers', 'environment'] as const)('blocks invalid device %s locally a
   fireEvent.click(screen.getByRole('button', { name: zh.saveConnector }))
   const message = kind === 'headers' ? 'connectorHeadersInvalid' : 'connectorEnvironmentInvalid'
   expect(screen.getByRole('alert').textContent).toBe(zh[message])
-  expect(screen.getByRole('alert').parentElement?.contains(screen.getByRole('button', { name: zh.saveConnector }))).toBe(true)
+  expect(screen.getByRole('button', { name: zh.saveConnector }).parentElement?.contains(screen.getByRole('alert'))).toBe(true)
   expect(screen.getByRole('alert').textContent).toMatchSnapshot()
   expect(screen.getByLabelText<HTMLInputElement>(key).value).toBe(value)
   expect(api.invoke.mock.calls.map(call => call[1])).toEqual(['extensions.connector.configuration.read'])

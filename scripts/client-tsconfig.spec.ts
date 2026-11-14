@@ -48,3 +48,14 @@ describe('client TypeScript aggregate', () => {
     expect(loaded).toEqual(clientCssDeclarations())
   })
 })
+
+it('keeps product Electron acceptance in the Host compiler only', () => {
+  const test = resolve(root, 'apps/web/tests/deepseek-harness-desktop.e2e.ts')
+  for (const [path, included] of [['tsconfig.host.json', true], ['apps/web/tsconfig.json', false]] as const) {
+    const configPath = resolve(root, path)
+    const read = ts.readConfigFile(configPath, file => ts.sys.readFile(file))
+    if (read.error !== undefined) throw new Error(ts.flattenDiagnosticMessageText(read.error.messageText, '\n'))
+    const parsed = ts.parseJsonConfigFileContent(read.config, ts.sys, resolve(configPath, '..'))
+    expect(parsed.fileNames.includes(test), path).toBe(included)
+  }
+})

@@ -8,7 +8,6 @@ exports[`focuses the prompt action and restores native entry focus after closing
     class="aag-textarea aag-prompt-body"
     readonly=""
     rows="3"
-    style="min-height: 240px; resize: none; overflow: auto;"
   >
     Review changes
   </textarea>,

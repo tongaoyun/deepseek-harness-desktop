@@ -116,7 +116,7 @@ index 966e51a364149c0a00fe33d124aa7f17c88e16d3..b1ad9dc9e50c491087f9ce4dbe97ec44
      if (process.connected) process.send?.({ type: 'platform-session', session })
    })
 diff --git a/apps/desktop/README.i18n.yaml b/apps/desktop/README.i18n.yaml
-index 7b4f37e1ad44b5e4c629cdf9ed608d2eed4e0bf7..5c68cee07f85f5d32d17df39a9942b08f7791d3c 100644
+index 47445f0d66c5dab25f8ca7f8939e33e7c3a16493..a294593bd0566b6fb83096c6721481c2ad4ad9a8 100644
 --- a/apps/desktop/README.i18n.yaml
 +++ b/apps/desktop/README.i18n.yaml
 @@ -12,23 +12,23 @@
@@ -167,8 +167,8 @@ index 7b4f37e1ad44b5e4c629cdf9ed608d2eed4e0bf7..5c68cee07f85f5d32d17df39a9942b08
 +  en: 4e6a0c7a92b21203
 +  zh: c35712345d691948
  /deepseek-harness-desktop/windows-installer-interface:
-   en: f1302ed4a3ab58bb
-   zh: cb53b9b349815028
+   en: 3a70021830865253
+   zh: 0467be8b505446cb
 @@ -60,20 +60,17 @@
    en: 8b0b9efeb83727ef
    zh: 5ee95de48ceab392
@@ -199,7 +199,7 @@ index 7b4f37e1ad44b5e4c629cdf9ed608d2eed4e0bf7..5c68cee07f85f5d32d17df39a9942b08
 +  en: 74ebdce7a0b8560a
 +  zh: 8fe929ccb423e3ab
 diff --git a/apps/desktop/package.json b/apps/desktop/package.json
-index f13ba3178ce659b65d01c4c005ab1ee992c045bd..e2134a0cbcb3c97eb207dcbab2a9955cc8fd6b53 100644
+index 0c90226f335f73c8aa15358dcbf3c5338cd38f24..ee3b378753aa2d8e91278622fd2846119af539ec 100644
 --- a/apps/desktop/package.json
 +++ b/apps/desktop/package.json
 @@ -48,24 +48,34 @@

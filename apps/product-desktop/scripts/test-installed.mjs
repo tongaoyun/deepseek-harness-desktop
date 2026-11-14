@@ -4,6 +4,7 @@ import { mkdtemp, readdir, rm, access } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { parseArgs } from 'node:util'
+import { verifyUiAcceptance } from './verify-ui-acceptance.mjs'
 import { runAcceptanceProcess } from './acceptance-process.mjs'
 import { stopInstalledProcesses } from './installed-processes.mjs'
 import { productSigningMode } from './update-release.mjs'
@@ -42,15 +43,18 @@ async function runAcceptance(executable, target, installationRoot) {
   process.once('SIGINT', interrupt)
   process.once('SIGTERM', terminate)
   try {
+    const report = join(root, `.artifacts/desktop-installed-${target}.json`)
+    await rm(report, { force: true })
     await runAcceptanceProcess(process.execPath, [manager, 'exec', 'vitest', 'run', '--config', 'vitest.web.config.ts',
-      'apps/web/tests/deepseek-harness-catalog.e2e.ts', '-t', 'boots the installed product Electron assembly',
+      'apps/web/tests/deepseek-harness-desktop.e2e.ts', '-t', 'boots the installed product Electron assembly',
       // Budget preparation, full UI coverage and native restart; allow two minutes for cleanup.
       '--testTimeout=900000', '--hookTimeout=120000',
-      '--reporter=default', '--reporter=json', `--outputFile=.artifacts/desktop-installed-${target}.json`], {
+      '--reporter=default', '--reporter=json', `--outputFile=${report}`], {
       cwd: root, timeoutMs: 1_080_000, signal: cancellation.signal,
       env: { ...process.env, DSH_DESKTOP_SMOKE: '1', DSH_SNAPSHOT: 'replay',
         DSH_INSTALLED_EXECUTABLE: executable, DSH_INSTALLED_ROOT: installationRoot },
     })
+    await verifyUiAcceptance(report, 'installed')
   } finally {
     process.off('SIGINT', interrupt)
     process.off('SIGTERM', terminate)

@@ -50,7 +50,7 @@ it.each([false, true])('notifies a complete catalog outage and recovery with an 
   expect(emit).toHaveBeenCalledTimes(2)
 })
 
-it('invalidates renderer catalogs when a scheduled refresh loses both services', async () => {
+it('invalidates renderer catalogs when a scheduled refresh loses the connector service', async () => {
   vi.useFakeTimers()
   onTestFinished(() => { vi.useRealTimers() })
   let offline = false
@@ -89,7 +89,7 @@ it('notifies a session-renewal outage without requesting catalogs and notifies i
   offline = false
   await catalogs.refresh()
   expect(emit).toHaveBeenCalledTimes(2)
-  expect(transport).toHaveBeenCalledTimes(2)
+  expect(transport).toHaveBeenCalledOnce()
 })
 
 it.each(['identity', 'reset'] as const)('does not publish a late renewal failure after %s cancellation', async (kind) => {
@@ -116,7 +116,7 @@ it('returns a pending read result even when a newer connector read fails', async
   let requests = 0
   const { catalogs } = fixture(async (input) => {
     const route = new URL(typeof input === 'string' ? input : input instanceof URL ? input.href : input.url).pathname
-    if (route !== '/api/v1/connectors') return page('knowledge')
+    if (route !== '/api/v1/connectors') return page('unrelated')
     if (++requests > 1) throw new Error('Newer connector read failed')
     entered.resolve(undefined)
     return response.promise
@@ -142,7 +142,7 @@ it('rejects reads after disposal without requesting or returning employee data',
   expect(transport).toHaveBeenCalledTimes(1)
 })
 
-it.each(['connectors.list', 'knowledge.bases.list'] as const)(
+it.each(['connectors.list'] as const)(
   'aborts and joins an active %s read on disposal, rejecting its late success', async (method) => {
     const response = Promise.withResolvers<Response>()
     let signal: AbortSignal | null | undefined
@@ -165,7 +165,7 @@ it.each(['identity', 'reset'] as const)('cancels an active catalog read on %s ch
   const response = Promise.withResolvers<Response>()
   let signal: AbortSignal | null | undefined
   const { catalogs, identity } = fixture(async (_input, init) => { signal = init?.signal; return response.promise }, () => { response.resolve(page('late')) })
-  const read = expect(catalogs.read('knowledge.bases.list')).rejects.toThrow(kind === 'identity' ? 'Employee changed' : 'reset')
+  const read = expect(catalogs.read('connectors.list')).rejects.toThrow(kind === 'identity' ? 'Employee changed' : 'reset')
   await vi.waitFor(() => { expect(signal).toBeDefined() })
   const reason = new Error('Employee changed')
   if (kind === 'identity') identity.abort(reason)
@@ -179,16 +179,16 @@ it.each(['identity', 'reset'] as const)('cancels an active catalog read on %s ch
 it('starts a new refresh after reset without publishing the old refresh', async () => {
   const response = Promise.withResolvers<Response>()
   let requests = 0
-  const { catalogs, emit } = fixture(async () => ++requests <= 2 ? response.promise : page('new'), () => { response.resolve(page('old')) })
+  const { catalogs, emit } = fixture(async () => ++requests <= 1 ? response.promise : page('new'), () => { response.resolve(page('old')) })
   const oldRefresh = expect(catalogs.refresh()).rejects.toThrow('reset')
-  await vi.waitFor(() => { expect(requests).toBe(2) })
+  await vi.waitFor(() => { expect(requests).toBe(1) })
   catalogs.reset()
   await catalogs.refresh()
   expect(emit).toHaveBeenCalledTimes(1)
   response.resolve(page('old'))
   await oldRefresh
   expect(emit).toHaveBeenCalledTimes(1)
-  expect(requests).toBe(4)
+  expect(requests).toBe(2)
 })
 
 it('emits a change when a catalog payload changes under the same route', async () => {
@@ -198,7 +198,7 @@ it('emits a change when a catalog payload changes under the same route', async (
     const route = new URL(requestUrl).pathname
     const version = refresh < 2 ? 'original' : 'updated'
     if (route === '/api/v1/connectors') return page(version)
-    return page('knowledge')
+    return page('unrelated')
   })
   const api = new DeepSeekHarnessApiClient({ baseUrl: 'https://product.test', getSessionToken: () => 'token', fetch: transport })
   const emit = vi.fn()

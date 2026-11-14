@@ -14,7 +14,7 @@ import { CompanyContentSubmission } from './CompanyContentSubmission.tsx'
 
 export const CAPABILITY_PANELS = [
   { id: 'deepseek-harness-connectors' as MainPanelId, labelKey: 'connectors', icon: IconApiOutlineRegular },
-  { id: 'deepseek-harness-knowledge' as MainPanelId, labelKey: 'knowledge', icon: IconDatabaseOutlineRegular },
+  { id: 'deepseek-harness-library' as MainPanelId, labelKey: 'library', icon: IconDatabaseOutlineRegular },
 ] as const
 
 export type CapabilityPanel = typeof CAPABILITY_PANELS[number]

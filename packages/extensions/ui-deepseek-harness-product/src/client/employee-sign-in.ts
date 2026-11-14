@@ -5,17 +5,18 @@ declare module '@deepseek-ai/cordis' {
   interface Events {
     /** Open the product's employee authorization dialog.
      * @mode emit
+     * @param returnFocus Recover lost focus through the requesting view's current controls when the sidebar is hidden.
      */
-    'deepseek-harness/sign-in'(): void
+    'deepseek-harness/sign-in'(returnFocus?: () => void): void
   }
 }
 
 /** Shared login entry and its launcher-owned subscription. */
 export interface EmployeeSignInActions {
-  /** Open the employee login dialog without navigating or changing the current draft. */
-  readonly openEmployeeSignIn: () => void
+  /** Open login without changing the draft; optionally recover lost focus when the sidebar cannot receive it. */
+  readonly openEmployeeSignIn: (returnFocus?: () => void) => void
   /** Subscribe the persistent launcher to login requests. */
-  readonly subscribeEmployeeSignIn: (listener: () => void) => () => void
+  readonly subscribeEmployeeSignIn: (listener: (returnFocus?: () => void) => void) => () => void
 }
 
 /** Bind product login requests to the native client event lifecycle.
@@ -24,7 +25,7 @@ export interface EmployeeSignInActions {
  */
 export function createEmployeeSignInActions(ctx: Context): EmployeeSignInActions {
   return {
-    openEmployeeSignIn: () => { ctx.emit('deepseek-harness/sign-in') },
+    openEmployeeSignIn: (returnFocus) => { ctx.emit('deepseek-harness/sign-in', returnFocus) },
     subscribeEmployeeSignIn: listener => ctx.on('deepseek-harness/sign-in', listener),
   }
 }

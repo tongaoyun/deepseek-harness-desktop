@@ -1,40 +1,11 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, expect, it, vi } from 'vitest'
-import { KnowledgeLibraryActions } from '../src/client/KnowledgeLibraryActions.tsx'
 import { ResourceActionsMenu } from '../src/client/ResourceActionsMenu.tsx'
 import { zh } from '../src/locales.ts'
 
 const t = (key: keyof typeof zh) => zh[key]
 afterEach(cleanup)
-
-it('closes library actions while busy and waits for a new click after recovery', () => {
-  const props = { name: '项目资料', disabled: false, onEdit: vi.fn(), onDelete: vi.fn(), t }
-  const view = render(<KnowledgeLibraryActions {...props} />)
-  const trigger = screen.getByRole('button')
-  trigger.focus()
-  fireEvent.click(trigger)
-  expect(screen.getByRole('menu')).toBeTruthy()
-  view.rerender(<KnowledgeLibraryActions {...props} disabled />)
-  expect(screen.queryByRole('menu')).toBeNull()
-  expect(trigger.getAttribute('aria-expanded')).toBe('false')
-  expect(trigger.classList.contains('product-control-pending')).toBe(true)
-  expect(trigger.hasAttribute('disabled')).toBe(false)
-  expect(trigger.getAttribute('aria-disabled')).toBe('true')
-  expect(document.activeElement).toBe(trigger)
-  expect(screen.getByRole('button')).toBe(trigger)
-  fireEvent.click(trigger)
-  expect(screen.queryByRole('menu')).toBeNull()
-  expect(props.onEdit).not.toHaveBeenCalled()
-  view.rerender(<KnowledgeLibraryActions {...props} />)
-  expect(trigger.classList.contains('product-control-pending')).toBe(false)
-  expect(screen.queryByRole('menu')).toBeNull()
-  fireEvent.click(trigger)
-  fireEvent.click(screen.getByRole('menuitem', { name: zh.knowledgeEditBase }))
-  expect(props.onEdit).toHaveBeenCalledOnce()
-  expect(props.onDelete).not.toHaveBeenCalled()
-  expect(screen.queryByRole('menu')).toBeNull()
-})
 
 it.each(['pending', 'permission'] as const)('closes connector actions after %s changes and requires reopening', (reason) => {
   const resource = { canEdit: true, canSubmit: true, canDelete: true, version: '1.0.0' }

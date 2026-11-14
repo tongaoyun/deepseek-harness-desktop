@@ -1,5 +1,5 @@
 import { PackageTransferError, importPackageFiles, draftPackageFiles, downloadPackage, addPackageResources, base64ByteLength } from './package-files.ts'
-import { LibraryConfirm, LibraryEditorFooter, useLibraryUnloadGuard } from './library-ui.tsx'
+import { LibraryConfirm, LibraryEditorFooter, useLibraryActionFocus, useLibraryUnloadGuard } from './library-ui.tsx'
 import { Button, Input, Modal } from './plugin-ui.ts'
 import React from 'react'
 import { deepEqualJson } from '@deepseek-ai/dsh-util-values'
@@ -37,7 +37,7 @@ export interface CustomEditorProps {
   readonly onClose: () => void
 }
 
-/** 原生模态窗口承载表单，未保存修改由独立确认层保护。 */
+/** 原生模态窗口承载表单与固定导入错误区；读取成功后恢复被移除控件的焦点，未保存修改由独立确认层保护。 */
 export function CustomExpertEditor(props: CustomEditorProps): React.ReactElement {
   const lifecycle = React.useRef(new AbortController())
   React.useEffect(() => {
@@ -66,6 +66,8 @@ export function CustomExpertEditor(props: CustomEditorProps): React.ReactElement
   const [error, setError] = React.useState<EditorError | null>(null)
   const [discard, setDiscard] = React.useState(false)
   const form = React.useRef<HTMLFormElement | null>(null)
+  const preserveReadFocus = useLibraryActionFocus(busy, 'expert-editor', form,
+    () => form.current?.querySelector<HTMLInputElement>('input[name="name"]'))
   const reviewArea = React.useRef<HTMLElement | null>(null)
   const reviewTrigger = React.useRef<HTMLButtonElement | null>(null)
   const zipInput = React.useRef<HTMLInputElement | null>(null)
@@ -136,6 +138,7 @@ export function CustomExpertEditor(props: CustomEditorProps): React.ReactElement
         const worker = typeof document.worker === 'object' && document.worker !== null ? document.worker : {}
         if (!('suggested_name' in worker) || worker.suggested_name !== draft.slug) manifest = JSON.stringify({ ...document, worker: { ...worker, suggested_name: draft.slug } })
       }
+      preserveReadFocus()
       setDraft({ ...result.value, manifest, slug: draft.slug, resources: result.value.resources ?? {}, emoji: result.value.emoji ?? DEFAULT_EXPERT_EMOJI, avatar: result.value.avatar ?? 0 })
       setError(null)
     }).catch((cause: unknown) => { if (!signal?.aborted) setError(editorError(cause)) })
@@ -148,6 +151,7 @@ export function CustomExpertEditor(props: CustomEditorProps): React.ReactElement
     try {
       const resources = await addPackageResources(draft, selection, signal)
       signal.throwIfAborted()
+      preserveReadFocus()
       setDraft(current => ({ ...current, resources }))
       setError(null)
     } catch (cause) { if (!signal.aborted) setError(editorError(cause)) }
@@ -272,7 +276,8 @@ export function CustomExpertEditor(props: CustomEditorProps): React.ReactElement
             },
           }, props.t('custom.removeAttachment')))))),
     ),
-    waitingForImport && errorText ? h('div', { className: 'aag-error', role: 'alert' }, errorText) : null,
+    waitingForImport ? h('div', { className: 'aag-editor-feedback' },
+      errorText ? h('p', { className: 'aag-error', role: 'alert', tabIndex: 0 }, errorText) : null) : null,
       needsReview ? h("section", { ref: reviewArea, className: "aag-custom-review" },
         h(Button, { ref: reviewTrigger, 'aria-disabled': busy, 'aria-busy': activity === 'review', className: pendingClass,
           onClick: refreshReview }, props.t("custom.reviewLatest")),
@@ -335,8 +340,17 @@ export const CUSTOM_EDITOR_CSS = `
 .aag-custom-footer{padding:14px 20px 18px;border-top:0.5px solid var(--dsw-alias-border-l2);flex-shrink:0}
 /* footer 进入宿主 footer 槽后，水平内边距由宿主提供，避免 24px+20px 叠加。 */
 .aag-editor-modal .aag-custom-footer{box-sizing:border-box;width:100%;padding:14px 0 0}
-.aag-custom-footer>div{display:flex;gap:10px;justify-content:flex-end;margin-top:14px}
-.aag-custom-footer>div>button:first-child{margin-right:auto}
+.aag-editor-feedback{position:relative;display:flex;align-items:center;height:40px;min-width:0}
+.aag-editor-feedback>.aag-note{margin:0}
+.aag-editor-feedback>.aag-note[aria-hidden=true]{visibility:hidden}
+.aag-custom-body>.aag-editor-feedback{margin-top:14px}
+.aag-editor-feedback>.aag-error{position:absolute;inset:0;margin:0;overflow:auto;overscroll-behavior:contain;overflow-wrap:anywhere}
+.aag-editor-feedback>.aag-error:focus-visible{outline:var(--dsw-focus-ring-width,1px) solid var(--dsw-focus-ring-color,var(--dsw-alias-brand-primary));outline-offset:-1px}
+.aag-editor-actions{display:flex;gap:10px;justify-content:flex-end;margin-top:14px}
+.aag-editor-actions>button:first-child{margin-right:auto}
+.aag-editor-action-label{display:inline-grid}
+.aag-editor-action-label>span{grid-area:1/1}
+.aag-editor-action-label>[aria-hidden=true]{visibility:hidden}
 .aag-custom-badge{display:inline-block;font-size:10px;padding:1px 5px;border:0.5px solid var(--dsw-alias-border-l3);border-radius:var(--dsw-radius-xs,4px);margin-left:6px;color:var(--dsw-alias-label-secondary)}
 .aag-custom-notice{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin:12px 0;font-size:13px;color:var(--dsw-alias-label-primary)}
 .aag-custom-review{margin-top:16px;padding:14px;border:0.5px solid var(--dsw-alias-brand-primary);border-radius:var(--dsw-radius-sm,8px)}

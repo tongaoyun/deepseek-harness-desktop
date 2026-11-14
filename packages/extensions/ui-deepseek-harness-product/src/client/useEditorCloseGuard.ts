@@ -3,6 +3,7 @@ import { useEffect, useLayoutEffect, useRef, useState, type FocusEventHandler, t
 import { focusWithoutRing } from '@deepseek-ai/dsh-client-ui-primitives'
 
 /** Guard every modal dismissal and document unload while an edit is unresolved.
+ * Returning from discard confirmation preserves the form's focus, selection and modal scroll positions.
  * @param dirty Whether the current values differ from the loaded form.
  * @param saving Whether a save or local suspension is pending; a reader also guards actions before React commits.
  * @param onClose Dismiss the editor after an explicit discard or an unchanged edit.
@@ -12,6 +13,8 @@ import { focusWithoutRing } from '@deepseek-ai/dsh-client-ui-primitives'
 export function useEditorCloseGuard(dirty: boolean, saving: boolean | (() => boolean), onClose: () => void, unconfirmed = false): {
   readonly confirming: boolean
   readonly blocked: boolean
+  /** Clear the previous write's close notice before starting another write. */
+  readonly clearBlocked: () => void
   readonly requestClose: () => void
   readonly keepEditing: () => void
   readonly discard: () => void
@@ -23,6 +26,7 @@ export function useEditorCloseGuard(dirty: boolean, saving: boolean | (() => boo
   const editor = useRef<HTMLDivElement>(null)
   const keepEditing = useRef<HTMLButtonElement>(null)
   const lastField = useRef<HTMLElement>()
+  const scrollPositions = useRef<readonly { element: HTMLElement; top: number; left: number }[]>([])
   const previousConfirming = useRef(false)
   useLayoutEffect(() => {
     const returning = previousConfirming.current && !confirming
@@ -34,7 +38,13 @@ export function useEditorCloseGuard(dirty: boolean, saving: boolean | (() => boo
         : editor.current?.querySelector<HTMLElement>('input:not(:disabled), textarea:not(:disabled), select:not(:disabled), button:not(:disabled)')
           ?? editor.current?.closest('[role="dialog"]')?.querySelector<HTMLElement>('button:not(:disabled)')
     }
-    if (target) focusWithoutRing(target)
+    if (target) focusWithoutRing(target, { preventScroll: returning })
+    if (returning) {
+      for (const { element, top, left } of scrollPositions.current) {
+        if (element.isConnected) { element.scrollTop = top; element.scrollLeft = left }
+      }
+      scrollPositions.current = []
+    }
   }, [confirming])
   const isSaving = (): boolean => typeof saving === 'function' ? saving() : saving
   const pending = isSaving()
@@ -48,6 +58,7 @@ export function useEditorCloseGuard(dirty: boolean, saving: boolean | (() => boo
   }, [dirty, pending, unconfirmed])
   return {
     confirming, blocked,
+    clearBlocked: () => { setBlocked(false) },
     editorProps: { ref: editor, onFocusCapture: (event) => {
       if (event.target instanceof HTMLElement) lastField.current = event.target
     } },
@@ -55,7 +66,15 @@ export function useEditorCloseGuard(dirty: boolean, saving: boolean | (() => boo
     requestClose: () => {
       if (isSaving()) { setBlocked(true); return }
       if (confirming) { setConfirming(false); return }
-      if (dirty) setConfirming(true)
+      if (dirty) {
+        const positions = []
+        const dialog = editor.current?.closest('[role="dialog"]')
+        for (let element: HTMLElement | null = editor.current; element && dialog?.contains(element); element = element.parentElement) {
+          if (element.scrollTop || element.scrollLeft) positions.push({ element, top: element.scrollTop, left: element.scrollLeft })
+        }
+        scrollPositions.current = positions
+        setConfirming(true)
+      }
       else onClose()
     },
     keepEditing: () => { setConfirming(false) },

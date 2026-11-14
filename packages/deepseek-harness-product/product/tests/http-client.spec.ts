@@ -2,8 +2,7 @@ import { createServer } from 'node:http'
 import { expect, it, onTestFinished } from 'vitest'
 import { DeepSeekHarnessApiClient } from '../src/http-client.ts'
 
-const resources = [{ kind: 'knowledge-base', id: 'base' }]
-const dependencyChecks = [{ kind: 'KNOWLEDGE_BASE', reference: 'orders', status: 'MISSING' }]
+const resources = [{ kind: 'library', id: 'base' }]
 
 it('rejects API redirects without forwarding employee credentials or replaying a write', async () => {
   const requests: string[] = []
@@ -45,15 +44,15 @@ it('normalizes streamed file transport failures like JSON requests', async () =>
   finally { client.close() }
 })
 
-it.each(['json', 'file'] as const)('preserves server retry policy and dependency diagnostics for %s requests', async (transport) => {
+it.each(['json', 'file'] as const)('preserves server retry policy and resource diagnostics for %s requests', async (transport) => {
   for (const [status, retryable] of [[503, false], [400, true], [429, false]] as const) {
     const client = new DeepSeekHarnessApiClient({ baseUrl: 'https://product.test', getSessionToken: () => undefined,
       fetch: async () => Response.json({ success: false, errCode: 'CONFIGURATION_REQUIRED', errMessage: 'Check configuration',
-        data: { retryable, resources, dependencyChecks } }, { status }) })
+        data: { retryable, resources } }, { status }) })
     try {
       const request = transport === 'json' ? client.request('/api/test') : client.requestBytes('/api/test', 4096)
       await expect(request).rejects.toMatchObject({ status, publicFailure: {
-        code: 'CONFIGURATION_REQUIRED', message: 'Check configuration', retryable, resources, dependencyChecks,
+        code: 'CONFIGURATION_REQUIRED', message: 'Check configuration', retryable, resources,
       } })
     } finally { client.close() }
   }

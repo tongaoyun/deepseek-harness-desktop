@@ -3,7 +3,7 @@
 exports[`keeps a failed expert choice stable through a locked retry with inserted=false 1`] = `
 {
   "choice": "评审专家启用并选择",
-  "error": "Enable unavailable刷新",
+  "error": "Enable unavailable",
   "unavailable": "true",
 }
 `;
@@ -11,7 +11,7 @@ exports[`keeps a failed expert choice stable through a locked retry with inserte
 exports[`keeps a failed expert choice stable through a locked retry with inserted=true 1`] = `
 {
   "choice": "评审专家启用并选择",
-  "error": "Enable unavailable刷新",
+  "error": "Enable unavailable",
   "unavailable": "true",
 }
 `;

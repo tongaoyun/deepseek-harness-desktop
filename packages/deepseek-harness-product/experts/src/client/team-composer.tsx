@@ -15,17 +15,16 @@ export function TeamMenu(props: {
     prepareSelect?(): (team: ExpertTeam, example?: string) => boolean | Promise<boolean>;
     onSelected(): void;
 }) {
-    const menuRef = React.useRef<HTMLDivElement>(null);
-    const refreshRef = React.useRef<HTMLButtonElement>(null);
+    const feedbackRef = React.useRef<HTMLDivElement>(null);
     const searchRef = React.useRef<HTMLInputElement>(null);
     const [focused, setFocused] = React.useState<{ id: string; action: 'choice' | 'details' } | null>(null);
     const choiceFocus = useLibraryRemovalFocus(() => searchRef.current);
     const { locale, tx, error, setError, directory, snapshot, experts } = useTeamDirectoryView({
         cache: props.cache, remote: props.remote, fallback: "专家团加载失败",
         onRefreshSuccess: () => {
-            const refresh = refreshRef.current;
-            const search = menuRef.current?.querySelector('input');
-            if (refresh && refresh.ownerDocument.activeElement === refresh && search) {
+            const feedback = feedbackRef.current;
+            const search = searchRef.current;
+            if (feedback?.contains(feedback.ownerDocument.activeElement) && search) {
                 focusWithoutRing(search, { preventScroll: true });
             }
         },
@@ -43,7 +42,6 @@ export function TeamMenu(props: {
     } | null>(null);
     React.useEffect(() => {
         setPending(null);
-        setError('');
         setDetailId(null);
         setConfirm(null);
         // The shared directory hook owns subscriptions and request cancellation.
@@ -118,14 +116,9 @@ export function TeamMenu(props: {
         `${t.name} ${t.description}`
             .toLowerCase()
             .includes(query.toLowerCase())) ?? [];
-    return (<div className="agt-compact" ref={menuRef}>
+    return (<div className="agt-compact">
       <Input ref={searchRef} data-modal-autofocus aria-label={tx("搜索专家团")} placeholder={tx("搜索团队或工作目标")} value={query}
         onFocus={() => setFocused(null)} onChange={(e) => setQuery(e.target.value)}/>
-      {error && !detail && !confirm && (<div className="aag-error" role="alert">
-          <span>{error}</span>
-          <Button ref={refreshRef} size="sm" aria-disabled={directory.refreshing} aria-busy={directory.refreshing}
-            className={directory.refreshing ? 'product-control-pending' : undefined} onClick={() => void directory.refresh()}>{tx("刷新")}</Button>
-        </div>)}
       <div className="agt-compact-list">
         {teams.map((team) => (<div className="agt-compact-row" key={team.id}>
             <button ref={focused?.id === team.id && focused.action === 'choice' ? choiceFocus : undefined}
@@ -146,24 +139,28 @@ export function TeamMenu(props: {
               <IconEye size={16}/>
             </button>
           </div>))}
-        {!teams.length && (snapshot !== null || !error) && (<p className="aag-note">
-            {snapshot ? tx("搜索并启用一个专家团。") : tx("正在加载…")}
+        {!teams.length && (<p className="aag-note" aria-hidden={snapshot === null && Boolean(error) || undefined}>
+            {snapshot ? tx("搜索并启用一个专家团。") : error ? '' : tx("正在加载…")}
           </p>)}
+      </div>
+      <div className="aag-discovery-feedback" ref={feedbackRef}>
+        <div className="aag-editor-feedback">
+          {error && !detail && !confirm && <div className="aag-error" role="alert" tabIndex={0}>{error}</div>}
+        </div>
+        {error && !detail && !confirm && <Button size="sm" aria-disabled={directory.refreshing} aria-busy={directory.refreshing}
+          className={directory.refreshing ? 'product-control-pending' : undefined} onClick={() => void directory.refresh()}>{tx("刷新")}</Button>}
       </div>
       {detail && (<TeamDetails team={detail} experts={experts} busy={busy} error={confirm ? undefined : error}
         refreshing={directory.refreshing} refreshLabel={tx("刷新")} onRefresh={() => void directory.refresh()}
         selecting={busy && pending.teamId === detail.id ? { example: pending.example } : undefined}
         close={() => { if (!operation.current || operation.current.aborted) setDetailId(null) }} onSelect={(example) => void pick(detail, example)}/>)}
       {confirm && (<TeamConfirm title={tx("启用专家团")} label={tx("启用团队及所需成员")} busy={busy} error={error}
+        description={tx("启用“{0}”及所需成员：{1}", [confirm.team.name, confirm.team.members
+            .map((m) => experts.find((e) => e.slug === m.expertSlug)?.name ?? tx("失效成员"))
+            .join(locale === 'en' ? ', ' : '、')])}
         onCancel={() => { if (!operation.current || operation.current.aborted) setConfirm(null) }} onConfirm={() => {
                 const value = confirm;
                 void pick(value.team, value.example, value.snapshot);
-            }}>
-          <p>{tx("启用“")}{confirm.team.name}{tx("”及所需成员：")}{confirm.team.members
-                .map((m) => experts.find((e) => e.slug === m.expertSlug)?.name ?? tx("失效成员"))
-                .join(locale === 'en' ? ', ' : '、')}
-            。
-          </p>
-        </TeamConfirm>)}
+            }} />)}
     </div>);
 }

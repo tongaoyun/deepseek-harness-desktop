@@ -20,8 +20,8 @@ import { prepareNativeCapabilities } from './native-capabilities.ts'
 import { ConnectorDraftSchema } from '@deepseek-harness/product/connector-draft'
 import { PersonalConnectors } from './personal-connectors.ts'
 import { confirmConnectorReleaseReceipt } from './connector-receipts.ts'
-import { knowledgeUploadDialogOptions, KnowledgeUploads } from './knowledge-upload.ts'
-import { KnowledgeFiles } from './knowledge-files.ts'
+import { LibraryUploads } from './library-upload.ts'
+import { LibraryFiles } from './library-files.ts'
 import { waitForNativeDialog } from './native-dialog.ts'
 interface ExtensionContext {
   readonly getWindow: () => BrowserWindow | undefined
@@ -120,13 +120,13 @@ export function createExtension(context: ExtensionContext): ProductDesktopExtens
     resourcesPath: process.resourcesPath,
   })
   const sessionToken = storedDeepSeekHarnessSession?.token ?? process.env.DEEPSEEK_HARNESS_SESSION_TOKEN
-  const knowledgeFilePolicy = config.knowledgeFiles
-  const knowledgeFiles = new KnowledgeFiles({
-    directory: join(app.getPath('userData'), 'knowledge-files'),
-    policy: knowledgeFilePolicy,
+  const libraryFilePolicy = config.libraryFiles
+  const libraryFiles = new LibraryFiles({
+    directory: join(app.getPath('userData'), 'library-files'),
+    policy: libraryFilePolicy,
     getEmployeeId: () => productBridge.getSession().employeeId,
-    renderOffice: (payload, signal) => context.requestHost('product', 'knowledge.documents.renderOffice', payload, signal,
-      knowledgeFilePolicy.fileRequestTimeoutMs),
+    renderOffice: (payload, signal) => context.requestHost('product', 'library.files.renderOffice', payload, signal,
+      libraryFilePolicy.fileRequestTimeoutMs),
     saveDialog: async (filename) => {
       const window = context.getWindow()
       const options = { defaultPath: filename }
@@ -135,7 +135,7 @@ export function createExtension(context: ExtensionContext): ProductDesktopExtens
     },
     openPath: path => shell.openPath(path),
   })
-  let knowledgeFileEmployeeId = storedDeepSeekHarnessSession?.session.employeeId
+  let libraryFileEmployeeId = storedDeepSeekHarnessSession?.session.employeeId
   let employeeLifecycle = new AbortController()
   let hostEmployeeId: string | undefined
   let companyContent: { readonly sync: CompanyContentSync; readonly ready: Promise<void> } | undefined
@@ -149,13 +149,13 @@ export function createExtension(context: ExtensionContext): ProductDesktopExtens
     void companyContentCleanup.catch(() => { /* The closing caller reports failure; future initialization remains blocked. */ })
     return closing
   }
-  const knowledgeUploads = new KnowledgeUploads(() => productBridge.getSession().employeeId, async (mode, signal) => {
+  const libraryUploads = new LibraryUploads(() => productBridge.getSession().employeeId, async (signal) => {
     const window = context.getWindow()
-    const options = knowledgeUploadDialogOptions(mode)
+    const options: import('electron').OpenDialogOptions = { properties: ['openFile', 'multiSelections'] }
     const selected = await waitForNativeDialog(() => window
       ? dialog.showOpenDialog(window, options) : dialog.showOpenDialog(options), signal)
     return selected.canceled ? undefined : selected.filePaths
-  }, knowledgeFilePolicy.uploadMaxBytes)
+  }, libraryFilePolicy.uploadMaxBytes, libraryFilePolicy.transferLifetimeMs, (payload, signal) => context.requestHost('product', 'library.files.archive.read', payload, signal, libraryFilePolicy.fileRequestTimeoutMs))
   const supportPolicy = config.support
   const support = new DesktopSupport({ policy: supportPolicy,
     installationId: getOrCreateAnonymousUserId(),
@@ -171,18 +171,25 @@ export function createExtension(context: ExtensionContext): ProductDesktopExtens
     }, () => { productBridge.invalidateConnectorCatalog() })
   const productBridgeOptions: ProductBridgeOptions = {
     support: (method, input, api, session, signal) => support.invoke(method, input, api, session, signal),
-    knowledgeFiles: (method, input, api, session, signal) => knowledgeFiles.invoke(method, input, api, session, signal),
-    knowledgeUpload: knowledgeUploads,
+    libraryFiles: (method, input, api, session, signal) => {
+      const lifetime = signal ?? lifecycle.signal
+      if (method.startsWith('library.files.upload') || method === 'library.files.archive.select') {
+        const employee = session.employeeId
+        if (employee === undefined) throw new Error('Authenticated employee required')
+        return libraryUploads.invoke(method, input, api, employee, lifetime)
+      }
+      return libraryFiles.invoke(method, input, api, session, lifetime)
+    },
     persistSession: (session, token) => {
       const employeeId = session.authenticated ? session.employeeId : undefined
       const pending: Promise<void>[] = []
-      if (employeeId !== knowledgeFileEmployeeId) {
+      if (employeeId !== libraryFileEmployeeId) {
         pending.push(closeCompanyContent())
-        knowledgeFileEmployeeId = employeeId
+        libraryFileEmployeeId = employeeId
         employeeLifecycle.abort(new Error('Employee identity changed'))
         employeeLifecycle = new AbortController()
-        knowledgeUploads.resetIdentity()
-        pending.push(knowledgeFiles.resetIdentity())
+        libraryUploads.resetIdentity()
+        pending.push(libraryFiles.resetIdentity())
       }
       pending.push(connectorProxy.resetIdentity(employeeId))
       pending.push(personalConnectors.resetIdentity(employeeId))
@@ -199,7 +206,6 @@ export function createExtension(context: ExtensionContext): ProductDesktopExtens
     serverUrl: config.serverUrl,
     sessionToken,
     initialSession: storedDeepSeekHarnessSession?.session,
-    taskCapabilities: (method, payload, signal) => context.requestHost('product', 'tasks.capabilities.' + method, payload, signal),
     connectorManagement: async (method, payload, api, session, signal) => {
       const lifetime = signal ?? lifecycle.signal
       const employee = session.employeeId
@@ -400,7 +406,7 @@ export function createExtension(context: ExtensionContext): ProductDesktopExtens
     prepareHost(profile): Promise<NodeJS.ProcessEnv | undefined> {
       if (preparePromise !== undefined) return preparePromise
       const operation = track(undefined, async (signal) => {
-        await knowledgeFiles.prepare()
+        await libraryFiles.prepare()
         signal.throwIfAborted()
         await connectorProxy.start()
         signal.throwIfAborted()
@@ -516,11 +522,11 @@ export function createExtension(context: ExtensionContext): ProductDesktopExtens
         const cleanup = async (close: () => void | Promise<void>): Promise<void> => {
           try { await close() } catch (error: unknown) { errors.push(error) }
         }
-        await cleanup(() => { knowledgeUploads.close() })
+        await cleanup(() => { libraryUploads.close() })
         await cleanup(closeCompanyContent)
         await cleanup(() => productBridge.dispose())
         await cleanup(() => support.close())
-        await cleanup(() => knowledgeFiles.close())
+        await cleanup(() => libraryFiles.close())
         await cleanup(() => connectorProxy.close())
         await cleanup(() => personalConnectors.close())
         await Promise.allSettled([...operations])

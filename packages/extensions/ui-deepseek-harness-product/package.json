@@ -39,7 +39,10 @@
         "@deepseek-ai/dsh-client-ui-primitives",
         "@deepseek-ai/dsh-client-ui-workspace"
       ],
-      "platform": "web"
+      "platform": "web",
+      "external": [
+        "@deepseek-ai/dsh-client-ui-conversation/client"
+      ]
     }
   },
   "scripts": {
@@ -82,6 +85,7 @@
     "react": "^18.2.0",
     "shell-quote": "^1.12.0",
     "@deepseek-harness/product-experts": "workspace:~",
-    "@deepseek-harness/product-skills": "workspace:~"
+    "@deepseek-harness/product-skills": "workspace:~",
+    "@deepseek-ai/dsh-client-ui-deliverables": "workspace:*"
   }
 }

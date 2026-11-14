@@ -85,7 +85,7 @@ jobs:
           apps/desktop/tests/update-coordinator.spec.ts apps/desktop/tests/update-mirror.spec.ts apps/desktop/tests/update-http-executor.spec.ts
           apps/desktop/tests/update-schedule.spec.ts
       - name: Test acceptance process cleanup
-        run: node --test apps/product-desktop/tests/acceptance-process.test.mjs apps/product-desktop/tests/office-process-diagnostics.test.mjs apps/product-desktop/tests/builder-diagnostics.test.mjs apps/product-desktop/tests/windows-processes.test.mjs
+        run: node --test apps/product-desktop/tests/acceptance-process.test.mjs apps/product-desktop/tests/ui-acceptance.test.mjs apps/product-desktop/tests/office-process-diagnostics.test.mjs apps/product-desktop/tests/builder-diagnostics.test.mjs apps/product-desktop/tests/windows-processes.test.mjs
       - name: Test Electron close lifecycle
         run: pnpm exec vitest run apps/product-desktop/tests/close-electron.spec.ts apps/product-desktop/tests/office-fixture.spec.ts apps/product-desktop/tests/native-update-dialog.spec.ts
       - name: Test upstream boundaries
@@ -255,10 +255,12 @@ jobs:
           DSH_SNAPSHOT: replay
         run: >-
           pnpm exec vitest run --config vitest.web.config.ts
-          apps/web/tests/deepseek-harness-catalog.e2e.ts
+          apps/web/tests/deepseek-harness-desktop.e2e.ts
           -t 'boots the built .* Electron assembly'
           --reporter=default --reporter=json
           --outputFile=.artifacts/desktop-ui-${{ matrix.target }}.json
+      - name: Verify native Electron UI coverage
+        run: node apps/product-desktop/scripts/verify-ui-acceptance.mjs .artifacts/desktop-ui-${{ matrix.target }}.json built
       - name: Test installed product desktop
         if: matrix.target != 'win-x64'
         env:

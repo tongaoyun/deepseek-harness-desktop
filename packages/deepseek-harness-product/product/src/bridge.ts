@@ -2,12 +2,11 @@
 
 import { addAbortListener } from 'node:events'
 import { DeepSeekHarnessApiClient, DeepSeekHarnessApiError } from './http-client.ts'
-import { assertProductMethod, assertProductPayload, parseTaskCapabilityRequest, parseTaskCapabilities, parseTaskCapabilityResult,
-  type KnowledgeFileMethod, type ProductEvent, type ProductMethod, type ProductRuntimeMethod, type ProductSession } from './protocol.ts'
+import { assertProductMethod, assertProductPayload,
+  type LibraryFileMethod, type ProductEvent, type ProductMethod, type ProductRuntimeMethod, type ProductSession } from './protocol.ts'
 import { ProductCatalogManager } from './catalog-manager.ts'
 import { ConnectorCatalogToolsSchema } from './catalog.ts'
-import { invokeKnowledge, type KnowledgeUpload } from './knowledge-bridge.ts'
-export type { KnowledgeUpload, KnowledgeUploadPending } from './knowledge-bridge.ts'
+import { invokeLibrary } from './library-bridge.ts'
 import { ProductError } from './errors.ts'
 import { z } from 'zod'
 import { invokeContentSubmission } from './content-submission-bridge.ts'
@@ -47,18 +46,14 @@ function runtimeBootstrap(value: unknown): ProductRuntimeBootstrap {
 /** Main-process dependencies used to construct the product bridge. */
 export interface ProductBridgeOptions {
   /** Main-owned original streaming, file handles, native download and system opening. */
-  readonly knowledgeFiles?: (method: KnowledgeFileMethod, payload: Readonly<Record<string, unknown>>, api: DeepSeekHarnessApiClient,
+  readonly libraryFiles?: (method: LibraryFileMethod, payload: Readonly<Record<string, unknown>>, api: DeepSeekHarnessApiClient,
     session: ProductSession, signal?: AbortSignal) => Promise<unknown>
-  /** Native knowledge-file picker and upload; renderer code cannot choose filesystem paths. */
-  readonly knowledgeUpload?: KnowledgeUpload
   readonly serverUrl?: string | undefined
   readonly sessionToken?: string | undefined
   readonly initialSession?: ProductSession | undefined
   /** Testable main-process HTTP transport. Renderer code never supplies this function. */
   readonly fetch?: typeof fetch
   readonly persistSession?: (session: ProductSession, sessionToken: string | undefined) => void | Promise<void>
-  /** Dispatch task capability operations to the trusted runtime. */
-  readonly taskCapabilities?: (method: 'read' | 'prepare', payload: Readonly<Record<string, unknown>>, signal?: AbortSignal) => Promise<unknown>
   /** Main-owned connector management, with authenticated API access and UI-safe employee identity. */
   readonly connectorManagement?: (method: string, payload: Readonly<Record<string, unknown>>, api: DeepSeekHarnessApiClient,
     session: ProductSession, signal?: AbortSignal) => Promise<unknown>
@@ -78,13 +73,11 @@ export class DeepSeekHarnessProductBridge {
   private session: ProductSession
   private readonly listeners = new Set<(event: ProductEvent) => void>()
   private readonly api?: DeepSeekHarnessApiClient
-  private readonly optionsTaskCapabilities?: ProductBridgeOptions['taskCapabilities']
   private readonly connectorManagement?: ProductBridgeOptions['connectorManagement']
   private readonly connectorRuntime?: ProductBridgeOptions['connectorRuntime']
   private readonly support?: ProductBridgeOptions['support']
   private readonly catalog: ProductCatalogManager
-  private readonly knowledgeUpload: KnowledgeUpload | undefined
-  private readonly knowledgeFiles: ProductBridgeOptions['knowledgeFiles']
+  private readonly libraryFiles: ProductBridgeOptions['libraryFiles']
   private sessionRefresh: Promise<void> | undefined
   private readonly refreshOperations = new Set<Promise<void>>()
   private sessionRefreshTimer: ReturnType<typeof setTimeout> | undefined
@@ -92,12 +85,10 @@ export class DeepSeekHarnessProductBridge {
   private authorizationAttempt: { readonly controller: AbortController; readonly signal: AbortSignal; state?: string } | undefined
 
   constructor(options: ProductBridgeOptions = {}) {
-    this.knowledgeUpload = options.knowledgeUpload
-    this.knowledgeFiles = options.knowledgeFiles
+    this.libraryFiles = options.libraryFiles
     this.sessionToken = options.sessionToken
     this.session = options.initialSession ?? (options.sessionToken === undefined ? { authenticated: false } : { authenticated: true })
     this.persistSession = options.persistSession
-    this.optionsTaskCapabilities = options.taskCapabilities
     this.connectorManagement = options.connectorManagement
     this.connectorRuntime = options.connectorRuntime
     this.support = options.support
@@ -313,11 +304,11 @@ export class DeepSeekHarnessProductBridge {
    * @returns Host-safe product data.
    */
   async invokeRuntime(method: ProductRuntimeMethod, payload?: unknown, signal?: AbortSignal): Promise<unknown> {
-    if (method.startsWith('runtime.knowledge.preview.')) {
+    if (method.startsWith('runtime.library.preview.')) {
       if (this.closed) throw new Error('Product bridge has been disposed')
       return this.withEmployeeSession(signal, async (lifetime) => {
-        if (this.api === undefined || this.knowledgeFiles === undefined) throw new ProductError('KNOWLEDGE_PREVIEW_UNAVAILABLE', 'File transport is unavailable', true)
-        return await this.knowledgeFiles(method as KnowledgeFileMethod, assertProductPayload(payload), this.api, this.session, lifetime)
+        if (this.api === undefined || this.libraryFiles === undefined) throw new ProductError('LIBRARY_PREVIEW_UNAVAILABLE', 'File transport is unavailable', true)
+        return await this.libraryFiles(method as LibraryFileMethod, assertProductPayload(payload), this.api, this.session, lifetime)
       })
     }
     if (method !== 'connectors.list') return this.invoke(method, payload, signal)
@@ -386,16 +377,6 @@ export class DeepSeekHarnessProductBridge {
         }
       }
     }
-    if (method === 'knowledge.references.resolve') {
-      return this.api.request('/api/v1/knowledge-references/resolve', { method: 'POST',
-        headers: { 'content-type': 'application/json' }, body: JSON.stringify(input), signal })
-    }
-    if (method === 'tasks.capabilities.read' || method === 'tasks.capabilities.prepare') {
-      if (this.optionsTaskCapabilities === undefined) throw new Error('Product task runtime is unavailable')
-      const request = parseTaskCapabilityRequest(input)
-      const value = await this.optionsTaskCapabilities(method.endsWith('.read') ? 'read' : 'prepare', request, signal)
-      return method === 'tasks.capabilities.read' ? parseTaskCapabilities(value) : parseTaskCapabilityResult(value, request)
-    }
     if (method === 'connectors.authorization.status') {
       const result = await this.api.request(
         `/api/v1/connectors/${encodeURIComponent(requiredId(input))}/authorization`, { signal },
@@ -418,45 +399,11 @@ export class DeepSeekHarnessProductBridge {
       this.catalogChanged()
       return result
     }
-    if (method === 'knowledge.search') {
-      const query = input.query
-      const knowledgeBaseRefs = input.knowledgeBaseRefs
-      const knowledgeBaseIds = input.knowledgeBaseIds
-      const limit = input.limit ?? 8
-      if (typeof query !== 'string' || query.trim() === '' || query.length > 2_000
-        || !stringArray(knowledgeBaseRefs, 32) || !stringArray(knowledgeBaseIds, 32)
-        || !Number.isSafeInteger(limit) || (limit as number) < 1 || (limit as number) > 12) {
-        throw new Error('deepseek-harness product: invalid knowledge search request')
-      }
-      if (input.restrictToKnowledgeBaseRefs === true && knowledgeBaseRefs.length === 0 && knowledgeBaseIds.length === 0) return []
-      return this.api.request('/api/v1/knowledge-searches', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        signal,
-        body: JSON.stringify({
-          query: query.trim(), knowledgeBaseRefs, knowledgeBaseIds,
-          restrictToKnowledgeBaseRefs: input.restrictToKnowledgeBaseRefs === true || knowledgeBaseRefs.length > 0, limit,
-        }),
-      })
+    if (method.startsWith('library.files.') && !['library.files.policy', 'library.files.list'].includes(method)) {
+      if (this.libraryFiles === undefined) throw new ProductError('LIBRARY_PREVIEW_UNAVAILABLE', 'File transport is unavailable', true)
+      return this.libraryFiles(method as LibraryFileMethod, input, this.api, this.session, signal)
     }
-    if (method === 'knowledge.bases.list') return this.catalog.read(method, signal)
-    if (method.startsWith('knowledge.documents.preview.') || method === 'knowledge.documents.download' || method === 'knowledge.documents.openExternal') {
-      if (!this.session.authenticated || !this.session.employeeId) throw new ProductError('KNOWLEDGE_ACCESS_DENIED', 'Authenticated employee is required', false)
-      if (this.knowledgeFiles === undefined) throw new ProductError('KNOWLEDGE_PREVIEW_UNAVAILABLE', 'File transport is unavailable', true)
-      return this.knowledgeFiles(method as KnowledgeFileMethod, input, this.api, this.session, signal)
-    }
-    if (method.startsWith('knowledge.documents.') || method.startsWith('knowledge.folders.') || method === 'knowledge.sources.read'
-      || method === 'knowledge.bases.create' || method === 'knowledge.bases.get' || method === 'knowledge.destinations.list' || method === 'knowledge.files.limits') {
-      return invokeKnowledge(this.api, method, input, this.knowledgeUpload, signal)
-    }
-    if (method === 'knowledge.bases.update' || method === 'knowledge.bases.delete') {
-      const result = await invokeKnowledge(this.api, method, input, this.knowledgeUpload, signal)
-      this.catalog.reset()
-      // Deletion is already committed on the server. A stale catalog should
-      // be refreshed opportunistically without turning success into failure.
-      await this.catalog.refresh(signal).catch(() => undefined)
-      return result
-    }
+    if (method.startsWith('library.')) return invokeLibrary(this.api, method, input, signal)
     const value = method === 'connectors.list' && this.connectorRuntime
       ? await this.readRuntimeConnectors(input, signal, false) : await this.catalog.read(method, signal)
     return method === 'connectors.list' && Array.isArray(value) ? value.map(rendererConnector) : value
@@ -656,9 +603,4 @@ function requiredId(input: Readonly<Record<string, unknown>>): string {
     throw new Error('deepseek-harness product: a valid product id is required')
   }
   return id
-}
-
-function stringArray(value: unknown, maximum: number): value is string[] {
-  return Array.isArray(value) && value.length <= maximum
-    && value.every(item => typeof item === 'string' && item.trim() !== '' && item.length <= 128)
 }

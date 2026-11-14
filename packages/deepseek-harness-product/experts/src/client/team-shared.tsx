@@ -69,7 +69,7 @@ export function TeamConfirm({ title, description, children, label, onCancel, onC
     danger?: boolean;
 }) {
     const { tx } = useTeamLocale();
-    return (<LibraryConfirm title={title} description={description} busy={busy} error={error} danger={danger} cancelLabel={cancelLabel ?? tx("取消")} confirmLabel={busy ? tx("正在处理…") : label} close={onCancel} confirm={onConfirm}>
+    return (<LibraryConfirm title={title} description={description} busy={busy} error={error} danger={danger} cancelLabel={cancelLabel ?? tx("取消")} confirmLabel={label} pendingLabel={tx("正在处理…")} close={onCancel} confirm={onConfirm}>
       {children}
     </LibraryConfirm>);
 }

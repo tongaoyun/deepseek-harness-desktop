@@ -7,7 +7,6 @@ import { isProductMethod, isProductRuntimeMethod, type ProductEvent } from '../s
 
 const immutableCatalog = {
   '/api/v1/connectors': [],
-  '/api/v1/knowledge-bases': [],
 } as const
 
 function requestUrl(input: Parameters<typeof fetch>[0]): URL {
@@ -47,7 +46,7 @@ describe('DeepSeekHarnessProductBridge', () => {
 
   it.each(['extensions.save', 'extensions.submit',
     'extensions.connector.update', 'extensions.connector.delete'])(
-    'returns committed %s without waiting for a stalled knowledge catalog', async (method) => {
+    'returns committed %s without waiting for a stalled connector catalog', async (method) => {
       const started = Promise.withResolvers<undefined>()
       const committed = vi.fn(async () => ({ committed: true }))
       let stalled = false
@@ -55,7 +54,7 @@ describe('DeepSeekHarnessProductBridge', () => {
         serverUrl: 'https://deepseek-harness.test', connectorManagement: committed,
         sessionToken: 'employee-session', initialSession: { authenticated: true, employeeId: 'employee-1' },
         fetch: async (input, init) => {
-          if (stalled && requestUrl(input).pathname === '/api/v1/knowledge-bases') {
+          if (stalled && requestUrl(input).pathname === '/api/v1/connectors') {
             started.resolve(undefined)
             return new Promise((_resolve, reject) => {
               const signal = init?.signal
@@ -84,50 +83,6 @@ describe('DeepSeekHarnessProductBridge', () => {
       } finally { controller.abort(); await bridge.dispose() }
     },
   )
-
-  it('dispatches personal library creation and limits through authenticated knowledge APIs', async () => {
-    const created = { id: 'personal-1', name: 'My files', scope: 'PERSONAL', canManage: true }
-    const limits = { previewMaxBytes: 50_000_000, downloadMaxBytes: 250_000_000, uploadMaxBytes: 50_000_000 }
-    const fetch = vi.fn((input: Parameters<typeof globalThis.fetch>[0], init?: RequestInit) => {
-      const url = requestUrl(input)
-      if (url.pathname === '/api/v1/knowledge-file-limits') return Promise.resolve(Response.json({ success: true, data: limits }))
-      if (url.pathname === '/api/v1/knowledge-bases' && init?.method === 'POST') {
-        return Promise.resolve(Response.json({ success: true, data: created }))
-      }
-      return catalogFetch(input)
-    })
-    const bridge = new DeepSeekHarnessProductBridge({ serverUrl: 'https://deepseek-harness.test', fetch,
-      sessionToken: 'employee-session', initialSession: { authenticated: true, employeeId: 'employee-1' } })
-    try {
-      await expect(bridge.invoke('knowledge.files.limits', {})).resolves.toEqual(limits)
-      await expect(bridge.invoke('knowledge.bases.create', { name: 'My files', operationId: 'personal-create-123456' })).resolves.toEqual(created)
-      const creation = fetch.mock.calls.find(([input, init]) => requestUrl(input).pathname.endsWith('/knowledge-bases') && init?.method === 'POST')
-      expect(creation).toBeDefined()
-      if (creation === undefined) throw new Error('Missing personal creation request')
-      const body = creation[1]?.body
-      if (typeof body !== 'string') throw new Error('Missing personal creation body')
-      expect(JSON.parse(body)).toEqual({ name: 'My files', description: '', scope: 'PERSONAL' })
-      expect(new Headers(creation[1]?.headers).get('x-deepseek-harness-employee-id')).toBe('employee-1')
-      expect(isProductRuntimeMethod('knowledge.bases.create')).toBe(false)
-      expect(isProductRuntimeMethod('knowledge.files.limits')).toBe(false)
-    } finally { await bridge.dispose() }
-  })
-
-  it('dispatches personal library deletion and tolerates a catalog refresh outage', async () => {
-    const fetch = vi.fn((input: Parameters<typeof globalThis.fetch>[0], init?: RequestInit) => {
-      const url = requestUrl(input)
-      if (url.pathname === '/api/v1/knowledge-bases/mine' && init?.method === 'DELETE') {
-        return Promise.resolve(new Response(null, { status: 204 }))
-      }
-      return Promise.reject(new Error('catalog offline'))
-    })
-    const bridge = new DeepSeekHarnessProductBridge({ serverUrl: 'https://deepseek-harness.test', fetch,
-      sessionToken: 'employee-session', initialSession: { authenticated: true, employeeId: 'employee-1' } })
-    try {
-      await expect(bridge.invoke('knowledge.bases.delete', { knowledgeBaseId: 'mine' })).resolves.toBeUndefined()
-      expect(fetch.mock.calls.some(([input, init]) => requestUrl(input).pathname.endsWith('/knowledge-bases/mine') && init?.method === 'DELETE')).toBe(true)
-    } finally { await bridge.dispose() }
-  })
   it('exposes session state without exposing a token', () => {
     const bridge = new DeepSeekHarnessProductBridge()
     bridge.setSession({ authenticated: true, employeeId: 'employee-1' }, 'opaque-secret')
@@ -201,14 +156,6 @@ describe('DeepSeekHarnessProductBridge', () => {
       expect(events).toEqual([])
       expect(fetch).toHaveBeenCalledTimes(requests)
     } finally { settle?.(); await bridge.dispose() }
-  })
-
-  it('requires an authenticated employee before preparing knowledge access', async () => {
-    const bridge = new DeepSeekHarnessProductBridge({
-      serverUrl: 'https://deepseek-harness.test', taskCapabilities: vi.fn(),
-    })
-    await expect(bridge.invoke('tasks.capabilities.prepare', { knowledgeBaseIds: ['orders'] }))
-      .rejects.toThrow('Employee authentication is required')
   })
 
   it('opens DingTalk OAuth in the system browser and never creates a QR window', async () => {
@@ -505,7 +452,7 @@ describe('DeepSeekHarnessProductBridge', () => {
           const path = requestUrl(input).pathname
           if (path.endsWith('/authorization')) return Promise.resolve(Response.json({ success: true,
             data: { connectorId: 'erp', status: method.endsWith('.revoke') ? 'REQUIRED' : 'AUTHORIZED' } }))
-          if (offline && path.endsWith('/knowledge-bases')) return Promise.resolve(Response.json({ success: false,
+          if (offline && path.endsWith('/connectors')) return Promise.resolve(Response.json({ success: false,
             errCode: 'ORGANIZATION_UNAVAILABLE', errMessage: 'Organization service unavailable' }, { status: 503 }))
           return catalogFetch(input)
         },
@@ -520,7 +467,7 @@ describe('DeepSeekHarnessProductBridge', () => {
         })
         expect(events.some(event => event.type === 'catalog.changed')).toBe(true)
         await expect(bridge.invoke('catalog.refresh')).rejects.toMatchObject({ code: 'ORGANIZATION_UNAVAILABLE' })
-        await expect(bridge.invoke('connectors.list')).resolves.toEqual(expect.any(Array))
+        await expect(bridge.invoke('connectors.list')).rejects.toMatchObject({ code: 'ORGANIZATION_UNAVAILABLE' })
       } finally { await bridge.dispose() }
     },
   )
@@ -535,7 +482,7 @@ describe('DeepSeekHarnessProductBridge', () => {
       fetch: async (input, init) => {
         const path = requestUrl(input).pathname
         if (path.endsWith('/authorization')) return Response.json({ success: true, data: { connectorId: 'erp', status: 'REQUIRED' } })
-        if (!path.endsWith('/knowledge-bases')) return catalogFetch(input)
+        if (!path.endsWith('/connectors')) return catalogFetch(input)
         const signal = init?.signal
         if (!signal) throw new Error('Missing refresh cancellation')
         signal.throwIfAborted()
@@ -608,31 +555,7 @@ describe('DeepSeekHarnessProductBridge', () => {
       .toBe(true)
     expect(authorizationRequests.filter(request => request.method !== 'GET')
       .every(request => request.headers.get('x-requested-with') === 'XMLHttpRequest')).toBe(true)
-    expect(requests).toHaveLength(7)
-    await bridge.dispose()
-  })
-
-  it('rechecks knowledge visibility on every read and rejects outages without cached grants', async () => {
-    let knowledge = [{ id: 'department-sales', scope: 'DEPARTMENT' }]
-    let fail = false
-    const calls: string[] = []
-    const bridge = new DeepSeekHarnessProductBridge({
-      serverUrl: 'https://deepseek-harness.test', sessionToken: 'employee-session',
-      initialSession: { authenticated: true, employeeId: 'employee-1' },
-      fetch: (input, init) => {
-        const path = new URL(typeof input === 'string' ? input : input instanceof URL ? input.href : input.url).pathname
-        calls.push(path)
-        if (path === '/api/v1/knowledge-bases' && fail) return Promise.reject(new TypeError('directory unavailable'))
-        return catalogTransport({ ...immutableCatalog, '/api/v1/knowledge-bases': knowledge })(input, init)
-      },
-    })
-    await bridge.invoke('catalog.refresh')
-    await expect(bridge.invoke('knowledge.bases.list')).resolves.toMatchObject([{ id: 'department-sales' }])
-    knowledge = [{ id: 'department-support', scope: 'DEPARTMENT' }]
-    await expect(bridge.invoke('knowledge.bases.list')).resolves.toMatchObject([{ id: 'department-support' }])
-    fail = true
-    await expect(bridge.invoke('knowledge.bases.list')).rejects.toMatchObject({ code: 'PRODUCT_NETWORK_UNAVAILABLE' })
-    expect(calls.filter(path => path === '/api/v1/knowledge-bases')).toHaveLength(4)
+    expect(requests).toHaveLength(5)
     await bridge.dispose()
   })
 
@@ -667,29 +590,29 @@ describe('DeepSeekHarnessProductBridge', () => {
     const first = bridge.invoke('catalog.refresh', undefined, controller.signal)
     const firstCancelled = expect(first).rejects.toThrow('Cancel first refresh')
     const second = bridge.invoke('catalog.refresh', undefined, new AbortController().signal)
-    await vi.waitFor(() => { expect(pending).toHaveLength(4) })
+    await vi.waitFor(() => { expect(pending).toHaveLength(2) })
     controller.abort(new Error('Cancel first refresh'))
-    expect(pending.slice(2).every(request => !request.signal.aborted)).toBe(true)
-    pending.slice(0, 2).forEach((request) => { request.cancel?.() })
-    pending.slice(2).forEach((request) => { request.finish() })
+    expect(pending.slice(1).every(request => !request.signal.aborted)).toBe(true)
+    pending.slice(0, 1).forEach((request) => { request.cancel?.() })
+    pending.slice(1).forEach((request) => { request.finish() })
     await firstCancelled
     await second
     expect(events).toEqual(['catalog.changed'])
     const background = bridge.refreshCatalog()
     // Nested abort signals report either owner's disposal reason across supported Node versions.
     const backgroundCancelled = expect(background).rejects.toThrow(/^Product (?:bridge closed|catalog has been disposed)$/u)
-    await vi.waitFor(() => { expect(pending).toHaveLength(6) })
+    await vi.waitFor(() => { expect(pending).toHaveLength(3) })
     let disposed = false
     const disposal = bridge.dispose().then(() => { disposed = true })
     await Promise.resolve()
     expect(disposed).toBe(false)
-    expect(pending.slice(4).every(request => request.signal.aborted)).toBe(true)
-    pending.slice(4).forEach((request) => { request.cancel?.() })
+    expect(pending.slice(2).every(request => request.signal.aborted)).toBe(true)
+    pending.slice(2).forEach((request) => { request.cancel?.() })
     await backgroundCancelled
     await disposal
     expect(disposed).toBe(true)
     expect(events).toEqual(['catalog.changed'])
     await expect(bridge.refreshCatalog()).rejects.toThrow('Product catalog has been disposed')
-    expect(pending).toHaveLength(6)
+    expect(pending).toHaveLength(3)
   })
 })

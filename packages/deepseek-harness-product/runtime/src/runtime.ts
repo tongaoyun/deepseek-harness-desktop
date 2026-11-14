@@ -1,32 +1,17 @@
-/** Enterprise connectors and task-scoped knowledge on public Harness extension points. */
-import { join } from 'node:path'
+/** Enterprise connector discovery and native approval on public Harness extension points. */
 import type { Context } from '@deepseek-ai/cordis'
-import type { PresetDefinition } from '@deepseek-ai/dsh-agent-preset-registry'
-import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
 import * as McpClient from '@deepseek-ai/dsh-mcp-client'
 import * as NativeToolExecutor from '@deepseek-ai/dsh-tool-executor-native'
 import Tools from '@deepseek-ai/dsh-tools'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import { installConnectorDiscovery, discoveryOptions, type DiscoveryOptions, type ConnectorCatalog } from './connector-discovery.ts'
 import type {} from '@deepseek-ai/dsh-session-query'
-import type { ProductTaskCapabilityRequest, ProductTaskCapabilityResult, ProductTaskCapabilities } from '@deepseek-harness/product/protocol'
 import { ProductError } from '@deepseek-harness/product/errors'
-import { createTaskCapabilities } from './tasks.ts'
-import * as KnowledgeLibrary from './knowledge-library.ts'
 import type { DeepSeekHarnessProductIpc } from './deepseek-harness-product-ipc.ts'
 import { connectorServerName, connectorToolPolicy, parseConnectorCatalog, type DeepSeekHarnessConnector as Connector } from './deepseek-harness-connector-contract.ts'
-import { objectRecord, stringField } from './response-fields.ts'
 
-const KNOWLEDGE_PLUGIN = import.meta.resolve('@deepseek-harness/product-runtime/knowledge')
 export const inject = ['agentPresets', 'agents', 'sessions', 'sessionQuery', 'sessionProjections', 'systemPrompt', 'tools']
 export interface DeepSeekHarnessRuntimeControl {
-  /** Read task selections with caller cancellation forwarded to native Session observation.
-   * @param request Task identity; absent identity reads the current default mode.
-   * @param signal Cancellation for the complete read.
-   * @returns The pinned task selection, never a late result after cancellation.
-   */
-  readCapabilities(request: ProductTaskCapabilityRequest, signal?: AbortSignal): Promise<ProductTaskCapabilities>
-  prepareCapabilities(request: ProductTaskCapabilityRequest, signal?: AbortSignal): Promise<ProductTaskCapabilityResult>
   refreshConnectors(signal?: AbortSignal): Promise<{ connectedIds: string[]; unavailableIds: string[] }>
 }
 export interface Config {
@@ -34,33 +19,9 @@ export interface Config {
   readonly connectorDiscovery?: DiscoveryOptions
   readonly publishControl: (control: DeepSeekHarnessRuntimeControl | undefined) => void
 }
-/** Register knowledge selection and authorized enterprise tools for native Agents, including subagents. */
+/** Register authorized enterprise tools for native Agents, including subagents. */
 export async function apply(ctx: Context, config: Config): Promise<void> {
   const discovery = discoveryOptions.parse(config.connectorDiscovery ?? {})
-  await ctx.plugin(KnowledgeLibrary, { product: config.product })
-  const visibleKnowledge = async (signal?: AbortSignal) => {
-    const value = await config.product.invoke('knowledge.bases.list', undefined, signal)
-    if (!Array.isArray(value)) throw new Error('Invalid knowledge catalog')
-    return value.map(row => stringField(objectRecord(row, 'knowledge base'), 'id'))
-  }
-  const tasks = await createTaskCapabilities(ctx, {
-    root: join(resolveDshHome(), 'product-knowledge-tasks-v1'), visibleKnowledge,
-    async validateKnowledge(ids, signal) {
-      if (ids.length === 0) return []
-      const visible = new Set(await visibleKnowledge(signal))
-      const denied = ids.filter(id => !visible.has(id))
-      if (denied.length) throw new ProductError('KNOWLEDGE_ACCESS_REVOKED', 'Selected knowledge is unavailable', false,
-        denied.map(id => ({ kind: 'knowledge-base', id })))
-      return ids
-    },
-    knowledgePlugins: ids => ids.length === 0 ? [] : [{ id: 'product-knowledge', name: KNOWLEDGE_PLUGIN,
-      config: { knowledgeBaseIds: ids } }],
-    async register(definition: PresetDefinition) {
-      const dispose = await ctx.agentPresets.register(definition)
-      ctx.effect(() => dispose, `product-knowledge.preset.${definition.id}`)
-      return dispose
-    },
-  })
   const connectors: Connector[] = []
   let catalog: ConnectorCatalog | undefined
   let privatePrompt: SystemPrompt | undefined
@@ -162,14 +123,11 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
   ctx.effect(() => async () => { catalog = undefined; abortConnectors(); await refreshQueue.catch(() => undefined) }, 'product-runtime.connectors')
   // Connector failure is reported in the model-visible, logged prompt, not as a global execution guard.
   await refreshConnectors().catch((error: unknown) => { lifetime.signal.throwIfAborted(); ctx.logger.warn(String(error)) })
-  ctx.on('agent-preset/resolve-selection', async (agent, _requested, next) => tasks.resolveSelection(agent.session.id, await next()))
-  ctx.on('agent/pre-step', async ({ agent, signal }, next) => {
-    await tasks.validate(ctx.agentPresets.composedPreset(agent.ctx), signal)
+  ctx.on('agent/pre-step', async ({ signal }, next) => {
     await updateConnectorInstructions(signal)
     return next()
   })
-  config.publishControl({ readCapabilities: (request, signal) => tasks.read(request, signal),
-    prepareCapabilities: (request, signal) => tasks.prepare(request, signal), refreshConnectors })
+  config.publishControl({ refreshConnectors })
   ctx.effect(() => () => { config.publishControl(undefined) }, 'product.runtime-control')
 }
 

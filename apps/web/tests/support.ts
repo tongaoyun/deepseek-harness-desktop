@@ -13,6 +13,22 @@ export const DIST_INDEX = fileURLToPath(new URL('../dist/index.html', import.met
 
 export const REPO_ROOT = fileURLToPath(new URL('../../..', import.meta.url))
 
+/** Check the full control against viewport and ancestor scroll clipping.
+ * @param control Visible product control, sampled without scrolling it into view.
+ * @returns Whether its bounds fit all clipping ancestors and the viewport.
+ */
+export function controlIsUnclipped(control: Locator): Promise<boolean> {
+  return control.evaluate((node) => {
+    const rect = node.getBoundingClientRect()
+    for (let parent = node.parentElement; parent; parent = parent.parentElement) {
+      const style = getComputedStyle(parent), bounds = parent.getBoundingClientRect()
+      if (/auto|scroll|hidden|clip/.test(style.overflowY) && (rect.top < bounds.top || rect.bottom > bounds.bottom)) return false
+      if (/auto|scroll|hidden|clip/.test(style.overflowX) && (rect.left < bounds.left || rect.right > bounds.right)) return false
+    }
+    return rect.top >= 0 && rect.bottom <= innerHeight && rect.left >= 0 && rect.right <= innerWidth
+  })
+}
+
 /** A visible control, including controls that declare no native window region. */
 interface WindowControlBox extends Omit<RegionRect, 'draggable'> {
   /** Sample points where the browser hit test reaches this control or its content. */

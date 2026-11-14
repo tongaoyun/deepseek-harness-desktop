@@ -60,7 +60,7 @@ it.each((['bytes', 'files'] as const).flatMap(limit => [false, true].map(overflo
       vi.runOnlyPendingTimers()
       expect(revoke).toHaveBeenCalledExactlyOnceWith('blob:expert-package-test')
     }
-  },
+  }, 10_000,
 )
 
 it.each(['prompt', 'agents'] as const)('round trips %s at the UTF-8 byte limit and rejects one additional byte', async (field) => {

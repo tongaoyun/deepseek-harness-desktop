@@ -36,6 +36,8 @@ export const TEAM_CSS = `
 .aag-host-modal.agt-detail .agt-detail-content{flex:1;min-height:0;overflow:hidden}
 .aag-host-modal.agt-detail .agt-detail-content>div:last-child{flex:1;min-height:0;overflow:hidden}
 .agt-dialog.agt-detail{flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain}
+.agt-detail-error{flex:1;min-width:0;overflow-wrap:anywhere}
+.agt-detail-retry{flex:none;white-space:nowrap}
 .agt-detail-head{display:flex;align-items:center;gap:16px}
 .agt-name-line{display:flex;align-items:center;flex-wrap:wrap;gap:8px 10px}
 .agt-name-line h2{margin:0}
@@ -78,6 +80,7 @@ export const TEAM_CSS = `
 .agt-dialog.agt-picker .agt-picker-list strong{font-size:14px}
 .agt-compact{display:flex;flex-direction:column;min-height:0}
 .agt-compact-list{flex:1;min-height:0;overflow:auto;max-height:250px;overscroll-behavior:contain}
+.agt-compact-list>.aag-note{min-height:1lh}
 .agt-compact-row{display:flex;align-items:center;padding:4px 8px}
 .agt-compact-row>button:first-child{flex:1;display:flex;align-items:center;gap:8px;min-width:0;text-align:left;border:0;background:transparent;color:inherit;cursor:pointer;padding:8px}
 .agt-compact-row .agt-stack img{width:22px;height:22px;object-position:center 20%;border:2px solid var(--dsw-specific-menu,var(--dsw-alias-bg-layer-2))}

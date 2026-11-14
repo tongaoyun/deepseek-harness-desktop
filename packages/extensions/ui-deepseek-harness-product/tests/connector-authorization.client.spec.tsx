@@ -46,7 +46,8 @@ it('retains expanded tools and their filters while refreshing after authorizatio
     expect(search.value).toBe('订单')
     expect(disclosure.open).toBe(true)
     expect(screen.getByRole('button', { name: zh.configureDevice })).toBe(configure)
-    expect(configure.disabled).toBe(true)
+    expect(configure.disabled).toBe(false)
+    expect(configure.getAttribute('aria-disabled')).toBe('true')
     expect(configure.classList.contains('product-control-pending')).toBe(true)
   } finally { await act(async () => { refresh.resolve(undefined) }) }
   expect(screen.getByRole('searchbox', { name: zh.searchConnectorTools })).toBe(search)

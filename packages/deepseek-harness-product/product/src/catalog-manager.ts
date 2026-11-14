@@ -10,7 +10,6 @@ import type {
 const CATALOG_REFRESH_INTERVAL_MS = 5 * 60 * 1_000
 const CATALOG_ROUTES = {
   'connectors.list': '/api/v1/connectors',
-  'knowledge.bases.list': '/api/v1/knowledge-bases',
 } as const satisfies Partial<Record<ProductMethod, string>>
 type CatalogMethod = keyof typeof CATALOG_ROUTES
 

@@ -9,7 +9,7 @@ import { builtinCapabilityPatches } from '../../../packages/deepseek-harness-pro
 import type AgencyAgentsRemote from '../../../packages/deepseek-harness-product/experts/lib/remote.js'
 import type { AgencyPersonaSource } from '../../../packages/deepseek-harness-product/experts/lib/index.js'
 import { launchWebScaffold, watchConsole } from './scaffold.ts'
-import { newEnglishPage, REPO_ROOT } from './support.ts'
+import { controlIsUnclipped, newEnglishPage, REPO_ROOT } from './support.ts'
 
 type ExpertLibrary = {
   catalog: (signal?: AbortSignal) => ReturnType<AgencyAgentsRemote['getCatalog']>
@@ -24,6 +24,453 @@ type TeamLibrary = {
   remove: AgencyAgentsRemote['deleteTeam']
   setEnabled: AgencyAgentsRemote['setTeamEnabled']
 }
+
+it.each(['expert', 'team'] as const)('keeps the %s directory still when an operation fails and its read is retried', async (surface) => {
+  const root = await mkdtemp(join(tmpdir(), 'directory-feedback-layout-'))
+  onTestFinished(() => rm(root, { recursive: true, force: true }))
+  const companyRoot = join(root, 'employee', 'company', 'experts')
+  await mkdir(companyRoot, { recursive: true })
+  vi.stubEnv('DSH_COMPANY_EXPERTS_ROOT', companyRoot)
+  onTestFinished(() => { vi.unstubAllEnvs() })
+  const overlay = join(root, 'experts.patch.yml')
+  await writeFile(overlay, JSON.stringify(builtinCapabilityPatches()))
+  const scaffold = await launchWebScaffold({ firstUse: true, profile: { packages: [] },
+    extraInstallAnchors: [join(REPO_ROOT, 'packages/deepseek-harness-product/desktop/package.json')],
+    extraOverlayPath: [overlay, join(REPO_ROOT, 'packages/extensions/ui-deepseek-harness-product/cordis.patch.yml'),
+      join(REPO_ROOT, 'apps/web/tests/pin-browse-picker.overlay.yml')],
+  })
+  onTestFinished(() => scaffold.close())
+  const library = scaffold.ctx.get('agencyAgentsLibrary') as ExpertLibrary
+  const teams = scaffold.ctx.get('agencyAgentsTeams') as TeamLibrary
+  let catalog = await library.catalog()
+  for (const name of ['Stable reviewer', 'Second reviewer']) catalog = await library.saveCustom({ name,
+    description: 'Read-only browser fixture', division: 'specialized', prompt: 'Keep {{literal}}.' }, true, catalog.revision)
+  await teams.save({ name: 'Stable team', description: 'Read-only browser fixture', tags: [], goal: 'Review the task',
+    constraints: 'Do not write', deliveryRequirements: 'Return findings', examples: ['Review the task'], coordinatorMode: 'template',
+    coordinatorTemplateId: 'general', coordinatorTemplateVersion: 1, coordinatorPrompt: '',
+    members: catalog.experts.map(item => ({ expertSlug: item.slug, duty: 'Review', instructions: 'Read the references.' })),
+  }, true, catalog.revision)
+  const browser = await chromium.launch()
+  onTestFinished(() => browser.close())
+  const page = await newEnglishPage(browser)
+  page.setDefaultTimeout(10_000)
+  const tripwire = watchConsole(page)
+  await page.goto(scaffold.authenticatedUrl)
+  await page.getByRole('button', { name: 'Expert kits', exact: true }).click()
+  await page.getByRole('tab', { name: 'Mine', exact: true }).click()
+  if (surface === 'team') await page.getByRole('tab', { name: 'Expert teams', exact: true }).click()
+  const area = page.locator(surface === 'team' ? '#aag-team-source-panel' : '#aag-expert-source-panel')
+  const search = area.getByRole('textbox', { name: surface === 'team' ? 'Search teams' : 'Search', exact: true })
+  await search.fill('Stable')
+  await search.evaluate((node) => { if (node instanceof HTMLInputElement) node.setSelectionRange(1, 4) })
+  const card = area.locator('.aag-expert-card').first()
+  await card.waitFor()
+  const cardNode = await card.elementHandle(), searchNode = await search.elementHandle()
+  const before = await card.boundingBox(), searchBefore = await search.boundingBox()
+  const failure = new Error('Directory temporarily unavailable. ' + 'Check the connection and retry. '.repeat(20))
+  const writes = surface === 'team' ? vi.spyOn(teams, 'setEnabled').mockRejectedValue(failure)
+    : vi.spyOn(library, 'setEnabled').mockRejectedValue(failure)
+  onTestFinished(() => { writes.mockRestore() })
+  await card.getByRole('switch').click()
+  const alert = area.getByRole('alert')
+  await alert.waitFor()
+  expect(await card.evaluate((node, previous) => node === previous, cardNode)).toBe(true)
+  expect(await card.boundingBox()).toEqual(before)
+  expect(await search.boundingBox()).toEqual(searchBefore)
+  expect(await search.evaluate((node, previous) => node === previous && node instanceof HTMLInputElement
+    && [node.value, node.selectionStart, node.selectionEnd], searchNode)).toEqual(['Stable', 1, 4])
+  const originalAlert = await alert.elementHandle()
+  const retry = area.getByRole('button', { name: surface === 'team' ? 'Refresh and retry' : 'Retry loading', exact: true })
+  const retryNode = await retry.elementHandle()
+  const failedRead = Promise.withResolvers<undefined>(), recoveredRead = Promise.withResolvers<undefined>()
+  onTestFinished(() => { failedRead.resolve(undefined); recoveredRead.resolve(undefined) })
+  let reads = 0
+  const catalogRead = library.catalog.bind(library), teamRead = teams.snapshot.bind(teams)
+  const read = surface === 'team' ? vi.spyOn(teams, 'snapshot').mockImplementation(async (...args) => {
+    if (++reads === 1) { await failedRead.promise; throw failure }
+    await recoveredRead.promise
+    return teamRead(...args)
+  }) : vi.spyOn(library, 'catalog').mockImplementation(async (...args) => {
+    if (++reads === 1) { await failedRead.promise; throw failure }
+    await recoveredRead.promise
+    return catalogRead(...args)
+  })
+  onTestFinished(() => { read.mockRestore() })
+  await retry.click(); await retry.press('Enter')
+  await expect.poll(() => reads).toBe(1)
+  expect(await alert.evaluate((node, previous) => node === previous, originalAlert)).toBe(true)
+  expect(await retry.evaluate((node, previous) => node === previous && node === document.activeElement, retryNode)).toBe(true)
+  expect(await card.boundingBox()).toEqual(before)
+  failedRead.resolve(undefined)
+  await expect.poll(() => retry.getAttribute('aria-busy')).toBe('false')
+  expect(await retry.evaluate((node, previous) => node === previous && node === document.activeElement, retryNode)).toBe(true)
+  expect(await alert.evaluate((node, previous) => node === previous, originalAlert)).toBe(true)
+  const screenshots = join(REPO_ROOT, '.artifacts/deepseek-harness-expert-retry')
+  await mkdir(screenshots, { recursive: true })
+  const region = alert.locator('..')
+  for (const theme of ['light', 'dark'] as const) {
+    await page.emulateMedia({ colorScheme: theme })
+    for (const width of [1440, 390]) {
+      await page.setViewportSize({ width, height: 900 })
+      if (width < 600) await expect.poll(() => page.locator('[data-sidebar-drawer]').count()).toBe(1)
+      if (await page.locator('[data-sidebar-drawer]:not([data-sidebar-collapsed])').count()) {
+        await page.getByRole('button', { name: 'Collapse sidebar', exact: true }).click()
+      }
+      if (width < 600) await expect.poll(() => page.locator('[data-sidebar-drawer] > [inert]').first()
+        .evaluate(node => node.getBoundingClientRect().right <= 1 && getComputedStyle(node).visibility === 'hidden')).toBe(true)
+      await region.scrollIntoViewIfNeeded()
+      await region.focus()
+      await page.screenshot({ path: join(screenshots, `directory-feedback-${surface}-${theme}-${width}.png`) })
+      expect(await controlIsUnclipped(region)).toBe(true)
+      expect(await controlIsUnclipped(retry)).toBe(true)
+      expect(await area.evaluate(node => node.scrollWidth <= node.clientWidth + 1)).toBe(true)
+      expect(await region.evaluate((node) => { node.scrollTop = 20; return node.scrollTop })).toBeGreaterThan(0)
+    }
+  }
+  await retry.click(); await retry.press('Enter')
+  await expect.poll(() => reads).toBe(2)
+  await region.focus()
+  const cardPending = await card.boundingBox(), searchPending = await search.boundingBox()
+  recoveredRead.resolve(undefined)
+  await alert.waitFor({ state: 'hidden' })
+  await expect.poll(() => search.evaluate(node => node === document.activeElement)).toBe(true)
+  expect(await card.evaluate((node, previous) => node === previous, cardNode)).toBe(true)
+  expect(await card.boundingBox()).toEqual(cardPending)
+  expect(await search.boundingBox()).toEqual(searchPending)
+  expect(await search.evaluate((node, previous) => node === previous && node instanceof HTMLInputElement
+    && [node.value, node.selectionStart, node.selectionEnd], searchNode)).toEqual(['Stable', 1, 4])
+  expect(writes).toHaveBeenCalledOnce()
+  expect(tripwire.pageErrors).toEqual([])
+})
+
+it.each((['menu', 'panel'] as const).flatMap(surface => (['success', 'failure'] as const).map(outcome => ({ surface, outcome }))))(
+  'preserves newer team feedback after an older directory read ($surface, $outcome)', async ({ surface, outcome }) => {
+    const root = await mkdtemp(join(tmpdir(), 'team-read-feedback-'))
+    onTestFinished(() => rm(root, { recursive: true, force: true }))
+    const companyRoot = join(root, 'employee', 'company', 'experts')
+    await mkdir(companyRoot, { recursive: true })
+    vi.stubEnv('DSH_COMPANY_EXPERTS_ROOT', companyRoot)
+    onTestFinished(() => { vi.unstubAllEnvs() })
+    const overlay = join(root, 'experts.patch.yml')
+    await writeFile(overlay, JSON.stringify(builtinCapabilityPatches()))
+    const scaffold = await launchWebScaffold({ firstUse: true, profile: { packages: [] },
+      extraInstallAnchors: [join(REPO_ROOT, 'packages/deepseek-harness-product/desktop/package.json')],
+      extraOverlayPath: [overlay, join(REPO_ROOT, 'packages/extensions/ui-deepseek-harness-product/cordis.patch.yml'),
+        join(REPO_ROOT, 'apps/web/tests/pin-browse-picker.overlay.yml')],
+    })
+    onTestFinished(() => scaffold.close())
+    const library = scaffold.ctx.get('agencyAgentsLibrary') as ExpertLibrary
+    const teams = scaffold.ctx.get('agencyAgentsTeams') as TeamLibrary
+    let catalog = await library.catalog()
+    for (const name of ['Feedback reviewer', 'Second reviewer']) catalog = await library.saveCustom({ name,
+      description: 'Read-only browser fixture', division: 'specialized', prompt: 'Keep {{literal}}.' }, true, catalog.revision)
+    let revision = catalog.revision
+    for (let index = 1; index <= 8; index++) revision = (await teams.save({ name: `Feedback team ${index}`,
+      description: 'Read-only browser fixture', tags: [], goal: 'Review the task', constraints: 'Do not write',
+      deliveryRequirements: 'Return findings', examples: ['Review the task'], coordinatorMode: 'template',
+      coordinatorTemplateId: 'general', coordinatorTemplateVersion: 1, coordinatorPrompt: '',
+      members: catalog.experts.map(item => ({ expertSlug: item.slug, duty: 'Review', instructions: 'Read the references.' })),
+    }, true, revision)).revision
+    const snapshot = teams.snapshot.bind(teams)
+    const browser = await chromium.launch()
+    onTestFinished(() => browser.close())
+    const page = await newEnglishPage(browser)
+    page.setDefaultTimeout(10_000)
+    const tripwire = watchConsole(page)
+    onTestFinished(() => { expect(tripwire.pageErrors).toEqual([]) })
+    await page.goto(scaffold.authenticatedUrl)
+    await expect.poll(() => page.getByRole('button', { name: 'Choose workspace', exact: true }).textContent()).toBe('Default workspace')
+    const trigger = page.getByRole('button', { name: 'Experts', exact: true })
+    await trigger.click()
+    const picker = page.getByRole('dialog', { name: 'Experts', exact: true })
+    await picker.getByRole('tab', { name: 'Expert teams', exact: true }).click()
+    await picker.getByRole('button', { name: /^Feedback team 1/ }).click()
+    await picker.waitFor({ state: 'hidden' })
+    const composer = page.locator('[data-composer-input][contenteditable="true"]').last()
+    await expect.poll(() => composer.textContent()).toContain('Feedback team 1')
+    const draft = await composer.textContent()
+    const pending = Promise.withResolvers<undefined>()
+    let reads = 0
+    const delayed = vi.spyOn(teams, 'snapshot').mockImplementation(async (...args) => {
+      if (++reads === 1) {
+        await pending.promise
+        if (outcome === 'failure') throw new Error('Older directory read failed')
+      }
+      return snapshot(...args)
+    })
+    const writes = vi.spyOn(teams, 'setEnabled')
+    onTestFinished(() => { pending.resolve(undefined); delayed.mockRestore(); writes.mockRestore() })
+    if (surface === 'menu') await trigger.click()
+    else {
+      await page.getByRole('button', { name: 'Expert kits', exact: true }).click()
+      await page.getByRole('tab', { name: 'Mine', exact: true }).click()
+      await page.getByRole('tab', { name: 'Expert teams', exact: true }).click()
+    }
+    await expect.poll(() => reads).toBe(1)
+    const area = surface === 'menu' ? picker : page.locator('#aag-team-source-panel')
+    const search = area.getByRole('textbox', { name: 'Search teams', exact: true })
+    await search.fill('Feedback')
+    await search.evaluate((node) => { if (node instanceof HTMLInputElement) node.setSelectionRange(1, 4) })
+    const list = area.locator(surface === 'menu' ? '.agt-compact-list' : '.aag-team-grid')
+    if (surface === 'menu') await area.getByRole('button', { name: /^Feedback team 1/ }).click()
+    else {
+      await area.getByRole('button', { name: 'View details', exact: true }).first().click()
+      await page.getByRole('dialog', { name: 'Feedback team 1 details', exact: true })
+        .getByRole('button', { name: 'Use team', exact: true }).click()
+    }
+    const confirmation = page.getByRole('dialog', { name: 'Confirm team selection', exact: true })
+    await confirmation.getByRole('button', { name: 'Cancel', exact: true }).click()
+    await confirmation.waitFor({ state: 'hidden' })
+    const feedback = surface === 'menu' ? area : page.getByRole('dialog', { name: 'Feedback team 1 details', exact: true })
+    const notice = feedback.getByRole('alert'), retry = feedback.getByRole('button', { name: surface === 'menu' ? 'Refresh' : 'Refresh and retry', exact: true })
+    await retry.waitFor()
+    const text = await notice.textContent(), originalNotice = await notice.elementHandle(), originalRetry = await retry.elementHandle()
+    const originalSearch = await search.elementHandle(), originalList = await list.elementHandle()
+    const screenshots = join(REPO_ROOT, '.artifacts/deepseek-harness-expert-retry')
+    await mkdir(screenshots, { recursive: true })
+    for (const theme of ['light', 'dark'] as const) {
+      await page.emulateMedia({ colorScheme: theme })
+      for (const width of [1440, 390]) {
+        await page.setViewportSize({ width, height: width === 390 ? 560 : 900 })
+        await retry.focus()
+        for (const control of [retry, notice]) expect(await controlIsUnclipped(control)).toBe(true)
+        if (surface === 'menu') {
+          expect(await notice.getAttribute('tabindex')).toBe('0')
+          expect(await notice.evaluate(node => node.scrollHeight <= node.clientHeight)).toBe(true)
+        }
+        expect(await retry.evaluate((node) => {
+          const range = document.createRange()
+          range.selectNodeContents(node)
+          const text = range.getBoundingClientRect(), button = node.getBoundingClientRect()
+          return text.top >= button.top && text.bottom <= button.bottom && text.left >= button.left && text.right <= button.right
+        })).toBe(true)
+        await page.screenshot({ path: join(screenshots, `team-feedback-${surface}-${outcome}-${theme}-${width}.png`), animations: 'disabled' })
+      }
+    }
+    if (surface === 'menu') await list.evaluate((node) => { node.scrollTop = 30 })
+    const scroll = await list.evaluate(node => node.scrollTop)
+    if (surface === 'menu') expect(scroll).toBeGreaterThan(0)
+    const geometry = () => Promise.all([feedback.boundingBox(), search.boundingBox(), list.boundingBox(), retry.boundingBox()])
+    const bounds = await geometry()
+    pending.resolve(undefined)
+    await expect.poll(() => retry.getAttribute('aria-busy')).toBe('false')
+    expect(await notice.textContent()).toBe(text)
+    expect(await notice.evaluate((node, previous) => node === previous, originalNotice)).toBe(true)
+    expect(await retry.evaluate((node, previous) => node === previous && node === document.activeElement, originalRetry)).toBe(true)
+    expect(await geometry()).toEqual(bounds)
+    expect(await list.evaluate((node, previous) => node === previous && node.scrollTop, originalList)).toBe(scroll)
+    expect(await search.evaluate((node, previous) => node === previous && node instanceof HTMLInputElement
+      && [node.value, node.selectionStart, node.selectionEnd], originalSearch)).toEqual(['Feedback', 1, 4])
+    await retry.press('Enter')
+    await notice.waitFor({ state: 'hidden' })
+    await expect.poll(() => reads).toBe(2)
+    await expect.poll(() => (surface === 'menu' ? search : feedback.getByRole('heading', { name: 'Feedback team 1', exact: true }))
+      .evaluate(node => node === document.activeElement)).toBe(true)
+    expect(await search.evaluate((node, previous) => node === previous && node instanceof HTMLInputElement
+      && [node.value, node.selectionStart, node.selectionEnd], originalSearch)).toEqual(['Feedback', 1, 4])
+    expect(writes).not.toHaveBeenCalled()
+    expect((await snapshot()).revision).toBe(revision)
+    if (surface === 'panel') {
+      await feedback.getByRole('button', { name: 'Close', exact: true }).click()
+      await page.setViewportSize({ width: 1440, height: 900 })
+      await page.getByRole('button', { name: 'New session', exact: true }).filter({ hasText: 'New Session' }).click()
+    }
+    else await page.keyboard.press('Escape')
+    expect(await composer.textContent()).toBe(draft)
+  },
+)
+
+it.each(['retained', 'filtered', 'reconciled', 'elsewhere'] as const)('preserves expert directory filters and focus after an edited expert is %s', async (change) => {
+  const root = await mkdtemp(join(tmpdir(), 'expert-save-filters-'))
+  onTestFinished(() => rm(root, { recursive: true, force: true }))
+  const companyRoot = join(root, 'employee', 'company', 'experts')
+  await mkdir(companyRoot, { recursive: true })
+  vi.stubEnv('DSH_COMPANY_EXPERTS_ROOT', companyRoot)
+  onTestFinished(() => { vi.unstubAllEnvs() })
+  const overlay = join(root, 'experts.patch.yml')
+  await writeFile(overlay, JSON.stringify(builtinCapabilityPatches()))
+  const scaffold = await launchWebScaffold({ firstUse: true, profile: { packages: [] },
+    extraInstallAnchors: [join(REPO_ROOT, 'packages/deepseek-harness-product/desktop/package.json')],
+    extraOverlayPath: [overlay, join(REPO_ROOT, 'packages/extensions/ui-deepseek-harness-product/cordis.patch.yml'),
+      join(REPO_ROOT, 'apps/web/tests/pin-browse-picker.overlay.yml')],
+  })
+  onTestFinished(() => scaffold.close())
+  const library = scaffold.ctx.get('agencyAgentsLibrary') as ExpertLibrary
+  await library.saveCustom({ name: 'Needle reviewer', description: 'Needle details', division: 'specialized',
+    prompt: 'Keep {{literal}}.' }, true, (await library.catalog()).revision)
+  const gates = [Promise.withResolvers<undefined>(), Promise.withResolvers<undefined>()]
+  const save = library.saveCustom.bind(library)
+  let writes = 0
+  const delayed = vi.spyOn(library, 'saveCustom').mockImplementation(async (...args) => {
+    const attempt = writes++
+    const gate = gates[attempt]
+    if (!gate) throw new Error('Unexpected duplicate write')
+    await gate.promise
+    if (attempt === 0) throw new Error('Write temporarily unavailable')
+    return save(...args)
+  })
+  onTestFinished(() => { gates.forEach((gate) => { gate.resolve(undefined) }); delayed.mockRestore() })
+  const browser = await chromium.launch()
+  onTestFinished(() => browser.close())
+  const page = await newEnglishPage(browser)
+  page.setDefaultTimeout(10_000)
+  const tripwire = watchConsole(page)
+  onTestFinished(() => { expect(tripwire.pageErrors).toEqual([]) })
+  await page.goto(scaffold.authenticatedUrl)
+  const reconcile = change === 'reconciled' || change === 'elsewhere'
+  const background = Promise.withResolvers<undefined>(), reread = Promise.withResolvers<undefined>()
+  let reads = 0
+  if (reconcile) {
+    const catalog = library.catalog.bind(library)
+    const initial = await catalog()
+    const delayedRead = vi.spyOn(library, 'catalog').mockImplementation(async (...args) => {
+      const index = ++reads
+      if (index === 2) {
+        await background.promise
+        return { ...initial, experts: [...initial.experts.map(expert => ({ ...expert, conflict: true })),
+          { ...initial.experts[0]!, slug: 'company-reviewer', custom: false, company: true }] }
+      }
+      if (index >= 3) await reread.promise
+      return catalog(...args)
+    })
+    onTestFinished(() => { background.resolve(undefined); reread.resolve(undefined); delayedRead.mockRestore() })
+  }
+  await page.getByRole('button', { name: 'Expert kits', exact: true }).click()
+  await page.getByRole('tab', { name: 'Mine', exact: true }).click()
+  if (reconcile) await expect.poll(() => reads).toBe(2)
+  const area = page.locator('#aag-expert-source-panel')
+  const search = area.getByRole('textbox', { name: 'Search', exact: true })
+  await search.fill('Needle')
+  await search.evaluate((node) => { if (node instanceof HTMLInputElement) node.setSelectionRange(1, 4) })
+  const status = area.getByRole('button', { name: 'Status', exact: true })
+  await status.click()
+  await page.getByRole('menuitem', { name: 'Enabled', exact: true }).click()
+  const category = area.getByRole('navigation', { name: 'Category', exact: true }).getByRole('button', { name: 'Other', exact: true })
+  await category.click()
+  const edit = area.getByRole('button', { name: 'Edit expert', exact: true })
+  const original = { search: await search.elementHandle(), status: await status.elementHandle(),
+    category: await category.elementHandle(), edit: await edit.elementHandle() }
+  await edit.click()
+  const dialog = page.getByRole('dialog', { name: 'Edit expert', exact: true })
+  const name = dialog.getByRole('textbox', { name: 'Expert name', exact: true })
+  await name.fill(change === 'retained' ? 'Needle updated' : 'Updated reviewer')
+  await dialog.getByRole('textbox', { name: 'Short description', exact: true }).fill('Updated details')
+  await name.evaluate((node) => { if (node instanceof HTMLInputElement) node.setSelectionRange(2, 5) })
+  const originalName = await name.elementHandle()
+  const submit = dialog.getByRole('button', { name: /^(?:Save changes|Saving…)$/u })
+  await submit.click()
+  await page.keyboard.press('Enter')
+  await expect.poll(() => writes).toBe(1)
+  gates[0]!.resolve(undefined)
+  await dialog.getByRole('alert').waitFor()
+  expect(await name.evaluate((node, previous) => node === previous, originalName)).toBe(true)
+  expect(await name.evaluate(node => node instanceof HTMLInputElement && [node.selectionStart, node.selectionEnd])).toEqual([2, 5])
+  expect(await search.inputValue()).toBe('Needle')
+  expect(await category.getAttribute('aria-pressed')).toBe('true')
+  expect(await status.textContent()).toBe('Enabled')
+  await submit.click()
+  await expect.poll(() => writes).toBe(2)
+  if (reconcile) {
+    background.resolve(undefined)
+    await area.getByText('Name conflict', { exact: true }).waitFor()
+  }
+  gates[1]!.resolve(undefined)
+  await dialog.waitFor({ state: 'hidden' })
+  if (reconcile) {
+    await expect.poll(() => reads).toBeGreaterThanOrEqual(3)
+    expect(await edit.evaluate(node => node === document.activeElement)).toBe(true)
+    if (change === 'elsewhere') await status.focus()
+    reread.resolve(undefined)
+  }
+  expect(delayed.mock.calls[1]!.slice(0, 3)).toEqual(delayed.mock.calls[0]!.slice(0, 3))
+  expect(await search.inputValue()).toBe('Needle')
+  expect(await search.evaluate(node => node instanceof HTMLInputElement && [node.selectionStart, node.selectionEnd])).toEqual([1, 4])
+  expect(await search.evaluate((node, previous) => node === previous, original.search)).toBe(true)
+  expect(await status.evaluate((node, previous) => node === previous, original.status)).toBe(true)
+  expect(await category.evaluate((node, previous) => node === previous, original.category)).toBe(true)
+  expect(await category.getAttribute('aria-pressed')).toBe('true')
+  expect(await status.textContent()).toBe('Enabled')
+  if (change !== 'retained') await edit.waitFor({ state: 'hidden' })
+  else expect(await edit.evaluate((node, previous) => node === previous, original.edit)).toBe(true)
+  const target = change === 'retained' ? edit : change === 'elsewhere' ? status : search
+  await expect.poll(() => target.evaluate(node => node === document.activeElement ? 'target'
+    : document.activeElement?.getAttribute('aria-label') ?? document.activeElement?.tagName)).toBe('target')
+  const screenshots = join(REPO_ROOT, '.artifacts/deepseek-harness-expert-retry')
+  await mkdir(screenshots, { recursive: true })
+  for (const theme of ['light', 'dark'] as const) {
+    await page.emulateMedia({ colorScheme: theme })
+    for (const width of [1440, 390]) {
+      await page.setViewportSize({ width, height: width === 390 ? 560 : 900 })
+      await target.scrollIntoViewIfNeeded()
+      expect(await target.evaluate(node => node === document.activeElement)).toBe(true)
+      expect(await controlIsUnclipped(target)).toBe(true)
+      expect(await area.evaluate(node => node.scrollWidth <= node.clientWidth)).toBe(true)
+      await page.screenshot({ path: join(screenshots, `expert-save-${change}-${theme}-${width}.png`), animations: 'disabled' })
+    }
+  }
+})
+
+it('keeps long expert prompt previews inside the viewport without rebuilding the selection', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'expert-prompt-layout-'))
+  onTestFinished(() => rm(root, { recursive: true, force: true }))
+  const companyRoot = join(root, 'employee', 'company', 'experts')
+  await mkdir(companyRoot, { recursive: true })
+  vi.stubEnv('DSH_COMPANY_EXPERTS_ROOT', companyRoot)
+  onTestFinished(() => { vi.unstubAllEnvs() })
+  const overlay = join(root, 'experts.patch.yml')
+  await writeFile(overlay, JSON.stringify(builtinCapabilityPatches()))
+  const scaffold = await launchWebScaffold({ firstUse: true, profile: { packages: [] },
+    extraInstallAnchors: [join(REPO_ROOT, 'packages/deepseek-harness-product/desktop/package.json')],
+    extraOverlayPath: [overlay, join(REPO_ROOT, 'packages/extensions/ui-deepseek-harness-product/cordis.patch.yml'),
+      join(REPO_ROOT, 'apps/web/tests/pin-browse-picker.overlay.yml')],
+  })
+  onTestFinished(() => scaffold.close())
+  const library = scaffold.ctx.get('agencyAgentsLibrary') as ExpertLibrary
+  const name = '订单核对与供应链分析专家'.repeat(3)
+  const prompt = 'Keep {{literal}} and read references.\n'.repeat(150)
+  await library.saveCustom({ name, description: 'Long prompt preview fixture', division: 'specialized', prompt }, false, (await library.catalog()).revision)
+  const browser = await chromium.launch()
+  onTestFinished(() => browser.close())
+  const page = await newEnglishPage(browser)
+  page.setDefaultTimeout(10_000)
+  const tripwire = watchConsole(page)
+  onTestFinished(() => { expect(tripwire.pageErrors).toEqual([]) })
+  await page.goto(scaffold.authenticatedUrl)
+  await page.getByRole('button', { name: 'Expert kits', exact: true }).click()
+  await page.getByRole('tab', { name: 'Mine', exact: true }).click()
+  const trigger = page.getByRole('button', { name: 'View prompt', exact: true })
+  await trigger.click()
+  const dialog = page.getByRole('dialog', { name: `Prompt for ${name}`, exact: true })
+  const text = dialog.getByRole('textbox')
+  const close = dialog.getByRole('button', { name: 'Close', exact: true })
+  await expect.poll(() => text.inputValue()).toContain(prompt.trimEnd())
+  const originalText = await text.elementHandle(), originalClose = await close.elementHandle()
+  await text.focus()
+  await text.evaluate((node) => { if (node instanceof HTMLTextAreaElement) { node.setSelectionRange(2, 17); node.scrollTop = 80 } })
+  const scroll = await text.evaluate(node => node.scrollTop)
+  const screenshots = join(REPO_ROOT, '.artifacts/deepseek-harness-expert-retry')
+  await mkdir(screenshots, { recursive: true })
+  for (const theme of ['light', 'dark'] as const) {
+    await page.emulateMedia({ colorScheme: theme })
+    for (const size of [{ width: 1440, height: 900 }, { width: 740, height: 400 }, { width: 390, height: 560 }]) {
+      await page.setViewportSize(size)
+      await page.screenshot({ path: join(screenshots, `prompt-layout-${theme}-${size.width}.png`), animations: 'disabled' })
+      expect(await controlIsUnclipped(dialog.getByRole('heading'))).toBe(true)
+      expect(await controlIsUnclipped(close)).toBe(true)
+      expect(await controlIsUnclipped(text)).toBe(true)
+      expect(await dialog.evaluate(node => node.scrollWidth <= node.clientWidth && node.getBoundingClientRect().top >= 24
+        && node.getBoundingClientRect().bottom <= innerHeight - 24)).toBe(true)
+      expect(await text.evaluate((node, previous) => node === previous && node === document.activeElement, originalText)).toBe(true)
+      expect(await text.evaluate(node => node instanceof HTMLTextAreaElement
+        && [node.selectionStart, node.selectionEnd, node.scrollTop])).toEqual([2, 17, scroll])
+      expect(await close.evaluate((node, previous) => node === previous, originalClose)).toBe(true)
+    }
+  }
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await page.keyboard.press('Escape')
+  await dialog.waitFor({ state: 'hidden' })
+  expect(await trigger.evaluate(node => node === document.activeElement)).toBe(true)
+})
 
 it.each((['prompt', 'editor'] as const).flatMap(surface => (['removed', 'moved', 'retained'] as const).flatMap(change =>
   (['button', 'escape', 'mask'] as const).map(close => ({ surface, change, close })),
@@ -801,7 +1248,10 @@ it.each((['expert-directory', 'team-directory', 'team-detail'] as const)
   },
 )
 
-it.each(['zip', 'directory', 'attachments'] as const)('keeps expert %s file actions focused through a read failure and retry', async (action) => {
+it.each((['zip', 'directory', 'attachments', 'import-zip', 'import-directory'] as const)
+  .flatMap(action => [1440, 390].map(width => ({ action, width }))))('keeps expert $action file actions focused through a read failure and retry ($width)', async ({ action, width }) => {
+  const importOnly = action.startsWith('import-')
+  const fileAction = action.replace('import-', '')
   const root = await mkdtemp(join(tmpdir(), 'expert-file-focus-'))
   onTestFinished(() => rm(root, { recursive: true, force: true }))
   const companyRoot = join(root, 'employee', 'company', 'experts')
@@ -838,7 +1288,7 @@ it.each(['zip', 'directory', 'attachments'] as const)('keeps expert %s file acti
     const gate = gates[index]
     if (!gate) throw new Error('Unexpected duplicate file read')
     await gate.promise
-    if (index === 0) throw new Error('File read temporarily unavailable')
+    if (index === 0) throw new Error('File read temporarily unavailable. '.repeat(24) + 'ERROR-END')
   })
   await page.goto(scaffold.authenticatedUrl)
   await page.evaluate((filename) => {
@@ -847,21 +1297,29 @@ it.each(['zip', 'directory', 'attachments'] as const)('keeps expert %s file acti
       if (this.name === filename) await bridge.__readExpertFile()
       return Blob.prototype.arrayBuffer.call(this)
     }
-  }, action === 'zip' ? 'focus.zip' : action === 'directory' ? 'manifest.json' : '中文资料.md')
+  }, fileAction === 'zip' ? 'focus.zip' : fileAction === 'directory' ? 'manifest.json' : '中文资料.md')
   await page.getByRole('button', { name: 'Expert kits', exact: true }).click()
   await page.getByRole('tab', { name: 'Mine', exact: true }).click()
-  await page.getByRole('button', { name: 'Edit expert', exact: true }).click()
-  const dialog = page.getByRole('dialog', { name: 'Edit expert', exact: true })
-  const label = action === 'zip' ? 'Import ZIP' : action === 'directory' ? 'Import directory' : 'Add references or templates'
+  await page.getByRole('button', { name: importOnly ? 'Import expert package' : 'Edit expert', exact: true }).click()
+  const dialog = page.getByRole('dialog', { name: importOnly ? 'Import expert package' : 'Edit expert', exact: true })
+  await page.setViewportSize({ width, height: width === 390 ? 560 : 900 })
+  const label = fileAction === 'zip' ? 'Import ZIP' : fileAction === 'directory' ? 'Import directory' : 'Add references or templates'
   const trigger = dialog.getByRole('button', { name: label, exact: true })
   const input = dialog.getByLabel(label, { exact: true }).filter({ visible: false })
   const select = async () => {
     await trigger.focus()
-    if (action === 'directory') await input.setInputFiles(directory)
-    else await input.setInputFiles(action === 'zip'
+    if (fileAction === 'directory') await input.setInputFiles(directory)
+    else await input.setInputFiles(fileAction === 'zip'
       ? { name: 'focus.zip', mimeType: 'application/zip', buffer: Buffer.from(zipSync(files)) }
       : { name: '中文资料.md', mimeType: 'text/markdown', buffer: Buffer.from('Reference {{literal}}.') })
   }
+  await trigger.scrollIntoViewIfNeeded()
+  const originalTrigger = await trigger.elementHandle()
+  const body = dialog.locator('form')
+  const originalBody = await body.elementHandle()
+  const controls = dialog.locator('.aag-package-toolbar')
+  const geometry = () => Promise.all([dialog.boundingBox(), controls.boundingBox(), trigger.boundingBox()])
+  const initialBounds = await geometry()
   await select()
   await expect.poll(() => reads).toBe(1)
   expect(await trigger.evaluate(node => node === document.activeElement)).toBe(true)
@@ -870,11 +1328,21 @@ it.each(['zip', 'directory', 'attachments'] as const)('keeps expert %s file acti
   expect(reads).toBe(1)
   gates[0]!.resolve(undefined)
   await dialog.getByRole('alert').waitFor()
+  expect(await geometry()).toEqual(initialBounds)
+  expect(await trigger.evaluate((node, original) => node === original, originalTrigger)).toBe(true)
+  expect(await body.evaluate((node, original) => node === original, originalBody)).toBe(true)
   expect(await trigger.evaluate(node => node === document.activeElement)).toBe(true)
   const error = await dialog.getByRole('alert').elementHandle()
+  await dialog.getByRole('alert').focus()
+  await page.keyboard.press('End')
+  await expect.poll(() => dialog.getByRole('alert').evaluate(node =>
+    node.scrollTop > 0 && Math.abs(node.scrollHeight - node.clientHeight - node.scrollTop) <= 1)).toBe(true)
+  const errorScroll = await dialog.getByRole('alert').evaluate(node => node.scrollTop)
   await select()
   await expect.poll(() => reads).toBe(2)
   expect(await dialog.getByRole('alert').evaluate((node, prior) => node === prior, error)).toBe(true)
+  expect(await dialog.getByRole('alert').evaluate(node => node.scrollTop)).toBe(errorScroll)
+  expect(await geometry()).toEqual(initialBounds)
   const screenshots = join(REPO_ROOT, '.artifacts/deepseek-harness-expert-retry')
   await mkdir(screenshots, { recursive: true })
   for (const theme of ['light', 'dark'] as const) {
@@ -884,15 +1352,179 @@ it.each(['zip', 'directory', 'attachments'] as const)('keeps expert %s file acti
       await trigger.scrollIntoViewIfNeeded()
       expect(await trigger.evaluate(node => node === document.activeElement)).toBe(true)
       expect(await dialog.evaluate(node => node.scrollWidth <= node.clientWidth)).toBe(true)
-      await page.screenshot({ path: join(screenshots, `file-${action}-${theme}-${size.width}.png`), animations: 'disabled' })
+      await page.screenshot({ path: join(screenshots, `file-${action}-${width}-${theme}-${size.width}.png`), animations: 'disabled' })
     }
   }
+  const nextFocus = width === 1440 ? dialog.getByRole('textbox', { name: 'Expert name', exact: true })
+    : dialog.getByRole('button', { name: fileAction === 'zip' ? 'Import directory' : 'Import ZIP', exact: true })
+  if (width === 1440) await dialog.getByRole('alert').focus()
+  else await nextFocus.focus()
   gates[1]!.resolve(undefined)
   await expect.poll(() => trigger.getAttribute('aria-busy')).toBe('false')
-  expect(await trigger.evaluate(node => node === document.activeElement)).toBe(true)
+  expect(await trigger.evaluate((node, original) => node === original, originalTrigger)).toBe(true)
+  expect(await body.evaluate((node, original) => node === original, originalBody)).toBe(true)
+  await expect.poll(() => nextFocus.evaluate(node => node === document.activeElement)).toBe(true)
   expect(await dialog.getByRole('textbox', { name: 'Expert instructions', exact: true }).inputValue()).toBe(action === 'attachments' ? 'Keep {{literal}}.' : 'Imported {{literal}}.')
-  if (action === 'attachments') expect(await dialog.getByRole('button', { name: 'Remove attachment: assets/中文资料.md', exact: true }).count()).toBe(1)
+  if (fileAction === 'attachments') expect(await dialog.getByRole('button', { name: 'Remove attachment: assets/中文资料.md', exact: true }).count()).toBe(1)
   expect(tripwire.pageErrors).toEqual([])
+})
+
+it.each(['expert-delete', 'team-delete', 'team-enable', 'team-enable-filtered', 'team-menu'] as const)('keeps long %s confirmation content and controls stable through retry', async (action) => {
+  const enabling = action.startsWith('team-enable') || action === 'team-menu'
+  const root = await mkdtemp(join(tmpdir(), 'expert-long-confirmation-'))
+  onTestFinished(() => rm(root, { recursive: true, force: true }))
+  const companyRoot = join(root, 'employee', 'company', 'experts')
+  await mkdir(companyRoot, { recursive: true })
+  vi.stubEnv('DSH_COMPANY_EXPERTS_ROOT', companyRoot)
+  onTestFinished(() => { vi.unstubAllEnvs() })
+  const overlay = join(root, 'experts.patch.yml')
+  await writeFile(overlay, JSON.stringify(builtinCapabilityPatches()))
+  const scaffold = await launchWebScaffold({ firstUse: true, profile: { packages: [] },
+    extraInstallAnchors: [join(REPO_ROOT, 'packages/deepseek-harness-product/desktop/package.json')],
+    extraOverlayPath: [overlay, join(REPO_ROOT, 'packages/extensions/ui-deepseek-harness-product/cordis.patch.yml'),
+      join(REPO_ROOT, 'apps/web/tests/pin-browse-picker.overlay.yml')],
+  })
+  onTestFinished(() => scaffold.close())
+  const library = scaffold.ctx.get('agencyAgentsLibrary') as ExpertLibrary
+  const teams = scaffold.ctx.get('agencyAgentsTeams') as TeamLibrary
+  let catalog = await library.catalog()
+  for (let index = 0; index < (enabling ? 8 : action === 'expert-delete' ? 1 : 2); index++) catalog = await library.saveCustom({
+    name: `${index}${(enabling ? '订单处理与企业运营资料审查专家' : 'OperationalReferenceReviewer').repeat(3)}`.slice(0, 40),
+    description: 'Review operational references.', division: 'specialized', prompt: 'Keep {{literal}}.',
+  }, false, catalog.revision)
+  if (action !== 'expert-delete') await teams.save({ name: 'OperationalTeamReferenceReviewer'.repeat(2).slice(0, 40),
+    description: 'Review operational references.', tags: [], goal: 'Review the task', constraints: 'Do not write',
+    deliveryRequirements: 'Return findings', examples: ['Review the references'], coordinatorMode: 'template',
+    coordinatorTemplateId: 'general', coordinatorTemplateVersion: 1, coordinatorPrompt: '',
+    members: catalog.experts.map(item => ({ expertSlug: item.slug, duty: 'Review', instructions: 'Read the references.' })),
+  }, false, catalog.revision)
+  const gates = [Promise.withResolvers<undefined>(), Promise.withResolvers<undefined>()]
+  let writes = 0
+  const waitForWrite = async () => {
+    const index = writes++
+    const gate = gates[index]
+    if (!gate) throw new Error('Unexpected duplicate long confirmation write')
+    await gate.promise
+    if (index === 0) throw new Error('Write temporarily unavailable')
+  }
+  const original = { expert: library.deleteCustom.bind(library), team: teams.remove.bind(teams), enable: teams.setEnabled.bind(teams) }
+  const write = action === 'expert-delete' ? vi.spyOn(library, 'deleteCustom').mockImplementation(async (...args) => {
+    await waitForWrite(); return original.expert(...args)
+  }) : action === 'team-delete' ? vi.spyOn(teams, 'remove').mockImplementation(async (...args) => {
+    await waitForWrite(); return original.team(...args)
+  }) : vi.spyOn(teams, 'setEnabled').mockImplementation(async (...args) => {
+    await waitForWrite(); return original.enable(...args)
+  })
+  onTestFinished(() => { gates.forEach((gate) => { gate.resolve(undefined) }); write.mockRestore() })
+  const browser = await chromium.launch()
+  onTestFinished(() => browser.close())
+  const page = await newEnglishPage(browser)
+  page.setDefaultTimeout(10_000)
+  const tripwire = watchConsole(page)
+  onTestFinished(() => { expect(tripwire.pageErrors).toEqual([]) })
+  await page.goto(scaffold.authenticatedUrl)
+  if (action === 'team-menu') {
+    await expect.poll(() => page.getByRole('button', { name: 'Choose workspace', exact: true }).textContent()).toBe('Default workspace')
+    await page.getByRole('button', { name: 'Experts', exact: true }).click()
+    await page.getByRole('dialog', { name: 'Experts', exact: true }).getByRole('tab', { name: 'Expert teams', exact: true }).click()
+  } else {
+    await page.getByRole('button', { name: 'Expert kits', exact: true }).click()
+    await page.getByRole('tab', { name: 'Mine', exact: true }).click()
+    if (action !== 'expert-delete') await page.getByRole('tab', { name: 'Expert teams', exact: true }).click()
+  }
+  const area = action === 'team-menu' ? page.getByRole('dialog', { name: 'Experts', exact: true })
+    : page.locator(action === 'expert-delete' ? '#aag-expert-source-panel' : '#aag-team-source-panel')
+  const search = area.getByRole('textbox')
+  await search.fill('Operational')
+  await search.evaluate((node) => { if (node instanceof HTMLInputElement) node.setSelectionRange(1, 4) })
+  const input = await search.elementHandle()
+  if (action === 'team-enable-filtered') {
+    await area.getByRole('button', { name: 'Status', exact: true }).click()
+    await page.getByRole('menuitem', { name: 'Disabled', exact: true }).click()
+  }
+  const trigger = action === 'team-menu' ? area.getByRole('button', { name: /^OperationalTeam/u }).first()
+    : enabling ? area.getByRole('switch').first()
+      : area.getByRole('button', { name: action === 'expert-delete' ? 'Delete expert' : 'Delete team', exact: true }).first()
+  await trigger.click()
+  const dialog = page.getByRole('dialog').last()
+  const submit = dialog.locator('button[aria-busy]').last()
+  const title = dialog.getByRole('heading')
+  const close = dialog.getByRole('button', { name: 'Close dialog', exact: true })
+  const cancel = dialog.getByRole('button', { name: 'Cancel', exact: true })
+  const withinFrame = () => dialog.evaluate((node) => {
+    const layer = node.parentElement!, style = getComputedStyle(layer), bounds = node.getBoundingClientRect()
+    return bounds.top >= parseFloat(style.paddingTop) && bounds.bottom <= innerHeight - parseFloat(style.paddingBottom)
+  })
+  await page.setViewportSize({ width: 390, height: 560 })
+  const screenshots = join(REPO_ROOT, '.artifacts/deepseek-harness-expert-retry')
+  await mkdir(screenshots, { recursive: true })
+  await page.screenshot({ path: join(screenshots, `long-${action}-initial.png`), animations: 'disabled' })
+  for (const control of [title, close, cancel, submit]) expect(await controlIsUnclipped(control)).toBe(true)
+  expect(await withinFrame()).toBe(true)
+  expect(await submit.evaluate((node) => {
+    const range = document.createRange()
+    range.selectNodeContents(node)
+    return range.getBoundingClientRect().height <= node.getBoundingClientRect().height
+  })).toBe(true)
+  expect(await dialog.locator('p').evaluateAll(nodes => nodes.every(node => node.scrollWidth <= node.clientWidth))).toBe(true)
+  const button = await submit.elementHandle()
+  const submitBounds = await submit.boundingBox(), cancelBounds = await cancel.boundingBox()
+  await submit.press('Enter')
+  await expect.poll(() => writes).toBe(1)
+  expect(await submit.boundingBox()).toEqual(submitBounds)
+  expect(await cancel.boundingBox()).toEqual(cancelBounds)
+  gates[0]!.resolve(undefined)
+  const notice = await dialog.getByRole('alert').elementHandle()
+  expect(await controlIsUnclipped(dialog.getByRole('alert'))).toBe(true)
+  for (const control of [title, close, cancel, submit]) expect(await controlIsUnclipped(control)).toBe(true)
+  expect(await withinFrame()).toBe(true)
+  if (enabling) {
+    const description = dialog.locator('p').first()
+    expect(await description.evaluate(node => node.scrollHeight > node.clientHeight)).toBe(true)
+    const titleBounds = await title.boundingBox(), actionBounds = await submit.boundingBox()
+    await description.evaluate((node) => { node.scrollTop = node.scrollHeight - node.clientHeight })
+    expect(await title.boundingBox()).toEqual(titleBounds)
+    expect(await submit.boundingBox()).toEqual(actionBounds)
+  }
+  const failedBounds = await submit.boundingBox(), failedCancelBounds = await cancel.boundingBox()
+  await submit.press('Enter')
+  await expect.poll(() => writes).toBe(2)
+  expect(await submit.boundingBox()).toEqual(failedBounds)
+  expect(await cancel.boundingBox()).toEqual(failedCancelBounds)
+  expect(await dialog.getByRole('alert').evaluate((node, previous) => node === previous, notice)).toBe(true)
+  await page.keyboard.press('Enter')
+  await page.keyboard.press(' ')
+  await page.keyboard.press('Escape')
+  expect(writes).toBe(2)
+  expect(await dialog.isVisible()).toBe(true)
+  for (const theme of ['light', 'dark'] as const) {
+    await page.emulateMedia({ colorScheme: theme })
+    for (const size of [{ width: 1440, height: 900 }, { width: 390, height: 560 }]) {
+      await page.setViewportSize(size)
+      for (const control of [title, close, cancel, submit]) expect(await controlIsUnclipped(control)).toBe(true)
+      expect(await controlIsUnclipped(dialog.getByRole('alert'))).toBe(true)
+      expect(await withinFrame()).toBe(true)
+      expect(await submit.evaluate((node, previous) => node === previous && node === document.activeElement, button)).toBe(true)
+      expect(await dialog.locator('p').evaluateAll(nodes => nodes.every(node => node.scrollWidth <= node.clientWidth))).toBe(true)
+      await page.screenshot({ path: join(screenshots, `long-${action}-retry-${theme}-${size.width}.png`), animations: 'disabled' })
+    }
+  }
+  if (action === 'team-menu') {
+    gates[1]!.resolve(undefined)
+    await dialog.waitFor({ state: 'hidden' })
+    await area.waitFor({ state: 'hidden' })
+    const composer = page.locator('[data-composer-input][contenteditable="true"]').last()
+    await expect.poll(() => composer.textContent()).toContain('OperationalTeamReferenceReviewer')
+    await expect.poll(() => composer.evaluate(node => node === document.activeElement)).toBe(true)
+    expect(writes).toBe(2)
+    return
+  }
+  gates[1]!.resolve(undefined)
+  await dialog.waitFor({ state: 'hidden' })
+  if (action !== 'team-enable') await trigger.waitFor({ state: 'hidden' })
+  await expect.poll(() => (action === 'team-enable' ? trigger : search).evaluate(node => node === document.activeElement)).toBe(true)
+  expect(await search.evaluate((node, previous) => node === previous, input)).toBe(true)
+  expect(await search.evaluate(node => node instanceof HTMLInputElement && [node.value, node.selectionStart, node.selectionEnd])).toEqual(['Operational', 1, 4])
 })
 
 it.each(['expert-save', 'team-save', 'expert-delete', 'team-delete'] as const)(
@@ -916,6 +1548,7 @@ it.each(['expert-save', 'team-save', 'expert-delete', 'team-delete'] as const)(
     let catalog = await library.catalog()
     for (const name of ['Focus reviewer', 'Second reviewer']) catalog = await library.saveCustom({
       name, description: 'Retain the review draft.', division: 'specialized', prompt: 'Keep {{literal}}.',
+      resources: Object.fromEntries(Array.from({ length: 8 }, (_, index) => [`references/资料-${index}.txt`, 'dGVzdA=='])),
     }, false, catalog.revision)
     await teams.save({ name: 'Focus team', description: 'Retain the team draft.', tags: [], goal: 'Review the task',
       constraints: 'Do not write', deliveryRequirements: 'Return findings', examples: ['Review the references'],
@@ -929,7 +1562,7 @@ it.each(['expert-save', 'team-save', 'expert-delete', 'team-delete'] as const)(
       const gate = gates[index]
       if (!gate) throw new Error('Unexpected duplicate write')
       await gate.promise
-      if (index === 0) throw new Error('Write temporarily unavailable')
+      if (index === 0) throw new Error(action.endsWith('save') ? 'Write temporarily unavailable. '.repeat(24) + 'ERROR-END' : 'Write temporarily unavailable')
     }
     const original = { expertSave: library.saveCustom.bind(library), teamSave: teams.save.bind(teams),
       expertDelete: library.deleteCustom.bind(library), teamDelete: teams.remove.bind(teams) }
@@ -963,8 +1596,26 @@ it.each(['expert-save', 'team-save', 'expert-delete', 'team-delete'] as const)(
     const dialog = page.getByRole('dialog', { name: deleting ? team ? 'Delete this team?' : 'Delete custom expert' : team ? 'Edit team' : 'Edit expert', exact: true })
     const submit = dialog.getByRole('button', { name: deleting ? team ? /^(?:Delete|Working…)$/u : 'Delete expert' : /^(?:Save changes|Saving…)$/u })
     const control = await submit.elementHandle()
+    const submitBounds = await submit.boundingBox()
+    const cancel = dialog.getByRole('button', { name: 'Cancel', exact: true })
+    const cancelBounds = await cancel.boundingBox()
+    const footerBounds = deleting ? null : await dialog.locator('footer').boundingBox()
+    const body = dialog.locator('.aag-custom-body')
+    const draft = dialog.getByRole('textbox', { name: team ? 'Team name' : 'Expert name', exact: true })
+    if (!deleting) {
+      await draft.evaluate((node) => { if (node instanceof HTMLInputElement) node.setSelectionRange(1, 4) })
+      await body.evaluate((node) => { node.scrollTop = 80 })
+    }
+    const originalDraft = deleting ? null : await draft.elementHandle()
+    const bodyBounds = deleting ? null : await body.boundingBox()
+    const bodyScroll = deleting ? 0 : await body.evaluate(node => node.scrollTop)
+    if (!deleting) expect(bodyScroll).toBeGreaterThan(0)
     await submit.press('Enter')
     await expect.poll(() => writes).toBe(1)
+    if (!deleting) {
+      expect(await submit.boundingBox()).toEqual(submitBounds)
+      expect(await cancel.boundingBox()).toEqual(cancelBounds)
+    }
     expect(await submit.evaluate(node => node === document.activeElement)).toBe(true)
     expect(await submit.evaluate(node => node instanceof HTMLButtonElement && !node.disabled)).toBe(true)
     expect(await submit.getAttribute('aria-disabled')).toBe('true')
@@ -973,6 +1624,13 @@ it.each(['expert-save', 'team-save', 'expert-delete', 'team-delete'] as const)(
     expect(writes).toBe(1)
     gates[0]!.resolve(undefined)
     await dialog.getByRole('alert').waitFor()
+    if (!deleting) {
+      expect(await dialog.locator('footer').boundingBox()).toEqual(footerBounds)
+      expect(await body.boundingBox()).toEqual(bodyBounds)
+      expect(await body.evaluate(node => node.scrollTop)).toBe(bodyScroll)
+      expect(await draft.evaluate((node, previous) => node === previous, originalDraft)).toBe(true)
+      expect(await draft.evaluate(node => node instanceof HTMLInputElement && [node.selectionStart, node.selectionEnd])).toEqual([1, 4])
+    }
     const alert = await dialog.getByRole('alert').elementHandle()
     expect(await submit.evaluate(node => node === document.activeElement)).toBe(true)
     await submit.press('Enter')
@@ -988,6 +1646,14 @@ it.each(['expert-save', 'team-save', 'expert-delete', 'team-delete'] as const)(
         expect(await submit.evaluate(node => getComputedStyle(node).opacity)).toBe('1')
         await page.screenshot({ path: join(screenshots, `${action}-${theme}-${size.width}.png`), animations: 'disabled' })
       }
+    }
+    if (!deleting) {
+      await page.keyboard.press('Shift+Tab')
+      await page.keyboard.press('Shift+Tab')
+      expect(await dialog.getByRole('alert').evaluate(node => node === document.activeElement)).toBe(true)
+      await page.keyboard.press('End')
+      await expect.poll(() => dialog.getByRole('alert').evaluate(node => node.scrollTop)).toBeGreaterThan(0)
+      await submit.focus()
     }
     await dialog.getByRole('button', { name: 'Cancel', exact: true }).dispatchEvent('click')
     await page.keyboard.press('Escape')
@@ -1221,6 +1887,9 @@ it('keeps expert selection focus and feedback stable through a real Settings con
       expect(await choice.evaluate(node => node === document.activeElement)).toBe(true)
       expect(await dialog.evaluate(node => node.scrollWidth <= node.clientWidth)).toBe(true)
       expect(await choice.evaluate(node => getComputedStyle(node).opacity)).toBe('1')
+      const feedback = dialog.getByRole('alert')
+      expect(await controlIsUnclipped(feedback)).toBe(true)
+      expect(await feedback.evaluate(node => node.scrollHeight <= node.clientHeight)).toBe(true)
       await page.screenshot({ path: join(screenshots, `selection-focus-${theme}-${width}.png`), animations: 'disabled' })
     }
   }
@@ -1229,6 +1898,37 @@ it('keeps expert selection focus and feedback stable through a real Settings con
   gates[1]!.resolve(undefined)
   await dialog.waitFor({ state: 'hidden' })
   expect((await library.catalog()).enabled).toEqual(expect.arrayContaining([target.slug, other.slug]))
+
+  const longMessage = 'The expert directory could not be read. '.repeat(40)
+  const reread = Promise.withResolvers<undefined>()
+  const catalog = library.catalog.bind(library)
+  const failedRead = vi.spyOn(library, 'catalog').mockRejectedValueOnce(new Error(longMessage))
+    .mockImplementation(async (...args) => { await reread.promise; return catalog(...args) })
+  onTestFinished(() => { reread.resolve(undefined); failedRead.mockRestore() })
+  await page.getByRole('button', { name: 'Experts', exact: true }).click()
+  const longFeedback = dialog.getByRole('alert')
+  await expect.poll(() => longFeedback.textContent()).toBe(longMessage)
+  const longNotice = await longFeedback.elementHandle()
+  const search = dialog.getByRole('searchbox'), originalSearch = await search.elementHandle()
+  for (const theme of ['light', 'dark'] as const) {
+    await page.emulateMedia({ colorScheme: theme })
+    await page.setViewportSize({ width: 390, height: 560 })
+    expect(await controlIsUnclipped(longFeedback)).toBe(true)
+    expect(await longFeedback.evaluate(node => node.clientHeight <= 120 && node.scrollHeight > node.clientHeight)).toBe(true)
+    await longFeedback.focus()
+    await longFeedback.press('End')
+    await expect.poll(() => longFeedback.evaluate(node => node.scrollTop)).toBeGreaterThan(0)
+    expect(await longFeedback.evaluate(node => node === document.activeElement)).toBe(true)
+    await page.screenshot({ path: join(screenshots, `selection-long-feedback-${theme}-390.png`), animations: 'disabled' })
+  }
+  const refresh = dialog.getByRole('button', { name: 'Refresh', exact: true })
+  await refresh.click()
+  await expect.poll(() => refresh.getAttribute('aria-busy')).toBe('true')
+  expect(await longFeedback.evaluate((node, previous) => node === previous, longNotice)).toBe(true)
+  expect(await refresh.evaluate(node => node === document.activeElement)).toBe(true)
+  reread.resolve(undefined)
+  await longFeedback.waitFor({ state: 'hidden' })
+  expect(await search.evaluate((node, previous) => node === previous && node === document.activeElement, originalSearch)).toBe(true)
   expect(tripwire.pageErrors).toEqual([])
 })
 
@@ -1297,6 +1997,216 @@ it('returns focus to the same expert and team searches after clearing market and
   }
   expect(tripwire.pageErrors).toEqual([])
 })
+
+it.each(['expert', 'team'] as const)('keeps the first %s picker failure distinct from empty results without moving controls', async (surface) => {
+  const root = await mkdtemp(join(tmpdir(), 'expert-picker-unread-'))
+  onTestFinished(() => rm(root, { recursive: true, force: true }))
+  const companyRoot = join(root, 'employee', 'company', 'experts')
+  await mkdir(companyRoot, { recursive: true })
+  vi.stubEnv('DSH_COMPANY_EXPERTS_ROOT', companyRoot)
+  onTestFinished(() => { vi.unstubAllEnvs() })
+  const overlay = join(root, 'experts.patch.yml')
+  await writeFile(overlay, JSON.stringify(builtinCapabilityPatches()))
+  const scaffold = await launchWebScaffold({ firstUse: true, profile: { packages: [] },
+    extraInstallAnchors: [join(REPO_ROOT, 'packages/deepseek-harness-product/desktop/package.json')],
+    extraOverlayPath: [overlay, join(REPO_ROOT, 'packages/extensions/ui-deepseek-harness-product/cordis.patch.yml'),
+      join(REPO_ROOT, 'apps/web/tests/pin-browse-picker.overlay.yml')],
+  })
+  onTestFinished(() => scaffold.close())
+  const library = scaffold.ctx.get('agencyAgentsLibrary') as ExpertLibrary
+  const teams = scaffold.ctx.get('agencyAgentsTeams') as TeamLibrary
+  const gates = [Promise.withResolvers<undefined>(), Promise.withResolvers<undefined>()]
+  let reads = 0
+  let phase = 0
+  const waitForRead = async () => {
+    reads++
+    const index = phase
+    await gates[index]!.promise
+    if (index === 0) throw new Error('First directory read unavailable')
+  }
+  const originalCatalog = library.catalog.bind(library), originalTeams = teams.snapshot.bind(teams)
+  const delay = surface === 'expert' ? vi.spyOn(library, 'catalog').mockImplementation(async (...args) => {
+    await waitForRead(); return originalCatalog(...args)
+  }) : vi.spyOn(teams, 'snapshot').mockImplementation(async (...args) => {
+    await waitForRead(); return originalTeams(...args)
+  })
+  onTestFinished(() => { gates.forEach((gate) => { gate.resolve(undefined) }); delay.mockRestore() })
+  const browser = await chromium.launch()
+  onTestFinished(() => browser.close())
+  const page = await newEnglishPage(browser)
+  page.setDefaultTimeout(10_000)
+  await page.setViewportSize({ width: 390, height: 560 })
+  const tripwire = watchConsole(page)
+  onTestFinished(() => { expect(tripwire.pageErrors).toEqual([]) })
+  await page.goto(scaffold.authenticatedUrl)
+  await expect.poll(() => page.getByRole('button', { name: 'Choose workspace', exact: true }).textContent()).toBe('Default workspace')
+  await page.getByRole('button', { name: 'Experts', exact: true }).click()
+  const region = page.getByRole('dialog', { name: 'Experts', exact: true })
+  const tab = region.getByRole('tab', { name: surface === 'team' ? 'Expert teams' : 'Experts', exact: true })
+  if (surface === 'team') await tab.click()
+  await expect.poll(() => reads).toBeGreaterThan(0)
+  const search = region.getByRole(surface === 'team' ? 'textbox' : 'searchbox')
+  const list = region.locator(surface === 'team' ? '.agt-compact-list' : '.aag-discovery-results')
+  await search.fill('No match')
+  await search.evaluate((node) => { if (node instanceof HTMLInputElement) node.setSelectionRange(1, 4) })
+  const originalSearch = await search.elementHandle(), originalList = await list.elementHandle()
+  const geometry = () => Promise.all([region.boundingBox(), tab.boundingBox(), search.boundingBox(), list.boundingBox()])
+  const bounds = await geometry()
+  gates[0]!.resolve(undefined)
+  const notice = region.getByRole('alert')
+  await notice.waitFor()
+  expect(await geometry()).toEqual(bounds)
+  expect(await region.getByRole('status').count()).toBe(0)
+  expect(await region.getByText(surface === 'team' ? 'Loading…' : 'Working…', { exact: true }).count()).toBe(0)
+  expect(await region.getByText(surface === 'team' ? 'Search for a team to enable.' : /^No (enabled|matching) experts/).count()).toBe(0)
+  expect(await search.evaluate((node, previous) => node === previous && node === document.activeElement, originalSearch)).toBe(true)
+  const retry = region.getByRole('button', { name: 'Refresh', exact: true })
+  const originalNotice = await notice.elementHandle()
+  const initialReads = reads
+  phase = 1
+  await retry.press('Enter')
+  await expect.poll(() => reads).toBe(initialReads + 1)
+  expect(await notice.evaluate((node, previous) => node === previous, originalNotice)).toBe(true)
+  expect(await geometry()).toEqual(bounds)
+  expect(await region.getByRole('status').count()).toBe(0)
+  expect(await region.getByText(surface === 'team' ? 'Loading…' : 'Working…', { exact: true }).count()).toBe(0)
+  const screenshots = join(REPO_ROOT, '.artifacts/deepseek-harness-expert-retry')
+  await mkdir(screenshots, { recursive: true })
+  await page.screenshot({ path: join(screenshots, `picker-${surface}-unread-retry.png`), animations: 'disabled' })
+  gates[1]!.resolve(undefined)
+  await notice.waitFor({ state: 'hidden' })
+  expect(await geometry()).toEqual(bounds)
+  expect(await list.evaluate((node, previous) => node === previous, originalList)).toBe(true)
+  expect(await search.evaluate((node, previous) => node === previous && node === document.activeElement
+    && node instanceof HTMLInputElement && [node.value, node.selectionStart, node.selectionEnd], originalSearch)).toEqual(['No match', 1, 4])
+  const emptyText = surface === 'team' ? 'Search for a team to enable.' : 'No matching experts. Try a different keyword.'
+  await region.getByText(emptyText, { exact: true }).waitFor()
+})
+
+it.each((['expert', 'team'] as const).flatMap(surface => [1440, 390].map(width => ({ surface, width }))))(
+  'keeps cached $surface picker controls stable through the first read failure and recovery ($width)', async ({ surface, width }) => {
+    const root = await mkdtemp(join(tmpdir(), 'expert-picker-first-failure-'))
+    onTestFinished(() => rm(root, { recursive: true, force: true }))
+    const companyRoot = join(root, 'employee', 'company', 'experts')
+    await mkdir(companyRoot, { recursive: true })
+    vi.stubEnv('DSH_COMPANY_EXPERTS_ROOT', companyRoot)
+    onTestFinished(() => { vi.unstubAllEnvs() })
+    const overlay = join(root, 'experts.patch.yml')
+    await writeFile(overlay, JSON.stringify(builtinCapabilityPatches()))
+    const scaffold = await launchWebScaffold({ firstUse: true, profile: { packages: [] },
+      extraInstallAnchors: [join(REPO_ROOT, 'packages/deepseek-harness-product/desktop/package.json')],
+      extraOverlayPath: [overlay, join(REPO_ROOT, 'packages/extensions/ui-deepseek-harness-product/cordis.patch.yml'),
+        join(REPO_ROOT, 'apps/web/tests/pin-browse-picker.overlay.yml')],
+    })
+    onTestFinished(() => scaffold.close())
+    const library = scaffold.ctx.get('agencyAgentsLibrary') as ExpertLibrary
+    const teams = scaffold.ctx.get('agencyAgentsTeams') as TeamLibrary
+    let catalog = await library.catalog()
+    for (let index = 1; index <= 8; index++) catalog = await library.saveCustom({ name: `Retry reviewer ${index}`,
+      description: 'Read-only picker fixture', division: 'specialized', prompt: 'Keep {{literal}}.' }, true, catalog.revision)
+    if (surface === 'team') {
+      let revision = catalog.revision
+      for (let index = 1; index <= 8; index++) {
+        const next = await teams.save({ name: `Retry team ${index}`, description: 'Read-only picker fixture', tags: [], goal: 'Review the task',
+          constraints: 'Do not write', deliveryRequirements: 'Return findings', examples: ['Review a change'],
+          coordinatorMode: 'template', coordinatorTemplateId: 'general', coordinatorTemplateVersion: 1, coordinatorPrompt: '',
+          members: catalog.experts.slice(0, 2).map(item => ({ expertSlug: item.slug, duty: 'Review', instructions: 'Read the references.' })),
+        }, true, revision)
+        revision = next.revision
+      }
+    }
+    const browser = await chromium.launch()
+    onTestFinished(() => browser.close())
+    const page = await newEnglishPage(browser)
+    page.setDefaultTimeout(10_000)
+    await page.setViewportSize({ width, height: width === 390 ? 560 : 900 })
+    const tripwire = watchConsole(page)
+    onTestFinished(() => { expect(tripwire.pageErrors).toEqual([]) })
+    await page.goto(scaffold.authenticatedUrl)
+    await expect.poll(() => page.getByRole('button', { name: 'Choose workspace', exact: true }).textContent()).toBe('Default workspace')
+    const trigger = page.getByRole('button', { name: 'Experts', exact: true })
+    await trigger.click()
+    const region = page.getByRole('dialog', { name: 'Experts', exact: true })
+    const tab = region.getByRole('tab', { name: surface === 'team' ? 'Expert teams' : 'Experts', exact: true })
+    if (surface === 'team') await tab.click()
+    const first = region.getByRole('button', { name: surface === 'team' ? /^Retry team 1/ : 'Retry reviewer 1', exact: surface === 'expert' })
+    await first.waitFor()
+    await page.keyboard.press('Escape')
+    await region.waitFor({ state: 'hidden' })
+    const gates = [Promise.withResolvers<undefined>(), Promise.withResolvers<undefined>()]
+    let reads = 0
+    const waitForRead = async () => {
+      const index = reads++
+      if (!gates[index]) throw new Error('Unexpected duplicate picker read')
+      await gates[index].promise
+      if (index === 0) throw new Error('Directory unavailable. Check https://content.example.test/resources/directory and retry. '.repeat(3))
+    }
+    const originalCatalog = library.catalog.bind(library), originalTeams = teams.snapshot.bind(teams)
+    const delay = surface === 'expert' ? vi.spyOn(library, 'catalog').mockImplementation(async (...args) => {
+      await waitForRead(); return originalCatalog(...args)
+    }) : vi.spyOn(teams, 'snapshot').mockImplementation(async (...args) => {
+      await waitForRead(); return originalTeams(...args)
+    })
+    onTestFinished(() => { gates.forEach((gate) => { gate.resolve(undefined) }); delay.mockRestore() })
+    await trigger.click()
+    await expect.poll(() => reads).toBe(1)
+    const search = region.getByRole(surface === 'team' ? 'textbox' : 'searchbox')
+    await search.fill('Retry')
+    await search.evaluate((node) => { if (node instanceof HTMLInputElement) node.setSelectionRange(1, 4) })
+    const list = region.locator(surface === 'team' ? '.agt-compact-list' : '.aag-discovery-results')
+    await list.evaluate((node) => { node.scrollTop = 30 })
+    const scroll = await list.evaluate(node => node.scrollTop)
+    expect(scroll).toBeGreaterThan(0)
+    const originalSearch = await search.elementHandle(), originalFirst = await first.elementHandle()
+    const originalList = await list.elementHandle()
+    const geometry = () => Promise.all([region.boundingBox(), tab.boundingBox(), search.boundingBox(),
+      list.boundingBox(), first.boundingBox()])
+    const bounds = await geometry()
+    const screenshots = join(REPO_ROOT, '.artifacts/deepseek-harness-expert-retry')
+    await mkdir(screenshots, { recursive: true })
+    await page.screenshot({ path: join(screenshots, `picker-${surface}-${width}-before-error.png`), animations: 'disabled' })
+    gates[0]!.resolve(undefined)
+    const notice = region.getByRole('alert')
+    await notice.waitFor()
+    await page.screenshot({ path: join(screenshots, `picker-${surface}-${width}-first-error.png`), animations: 'disabled' })
+    expect(await geometry()).toEqual(bounds)
+    expect(await search.evaluate((node, previous) => node === previous && node === document.activeElement, originalSearch)).toBe(true)
+    expect(await first.evaluate((node, previous) => node === previous, originalFirst)).toBe(true)
+    expect(await list.evaluate((node, previous) => node === previous && node.scrollTop, originalList)).toBe(scroll)
+    const originalNotice = await notice.elementHandle()
+    const retry = region.getByRole('button', { name: 'Refresh', exact: true })
+    const originalRetry = await retry.elementHandle()
+    await retry.press('Enter')
+    await expect.poll(() => reads).toBe(2)
+    expect(await retry.evaluate((node, previous) => node === previous && node === document.activeElement, originalRetry)).toBe(true)
+    expect(await notice.evaluate((node, previous) => node === previous, originalNotice)).toBe(true)
+    expect(await geometry()).toEqual(bounds)
+    await page.keyboard.press('Enter')
+    await page.keyboard.press(' ')
+    expect(reads).toBe(2)
+    await page.keyboard.press('Shift+Tab')
+    expect(await notice.evaluate(node => node === document.activeElement)).toBe(true)
+    await page.keyboard.press('End')
+    await expect.poll(() => notice.evaluate(node => node.scrollTop > 0
+      && Math.abs(node.scrollHeight - node.clientHeight - node.scrollTop) <= 1)).toBe(true)
+    for (const theme of ['light', 'dark'] as const) {
+      await page.emulateMedia({ colorScheme: theme })
+      expect(await controlIsUnclipped(search)).toBe(true)
+      expect(await controlIsUnclipped(tab)).toBe(true)
+      expect(await controlIsUnclipped(retry)).toBe(true)
+      await page.screenshot({ path: join(screenshots, `picker-${surface}-${width}-retry-${theme}.png`), animations: 'disabled' })
+    }
+    if (width === 390) await tab.focus()
+    gates[1]!.resolve(undefined)
+    await notice.waitFor({ state: 'hidden' })
+    expect(await retry.count()).toBe(0)
+    await expect.poll(() => (width === 390 ? tab : search).evaluate(node => node === document.activeElement)).toBe(true)
+    expect(await geometry()).toEqual(bounds)
+    expect(await list.evaluate((node, previous) => node === previous && node.scrollTop, originalList)).toBe(scroll)
+    expect(await search.evaluate((node, previous) => node === previous && node instanceof HTMLInputElement
+      && [node.value, node.selectionStart, node.selectionEnd], originalSearch)).toEqual(['Retry', 1, 4])
+  },
+)
 
 it.each(['expert', 'team', 'picker', 'team-picker'] as const)('keeps %s read retry focus, geometry and draft stable', async (surface) => {
   const picker = surface === 'picker' || surface === 'team-picker'

@@ -556,6 +556,75 @@ function searchSignal(mock: RemoteMock, source: 'clawhub' | 'skillsh', index: nu
     : mock.remote.skillsManager.searchSkillsSh.mock.calls[index]?.[1]
 }
 
+it.each(searchCatalogs)('allows switching to $source while the repository directory is being read', async (catalog) => {
+  const { mock, view, Harness } = await setup()
+  const pending = deferred<SkillOutput<'listRepositories'>>()
+  const result: SkillOutput<'listRepositories'> = { repositories: [repo], installRoots: [], catalogInstalls: [], catalogCopies: [], catalogWarnings: [] }
+  onTestFinished(() => { view.unmount(); pending.resolve(result) })
+  view.rerender(h(React.StrictMode, null, h(Harness, { active: false })))
+  mock.unary('skillsManager/listRepositories', async () => ok(await pending.promise))
+  view.rerender(h(React.StrictMode, null, h(Harness)))
+  const target = screen.getByRole('button', { name: `repo.subsource.${catalog.source}` })
+  target.focus(); fireEvent.click(target)
+  expect(screen.getByRole('textbox', { name: catalog.label })).toBeTruthy()
+  expect(target.getAttribute('aria-pressed')).toBe('true')
+  await act(async () => { pending.resolve(result) })
+  expect(target.getAttribute('aria-pressed')).toBe('true')
+  expect(document.activeElement).toBe(target)
+})
+
+it.each(searchCatalogs.flatMap(catalog => (['retained', 'removed', 'failure'] as const).map(outcome => ({ ...catalog, outcome }))))(
+  'retains confirmed $source search rows while reactivating with $outcome results', async (catalog) => {
+    const { mock, view, Harness } = await setup()
+    mock.unary(`skillsManager/${catalog.method}`, () => ok(searchResult(catalog.source, 'orders')))
+    fireEvent.click(screen.getByRole('button', { name: `repo.subsource.${catalog.source}` }))
+    const input = screen.getByRole<HTMLInputElement>('textbox', { name: catalog.label })
+    fireEvent.change(input, { target: { value: 'orders' } })
+    const row = (await screen.findByText('orders')).closest('.dssm-repo-row')!
+    const action = within(row).getByRole('button', { name: 'repo.detail' })
+    view.rerender(h(React.StrictMode, null, h(Harness, { active: false })))
+    const pending = deferred<ReturnType<typeof searchResult>>()
+    onTestFinished(() => { view.unmount(); pending.resolve(searchResult(catalog.source, 'disposed')) })
+    mock.unary(`skillsManager/${catalog.method}`, async () => ok(await pending.promise))
+    input.setSelectionRange(1, 4)
+    action.focus()
+    view.rerender(h(React.StrictMode, null, h(Harness)))
+    expect(screen.getByText('orders').closest('.dssm-repo-row')).toBe(row)
+    expect(document.activeElement).toBe(action)
+    expect(screen.queryByRole('status', { name: catalog.loading })).toBeNull()
+    await act(async () => {
+      if (catalog.outcome === 'failure') pending.reject(new Error('Refresh unavailable'))
+      else pending.resolve(searchResult(catalog.source, catalog.outcome === 'retained' ? 'orders' : 'replacement'))
+    })
+    if (catalog.outcome === 'failure') {
+      const notice = screen.getByRole('alert')
+      expect(screen.getByText('orders').closest('.dssm-repo-row')).toBe(row)
+      expect(document.activeElement).toBe(action)
+      const retry = deferred<ReturnType<typeof searchResult>>()
+      onTestFinished(() => { retry.resolve(searchResult(catalog.source, 'disposed')) })
+      mock.unary(`skillsManager/${catalog.method}`, async () => ok(await retry.promise))
+      const button = within(notice).getByRole('button', { name: 'repo.catalog.retry' })
+      button.focus(); fireEvent.click(button); fireEvent.click(button)
+      expect(mock.remote.skillsManager[catalog.method]).toHaveBeenCalledTimes(3)
+      expect(screen.getByRole('alert')).toBe(notice)
+      expect(screen.getByText('orders').closest('.dssm-repo-row')).toBe(row)
+      expect(document.activeElement).toBe(button)
+      await act(async () => { retry.resolve(searchResult(catalog.source, 'orders')) })
+      expect(screen.queryByRole('alert')).toBeNull()
+      expect(document.activeElement).toBe(input)
+    } else if (catalog.outcome === 'retained') {
+      expect(screen.getByText('orders').closest('.dssm-repo-row')).toBe(row)
+      expect(document.activeElement).toBe(action)
+    } else {
+      expect(row.isConnected).toBe(false)
+      expect(screen.getByText('replacement')).toBeTruthy()
+      expect(document.activeElement).toBe(input)
+    }
+    expect(screen.getByRole('textbox', { name: catalog.label })).toBe(input)
+    expect([input.value, input.selectionStart, input.selectionEnd]).toEqual(['orders', 1, 4])
+  },
+)
+
 it.each(searchCatalogs)('keeps $source search pending while typing and cancels a cleared query without flashing empty results', async (catalog) => {
   const { mock, view } = await setup()
   const pending = deferred<ReturnType<typeof searchResult>>()
@@ -1014,15 +1083,18 @@ async function prepareConfirmation(write: typeof confirmationWrites[number]) {
 
 it.each(confirmationWrites)('retains one $action confirmation and its failure through a locked retry', async (write) => {
   const { mock, view, confirm } = await prepareConfirmation(write)
+  const dialog = screen.getByRole('dialog')
+  const feedback = dialog.querySelector('.dssm-write-feedback')
+  expect(feedback?.textContent).toBe('')
   const failure = { ok: false as const, error: new RemoteError('skills/operation', 'Mutation rejected', {
     code: 'error.repo.conflict', error: 'Mutation rejected',
   }) }
   mock.unary(`skillsManager/${write.method}`, () => failure)
   confirm.focus()
   fireEvent.click(confirm)
-  const dialog = screen.getByRole('dialog')
   const area = within(dialog)
   const alert = await area.findByRole('alert')
+  expect(alert.closest('.dssm-write-feedback')).toBe(feedback)
   await waitFor(() => { expect(confirm).toHaveProperty('disabled', false) })
   expect.soft(screen.getAllByRole('alert')).toEqual([alert])
   expect(document.activeElement).toBe(confirm)
@@ -1034,9 +1106,15 @@ it.each(confirmationWrites)('retains one $action confirmation and its failure th
     fireEvent.click(confirm); fireEvent.click(confirm); fireEvent.click(cancel)
     fireEvent.keyDown(document, { key: 'Escape' })
   })
+  const selectedSource = document.querySelector('.dssm-subsource-btn[aria-pressed="true"]')
+  const otherSource = document.querySelector('.dssm-subsource-btn[aria-pressed="false"]')
+  expect(otherSource).toBeTruthy()
+  fireEvent.click(otherSource!)
+  expect(document.querySelector('.dssm-subsource-btn[aria-pressed="true"]')).toBe(selectedSource)
   expect(mock.remote.skillsManager[write.method]).toHaveBeenCalledTimes(2)
   expect(screen.getByRole('dialog')).toBe(dialog)
   expect.soft(alert.isConnected).toBe(true)
+  expect(alert.closest('.dssm-write-feedback')).toBe(feedback)
   expect.soft(screen.queryAllByRole('alert')).toEqual([alert])
   expect.soft(confirm.getAttribute('aria-busy')).toBe('true')
   expect(confirm).toHaveProperty('disabled', false)

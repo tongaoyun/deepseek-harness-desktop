@@ -1,11 +1,11 @@
 // @vitest-environment jsdom
 /** Expert-team views follow the native store and their current mounted operations. */
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
-import { useLayoutEffect } from 'react'
+import { Suspense, startTransition, useLayoutEffect } from 'react'
 import { afterEach, expect, it, onTestFinished, vi } from 'vitest'
 import { createExpertClientState } from '../../src/client/client-state.ts'
 import { TeamMenu } from '../../src/client/team-composer.tsx'
-import { TeamsPanel, type TeamRemote } from '../../src/client/team-ui.tsx'
+import { TeamDetails, TeamsPanel, type TeamRemote } from '../../src/client/team-ui.tsx'
 import { TEST_TEAMS } from '../../src/fixtures/teams.ts'
 import type { TeamSnapshot } from '../../src/team-contract.ts'
 import { useTeamDirectory } from '../../src/client/team-directory.ts'
@@ -34,6 +34,102 @@ function fixture() {
   cache.teams.accept(original)
   return { remote, cache, getTeams, getCatalog, setTeamEnabled }
 }
+
+it.each(['success', 'failure'] as const)('keeps committed team refresh callbacks through a suspended render ending in %s', async (outcome) => {
+  const value = fixture()
+  const suspended = Promise.withResolvers<undefined>()
+  const rendering = vi.fn()
+  const committed = { onStart: vi.fn(), onSuccess: vi.fn(), onError: vi.fn() }
+  const candidate = { onStart: vi.fn(), onSuccess: vi.fn(), onError: vi.fn() }
+  function Directory({ next = false, pending = false }: { next?: boolean; pending?: boolean }) {
+    const callbacks = next ? candidate : committed
+    const directory = useTeamDirectory({ ...value, ...callbacks })
+    if (pending) { rendering(); throw suspended.promise }
+    return <button onClick={() => { void directory.refresh() }}>Refresh directory</button>
+  }
+  const view = render(<Suspense><Directory /></Suspense>)
+  onTestFinished(() => { view.unmount(); suspended.resolve(undefined); value.cache.catalog.dispose(); value.cache.teams.dispose() })
+  await waitFor(() => { expect(committed.onSuccess).toHaveBeenCalledOnce() })
+  Object.values(committed).forEach(callback => callback.mockClear())
+  const refresh = screen.getByRole('button', { name: 'Refresh directory' })
+  refresh.focus()
+  act(() => { startTransition(() => { view.rerender(<Suspense><Directory next pending /></Suspense>) }) })
+  expect(rendering).toHaveBeenCalled()
+  expect(screen.getByRole('button', { name: 'Refresh directory' })).toBe(refresh)
+  if (outcome === 'failure') value.getTeams.mockRejectedValueOnce(new Error('Directory offline'))
+  await act(async () => { fireEvent.click(refresh) })
+  expect(committed.onStart).toHaveBeenCalledOnce()
+  expect(committed.onSuccess).toHaveBeenCalledTimes(outcome === 'success' ? 1 : 0)
+  expect(committed.onError).toHaveBeenCalledTimes(outcome === 'failure' ? 1 : 0)
+  for (const callback of Object.values(candidate)) expect(callback).not.toHaveBeenCalled()
+  expect(document.activeElement).toBe(refresh)
+  if (outcome === 'failure') {
+    await act(async () => { fireEvent.click(refresh) })
+    expect(committed.onSuccess).toHaveBeenCalledOnce()
+    expect(committed.onStart).toHaveBeenCalledTimes(2)
+  }
+  view.rerender(<Suspense><Directory next /></Suspense>)
+  await act(async () => { fireEvent.click(refresh) })
+  expect(candidate.onStart).toHaveBeenCalledOnce()
+  expect(candidate.onSuccess).toHaveBeenCalledOnce()
+  expect(candidate.onError).not.toHaveBeenCalled()
+  expect(screen.getByRole('button', { name: 'Refresh directory' })).toBe(refresh)
+  expect(document.activeElement).toBe(refresh)
+})
+
+it.each([false, true])('recovers a cleared scrollable team read error without taking another control (elsewhere=%s)', async (elsewhere) => {
+  const value = fixture()
+  value.getTeams.mockRejectedValueOnce(new Error('Team directory unavailable'))
+  const response = Promise.withResolvers<Awaited<ReturnType<TeamRemote['getTeams']>>>()
+  const view = render(<><TeamsPanel {...value} /><button>Other action</button></>)
+  onTestFinished(() => {
+    view.unmount(); response.resolve({ ok: true, value: original }); value.cache.catalog.dispose(); value.cache.teams.dispose()
+  })
+  const alert = await screen.findByRole('alert')
+  const region = screen.getByRole('region', { name: 'Team directory unavailable' })
+  const search = screen.getByRole<HTMLInputElement>('textbox', { name: '搜索专家团' })
+  fireEvent.change(search, { target: { value: 'team' } })
+  search.setSelectionRange(1, 3)
+  value.getTeams.mockReturnValueOnce(response.promise)
+  const refresh = screen.getByRole('button', { name: '刷新重试' })
+  fireEvent.click(refresh); fireEvent.click(refresh)
+  await waitFor(() => { expect(value.getTeams).toHaveBeenCalledTimes(2) })
+  expect(screen.getByRole('alert')).toBe(alert)
+  region.focus()
+  const other = screen.getByRole('button', { name: 'Other action' })
+  if (elsewhere) other.focus()
+  await act(async () => { response.resolve({ ok: true, value: original }) })
+  expect(screen.queryByRole('alert')).toBeNull()
+  expect(document.activeElement).toBe(elsewhere ? other : search)
+  expect(screen.getByRole('textbox', { name: '搜索专家团' })).toBe(search)
+  expect([search.value, search.selectionStart, search.selectionEnd]).toEqual(['team', 1, 3])
+  expect({ errorRemoved: !region.isConnected, searchRetained: search.isConnected,
+    focused: document.activeElement === search ? 'search' : 'other', query: search.value }).toMatchSnapshot()
+})
+
+it.each([false, true])('captures team close focus from the committed detail callback (commit=%s)', async (commit) => {
+  const suspended = Promise.withResolvers<undefined>()
+  const rendering = vi.fn(), committed = vi.fn(), candidate = vi.fn()
+  function Gate({ pending }: { pending: boolean }) {
+    if (pending) { rendering(); throw suspended.promise }
+    return null
+  }
+  function Detail({ next = false, pending = false }: { next?: boolean; pending?: boolean }) {
+    return <><TeamDetails team={team} experts={[]} close={() => {}} captureCloseFocus={next ? candidate : committed} />
+      <Gate pending={pending} /></>
+  }
+  const view = render(<Suspense><Detail /></Suspense>)
+  onTestFinished(() => { view.unmount(); suspended.resolve(undefined) })
+  const dialog = screen.getByRole('dialog')
+  within(dialog).getAllByRole('button')[0].focus()
+  act(() => { startTransition(() => { view.rerender(<Suspense><Detail next pending /></Suspense>) }) })
+  expect(rendering).toHaveBeenCalled()
+  expect(screen.getByRole('dialog')).toBe(dialog)
+  if (commit) view.rerender(<Suspense><Detail next /></Suspense>)
+  view.unmount()
+  expect(committed).toHaveBeenCalledTimes(commit ? 0 : 1)
+  expect(candidate).toHaveBeenCalledTimes(commit ? 1 : 0)
+})
 
 it.each((['menu', 'panel'] as const).flatMap(kind => (['zh', 'en'] as const)
   .flatMap(locale => [false, true].map(elsewhere => ({ kind, locale, elsewhere })))))(
@@ -272,8 +368,10 @@ it.each(['delete', 'enable', 'menu-enable'] as const)('keeps the %s team confirm
   expect(submit).toHaveProperty('disabled', false)
   expect(submit.getAttribute('aria-disabled')).toBe('true')
   expect(document.activeElement).toBe(submit)
-  expect({ kind, error: error.textContent, submit: submit.textContent, busy: submit.getAttribute('aria-busy'),
-    focused: document.activeElement?.textContent }).toMatchSnapshot()
+  const pendingLabel = within(submit).getByText('正在处理…')
+  expect(pendingLabel.getAttribute('aria-hidden')).toBe('false')
+  expect({ kind, error: error.textContent, submit: pendingLabel.textContent, busy: submit.getAttribute('aria-busy'),
+    focused: document.activeElement?.querySelector('[aria-hidden="false"]')?.textContent }).toMatchSnapshot()
   await act(async () => {
     response.resolve({ ok: true, value: { ...original, ...(kind === 'delete' ? { teams: [], enabledTeams: [] } : {}), revision: 2 } })
     await response.promise
@@ -613,6 +711,100 @@ it('shows the first team directory failure without an idle or retry loading plac
   await act(async () => { response.resolve({ ok: true, value: original }) })
   expect(await screen.findByText('Original team')).not.toBeNull()
   expect(screen.queryByRole('alert')).toBeNull()
+})
+
+it.each((['menu', 'panel'] as const).flatMap(kind => (['success', 'failure'] as const)
+  .flatMap(outcome => [false, true].map(repeated => ({ kind, outcome, repeated })))))(
+  'retains a newer $kind selection failure when an earlier directory read ends with $outcome (repeated=$repeated)', async ({ kind, outcome, repeated }) => {
+    const value = fixture(), read = Promise.withResolvers<Awaited<ReturnType<TeamRemote['getTeams']>>>()
+    onTestFinished(() => { read.resolve({ ok: true, value: original }); value.cache.catalog.dispose(); value.cache.teams.dispose() })
+    const selectionError = kind === 'menu' ? '无法插入团队，请确认当前聊天草稿后重试。'
+      : '团队已启用，但无法写入当前聊天草稿。请关闭设置后，在聊天的专家团入口选择。'
+    if (repeated) value.getTeams.mockRejectedValueOnce(new Error(selectionError))
+    else value.getTeams.mockReturnValueOnce(read.promise)
+    const insert = vi.fn(async () => false), selected = vi.fn()
+    render(kind === 'menu' ? <TeamMenu {...value} prepareSelect={() => insert} onSelected={selected} />
+      : <TeamsPanel {...value} prepareSelect={() => insert} />)
+    const search = screen.getByRole<HTMLInputElement>('textbox', { name: '搜索专家团' })
+    if (repeated) {
+      await screen.findByRole('alert')
+      value.getTeams.mockReturnValueOnce(read.promise)
+      fireEvent.click(screen.getByRole('button', { name: kind === 'menu' ? '刷新' : '刷新重试' }))
+    }
+    fireEvent.change(search, { target: { value: 'team' } })
+    search.focus(); search.setSelectionRange(1, 3)
+    if (kind === 'menu') fireEvent.click(screen.getByRole('button', { name: /^Original team/ }))
+    else {
+      fireEvent.click(screen.getByRole('button', { name: '查看详情' }))
+      fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: '召唤专家团' }))
+    }
+    const error = await screen.findByRole('alert'), text = error.textContent
+    const retry = screen.getByRole('button', { name: kind === 'menu' ? '刷新' : '刷新重试' })
+    retry.focus()
+    await act(async () => {
+      if (outcome === 'success') read.resolve({ ok: true, value: original })
+      else read.reject(new Error('Older directory read failed'))
+      await read.promise.catch(() => {})
+    })
+    expect(screen.getByRole('alert')).toBe(error)
+    expect(error.textContent).toBe(text)
+    expect(screen.getByRole('button', { name: kind === 'menu' ? '刷新' : '刷新重试' })).toBe(retry)
+    expect(document.activeElement).toBe(retry)
+    expect(screen.getByRole('textbox', { name: '搜索专家团' })).toBe(search)
+    expect([search.value, search.selectionStart, search.selectionEnd]).toEqual(['team', 1, 3])
+    if (!repeated && outcome === 'success') expect({ error: error.textContent, retry: retry.textContent,
+      busy: retry.getAttribute('aria-busy'), query: search.value }).toMatchSnapshot()
+    await act(async () => { fireEvent.click(retry); await value.cache.teams.refresh() })
+    expect(screen.queryByRole('alert')).toBeNull()
+    expect(value.getTeams).toHaveBeenCalledTimes(repeated ? 3 : 2)
+    expect(insert).toHaveBeenCalledOnce()
+    expect(selected).not.toHaveBeenCalled()
+    expect(value.setTeamEnabled).not.toHaveBeenCalled()
+    expect(document.activeElement).toBe(kind === 'menu' ? search : screen.getByRole('heading', { name: team.name }))
+  },
+)
+
+it.each(['success', 'failure'] as const)('retains a newer selection error when the active member catalog refresh ends with %s', async (outcome) => {
+  const value = fixture(), read = Promise.withResolvers<Awaited<ReturnType<TeamRemote['getCatalog']>>>()
+  onTestFinished(() => {
+    read.resolve({ ok: true, value: { experts: [], enabled: [], revision: 1 } })
+    value.cache.catalog.dispose(); value.cache.teams.dispose()
+  })
+  const insert = vi.fn(async () => false)
+  const view = render(<TeamsPanel {...value} prepareSelect={() => insert} source="custom" active={false} />)
+  await act(async () => { await value.cache.teams.refresh() })
+  value.getCatalog.mockReturnValueOnce(read.promise)
+  view.rerender(<TeamsPanel {...value} prepareSelect={() => insert} source="custom" active />)
+  fireEvent.click(screen.getByRole('button', { name: '查看详情' }))
+  fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: '召唤专家团' }))
+  const error = await screen.findByRole('alert'), text = error.textContent
+  const retry = screen.getByRole('button', { name: '刷新重试' })
+  retry.focus()
+  await act(async () => {
+    if (outcome === 'success') read.resolve(await value.getCatalog(false))
+    else read.reject(new Error('Earlier member refresh failed'))
+    await read.promise.catch(() => {})
+  })
+  expect(screen.getByRole('alert')).toBe(error)
+  expect(error.textContent).toBe(text)
+  expect(document.activeElement).toBe(retry)
+  await act(async () => { fireEvent.click(retry) })
+  expect(screen.queryByRole('alert')).toBeNull()
+  expect(insert).toHaveBeenCalledOnce()
+})
+
+it.each(['menu', 'panel'] as const)('reports the new %s directory failure after replacing a connection with an existing error', async (kind) => {
+  const value = fixture()
+  onTestFinished(() => { value.cache.catalog.dispose(); value.cache.teams.dispose() })
+  value.getTeams.mockRejectedValueOnce(new Error('Previous connection failed'))
+  const props = { ...value, onSelected: vi.fn() }
+  const view = render(kind === 'menu' ? <TeamMenu {...props} /> : <TeamsPanel {...props} />)
+  expect((await screen.findByRole('alert')).textContent).toContain('Previous connection failed')
+  value.getTeams.mockRejectedValueOnce(new Error('Current connection failed'))
+  const remote = { ...value.remote }
+  await act(async () => { view.rerender(kind === 'menu' ? <TeamMenu {...props} remote={remote} /> : <TeamsPanel {...props} remote={remote} />) })
+  expect(screen.getByRole('alert').textContent).toContain('Current connection failed')
+  expect(value.getTeams).toHaveBeenCalledTimes(2)
 })
 
 it.each(['menu', 'panel'] as const)('keeps the %s retry error and selection until the directory recovers', async (kind) => {

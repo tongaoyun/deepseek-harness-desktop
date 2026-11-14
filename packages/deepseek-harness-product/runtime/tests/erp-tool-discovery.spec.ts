@@ -147,7 +147,6 @@ it('proves scoped discovery over 300 ERP tools with native policy, approval, dur
           tools: [...definitions.map(tool => ({ name: tool.name, access: tool.annotations.readOnlyHint ? 'READ' : 'WRITE' })),
             ...missingNative ? [{ name: 'missing_native', access: 'READ' }] : []] })) : []
     }
-    if (method === 'knowledge.bases.list') return []
     throw new Error(`Unexpected product request ${method}`)
   } }
   const directory = join(home, 'profile')
@@ -217,20 +216,6 @@ it('proves scoped discovery over 300 ERP tools with native policy, approval, dur
   const exact = (toolNames: string[], connectorId = 'erp'): Step => ({ name: DISCOVER, arguments: { connectorId, toolNames } })
   const call = (raw: string): Step => ({ name: publicName(raw), arguments: { recordId: 'fixture-record' } })
   const ctx = await start()
-  const runtimeOwner = runtimeFibers.get(ctx)?.ctx.fiber
-  const conversationFibers = new Set<NonNullable<typeof runtimeOwner>>()
-  const stopTracking = ctx.on('internal/plugin', (fiber) => {
-    if (fiber.parent.fiber !== runtimeOwner) return
-    if (fiber.uid === null) conversationFibers.delete(fiber)
-    else conversationFibers.add(fiber)
-  }, { global: true })
-  onTestFinished(() => { stopTracking() })
-  for (const id of ['scope-lifetime-first', 'scope-lifetime-second']) {
-    const transient = await create(ctx, id)
-    expect(conversationFibers.size).toBeGreaterThan(0)
-    await transient.handle.dispose()
-    await vi.waitFor(() => { expect(conversationFibers.size).toBe(0) })
-  }
   const a = await create(ctx, 'erp-proof-a')
   const b = await create(ctx, 'erp-proof-b')
   expect(protocol.filter(method => method === 'initialize')).toHaveLength(1)
@@ -276,7 +261,7 @@ it('proves scoped discovery over 300 ERP tools with native policy, approval, dur
   expect(ctx.tools.schemas(b.handle.agent).some(tool => names.includes(tool.name))).toBe(false)
   expect(calls).toEqual(['orders_read_00', 'orders_write'])
   // Keep an unrelated native tool available; this mask applies only to the ERP namespace.
-  expect(ctx.tools.schemas(a.handle.agent).some(tool => tool.name === 'knowledge_destinations')).toBe(true)
+  expect(ctx.tools.schemas(a.handle.agent).some(tool => tool.name.startsWith('knowledge_'))).toBe(false)
   available = false
   const resourceCalls = protocol.filter(method => method === 'resources/list').length
   expect((await executeTool(ctx, a.handle.agent, 'list_mcp_resources', { server: serverName }, ToolCallId('revoked-resource'))).isError).toBe(true)
