@@ -4,7 +4,7 @@ import { createActivationProbe } from '../tests/activation-probe.ts'
 import { expertPackageFiles } from './expert-packages.ts'
 import { importExpertPackage } from './package-transfer.ts'
 import { loadEditorReview, continueEditorReview } from "./client/editor-review.ts";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import { buildExpertReference, writeEnabled, matchExpertQuery } from "./client/index.ts";
 import { Context } from "@deepseek-ai/cordis";
 import type { SettingsNamespace } from "@deepseek-ai/dsh-settings";
@@ -18,7 +18,6 @@ import {
   customExpertInputSchema,
   isExpertEmoji,
   type ExpertSummary,
-  type CustomExpertInput,
 } from "./expert-contract.ts";
 import { expertSettingsNamespace } from "./settings.ts";
 import { MemorySettings } from "./settings-memory.ts";

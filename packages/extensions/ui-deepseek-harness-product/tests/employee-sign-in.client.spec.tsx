@@ -45,7 +45,7 @@ function fixture() {
   const requests: { id: string; timeout?: number }[] = []
   const cancel = vi.fn()
   const getSession = vi.fn(async () => session)
-  const resources = vi.fn(async (method: string): Promise<unknown> => method === 'library.list'
+  const resources = vi.fn(async (method: string): Promise<unknown> => method === 'library.list' || method === 'library.files.list'
     ? { data: [], pageIndex: 1, pageSize: 20, totalCount: 0, totalPages: 0 } : [])
   const changeSession = (value: Session) => {
     session = value
@@ -202,24 +202,25 @@ it('retains composer verification failure and retry focus until employee verific
   expect(document.activeElement).toBe(screen.getByRole('button', { name: zh.cancel }))
 })
 
-it('clears private library rows before loading the new employee directory and retains its failure for retry', async () => {
+it('clears private file rows before loading the new employee files and retains its failure for retry', async () => {
   const f = fixture()
   f.changeSession({ authenticated: true, employeeId: 'alice', displayName: '员工甲' })
-  const library = { id: '11111111-1111-4111-8111-111111111111', name: '甲的私人资料', description: '', scope: 'PERSONAL',
-    ownerId: 'alice', managerEmployeeId: 'alice', canManage: true, version: 1,
-    createdAt: '2026-11-13T01:00:00Z', updatedAt: '2026-11-13T01:00:00Z' }
-  f.resources.mockResolvedValue({ data: [library], pageIndex: 1, pageSize: 20, totalCount: 1, totalPages: 1 })
+  const file = { entry: { id: '22222222-2222-4222-8222-222222222222', libraryId: '11111111-1111-4111-8111-111111111111',
+    parentId: null, name: '甲的私人资料.md', kind: 'FILE', sha256: 'a'.repeat(64), mediaType: 'text/markdown',
+    sizeBytes: 64, favorite: false, version: 1, createdAt: '2026-11-13T01:00:00Z', updatedAt: '2026-11-13T01:00:00Z' },
+  libraryName: '个人资料', canManage: true, lastAccessedAt: null, sourceKind: 'UPLOAD', sourceSessionId: null }
+  f.resources.mockResolvedValue({ data: [file], pageIndex: 1, pageSize: 20, totalCount: 1, totalPages: 1 })
   await renderAfterInitialPrompt(f.tree('library'))
-  await screen.findByRole('button', { name: /甲的私人资料/ })
+  await screen.findByRole('button', { name: /^甲的私人资料/ })
   f.resources.mockRejectedValueOnce(new Error('New employee directory unavailable'))
   act(() => { f.changeSession({ authenticated: true, employeeId: 'bob', displayName: '员工乙' }) })
   await screen.findByRole('alert')
-  await waitFor(() => { expect(screen.queryByRole('button', { name: /甲的私人资料/ })).toBeNull() })
+  await waitFor(() => { expect(screen.queryByRole('button', { name: /^甲的私人资料/ })).toBeNull() })
   f.resources.mockResolvedValue({ data: [], pageIndex: 1, pageSize: 20, totalCount: 0, totalPages: 0 })
   fireEvent.click(screen.getByRole('button', { name: zh.retry }))
-  await screen.findByRole('button', { name: zh.libraryCreate })
+  await screen.findByText(zh.libraryEmpty)
   expect(screen.queryByRole('alert')).toBeNull()
-  expect(screen.queryByRole('button', { name: /甲的私人资料/ })).toBeNull()
+  expect(screen.queryByRole('button', { name: /^甲的私人资料/ })).toBeNull()
 })
 
 it('shows the same signed-out label in wide and collapsed sidebars and reacts to employee events', async () => {
