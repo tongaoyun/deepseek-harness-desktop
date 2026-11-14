@@ -13102,6 +13102,9 @@ importers:
       shell-quote:
         specifier: ^1.12.0
         version: 1.12.0
+      zod:
+        specifier: ^4.6.6
+        version: 4.6.6
 
   packages/feedback/command-feedback:
     dependencies:
