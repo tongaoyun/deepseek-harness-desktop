@@ -10,7 +10,7 @@ function fixture() {
   let employee = 'alice'
   const source = { libraryId: '11111111-1111-4111-8111-111111111111', id: '22222222-2222-4222-8222-222222222222', parentId: null,
     name: '模板.docx', kind: 'FILE', sha256: 'a'.repeat(64), sizeBytes: 3, mediaType: 'application/octet-stream',
-    favorite: false, version: 1, createdAt: '2026-11-13T01:00:00Z', updatedAt: '2026-11-13T01:00:00Z' }
+    version: 1, createdAt: '2026-11-13T01:00:00Z', updatedAt: '2026-11-13T01:00:00Z' }
   const identity = { libraryId: source.libraryId, entryId: source.id }
   const pdf = Buffer.from('%PDF-fixture')
   const descriptor = { transferId: '33333333-3333-4333-8333-333333333333', fileName: source.name, mediaType: source.mediaType,

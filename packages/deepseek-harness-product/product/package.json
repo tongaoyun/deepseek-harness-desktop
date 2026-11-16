@@ -62,6 +62,10 @@
     "./library": {
       "types": "./lib/types/library.d.ts",
       "default": "./lib/library.js"
+    },
+    "./auth-screen": {
+      "types": "./lib/types/auth-screen.d.ts",
+      "default": "./lib/auth-screen.js"
     }
   },
   "scripts": {

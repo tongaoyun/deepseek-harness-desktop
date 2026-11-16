@@ -71,6 +71,7 @@
       "@deepseek-harness/product/errors": ["./packages/deepseek-harness-product/product/src/errors.ts"],
       "@deepseek-harness/product/catalog-manager": ["./packages/deepseek-harness-product/product/src/catalog-manager.ts"],
       "@deepseek-harness/product/catalog": ["./packages/deepseek-harness-product/product/src/catalog.ts"],
+      "@deepseek-harness/product/auth-screen": ["./packages/deepseek-harness-product/product/src/auth-screen.ts"],
       "@deepseek-harness/product/protocol": ["./packages/deepseek-harness-product/product/src/protocol.ts"],
       "@deepseek-harness/product/bridge": ["./packages/deepseek-harness-product/product/src/bridge.ts"],
       "@deepseek-harness/product/dingtalk-auth": ["./packages/deepseek-harness-product/product/src/dingtalk-auth.ts"],

@@ -13,7 +13,7 @@ import { en, zh } from '../src/locales.ts'
 const t = makeTranslate(zh, commonZh)
 const renderFactorySlot = () => null
 const library = { id: '11111111-1111-4111-8111-111111111111', name: '目标资料库', description: '', scope: 'PERSONAL',
-  ownerId: 'alice', managerEmployeeId: 'alice', canManage: true, version: 1, createdAt: '2026-11-13T01:00:00Z', updatedAt: '2026-11-13T01:00:00Z' }
+  ownerId: 'alice', companyId: 'company', role: 'OWNER', canManage: true, version: 1, createdAt: '2026-11-13T01:00:00Z', updatedAt: '2026-11-13T01:00:00Z' }
 const selection = { selectionId: '22222222-2222-4222-8222-222222222222', name: '交付资料.md', sizeBytes: 12 }
 const alice = { authenticated: true, employeeId: 'alice' }
 const bob = { authenticated: true, employeeId: 'bob' }
@@ -26,7 +26,7 @@ function fixture(initial: Promise<unknown> = Promise.resolve(alice)) {
     if (method === 'auth.getSession') return identity
     if (method === 'library.files.archive.select') return [selection]
     if (method === 'library.list') return { data: [library], pageIndex: 1, pageSize: 20, totalCount: 1, totalPages: 1 }
-    if (method === 'library.get') return library
+    if (method === 'library.personal.ensure' || method === 'library.get') return library
     if (method === 'library.entries.list') return { data: [], pageIndex: 1, pageSize: 20, totalCount: 0, totalPages: 0 }
     return true
   })
@@ -114,7 +114,7 @@ it.each(['count', 'bytes'] as const)('explains the attachment %s limit and recov
     id: `22222222-2222-4222-8222-${String(index).padStart(12, '0')}`, libraryId: library.id, parentId: null,
     name: `资料 ${index}.md`, kind: 'FILE', sha256: 'a'.repeat(64), mediaType: 'text/markdown',
     sizeBytes: limit === 'count' || index === 2 ? 1 : (index === 0 ? 60 : 40) * 1024 * 1024,
-    favorite: false, version: 1, createdAt: library.createdAt, updatedAt: library.updatedAt,
+    version: 1, createdAt: library.createdAt, updatedAt: library.updatedAt,
   }))
   const original = f.read.getMockImplementation()!
   f.read.mockImplementation(async (method, payload) => {
@@ -133,7 +133,7 @@ it.each(['count', 'bytes'] as const)('explains the attachment %s limit and recov
   for (let index = 0; index < chosen; index++) fireEvent.click(choose(index))
   const dialog = screen.getByRole('dialog'), search = screen.getByRole<HTMLInputElement>('searchbox')
   fireEvent.change(search, { target: { value: '资料' } })
-  await waitFor(() => { expect(screen.getByRole('button', { name: zh.refresh }).getAttribute('aria-busy')).toBe('false') })
+  await waitFor(() => { expect(screen.getByRole('region', { name: zh.library }).querySelector('[aria-busy="true"]')).toBeNull() })
   if (limit === 'count') {
     fireEvent.click(screen.getByRole('button', { name: zh.libraryNext }))
     await screen.findByText(files[chosen]!.name)
@@ -189,7 +189,7 @@ it('locks archive writes until their result and preserves them across same-emplo
   fireEvent.click(await screen.findByRole('button', { name: /目标资料库/ }))
   const save = screen.getByRole('button', { name: zh.saveResource })
   await waitFor(() => { expect(save.getAttribute('aria-disabled')).toBe('false') })
-  await waitFor(() => { expect(screen.getByRole('button', { name: zh.refresh }).getAttribute('aria-busy')).toBe('false') })
+  await waitFor(() => { expect(screen.getByRole('region', { name: zh.library }).querySelector('[aria-busy="true"]')).toBeNull() })
   f.read.mockImplementationOnce(() => saved.promise)
   save.focus(); fireEvent.click(save); fireEvent.click(save)
   const dialog = screen.getByRole('dialog')
@@ -198,7 +198,7 @@ it('locks archive writes until their result and preserves them across same-emplo
   expect(search.readOnly).toBe(true)
   fireEvent.change(search, { target: { value: '不能切换的目录' } })
   fireEvent.click(within(dialog).getByRole('button', { name: zh.library }))
-  fireEvent.click(within(dialog).getByRole('button', { name: zh.refresh }))
+  expect(within(dialog).queryByRole('button', { name: zh.refresh })).toBeNull()
   expect(search.value).toBe('')
   expect(f.read.mock.calls).toHaveLength(reads)
   fireEvent.keyDown(save, { key: 'Escape' })
@@ -279,7 +279,7 @@ it('explains the archive destination lock in the active language without rewriti
   await waitFor(() => { expect(save.getAttribute('aria-disabled')).toBe('false') })
   const search = screen.getByRole('searchbox')
   fireEvent.change(search, { target: { value: '保留查询' } })
-  await waitFor(() => { expect(screen.getByRole('button', { name: zh.refresh }).getAttribute('aria-disabled')).toBe('false') })
+  await waitFor(() => { expect(screen.getByRole('region', { name: zh.library }).querySelector('[aria-busy="true"]')).toBeNull() })
   save.focus(); fireEvent.click(save)
   expect(screen.getByRole('alert')).toBe(notice)
   expect(notice.textContent).toBe(zh.libraryRetryDestination)
@@ -326,7 +326,7 @@ it('releases the snapshot and destination lock when initial identity verificatio
   const next = { ...library, id: '44444444-4444-4444-8444-444444444444', name: '另一资料库' }
   f.read.mockImplementation(async (method, payload) => {
     if (method === 'library.list') return { data: [next], pageIndex: 1, pageSize: 20, totalCount: 1, totalPages: 1 }
-    if (method === 'library.get') return next
+    if (method === 'library.personal.ensure' || method === 'library.get') return next
     return original(method, payload)
   })
   fireEvent.click(screen.getByRole('button', { name: zh.libraryArchive }))

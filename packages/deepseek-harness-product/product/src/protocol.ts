@@ -80,7 +80,7 @@ export type LibraryFileMethod =
 
 /** Allowlisted product desktop operations. */
 export type ProductMethod = typeof PRODUCT_METHODS[number]
-const PRODUCT_METHODS = ['support.device.report', 'support.feedback.submit', 'extensions.save', 'extensions.submit', 'content.submissions.inspect', 'content.submissions.submit', 'extensions.connector.read', 'extensions.connector.update', 'extensions.connector.delete', 'extensions.connector.configuration.read', 'extensions.connector.configuration.save', 'auth.getSession', 'auth.ensureDingTalk', 'auth.beginDingTalk', 'auth.pollDingTalk', 'auth.refresh', 'catalog.refresh', 'connectors.refresh', 'connectors.list', 'connectors.authorization.status', 'connectors.authorization.begin', 'connectors.authorization.revoke', 'library.files.list', 'library.entries.access', 'library.list', 'library.get', 'library.create', 'library.update', 'library.delete', 'library.entries.list', 'library.entries.get', 'library.entries.update', 'library.entries.delete', 'library.entries.favorite', 'library.folders.create', 'library.files.policy', 'library.files.archive.select', 'library.files.upload.select', 'library.files.upload', 'library.files.upload.discard', 'library.files.preview.open', 'library.files.preview.read', 'library.files.preview.close', 'library.files.download', 'library.files.openExternal'] as const
+const PRODUCT_METHODS = ['support.device.report', 'support.feedback.submit', 'extensions.save', 'extensions.submit', 'content.submissions.inspect', 'content.submissions.submit', 'extensions.connector.read', 'extensions.connector.update', 'extensions.connector.delete', 'extensions.connector.configuration.read', 'extensions.connector.configuration.save', 'auth.getSession', 'auth.signOut', 'auth.ensureDingTalk', 'auth.beginDingTalk', 'auth.pollDingTalk', 'auth.refresh', 'catalog.refresh', 'connectors.refresh', 'connectors.list', 'connectors.authorization.status', 'connectors.authorization.begin', 'connectors.authorization.revoke', 'library.files.list', 'library.entries.access', 'library.personal.ensure', 'library.list', 'library.create', 'library.members.list', 'library.members.save', 'library.members.remove', 'library.owner.transfer', 'library.memberOptions.employees', 'library.memberOptions.departments', 'library.get', 'library.update', 'library.delete', 'library.entries.list', 'library.entries.get', 'library.entries.update', 'library.entries.delete', 'library.folders.create', 'library.files.policy', 'library.files.archive.select', 'library.files.upload.select', 'library.files.upload', 'library.files.upload.discard', 'library.files.preview.open', 'library.files.preview.read', 'library.files.preview.close', 'library.files.download', 'library.files.openExternal'] as const
 
 /** Operations available only to the trusted Host. */
 export type ProductRuntimeMethod = typeof PRODUCT_RUNTIME_METHODS[number]
@@ -105,6 +105,7 @@ export interface ProductSession {
   readonly authenticated: boolean
   readonly employeeId?: string
   readonly displayName?: string
+  readonly loginExpiresAt?: string
   readonly expiresAt?: string
 }
 

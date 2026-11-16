@@ -308,7 +308,7 @@
   ],
   "narrative": {
     "northStar": "复用原生 Harness 的资料库工作区",
-    "overview": "资料库管理文件、文件夹及收藏。选中文件后交给原生附件与文件能力使用，预览复用 document.preview；不提供向量检索或解析处理状态。",
+    "overview": "资料库管理文件和文件夹。选中文件后交给原生附件与文件能力使用，预览复用 document.preview；不提供向量检索或解析处理状态。",
     "keyCharacteristics": [
       "沿用原生深浅色语义变量与字体。",
       "先浏览资料库，再进入文件目录。",

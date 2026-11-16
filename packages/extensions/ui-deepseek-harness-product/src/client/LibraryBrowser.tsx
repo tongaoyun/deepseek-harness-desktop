@@ -2,13 +2,13 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import {
   Button,
+  Input,
   IconDatabaseOutlineRegular,
   IconFolderCloseRegular,
   IconDeliverDocRegular,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import {
   LibrarySchema,
-  LibraryEntrySchema,
   LibraryEntryPageSchema,
   LibraryPageSchema,
   type Library,
@@ -16,22 +16,23 @@ import {
 } from '@deepseek-harness/product/library'
 import type { DeepSeekHarnessProductKey } from '../locales.ts'
 import css from '../DeepSeekHarnessProduct.module.css'
-import { useLibraryRequests } from './library-data.ts'
+import { readLibraryTrail, useLibraryRequests } from './library-data.ts'
 import { useResultFocus } from './useResultFocus.ts'
 import { productErrorMessage } from './product-errors.ts'
 import { ProductLoading } from './ProductLoading.tsx'
-import { ProductActionLabel } from './ProductActionLabel.tsx'
 import { LibraryMutation } from './LibraryMutation.tsx'
 import { LibraryPreview } from './LibraryPreview.tsx'
 import type { PropsRenderFactories } from '@deepseek-ai/dsh-client-ui-slots'
 import { LibraryUpload } from './LibraryUpload.tsx'
-type View = 'folder' | 'recent' | 'favorites'
+type View = 'folder' | 'recent'
 export type LibraryText = (key: DeepSeekHarnessProductKey) => string
 export interface LibraryLocation {
   readonly library: Library
   readonly parentId: string | null
+  /** Display name of the confirmed destination folder; absent for a library root. */
+  readonly parentName?: string
 }
-/** Confirmed rows remain mounted while a request refreshes them; search and pagination do not cancel favorite writes.
+/** Confirmed rows remain mounted while a request refreshes them.
  * @param props Optional file selection and native preview factory.
  * @returns Paginated libraries, folders and immutable files.
  */
@@ -42,6 +43,7 @@ export function LibraryBrowser({
   onSelect,
   onLocation,
   foldersOnly = false,
+  allowFolderCreation = true,
   rootLibrary,
   navigationLocked = false,
 }: PropsRenderFactories & {
@@ -49,6 +51,7 @@ export function LibraryBrowser({
   readonly selected?: ReadonlyMap<string, LibraryEntry>
   readonly onSelect?: (entry: LibraryEntry) => void
   readonly foldersOnly?: boolean
+  readonly allowFolderCreation?: boolean
   readonly rootLibrary?: Library
   /** Keep the selected destination and its controls mounted during a parent-owned write. */
   readonly navigationLocked?: boolean
@@ -61,6 +64,7 @@ export function LibraryBrowser({
   const [location, setLocation] = useState<LibraryLocation | undefined>(() =>
     rootLibrary ? { library: rootLibrary, parentId: null } : undefined,
   )
+  const [personalReady, setPersonalReady] = useState(!foldersOnly || rootLibrary !== undefined)
   const [trail, setTrail] = useState<readonly LibraryEntry[]>([])
   const [entries, setEntries] = useState<readonly LibraryEntry[]>()
   const [page, setPage] = useState(1)
@@ -79,13 +83,8 @@ export function LibraryBrowser({
     errorRevision.current++
     setError(failure)
   }, [])
-  const [favoriteFailure, setFavoriteFailure] = useState<{
-    readonly entry: LibraryEntry
-    readonly value: boolean
-    readonly cause: unknown
-  }>()
   const [editor, setEditor] = useState<{
-    kind: 'library' | 'folder' | 'rename' | 'delete' | 'deleteLibrary' | 'move' | 'editLibrary'
+    kind: 'folder' | 'rename' | 'delete' | 'deleteLibrary' | 'move' | 'editLibrary'
     entry?: LibraryEntry
     library?: Library
   }>()
@@ -100,13 +99,12 @@ export function LibraryBrowser({
     modalArea.current = root.current?.ownerDocument.body ?? null
     captureModalClose()
   }
-  const operation = useRef<{ readonly kind: 'folder' | 'favorite'; readonly controller: AbortController }>()
-  const [favoriteId, setFavoriteId] = useState<string>()
+  const operation = useRef<AbortController>()
   const [openingId, setOpeningId] = useState<string>()
-  const operationPending = favoriteId !== undefined || openingId !== undefined
+  const operationPending = openingId !== undefined
   useEffect(
     () => () => {
-      operation.current?.controller.abort()
+      operation.current?.abort()
       operation.current = undefined
     },
     [],
@@ -119,8 +117,8 @@ export function LibraryBrowser({
     onLocation?.(location)
   }, [location, onLocation])
   useEffect(() => {
-    if (operation.current?.kind === 'folder') {
-      operation.current.controller.abort()
+    if (operation.current) {
+      operation.current.abort()
       operation.current = undefined
     }
     setOpeningId(undefined)
@@ -133,44 +131,53 @@ export function LibraryBrowser({
     pageCorrection.current = undefined
     setPending(true)
     const read =
-      location === undefined
-        ? request('library.list', { page: libraryPage, size: 20, query }, controller.signal).then((value) => {
-          const result = LibraryPageSchema.parse(value)
+      !personalReady
+        ? request('library.personal.ensure', {}, controller.signal).then((value) => {
+          const library = LibrarySchema.parse(value)
           controller.signal.throwIfAborted()
-          if (libraryPage > Math.max(1, result.totalPages)) {
-            correctingPage = true
-            const nextPage = Math.max(1, result.totalPages)
-            pageCorrection.current = { key: readKey(nextPage), feedbackRevision }
-            setLibraryPage(nextPage)
-            return
-          }
           capture()
-          setLibraries(result.data)
-          setLibraryPages(result.totalPages)
+          correctingPage = true
+          setLocation({ library, parentId: null })
+          setPersonalReady(true)
         })
-        : Promise.all([
-          request('library.get', { libraryId: location.library.id }, controller.signal),
-          request(
-            'library.entries.list',
-            { libraryId: location.library.id, parentId: location.parentId, page, size: 20, query, view: foldersOnly ? 'folders' : view },
-            controller.signal,
-          ),
-        ]).then(([meta, value]) => {
-          const library = LibrarySchema.parse(meta),
-            result = LibraryEntryPageSchema.parse(value)
-          controller.signal.throwIfAborted()
-          if (page > Math.max(1, result.totalPages)) {
-            correctingPage = true
-            const nextPage = Math.max(1, result.totalPages)
-            pageCorrection.current = { key: readKey(libraryPage, nextPage), feedbackRevision }
-            setPage(nextPage)
-            return
-          }
-          capture()
-          setLocation(current => (current?.library.id === library.id ? { ...current, library } : current))
-          setEntries(result.data)
-          setPages(result.totalPages)
-        })
+        : location === undefined
+          ? request('library.list', { page: libraryPage, size: 20, query }, controller.signal).then((value) => {
+            const result = LibraryPageSchema.parse(value)
+            controller.signal.throwIfAborted()
+            if (libraryPage > Math.max(1, result.totalPages)) {
+              correctingPage = true
+              const nextPage = Math.max(1, result.totalPages)
+              pageCorrection.current = { key: readKey(nextPage), feedbackRevision }
+              setLibraryPage(nextPage)
+              return
+            }
+            capture()
+            setLibraries(result.data)
+            setLibraryPages(result.totalPages)
+          })
+          : Promise.all([
+            request('library.get', { libraryId: location.library.id }, controller.signal),
+            request(
+              'library.entries.list',
+              { libraryId: location.library.id, parentId: location.parentId, page, size: 20, query, view: foldersOnly ? 'folders' : view },
+              controller.signal,
+            ),
+          ]).then(([meta, value]) => {
+            const library = LibrarySchema.parse(meta),
+              result = LibraryEntryPageSchema.parse(value)
+            controller.signal.throwIfAborted()
+            if (page > Math.max(1, result.totalPages)) {
+              correctingPage = true
+              const nextPage = Math.max(1, result.totalPages)
+              pageCorrection.current = { key: readKey(libraryPage, nextPage), feedbackRevision }
+              setPage(nextPage)
+              return
+            }
+            capture()
+            setLocation(current => (current?.library.id === library.id ? { ...current, library } : current))
+            setEntries(result.data)
+            setPages(result.totalPages)
+          })
     void read
       .then(() => {
         if (!controller.signal.aborted && !correctingPage && errorRevision.current === feedbackRevision) {
@@ -191,18 +198,19 @@ export function LibraryBrowser({
       controller.abort()
       if (activeRead.current === controller) activeRead.current = undefined
     }
-  }, [request, location?.library.id, location?.parentId, libraryPage, page, query, view, foldersOnly, revision, capture, reportError])
+  }, [request, personalReady, location?.library.id, location?.parentId, libraryPage, page, query, view, foldersOnly,
+    revision, capture, reportError])
   const navigate = (next: LibraryLocation | undefined, breadcrumbs: readonly LibraryEntry[] = []) => {
     if (navigationLocked || operation.current) return
     const target = next ?? (rootLibrary ? { library: rootLibrary, parentId: null } : undefined)
     if (target?.library.id === location?.library.id && target?.parentId === location?.parentId
       && page === 1 && entryQuery === '' && view === 'folder') return
     capture()
-    setLocation(target)
+    const parentName = breadcrumbs.at(-1)?.name
+    setLocation(target && { ...target, ...(parentName ? { parentName } : {}) })
     setTrail(breadcrumbs)
     setEntries(undefined)
     reportError()
-    setFavoriteFailure(undefined)
     setPage(1)
     setEntryQuery('')
     setView('folder')
@@ -214,26 +222,11 @@ export function LibraryBrowser({
       return
     }
     const controller = new AbortController()
-    const currentOperation = { kind: 'folder' as const, controller }
+    const currentOperation = controller
     operation.current = currentOperation
     setOpeningId(entry.id)
     try {
-      const ancestors = [entry]
-      const visited = new Set([entry.id])
-      let parentId = entry.parentId
-      while (parentId !== null) {
-        if (visited.has(parentId)) throw new Error('Invalid library folder ancestry')
-        visited.add(parentId)
-        const parent = LibraryEntrySchema.parse(await request('library.entries.get', {
-          libraryId: entry.libraryId, entryId: parentId,
-        }, controller.signal))
-        controller.signal.throwIfAborted()
-        if (parent.id !== parentId || parent.libraryId !== entry.libraryId || parent.kind !== 'FOLDER') {
-          throw new Error('Invalid library folder ancestry')
-        }
-        ancestors.unshift(parent)
-        parentId = parent.parentId
-      }
+      const ancestors = await readLibraryTrail(request, entry, controller.signal)
       controller.signal.throwIfAborted()
       operation.current = undefined
       navigate({ library: location.library, parentId: entry.id }, ancestors)
@@ -245,40 +238,6 @@ export function LibraryBrowser({
     } finally {
       if (operation.current === currentOperation) operation.current = undefined
       if (!controller.signal.aborted) setOpeningId(undefined)
-    }
-  }
-  const favorite = async (entry: LibraryEntry, value = !entry.favorite) => {
-    if (operation.current) return
-    const controller = new AbortController()
-    const currentOperation = { kind: 'favorite' as const, controller }
-    operation.current = currentOperation
-    setFavoriteId(entry.id)
-    try {
-      await request(
-        'library.entries.favorite',
-        { libraryId: entry.libraryId, entryId: entry.id, value },
-        controller.signal,
-      )
-      controller.signal.throwIfAborted()
-      capture()
-      setEntries(rows =>
-        rows?.flatMap(row =>
-          row.id !== entry.id
-            ? [row]
-            : view === 'favorites' && !value
-              ? []
-              : [{ ...row, favorite: value }],
-        ),
-      )
-      setFavoriteFailure(current => current?.entry.id === entry.id ? undefined : current)
-      setRevision(current => current + 1)
-    } catch (failure) {
-      if (!controller.signal.aborted) setFavoriteFailure({ entry, value, cause: failure })
-    } finally {
-      if (operation.current === currentOperation) {
-        operation.current = undefined
-        if (!controller.signal.aborted) setFavoriteId(undefined)
-      }
     }
   }
   const committed = () => {
@@ -335,7 +294,7 @@ export function LibraryBrowser({
             </span>
           ))}
         </div>
-        <Button
+        {!foldersOnly && <Button
           variant="outline"
           size="sm"
           aria-disabled={pending || navigationLocked || operationPending}
@@ -345,23 +304,12 @@ export function LibraryBrowser({
           }}
         >
           {t('refresh')}
-        </Button>
-        {!onSelect && !foldersOnly && (
-          <Button
-            variant="primary"
-            size="sm"
-            onClick={() => {
-              setEditor({ kind: 'library' })
-            }}
-          >
-            {t('libraryCreate')}
-          </Button>
-        )}
+        </Button>}
       </div>
       <div className={css.libraryToolbar}>
-        <input
+        <Input
           ref={search}
-          className={css.librarySearch}
+          className={css.librarySearch as string}
           type="search"
           value={query}
           readOnly={navigationLocked}
@@ -382,7 +330,7 @@ export function LibraryBrowser({
           <>
             {!foldersOnly && (
               <div className={css.libraryTabs}>
-                {(['folder', 'recent', 'favorites'] as const).map(value => (
+                {(['folder', 'recent'] as const).map(value => (
                   <Button
                     key={value}
                     variant={view === value ? 'outline' : 'ghost'}
@@ -396,23 +344,25 @@ export function LibraryBrowser({
                       }
                     }}
                   >
-                    {t(value === 'folder' ? 'libraryFiles' : value === 'recent' ? 'libraryRecent' : 'libraryFavorites')}
+                    {t(value === 'folder' ? 'libraryFiles' : 'libraryRecent')}
                   </Button>
                 ))}
               </div>
             )}
-            {!onSelect && !foldersOnly && location.library.canManage && (
+            {!onSelect && allowFolderCreation && location.library.canManage && (
               <>
                 <Button
                   variant="outline"
                   size="sm"
+                  aria-disabled={navigationLocked || operationPending}
                   onClick={() => {
+                    if (navigationLocked || operation.current) return
                     setEditor({ kind: 'folder' })
                   }}
                 >
                   {t('libraryNewFolder')}
                 </Button>
-                <Button
+                {!foldersOnly && <Button
                   variant="primary"
                   size="sm"
                   onClick={() => {
@@ -420,7 +370,7 @@ export function LibraryBrowser({
                   }}
                 >
                   {t('libraryUpload')}
-                </Button>
+                </Button>}
               </>
             )}
           </>
@@ -429,9 +379,9 @@ export function LibraryBrowser({
       <div className={css.libraryFeedback}>
         {error !== undefined && <>
           <div className={css.feedbackResult}>
-            <span aria-hidden="true">{t('loadFailed')}</span>
-            <div role="region" aria-label={t('loadFailed')} tabIndex={0} className={css.catalogError}>
-              <p role="alert">{productErrorMessage(error, t, 'loadFailed')}</p>
+            <span aria-hidden="true">{t('libraryLoadFailed')}</span>
+            <div role="region" aria-label={t('libraryLoadFailed')} tabIndex={0} className={css.catalogError}>
+              <p role="alert">{productErrorMessage(error, t, 'libraryLoadFailed')}</p>
             </div>
           </div>
           <Button
@@ -447,29 +397,6 @@ export function LibraryBrowser({
           </Button>
         </>}
       </div>
-      {!onSelect && !foldersOnly && location && (
-        <div className={css.libraryFeedback}>
-          {favoriteFailure && <>
-            <div className={css.feedbackResult}>
-              <span aria-hidden="true">{t('saveFailed')}</span>
-              <div role="region" aria-label={t('saveFailed')} tabIndex={0} className={css.catalogError}>
-                <p role="alert">{productErrorMessage(favoriteFailure.cause, t, 'saveFailed')}</p>
-              </div>
-            </div>
-            <Button
-              variant="outline"
-              size="sm"
-              aria-disabled={operationPending}
-              aria-busy={favoriteId === favoriteFailure.entry.id}
-              onClick={() => {
-                void favorite(favoriteFailure.entry, favoriteFailure.value)
-              }}
-            >
-              {t('retry')}
-            </Button>
-          </>}
-        </div>
-      )}
       <div className={css.libraryRows} aria-busy={pending}>
         {displayed === undefined && error === undefined && <ProductLoading label={t('loading')} />}
         {location === undefined
@@ -491,12 +418,10 @@ export function LibraryBrowser({
                 {t(
                   library.scope === 'PERSONAL'
                     ? 'scopePersonal'
-                    : library.scope === 'DEPARTMENT'
-                      ? 'scopeDepartment'
-                      : 'scopeCompany',
+                    : 'libraryShared',
                 )}
               </span>
-              {!onSelect && !foldersOnly && library.canManage && (
+              {!onSelect && !foldersOnly && library.scope === 'TEAM' && library.role === 'OWNER' && (
                 <>
                   <Button
                     variant="ghost"
@@ -553,19 +478,6 @@ export function LibraryBrowser({
                 !onSelect &&
                   !foldersOnly && (
                   <>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      aria-pressed={entry.favorite}
-                      aria-disabled={operationPending}
-                      aria-busy={favoriteId === entry.id}
-                      onClick={() => {
-                        void favorite(entry)
-                      }}
-                    >
-                      <ProductActionLabel pending={false} label={t(entry.favorite ? 'libraryUnfavorite' : 'libraryFavorite')}
-                        pendingLabel={t(entry.favorite ? 'libraryFavorite' : 'libraryUnfavorite')} />
-                    </Button>
                     {location.library.canManage && (
                       <>
                         <Button
@@ -602,11 +514,11 @@ export function LibraryBrowser({
               )}
             </article>
           ))}
-        {displayed?.length === 0 && <p className={css.catalogStatus}>{t(
+        {displayed?.length === 0 && <p className={css.libraryDirectoryEmpty}>{t(
           location === undefined ? 'libraryDirectoryEmpty' : foldersOnly ? 'libraryFoldersEmpty' : 'libraryEmpty',
         )}</p>}
       </div>
-      <div className={css.libraryPagination}>
+      <div className={css.libraryPagination} hidden={(location ? page : libraryPage) <= 1 && (location ? pages : libraryPages) <= 1}>
         <Button
           variant="outline"
           size="sm"

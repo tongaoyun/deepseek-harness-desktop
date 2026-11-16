@@ -1,11 +1,12 @@
 /** Product desktop authentication, resource lifecycle, and credential-owning dispatch. */
-import { readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { app, dialog, safeStorage, screen, shell, type BrowserWindow } from 'electron'
 import { DeepSeekHarnessProductBridge, type ProductBridgeOptions, type ProductRuntimeBootstrap } from '@deepseek-harness/product/bridge'
 import { DeepSeekHarnessApiError } from '@deepseek-harness/product'
 import { ProductError } from '@deepseek-harness/product/errors'
+import { EMPLOYEE_AUTH_CLASS_NAME, EMPLOYEE_AUTH_COPY, EMPLOYEE_AUTH_CSS } from '@deepseek-harness/product/auth-screen'
 import { ensureDingTalkSession, DingTalkAuthorizationTimeoutError } from '@deepseek-harness/product/dingtalk-auth'
 import { DINGTALK_AUTHORIZATION_TIMEOUT_MS, isProductRuntimeMethod, type ProductSession } from '@deepseek-harness/product/protocol'
 import { getOrCreateAnonymousUserId } from '@deepseek-ai/dsh-anonymous-user-id'
@@ -39,73 +40,59 @@ interface ProductDesktopExtension {
   close(): Promise<void>
 }
 function deepseekHarnessAuthenticationPage(): string {
+  const copy = EMPLOYEE_AUTH_COPY.zh
   const html = `<!doctype html>
 <html lang="zh-CN"><head><meta charset="utf-8"><meta name="color-scheme" content="light dark">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'">
-<title>DeepSeek Harness</title><style>
-:root{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC",sans-serif;color:#202124;background:#fff}
-@media(prefers-color-scheme:dark){:root{color:#f2f3f5;background:#171817}}
-body{min-height:100vh;margin:0;display:grid;place-items:center}.content{text-align:center;padding:32px}
-.mark{width:42px;height:42px;margin:0 auto 24px;border:3px solid #dfe5e1;border-top-color:#1f8f5f;border-radius:50%;animation:spin .8s linear infinite}
-h1{margin:0 0 10px;font-size:22px;font-weight:600;letter-spacing:0}p{margin:0;color:#777;font-size:14px;letter-spacing:0}
-@media(prefers-color-scheme:dark){p{color:#aaa}.mark{border-color:#343936;border-top-color:#4bc58a}}@keyframes spin{to{transform:rotate(360deg)}}
-</style></head><body><main class="content"><div class="mark" aria-hidden="true"></div><h1>正在连接钉钉</h1><p>请在系统浏览器中完成授权</p></main></body></html>`
+<title>DeepSeek Harness</title><style>body{margin:0}${EMPLOYEE_AUTH_CSS}</style></head>
+<body><div class="${EMPLOYEE_AUTH_CLASS_NAME}"><main><div data-product-auth-mark="pending" aria-hidden="true"></div>
+<h1>${copy.connecting}</h1><p>${copy.hint}</p></main></div></body></html>`
   return `data:text/html;charset=utf-8,${encodeURIComponent(html)}`
 }
 
-interface StoredDeepSeekHarnessSession {
-  readonly version: number
-  readonly session: ProductSession
-  readonly encryptedToken: string
-}
-
 const StoredDeepSeekHarnessSessionSchema = z.object({
-  version: z.literal(1),
+  version: z.literal(2),
+  serverUrl: z.url(),
   session: z.object({
-    authenticated: z.boolean(),
-    employeeId: z.string().min(1).max(256).optional(),
+    authenticated: z.literal(true), employeeId: z.string().min(1).max(256),
     displayName: z.string().max(256).optional(),
-    expiresAt: z.string().max(128).optional(),
-  }).strict().refine(value => !value.authenticated || value.employeeId !== undefined, 'authenticated session requires employeeId'),
-  encryptedToken: z.string().min(1),
+    expiresAt: z.string().regex(/^\d+$/), loginExpiresAt: z.string().regex(/^\d+$/),
+  }).strict(),
+  encryptedCredentials: z.string().min(1),
 }).strict()
+const StoredCredentialsSchema = z.object({ token: z.string().min(1).max(128), refreshToken: z.string().min(1).max(128) }).strict()
 
-/** Restore the product session without exposing the opaque token to Renderer. */
-function readStoredDeepSeekHarnessSession(): { session: ProductSession; token: string } | undefined {
+/** Restore main-owned credentials only for their issuing server. */
+function readStoredDeepSeekHarnessSession(serverUrl: string): { session: ProductSession; token: string; refreshToken: string } | undefined {
   if (!safeStorage.isEncryptionAvailable()) return undefined
   try {
-    const parsed = StoredDeepSeekHarnessSessionSchema.safeParse(
+    const raw = StoredDeepSeekHarnessSessionSchema.parse(
       JSON.parse(readFileSync(join(app.getPath('userData'), 'deepseek-harness-session.json'), 'utf8')))
-    if (!parsed.success) return undefined
-    const raw = parsed.data
-    const token = safeStorage.decryptString(Buffer.from(raw.encryptedToken, 'base64'))
-    if (token === '') return undefined
-    const session: ProductSession = {
-      authenticated: raw.session.authenticated,
-      ...raw.session.employeeId === undefined ? {} : { employeeId: raw.session.employeeId },
-      ...raw.session.displayName === undefined ? {} : { displayName: raw.session.displayName },
-      ...raw.session.expiresAt === undefined ? {} : { expiresAt: raw.session.expiresAt },
-    }
-    return { session, token }
+    if (raw.serverUrl !== serverUrl) return undefined
+    const credentials = StoredCredentialsSchema.parse(JSON.parse(
+      safeStorage.decryptString(Buffer.from(raw.encryptedCredentials, 'base64'))))
+    return { session: { authenticated: true, employeeId: raw.session.employeeId, expiresAt: raw.session.expiresAt,
+      loginExpiresAt: raw.session.loginExpiresAt,
+      ...raw.session.displayName === undefined ? {} : { displayName: raw.session.displayName } }, ...credentials }
   } catch {
     return undefined
   }
 }
 
-/** Persist only an OS-encrypted token and its non-secret identity projection. */
-function persistDeepSeekHarnessSession(session: ProductSession, token: string | undefined): void {
+/** Atomically replace OS-encrypted credentials; a failed write preserves the last complete login. */
+function persistDeepSeekHarnessSession(serverUrl: string, session: ProductSession, token: string | undefined,
+  refreshToken: string | undefined): void {
   const path = join(app.getPath('userData'), 'deepseek-harness-session.json')
-  if (token === undefined || token === '') {
-    rmSync(path, { force: true })
-    return
-  }
-  if (!safeStorage.isEncryptionAvailable()) return
-  const encryptedToken = safeStorage.encryptString(token).toString('base64')
-  writeFileSync(path, JSON.stringify({
-    version: 1, session, encryptedToken,
-  } satisfies StoredDeepSeekHarnessSession), { mode: 0o600 })
+  if (!session.authenticated || !token || !refreshToken) { rmSync(path, { force: true }); return }
+  if (!safeStorage.isEncryptionAvailable()) throw new Error('Operating-system credential encryption is unavailable')
+  const encryptedCredentials = safeStorage.encryptString(JSON.stringify({ token, refreshToken })).toString('base64')
+  const stored = StoredDeepSeekHarnessSessionSchema.parse({ version: 2, serverUrl, session, encryptedCredentials })
+  const temporary = path + '.tmp'
+  try {
+    writeFileSync(temporary, JSON.stringify(stored), { mode: 0o600 })
+    renameSync(temporary, path)
+  } finally { rmSync(temporary, { force: true }) }
 }
-
 
 /** Create credential-owning desktop lifecycle hooks.
  * @param context Trusted shell access to its primary window and Host transport.
@@ -114,12 +101,12 @@ function persistDeepSeekHarnessSession(session: ProductSession, token: string | 
 export function createExtension(context: ExtensionContext): ProductDesktopExtension {
   const lifecycle = new AbortController()
   const operations = new Set<Promise<unknown>>()
-  const storedDeepSeekHarnessSession = readStoredDeepSeekHarnessSession()
   const config = resolveDeepSeekHarnessProductConfig({
     packaged: app.isPackaged,
     resourcesPath: process.resourcesPath,
   })
-  const sessionToken = storedDeepSeekHarnessSession?.token ?? process.env.DEEPSEEK_HARNESS_SESSION_TOKEN
+  const storedDeepSeekHarnessSession = readStoredDeepSeekHarnessSession(config.serverUrl)
+  const sessionToken = storedDeepSeekHarnessSession?.token
   const libraryFilePolicy = config.libraryFiles
   const libraryFiles = new LibraryFiles({
     directory: join(app.getPath('userData'), 'library-files'),
@@ -180,7 +167,7 @@ export function createExtension(context: ExtensionContext): ProductDesktopExtens
       }
       return libraryFiles.invoke(method, input, api, session, lifetime)
     },
-    persistSession: (session, token) => {
+    persistSession: (session, token, refreshToken) => {
       const employeeId = session.authenticated ? session.employeeId : undefined
       const pending: Promise<void>[] = []
       if (employeeId !== libraryFileEmployeeId) {
@@ -193,7 +180,7 @@ export function createExtension(context: ExtensionContext): ProductDesktopExtens
       }
       pending.push(connectorProxy.resetIdentity(employeeId))
       pending.push(personalConnectors.resetIdentity(employeeId))
-      pending.push(Promise.resolve().then(() => { persistDeepSeekHarnessSession(session, token) }))
+      pending.push(Promise.resolve().then(() => { persistDeepSeekHarnessSession(config.serverUrl, session, token, refreshToken) }))
       const operation = Promise.allSettled(pending).then((results) => {
         const errors: unknown[] = []
         for (const result of results) if (result.status === 'rejected') errors.push(result.reason)
@@ -205,6 +192,7 @@ export function createExtension(context: ExtensionContext): ProductDesktopExtens
     },
     serverUrl: config.serverUrl,
     sessionToken,
+    refreshToken: storedDeepSeekHarnessSession?.refreshToken,
     initialSession: storedDeepSeekHarnessSession?.session,
     connectorManagement: async (method, payload, api, session, signal) => {
       const lifetime = signal ?? lifecycle.signal

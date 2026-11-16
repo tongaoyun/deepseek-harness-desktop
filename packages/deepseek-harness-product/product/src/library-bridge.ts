@@ -10,6 +10,9 @@ import {
   LibraryIdentitySchema,
   LibraryFilePageSchema,
   LibraryFileQuerySchema,
+  LibraryMemberPageSchema,
+  LibraryCandidateSchema,
+  LibraryCandidatePageSchema,
 } from './library.ts'
 const id = z.uuid()
 const name = z.string().trim().min(1).max(180)
@@ -44,9 +47,6 @@ const paging = {
 const write = {
   name,
   description: z.string().max(1000),
-  scope: z.enum(['PERSONAL', 'DEPARTMENT', 'COMPANY']),
-  ownerId: z.string().min(1).optional(),
-  managerEmployeeId: z.string().min(1).optional(),
 }
 const key = z.string().regex(/^[A-Za-z0-9._~-]{16,128}$/u)
 /** Dispatch one allowlisted library metadata request.
@@ -77,7 +77,6 @@ export async function invokeLibrary(
       `/api/v1/library-files?${new URLSearchParams(filters)}`, page, size, signal,
     ))
     pageReply({ ...result, data: result.data.map(row => row.entry) }, page, size)
-    reply(result.data.every(row => filters.view !== 'favorites' || row.entry.favorite))
     return result
   }
   if (method === 'library.entries.access') {
@@ -86,6 +85,12 @@ export async function invokeLibrary(
       method: 'PUT', signal,
     })
     reply(result === true)
+    return result
+  }
+  if (method === 'library.personal.ensure') {
+    z.object({}).strict().parse(input)
+    const result = LibrarySchema.parse(await api.request('/api/v1/libraries/personal-root', { method: 'POST', signal }))
+    reply(result.scope === 'PERSONAL' && result.canManage && result.role === 'OWNER')
     return result
   }
   if (method === 'library.list') {
@@ -104,15 +109,6 @@ export async function invokeLibrary(
     pageReply(result, query.page, query.size)
     return result
   }
-  if (method === 'library.create') {
-    const { key: requestKey, ...body } = z
-      .object({ ...write, key })
-      .strict()
-      .parse(input)
-    const result = LibrarySchema.parse(await api.request('/api/v1/libraries', json(body, 'POST', requestKey)))
-    reply(result.name === body.name && result.description === body.description && result.scope === body.scope)
-    return result
-  }
   if (method === 'library.files.policy')
     return z
       .number()
@@ -125,6 +121,45 @@ export async function invokeLibrary(
     reply(result.id === value.libraryId)
     return result
   }
+  if (method === 'library.create') {
+    const { key: requestKey, ...body } = z.object({ ...write, key }).strict().parse(input)
+    const result = LibrarySchema.parse(await api.request('/api/v1/libraries', json(body, 'POST', requestKey)))
+    reply(result.scope === 'TEAM' && result.role === 'OWNER' && result.canManage && result.name === body.name && result.description === body.description)
+    return result
+  }
+  if (method === 'library.memberOptions.employees') {
+    const { query, page, size } = z.object({ query: z.string().max(180).default(''), ...paging }).strict().parse(input)
+    const result = LibraryCandidatePageSchema.parse(await api.list(`/api/v1/libraries/member-options/employees?${new URLSearchParams({ query })}`, page, size, signal))
+    pageReply(result, page, size)
+    return result
+  }
+  if (method === 'library.memberOptions.departments') {
+    z.object({}).strict().parse(input)
+    return z.array(LibraryCandidateSchema).parse(await api.request('/api/v1/libraries/member-options/departments', { signal }))
+  }
+  if (method === 'library.members.list') {
+    const { libraryId, query, page, size } = z.object({ libraryId: id, query: z.string().max(180).default(''), ...paging }).strict().parse(input)
+    const result = LibraryMemberPageSchema.parse(await api.list(`/api/v1/libraries/${libraryId}/members?${new URLSearchParams({ query })}`, page, size, signal))
+    pageReply({ ...result, data: result.data.map(row => ({ id: `${row.subjectType}:${row.subjectId}` })) }, page, size)
+    return result
+  }
+  if (method === 'library.members.save' || method === 'library.members.remove' || method === 'library.owner.transfer') {
+    const subject = { subjectType: z.enum(['EMPLOYEE', 'DEPARTMENT', 'COMPANY']), subjectId: z.string().min(1).max(128) }
+    const value = method === 'library.owner.transfer'
+      ? z.object({ libraryId: id, employeeId: z.string().min(1).max(128), version }).strict().parse(input)
+      : method === 'library.members.save'
+        ? z.object({ libraryId: id, ...subject, role: z.enum(['EDITOR', 'VIEWER']), version }).strict().parse(input)
+        : z.object({ libraryId: id, ...subject, version }).strict().parse(input)
+    const { libraryId, ...body } = value
+    const path = 'employeeId' in value ? 'owner' : 'members'
+    const result = LibrarySchema.parse(await api.request(`/api/v1/libraries/${libraryId}/${path}${method === 'library.members.remove' && 'subjectType' in value
+      ? `/${value.subjectType}/${encodeURIComponent(value.subjectId)}?version=${value.version}` : ''}`,
+    method === 'library.members.remove' ? { method: 'DELETE', signal } : json(body, 'PUT')))
+    reply(result.id === libraryId && result.scope === 'TEAM' && result.version === value.version + 1
+      && result.role === (method === 'library.owner.transfer' ? 'EDITOR' : 'OWNER') && result.canManage)
+    if ('employeeId' in value) reply(result.ownerId === value.employeeId)
+    return result
+  }
   if (method === 'library.update') {
     const { libraryId, ...body } = z
       .object({ libraryId: id, ...write, version })
@@ -135,8 +170,7 @@ export async function invokeLibrary(
       result.id === libraryId &&
         result.version === body.version + 1 &&
         result.name === body.name &&
-        result.description === body.description &&
-        result.scope === body.scope,
+        result.description === body.description,
     )
     return result
   }
@@ -155,7 +189,7 @@ export async function invokeLibrary(
         libraryId: id,
         parentId: id.nullable().optional(),
         query: z.string().max(180).default(''),
-        view: z.enum(['folder', 'folders', 'recent', 'favorites']).default('folder'),
+        view: z.enum(['folder', 'folders', 'recent']).default('folder'),
         ...paging,
       })
       .strict()
@@ -230,18 +264,6 @@ export async function invokeLibrary(
       { method: 'DELETE', signal },
     )
     reply(result === true)
-    return result
-  }
-  if (method === 'library.entries.favorite') {
-    const value = z
-      .object({ ...LibraryIdentitySchema.shape, value: z.boolean() })
-      .strict()
-      .parse(input)
-    const result = await api.request(
-      `/api/v1/libraries/${value.libraryId}/entries/${value.entryId}/favorite?value=${value.value}`,
-      { method: 'PUT', signal },
-    )
-    reply(result === value.value)
     return result
   }
   throw new Error('Unsupported library metadata operation')

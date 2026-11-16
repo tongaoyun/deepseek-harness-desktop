@@ -8,7 +8,7 @@ description: "认证产品桌面用户，管理凭据、原生操作与产品资
 <a id="summary"></a>
 ## 概述
 
-进入企业工作区前通过钉钉登录。员工令牌由 Electron 主进程使用操作系统加密存储。可信桌面扩展管理产品请求与资源。
+进入企业工作区前通过钉钉登录。短期访问令牌和 30 天长期登录凭据由 Electron 主进程使用操作系统加密存储，按服务地址隔离；凭据文件原子替换，不向渲染进程传递。重启后静默恢复登录，临时断网保留凭据。可信桌面扩展管理产品请求与资源。
 
 <a id="table-of-contents"></a>
 ## 目录
@@ -38,7 +38,7 @@ AI 浏览器操作使用原生 Playwright MCP，以有窗口的独立 Chromium �
 
 同一扩展的并发 Host 准备请求共享一个操作；关闭会取消并等待准备、认证、目录同步与桥接的实际结束。重复关闭共享同一个清理结果，避免退出期间重复销毁资源或让迟到的启动结果继续写入配置。
 
-企业登录、工作区配置和推理 overlay 准备完成前不启动 Host。桌面壳将认证后环境和有序 overlay 交给原生 profile 启动器，加载产品运行时与内建专家、技能；员工令牌留在主进程。通用扩展传输与页面重载规则见 [Desktop](../../../apps/desktop/README.md#low-level-development-overrides)。
+企业登录、工作区配置和推理 overlay 准备完成前不启动 Host。启动授权和工作区内重新登录共用整窗登录布局；工作区内使用原生 Modal 保留会话节点、草稿和返回焦点，不导航或重载工作区。桌面壳将认证后环境和有序 overlay 交给原生 profile 启动器，加载产品运行时与内建专家、技能；员工令牌留在主进程。通用扩展传输与页面重载规则见 [Desktop](../../../apps/desktop/README.md#low-level-development-overrides)。
 
 通过 `pnpm --dir apps/product-desktop run package <target>` 打包产品，未签名制品添加 `--unsigned`。该入口为官方构建流程选择产品组合。内部桌面 CI 与发布流程使用此入口；根目录的 `package:desktop:*` 命令打包不含产品资源的官方桌面。
 

@@ -90,6 +90,24 @@ describe('DeepSeekHarnessProductBridge', () => {
     expect(JSON.stringify(bridge.getSession())).not.toContain('opaque-secret')
   })
 
+  it('prepares a personal root through the public bridge and validates manual team creation', async () => {
+    const library = { id: '11111111-1111-4111-8111-111111111111', name: '我的资料', description: '', scope: 'PERSONAL',
+      ownerId: 'employee-1', companyId: 'company', role: 'OWNER', canManage: true, version: 1,
+      createdAt: '2026-11-14T01:00:00Z', updatedAt: '2026-11-14T01:00:00Z' }
+    const fetch = vi.fn(async (input: Parameters<typeof globalThis.fetch>[0], init?: RequestInit) => {
+      expect(requestUrl(input).pathname).toBe('/api/v1/libraries/personal-root')
+      expect(init?.method).toBe('POST')
+      return Response.json({ success: true, data: library })
+    })
+    const bridge = new DeepSeekHarnessProductBridge({ serverUrl: 'https://deepseek-harness.test', fetch,
+      sessionToken: 'employee-session', initialSession: { authenticated: true, employeeId: 'employee-1' } })
+    try {
+      await expect(bridge.invoke('library.personal.ensure', {})).resolves.toEqual(library)
+      await expect(bridge.invoke('library.create', {})).rejects.toThrow()
+      expect(fetch).toHaveBeenCalledOnce()
+    } finally { await bridge.dispose() }
+  })
+
   it('rejects product methods outside the allowlist', async () => {
     const bridge = new DeepSeekHarnessProductBridge()
     await expect(bridge.invoke('shell.exec')).rejects.toThrow('unsupported method')
@@ -201,15 +219,15 @@ describe('DeepSeekHarnessProductBridge', () => {
       fetch: async input => new Request(input).url.endsWith('/authorization-requests')
         ? Response.json({ success: true, data: { state: 'state-12345678', authorizationUrl: 'https://login.example.test/dingtalk' } })
         : Response.json({ success: true, data: {
-          status: 'authorized', session: { sessionToken: 'private-employee-token', expiresAt,
-            employee: { employeeId: 'employee-1', employeeName: 'Employee' } }, extraSecret: 'private-employee-token',
+          status: 'authorized', session: { sessionToken: 'private-employee-token', refreshToken: 'private-login', expiresAt, refreshExpiresAt: expiresAt + 2592000,
+            employee: { employeeId: 'employee-1', employeeName: 'Employee', teamId: '' } }, extraSecret: 'private-employee-token',
         } }),
     })
     try {
       await bridge.invoke('auth.beginDingTalk')
       const result = await bridge.invoke('auth.pollDingTalk', { state: 'state-12345678' })
       expect(result).toEqual({ status: 'authorized', session: { authenticated: true,
-        employeeId: 'employee-1', displayName: 'Employee', expiresAt: String(expiresAt) } })
+        employeeId: 'employee-1', displayName: 'Employee', expiresAt: String(expiresAt), loginExpiresAt: String(expiresAt + 2592000) } })
       expect(JSON.stringify(result)).not.toContain('private-employee-token')
     } finally { await bridge.dispose() }
   })
@@ -312,7 +330,7 @@ describe('DeepSeekHarnessProductBridge', () => {
         return Promise.resolve(Response.json({ success: true, data: { sessionToken: 'rotated' } }))
       },
     })
-    await client.refreshSession()
+    await client.refreshSession('remembered-login')
     expect(requests).toHaveLength(1)
     const request = requests[0]
     if (request === undefined) throw new Error('expected one authenticated request')

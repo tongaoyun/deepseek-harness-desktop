@@ -8,8 +8,14 @@ function deferred<T>() {
   return { promise, resolve }
 }
 
-function refreshed(employeeId: string, sessionToken: string) {
-  return Response.json({ success: true, data: { sessionToken, employee: { employeeId } } })
+function sessionReceipt(employeeId: string, sessionToken: string, refreshToken = 'remembered-a') {
+  return { sessionToken, refreshToken, expiresAt: Math.floor(Date.now() / 1000) + 1800,
+    refreshExpiresAt: Math.floor(Date.now() / 1000) + 2592000,
+    employee: { employeeId, employeeName: 'Employee', teamId: '' } }
+}
+
+function refreshed(employeeId: string, sessionToken: string, refreshToken = 'remembered-a') {
+  return Response.json({ success: true, data: sessionReceipt(employeeId, sessionToken, refreshToken) })
 }
 
 function authorization(state = 'state-1234567890') {
@@ -17,16 +23,14 @@ function authorization(state = 'state-1234567890') {
 }
 
 function authorized() {
-  return Response.json({ success: true, data: { status: 'authorized', session: {
-    sessionToken: 'token-a', employee: { employeeId: 'employee-a' },
-  } } })
+  return Response.json({ success: true, data: { status: 'completed', session: sessionReceipt('employee-a', 'token-a') } })
 }
 
 it('continues browser sign-in after the shared refresh rejects a stored session', async () => {
   let refreshes = 0
   const opened = vi.fn(async (_url: string) => {})
   const bridge = new DeepSeekHarnessProductBridge({ serverUrl: 'https://product.test',
-    sessionToken: 'expired-token', initialSession: { authenticated: true, employeeId: 'employee-a',
+    sessionToken: 'expired-token', refreshToken: 'remembered-a', initialSession: { authenticated: true, employeeId: 'employee-a',
       expiresAt: String(Date.now() / 1000 + 10) },
     fetch: async (input) => {
       const url = new Request(input).url
@@ -61,7 +65,7 @@ it.each(['employee-changed', 'superseded', 'cancelled'] as const)('rejects an ob
     const pending = bridge.invoke('auth.pollDingTalk', { state: 'state-1234567890' }, controller.signal)
     const rejected = expect(pending).rejects.toThrow()
     await started.promise
-    if (reason === 'employee-changed') bridge.setSession({ authenticated: true, employeeId: 'employee-b' }, 'token-b')
+    if (reason === 'employee-changed') bridge.setSession({ authenticated: true, employeeId: 'employee-b' }, 'token-b', 'remembered-b')
     if (reason === 'superseded') await bridge.invoke('auth.beginDingTalk')
     if (reason === 'cancelled') controller.abort(new Error('Caller cancelled login'))
     response.resolve(authorized())
@@ -76,7 +80,7 @@ it.each(['refresh', 'begin', 'poll'] as const)('propagates cancelled sign-in thr
   const started = deferred<boolean>()
   const response = deferred<Response>()
   const bridge = new DeepSeekHarnessProductBridge({ serverUrl: 'https://product.test',
-    ...stage === 'refresh' ? { sessionToken: 'old-token', initialSession: { authenticated: true, employeeId: 'employee-a' } } : {},
+    ...stage === 'refresh' ? { sessionToken: 'old-token', refreshToken: 'remembered-a', initialSession: { authenticated: true, employeeId: 'employee-a' } } : {},
     fetch: async (input) => {
       const url = new Request(input).url
       if (stage === 'refresh' && url.endsWith('/session/refresh')
@@ -114,11 +118,11 @@ it.each(['success', 'unauthorized'] as const)('discards a previous employee refr
   const started = deferred<boolean>()
   const response = deferred<Response>()
   const bridge = new DeepSeekHarnessProductBridge({ serverUrl: 'https://product.test',
-    sessionToken: 'token-a', initialSession: { authenticated: true, employeeId: 'employee-a' },
+    sessionToken: 'token-a', refreshToken: 'remembered-a', initialSession: { authenticated: true, employeeId: 'employee-a' },
     fetch: async (input, init) => {
       const request = new Request(input, init)
       if (request.url.endsWith('/session/refresh')) {
-        if (request.headers.get('authorization') === 'Bearer token-b') return refreshed('employee-b', 'new-b')
+        if (request.headers.get('authorization') === 'Bearer token-b') return refreshed('employee-b', 'new-b', 'remembered-b')
         started.resolve(true); return response.promise
       }
       return Response.json({ success: true, data: 52428800, pageIndex: 1, pageSize: 100, totalCount: 0, totalPages: 0 })
@@ -127,7 +131,7 @@ it.each(['success', 'unauthorized'] as const)('discards a previous employee refr
     const pending = bridge.invoke('auth.refresh')
     const rejected = expect(pending).rejects.toThrow('Product employee identity changed')
     await started.promise
-    bridge.setSession({ authenticated: true, employeeId: 'employee-b' }, 'token-b')
+    bridge.setSession({ authenticated: true, employeeId: 'employee-b' }, 'token-b', 'remembered-b')
     await bridge.invoke('auth.refresh')
     response.resolve(outcome === 'success' ? refreshed('employee-a', 'new-a') : Response.json({
       success: false, errCode: 'EMPLOYEE_UNAUTHORIZED', errMessage: 'Old session expired',
@@ -141,7 +145,7 @@ it.each(['connectors.authorization.status', 'bootstrap'] as const)('cancels an o
   const started = deferred<boolean>()
   const response = deferred<Response>()
   const bridge = new DeepSeekHarnessProductBridge({ serverUrl: 'https://product.test',
-    sessionToken: 'token-a', initialSession: { authenticated: true, employeeId: 'employee-a' },
+    sessionToken: 'token-a', refreshToken: 'remembered-a', initialSession: { authenticated: true, employeeId: 'employee-a' },
     fetch: async (input) => {
       if (new Request(input).url.endsWith(method === 'bootstrap' ? '/bootstrap' : '/connectors/connector-test/authorization')) {
         started.resolve(true); return response.promise
@@ -152,7 +156,7 @@ it.each(['connectors.authorization.status', 'bootstrap'] as const)('cancels an o
     const pending = method === 'bootstrap' ? bridge.loadRuntimeBootstrap() : bridge.invoke(method, { id: 'connector-test' })
     const rejected = expect(pending).rejects.toThrow('Product employee identity changed')
     await started.promise
-    bridge.setSession({ authenticated: true, employeeId: 'employee-b' }, 'token-b')
+    bridge.setSession({ authenticated: true, employeeId: 'employee-b' }, 'token-b', 'remembered-b')
     response.resolve(Response.json({ success: false, errCode: 'EMPLOYEE_UNAUTHORIZED', errMessage: 'Old session expired' }, { status: 401 }))
     await rejected
     expect(bridge.getSession()).toMatchObject({ authenticated: true, employeeId: 'employee-b' })
@@ -163,7 +167,7 @@ it('does not sign out a renewed session when an older token returns unauthorized
   const started = deferred<boolean>()
   const response = deferred<Response>()
   const bridge = new DeepSeekHarnessProductBridge({ serverUrl: 'https://product.test',
-    sessionToken: 'old-token', initialSession: { authenticated: true, employeeId: 'employee-a' },
+    sessionToken: 'old-token', refreshToken: 'remembered-a', initialSession: { authenticated: true, employeeId: 'employee-a' },
     fetch: async (input) => {
       const url = new Request(input).url
       if (url.endsWith('/connectors/connector-test/authorization')) { started.resolve(true); return response.promise }
@@ -188,7 +192,7 @@ it.each(['success', 'failure'] as const)('cancels one waiter without cancelling 
   let refreshSignal: AbortSignal | null | undefined
   let requests = 0
   const bridge = new DeepSeekHarnessProductBridge({ serverUrl: 'https://product.test',
-    sessionToken: 'old-token', initialSession: { authenticated: true, employeeId: 'employee-a',
+    sessionToken: 'old-token', refreshToken: 'remembered-a', initialSession: { authenticated: true, employeeId: 'employee-a',
       expiresAt: String(Date.now() / 1000 + 120) },
     fetch: async (input, init) => {
       const url = new Request(input).url
@@ -240,7 +244,7 @@ it.each(['employee-change', 'disposal'] as const)('releases session refresh wait
   let refreshSignal: AbortSignal | null | undefined
   let requests = 0
   const bridge = new DeepSeekHarnessProductBridge({ serverUrl: 'https://product.test',
-    sessionToken: 'token-a', initialSession: { authenticated: true, employeeId: 'employee-a',
+    sessionToken: 'token-a', refreshToken: 'remembered-a', initialSession: { authenticated: true, employeeId: 'employee-a',
       expiresAt: String(Date.now() / 1000 + 120) },
     fetch: async (input, init) => {
       const url = new Request(input).url
@@ -258,7 +262,7 @@ it.each(['employee-change', 'disposal'] as const)('releases session refresh wait
   const pending = bridge.invoke('library.files.policy', {}).catch((error: unknown) => { reason = error })
   try {
     await started.promise
-    if (event === 'employee-change') bridge.setSession({ authenticated: true, employeeId: 'employee-b' }, 'token-b')
+    if (event === 'employee-change') bridge.setSession({ authenticated: true, employeeId: 'employee-b' }, 'token-b', 'remembered-b')
     else disposal = bridge.dispose().then(() => { disposed = true })
     await expect.poll(() => reason).toMatchObject({ message: event === 'employee-change'
       ? 'Product employee identity changed' : 'Product bridge closed' })

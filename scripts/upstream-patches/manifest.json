@@ -1141,7 +1141,7 @@
         {
           "path": "packages/extensions/cordis-client-runner/src/client/slot-catalog.ts",
           "before": "842f3eb08cf05186b5b484aa08734579ff882971e72604c1e231ce52ed6a1bc0",
-          "after": "cab9c16291024177a989ef05c0d6475a234f29e607bdcef59b5e7c6918c25b78"
+          "after": "9c58c4e2e617811c929b6b0aabb69d6a2ab1bb82e89555f79627c0de9eca8f3b"
         },
         {
           "path": "packages/extensions/cordis-client-runner/tests/api-catalog.client.spec.ts",
@@ -1296,7 +1296,7 @@
         {
           "path": "pnpm-lock.yaml",
           "before": "c24a38565023f08480f3832a554a676ad7479d36c0868063c85ad66ba6d3e68a",
-          "after": "64b7750ac9bbad1c10ab4901b059b3bc108b94f347c718f41663af5eb501f82e"
+          "after": "6e4c3e9e3fa1ab7cddbf9ad183a702156b11f822a07309f3123874e1a76c5221"
         },
         {
           "path": "README.i18n.yaml",
@@ -1491,7 +1491,7 @@
         {
           "path": "tsconfig.base.json",
           "before": "9d4ba53d7ecc28ff95070a37d4d6597ec1eec735d86de7fe0b9b7ed0628904c6",
-          "after": "60cb78b6961825c325da7b6bb5068ec5df104bc2086c076bde258f41201ce452"
+          "after": "290ad112ac5bcea51290fd3e4b09663a8f50a630ce1bf83a1927c3871b632fec"
         },
         {
           "path": "tsconfig.client.json",

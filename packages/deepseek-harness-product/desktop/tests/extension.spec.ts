@@ -1,3 +1,4 @@
+import type { BrowserWindow } from 'electron'
 import { beforeEach, expect, it, vi } from 'vitest'
 import { DingTalkAuthorizationTimeoutError } from '@deepseek-harness/product/dingtalk-auth'
 import type { ProductBridgeOptions } from '@deepseek-harness/product/bridge'
@@ -17,6 +18,7 @@ const fixture = vi.hoisted(() => ({ authenticate: vi.fn<typeof import('@deepseek
   bootstrap: vi.fn(async () => ({ modelApiKey: 'model-key', endpoints: { litellm: 'https://example.test/v1' }, models: ['deepseek-v4-flash', 'gpt-example'] })),
   connectorsClose: vi.fn(async () => {}), dispose: vi.fn(),
   libraryPrepare: vi.fn(async () => {}), libraryClose: vi.fn(async () => {}), writeFile: vi.fn(), removeFile: vi.fn(),
+  readFile: vi.fn(), renameFile: vi.fn(),
   encryptionAvailable: vi.fn(() => false),
   libraryReset: vi.fn(async () => {}),
   companyPrepare: vi.fn(async () => {}), companyClose: vi.fn(async () => {}),
@@ -37,11 +39,12 @@ vi.mock('../src/builtin-capabilities.ts', () => ({ builtinCapabilityPatches: () 
 vi.mock('../src/native-capabilities.ts', () => ({ prepareNativeCapabilities: async () => {} }))
 
 vi.mock('node:fs', async original => ({ ...await original<typeof import('node:fs')>(), writeFileSync: fixture.writeFile,
-  rmSync: fixture.removeFile }))
+  rmSync: fixture.removeFile, readFileSync: fixture.readFile, renameSync: fixture.renameFile }))
 vi.mock('electron', () => ({
   app: { isPackaged: false, getPath: () => '/unused-fixture', getAppPath: () => '/unused-fixture', getVersion: () => '0.1.0', quit: fixture.quit },
   dialog: { showMessageBox: fixture.dialog }, shell: { openExternal: vi.fn(async () => {}) },
-  safeStorage: { isEncryptionAvailable: fixture.encryptionAvailable, encryptString: (value: string) => Buffer.from(value) },
+  safeStorage: { isEncryptionAvailable: fixture.encryptionAvailable,
+    encryptString: (value: string) => Buffer.from(value), decryptString: (value: Buffer) => value.toString() },
   screen: { getAllDisplays: () => [{ scaleFactor: 2 }] },
 }))
 vi.mock('../src/deepseek-harness-product-config.ts', () => ({ resolveDeepSeekHarnessProductConfig: () => ({ serverUrl: 'https://example.test',
@@ -81,6 +84,7 @@ beforeEach(() => {
   fixture.companyPrepare.mockReset().mockResolvedValue(); fixture.companyClose.mockReset().mockResolvedValue()
   fixture.expertVersion.mockReset().mockResolvedValue('/company/resources/orders')
   fixture.libraryReset.mockReset().mockResolvedValue()
+  fixture.readFile.mockReset().mockImplementation(() => { throw new Error('Missing stored login') }); fixture.renameFile.mockReset()
   fixture.writeFile.mockReset(); fixture.removeFile.mockReset(); fixture.encryptionAvailable.mockReset().mockReturnValue(false)
 })
 
@@ -627,11 +631,11 @@ it.each(['save', 'remove'] as const)('invalidates employee resources and joins c
     fixture.encryptionAvailable.mockReturnValue(true)
     const storage = operation === 'save' ? fixture.writeFile : fixture.removeFile
     storage.mockImplementationOnce(() => { throw failure })
-    const session = operation === 'save' ? { authenticated: true, employeeId: 'second' } : { authenticated: false }
+    const session = operation === 'save' ? { authenticated: true, employeeId: 'second', expiresAt: '2000000000', loginExpiresAt: '2002592000' } : { authenticated: false }
     const token = operation === 'save' ? 'fixture-token' : undefined
     let settled = false
     expect(() => {
-      pending = Promise.resolve(persist(session, token)).then((value) => { settled = true; return value },
+      pending = Promise.resolve(persist(session, token, operation === 'save' ? 'remembered-token' : undefined)).then((value) => { settled = true; return value },
         (error: unknown) => { settled = true; return error })
     }).not.toThrow()
     await entered.promise
@@ -647,4 +651,58 @@ it.each(['save', 'remove'] as const)('invalidates employee resources and joins c
     await extension.close()
     resets.mockRestore()
   }
+})
+
+it('shows the shared startup page and never navigates away from an existing workspace for reauthorization', async () => {
+  const window = { loadURL: vi.fn(async (_url: string) => {}), isDestroyed: () => false,
+    isMinimized: () => false, show: vi.fn(), focus: vi.fn() }
+  const browserWindow: Partial<BrowserWindow> = window
+  fixture.authenticate.mockImplementation(async (_bridge, open) => {
+    await open('https://example.test/authorize')
+    return fixture.session
+  })
+  const extension = createExtension({ getWindow: () => browserWindow as BrowserWindow,
+    isQuitting: () => false, requestHost: async () => ({}) })
+  try {
+    await extension.prepareHost({ directory: '/unused-profile', installAnchor: '/unused-runtime/package.json' })
+    const url = window.loadURL.mock.calls[0]![0]
+    const html = decodeURIComponent(url.slice(url.indexOf(',') + 1))
+    expect(html).toContain('product-employee-authorization')
+    expect(html).toContain('正在连接钉钉')
+    expect(html).toContain('请在系统浏览器中完成授权')
+    expect(window.loadURL).toHaveBeenCalledOnce()
+    await extension.invoke('auth.ensureDingTalk')
+    expect(fixture.authenticate).toHaveBeenCalledTimes(2)
+    expect(window.loadURL).toHaveBeenCalledOnce()
+  } finally { await extension.close() }
+})
+
+it('atomically saves OS-encrypted login credentials and restores them after weeks for the issuing server only', async () => {
+  fixture.encryptionAvailable.mockReturnValue(true)
+  const extension = createExtension({ getWindow: () => undefined, isQuitting: () => false, requestHost: async () => ({}) })
+  const session = { authenticated: true, employeeId: 'fixture', displayName: '员工',
+    expiresAt: String(Math.floor(Date.now() / 1000) - 21 * 86400),
+    loginExpiresAt: String(Math.floor(Date.now() / 1000) + 9 * 86400) }
+  try {
+    await fixture.bridgeOptions.mock.calls[0]![0].persistSession!(session, 'private-access', 'private-remembered')
+    const stored = fixture.writeFile.mock.calls.find(([path]) => String(path).endsWith('deepseek-harness-session.json.tmp'))
+    expect(stored).toBeDefined()
+    expect(stored?.[2]).toEqual({ mode: 0o600 })
+    const saved = String(stored?.[1])
+    expect(saved).not.toContain('private-access')
+    expect(saved).not.toContain('private-remembered')
+    expect(fixture.renameFile).toHaveBeenCalledWith('/unused-fixture/deepseek-harness-session.json.tmp', '/unused-fixture/deepseek-harness-session.json')
+    fixture.readFile.mockReturnValue(saved)
+    const restored = createExtension({ getWindow: () => undefined, isQuitting: () => false, requestHost: async () => ({}) })
+    try {
+      expect(fixture.bridgeOptions.mock.calls.at(-1)?.[0]).toMatchObject({ initialSession: session,
+        sessionToken: 'private-access', refreshToken: 'private-remembered' })
+    } finally { await restored.close() }
+    fixture.readFile.mockReturnValue(JSON.stringify({ ...JSON.parse(saved), serverUrl: 'https://other-server.test' }))
+    const otherServer = createExtension({ getWindow: () => undefined, isQuitting: () => false, requestHost: async () => ({}) })
+    try {
+      expect(fixture.bridgeOptions.mock.calls.at(-1)?.[0].refreshToken).toBeUndefined()
+      expect(fixture.bridgeOptions.mock.calls.at(-1)?.[0].sessionToken).toBeUndefined()
+    } finally { await otherServer.close() }
+  } finally { await extension.close() }
 })

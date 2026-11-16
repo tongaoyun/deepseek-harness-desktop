@@ -49,11 +49,12 @@ export interface ProductBridgeOptions {
   readonly libraryFiles?: (method: LibraryFileMethod, payload: Readonly<Record<string, unknown>>, api: DeepSeekHarnessApiClient,
     session: ProductSession, signal?: AbortSignal) => Promise<unknown>
   readonly serverUrl?: string | undefined
+  readonly refreshToken?: string | undefined
   readonly sessionToken?: string | undefined
   readonly initialSession?: ProductSession | undefined
   /** Testable main-process HTTP transport. Renderer code never supplies this function. */
   readonly fetch?: typeof fetch
-  readonly persistSession?: (session: ProductSession, sessionToken: string | undefined) => void | Promise<void>
+  readonly persistSession?: (session: ProductSession, sessionToken: string | undefined, refreshToken?: string) => void | Promise<void>
   /** Main-owned connector management, with authenticated API access and UI-safe employee identity. */
   readonly connectorManagement?: (method: string, payload: Readonly<Record<string, unknown>>, api: DeepSeekHarnessApiClient,
     session: ProductSession, signal?: AbortSignal) => Promise<unknown>
@@ -68,6 +69,7 @@ const SESSION_REFRESH_LEAD_SECONDS = 5 * 60
 const SESSION_REFRESH_RETRY_SECONDS = 30
 /** Main-process product API boundary exposed to the Renderer through preload. */
 export class DeepSeekHarnessProductBridge {
+  private refreshToken: string | undefined
   private sessionToken: string | undefined
   private identityLifecycle = new AbortController()
   private session: ProductSession
@@ -78,6 +80,7 @@ export class DeepSeekHarnessProductBridge {
   private readonly support?: ProductBridgeOptions['support']
   private readonly catalog: ProductCatalogManager
   private readonly libraryFiles: ProductBridgeOptions['libraryFiles']
+  private sessionSignOut: Promise<void> | undefined
   private sessionRefresh: Promise<void> | undefined
   private readonly refreshOperations = new Set<Promise<void>>()
   private sessionRefreshTimer: ReturnType<typeof setTimeout> | undefined
@@ -86,6 +89,7 @@ export class DeepSeekHarnessProductBridge {
 
   constructor(options: ProductBridgeOptions = {}) {
     this.libraryFiles = options.libraryFiles
+    this.refreshToken = options.refreshToken
     this.sessionToken = options.sessionToken
     this.session = options.initialSession ?? (options.sessionToken === undefined ? { authenticated: false } : { authenticated: true })
     this.persistSession = options.persistSession
@@ -146,31 +150,36 @@ export class DeepSeekHarnessProductBridge {
 
   /** Replace the current session and persist the opaque token outside the Renderer.
    * @param session - UI-safe employee session.
-   * @param token - Opaque token retained by the main process.
+   * @param token - Short-lived access token retained by the main process.
+   * @param refreshToken - Remembered-login credential retained by the main process.
    */
-  setSession(session: ProductSession, token?: string): void {
-    this.commitSession(session, token, false)
+  setSession(session: ProductSession, token?: string, refreshToken?: string): void {
+    this.commitSession(session, token, refreshToken, false)
   }
 
   /** A successful refresh may establish its token's missing employee identity
    * without cancelling the refresh or its concurrent sign-in waiters.
    */
-  private commitSession(session: ProductSession, token: string | undefined, establishesEmployee: boolean): void {
+  private commitSession(session: ProductSession, token: string | undefined, refreshToken: string | undefined,
+    establishesEmployee: boolean): void {
     if (this.closed) return
     this.authorizationAttempt?.controller.abort(new Error('Product employee session changed'))
     this.authorizationAttempt = undefined
-    const previousEmployee = this.session.employeeId
+    const identityChanged = !session.authenticated || session.employeeId !== this.session.employeeId
+    const credentialChanged = this.refreshToken !== refreshToken
     this.session = { ...session }
     this.sessionToken = token
-    if (!session.authenticated || session.employeeId !== previousEmployee) {
+    this.refreshToken = refreshToken
+    if (identityChanged || credentialChanged) {
       if (!establishesEmployee) {
         this.identityLifecycle.abort(new Error('Product employee identity changed'))
         this.identityLifecycle = new AbortController()
         this.sessionRefresh = undefined
+        this.sessionSignOut = undefined
       }
-      this.catalog.reset()
+      if (identityChanged) this.catalog.reset()
     }
-    const persisted = this.persistSession?.(this.session, this.sessionToken)
+    const persisted = this.persistSession?.(this.session, this.sessionToken, this.refreshToken)
     if (persisted instanceof Promise) {
       void persisted.catch((error: unknown) => {
         console.error('deepseek-harness product: failed to persist session', error)
@@ -266,26 +275,32 @@ export class DeepSeekHarnessProductBridge {
       if (typeof session !== 'object' || session === null || Array.isArray(session)) {
         return { status: typeof result.status === 'string' ? result.status : undefined, session: null }
       }
-      const authenticated = session as Record<string, unknown>
-      const token = authenticated.sessionToken
-      if (typeof token === 'string' && token !== '') {
-        const identity = authenticated.employee as Record<string, unknown> | undefined
-        this.setSession({ authenticated: true,
-          ...(typeof identity?.employeeId === 'string' ? { employeeId: identity.employeeId } : {}),
-          ...(typeof identity?.employeeName === 'string' ? { displayName: identity.employeeName } : {}),
-          ...((typeof authenticated.expiresAt === 'string' || typeof authenticated.expiresAt === 'number')
-            ? { expiresAt: String(authenticated.expiresAt) } : {}),
-        }, token)
-      }
+      const receipt = employeeSessionReceipt(session)
+      this.setSession(receipt.session, receipt.token, receipt.refreshToken)
       return { status: typeof result.status === 'string' ? result.status : undefined,
         session: this.session.authenticated ? this.getSession() : null }
+    }
+    if (method === 'auth.signOut') {
+      const cancelled = Promise.withResolvers<never>()
+      if (signal?.aborted) signal.throwIfAborted()
+      using _listener = signal ? addAbortListener(signal, () => { cancelled.reject(signal.reason) }) : undefined
+      await Promise.race([this.signOutEmployee(), cancelled.promise])
+      signal?.throwIfAborted()
+      return this.session
     }
     if (method === 'auth.refresh') {
       const lifetime = AbortSignal.any([this.identityLifecycle.signal, ...signal ? [signal] : []])
       lifetime.throwIfAborted()
       const cancelled = Promise.withResolvers<never>()
       using _listener = addAbortListener(lifetime, () => { cancelled.reject(lifetime.reason) })
-      await Promise.race([this.refreshEmployeeSession(), cancelled.promise])
+      try { await Promise.race([this.refreshEmployeeSession(), cancelled.promise]) }
+      catch (error) {
+        signal?.throwIfAborted()
+        if (!this.getSession().authenticated) {
+          throw new DeepSeekHarnessApiError(401, 'EMPLOYEE_UNAUTHORIZED', 'Employee login has expired')
+        }
+        throw error
+      }
       lifetime.throwIfAborted()
       return this.session
     }
@@ -409,6 +424,27 @@ export class DeepSeekHarnessProductBridge {
     return method === 'connectors.list' && Array.isArray(value) ? value.map(rendererConnector) : value
   }
 
+  private signOutEmployee(): Promise<void> {
+    if (this.sessionSignOut) return this.sessionSignOut
+    const token = this.refreshToken
+    const lifetime = this.identityLifecycle.signal
+    const operation = (async () => {
+      if (token && this.api) {
+        await this.api.request('/api/v1/employee-auth/session', { method: 'DELETE',
+          headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ refreshToken: token }), signal: lifetime })
+        lifetime.throwIfAborted()
+        if (this.refreshToken !== token) return
+      }
+      this.clearSession()
+    })().finally(() => {
+      if (this.sessionSignOut === operation) this.sessionSignOut = undefined
+      this.refreshOperations.delete(operation)
+    })
+    this.sessionSignOut = operation
+    this.refreshOperations.add(operation)
+    return operation
+  }
+
   private async ensureFreshSession(): Promise<void> {
     if (!this.session.authenticated || this.sessionToken === undefined) {
       throw new DeepSeekHarnessApiError(401, 'EMPLOYEE_UNAUTHORIZED', 'Employee authentication is required')
@@ -416,39 +452,25 @@ export class DeepSeekHarnessProductBridge {
     const expiresAt = Number(this.session.expiresAt)
     if (!Number.isFinite(expiresAt)) return
     const remaining = expiresAt - Date.now() / 1_000
-    if (remaining <= 0) {
-      this.clearSession()
-      throw new DeepSeekHarnessApiError(401, 'EMPLOYEE_UNAUTHORIZED', 'Employee authentication is required')
-    }
     if (remaining <= SESSION_REFRESH_LEAD_SECONDS) await this.refreshEmployeeSession()
   }
 
   private refreshEmployeeSession(): Promise<void> {
     if (this.sessionRefresh !== undefined) return this.sessionRefresh
-    if (this.api === undefined || !this.session.authenticated || this.sessionToken === undefined) {
+    if (this.api === undefined || !this.session.authenticated || this.refreshToken === undefined) {
       this.clearSession()
       return Promise.reject(new DeepSeekHarnessApiError(401, 'EMPLOYEE_UNAUTHORIZED', 'Employee authentication is required'))
     }
     const refreshLifetime = this.identityLifecycle.signal
     const tokenBeforeRefresh = this.sessionToken
-    const refresh = this.api.refreshSession<unknown>(refreshLifetime).then((result) => {
+    const refreshToken = this.refreshToken
+    const refresh = this.api.refreshSession<unknown>(refreshToken, refreshLifetime).then((result) => {
       refreshLifetime.throwIfAborted()
-      if (this.sessionToken !== tokenBeforeRefresh) throw new Error('Product employee session changed')
-      if (typeof result !== 'object' || result === null || Array.isArray(result)) {
-        throw new Error('deepseek-harness product: invalid refreshed session')
-      }
-      const refreshed = result as Record<string, unknown>
-      const token = refreshed.sessionToken
-      if (typeof token !== 'string' || token === '') {
-        throw new Error('deepseek-harness product: invalid refreshed session')
-      }
-      const identity = refreshed.employee as Record<string, unknown> | undefined
-      this.commitSession({ authenticated: true,
-        ...(typeof identity?.employeeId === 'string' ? { employeeId: identity.employeeId } : {}),
-        ...(typeof identity?.employeeName === 'string' ? { displayName: identity.employeeName } : {}),
-        ...((typeof refreshed.expiresAt === 'string' || typeof refreshed.expiresAt === 'number')
-          ? { expiresAt: String(refreshed.expiresAt) } : {}),
-      }, token, this.session.employeeId === undefined && typeof identity?.employeeId === 'string')
+      if (this.refreshToken !== refreshToken || this.sessionToken !== tokenBeforeRefresh) throw new Error('Product employee session changed')
+      const receipt = employeeSessionReceipt(result)
+      if (receipt.refreshToken !== refreshToken || this.session.employeeId !== undefined
+        && receipt.session.employeeId !== this.session.employeeId) throw new Error('Product employee session changed')
+      this.commitSession(receipt.session, receipt.token, receipt.refreshToken, this.session.employeeId === undefined)
     }).catch((error: unknown) => {
       if (!refreshLifetime.aborted && this.sessionToken === tokenBeforeRefresh) {
         this.handleAuthenticationFailure(error)
@@ -481,13 +503,7 @@ export class DeepSeekHarnessProductBridge {
   private scheduleSessionRefreshRetry(): void {
     if (this.closed) return
     if (this.sessionRefreshTimer !== undefined) clearTimeout(this.sessionRefreshTimer)
-    const expiresAt = Number(this.session.expiresAt)
-    const remainingSeconds = Number.isFinite(expiresAt) ? expiresAt - Date.now() / 1_000 : SESSION_REFRESH_RETRY_SECONDS
-    if (remainingSeconds <= 0) {
-      this.clearSession()
-      return
-    }
-    const delay = Math.min(SESSION_REFRESH_RETRY_SECONDS, remainingSeconds) * 1_000
+    const delay = SESSION_REFRESH_RETRY_SECONDS * 1_000
     this.sessionRefreshTimer = setTimeout(() => {
       this.sessionRefreshTimer = undefined
       void this.refreshEmployeeSession().catch(() => undefined)
@@ -523,7 +539,10 @@ export class DeepSeekHarnessProductBridge {
       return result
     } catch (error) {
       lifetime.throwIfAborted()
-      if (this.sessionToken === token) this.handleAuthenticationFailure(error)
+      if (this.sessionToken === token && error instanceof DeepSeekHarnessApiError && error.status === 401
+        && error.code === 'EMPLOYEE_UNAUTHORIZED') {
+        await this.refreshEmployeeSession()
+      }
       throw error
     }
   }
@@ -603,4 +622,18 @@ function requiredId(input: Readonly<Record<string, unknown>>): string {
     throw new Error('deepseek-harness product: a valid product id is required')
   }
   return id
+}
+
+function employeeSessionReceipt(value: unknown): { session: ProductSession; token: string; refreshToken: string } {
+  const receipt = z.object({
+    sessionToken: z.string().min(1).max(128), refreshToken: z.string().min(1).max(128),
+    expiresAt: z.number().int().positive(), refreshExpiresAt: z.number().int().positive(),
+    employee: z.object({ employeeId: z.string().min(1), employeeName: z.string(), teamId: z.string() }),
+  }).parse(value)
+  if (receipt.expiresAt <= Date.now() / 1000 || receipt.refreshExpiresAt < receipt.expiresAt) {
+    throw new Error('Product employee session receipt has expired')
+  }
+  return { token: receipt.sessionToken, refreshToken: receipt.refreshToken, session: { authenticated: true,
+    employeeId: receipt.employee.employeeId, displayName: receipt.employee.employeeName,
+    expiresAt: String(receipt.expiresAt), loginExpiresAt: String(receipt.refreshExpiresAt) } }
 }

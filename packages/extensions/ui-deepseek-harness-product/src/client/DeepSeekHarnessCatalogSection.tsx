@@ -1,6 +1,6 @@
 import type { PropsLocale, PropsRuntime, PropsRenderFactories } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ReactNode } from 'react'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import { Button, IconChevronDownOutlineRegular, IconLinkOutlineRegular, IconPlusOutlineRegular, IconRefreshOutlineRegular, IconSearchOutlineRegular, Menu, Modal, focusWithoutRing } from '@deepseek-ai/dsh-client-ui-primitives'
 import { ConnectorRefreshResultSchema, ExtensionRemovalResultSchema, ExtensionSubmissionResultSchema } from '@deepseek-harness/product/connector-draft'
 import { NS, type DeepSeekHarnessProductKey } from '../locales.ts'
@@ -12,13 +12,12 @@ import { type Catalog, type ProductItem, type ProductDetail, METHODS, CATEGORY_K
 import { ConnectorDetailModal } from './ConnectorView.tsx'
 import { ConnectorEditor } from './ConnectorEditor.tsx'
 import { ResourceActionsMenu } from './ResourceActionsMenu.tsx'
-import { ProductSignIn } from './ProductSignIn.tsx'
+import { EmployeeIdentity } from './EmployeeContent.tsx'
 import { ProductLoading } from './ProductLoading.tsx'
 import { ProductActionLabel } from './ProductActionLabel.tsx'
 import { useResultFocus } from './useResultFocus.ts'
-import type { EmployeeSignInActions } from './employee-sign-in.ts'
 type CatalogSectionProps = PropsRuntime<'main'> & PropsLocale<typeof NS> & PropsRenderFactories
-  & Pick<EmployeeSignInActions, 'openEmployeeSignIn'> & {
+  & {
     readonly catalog: Catalog
     readonly labelKey: DeepSeekHarnessProductKey
   }
@@ -30,20 +29,18 @@ interface ReadScope {
 /** Employee catalogs retain confirmed results on read failures, invalidate them on authority loss and recover removed controls in place. */
 export function DeepSeekHarnessCatalogSection(props: CatalogSectionProps): ReactNode {
   const { catalog, labelKey } = props
+  const verifiedEmployee = useContext(EmployeeIdentity)
   const t = useCallback((key: DeepSeekHarnessProductKey): string => props.t(key), [props.t])
   const [entries, setEntries] = useState<readonly ProductItem[]>([])
   const [loading, setLoading] = useState(true)
   const [catalogLoaded, setCatalogLoaded] = useState(false)
-  const [authRequired, setAuthRequired] = useState<boolean>()
+  const [authRequired, setAuthRequired] = useState<boolean | undefined>(verifiedEmployee === undefined ? undefined : false)
   const [error, setError] = useState<ProductFailureReport>()
   const [unavailableConnectorIds, setUnavailableConnectorIds] = useState<readonly string[]>([])
   const [query, setQuery] = useState('')
   const catalogRoot = useRef<HTMLElement>(null)
   const captureReadFocus = useResultFocus(catalogRoot, catalogRoot)
   const search = useRef<HTMLInputElement>(null)
-  const openEmployeeSignIn = () => { props.openEmployeeSignIn(() => {
-    if (catalogRoot.current) focusWithoutRing(catalogRoot.current, { preventScroll: true })
-  }) }
   const managementFocusArea = useRef<HTMLElement | null>(null)
   const managementClose = useRef<HTMLButtonElement>(null)
   const captureManagementFocus = useResultFocus(managementFocusArea, () => {
@@ -126,7 +123,7 @@ export function DeepSeekHarnessCatalogSection(props: CatalogSectionProps): React
     }
     setLoading(true)
     try {
-      const session = await api.getSession()
+      const session = verifiedEmployee === undefined ? await api.getSession() : { authenticated: true, employeeId: verifiedEmployee }
       if (currentGeneration !== scope.generation) return
       synchronizeIdentity(session, scope)
       if (session.authenticated !== true) {
@@ -345,7 +342,6 @@ export function DeepSeekHarnessCatalogSection(props: CatalogSectionProps): React
           {loading && <span className={css.visuallyHidden} role="status" aria-label={t('loading')} />}
         </Button>
       </div>}
-      {authRequired && <ProductSignIn onSignIn={openEmployeeSignIn} t={t} />}
       {!authRequired && <div className={css.feedbackResult}>
         <span aria-hidden="true">{t('loadFailed')}</span>
         {error && <div className={css.catalogError} role="region" aria-label={t('loadFailed')} tabIndex={0}>

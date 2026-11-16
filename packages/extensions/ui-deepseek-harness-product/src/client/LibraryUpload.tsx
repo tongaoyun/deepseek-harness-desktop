@@ -27,7 +27,8 @@ export function LibraryUpload({
   const request = useLibraryRequests()
   const [files, setFiles] = useState<readonly LibrarySelection[]>([])
   const [pending, setPending] = useState<string>()
-  const [error, setError] = useState<unknown>()
+  const [selectionError, setSelectionError] = useState<unknown>()
+  const [uploadError, setUploadError] = useState<unknown>()
   const busy = useRef(false)
   const writing = useRef(false)
   const lifetime = useRef(new AbortController())
@@ -68,9 +69,9 @@ export function LibraryUpload({
       owned.current = [...owned.current, ...selected]
       setFiles(owned.current)
       captureFeedback()
-      setError(undefined)
+      setSelectionError(undefined)
     } catch (failure) {
-      if (!signal.aborted) setError(failure)
+      if (!signal.aborted) setSelectionError(failure)
     } finally {
       busy.current = false
       if (!signal.aborted) setPending(undefined)
@@ -104,7 +105,7 @@ export function LibraryUpload({
       signal.throwIfAborted()
       onCommitted()
     } catch (failure) {
-      if (!signal.aborted) setError(failure)
+      if (!signal.aborted) setUploadError(failure)
     } finally {
       busy.current = false
       writing.current = false
@@ -138,9 +139,17 @@ export function LibraryUpload({
       contentClassName={css.detailModalContent as string}
       footer={
         <div className={css.libraryMutationFooter}>
-          <div ref={feedback} className={css.feedbackResult}>
-            <span aria-hidden="true">{t('saveFailed')}</span>
-            {error !== undefined && <p role="alert" tabIndex={0} className={css.catalogError}>{productErrorMessage(error, t, 'saveFailed')}</p>}
+          <div ref={feedback} className={css.libraryErrorStack}>
+            <div className={css.feedbackResult}>
+              <span aria-hidden="true">{t('librarySelectionFailed')}</span>
+              {selectionError !== undefined && <div role="region" aria-label={t('librarySelectionFailed')} tabIndex={0} className={css.catalogError}>
+                <p role="alert">{productErrorMessage(selectionError, t, 'librarySelectionFailed')}</p></div>}
+            </div>
+            <div className={css.feedbackResult}>
+              <span aria-hidden="true">{t('saveFailed')}</span>
+              {uploadError !== undefined && <div role="region" aria-label={t('saveFailed')} tabIndex={0} className={css.catalogError}>
+                <p role="alert">{productErrorMessage(uploadError, t, 'saveFailed')}</p></div>}
+            </div>
           </div>
           <div className={css.detailActions}>
             <Button variant="outline" aria-disabled={pending !== undefined && pending !== 'select'} onClick={close}>
@@ -160,6 +169,7 @@ export function LibraryUpload({
         </div>
       }
     >
+      <p className={css.libraryNavNote}>{location.library.name}{location.parentName && ` / ${location.parentName}`}</p>
       <Button
         ref={chooseButton}
         variant="outline"

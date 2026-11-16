@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { StrictMode, Suspense, startTransition } from 'react'
-import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, expect, it, vi } from 'vitest'
 import { ConnectorDraftSchema } from '@deepseek-harness/product/connector-draft'
 import { ConnectorEditor } from '../src/client/ConnectorEditor.tsx'
@@ -510,13 +510,16 @@ it('ignores an abandoned device configuration read after StrictMode reactivation
   expect(cancel).toHaveBeenCalledWith('product', invoke.mock.calls[0]![3])
 })
 
-it.each(['read', 'save'] as const)('cancels the old connector configuration %s when its published version changes', async (phase) => {
+it.each(['read', 'save'] as const)('retains the pinned connector configuration %s when its published version changes', async (phase) => {
   const pending = deferred<unknown>()
   const nextProduct = { ...product, version: '2.0.0' }
   const invoke = vi.fn(async (_namespace: string, method: string, payload: unknown, _request?: string) => {
     const next = typeof payload === 'object' && payload !== null && 'version' in payload && payload.version === nextProduct.version
-    return { ok: true, result: next ? { ...template, version: nextProduct.version }
-      : method.endsWith('.read') && phase === 'save' ? template : await pending.promise }
+    if (next) return { ok: true, result: { ...template, version: nextProduct.version } }
+    if (method.endsWith('.read') && phase === 'save') return { ok: true, result: template }
+    const result = await pending.promise
+    if (phase === 'save') throw new Error('Connector version changed; reopen configuration')
+    return { ok: true, result }
   })
   const cancel = vi.fn(), onCatalogChanged = vi.fn(async () => {})
   vi.stubGlobal('dshDesktop', { extensions: { invoke, cancel } })
@@ -527,16 +530,26 @@ it.each(['read', 'save'] as const)('cancels the old connector configuration %s w
     fireEvent.change(await screen.findByLabelText('Authorization'), { target: { value: 'old-version-private-value' } })
     fireEvent.click(screen.getByRole('button', { name: zh.saveConnector }))
   }
-  const request = invoke.mock.calls.at(-1)![3]
+  const dialog = screen.getByRole('dialog', { name: zh.configureDevice })
+  const input = screen.queryByLabelText<HTMLInputElement>('Authorization')
+  const request = invoke.mock.calls.at(-1)!
   view.rerender(<ConnectorDetailModal {...props} detail={nextProduct} />)
-  expect(screen.queryByRole('dialog', { name: zh.configureDevice })).toBeNull()
-  expect(cancel).toHaveBeenCalledWith('product', request)
-  fireEvent.click(screen.getByRole('button', { name: zh.configureDevice }))
-  expect((await screen.findByLabelText<HTMLInputElement>('Authorization')).value).toBe('')
-  await act(async () => { pending.resolve(phase === 'read' ? template : { ...editing, configured: true }) })
-  expect(screen.getByLabelText<HTMLInputElement>('Authorization').value).toBe('')
+  expect(screen.getByRole('dialog', { name: zh.configureDevice })).toBe(dialog)
+  expect(cancel).not.toHaveBeenCalledWith('product', request[3])
+  expect(request[2]).toEqual(expect.objectContaining(editing))
+  await act(async () => { pending.resolve(template) })
+  if (phase === 'save') {
+    await screen.findByRole('alert')
+    expect(screen.getByLabelText('Authorization')).toBe(input)
+    expect(input?.value).toBe('old-version-private-value')
+  } else {
+    expect((await screen.findByLabelText<HTMLInputElement>('Authorization')).value).toBe('')
+    fireEvent.click(within(dialog).getByRole('button', { name: zh.close }))
+    fireEvent.click(screen.getByRole('button', { name: zh.configureDevice }))
+    expect((await screen.findByLabelText<HTMLInputElement>('Authorization')).value).toBe('')
+    expect(invoke.mock.calls.at(-1)?.[2]).toEqual({ id: nextProduct.id, version: nextProduct.version })
+  }
   expect(onCatalogChanged).not.toHaveBeenCalled()
-  expect(invoke.mock.calls.at(-1)?.[2]).toEqual({ id: nextProduct.id, version: nextProduct.version })
 })
 
 it.each([undefined, {}, { id: draft.id, version: '2.0.0', configured: true },

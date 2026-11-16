@@ -5,12 +5,13 @@ import { StrictMode } from 'react'
 import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import { zh as commonZh } from '@deepseek-ai/dsh-client-locale/src/locales/zh.ts'
 import { LibraryUpload } from '../src/client/LibraryUpload.tsx'
+import { LibraryDestination } from '../src/client/LibraryDestination.tsx'
 import { zh } from '../src/locales.ts'
 import { ProductError } from '@deepseek-harness/product/errors'
 
 const t = makeTranslate(zh, commonZh)
 const library = { id: '11111111-1111-4111-8111-111111111111', name: '资料库', description: '', scope: 'PERSONAL' as const,
-  ownerId: 'alice', managerEmployeeId: 'alice', canManage: true, version: 1, createdAt: '2026-11-13T01:00:00Z', updatedAt: '2026-11-13T01:00:00Z' }
+  ownerId: 'alice', companyId: 'company', role: 'OWNER' as const, canManage: true, version: 1, createdAt: '2026-11-13T01:00:00Z', updatedAt: '2026-11-13T01:00:00Z' }
 const first = { selectionId: '22222222-2222-4222-8222-222222222222', name: '第一份.md', sizeBytes: 12 }
 const second = { ...first, selectionId: '33333333-3333-4333-8333-333333333333', name: '第二份.md' }
 afterEach(() => { cleanup(); vi.unstubAllGlobals() })
@@ -37,6 +38,37 @@ it('cancels selection preparation when closed and releases a late native selecti
   await act(async () => { selected.resolve([first]) })
   await waitFor(() => { expect(f.read.mock.calls).toContainEqual(['library.files.upload.discard', { selectionId: first.selectionId }]) })
   expect(f.committed).not.toHaveBeenCalled()
+})
+
+it.each(['PERSONAL', 'TEAM'] as const)('uploads to the current %s folder without silently selecting another root', async (scope) => {
+  const f = fixture()
+  f.view.unmount()
+  const destination = { library: { ...library, scope }, parentId: second.selectionId, parentName: '项目模板' }
+  render(<LibraryDestination kind="upload" initialLocation={destination} t={t} renderFactorySlot={() => null}
+    onClose={f.closed} onCommitted={f.committed} />)
+  const dialog = screen.getByRole('dialog', { name: zh.libraryUpload })
+  expect(screen.queryByRole('dialog', { name: zh.libraryUploadDestination })).toBeNull()
+  expect(screen.getByText('资料库 / 项目模板')).toBeDefined()
+  let fail = true
+  f.read.mockImplementation(async (method) => {
+    if (method === 'library.files.upload.select') return [first]
+    if (method === 'library.files.upload' && fail) throw new Error('upload unavailable')
+    return true
+  })
+  fireEvent.click(screen.getByRole('button', { name: zh.libraryChooseLocalFiles }))
+  await screen.findByText(/第一份.md/)
+  const upload = screen.getByRole('button', { name: zh.libraryUpload })
+  upload.focus(); fireEvent.click(upload)
+  await screen.findByRole('alert')
+  expect(screen.getByRole('dialog', { name: zh.libraryUpload })).toBe(dialog)
+  expect(document.activeElement).toBe(upload)
+  fail = false; fireEvent.click(upload)
+  await waitFor(() => { expect(f.committed).toHaveBeenCalledOnce() })
+  const writes = f.read.mock.calls.filter(([method]) => method === 'library.files.upload').map(([, payload]) => payload)
+  expect(writes).toHaveLength(2)
+  expect(writes[1]).toEqual(writes[0])
+  expect(writes[0]).toMatchObject({ libraryId: library.id, parentId: destination.parentId })
+  expect(f.read.mock.calls.some(([method]) => method === 'library.personal.ensure')).toBe(false)
 })
 
 it('retains a partial upload failure when native selection is cancelled and only retries unconfirmed files', async () => {
@@ -190,7 +222,7 @@ it.each(['error', 'other'] as const)('recovers only removed selection-error focu
   expect(f.read.mock.calls.filter(([method]) => method === 'library.files.upload.select')).toHaveLength(2)
   expect(screen.getByRole('alert')).toBe(alert)
   const close = screen.getAllByRole('button', { name: zh.close }).at(-1)!
-  const target = focused === 'error' ? alert : close
+  const target = focused === 'error' ? screen.getByRole('region', { name: zh.librarySelectionFailed }) : close
   target.focus()
   await act(async () => { selected.resolve([first]) })
   expect(screen.queryByRole('alert')).toBeNull()
@@ -229,4 +261,44 @@ it('selects files after effect reactivation and retains controls and receipts th
   await act(async () => { retry.resolve(true) })
   expect(f.committed).toHaveBeenCalledOnce()
   expect(f.closed).not.toHaveBeenCalled()
+})
+
+
+it('retains an upload failure through additional selection failure and recovery without resubmitting confirmed files', async () => {
+  const f = fixture()
+  let selections = 0, attempts = 0
+  f.read.mockImplementation(async (method) => {
+    if (method === 'library.files.upload.select') {
+      selections++
+      if (selections === 2) throw new Error('selection unavailable')
+      return selections === 1 ? [first] : [second]
+    }
+    if (method === 'library.files.upload' && ++attempts === 1) throw new Error('upload offline')
+    return true
+  })
+  const choose = screen.getByRole('button', { name: zh.libraryChooseLocalFiles })
+  fireEvent.click(choose)
+  const firstRow = await screen.findByText(/第一份.md/)
+  const upload = screen.getByRole('button', { name: zh.libraryUpload })
+  fireEvent.click(upload)
+  const uploadError = await screen.findByRole('alert')
+  expect(uploadError.textContent).toBe(zh.saveFailed)
+  fireEvent.click(choose)
+  await waitFor(() => { expect(screen.getAllByRole('alert')).toHaveLength(2) })
+  expect(screen.getAllByRole('alert')).toContain(uploadError)
+  expect(screen.getByText(/第一份.md/)).toBe(firstRow)
+  const selectionError = screen.getByRole('region', { name: zh.librarySelectionFailed })
+  selectionError.focus()
+  fireEvent.click(choose)
+  await screen.findByText(/第二份.md/)
+  expect(screen.queryAllByRole('alert').some(node => node.textContent === zh.librarySelectionFailed)).toBe(false)
+  expect(screen.getByRole('alert')).toBe(uploadError)
+  expect(document.activeElement).toBe(choose)
+  expect(screen.getByText(/第一份.md/)).toBe(firstRow)
+  fireEvent.click(upload)
+  await waitFor(() => { expect(f.committed).toHaveBeenCalledOnce() })
+  const writes = f.read.mock.calls.filter(([method]) => method === 'library.files.upload')
+  expect(writes).toHaveLength(3)
+  expect(writes[1]).toEqual(writes[0])
+  expect(writes[2]?.[1]).toMatchObject({ selectionId: second.selectionId })
 })

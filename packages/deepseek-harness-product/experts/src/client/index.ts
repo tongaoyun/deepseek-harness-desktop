@@ -1382,7 +1382,7 @@ function AgencySettingsPage(props: React.ComponentProps<typeof AgencySettingsPan
 }
 export const inject = ['slots', 'inputTriggers', 'locale', 'remote', 'sessions', 'conversation', 'layout', 'uiWorkspace']
 
-export async function apply(ctx: ClientContext): Promise<() => Promise<void>> {
+export async function apply(ctx: ClientContext, config: { readonly PageAccess?: React.ComponentType<React.PropsWithChildren> } = {}): Promise<() => Promise<void>> {
   // Read the mounted native Client Session service once and use its public contract.
   // Widen only the lookup boundary so the Host SessionStore declaration cannot leak
   // into this client entrypoint; no second session API is introduced.
@@ -1490,7 +1490,7 @@ export async function apply(ctx: ClientContext): Promise<() => Promise<void>> {
       inject: () => ({ remote, cache, getActive, startCreation, prepareTeamSelection: bindExpertInsertion().prepareTeamSelection,
         hooks: { expertCatalog: cache.catalog, expertTeams: cache.teams } }),
     },
-    AgencySettingsPage,
+    props => React.createElement(config.PageAccess ?? React.Fragment, null, React.createElement(AgencySettingsPage, props)),
   ))
 
   ctx.slots.inject('conversation.input.left', () => ctx.slots.register(

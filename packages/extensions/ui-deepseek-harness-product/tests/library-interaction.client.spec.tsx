@@ -12,10 +12,10 @@ import { LibraryPreview } from '../src/client/LibraryPreview.tsx'
 import { LibraryMutation } from '../src/client/LibraryMutation.tsx'
 import { TaskLibraryInput } from '../src/client/TaskLibraryInput.tsx'
 import { zh } from '../src/locales.ts'
-const library = { id: '11111111-1111-4111-8111-111111111111', name: '项目资料', description: '团队文件', scope: 'PERSONAL' as const,
-  ownerId: 'employee', managerEmployeeId: 'employee', canManage: true, version: 1, createdAt: '2026-11-13T01:00:00Z', updatedAt: '2026-11-13T01:00:00Z' }
+const library = { id: '11111111-1111-4111-8111-111111111111', name: '项目资料', description: '团队文件', scope: 'TEAM' as const,
+  ownerId: 'employee', companyId: 'company', role: 'OWNER' as const, canManage: true, version: 1, createdAt: '2026-11-13T01:00:00Z', updatedAt: '2026-11-13T01:00:00Z' }
 const file = { id: '22222222-2222-4222-8222-222222222222', libraryId: library.id, parentId: null, name: '中文资料.md', kind: 'FILE' as const,
-  sha256: 'a'.repeat(64), mediaType: 'text/markdown', sizeBytes: 12, favorite: false, version: 1, createdAt: library.createdAt, updatedAt: library.updatedAt }
+  sha256: 'a'.repeat(64), mediaType: 'text/markdown', sizeBytes: 12, version: 1, createdAt: library.createdAt, updatedAt: library.updatedAt }
 const t = makeTranslate(zh, commonZh)
 const renderFactorySlot = (() => null)
 afterEach(() => { cleanup(); vi.unstubAllGlobals() })
@@ -51,10 +51,10 @@ it.each([
   expect(document.activeElement).toBe(refresh)
   await act(async () => { result.reject(new Error('offline')) })
   const alert = await screen.findByRole('alert'), retry = screen.getByRole('button', { name: zh.retry })
-  const region = screen.getByRole('region', { name: zh.loadFailed })
+  const region = screen.getByRole('region', { name: zh.libraryLoadFailed })
   expect({ role: region.getAttribute('role'), tabIndex: region.tabIndex, message: alert.textContent }).toMatchInlineSnapshot(`
     {
-      "message": "产品目录暂时无法加载，请稍后重试。",
+      "message": "资料库暂时无法加载，请重试。",
       "role": "region",
       "tabIndex": 0,
     }
@@ -66,7 +66,7 @@ it.each([
   expect(screen.getByRole('alert')).toBe(alert)
   expect(document.activeElement).toBe(retry)
   await act(async () => { result.reject(new Error('still offline')) })
-  expect(screen.getByRole('region', { name: zh.loadFailed })).toBe(region)
+  expect(screen.getByRole('region', { name: zh.libraryLoadFailed })).toBe(region)
   expect(screen.getByRole('button', { name: zh.retry })).toBe(retry)
   expect(document.activeElement).toBe(retry)
   result = Promise.withResolvers<unknown>()
@@ -97,7 +97,7 @@ it('retains the same draft node, text selection and contents after declining dis
   expect(input.value).toBe('保留的资料名称')
   expect(close).not.toHaveBeenCalled(); expect(committed).not.toHaveBeenCalled()
 })
-it.each(['library', 'folder'] as const)('reuses the %s creation receipt when only surrounding name whitespace changes', async (kind) => {
+it.each(['folder'] as const)('reuses the %s creation receipt when only surrounding name whitespace changes', async (kind) => {
   const read = fixture(), retried = Promise.withResolvers<unknown>()
   const committed = vi.fn()
   render(<LibraryMutation kind={kind} location={{ library, parentId: null }} t={t} onClose={vi.fn()} onCommitted={committed} />)
@@ -161,7 +161,7 @@ it('cancels an unchanged move picker directly, including entries below the root'
   const close = vi.fn()
   render(<LibraryMutation kind="move" location={{ library, parentId: '33333333-3333-4333-8333-333333333333' }}
     entry={{ ...file, parentId: '33333333-3333-4333-8333-333333333333' }} t={t} onClose={close} onCommitted={vi.fn()} />)
-  await waitFor(() => { expect(screen.getByRole('button', { name: zh.refresh }).getAttribute('aria-busy')).toBe('false') })
+  await waitFor(() => { expect(screen.getByRole('region', { name: zh.library }).querySelector('[aria-busy="true"]')).toBeNull() })
   fireEvent.keyDown(screen.getByRole('button', { name: zh.cancel }), { key: 'Escape' })
   expect(close).toHaveBeenCalledOnce()
   expect(screen.queryByText(zh.libraryDiscardConfirm)).toBeNull()
@@ -179,7 +179,7 @@ it('refuses moves to the unchanged parent or to the folder itself without sendin
   expect(save.getAttribute('aria-disabled')).toBe('true')
   fireEvent.click(save)
   fireEvent.click(row)
-  await waitFor(() => { expect(screen.getByRole('button', { name: zh.refresh }).getAttribute('aria-busy')).toBe('false') })
+  await waitFor(() => { expect(screen.getByRole('region', { name: zh.library }).querySelector('[aria-busy="true"]')).toBeNull() })
   expect(save.getAttribute('aria-disabled')).toBe('true')
   fireEvent.click(save)
   expect(read.mock.calls.filter(([method]) => method === 'library.entries.update')).toHaveLength(0)
@@ -213,7 +213,7 @@ it('keeps the move target, search and error nodes stable while a failed move is 
   fireEvent.change(search, { target: { value: '忽略的搜索' } })
   fireEvent.click(row)
   fireEvent.click(screen.getByRole('button', { name: library.name }))
-  fireEvent.click(screen.getByRole('button', { name: zh.refresh }))
+  expect(screen.queryByRole('button', { name: zh.refresh })).toBeNull()
   fireEvent.keyDown(save, { key: 'Escape' })
   expect(writes).toBe(2)
   expect(read.mock.calls.filter(([method]) => method === 'library.entries.list')).toHaveLength(reads)
@@ -461,221 +461,6 @@ it('hides write actions during discard confirmation and restores their original 
   expect(document.activeElement).toBe(input)
   expect([input.selectionStart, input.selectionEnd]).toEqual([1, 4])
 })
-it.each((['search', 'page'] as const).flatMap(change => (['success', 'failure'] as const).map(outcome => ({ change, outcome }))))(
-  'settles a favorite write after changing the $change ($outcome)', async ({ change, outcome }) => {
-    const read = fixture(), write = Promise.withResolvers<unknown>(), retryWrite = Promise.withResolvers<unknown>()
-    const original = read.getMockImplementation()!
-    const nextFile = { ...file, id: '33333333-3333-4333-8333-333333333333', name: '第二页资料.md' }
-    let writes = 0, saved = false
-    read.mockImplementation(async (method, payload) => {
-      if (method === 'library.entries.favorite') {
-        const pending = ++writes === 1 ? write : retryWrite
-        await pending.promise
-        saved = true
-        return true
-      }
-      if (method === 'library.entries.list') {
-        const { page } = payload as { page: number }
-        return { data: [page === 1 ? { ...file, favorite: saved } : nextFile],
-          pageIndex: page, pageSize: 20, totalCount: 21, totalPages: 2 }
-      }
-      return original(method, payload)
-    })
-    render(<LibraryBrowser rootLibrary={library} t={t} renderFactorySlot={renderFactorySlot} />)
-    const row = await screen.findByRole('button', { name: /中文资料.md/ })
-    const toggle = within(row.closest('article')!).getByRole('button', { name: zh.libraryFavorite })
-    const search = screen.getByRole<HTMLInputElement>('searchbox')
-    fireEvent.click(toggle); fireEvent.click(toggle)
-    expect(writes).toBe(1)
-    if (change === 'search') {
-      fireEvent.change(search, { target: { value: '中文' } })
-      search.focus(); search.setSelectionRange(0, 1)
-    } else {
-      const next = screen.getByRole('button', { name: zh.libraryNext })
-      next.focus(); fireEvent.click(next)
-      await screen.findByRole('button', { name: /第二页资料.md/ })
-    }
-    const current = screen.getByRole('button', { name: change === 'search' ? /中文资料.md/ : /第二页资料.md/ })
-    await waitFor(() => { expect(read.mock.calls.filter(([method]) => method === 'library.entries.list')).toHaveLength(2) })
-    const focused = document.activeElement
-    if (outcome === 'failure') {
-      await act(async () => { write.reject(new Error('favorite offline')) })
-      const error = await screen.findByRole('alert'), retry = screen.getByRole('button', { name: zh.retry })
-      expect(document.activeElement).toBe(focused)
-      retry.focus(); fireEvent.click(retry); fireEvent.click(retry)
-      expect(writes).toBe(2)
-      expect(screen.getByRole('alert')).toBe(error)
-      expect(document.activeElement).toBe(retry)
-      await act(async () => { retryWrite.resolve(true) })
-      await waitFor(() => { expect(screen.queryByRole('alert')).toBeNull() })
-      expect(document.activeElement).toBe(search)
-    } else {
-      await act(async () => { write.resolve(true) })
-      expect(document.activeElement).toBe(focused)
-    }
-    await waitFor(() => { expect(read.mock.calls.filter(([method]) => method === 'library.entries.list')).toHaveLength(3) })
-    expect(screen.getByRole('searchbox')).toBe(search)
-    expect(screen.getByRole('button', { name: change === 'search' ? /中文资料.md/ : /第二页资料.md/ })).toBe(current)
-    expect(search.value).toBe(change === 'search' ? '中文' : '')
-    if (change === 'search') {
-      expect([search.selectionStart, search.selectionEnd]).toEqual([0, 1])
-      expect(within(current.closest('article')!).getByRole('button', { name: zh.libraryUnfavorite })).toBe(toggle)
-    } else {
-      expect(screen.getByText('2 / 2')).toBeDefined()
-      expect(screen.queryByRole('button', { name: /中文资料.md/ })).toBeNull()
-    }
-    expect(read.mock.calls.filter(([method]) => method === 'library.entries.favorite').map(([, payload]) => payload))
-      .toEqual(Array(outcome === 'success' ? 1 : 2).fill({ libraryId: library.id, entryId: file.id, value: true }))
-  },
-)
-it('ignores a searched list read from before the confirmed favorite write', async () => {
-  const read = fixture(), write = Promise.withResolvers<unknown>(), stale = Promise.withResolvers<unknown>()
-  const original = read.getMockImplementation()!
-  let reads = 0, saved = false
-  read.mockImplementation(async (method, payload) => {
-    if (method === 'library.entries.favorite') { await write.promise; saved = true; return true }
-    if (method === 'library.entries.list') {
-      if (++reads === 2) return stale.promise
-      return { data: [{ ...file, favorite: saved }], pageIndex: 1, pageSize: 20, totalCount: 1, totalPages: 1 }
-    }
-    return original(method, payload)
-  })
-  render(<LibraryBrowser rootLibrary={library} t={t} renderFactorySlot={renderFactorySlot} />)
-  const row = await screen.findByRole('button', { name: /中文资料.md/ })
-  const toggle = within(row.closest('article')!).getByRole('button', { name: zh.libraryFavorite })
-  fireEvent.click(toggle)
-  const search = screen.getByRole<HTMLInputElement>('searchbox')
-  fireEvent.change(search, { target: { value: '中文' } })
-  search.focus(); search.setSelectionRange(0, 1)
-  await act(async () => { write.resolve(true) })
-  await waitFor(() => { expect(reads).toBe(3) })
-  await act(async () => { stale.resolve({ data: [file], pageIndex: 1, pageSize: 20, totalCount: 1, totalPages: 1 }) })
-  expect(screen.getByRole('button', { name: /中文资料.md/ })).toBe(row)
-  expect(within(row.closest('article')!).getByRole('button', { name: zh.libraryUnfavorite })).toBe(toggle)
-  expect(document.activeElement).toBe(search)
-  expect([search.value, search.selectionStart, search.selectionEnd]).toEqual(['中文', 0, 1])
-})
-it('disposes an in-flight favorite without altering a newly mounted library browser', async () => {
-  const read = fixture(), write = Promise.withResolvers<unknown>()
-  const original = read.getMockImplementation()!
-  read.mockImplementation(async (method, payload) => method === 'library.entries.favorite' ? write.promise : original(method, payload))
-  const first = render(<LibraryBrowser rootLibrary={library} t={t} renderFactorySlot={renderFactorySlot} />)
-  const row = await screen.findByRole('button', { name: /中文资料.md/ })
-  fireEvent.click(within(row.closest('article')!).getByRole('button', { name: zh.libraryFavorite }))
-  first.unmount()
-  render(<LibraryBrowser rootLibrary={library} t={t} renderFactorySlot={renderFactorySlot} />)
-  const current = await screen.findByRole('button', { name: /中文资料.md/ }), search = screen.getByRole('searchbox')
-  search.focus()
-  await act(async () => { write.reject(new Error('old favorite failed')) })
-  expect(screen.queryByRole('alert')).toBeNull()
-  expect(screen.getByRole('button', { name: /中文资料.md/ })).toBe(current)
-  expect(document.activeElement).toBe(search)
-  expect(read.mock.calls.filter(([method]) => method === 'library.entries.list')).toHaveLength(2)
-})
-it('keeps an unrelated favorite failure actionable while saving another entry', async () => {
-  const read = fixture(), otherWrite = Promise.withResolvers<unknown>(), retryWrite = Promise.withResolvers<unknown>()
-  const original = read.getMockImplementation()!
-  const other = { ...file, id: '33333333-3333-4333-8333-333333333333', name: '另一份资料.md' }
-  const saved = new Set<string>()
-  let writes = 0
-  read.mockImplementation(async (method, payload) => {
-    if (method === 'library.entries.favorite') {
-      const { entryId } = payload as { entryId: string }
-      if (++writes === 1) throw new Error('first favorite failed')
-      await (entryId === other.id ? otherWrite : retryWrite).promise
-      saved.add(entryId)
-      return true
-    }
-    if (method === 'library.entries.list') return { data: [file, other].map(entry => ({ ...entry, favorite: saved.has(entry.id) })),
-      pageIndex: 1, pageSize: 20, totalCount: 2, totalPages: 1 }
-    return original(method, payload)
-  })
-  render(<LibraryBrowser rootLibrary={library} t={t} renderFactorySlot={renderFactorySlot} />)
-  const row = await screen.findByRole('button', { name: /中文资料.md/ })
-  fireEvent.click(within(row.closest('article')!).getByRole('button', { name: zh.libraryFavorite }))
-  const error = await screen.findByRole('alert'), retry = screen.getByRole('button', { name: zh.retry })
-  const otherRow = screen.getByRole('button', { name: /另一份资料.md/ })
-  const toggle = within(otherRow.closest('article')!).getByRole('button', { name: zh.libraryFavorite })
-  toggle.focus(); fireEvent.click(toggle)
-  expect(retry.getAttribute('aria-disabled')).toBe('true')
-  expect(retry.getAttribute('aria-busy')).toBe('false')
-  expect(toggle.getAttribute('aria-busy')).toBe('true')
-  fireEvent.click(retry)
-  expect(writes).toBe(2)
-  await act(async () => { otherWrite.resolve(true) })
-  expect(screen.getByRole('alert')).toBe(error)
-  expect(screen.getByRole('button', { name: zh.retry })).toBe(retry)
-  expect(retry.getAttribute('aria-disabled')).toBe('false')
-  expect(document.activeElement).toBe(toggle)
-  retry.focus(); fireEvent.click(retry)
-  expect(retry.getAttribute('aria-busy')).toBe('true')
-  expect(toggle.getAttribute('aria-busy')).toBe('false')
-  await act(async () => { retryWrite.resolve(true) })
-  await waitFor(() => { expect(screen.queryByRole('alert')).toBeNull() })
-  expect(document.activeElement).toBe(screen.getByRole('searchbox'))
-  expect(read.mock.calls.filter(([method]) => method === 'library.entries.favorite').map(([, payload]) => payload))
-    .toEqual([file.id, other.id, file.id].map(entryId => ({ libraryId: library.id, entryId, value: true })))
-})
-it('retries the failed favorite write once and refreshes its list after confirmation', async () => {
-  const read = fixture(), retryGate = Promise.withResolvers<unknown>()
-  const original = read.getMockImplementation()!
-  let writes = 0, saved = false
-  read.mockImplementation(async (method, payload) => {
-    if (method === 'library.entries.favorite') {
-      if (++writes === 1) throw new Error('favorite offline')
-      await retryGate.promise
-      saved = true
-      return true
-    }
-    if (method === 'library.entries.list') return { data: [{ ...file, favorite: saved }], pageIndex: 1, pageSize: 20, totalCount: 1, totalPages: 1 }
-    return original(method, payload)
-  })
-  render(<LibraryBrowser rootLibrary={library} t={t} renderFactorySlot={renderFactorySlot} />)
-  const row = await screen.findByRole('button', { name: /中文资料.md/ })
-  fireEvent.click(within(row.closest('article')!).getByRole('button', { name: zh.libraryFavorite }))
-  const alert = await screen.findByRole('alert'), retry = screen.getByRole('button', { name: zh.retry })
-  retry.focus(); fireEvent.click(retry); fireEvent.click(retry)
-  expect(writes).toBe(2)
-  expect(screen.getByRole('alert')).toBe(alert)
-  expect(document.activeElement).toBe(retry)
-  const calls = read.mock.calls.filter(([method]) => method === 'library.entries.favorite')
-  expect(calls.map(([, payload]) => payload)).toEqual(Array(2).fill({ libraryId: library.id, entryId: file.id, value: true }))
-  await act(async () => { retryGate.resolve(true) })
-  await waitFor(() => { expect(screen.queryByRole('alert')).toBeNull() })
-  expect(read.mock.calls.filter(([method]) => method === 'library.entries.list')).toHaveLength(2)
-  expect(screen.getByRole('button', { name: /中文资料.md/ })).toBe(row)
-  expect(within(row.closest('article')!).getByRole('button', { name: zh.libraryUnfavorite })).toBeDefined()
-  expect(document.activeElement).toBe(screen.getByRole('searchbox'))
-})
-it('returns from a removed favorites tail page without leaving an empty page or lost focus', async () => {
-  const read = fixture()
-  let removed = false
-  read.mockImplementation(async (method, payload) => {
-    if (method === 'library.get') return library
-    if (method === 'library.entries.favorite') { removed = true; return false }
-    if (method === 'library.entries.list') {
-      const { page, view } = payload as { page: number; view: string }
-      const data = page === 2 ? removed ? [] : [{ ...file, favorite: true }]
-        : [{ ...file, id: '44444444-4444-4444-8444-444444444444', name: '保留资料.md', favorite: true }]
-      const total = view === 'favorites' && removed ? 20 : 21
-      return { data, pageIndex: page, pageSize: 20, totalCount: total, totalPages: Math.ceil(total / 20) }
-    }
-    throw new Error(`Unexpected method: ${method}`)
-  })
-  render(<LibraryBrowser rootLibrary={library} t={t} renderFactorySlot={renderFactorySlot} />)
-  await screen.findByRole('button', { name: /保留资料.md/ })
-  fireEvent.click(screen.getByRole('button', { name: zh.libraryFavorites }))
-  await waitFor(() => { expect(screen.getByRole('button', { name: zh.refresh }).getAttribute('aria-busy')).toBe('false') })
-  fireEvent.click(screen.getByRole('button', { name: zh.libraryNext }))
-  const row = await screen.findByRole('button', { name: /中文资料.md/ })
-  const remove = within(row.closest('article')!).getByRole('button', { name: zh.libraryUnfavorite })
-  remove.focus(); fireEvent.click(remove)
-  await screen.findByRole('button', { name: /保留资料.md/ })
-  await waitFor(() => { expect(screen.getByRole('button', { name: zh.refresh }).getAttribute('aria-busy')).toBe('false') })
-  expect(screen.getByText('1 / 1')).toBeDefined()
-  expect(document.activeElement).toBe(screen.getByRole('searchbox'))
-  expect(read.mock.calls.filter(([method]) => method === 'library.entries.favorite')).toHaveLength(1)
-})
 it('cancels attachment admission, and a late result cannot close a newly opened picker', async () => {
   fixture()
   let open!: () => void
@@ -863,7 +648,38 @@ it('saves a metadata draft after effect reactivation and keeps its node and sele
   expect(screen.getByRole('button', { name: zh.saveResource })).toBe(save)
   expect(document.activeElement).toBe(save)
   expect(read.mock.calls.filter(([method]) => method === 'library.update')).toHaveLength(2)
-  await act(async () => { retry.resolve(true) })
+  await act(async () => { retry.resolve({ ...library, name: '更新的资料名称', version: 2 }) })
   expect(committed).toHaveBeenCalledOnce()
   expect(close).not.toHaveBeenCalled()
+})
+
+it.each([true, false])('offers nested folder creation in a destination picker only with management permission (%s)', async (canManage) => {
+  const read = fixture()
+  const original = read.getMockImplementation()!
+  read.mockImplementation(async (method, payload) => method === 'library.get' ? { ...library, canManage } : original(method, payload))
+  render(<LibraryBrowser foldersOnly rootLibrary={{ ...library, canManage }} t={t} renderFactorySlot={renderFactorySlot} />)
+  await waitFor(() => { expect(read).toHaveBeenCalledWith('library.entries.list', expect.anything()) })
+  expect(screen.queryByRole('button', { name: zh.refresh })).toBeNull()
+  expect(screen.queryByRole('button', { name: zh.libraryUpload })).toBeNull()
+  if (!canManage) {
+    expect(screen.queryByRole('button', { name: zh.libraryNewFolder })).toBeNull()
+    return
+  }
+  const trigger = screen.getByRole('button', { name: zh.libraryNewFolder })
+  trigger.focus(); fireEvent.click(trigger)
+  fireEvent.change(screen.getByRole('textbox', { name: zh.libraryName }), { target: { value: '模板' } })
+  fireEvent.click(screen.getByRole('button', { name: zh.saveResource }))
+  await waitFor(() => { expect(screen.queryByRole('dialog')).toBeNull() })
+  expect(read).toHaveBeenCalledWith('library.folders.create', expect.objectContaining({ libraryId: library.id, parentId: null, name: '模板' }))
+  expect(document.activeElement).toBe(trigger)
+})
+
+it('blocks folder creation in a locked destination picker', async () => {
+  const read = fixture()
+  render(<LibraryBrowser foldersOnly navigationLocked rootLibrary={library} t={t} renderFactorySlot={renderFactorySlot} />)
+  const trigger = screen.getByRole('button', { name: zh.libraryNewFolder })
+  expect(trigger.getAttribute('aria-disabled')).toBe('true')
+  fireEvent.click(trigger)
+  expect(screen.queryByRole('dialog')).toBeNull()
+  expect(read.mock.calls.some(([method]) => method === 'library.folders.create')).toBe(false)
 })

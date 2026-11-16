@@ -3,7 +3,7 @@ import type { Context } from '@deepseek-ai/cordis'
 
 declare module '@deepseek-ai/cordis' {
   interface Events {
-    /** Open the product's employee authorization dialog.
+    /** Open the product's employee authorization screen.
      * @mode emit
      * @param returnFocus Recover lost focus through the requesting view's current controls when the sidebar is hidden.
      */

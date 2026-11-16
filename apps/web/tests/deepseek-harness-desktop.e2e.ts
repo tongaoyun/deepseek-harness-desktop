@@ -59,19 +59,25 @@ for (const { mode, installed, surface } of desktopCarriers) {
       const userData = join(root, 'electron')
       const project = join(root, 'runtime')
       const secret = 'fixture-employee-secret'
+      const refreshSecret = 'fixture-remembered-login'
       const expiresAt = Math.floor(Date.now() / 1000) + 3600
+      const refreshExpiresAt = Math.floor(Date.now() / 1000) + 2592000
+      const employeeSession = { sessionToken: secret, expiresAt, refreshToken: refreshSecret, refreshExpiresAt,
+        employee: { employeeId: 'fixture-employee', employeeName: 'Fixture user', teamId: '' } }
       const model = await startMockLlmServer({ sequence: ['success'], repeatLast: true,
         successText: 'Fixture review complete.', apiKey: 'fixture-model-key' })
       onTestFinished(() => model.close())
       const libraryId = '11111111-1111-4111-8111-111111111111'
-      const library = { id: libraryId, name: 'Operations playbook', description: 'Reference files', scope: 'COMPANY',
-        ownerId: 'fixture-company', managerEmployeeId: 'fixture-employee', canManage: false, version: 1,
+      const library = { id: libraryId, name: 'Operations playbook', description: 'Reference files', scope: 'TEAM',
+        ownerId: 'fixture-company', companyId: 'company', role: 'OWNER', canManage: false, version: 1,
         createdAt: '2026-11-13T01:00:00Z', updatedAt: '2026-11-13T01:00:00Z' }
       const catalogRows: Record<string, object[]> = {
-        '/api/v1/connectors': [], '/api/v1/libraries': [library],
+        '/api/v1/connectors': [], '/api/v1/libraries': [library], '/api/v1/library-files': [],
         [`/api/v1/libraries/${libraryId}/entries`]: [],
       }
       let bootstrapLoads = 0
+      let authorizationBegins = 0
+      let rememberedRefreshes = 0
       const deviceReports: Record<string, unknown>[] = []
       const feedbackBodies: string[] = []
       const feedbackPayloads: unknown[] = []
@@ -81,9 +87,23 @@ for (const { mode, installed, surface } of desktopCarriers) {
         const url = new URL(request.url ?? '/', 'http://localhost')
         const path = url.pathname
         response.setHeader('content-type', 'application/json')
-        if (path === '/api/v1/employee-auth/session/refresh') {
-          response.end(JSON.stringify({ success: true, data: { sessionToken: secret, expiresAt,
-            employee: { employeeId: 'fixture-employee', employeeName: 'Fixture user' } } }))
+        if (path === '/api/v1/dingtalk-auth/authorization-requests' && request.method === 'POST') {
+          authorizationBegins++
+          response.end(JSON.stringify({ success: true, data: { state: 'fixture-authorization-state',
+            authorizationUrl: origin + '/fixture-sign-in' } }))
+        } else if (path === '/api/v1/dingtalk-auth/authorization-requests/fixture-authorization-state') {
+          response.end(JSON.stringify({ success: true, data: { status: 'completed', session: employeeSession } }))
+        } else if (path === '/fixture-sign-in') {
+          response.setHeader('content-type', 'text/plain; charset=utf-8')
+          response.end('桌面隔离验收登录已完成，可关闭此页面。')
+        } else if (path === '/favicon.ico') {
+          response.writeHead(204).end()
+        } else if (path === '/api/v1/employee-auth/session/refresh') {
+          rememberedRefreshes++
+          void fixtureRequestBody(request).then((body) => {
+            expect(body).toEqual({ refreshToken: refreshSecret })
+            response.end(JSON.stringify({ success: true, data: employeeSession }))
+          }).catch(() => { response.statusCode = 400; response.end() })
         } else if (path === '/api/v1/company-content') {
           response.end(JSON.stringify({ success: true, data: companyRelease }))
         } else if (path === '/api/v1/bootstrap') {
@@ -118,6 +138,8 @@ for (const { mode, installed, surface } of desktopCarriers) {
           })().catch(() => { response.statusCode = 400; response.end() })
         } else if (path === `/api/v1/libraries/${libraryId}`) {
           response.end(JSON.stringify({ success: true, data: library }))
+        } else if (path === '/api/v1/libraries/file-policy') {
+          response.end(JSON.stringify({ success: true, data: 52428800 }))
         } else if (catalogRows[path] !== undefined) {
           const data = catalogRows[path]
           const pageSize = Number(url.searchParams.get('size') ?? 100)
@@ -164,7 +186,7 @@ for (const { mode, installed, surface } of desktopCarriers) {
         onTestFinished(() => writeFile(configPath, original))
         if (['darwin', 'win32'].includes(process.platform) && process.env.PACKAGE_SIGNING === 'internal') {
           nativeUpdate = await prepareNativeProductUpdate({ installed, root, home, userData,
-            serverUrl: origin, token: secret, environment: process.env })
+            serverUrl: origin, environment: process.env })
           onTestFinished(() => nativeUpdate!.dispose())
         } else await writeFile(configPath, JSON.stringify({ ...JSON.parse(original), serverUrl: origin }))
       }
@@ -196,6 +218,7 @@ for (const { mode, installed, surface } of desktopCarriers) {
           expect(request.headers.authorization).toBeUndefined()
         }
         expect(JSON.stringify(model.requests)).not.toContain(secret)
+        expect(JSON.stringify(model.requests)).not.toContain(refreshSecret)
       }
       const hostDiagnostic = join(root, 'host-modules.json')
       const diagnosticPlugin = join(root, 'desktop-module-diagnostics.mjs')
@@ -239,7 +262,7 @@ for (const { mode, installed, surface } of desktopCarriers) {
           ...mode === 'official' ? {
             DEEPSEEK_API_KEY: 'fixture-model-key', DEEPSEEK_BASE_URL: model.baseURL + '/v1',
           } : {
-            DEEPSEEK_HARNESS_SERVER_URL: origin, DEEPSEEK_HARNESS_SESSION_TOKEN: secret,
+            DEEPSEEK_HARNESS_SERVER_URL: origin,
             ...installed === undefined ? { DSH_DESKTOP_EXTENSION: pathToFileURL(join(REPO_ROOT, 'packages/deepseek-harness-product/desktop/lib/index.js')).href } : {},
           },
         }, timeout: 60_000 }
@@ -460,8 +483,8 @@ for (const { mode, installed, surface } of desktopCarriers) {
           await directory.getByRole('searchbox').waitFor()
           expect(await directory.getByRole('alert').count()).toBe(0)
         }
-        await page.getByRole('button', { name: 'Operations playbook Reference files', exact: true }).click()
-        await page.getByRole('button', { name: 'Operations playbook', exact: true }).waitFor()
+        await page.locator('[data-library-root]').getByText('Operations playbook', { exact: true }).click()
+        await page.locator('[data-library-root][aria-current="page"]').waitFor()
         for (const theme of ['light', 'dark'] as const) {
           await page.emulateMedia({ colorScheme: theme })
           for (const width of [1440, 390]) {
@@ -495,6 +518,11 @@ for (const { mode, installed, surface } of desktopCarriers) {
         await page.waitForURL('dsh-app://app/', { timeout: 60_000 })
         composer = page.locator('[data-composer-input][contenteditable="true"]').last()
         await composer.waitFor({ timeout: 60_000 })
+        expect(authorizationBegins).toBe(1)
+        expect(rememberedRefreshes).toBeGreaterThan(0)
+        const storedLogin = await readFile(join(userData, 'deepseek-harness-session.json'), 'utf8')
+        expect(storedLogin).not.toContain(secret)
+        expect(storedLogin).not.toContain(refreshSecret)
         await page.locator(`[data-row-key="session:${sessionId}"]`).click()
         await expect.poll(() => composer.textContent()).toBe('Keep this task draft')
         await page.locator('p').filter({ hasText: /^Fixture review complete\.$/ }).waitFor()

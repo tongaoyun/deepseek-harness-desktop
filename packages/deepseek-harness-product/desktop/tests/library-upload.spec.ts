@@ -23,7 +23,7 @@ async function fixture() {
     const bytes = new Uint8Array(await file.arrayBuffer())
     return { id: entryId, libraryId, parentId: form.get('parentId') ?? null, name: file.name, kind: 'FILE',
       sha256: createHash('sha256').update(bytes).digest('hex'), mediaType: 'application/octet-stream', sizeBytes: bytes.byteLength,
-      favorite: false, version: 1, createdAt: timestamp, updatedAt: timestamp }
+      version: 1, createdAt: timestamp, updatedAt: timestamp }
   })
   const api = new DeepSeekHarnessApiClient({ baseUrl: 'https://product.test', getSessionToken: () => 'token', fetch: async (input, init) => {
     const url = new URL((typeof input === 'string' ? input : input instanceof URL ? input.href : input.url))
@@ -111,7 +111,7 @@ it('takes conversation origin only from the validated main-owned deliverable sel
     const form = init?.body
     if (!(form instanceof FormData)) throw new Error('Missing upload')
     origin = form.get('sourceSessionId')
-    return Response.json({ success: true, data: { id: entryId, libraryId, parentId: null, name: '成果.md', kind: 'FILE', sha256: createHash('sha256').update('result').digest('hex'), mediaType: 'text/markdown', sizeBytes: 6, favorite: false, version: 1, createdAt: timestamp, updatedAt: timestamp } })
+    return Response.json({ success: true, data: { id: entryId, libraryId, parentId: null, name: '成果.md', kind: 'FILE', sha256: createHash('sha256').update('result').digest('hex'), mediaType: 'text/markdown', sizeBytes: 6, version: 1, createdAt: timestamp, updatedAt: timestamp } })
   } })
   const readArchive = vi.fn(async () => ({ name: '成果.md', dataBase64: Buffer.from('result').toString('base64') }))
   const uploads = new LibraryUploads(() => 'employee', async () => [], 1024, 1000, readArchive)

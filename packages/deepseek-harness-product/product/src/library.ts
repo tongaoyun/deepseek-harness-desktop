@@ -10,16 +10,17 @@ export const LibrarySchema = z
     id,
     name: z.string().min(1).max(180),
     description: z.string().max(1000),
-    scope: z.enum(['PERSONAL', 'DEPARTMENT', 'COMPANY']),
+    scope: z.enum(['PERSONAL', 'TEAM']),
     ownerId: z.string().min(1),
-    managerEmployeeId: z.string().min(1),
+    companyId: z.string().min(1),
+    role: z.enum(['OWNER', 'EDITOR', 'VIEWER']),
     canManage: z.boolean(),
     version: z.number().int().positive(),
     createdAt: timestamp,
     updatedAt: timestamp,
   })
   .readonly()
-/** A personal, department or company file library. */
+/** Private personal files or a team library governed by explicit membership. */
 export type Library = z.infer<typeof LibrarySchema>
 /** File or folder metadata; file bytes are transferred separately. */
 export const LibraryEntrySchema = z
@@ -35,7 +36,6 @@ export const LibraryEntrySchema = z
       .nullable(),
     mediaType: z.string().min(3).max(120).nullable(),
     sizeBytes: z.number().int().nonnegative(),
-    favorite: z.boolean(),
     version: z.number().int().positive(),
     createdAt: timestamp,
     updatedAt: timestamp,
@@ -83,10 +83,26 @@ export type LibraryFile = z.infer<typeof LibraryFileSchema>
 /** Filters applied before server pagination. */
 export const LibraryFileQuerySchema = z.object({
   query: z.string().max(180).default(''),
-  view: z.enum(['recent', 'mine', 'favorites']).default('recent'),
+  view: z.enum(['recent', 'mine']).default('recent'),
   category: z.enum(['all', 'document', 'media', 'html', 'other']).default('all'),
   sort: z.enum(['accessed', 'name', 'size', 'updated']).default('accessed'),
   direction: z.enum(['asc', 'desc']).default('desc'),
 })
 /** Global file page without storage addresses. */
 export const LibraryFilePageSchema = LibraryPageSchema.extend({ data: z.array(LibraryFileSchema).readonly() })
+
+/** One employee or organization group with access to a team library. */
+export const LibraryMemberSchema = z.object({
+  subjectType: z.enum(['EMPLOYEE', 'DEPARTMENT', 'COMPANY']),
+  subjectId: z.string().min(1).max(128),
+  name: z.string().min(1).max(180),
+  role: z.enum(['OWNER', 'EDITOR', 'VIEWER']),
+}).readonly()
+/** A paginated member or organization grant. */
+export type LibraryMember = z.infer<typeof LibraryMemberSchema>
+/** Server-paginated membership list. */
+export const LibraryMemberPageSchema = LibraryPageSchema.extend({ data: z.array(LibraryMemberSchema).readonly() })
+/** Employee or department selected from the current enterprise directory. */
+export const LibraryCandidateSchema = z.object({ id: z.string().min(1).max(128), name: z.string().min(1).max(180) }).readonly()
+/** Server-paginated employee directory. */
+export const LibraryCandidatePageSchema = LibraryPageSchema.extend({ data: z.array(LibraryCandidateSchema).readonly() })

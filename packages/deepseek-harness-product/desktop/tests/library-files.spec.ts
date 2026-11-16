@@ -19,7 +19,7 @@ async function fixture() {
   let accessed = 0
   let content: Buffer = bytes
   const metadata = { id: entryId, libraryId, parentId: null, name: '中文资料.md', kind: 'FILE', sha256,
-    mediaType: 'text/markdown', sizeBytes: bytes.length, version: 1, favorite: false,
+    mediaType: 'text/markdown', sizeBytes: bytes.length, version: 1,
     createdAt: '2026-11-13T01:00:00Z', updatedAt: '2026-11-13T01:00:00Z' }
   const api = new DeepSeekHarnessApiClient({ baseUrl: 'https://product.test', getSessionToken: () => 'token', fetch: async (input) => {
     if ((typeof input === 'string' ? input : input instanceof URL ? input.href : input.url).endsWith('/access')) { accessed++; return Response.json({ success: true, data: true }) }

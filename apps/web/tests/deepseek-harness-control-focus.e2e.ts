@@ -522,14 +522,14 @@ it.each((['light', 'dark'] as const).flatMap(theme => (['connectors', 'library']
       throw new Error(`Unexpected employee retry method: ${method}`)
     }, async () => ({ authenticated, ...authenticated ? { employeeId: 'reviewer', displayName: 'Signed-in reviewer' } : {} }))
     await page.emulateMedia({ colorScheme: theme })
-    const initialPrompt = page.getByRole('dialog', { name: 'Sign in to use organization resources', exact: true })
+    const initialPrompt = page.getByRole('dialog', { name: 'Sign in to DeepSeek Harness', exact: true })
     await initialPrompt.getByRole('button', { name: 'Cancel', exact: true }).click()
     expect(writes).toBe(0)
     await page.getByRole('button', { name: catalog === 'connectors' ? 'Connectors' : 'Libraries', exact: true }).click()
     const opener = page.getByRole('button', { name: 'Sign in with DingTalk', exact: true })
     const originalOpener = await opener.elementHandle()
     await opener.press('Enter')
-    const dialog = page.getByRole('dialog', { name: 'Sign in to use organization resources', exact: true })
+    const dialog = page.getByRole('dialog', { name: 'Sign in to DeepSeek Harness', exact: true })
     const notice = dialog.getByRole('alert')
     const waiting = dialog.getByRole('button', { name: 'Waiting for DingTalk…', exact: true })
     await waiting.waitFor()
@@ -796,143 +796,16 @@ async function capture(page: Page, name: string, region: Locator, focused: Locat
   }
 }
 
-it.each(['success', 'failure'] as const)('settles library favorites across search and pagination without losing the viewport (%s)', async (outcome) => {
-  const now = '2026-11-13T01:00:00Z'
-  const library = { id: '11111111-1111-4111-8111-111111111111', name: 'Favorite library', description: 'Retained files',
-    scope: 'PERSONAL', ownerId: 'employee-fixture', managerEmployeeId: 'employee-fixture', canManage: true,
-    version: 1, createdAt: now, updatedAt: now }
-  const files = Array.from({ length: 40 }, (_, index) => ({
-    id: `22222222-2222-4222-8222-${String(index).padStart(12, '0')}`, libraryId: library.id, parentId: null,
-    name: `Retained ${index}.md`, kind: 'FILE', sha256: 'a'.repeat(64), mediaType: 'text/markdown', sizeBytes: 12,
-    favorite: false, version: 1, createdAt: now, updatedAt: now,
-  }))
-  const write = Promise.withResolvers<undefined>(), retry = Promise.withResolvers<undefined>()
-  onTestFinished(() => { write.resolve(undefined); retry.resolve(undefined) })
-  let writes = 0, reads = 0, saved = false
-  const page = await boot(async (method, payload) => {
-    switch (method) {
-      case 'library.list': return { data: [library], pageIndex: 1, pageSize: 20, totalCount: 1, totalPages: 1 }
-      case 'library.get': return library
-      case 'library.entries.list': {
-        reads++
-        const index = typeof payload === 'object' && payload !== null && 'page' in payload ? Number(payload.page) : 1
-        return { data: files.slice((index - 1) * 20, index * 20).map(file => ({ ...file, favorite: saved && file.id === files[0]!.id })),
-          pageIndex: index, pageSize: 20, totalCount: 40, totalPages: 2 }
-      }
-      case 'library.entries.favorite':
-        if (++writes === 1) {
-          await write.promise
-          if (outcome === 'failure') return { fixtureFailure: {
-            code: 'LIBRARY_ACCESS_DENIED', message: 'Favorite unavailable', retryable: true, resources: [],
-          } }
-        } else await retry.promise
-        saved = typeof payload === 'object' && payload !== null && 'value' in payload && payload.value === true
-        return saved
-      default: throw new Error(`Unexpected library favorite method: ${method}`)
-    }
-  })
-  await page.getByRole('button', { name: 'Libraries', exact: true }).click()
-  await page.getByRole('button', { name: 'Favorite library Retained files', exact: true }).click()
-  const browser = page.getByRole('region', { name: 'Libraries', exact: true }).last()
-  const first = browser.getByRole('button', { name: 'Retained 0.md 1 KB', exact: true })
-  const favorite = first.locator('..').getByRole('button', { name: 'Favorite', exact: true })
-  const upload = browser.getByRole('button', { name: 'Upload files', exact: true })
-  const uploadNode = await upload.elementHandle(), uploadBounds = await upload.boundingBox()
-  await favorite.press('Enter'); await favorite.press(' ')
-  await expect.poll(() => writes).toBe(1)
-  expect(await favorite.getAttribute('aria-busy')).toBe('true')
-  expect(await upload.evaluate((node, original) => node === original && getComputedStyle(node).opacity === '1', uploadNode)).toBe(true)
-  expect(await upload.boundingBox()).toEqual(uploadBounds)
-  const search = browser.getByRole('searchbox', { name: 'Search names', exact: true })
-  const searchNode = await search.elementHandle()
-  await search.fill('Retained')
-  const refresh = browser.getByRole('button', { name: 'Refresh', exact: true })
-  await expect.poll(() => reads).toBe(2)
-  await expect.poll(() => refresh.getAttribute('aria-busy')).toBe('false')
-  expect(await favorite.getAttribute('aria-busy')).toBe('true')
-  await search.focus()
-  await search.evaluate((node) => { if (node instanceof HTMLInputElement) node.setSelectionRange(1, 4) })
-  await browser.getByRole('button', { name: 'Next', exact: true }).click()
-  const retained = browser.getByRole('button', { name: 'Retained 32.md 1 KB', exact: true })
-  await retained.focus()
-  await expect.poll(() => reads).toBe(3)
-  await expect.poll(() => refresh.getAttribute('aria-busy')).toBe('false')
-  const retainedNode = await retained.elementHandle(), retainedBounds = await retained.boundingBox()
-  const viewport = await retained.evaluateHandle((node) => {
-    for (let owner = node.parentElement; owner; owner = owner.parentElement) {
-      if (['auto', 'scroll'].includes(getComputedStyle(owner).overflowY) && owner.scrollHeight > owner.clientHeight) return owner
-    }
-    throw new Error('Missing library scroll owner')
-  })
-  const scroll = await viewport.evaluate(node => node.scrollTop)
-  expect(scroll).toBeGreaterThan(0)
-  write.resolve(undefined)
-  if (outcome === 'failure') {
-    const notice = browser.getByRole('alert'), action = browser.getByRole('button', { name: 'Retry', exact: true })
-    await notice.waitFor()
-    expect(await retained.evaluate((node, original) => node === original && node === document.activeElement, retainedNode)).toBe(true)
-    expect(await retained.boundingBox()).toEqual(retainedBounds)
-    expect(await viewport.evaluate(node => node.scrollTop)).toBe(scroll)
-    await action.focus()
-    const actionNode = await action.elementHandle(), noticeNode = await notice.elementHandle(), actionBounds = await action.boundingBox()
-    await action.press('Enter'); await action.press(' ')
-    await expect.poll(() => writes).toBe(2)
-    expect(await action.evaluate((node, original) => node === original && node === document.activeElement, actionNode)).toBe(true)
-    expect(await action.boundingBox()).toEqual(actionBounds)
-    expect(await notice.evaluate((node, original) => node === original, noticeNode)).toBe(true)
-    await capture(page, 'library-favorite-retry', browser, action)
-    const message = browser.getByRole('region', { name: 'Save failed. Please retry.', exact: true })
-    const retryBounds = await action.boundingBox()
-    await message.focus()
-    expect(await message.evaluate(node => node.scrollHeight > node.clientHeight)).toBe(true)
-    await message.press('ArrowDown')
-    await expect.poll(() => message.evaluate(node => node.scrollTop)).toBeGreaterThan(0)
-    expect(await action.boundingBox()).toEqual(retryBounds)
-    await action.focus()
-    retry.resolve(undefined)
-    await notice.waitFor({ state: 'detached' })
-    expect(await search.evaluate(node => node === document.activeElement)).toBe(true)
-  } else {
-    await expect.poll(() => reads).toBe(4)
-    expect(await retained.evaluate((node, original) => node === original && node === document.activeElement, retainedNode)).toBe(true)
-    expect(await retained.boundingBox()).toEqual(retainedBounds)
-    expect(await viewport.evaluate(node => node.scrollTop)).toBe(scroll)
-    await capture(page, 'library-favorite-confirmed', browser, retained)
-  }
-  await expect.poll(() => reads).toBe(4)
-  await expect.poll(() => refresh.getAttribute('aria-busy')).toBe('false')
-  expect(await retained.evaluate((node, original) => node === original, retainedNode)).toBe(true)
-  expect(await search.evaluate((node, original) => ({ same: node === original,
-    selection: node instanceof HTMLInputElement ? [node.value, node.selectionStart, node.selectionEnd] : [],
-  }), searchNode)).toEqual({ same: true, selection: ['Retained', 1, 4] })
-  expect(await browser.getByText('2 / 2', { exact: true }).count()).toBe(1)
-  await browser.getByRole('button', { name: 'Previous', exact: true }).click()
-  await first.locator('..').getByRole('button', { name: 'Remove favorite', exact: true }).waitFor()
-  expect(writes).toBe(outcome === 'success' ? 1 : 2)
-  const remove = first.locator('..').getByRole('button', { name: 'Remove favorite', exact: true })
-  await remove.focus()
-  const removeNode = await remove.elementHandle(), removeBounds = await remove.boundingBox(), firstBounds = await first.boundingBox()
-  retry.resolve(undefined)
-  await remove.press('Enter')
-  const restored = first.locator('..').getByRole('button', { name: 'Favorite', exact: true })
-  await restored.waitFor()
-  await expect.poll(() => refresh.getAttribute('aria-busy')).toBe('false')
-  expect(await restored.evaluate((node, original) => node === original && node === document.activeElement, removeNode)).toBe(true)
-  expect(await restored.boundingBox()).toEqual(removeBounds)
-  expect(await first.boundingBox()).toEqual(firstBounds)
-  expect(writes).toBe(outcome === 'success' ? 2 : 3)
-})
-
 it.each(['count', 'bytes'] as const)('keeps library selection %s limits actionable without moving controls or losing focus', async (limit) => {
   const now = '2026-11-13T01:00:00Z'
   const library = { id: '11111111-1111-4111-8111-111111111111', name: 'Selection library', description: 'Limit fixtures',
-    scope: 'PERSONAL', ownerId: 'employee-fixture', managerEmployeeId: 'employee-fixture', canManage: true,
+    scope: 'PERSONAL', ownerId: 'employee-fixture', companyId: 'company', role: 'OWNER', canManage: true,
     version: 1, createdAt: now, updatedAt: now }
   const files = Array.from({ length: limit === 'count' ? 21 : 3 }, (_, index) => ({
     id: `22222222-2222-4222-8222-${String(index).padStart(12, '0')}`, libraryId: library.id, parentId: null,
     name: `Selection ${index}.md`, kind: 'FILE', sha256: 'a'.repeat(64), mediaType: 'text/markdown',
     sizeBytes: limit === 'count' || index === 2 ? 1 : (index === 0 ? 60 : 40) * 1024 * 1024,
-    favorite: false, version: 1, createdAt: now, updatedAt: now,
+    version: 1, createdAt: now, updatedAt: now,
   }))
   let fileReads = 0
   const page = await boot(async (method, payload) => {
@@ -2058,12 +1931,12 @@ it.each([
 ] as const)('keeps library feedback retry stable and recovers removed error focus ($surface, $focused)', async ({ surface, focused }) => {
   const now = '2026-11-13T01:00:00Z'
   const library = { id: '11111111-1111-4111-8111-111111111111', name: 'Feedback library', description: 'Retained controls',
-    scope: 'PERSONAL', ownerId: 'employee-fixture', managerEmployeeId: 'employee-fixture', canManage: true,
+    scope: 'PERSONAL', ownerId: 'employee-fixture', companyId: 'company', role: 'OWNER', canManage: true,
     version: 1, createdAt: now, updatedAt: now }
   const data = Array.from(new TextEncoder().encode(Array.from({ length: 60 }, (_, index) => `Retained reader line ${index}\n\n`).join('')))
   const file = { id: '22222222-2222-4222-8222-222222222222', libraryId: library.id, parentId: null,
     name: 'Retained reader.md', kind: 'FILE', sha256: 'a'.repeat(64), mediaType: 'text/markdown', sizeBytes: data.length,
-    favorite: false, version: 1, createdAt: now, updatedAt: now }
+    version: 1, createdAt: now, updatedAt: now }
   const failed = Promise.withResolvers<undefined>(), succeeded = Promise.withResolvers<undefined>()
   onTestFinished(() => { failed.resolve(undefined); succeeded.resolve(undefined) })
   const methodName = surface === 'download' ? 'library.files.download' : 'library.files.upload.select'
@@ -2160,7 +2033,7 @@ it.each((['edit', 'device', 'library'] as const).flatMap(surface => [1440, 390].
       transport: 'stdio', command: 'node', arguments: ['fixture.js'], headers: {}, environment: {}, timeoutSeconds: 60 }
     const now = '2026-11-13T01:00:00Z'
     const library = { id: '11111111-1111-4111-8111-111111111111', name: 'Close notice library', description: 'Retained library',
-      scope: 'PERSONAL', ownerId: 'employee-fixture', managerEmployeeId: 'employee-fixture', canManage: true,
+      scope: 'PERSONAL', ownerId: 'employee-fixture', companyId: 'company', role: 'OWNER', canManage: true,
       version: 1, createdAt: now, updatedAt: now }
     const method = surface === 'edit' ? 'extensions.connector.update' : surface === 'device'
       ? 'extensions.connector.configuration.save' : 'library.update'
@@ -2249,10 +2122,10 @@ it.each((['edit', 'device', 'library'] as const).flatMap(surface => [1440, 390].
 it.each(['success', 'failure'] as const)('preserves newer library folder feedback across an older refresh (%s)', async (outcome) => {
   const now = '2026-11-13T01:00:00Z'
   const library = { id: '11111111-1111-4111-8111-111111111111', name: 'Folder feedback library', description: 'Retained directory',
-    scope: 'PERSONAL', ownerId: 'employee-fixture', managerEmployeeId: 'employee-fixture', canManage: true,
+    scope: 'PERSONAL', ownerId: 'employee-fixture', companyId: 'company', role: 'OWNER', canManage: true,
     version: 1, createdAt: now, updatedAt: now }
   const parent = { id: '22222222-2222-4222-8222-222222222222', libraryId: library.id, parentId: null,
-    name: 'Parent folder', kind: 'FOLDER', sha256: null, mediaType: null, sizeBytes: 0, favorite: false,
+    name: 'Parent folder', kind: 'FOLDER', sha256: null, mediaType: null, sizeBytes: 0,
     version: 1, createdAt: now, updatedAt: now }
   const nested = { ...parent, id: '33333333-3333-4333-8333-333333333333', parentId: parent.id, name: 'Nested match' }
   const background = Promise.withResolvers<undefined>(), navigation = Promise.withResolvers<undefined>()
@@ -2374,7 +2247,7 @@ it.each(['Expert kits', 'Skills', 'Connectors', 'Libraries'] as const)(
       dispatchEvent(new CustomEvent('control-product-event', { detail: { type: 'auth.required' } }))
     })
     await expire()
-    const dialog = page.getByRole('dialog', { name: 'Sign in to use organization resources', exact: true })
+    const dialog = page.getByRole('dialog', { name: 'Sign in to DeepSeek Harness', exact: true })
     await dialog.waitFor()
     const originalDialog = await dialog.elementHandle()
     const action = dialog.getByRole('button', { name: 'Sign in with DingTalk', exact: true })

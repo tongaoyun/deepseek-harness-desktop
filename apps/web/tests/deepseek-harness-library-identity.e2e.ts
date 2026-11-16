@@ -45,13 +45,18 @@ it('keeps library identity retry and renewal stable and disposes old employee ed
       return { authenticated: true, employeeId: current, displayName: current }
     }
     if (method === 'library.files.list') return { data: [], pageIndex: 1, pageSize: 20, totalCount: 0, totalPages: 0 }
+    if (method === 'library.personal.ensure' || method === 'library.get') return {
+      id: '11111111-1111-4111-8111-111111111111', name: `${employeeId} library`, description: 'Private files',
+      scope: 'PERSONAL', ownerId: employeeId, companyId: 'company', role: 'OWNER', canManage: true,
+      version: 1, createdAt: now, updatedAt: now }
+    if (method === 'library.entries.list') { listReads++; return { data: [], pageIndex: 1, pageSize: 20, totalCount: 0, totalPages: 0 } }
     if (method === 'library.list') {
       listReads++
       return { data: [{ id: '11111111-1111-4111-8111-111111111111', name: `${employeeId} library`, description: 'Private files',
-        scope: 'PERSONAL', ownerId: employeeId, managerEmployeeId: employeeId, canManage: true,
+        scope: 'PERSONAL', ownerId: employeeId, companyId: 'company', role: 'OWNER', canManage: true,
         version: 1, createdAt: now, updatedAt: now }], pageIndex: 1, pageSize: 20, totalCount: 1, totalPages: 1 }
     }
-    if (method === 'library.create') { writes++; await writeGate.promise; return true }
+    if (method === 'library.folders.create') { writes++; await writeGate.promise; return true }
     throw new Error(`Unexpected library identity method: ${method}`)
   })
   await page.exposeFunction('__libraryIdentityCancel', () => { cancellations++ })
@@ -113,15 +118,17 @@ it('keeps library identity retry and renewal stable and disposes old employee ed
   const homeSearch = page.getByRole('searchbox', { name: 'Search names', exact: true })
   await homeSearch.waitFor()
   expect(await homeSearch.evaluate(node => node === document.activeElement)).toBe(true)
-  await page.getByRole('button', { name: 'Library directory', exact: true }).click()
-  const row = page.getByRole('button', { name: 'alice library Private files', exact: true })
+  await page.getByRole('button', { name: 'Upload files', exact: true }).click()
+  const row = page.getByRole('button', { name: 'alice library', exact: true, includeHidden: true })
   await row.waitFor()
-  const search = page.getByRole('searchbox', { name: 'Search names', exact: true })
+  const search = page.getByRole('dialog', { name: 'Choose upload destination', exact: true, includeHidden: true })
+    .getByRole('searchbox', { name: 'Search names', exact: true, includeHidden: true })
   await search.focus()
   const rowNode = await row.elementHandle(), searchNode = await search.elementHandle(), beforeRenewal = listReads
   await page.setViewportSize({ width: 1440, height: 900 })
-  await page.getByRole('button', { name: 'New library', exact: true }).click()
-  const dialog = page.getByRole('dialog', { name: 'New library', exact: true })
+  await page.getByRole('dialog', { name: 'Choose upload destination', exact: true })
+    .getByRole('button', { name: 'New folder', exact: true }).click()
+  const dialog = page.getByRole('dialog', { name: 'New folder', exact: true })
   const input = dialog.getByRole('textbox', { name: 'Name', exact: true })
   await input.fill('Retain this private draft')
   await input.evaluate((node) => { if (node instanceof HTMLInputElement) node.setSelectionRange(7, 11) })
@@ -148,12 +155,13 @@ it('keeps library identity retry and renewal stable and disposes old employee ed
     type: 'session.changed', payload: { authenticated: true, employeeId: 'bob', displayName: 'bob' },
   } })) })
   await dialog.waitFor({ state: 'detached' })
-  await page.getByRole('button', { name: 'Library directory', exact: true }).click()
-  await page.getByRole('button', { name: 'bob library Private files', exact: true }).waitFor()
+  await page.getByRole('button', { name: 'Upload files', exact: true }).click()
+  await page.getByRole('button', { name: 'bob library', exact: true }).waitFor()
   expect(await row.count()).toBe(0)
   await expect.poll(() => cancellations).toBe(1)
   await search.focus()
-  await page.getByRole('button', { name: 'New library', exact: true }).click()
+  await page.getByRole('dialog', { name: 'Choose upload destination', exact: true })
+    .getByRole('button', { name: 'New folder', exact: true }).click()
   await dialog.waitFor()
   writeGate.resolve(undefined)
   staleGate.resolve(undefined)
@@ -163,10 +171,10 @@ it('keeps library identity retry and renewal stable and disposes old employee ed
     type: 'session.changed', payload: { authenticated: false },
   } })) })
   await dialog.waitFor({ state: 'detached' })
-  await page.getByRole('region', { name: 'Libraries', exact: true }).first()
-    .getByRole('button', { name: 'Sign in with DingTalk', exact: true }).waitFor()
+  await page.getByRole('dialog', { name: 'Sign in to DeepSeek Harness', exact: true }).waitFor()
+  expect(await page.getByRole('button', { name: 'Sign in with DingTalk', exact: true }).count()).toBe(1)
   expect(await search.count()).toBe(0)
-  expect(await page.getByRole('button', { name: 'bob library Private files', exact: true }).count()).toBe(0)
+  expect(await page.getByRole('button', { name: 'bob library', exact: true }).count()).toBe(0)
   expect(tripwire.pageErrors).toEqual([])
   expect(tripwire.warnings).toEqual([])
 })
@@ -183,11 +191,11 @@ it('keeps searched folder navigation and shrinking pagination stable in the real
   const tripwire = watchConsole(page)
   const now = '2026-11-13T01:00:00Z'
   const library = { id: '11111111-1111-4111-8111-111111111111', name: 'Audit library', description: '',
-    scope: 'PERSONAL', ownerId: 'alice', managerEmployeeId: 'alice', canManage: true,
+    scope: 'PERSONAL', ownerId: 'alice', companyId: 'company', role: 'OWNER', canManage: true,
     version: 1, createdAt: now, updatedAt: now }
   const parent: LibraryEntry = { id: '22222222-2222-4222-8222-222222222222', libraryId: library.id,
     name: 'Actual parent', parentId: null, kind: 'FOLDER', sha256: null, mediaType: null,
-    sizeBytes: 0, favorite: false, version: 1, createdAt: now, updatedAt: now }
+    sizeBytes: 0, version: 1, createdAt: now, updatedAt: now }
   const nested = { ...parent, id: '33333333-3333-4333-8333-333333333333', name: 'Nested match', parentId: parent.id }
   const file = { ...parent, id: '44444444-4444-4444-8444-444444444444', name: 'Old tail file.md', kind: 'FILE',
     sha256: 'a'.repeat(64), mediaType: 'text/markdown', sizeBytes: 12 }
@@ -230,8 +238,8 @@ it('keeps searched folder navigation and shrinking pagination stable in the real
     } } })
   })
   await page.goto(scaffold.authenticatedUrl)
-  await page.getByRole('button', { name: 'Libraries', exact: true }).click()
-  await page.getByRole('button', { name: 'Library directory', exact: true }).click()
+  await page.getByRole('button', { name: 'Add files or run commands', exact: true }).click()
+  await page.getByRole('option', { name: /Choose library files/ }).click()
   await page.getByRole('button', { name: library.name, exact: true }).click()
   const search = page.getByRole('searchbox', { name: 'Search names', exact: true })
   await search.fill(nested.name)
@@ -297,7 +305,7 @@ it('keeps searched folder navigation and shrinking pagination stable in the real
   correction.resolve(undefined)
   await page.getByRole('button', { name: 'Remaining file.md 1 KB', exact: true }).waitFor()
   await expect.poll(() => refresh.getAttribute('aria-busy')).toBe('false')
-  await page.getByText('1 / 1', { exact: true }).filter({ visible: true }).waitFor()
+  expect(await page.getByRole('button', { name: 'Previous', exact: true }).isVisible()).toBe(false)
   expect(await refresh.evaluate(node => node === document.activeElement)).toBe(true)
   expect(tripwire.pageErrors).toEqual([])
   expect(tripwire.warnings).toEqual([])

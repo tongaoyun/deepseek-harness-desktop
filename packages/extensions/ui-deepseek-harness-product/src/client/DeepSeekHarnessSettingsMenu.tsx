@@ -4,6 +4,7 @@ import {
   IconUserOutlineMedium, Menu, Modal, focusWithoutRing,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { EMPLOYEE_AUTH_CLASS_NAME, EMPLOYEE_AUTH_CSS } from '@deepseek-harness/product/auth-screen'
 import { DINGTALK_AUTHORIZATION_TIMEOUT_MS } from '@deepseek-harness/product/protocol'
 import { NS } from '../locales.ts'
 import css from '../DeepSeekHarnessProduct.module.css'
@@ -17,7 +18,7 @@ type EmployeeStatus = { readonly phase: 'checking' | 'unavailable' }
   | { readonly phase: 'ready'; readonly session: Awaited<ReturnType<ProductApi['getSession']>> }
 
 /** The persistent sidebar owns employee status, DingTalk authorization, and product settings.
- * A missing or expired employee session opens one login prompt until authorization succeeds; cancellation suppresses repeated notices.
+ * A missing or expired employee session opens one full-window login screen. Cancellation suppresses repeated notices.
  * Authorization retries retain their feedback, focused action and reserved label width.
  * If sign-in removes its directory entry, lost return focus uses the employee button or its page when the sidebar is inert.
  */
@@ -33,6 +34,30 @@ PropsRuntime<'settings.launcher'> & PropsLocale<typeof NS> & EmployeeSignInActio
     if (employee?.isConnected && !employee.closest('[hidden], [inert]')) focusWithoutRing(employee, { preventScroll: true })
     else authorizationReturn.current?.()
   })
+  const signOutRequest = useRef<AbortController>()
+  const [signOutPending, setSignOutPending] = useState(false)
+  const [signOutError, setSignOutError] = useState(false)
+  useEffect(() => () => { signOutRequest.current?.abort() }, [])
+  const signOut = async (): Promise<void> => {
+    if (signOutRequest.current) return
+    const api = productApi()
+    if (!api) { setSignOutError(true); return }
+    const controller = new AbortController()
+    signOutRequest.current = controller
+    setSignOutPending(true)
+    try {
+      await invokeProduct(api, 'auth.signOut', undefined, controller.signal)
+      controller.signal.throwIfAborted()
+      setSignOutError(false)
+    } catch {
+      if (!controller.signal.aborted) setSignOutError(true)
+    } finally {
+      if (signOutRequest.current === controller) {
+        signOutRequest.current = undefined
+        if (!controller.signal.aborted) setSignOutPending(false)
+      }
+    }
+  }
   const [feedbackOpen, setFeedbackOpen] = useState(false)
   const feedbackAfterSignIn = useRef(false)
   const [updateError, setUpdateError] = useState(false)
@@ -161,6 +186,7 @@ PropsRuntime<'settings.launcher'> & PropsLocale<typeof NS> & EmployeeSignInActio
     ? signedIn ? employee.session.displayName?.trim() || t('employeeSignedIn') : t('employeeSignedOut')
     : t(employee.phase === 'checking' ? 'loading' : 'employeeStatusUnavailable')
   return <div className={css.menuRoot}>
+    {signOutError && <p role="alert" className={css.catalogError}>{t('signOutFailed')}</p>}
     {updateError && <p role="alert" className={css.catalogError}>{t('softwareUpdateFailed')}</p>}
     <Menu open={open} side="top" portal autoFocus className={css.menuAnchor} listClassName={css.menuList}
       anchor={<button ref={employeeButton} type="button" className={css.menuTrigger} data-collapsed={!wide} title={employeeLabel}
@@ -177,12 +203,14 @@ PropsRuntime<'settings.launcher'> & PropsLocale<typeof NS> & EmployeeSignInActio
           { id: 'software-update', label: t('softwareUpdate'), icon: <IconDownloadOutlineRegular size={16} />, disabled: updatePending },
         ],
         { id: 'feedback', label: t('feedbackTitle'), icon: <IconQuestionOutlineRegular size={16} /> },
+        ...signedIn ? [{ id: 'signout', label: t('signOut'), icon: <IconUserOutlineMedium size={16} />, disabled: signOutPending }] : [],
       ]}
       onClose={() => { setOpen(false) }}
       onSelect={(id) => {
         if (employeeButton.current) focusWithoutRing(employeeButton.current)
         setOpen(false)
         if (id === 'signin') openEmployeeSignIn()
+        if (id === 'signout') void signOut()
         if (id === 'settings') openSettings()
         if (id === 'feedback') {
           if (signedIn) setFeedbackOpen(true)
@@ -190,18 +218,24 @@ PropsRuntime<'settings.launcher'> & PropsLocale<typeof NS> & EmployeeSignInActio
         }
         if (id === 'software-update') void update()
       }} />
-    <Modal open={loginVisible} title={t('authTitle')} closeLabel={t('close')}
-      description={t('authBrowserHint')}
-      onClose={() => { cancelAuthorization(); setLoginVisible(false) }}
-      footer={<div ref={(node) => { authorizationFocusArea.current = node?.closest<HTMLElement>('[role="dialog"]') ?? null }} className={css.detailActions}>
-        <Button variant="outline" size="sm" onClick={() => { cancelAuthorization(); setLoginVisible(false) }}>{t('cancel')}</Button>
-        <Button variant="primary" size="sm" aria-disabled={authPending} aria-busy={authPending}
-          className={authPending ? 'product-control-pending' : undefined} onClick={() => { void signIn() }}>
-          <ProductActionLabel pending={authPending} label={t('signIn')} pendingLabel={t('signingIn')} />
-        </Button>
-      </div>}>
-      <p role={authError ? 'alert' : undefined} aria-hidden={!authError}
-        className={`${css.catalogError} ${css.employeeAuthorizationError}`}>{t('signInFailed')}</p>
+    <Modal open={loginVisible} title={t('authTitle')} headless backdropBlur={false}
+      className={EMPLOYEE_AUTH_CLASS_NAME}
+      onClose={() => { cancelAuthorization(); setLoginVisible(false) }}>
+      <style>{EMPLOYEE_AUTH_CSS}</style>
+      <main ref={(node) => { authorizationFocusArea.current = node?.closest<HTMLElement>('[role="dialog"]') ?? null }}>
+        <div data-product-auth-mark={authPending ? 'pending' : 'idle'} aria-hidden="true" />
+        <h1><ProductActionLabel pending={authPending} label={t('authTitle')} pendingLabel={t('authConnecting')} /></h1>
+        <p>{t('authBrowserHint')}</p>
+        <div data-product-auth-actions>
+          <Button variant="outline" onClick={() => { cancelAuthorization(); setLoginVisible(false) }}>{t('cancel')}</Button>
+          <Button variant="primary" aria-disabled={authPending} aria-busy={authPending}
+            data-modal-autofocus className={authPending ? 'product-control-pending' : undefined}
+            onClick={() => { void signIn() }}>
+            <ProductActionLabel pending={authPending} label={t('signIn')} pendingLabel={t('signingIn')} />
+          </Button>
+        </div>
+        <p role={authError ? 'alert' : undefined} aria-hidden={!authError} data-product-auth-error>{t('signInFailed')}</p>
+      </main>
     </Modal>
     <DesktopFeedback open={feedbackOpen} onClose={() => { setFeedbackOpen(false) }} t={t} />
   </div>

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef } from 'react'
 import { z } from 'zod'
-import { LibrarySelectionSchema } from '@deepseek-harness/product/library'
+import { LibraryEntrySchema, LibrarySelectionSchema, type LibraryEntry } from '@deepseek-harness/product/library'
 import type { DocumentPreviewFile } from '@deepseek-ai/dsh-client-ui-sidebar-documentpreview/client'
 import { invokeProduct, productApi } from './product-api.ts'
 function record(value: unknown): Record<string, unknown> {
@@ -14,6 +14,34 @@ function string(value: unknown): string {
 function number(value: unknown): number {
   if (typeof value !== 'number') throw new Error('Invalid file response')
   return value
+}
+/** Resolve a folder's path within its authorized library, rejecting cycles and mismatched replies.
+ * @param request Cancellable metadata transport.
+ * @param entry Folder whose ancestors are needed.
+ * @param signal Owning navigation lifetime.
+ * @returns Root-to-folder breadcrumbs, including the supplied folder.
+ */
+export async function readLibraryTrail(
+  request: ReturnType<typeof useLibraryRequests>, entry: LibraryEntry, signal: AbortSignal,
+): Promise<readonly LibraryEntry[]> {
+  const ancestors = [entry]
+  const visited = new Set([entry.id])
+  let parentId = entry.parentId
+  while (parentId !== null) {
+    if (visited.has(parentId)) throw new Error('Invalid library folder ancestry')
+    visited.add(parentId)
+    const parent = LibraryEntrySchema.parse(await request('library.entries.get', {
+      libraryId: entry.libraryId, entryId: parentId,
+    }, signal))
+    signal.throwIfAborted()
+    if (parent.id !== parentId || parent.libraryId !== entry.libraryId || parent.kind !== 'FOLDER') {
+      throw new Error('Invalid library folder ancestry')
+    }
+    ancestors.unshift(parent)
+    parentId = parent.parentId
+  }
+  signal.throwIfAborted()
+  return ancestors
 }
 /** Read a bounded private file transfer and release its handle on every outcome.
  * @param request Cancellable library transport with independent cleanup requests.

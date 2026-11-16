@@ -10,7 +10,6 @@ import { LibraryBrowser } from './LibraryBrowser.tsx'
 import { productErrorMessage, type ProductFailureReport } from './product-errors.ts'
 import type { EmployeeSignInActions } from './employee-sign-in.ts'
 import { ProductLoading } from './ProductLoading.tsx'
-import { ProductSignIn } from './ProductSignIn.tsx'
 import { useResultFocus } from './useResultFocus.ts'
 import css from '../DeepSeekHarnessProduct.module.css'
 /** Releasing the picker cancels pending file admission and uses no separate task scope.
@@ -41,6 +40,9 @@ export function TaskLibraryInput({
   const [pending, setPending] = useState(false)
   const [error, setError] = useState<DeepSeekHarnessProductKey | ProductFailureReport>()
   const operation = useRef<AbortController>()
+  const pickerRequested = useRef(false)
+  const requestSignIn = useRef(() => {})
+  requestSignIn.current = () => { openEmployeeSignIn(focusInput) }
   const [authenticated, setAuthenticated] = useState<boolean>()
   const [verifying, setVerifying] = useState(true)
   const [verificationError, setVerificationError] = useState<unknown>()
@@ -49,6 +51,7 @@ export function TaskLibraryInput({
   const cancel = useRef<HTMLButtonElement>(null)
   const capture = useResultFocus(retry, cancel)
   const close = useCallback(() => {
+    pickerRequested.current = false
     operation.current?.abort()
     operation.current = undefined
     setPending(false)
@@ -56,13 +59,9 @@ export function TaskLibraryInput({
     setSelected(new Map())
     setError(undefined)
   }, [])
-  const signIn = () => {
-    close()
-    openEmployeeSignIn(focusInput)
-  }
   useEffect(() => subscribeOpen(() => {
     if (authenticated === false) openEmployeeSignIn(focusInput)
-    else setOpen(true)
+    else { pickerRequested.current = true; setOpen(true) }
   }), [subscribeOpen, authenticated, openEmployeeSignIn, focusInput])
   useEffect(() => {
     close()
@@ -76,10 +75,16 @@ export function TaskLibraryInput({
     let identity: string | undefined
     const updateIdentity = (session: Awaited<ReturnType<NonNullable<typeof api>['getSession']>>, changed = false) => {
       const next = JSON.stringify([session.authenticated, session.employeeId])
+      const requested = pickerRequested.current
       if (identity === undefined ? changed : next !== identity) close()
       identity = next
       capture()
-      setAuthenticated(session.authenticated === true && !!session.employeeId)
+      const authorized = session.authenticated === true && !!session.employeeId
+      if (!authorized) {
+        close()
+        if (requested) requestSignIn.current()
+      }
+      setAuthenticated(authorized)
       setVerificationError(undefined)
       setVerifying(false)
     }
@@ -176,7 +181,6 @@ export function TaskLibraryInput({
           </Button>
         </div>
       )}
-      {authenticated === false && <ProductSignIn t={t} onSignIn={signIn} />}
       {authenticated === true && <LibraryBrowser
         t={t}
         selected={selected}

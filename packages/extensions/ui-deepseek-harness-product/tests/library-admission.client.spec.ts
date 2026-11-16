@@ -8,7 +8,7 @@ import { zh } from '@deepseek-ai/dsh-client-ui-conversation/src/client/locales.t
 import { createHarnessActions } from '../src/client/harness-actions.ts'
 import { LibraryEntrySchema } from '@deepseek-harness/product/library'
 const file = LibraryEntrySchema.parse({ id: '22222222-2222-4222-8222-222222222222', libraryId: '11111111-1111-4111-8111-111111111111',
-  parentId: null, name: '中文资料.md', kind: 'FILE', sha256: 'a'.repeat(64), mediaType: 'text/markdown', sizeBytes: 3, favorite: false,
+  parentId: null, name: '中文资料.md', kind: 'FILE', sha256: 'a'.repeat(64), mediaType: 'text/markdown', sizeBytes: 3,
   version: 1, createdAt: '2026-11-13T01:00:00Z', updatedAt: '2026-11-13T01:00:00Z' })
 async function fixture() {
   const runtime = await SlotTestRuntime.create()

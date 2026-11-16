@@ -15,6 +15,29 @@ const template = { id: 'erp', version: '1.0.0', transport: 'streamable-http', ur
   arguments: [], headers: ['Authorization'], environment: [], configured: false, timeoutSeconds: 60 }
 afterEach(() => { cleanup(); vi.useRealTimers(); vi.unstubAllGlobals() })
 
+it('pins an open device draft to its original version when connector details update', async () => {
+  const invoke = vi.fn(async (_namespace: string, method: string) => ({ ok: true,
+    result: method.endsWith('.read') ? template : { id: descriptor.id, version: descriptor.version, configured: true } }))
+  vi.stubGlobal('dshDesktop', { extensions: { invoke, cancel: vi.fn() } })
+  const refresh = vi.fn(async () => {})
+  const initial = localDetail(items([descriptor])[0]!)
+  const view = render(<ConnectorDetail product={initial} onCatalogChanged={refresh} t={t} />)
+  fireEvent.click(screen.getByRole('button', { name: zh.configureDevice }))
+  const input = await screen.findByLabelText<HTMLInputElement>('Authorization')
+  fireEvent.change(input, { target: { value: 'private-draft' } })
+  input.focus(); input.setSelectionRange(2, 6)
+  view.rerender(<ConnectorDetail product={{ ...initial, version: '2.0.0' }} onCatalogChanged={refresh} t={t} />)
+  expect(screen.getByLabelText('Authorization')).toBe(input)
+  expect(input.value).toBe('private-draft')
+  expect(document.activeElement).toBe(input)
+  expect([input.selectionStart, input.selectionEnd]).toEqual([2, 6])
+  fireEvent.click(screen.getByRole('button', { name: zh.saveConnector }))
+  await act(async () => {})
+  expect(invoke).toHaveBeenCalledWith('product', 'extensions.connector.configuration.save',
+    expect.objectContaining({ id: 'erp', version: '1.0.0' }), expect.any(String), expect.any(Number))
+  expect(refresh).toHaveBeenCalledOnce()
+})
+
 it.each((['resolve', 'reject'] as const).flatMap(outcome => [false, true].map(elsewhere => ({ outcome, elsewhere }))))(
   'retains the device entry during authorization refresh ($outcome, elsewhere=$elsewhere)', async ({ outcome, elsewhere }) => {
     const revoked = Promise.withResolvers<unknown>(), refreshed = Promise.withResolvers<undefined>()

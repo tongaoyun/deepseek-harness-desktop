@@ -877,18 +877,19 @@ function createSkillsPage(localeService: ClientContext["locale"]) {
 
 /** Register the builtin skills page in the product main area. */
 export const inject = ['slots', 'locale', 'remote', 'uiWorkspace'];
-export async function apply(ctx: ClientContext): Promise<() => Promise<void>> {
+export async function apply(ctx: ClientContext, config: { readonly PageAccess?: React.ComponentType<React.PropsWithChildren> } = {}): Promise<() => Promise<void>> {
   const dispose = await ctx.remote.$mount(TYPERT_REMOTE);
   const ui = ctx.inject(['remote.skillsManager'], scope => {
     const apiForSession = (sessionId?: string) => createSkillApi(scope.remote, sessionId);
     const api = apiForSession();
     const SkillManagerSection = createSkillsPage(scope.locale);
+    const PageAccess = config.PageAccess ?? react.Fragment;
     const startCreation = () => scope.uiWorkspace.startSession(undefined, { prompt: scope.locale.bind(NS)('creation.prompt'), whenDraftExists: 'append' });
     scope.effect(() => scope.locale.register(NS, DICT));
     scope.slots.inject('main', () => scope.slots.register({
       name: 'main', key: 'deepseek-harness-skills', locale: NS,
-    }, props => h('div', { className: 'product-capability-page' },
-      h('div', { className: 'product-capability-content' }, h(SkillManagerSection, { ...props, api, apiForSession, startCreation, t: (key: string, params?: object) => props.t(key, { ...params }) })))));
+    }, props => h(PageAccess, null, h('div', { className: 'product-capability-page' },
+      h('div', { className: 'product-capability-content' }, h(SkillManagerSection, { ...props, api, apiForSession, startCreation, t: (key: string, params?: object) => props.t(key, { ...params }) }))))));
   });
   try { await ui; } catch (error) { await ui.dispose(); await dispose(); throw error; }
   return async () => { await ui.dispose(); await dispose(); };

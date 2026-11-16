@@ -243,10 +243,11 @@ export class DeepSeekHarnessApiClient {
    */
   pollDingTalk<T>(state: string, signal?: AbortSignal): Promise<T> { return this.request<T>(`/api/v1/dingtalk-auth/authorization-requests/${encodeURIComponent(state)}`, signal === undefined ? {} : { signal }) }
   /** Refresh the current employee session.
+   * @param refreshToken - Main-owned remembered-login credential.
    * @param signal - Employee request lifetime.
    * @returns Refreshed session data.
    */
-  refreshSession<T>(signal?: AbortSignal): Promise<T> { return this.request<T>('/api/v1/employee-auth/session/refresh', { method: 'POST', ...(signal === undefined ? {} : { signal }) }) }
+  refreshSession<T>(refreshToken: string, signal?: AbortSignal): Promise<T> { return this.request<T>('/api/v1/employee-auth/session/refresh', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ refreshToken }), ...(signal === undefined ? {} : { signal }) }) }
   /** Read one validated page from a product directory.
    * @param path - Directory endpoint path.
    * @param page - One-based page number.

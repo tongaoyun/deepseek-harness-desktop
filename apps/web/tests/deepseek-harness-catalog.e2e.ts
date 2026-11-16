@@ -52,7 +52,7 @@ it('keeps composer login, partial library uploads and cancelled selections stabl
   let authenticated = false, resourceReads = 0, selects = 0, discards = 0
   const now = '2026-11-13T01:00:00Z'
   const library = { id: '11111111-1111-4111-8111-111111111111', name: 'Upload library', description: 'Reference files',
-    scope: 'PERSONAL', ownerId: 'fixture-employee', managerEmployeeId: 'fixture-employee', canManage: true,
+    scope: 'PERSONAL', ownerId: 'fixture-employee', companyId: 'company', role: 'OWNER', canManage: true,
     version: 1, createdAt: now, updatedAt: now }
   const files = [
     { selectionId: '22222222-2222-4222-8222-222222222222', name: 'First.md', sizeBytes: 12 },
@@ -66,12 +66,17 @@ it('keeps composer login, partial library uploads and cancelled selections stabl
   await page.exposeFunction('__libraryUploadInvoke', async (method: string, payload?: unknown) => {
     if (method === 'auth.getSession') return authenticated ? { authenticated, employeeId: 'fixture-employee' } : { authenticated }
     if (method === 'auth.ensureDingTalk') { await loginGate.promise; return { authenticated: false } }
-    if (method === 'library.files.list') return { data: [], pageIndex: 1, pageSize: 20, totalCount: 0, totalPages: 0 }
+    if (method === 'library.files.list') return { data: uploaded.map(id => ({
+      entry: { id, libraryId: library.id, parentId: null,
+        name: [...files, singleFile, recoveredFile].find(file => file.selectionId === id)!.name,
+        kind: 'FILE', sha256: 'a'.repeat(64), mediaType: 'text/markdown', sizeBytes: 12, version: 1, createdAt: now, updatedAt: now },
+      libraryName: library.name, canManage: true, lastAccessedAt: now, sourceKind: 'UPLOAD', sourceSessionId: null,
+    })), pageIndex: 1, pageSize: 20, totalCount: uploaded.length, totalPages: uploaded.length ? 1 : 0 }
     if (method === 'library.list') { resourceReads++; return { data: [library], pageIndex: 1, pageSize: 20, totalCount: 1, totalPages: 1 } }
-    if (method === 'library.get') return library
+    if (method === 'library.get' || method === 'library.personal.ensure') return library
     if (method === 'library.entries.list') return { data: uploaded.map(id => ({ id, libraryId: library.id, parentId: null,
       name: [...files, singleFile, recoveredFile].find(file => file.selectionId === id)!.name, kind: 'FILE', sha256: 'a'.repeat(64), mediaType: 'text/markdown',
-      sizeBytes: 12, favorite: false, version: 1, createdAt: now, updatedAt: now })), pageIndex: 1, pageSize: 20,
+      sizeBytes: 12, version: 1, createdAt: now, updatedAt: now })), pageIndex: 1, pageSize: 20,
     totalCount: uploaded.length, totalPages: uploaded.length ? 1 : 0 }
     if (method === 'library.files.upload.select') {
       const attempt = ++selects
@@ -112,7 +117,7 @@ it('keeps composer login, partial library uploads and cancelled selections stabl
     } } })
   })
   await page.goto(scaffold.authenticatedUrl)
-  const initialLogin = page.getByRole('dialog', { name: 'Sign in to use organization resources', exact: true })
+  const initialLogin = page.getByRole('dialog', { name: 'Sign in to DeepSeek Harness', exact: true })
   await initialLogin.waitFor()
   await initialLogin.getByRole('button', { name: 'Cancel', exact: true }).click()
   await initialLogin.waitFor({ state: 'hidden' })
@@ -127,7 +132,7 @@ it('keeps composer login, partial library uploads and cancelled selections stabl
   const inputNode = await input.elementHandle()
   await page.getByRole('button', { name: 'Add files or run commands', exact: true }).click()
   await page.getByRole('option', { name: /Choose library files/ }).click()
-  const login = page.getByRole('dialog', { name: 'Sign in to use organization resources', exact: true })
+  const login = page.getByRole('dialog', { name: 'Sign in to DeepSeek Harness', exact: true })
   await login.waitFor()
   expect(await page.getByRole('dialog', { name: 'Choose library files', exact: true }).count()).toBe(0)
   expect(resourceReads).toBe(0)
@@ -140,11 +145,15 @@ it('keeps composer login, partial library uploads and cancelled selections stabl
     type: 'session.changed', payload: { authenticated: true, employeeId: 'fixture-employee' },
   } })) })
   await page.getByRole('button', { name: 'Libraries', exact: true }).click()
-  await page.getByRole('button', { name: 'Library directory', exact: true }).click()
-  await page.getByRole('button', { name: /Upload library Reference files/ }).click()
   const trigger = page.getByRole('button', { name: 'Upload files', exact: true })
   const triggerNode = await trigger.elementHandle()
-  await trigger.click()
+  const openUpload = async () => {
+    await trigger.click()
+    const destination = page.getByRole('dialog', { name: 'Choose upload destination', exact: true })
+    await expect.poll(() => destination.getByRole('button', { name: 'Choose', exact: true }).getAttribute('aria-disabled')).toBe('false')
+    await destination.getByRole('button', { name: 'Choose', exact: true }).click()
+  }
+  await openUpload()
   const dialog = page.getByRole('dialog', { name: 'Upload files', exact: true })
   const choose = dialog.getByRole('button', { name: 'Choose local files', exact: true })
   const upload = dialog.getByRole('button', { name: 'Upload files', exact: true })
@@ -186,9 +195,9 @@ it('keeps composer login, partial library uploads and cancelled selections stabl
   }
   retryGate.resolve(undefined)
   await dialog.waitFor({ state: 'detached' })
-  await page.getByRole('button', { name: 'Second.md 1 KB', exact: true }).waitFor()
+  await page.getByRole('button', { name: 'Second.md Upload library', exact: true }).waitFor()
   expect(await trigger.evaluate((node, previous) => node === previous && node === document.activeElement, triggerNode)).toBe(true)
-  await trigger.click()
+  await openUpload()
   await choose.click()
   await expect.poll(() => selects).toBe(3)
   await page.keyboard.press('Escape')
@@ -196,7 +205,7 @@ it('keeps composer login, partial library uploads and cancelled selections stabl
   selectionGate.resolve(undefined)
   await expect.poll(() => discards).toBe(3)
   expect(writes).toHaveLength(3)
-  await trigger.click()
+  await openUpload()
   await choose.click()
   const remaining = dialog.getByText('New.md · 1 KB', { exact: true })
   await remaining.waitFor()
@@ -215,9 +224,10 @@ it('keeps composer login, partial library uploads and cancelled selections stabl
       await page.setViewportSize({ width, height: 900 })
       expect(await dialog.locator('[role="alert"]').evaluate(node => node.getBoundingClientRect().right <= innerWidth)).toBe(true)
       if (width === 390) {
-        expect(await alert.evaluate(node => node.scrollHeight > node.clientHeight)).toBe(true)
-        await alert.focus(); await alert.press('End')
-        await expect.poll(() => alert.evaluate(node => node.scrollTop > 0)).toBe(true)
+        const errorRegion = dialog.getByRole('region', { name: 'Save failed. Please retry.', exact: true })
+        expect(await errorRegion.evaluate(node => node.scrollHeight > node.clientHeight)).toBe(true)
+        await errorRegion.focus(); await errorRegion.press('End')
+        await expect.poll(() => errorRegion.evaluate(node => node.scrollTop > 0)).toBe(true)
         await upload.focus()
       }
       await page.screenshot({ path: join(screenshots, `library-upload-error-${theme}-${width}.png`) })
@@ -228,7 +238,7 @@ it('keeps composer login, partial library uploads and cancelled selections stabl
   expect(writes).toHaveLength(5)
   expect(writes[4]).toEqual(writes[3])
   expect(await trigger.evaluate(node => node === document.activeElement)).toBe(true)
-  await trigger.click()
+  await openUpload()
   await choose.click()
   const invalidRow = dialog.getByText(`${invalidFile.name} · 1 KB`, { exact: true })
   await invalidRow.waitFor()
@@ -285,12 +295,12 @@ it('keeps library attachment errors visible and preserves the native composer th
   onTestFinished(() => { cancelledOpen.resolve(undefined); cancelledRead.resolve(undefined) })
   const now = '2026-11-13T01:00:00Z'
   const library = { id: '11111111-1111-4111-8111-111111111111', name: 'Attachment library', description: 'Reference files',
-    scope: 'PERSONAL', ownerId: 'fixture-employee', managerEmployeeId: 'fixture-employee', canManage: true,
+    scope: 'PERSONAL', ownerId: 'fixture-employee', companyId: 'company', role: 'OWNER', canManage: true,
     version: 1, createdAt: now, updatedAt: now }
   const files = Array.from({ length: 20 }, (_, index) => ({
     id: `22222222-2222-4222-8222-${String(index).padStart(12, '0')}`, libraryId: library.id, parentId: null,
     name: `Reference ${index}.md`, kind: 'FILE', sha256: 'a'.repeat(64), mediaType: 'text/markdown', sizeBytes: 3,
-    favorite: false, version: 1, createdAt: now, updatedAt: now,
+    version: 1, createdAt: now, updatedAt: now,
   }))
   await page.exposeFunction('__libraryAttachmentInvoke', async (method: string, payload?: unknown) => {
     if (method === 'auth.getSession') return { authenticated: true, employeeId: 'fixture-employee' }
@@ -352,7 +362,7 @@ it('keeps library attachment errors visible and preserves the native composer th
   await row.locator('..').getByRole('button', { name: 'Choose', exact: true }).click()
   const search = dialog.getByRole('searchbox')
   await search.fill('Reference')
-  await expect.poll(() => dialog.getByRole('button', { name: 'Refresh', exact: true }).getAttribute('aria-busy')).toBe('false')
+  await expect.poll(() => dialog.locator('[class*=libraryRows]').getAttribute('aria-busy')).toBe('false')
   await search.evaluate((node) => { if (node instanceof HTMLInputElement) node.setSelectionRange(2, 7) })
   const rowNode = await row.elementHandle(), searchNode = await search.elementHandle()
   const scroller = dialog.locator('[class*="detailModalContent"] > div:last-child')
@@ -464,9 +474,10 @@ it('cancels native library archive preparation and keeps retry focus and employe
     late.resolve(undefined); retryGate.resolve(undefined); saveGate.resolve(undefined); failureGate.resolve(undefined)
   })
   let selections = 0, discards = 0, saves = 0
+  const archiveName = `验收-${'A'.repeat(160)}.txt`
   const now = '2026-11-13T01:00:00Z'
   const library = { id: '11111111-1111-4111-8111-111111111111', name: 'Archive library', description: 'Reference files',
-    scope: 'PERSONAL', ownerId: 'fixture-employee', managerEmployeeId: 'fixture-employee', canManage: true,
+    scope: 'PERSONAL', ownerId: 'fixture-employee', companyId: 'company', role: 'OWNER', canManage: true,
     version: 1, createdAt: now, updatedAt: now }
   const alternate = { ...library, id: '44444444-4444-4444-8444-444444444444', name: 'Archive alternate' }
   const writes: unknown[] = []
@@ -481,16 +492,20 @@ it('cancels native library archive preparation and keeps retry focus and employe
           return { fixtureFailure: productFailure(new ProductError('EXTERNAL_SERVICE_ERROR', 'Snapshot unavailable', true)) }
         }
         if (attempt === 3) await retryGate.promise
-        return [{ selectionId: '22222222-2222-4222-8222-222222222222', name: 'Report.txt', sizeBytes: 12 }]
+        return [{ selectionId: '22222222-2222-4222-8222-222222222222', name: archiveName, sizeBytes: 12 }]
       }
       case 'library.files.upload':
         writes.push(payload)
         if (++saves === 1) return { fixtureFailure: productFailure(new ProductError('EXTERNAL_SERVICE_ERROR', 'Archive unavailable', true)) }
         await saveGate.promise
         return true
+      case 'library.personal.ensure': return library
       case 'library.get': return typeof payload === 'object' && payload !== null && 'libraryId' in payload
         && payload.libraryId === alternate.id ? alternate : library
-      case 'library.entries.list': return { data: [], pageIndex: 1, pageSize: 20, totalCount: 0, totalPages: 0 }
+      case 'library.entries.list': return { data: [{ id: '33333333-3333-4333-8333-333333333333',
+        libraryId: library.id, parentId: null, name: 'Archive folder', kind: 'FOLDER',
+        sha256: null, mediaType: null, sizeBytes: 0,
+        version: 1, createdAt: now, updatedAt: now }], pageIndex: 1, pageSize: 20, totalCount: 1, totalPages: 1 }
       case 'library.files.upload.discard': discards++; return true
       case 'library.files.list': return { data: [], pageIndex: 1, pageSize: 20, totalCount: 0, totalPages: 0 }
       case 'library.list': return { data: [library, alternate], pageIndex: 1, pageSize: 20, totalCount: 2, totalPages: 1 }
@@ -562,7 +577,6 @@ it('cancels native library archive preparation and keeps retry focus and employe
   } })) })
   expect(await search.evaluate((node, previous) => node === previous && node === document.activeElement, searchNode)).toBe(true)
   expect(await search.evaluate(node => node instanceof HTMLInputElement && [node.value, node.selectionStart, node.selectionEnd])).toEqual(['Archive', 1, 4])
-  await dialog.getByRole('button', { name: /Archive library Reference files/ }).click()
   const save = dialog.getByRole('button', { name: 'Save', exact: true })
   await expect.poll(() => save.getAttribute('aria-disabled')).toBe('false')
   const bounds = await dialog.boundingBox(), saveBounds = await save.boundingBox(), searchBounds = await search.boundingBox()
@@ -577,6 +591,7 @@ it('cancels native library archive preparation and keeps retry focus and employe
     await page.emulateMedia({ colorScheme: theme })
     for (const width of [1440, 390]) {
       await page.setViewportSize({ width, height: 900 })
+      expect(await dialog.getByText(archiveName, { exact: true }).evaluate(node => node.scrollWidth <= node.clientWidth)).toBe(true)
       await page.screenshot({ path: join(screenshots, `library-archive-save-error-${theme}-${width}.png`) })
     }
   }
@@ -597,6 +612,9 @@ it('cancels native library archive preparation and keeps retry focus and employe
     for (const width of [1440, 390]) {
       await page.setViewportSize({ width, height: width === 390 ? 560 : 900 })
       expect(await controlIsUnclipped(save)).toBe(true)
+      const folder = dialog.getByRole('button', { name: 'Archive folder Folder', exact: true })
+      await folder.scrollIntoViewIfNeeded()
+      expect(await controlIsUnclipped(folder)).toBe(true)
       await page.screenshot({ path: join(screenshots, `library-archive-destination-${theme}-${width}.png`) })
     }
   }
@@ -609,7 +627,6 @@ it('cancels native library archive preparation and keeps retry focus and employe
   await expect.poll(() => saves).toBe(2)
   expect(writes[1]).toEqual(writes[0])
   expect(await search.getAttribute('readonly')).toBe('')
-  expect(await dialog.getByRole('button', { name: 'Refresh', exact: true }).getAttribute('aria-disabled')).toBe('true')
   await dialog.getByRole('button', { name: 'Libraries', exact: true }).evaluate((node) => {
     if (node instanceof HTMLButtonElement) node.click()
   })
@@ -645,11 +662,11 @@ it('keeps library move destinations, retry focus and committed refreshes stable'
   const tripwire = watchConsole(page)
   const now = '2026-11-13T01:00:00Z'
   const library = { id: '11111111-1111-4111-8111-111111111111', name: 'Move library', description: 'Reference files',
-    scope: 'PERSONAL', ownerId: 'fixture-employee', managerEmployeeId: 'fixture-employee', canManage: true,
+    scope: 'PERSONAL', ownerId: 'fixture-employee', companyId: 'company', role: 'OWNER', canManage: true,
     version: 1, createdAt: now, updatedAt: now }
   const file = { id: '22222222-2222-4222-8222-222222222222', libraryId: library.id, parentId: null,
     name: 'Move me.md', kind: 'FILE', sha256: 'a'.repeat(64), mediaType: 'text/markdown', sizeBytes: 12,
-    favorite: false, version: 1, createdAt: now, updatedAt: now }
+    version: 1, createdAt: now, updatedAt: now }
   const folder = { ...file, id: '33333333-3333-4333-8333-333333333333', name: 'Destination', kind: 'FOLDER',
     sha256: null, mediaType: null, sizeBytes: 0 }
   const children = Array.from({ length: 21 }, (_, index) => ({ ...folder,
@@ -666,7 +683,13 @@ it('keeps library move destinations, retry focus and committed refreshes stable'
     version?: number
   }) => {
     if (method === 'auth.getSession') return { authenticated: true, employeeId: 'fixture-employee' }
-    if (method === 'library.files.list') return { data: [], pageIndex: 1, pageSize: 20, totalCount: 0, totalPages: 0 }
+    if (method === 'library.files.list') {
+      reads++
+      if (failRead) { failRead = false; return { fixtureFailure: productFailure(new ProductError('EXTERNAL_SERVICE_ERROR', 'Directory unavailable', true)) } }
+      return { data: [{ entry: { ...file, parentId: moved ? folder.id : null, version: moved ? 2 : 1 },
+        libraryName: library.name, canManage: true, lastAccessedAt: now, sourceKind: 'UPLOAD', sourceSessionId: null }],
+      pageIndex: 1, pageSize: 20, totalCount: 1, totalPages: 1 }
+    }
     if (method === 'library.list') return { data: [library], pageIndex: 1, pageSize: 20, totalCount: 1, totalPages: 1 }
     if (method === 'library.get') return library
     if (method === 'library.entries.list') {
@@ -704,11 +727,13 @@ it('keeps library move destinations, retry focus and committed refreshes stable'
   })
   await page.goto(scaffold.authenticatedUrl)
   await page.getByRole('button', { name: 'Libraries', exact: true }).click()
-  await page.getByRole('button', { name: 'Library directory', exact: true }).click()
-  await page.getByRole('button', { name: /Move library Reference files/ }).click()
-  const fileRow = page.getByRole('button', { name: 'Move me.md 1 KB', exact: true })
+  const fileRow = page.getByRole('button', { name: 'Move me.md Move library', exact: true })
   await fileRow.waitFor()
-  await fileRow.locator('..').getByRole('button', { name: 'Move', exact: true }).click()
+  const move = async () => {
+    await page.getByRole('button', { name: 'More actions · Move me.md', exact: true }).click()
+    await page.getByRole('menuitem', { name: 'Move', exact: true }).click()
+  }
+  await move()
   const dialog = page.getByRole('dialog', { name: 'Move', exact: true })
   const save = dialog.getByRole('button', { name: 'Save', exact: true })
   expect(await save.getAttribute('aria-disabled')).toBe('true')
@@ -717,7 +742,6 @@ it('keeps library move destinations, retry focus and committed refreshes stable'
   await dialog.getByRole('button', { name: 'Destination Folder', exact: true }).click()
   const search = dialog.getByRole('searchbox')
   await search.fill('Destination child')
-  await expect.poll(() => dialog.getByRole('button', { name: 'Refresh', exact: true }).getAttribute('aria-busy')).toBe('false')
   const child = dialog.getByRole('button', { name: 'Destination child 0 Folder', exact: true })
   const childNode = await child.elementHandle(), searchNode = await search.elementHandle(), saveNode = await save.elementHandle()
   await search.evaluate((node) => { if (node instanceof HTMLInputElement) node.setSelectionRange(2, 9) })
@@ -749,7 +773,7 @@ it('keeps library move destinations, retry focus and committed refreshes stable'
   const lockedReads = reads
   expect(await search.getAttribute('readonly')).toBe('')
   for (const button of [child, dialog.getByRole('button', { name: library.name, exact: true }),
-    dialog.getByRole('button', { name: 'Refresh', exact: true }), dialog.getByRole('button', { name: 'Next', exact: true })]) {
+    dialog.getByRole('button', { name: 'Next', exact: true })]) {
     expect(await button.getAttribute('aria-disabled')).toBe('true')
     await button.evaluate((node) => { if (node instanceof HTMLButtonElement) node.click() })
   }
@@ -767,24 +791,22 @@ it('keeps library move destinations, retry focus and committed refreshes stable'
   await page.getByRole('alert').waitFor()
   await fileRow.waitFor()
   await page.getByRole('button', { name: 'Retry', exact: true }).click()
-  await fileRow.waitFor({ state: 'detached' })
+  await expect.poll(() => page.getByRole('alert').count()).toBe(0)
+  await fileRow.waitFor()
   expect(writes).toBe(2)
   expect(await page.getByRole('searchbox').evaluate(node => node === document.activeElement)).toBe(true)
-  await page.getByRole('button', { name: 'Destination Folder', exact: true }).click()
-  await page.getByRole('searchbox').fill('Move me')
-  await fileRow.waitFor()
-  const move = fileRow.locator('..').getByRole('button', { name: 'Move', exact: true })
-  await move.click()
+  await move()
   await dialog.getByRole('button', { name: 'Destination Folder', exact: true }).waitFor()
   await page.keyboard.press('Escape')
   await dialog.waitFor({ state: 'detached' })
-  expect(await move.evaluate(node => node === document.activeElement)).toBe(true)
+  expect(await page.getByRole('button', { name: 'More actions · Move me.md', exact: true })
+    .evaluate(node => node === document.activeElement)).toBe(true)
   expect(writes).toBe(2)
   expect(tripwire.pageErrors).toEqual([])
   expect(tripwire.warnings).toEqual([])
 })
 
-it('keeps library navigation, favorite retry and discard confirmation stable', async () => {
+it('keeps library navigation and discard confirmation stable', async () => {
   const scaffold = await launchWebScaffold({ firstUse: true,
     extraInstallAnchors: [join(REPO_ROOT, 'packages/deepseek-harness-product/desktop/package.json')],
     extraOverlayPath: [join(packageDir, 'cordis.patch.yml'), join(REPO_ROOT, 'apps/web/tests/pin-browse-picker.overlay.yml')],
@@ -796,33 +818,36 @@ it('keeps library navigation, favorite retry and discard confirmation stable', a
   const tripwire = watchConsole(page)
   const now = '2026-11-13T01:00:00Z'
   const library = { id: '11111111-1111-4111-8111-111111111111', name: 'Library fixture', description: 'Reference files',
-    scope: 'PERSONAL', ownerId: 'fixture-employee', managerEmployeeId: 'fixture-employee', canManage: true,
+    scope: 'PERSONAL', ownerId: 'fixture-employee', companyId: 'company', role: 'OWNER', canManage: true,
     version: 1, createdAt: now, updatedAt: now }
   const file = { id: '22222222-2222-4222-8222-222222222222', libraryId: library.id, parentId: null,
     name: 'Reference.md', kind: 'FILE', sha256: 'a'.repeat(64), mediaType: 'text/markdown', sizeBytes: 12,
-    favorite: false, version: 1, createdAt: now, updatedAt: now }
-  const gate = Promise.withResolvers<undefined>()
+    version: 1, createdAt: now, updatedAt: now }
   const renameGate = Promise.withResolvers<undefined>(), deleteGate = Promise.withResolvers<undefined>()
   const downloadGate = Promise.withResolvers<undefined>()
   const creationGates = {
-    'library.create': Promise.withResolvers<undefined>(),
     'library.folders.create': Promise.withResolvers<undefined>(),
   }
   const creationRequests = new Map<string, unknown[]>()
   const previewText = Array.from({ length: 80 }, (_, index) => `Reference paragraph ${index}.`).join('\n\n')
   onTestFinished(() => {
-    gate.resolve(undefined); renameGate.resolve(undefined); deleteGate.resolve(undefined); downloadGate.resolve(undefined)
+    renameGate.resolve(undefined); deleteGate.resolve(undefined); downloadGate.resolve(undefined)
     for (const pending of Object.values(creationGates)) pending.resolve(undefined)
   })
-  let writes = 0, saved = false, reads = 0, renames = 0, renamed = false, deletes = 0, deleted = false
+  let reads = 0, renames = 0, renamed = false, deletes = 0, deleted = false
   let downloads = 0, previewReads = 0
   await page.exposeFunction('__libraryStabilityInvoke', async (method: string, payload?: unknown) => {
     switch (method) {
       case 'auth.getSession': return { authenticated: true, employeeId: 'fixture-employee' }
-      case 'library.files.list': return { data: [], pageIndex: 1, pageSize: 20, totalCount: 0, totalPages: 0 }
+      case 'library.files.list':
+        reads++
+        return { data: deleted ? [] : [{ entry: { ...file, name: renamed ? 'Retained reference.md' : file.name,
+          version: renamed ? 2 : 1 }, libraryName: library.name, canManage: true,
+        lastAccessedAt: now, sourceKind: 'UPLOAD', sourceSessionId: null }],
+        pageIndex: 1, pageSize: 20, totalCount: deleted ? 0 : 1, totalPages: deleted ? 0 : 1 }
       case 'library.list': return { data: [library], pageIndex: 1, pageSize: 20, totalCount: 1, totalPages: 1 }
-      case 'library.get': return library
-      case 'library.create':
+      case 'library.get':
+      case 'library.personal.ensure': return library
       case 'library.folders.create': {
         const requests = creationRequests.get(method) ?? []
         requests.push(payload)
@@ -833,10 +858,7 @@ it('keeps library navigation, favorite retry and discard confirmation stable', a
         }
         return true
       }
-      case 'library.entries.list':
-        reads++
-        return { data: deleted ? [] : [{ ...file, name: renamed ? 'Retained reference.md' : file.name, favorite: saved,
-          version: renamed ? 2 : 1 }], pageIndex: 1, pageSize: 20, totalCount: deleted ? 0 : 1, totalPages: deleted ? 0 : 1 }
+      case 'library.entries.list': return { data: [], pageIndex: 1, pageSize: 20, totalCount: 0, totalPages: 0 }
       case 'library.files.preview.open':
         if (++previewReads === 1) return { fixtureFailure:
           productFailure(new ProductError('EXTERNAL_SERVICE_ERROR', 'Preview unavailable', true)) }
@@ -853,11 +875,6 @@ it('keeps library navigation, favorite retry and discard confirmation stable', a
           productFailure(new ProductError('LIBRARY_PREVIEW_SOURCE_CHANGED', 'PRIVATE_EXPECTED_FILE_DIGEST', true)) }
         await downloadGate.promise
         return { cancelled: false }
-      case 'library.entries.favorite':
-        if (++writes === 1) return { fixtureFailure: productFailure(new ProductError('EXTERNAL_SERVICE_ERROR', 'Favorite unavailable', true)) }
-        await gate.promise
-        saved = true
-        return true
       case 'library.entries.update':
         if (++renames === 1) return { fixtureFailure: productFailure(new ProductError('EXTENSION_REQUEST_TIMEOUT', 'Rename timed out', true)) }
         await renameGate.promise
@@ -885,18 +902,11 @@ it('keeps library navigation, favorite retry and discard confirmation stable', a
   })
   await page.goto(scaffold.authenticatedUrl)
   await page.getByRole('button', { name: 'Libraries', exact: true }).click()
-  await page.getByRole('button', { name: 'Library directory', exact: true }).click()
-  await page.getByRole('button', { name: /Library fixture Reference files/ }).click()
-  const row = page.getByRole('button', { name: 'Reference.md 1 KB', exact: true })
+  const row = page.getByRole('button', { name: 'Reference.md Library fixture', exact: true })
   await row.waitFor()
   const original = await row.elementHandle()
   const search = page.getByRole('searchbox', { name: 'Search names' })
   const originalSearch = await search.elementHandle()
-  const breadcrumb = page.getByRole('button', { name: library.name, exact: true })
-  await breadcrumb.focus()
-  await breadcrumb.press('Enter')
-  expect(await row.evaluate((node, previous) => node === previous, original)).toBe(true)
-  expect(await breadcrumb.evaluate(node => node === document.activeElement)).toBe(true)
   expect(reads).toBe(1)
   await row.focus(); await row.press('Enter')
   const preview = page.getByRole('dialog', { name: file.name, exact: true })
@@ -968,29 +978,10 @@ it('keeps library navigation, favorite retry and discard confirmation stable', a
   expect(await viewport.evaluate(node => node.scrollTop)).toBe(scroll)
   await page.keyboard.press('Escape')
   expect(await row.evaluate((node, previous) => node === previous && node === document.activeElement, original)).toBe(true)
-  const create = page.getByRole('button', { name: 'New library', exact: true })
-  const originalCreate = await create.elementHandle(), createBounds = await create.boundingBox()
-  await page.getByRole('button', { name: 'Favorite', exact: true }).click()
-  const retry = page.getByRole('button', { name: 'Retry', exact: true })
-  await retry.waitFor()
-  const alert = await page.getByRole('alert').elementHandle()
-  await retry.focus(); await retry.press('Enter')
-  await expect.poll(() => writes).toBe(2)
-  const retryBounds = await retry.boundingBox()
-  await retry.press('Enter'); await retry.press(' ')
-  expect(writes).toBe(2)
-  expect(await retry.evaluate(node => node === document.activeElement)).toBe(true)
-  expect(await create.evaluate((node, previous) => node === previous, originalCreate)).toBe(true)
-  expect(await create.boundingBox()).toEqual(createBounds)
-  expect(await page.getByRole('alert').evaluate((node, previous) => node === previous, alert)).toBe(true)
-  expect(await retry.boundingBox()).toEqual(retryBounds)
-  gate.resolve(undefined)
-  await page.getByRole('button', { name: 'Remove favorite', exact: true }).waitFor()
-  await expect.poll(() => reads).toBe(2)
-  expect(await row.evaluate((node, previous) => node === previous, original)).toBe(true)
   expect(await search.evaluate((node, previous) => node === previous, originalSearch)).toBe(true)
-  expect(await search.evaluate(node => node === document.activeElement)).toBe(true)
-  await page.getByRole('button', { name: 'Rename', exact: true }).click()
+  const actions = page.getByRole('button', { name: 'More actions · Reference.md', exact: true })
+  await actions.click()
+  await page.getByRole('menuitem', { name: 'Rename', exact: true }).click()
   const dialog = page.getByRole('dialog', { name: 'Rename', exact: true })
   const input = dialog.getByRole('textbox', { name: 'Name', exact: true })
   await input.fill('Retained reference.md')
@@ -1037,13 +1028,18 @@ it('keeps library navigation, favorite retry and discard confirmation stable', a
   expect(await dialog.boundingBox()).toEqual(dialogBounds)
   expect(await save.boundingBox()).toEqual(saveBounds)
   expect(await renameError.evaluate((node, previous) => node === previous, renameErrorNode)).toBe(true)
+  const waitStatus = dialog.getByRole('region', { name: 'Wait for the current operation to finish.', exact: true })
+  expect(await controlIsUnclipped(waitStatus)).toBe(true)
+  await waitStatus.focus(); await waitStatus.press('End')
+  expect(await waitStatus.evaluate(node => node === document.activeElement)).toBe(true)
+  await page.screenshot({ path: join(screenshots, 'library-rename-wait-dark-390.png') })
   renameGate.resolve(undefined)
   await dialog.waitFor({ state: 'detached' })
-  const renamedRow = page.getByRole('button', { name: 'Retained reference.md 1 KB', exact: true })
+  const renamedRow = page.getByRole('button', { name: 'Retained reference.md Library fixture', exact: true })
   await renamedRow.waitFor()
   expect(await renamedRow.evaluate((node, previous) => node === previous, original)).toBe(true)
-  const deleteEntry = page.getByRole('button', { name: 'Delete', exact: true })
-  await deleteEntry.click()
+  await page.getByRole('button', { name: 'More actions · Retained reference.md', exact: true }).click()
+  await page.getByRole('menuitem', { name: 'Delete', exact: true }).click()
   const deletion = page.getByRole('dialog', { name: 'Delete', exact: true })
   const confirm = deletion.getByRole('button', { name: 'Delete', exact: true })
   const confirmNode = await confirm.elementHandle(), confirmBounds = await confirm.boundingBox()
@@ -1059,7 +1055,7 @@ it('keeps library navigation, favorite retry and discard confirmation stable', a
   await deletion.waitFor({ state: 'detached' })
   await expect.poll(() => renamedRow.count()).toBe(0)
   expect(await search.evaluate(node => node === document.activeElement)).toBe(true)
-  for (const [title, method] of [['New library', 'library.create'], ['New folder', 'library.folders.create']] as const) {
+  for (const [title, method] of [['New folder', 'library.folders.create']] as const) {
     const opener = page.getByRole('button', { name: title, exact: true })
     await opener.click()
     const creation = page.getByRole('dialog', { name: title, exact: true })
@@ -1373,7 +1369,8 @@ it('restores connector capability browsing after a failed refresh without remoun
         reads++
         if (reads === 2) { await failure.promise; throw new Error('Directory unavailable') }
         if (reads === 3) await retry.promise
-        return [{ ...descriptor, authorizationStatus: reads > 1 ? 'REQUIRED' : 'AUTHORIZED' }]
+        return [{ ...descriptor, version: reads > 1 ? '1.0.1' : '1.0.0',
+          authorizationStatus: reads > 1 ? 'REQUIRED' : 'AUTHORIZED' }]
       }
       case 'connectors.authorization.revoke': { revocations++; return { connectorId: 'erp', status: 'REQUIRED' } }
       default: throw new Error(`Unexpected capability refresh method: ${method}`)
@@ -1458,9 +1455,9 @@ it.each(['libraries', 'files'] as const)('keeps %s geometry and focus stable acr
   const tripwire = watchConsole(page)
   const timestamp = '2026-11-13T01:00:00Z'
   const library = { id: '11111111-1111-4111-8111-111111111111', name: '项目资料', description: '团队文件', scope: 'PERSONAL',
-    ownerId: 'employee', managerEmployeeId: 'employee', canManage: true, version: 1, createdAt: timestamp, updatedAt: timestamp }
+    ownerId: 'employee', companyId: 'company', role: 'OWNER', canManage: true, version: 1, createdAt: timestamp, updatedAt: timestamp }
   const file = { id: '22222222-2222-4222-8222-222222222222', libraryId: library.id, parentId: null, name: '中文资料.md', kind: 'FILE',
-    sha256: 'a'.repeat(64), mediaType: 'text/markdown', sizeBytes: 12, favorite: false, version: 1, createdAt: timestamp, updatedAt: timestamp }
+    sha256: 'a'.repeat(64), mediaType: 'text/markdown', sizeBytes: 12, version: 1, createdAt: timestamp, updatedAt: timestamp }
   let reads = 0, mode: 'ready' | 'failed' | 'pending' = 'ready'
   let pending: ReturnType<typeof Promise.withResolvers<undefined>> | undefined
   onTestFinished(() => pending?.resolve(undefined))
@@ -1469,6 +1466,7 @@ it.each(['libraries', 'files'] as const)('keeps %s geometry and focus stable acr
     if (method === 'auth.getSession') return { authenticated: true, employeeId: 'employee' }
     if (method === 'connectors.list') return []
     if (method === 'library.get') return library
+    if (method === 'library.files.list') return { data: [], pageIndex: 1, pageSize: 20, totalCount: 0, totalPages: 0 }
     if (method === readMethod) {
       reads++
       if (mode === 'pending') await pending?.promise
@@ -1489,15 +1487,16 @@ it.each(['libraries', 'files'] as const)('keeps %s geometry and focus stable acr
     } } })
   })
   await page.goto(scaffold.authenticatedUrl)
-  await page.getByRole('button', { name: 'Libraries', exact: true }).click()
-  await page.getByRole('button', { name: 'Library directory', exact: true }).click()
+  await page.getByRole('button', { name: 'Add files or run commands', exact: true }).click()
+  await page.getByRole('option', { name: /Choose library files/ }).click()
   if (source === 'files') await page.getByRole('button', { name: /项目资料/ }).click()
   const row = page.getByRole('button', { name: source === 'files' ? /中文资料.md/ : /项目资料/ })
   const search = page.getByRole('searchbox', { name: 'Search names', exact: true })
-  const refresh = page.getByRole('button', { name: 'Refresh', exact: true })
+  const directory = page.getByRole('dialog', { name: 'Choose library files', exact: true })
+  const rows = directory.locator('[class*=libraryRows]')
   await row.waitFor()
   await search.fill('资料')
-  await expect.poll(() => refresh.getAttribute('aria-busy')).toBe('false')
+  await expect.poll(() => rows.getAttribute('aria-busy')).toBe('false')
   const rowNode = await row.elementHandle(), searchNode = await search.elementHandle()
   await mkdir(screenshots, { recursive: true })
   for (const theme of ['light', 'dark'] as const) {
@@ -1510,15 +1509,15 @@ it.each(['libraries', 'files'] as const)('keeps %s geometry and focus stable acr
       }
       if (width < 600) await expect.poll(() => page.locator('[data-sidebar-drawer] > [inert]').first()
         .evaluate(node => node.getBoundingClientRect().right <= 1 && getComputedStyle(node).visibility === 'hidden')).toBe(true)
-      await refresh.scrollIntoViewIfNeeded()
-      const before = { row: await row.boundingBox(), search: await search.boundingBox(), refresh: await refresh.boundingBox() }
+      await search.scrollIntoViewIfNeeded()
+      const before = { row: await row.boundingBox(), search: await search.boundingBox() }
       mode = 'failed'
-      await refresh.click()
+      await search.fill('资')
       const retry = page.getByRole('button', { name: 'Retry', exact: true })
       await retry.waitFor()
-      const region = page.getByRole('region', { name: 'Product catalogs are temporarily unavailable. Try again later.', exact: true })
+      const region = page.getByRole('region', { name: 'Could not load the library. Retry.', exact: true })
       const alertNode = await page.getByRole('alert').elementHandle(), retryNode = await retry.elementHandle()
-      expect({ row: await row.boundingBox(), search: await search.boundingBox(), refresh: await refresh.boundingBox() }).toEqual(before)
+      expect({ row: await row.boundingBox(), search: await search.boundingBox() }).toEqual(before)
       expect(await controlIsUnclipped(retry)).toBe(true)
       const section = page.getByRole('region', { name: 'Libraries', exact: true }).last()
       expect(await section.evaluate(node => node.scrollWidth <= node.clientWidth + 1)).toBe(true)
@@ -1539,19 +1538,21 @@ it.each(['libraries', 'files'] as const)('keeps %s geometry and focus stable acr
       await expect.poll(() => page.getByRole('alert').count()).toBe(0)
       expect(await row.evaluate((node, original) => node === original, rowNode)).toBe(true)
       expect(await search.evaluate((node, original) => node === original && node === document.activeElement, searchNode)).toBe(true)
-      expect(await search.inputValue()).toBe('资料')
+      expect(await search.inputValue()).toBe('资')
       expect(await search.evaluate(input => [
         (input as HTMLInputElement).selectionStart, (input as HTMLInputElement).selectionEnd,
       ])).toEqual([0, 1])
       expect(await section.evaluate(node => node.scrollTop)).toBe(scroll)
-      expect({ row: await row.boundingBox(), search: await search.boundingBox(), refresh: await refresh.boundingBox() }).toEqual(before)
+      expect({ row: await row.boundingBox(), search: await search.boundingBox() }).toEqual(before)
+      await search.fill('资料')
+      await expect.poll(() => rows.getAttribute('aria-busy')).toBe('false')
     }
   }
   expect(tripwire.pageErrors).toEqual([])
   expect(tripwire.warnings).toEqual([])
 }, 120_000)
 
-it('keeps library files, drafts and focus stable through refresh, retry and deletion in the real Harness page', async () => {
+it('keeps library files, drafts and focus stable through reads, retry and deletion in the real Harness page', async () => {
   const scaffold = await launchWebScaffold({ firstUse: true,
     extraInstallAnchors: [join(REPO_ROOT, 'packages/deepseek-harness-product/desktop/package.json')],
     extraOverlayPath: [join(packageDir, 'cordis.patch.yml'), join(REPO_ROOT, 'apps/web/tests/pin-browse-picker.overlay.yml')],
@@ -1564,9 +1565,9 @@ it('keeps library files, drafts and focus stable through refresh, retry and dele
   const tripwire = watchConsole(page)
   const timestamp = '2026-11-13T01:00:00Z'
   const library = { id: '11111111-1111-4111-8111-111111111111', name: '项目资料', description: '团队文件', scope: 'PERSONAL',
-    ownerId: 'employee', managerEmployeeId: 'employee', canManage: true, version: 1, createdAt: timestamp, updatedAt: timestamp }
+    ownerId: 'employee', companyId: 'company', role: 'OWNER', canManage: true, version: 1, createdAt: timestamp, updatedAt: timestamp }
   const file = { id: '22222222-2222-4222-8222-222222222222', libraryId: library.id, parentId: null, name: '中文资料.md', kind: 'FILE',
-    sha256: 'a'.repeat(64), mediaType: 'text/markdown', sizeBytes: 12, favorite: false, version: 1, createdAt: timestamp, updatedAt: timestamp }
+    sha256: 'a'.repeat(64), mediaType: 'text/markdown', sizeBytes: 12, version: 1, createdAt: timestamp, updatedAt: timestamp }
   let reads = 0, deletes = 0, mode: 'ready' | 'failed' | 'pending' = 'ready'
   let removed = false
   let background: ReturnType<typeof Promise.withResolvers<undefined>> | undefined
@@ -1575,15 +1576,14 @@ it('keeps library files, drafts and focus stable through refresh, retry and dele
   await page.exposeFunction('__libraryInvoke', async (method: string) => {
     if (method === 'auth.getSession') return { authenticated: true, employeeId: 'employee' }
     if (method === 'connectors.list') return []
-    if (method === 'library.files.list') return { data: [], pageIndex: 1, pageSize: 20, totalCount: 0, totalPages: 0 }
     if (method === 'library.list') return { data: [library], pageIndex: 1, pageSize: 20, totalCount: 1, totalPages: 1 }
-    if (method === 'library.get') return library
-    if (method === 'library.entries.list') {
+    if (method === 'library.get' || method === 'library.personal.ensure') return library
+    if (method === 'library.files.list') {
       reads++
       if (mode === 'pending') await pending.promise
       await background?.promise
       if (mode === 'failed') throw new Error('Directory unavailable')
-      return { data: removed ? [] : [file], pageIndex: 1, pageSize: 20, totalCount: removed ? 0 : 1, totalPages: removed ? 0 : 1 }
+      return { data: removed ? [] : [{ entry: file, libraryName: library.name, canManage: true, lastAccessedAt: timestamp, sourceKind: 'UPLOAD', sourceSessionId: null }], pageIndex: 1, pageSize: 20, totalCount: removed ? 0 : 1, totalPages: removed ? 0 : 1 }
     }
     if (method === 'library.entries.delete') { deletes++; removed = true; return true }
     throw new Error(`Unexpected library method ${method}`)
@@ -1599,15 +1599,17 @@ it('keeps library files, drafts and focus stable through refresh, retry and dele
   })
   await page.goto(scaffold.authenticatedUrl)
   await page.getByRole('button', { name: 'Libraries', exact: true }).click()
-  await page.getByRole('button', { name: 'Library directory', exact: true }).click()
-  await page.getByRole('button', { name: /项目资料/ }).click()
-  const fileButton = page.getByRole('button', { name: /中文资料.md/ }), search = page.getByRole('searchbox', { name: 'Search names', exact: true })
+  const fileButton = page.getByRole('button', { name: '中文资料.md 项目资料', exact: true }), search = page.getByRole('searchbox', { name: 'Search names', exact: true })
   await fileButton.waitFor()
   const fileNode = await fileButton.elementHandle(), searchNode = await search.elementHandle()
-  const refresh = page.getByRole('button', { name: 'Refresh', exact: true }), refreshNode = await refresh.elementHandle()
-  const refreshBox = await refresh.boundingBox(), fileBox = await fileButton.boundingBox(), searchBox = await search.boundingBox()
+  const mine = page.getByRole('tab', { name: 'Mine', exact: true }), mineNode = await mine.elementHandle()
+  const mineBox = await mine.boundingBox(), fileBox = await fileButton.boundingBox(), searchBox = await search.boundingBox()
+  const nextView = async () => {
+    const active = await mine.getAttribute('aria-selected') === 'true'
+    await page.getByRole('tab', { name: active ? 'Recent' : 'Mine', exact: true }).click()
+  }
   mode = 'failed'
-  await refresh.click()
+  await nextView()
   const retry = page.getByRole('button', { name: 'Retry', exact: true })
   await retry.waitFor()
   expect(await fileButton.boundingBox()).toEqual(fileBox)
@@ -1618,8 +1620,8 @@ it('keeps library files, drafts and focus stable through refresh, retry and dele
   await expect.poll(() => reads).toBe(3)
   expect(await retry.evaluate(node => node === document.activeElement)).toBe(true)
   expect(await fileButton.evaluate((node, original) => node === original, fileNode)).toBe(true)
-  expect(await refresh.evaluate((node, original) => node === original, refreshNode)).toBe(true)
-  expect(await refresh.boundingBox()).toEqual(refreshBox)
+  expect(await mine.evaluate((node, original) => node === original, mineNode)).toBe(true)
+  expect(await mine.boundingBox()).toEqual(mineBox)
   expect(await fileButton.boundingBox()).toEqual(fileBox)
   await retry.press('Enter'); expect(reads).toBe(3)
   expect(await retry.evaluate((node, original) => node === original, retryNode)).toBe(true)
@@ -1639,7 +1641,8 @@ it('keeps library files, drafts and focus stable through refresh, retry and dele
     (input as HTMLInputElement).selectionStart, (input as HTMLInputElement).selectionEnd,
   ])).toEqual([2,5])
   await name.press('Escape'); await dialog.getByRole('button', { name: 'Discard', exact: true }).click()
-  await page.getByRole('button', { name: 'Delete', exact: true }).click()
+  await page.getByRole('button', { name: 'More actions · 中文资料.md', exact: true }).click()
+  await page.getByRole('menuitem', { name: 'Delete', exact: true }).click()
   await page.getByRole('dialog').getByRole('button', { name: 'Delete', exact: true }).click()
   await expect.poll(() => fileButton.count()).toBe(0)
   expect(deletes).toBe(1)
@@ -1660,13 +1663,12 @@ it('keeps library files, drafts and focus stable through refresh, retry and dele
       await expect.poll(() => section.evaluate(node => node.scrollWidth <= node.clientWidth + 1)).toBe(true)
       await page.screenshot({ path: join(screenshots, `library-${theme}-${width}.png`) })
       removed = false
-      await refresh.click()
+      await nextView()
       await fileButton.waitFor()
-      await expect.poll(() => refresh.getAttribute('aria-busy')).toBe('false')
       background = Promise.withResolvers<undefined>()
-      await refresh.click()
-      const opener = page.getByRole('button', { name: width === 390 ? 'Rename' : 'Delete', exact: true })
-      await opener.click()
+      await nextView()
+      await page.getByRole('button', { name: 'More actions · 中文资料.md', exact: true }).click()
+      await page.getByRole('menuitem', { name: width === 390 ? 'Rename' : 'Delete', exact: true }).click()
       const overlay = page.getByRole('dialog'), overlayNode = await overlay.elementHandle()
       await overlay.evaluate(async (node) => {
         await Promise.all(node.getAnimations({ subtree: true }).map(animation => animation.finished))
@@ -1691,3 +1693,189 @@ it('keeps library files, drafts and focus stable through refresh, retry and dele
   }
   expect(tripwire.pageErrors).toEqual([])
 }, 120_000)
+
+it('keeps signed-out product pages behind one global authorization dialog', async () => {
+  const en = { library: 'Libraries', connectors: 'Connectors', skills: 'Skills', expertKits: 'Expert kits',
+    authTitle: 'Sign in to DeepSeek Harness', signIn: 'Sign in with DingTalk', cancel: 'Cancel',
+    employeeSignedOut: 'Not signed in', authRequired: 'Sign in with your organization DingTalk account to access authorized resources.',
+    librarySearch: 'Search names', addExtension: 'Add' }
+  const scaffold = await launchWebScaffold({ firstUse: true,
+    extraInstallAnchors: [join(REPO_ROOT, 'packages/deepseek-harness-product/desktop/package.json')],
+    extraOverlayPath: [join(REPO_ROOT, 'packages/extensions/ui-deepseek-harness-product/cordis.patch.yml'),
+      join(REPO_ROOT, 'apps/web/tests/pin-browse-picker.overlay.yml')],
+  })
+  onTestFinished(() => scaffold.close())
+  await seedSession(scaffold, await readFile(join(REPO_ROOT, 'snapshots/web/present-after-closing-reply/session.v4.jsonl'), 'utf8'), 'full-window-employee-login')
+  const browser = await chromium.launch()
+  onTestFinished(async ({ task }) => {
+    try {
+      if (task.result?.state === 'fail') {
+        const directory = join(REPO_ROOT, '.artifacts/employee-login-nov16')
+        await mkdir(directory, { recursive: true })
+        await page.screenshot({ path: join(directory, 'full-window-login-failure.png') })
+      }
+    } finally { await browser.close() }
+  })
+  const page = await newEnglishPage(browser)
+  page.setDefaultTimeout(10_000)
+  const tripwire = watchConsole(page)
+  let authorization = Promise.withResolvers<undefined>()
+  authorization.resolve(undefined)
+  onTestFinished(() => { authorization.resolve(undefined) })
+  await page.exposeFunction('__employeeAuthorization', async () => {
+    try { await authorization.promise }
+    catch (error) { return productFailure(error) }
+    return undefined
+  })
+  let signOutGate = Promise.withResolvers<undefined>()
+  let signOutCalls = 0
+  onTestFinished(() => { signOutGate.resolve(undefined) })
+  await page.exposeFunction('__employeeSignOut', async () => {
+    signOutCalls++
+    try { await signOutGate.promise }
+    catch (error) { return productFailure(error) }
+    return undefined
+  })
+  await page.addInitScript(() => {
+    const api = globalThis as typeof globalThis & {
+      __employeeAuthorization(): Promise<unknown>
+      __employeeSignOut(): Promise<unknown>
+    }
+    let authenticated = false
+    const listeners = new Set<(event: object) => void>()
+    const session = () => authenticated ? { authenticated, employeeId: 'fixture-employee', displayName: 'Fixture employee' }
+      : { authenticated }
+    globalThis.addEventListener('fixture-employee-identity', (event) => {
+      if (!(event instanceof CustomEvent) || typeof event.detail !== 'boolean') return
+      authenticated = event.detail
+      for (const listener of listeners) listener({ type: 'session.changed', payload: session() })
+    })
+    Object.defineProperty(globalThis, 'dshDesktop', { value: { extensions: {
+      invoke: async (_namespace: string, method: string) => {
+        if (method === 'auth.getSession') return { ok: true, result: session() }
+        if (method === 'auth.ensureDingTalk') {
+          const failure = await api.__employeeAuthorization()
+          if (failure) return { ok: false, failure }
+          authenticated = true
+          for (const listener of listeners) listener({ type: 'session.changed', payload: session() })
+          return { ok: true, result: session() }
+        }
+        if (method === 'auth.signOut') {
+          const failure = await api.__employeeSignOut()
+          if (failure) return { ok: false, failure }
+          authenticated = false
+          for (const listener of listeners) listener({ type: 'session.changed', payload: session() })
+          return { ok: true, result: session() }
+        }
+        if (!authenticated) throw new Error('Signed-out product content requested private data')
+        return { ok: true, result: method === 'connectors.list' ? []
+          : { data: [], pageIndex: 1, pageSize: 20, totalCount: 0, totalPages: 0 } }
+      },
+      cancel: () => {},
+      subscribe: (_namespace: string, listener: (event: object) => void) => {
+        listeners.add(listener); return () => { listeners.delete(listener) }
+      },
+    } } })
+  })
+  await page.goto(scaffold.authenticatedUrl)
+  const dialog = page.getByRole('dialog', { name: en.authTitle, exact: true })
+  await dialog.waitFor()
+  expect(await page.getByRole('dialog').count()).toBe(1)
+  expect(await page.getByRole('button', { name: en.signIn, exact: true }).count()).toBe(1)
+  await dialog.getByRole('button', { name: en.cancel, exact: true }).click()
+  for (const name of [en.library, en.connectors, en.skills, en.expertKits]) {
+    await page.getByRole('button', { name, exact: true }).click()
+    expect(await page.getByText(en.authRequired, { exact: true }).count()).toBe(0)
+    expect(await page.getByRole('button', { name: en.signIn, exact: true }).count()).toBe(0)
+    expect(await page.getByRole('alert').count()).toBe(0)
+    expect(await page.getByRole('dialog').count()).toBe(0)
+  }
+  await page.getByRole('button', { name: en.employeeSignedOut, exact: true }).click()
+  await page.getByRole('menuitem', { name: en.signIn, exact: true }).click()
+  await page.getByRole('button', { name: 'Fixture employee', exact: true }).waitFor()
+  await dialog.waitFor({ state: 'hidden' })
+  await page.getByRole('button', { name: en.library, exact: true }).click()
+  await page.getByRole('searchbox', { name: en.librarySearch, exact: true }).waitFor()
+  await page.getByRole('button', { name: en.connectors, exact: true }).click()
+  await page.getByRole('button', { name: en.addExtension, exact: true }).waitFor()
+  await page.locator('[role="treeitem"]').first().click()
+  await page.locator('[role="treeitem"]').nth(1).click()
+  const composer = page.locator('[data-composer-input]').first()
+  await expect.poll(() => composer.evaluate(node => node === document.activeElement)).toBe(true)
+  await composer.fill('Keep this workspace draft and selection')
+  const composerNode = await composer.elementHandle()
+  await composer.evaluate((node) => {
+    const range = document.createRange(), selection = document.getSelection()!
+    const text = document.createTreeWalker(node, NodeFilter.SHOW_TEXT).nextNode()!
+    range.setStart(text, 5); range.setEnd(text, 9)
+    selection.removeAllRanges(); selection.addRange(range)
+  })
+  authorization = Promise.withResolvers<undefined>()
+  await page.evaluate(() => { globalThis.dispatchEvent(new CustomEvent('fixture-employee-identity', { detail: false })) })
+  await dialog.waitFor()
+  const originalDialog = await dialog.elementHandle()
+  const signIn = dialog.getByRole('button', { name: en.signIn, exact: true })
+  const signInNode = await signIn.elementHandle()
+  const cancel = dialog.getByRole('button', { name: en.cancel, exact: true })
+  await signIn.click()
+  await dialog.getByRole('heading', { name: 'Connecting to DingTalk', exact: true }).waitFor()
+  const screenshots = join(REPO_ROOT, '.artifacts/employee-login-nov16')
+  await mkdir(screenshots, { recursive: true })
+  for (const theme of ['light', 'dark'] as const) {
+    await page.emulateMedia({ colorScheme: theme })
+    for (const width of [1440, 390]) {
+      await page.setViewportSize({ width, height: 900 })
+      await expect.poll(() => dialog.evaluate((node) => {
+        const rect = node.getBoundingClientRect()
+        return [rect.x, rect.y, rect.width - innerWidth, rect.height - innerHeight]
+      })).toEqual([0, 0, 0, 0])
+      await expect.poll(() => dialog.evaluate(node => getComputedStyle(node).opacity)).toBe('1')
+      expect(await controlIsUnclipped(cancel)).toBe(true)
+      expect(await page.locator('body').evaluate(node => node.scrollWidth <= node.clientWidth)).toBe(true)
+      await page.screenshot({ path: join(screenshots, `full-window-login-${theme}-${width}.png`) })
+    }
+  }
+  authorization.reject(new ProductError('EXTERNAL_SERVICE_ERROR', 'Authorization unavailable', true))
+  const notice = dialog.getByRole('alert')
+  await notice.waitFor()
+  const noticeNode = await notice.elementHandle(), actionsBox = await cancel.boundingBox()
+  expect(await signIn.evaluate((node, previous) => node === previous, signInNode)).toBe(true)
+  authorization = Promise.withResolvers<undefined>()
+  await signIn.click()
+  await dialog.getByRole('heading', { name: 'Connecting to DingTalk', exact: true }).waitFor()
+  expect(await dialog.evaluate((node, previous) => node === previous, originalDialog)).toBe(true)
+  expect(await notice.evaluate((node, previous) => node === previous, noticeNode)).toBe(true)
+  expect(await cancel.boundingBox()).toEqual(actionsBox)
+  expect(await dialog.getByRole('button', { name: 'Waiting for DingTalk…', exact: true })
+    .evaluate((node, previous) => node === previous && node === document.activeElement, signInNode)).toBe(true)
+  await page.screenshot({ path: join(screenshots, 'full-window-login-retry-dark-390.png') })
+  authorization.resolve(undefined)
+  await dialog.waitFor({ state: 'hidden' })
+  expect(await composer.evaluate((node, previous) => node === previous
+    && node.textContent === 'Keep this workspace draft and selection', composerNode)).toBe(true)
+  await expect.poll(() => composer.evaluate(node => node === document.activeElement)).toBe(true)
+  expect(await page.evaluate(() => document.getSelection()?.toString())).toBe('this')
+  await page.setViewportSize({ width: 1440, height: 900 })
+  const employee = page.getByRole('button', { name: 'Fixture employee', exact: true })
+  const employeeNode = await employee.elementHandle()
+  await employee.click()
+  await page.getByRole('menuitem', { name: 'Sign out', exact: true }).click()
+  await expect.poll(() => signOutCalls).toBe(1)
+  expect(await employee.evaluate((node, previous) => node === previous, employeeNode)).toBe(true)
+  expect(await composer.evaluate((node, previous) => node === previous, composerNode)).toBe(true)
+  signOutGate.reject(new ProductError('PRODUCT_NETWORK_UNAVAILABLE', 'Offline', true))
+  await page.getByRole('alert').filter({ hasText: 'Could not sign out' }).waitFor()
+  expect(await dialog.count()).toBe(0)
+  expect(await employee.evaluate((node, previous) => node === previous, employeeNode)).toBe(true)
+  await employee.click()
+  expect(await page.getByRole('menuitem', { name: 'Settings', exact: true }).getAttribute('aria-disabled')).not.toBe('true')
+  signOutGate = Promise.withResolvers<undefined>()
+  await page.getByRole('menuitem', { name: 'Sign out', exact: true }).click()
+  await expect.poll(() => signOutCalls).toBe(2)
+  signOutGate.resolve(undefined)
+  await dialog.waitFor()
+  expect(await composer.evaluate((node, previous) => node === previous
+    && node.textContent === 'Keep this workspace draft and selection', composerNode)).toBe(true)
+  expect(tripwire.pageErrors).toEqual([])
+  expect(tripwire.warnings).toEqual([])
+})

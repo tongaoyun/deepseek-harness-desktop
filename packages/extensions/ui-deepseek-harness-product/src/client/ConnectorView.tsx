@@ -29,7 +29,7 @@ export function ConnectorDetailModal({ detail: product, onCatalogChanged, manage
         <DetailIdentity detail={product} icon={IconLinkOutlineRegular} t={t} />
         {product.summary !== undefined && <p className={css.detailSummary}>{product.summary}</p>}
       </div>
-      <ConnectorDetail key={`${product.id}:${product.version}`} product={product} onCatalogChanged={onCatalogChanged} t={t} />
+      <ConnectorDetail key={product.id} product={product} onCatalogChanged={onCatalogChanged} t={t} />
     </>}
   </Modal>
 }
@@ -51,7 +51,7 @@ export function ConnectorDetail({ product, onCatalogChanged, t }: {
   const [refreshState, setRefreshState] = useState<'idle' | 'pending' | 'failed' | 'retrying'>('idle')
   const refreshing = refreshState === 'pending' || refreshState === 'retrying'
   const refreshFailed = refreshState === 'failed' || refreshState === 'retrying'
-  const [configuring, setConfiguring] = useState(false)
+  const [configuring, setConfiguring] = useState<ProductDetail>()
   const authorizationOperation = useRef(false)
   const refreshOperation = useRef(false)
   const configurationArea = useRef<HTMLElement>(null)
@@ -173,11 +173,11 @@ export function ConnectorDetail({ product, onCatalogChanged, t }: {
           if (!managedAuthorization) configurationAction.current = element
         }} variant="outline" size="sm" className={refreshing ? 'product-control-pending' : undefined}
         aria-disabled={refreshing} onClick={() => {
-          if (!refreshOperation.current && refreshState === 'idle') setConfiguring(true)
+          if (!refreshOperation.current && refreshState === 'idle') setConfiguring(product)
         }}><IconLinkOutlineRegular size={14} />{t('configureDevice')}</Button>
       </div>}
     </section>}
-    {configuring && <ConnectorDeviceConfiguration product={product} onClose={() => { setConfiguring(false) }}
+    {configuring && <ConnectorDeviceConfiguration product={configuring} onClose={() => { setConfiguring(undefined) }}
       onSaved={async () => {
         const signal = lifecycle.current.signal
         await refreshCatalog()
@@ -185,7 +185,7 @@ export function ConnectorDetail({ product, onCatalogChanged, t }: {
           // The nested portal's return target can be disabled or removed by the refresh.
           configurationCloseArea.current = configurationArea.current?.ownerDocument.body ?? null
           preserveConfigurationCloseFocus()
-          setConfiguring(false)
+          setConfiguring(undefined)
         }
       }} t={t} />}
     <section ref={toolsArea} hidden={refreshFailed} className={css.connectorSection} aria-busy={refreshing}>
@@ -197,7 +197,7 @@ export function ConnectorDetail({ product, onCatalogChanged, t }: {
       </div>}
       {product.tools.length === 0 && <p className={css.catalogStatus}>{t('empty')}</p>}
       <div hidden={product.tools.length === 0}>
-        <ConnectorTools key={`${product.id}:${product.version}`} tools={product.tools} t={t} />
+        <ConnectorTools tools={product.tools} t={t} />
       </div>
     </section>
   </>

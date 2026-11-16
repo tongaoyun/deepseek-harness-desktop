@@ -223,7 +223,7 @@ export function LibraryArchive({
             </div>
           }
         >
-          {selection && <p>{selection.name}</p>}
+          {selection && <p className={css.resourceConfirmation}>{selection.name}</p>}
           {selection && (
             <LibraryBrowser t={t} foldersOnly navigationLocked={pending} renderFactorySlot={renderFactorySlot} onLocation={onLocation} />
           )}

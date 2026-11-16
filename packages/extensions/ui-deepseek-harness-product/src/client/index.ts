@@ -32,6 +32,8 @@ import { LibraryArchive } from './LibraryArchive.tsx'
 import { LibraryPanel } from './LibraryPanel.tsx'
 import type {} from '@deepseek-ai/dsh-client-ui-agent-preset/client'
 import { createEmployeeSignInActions } from './employee-sign-in.ts'
+import { EmployeeContent } from './EmployeeContent.tsx'
+import { createElement, type PropsWithChildren } from 'react'
 
 export const inject = [
   'slots', 'locale', 'sessions', 'workspaces', 'uiWorkspace', 'conversation', 'layout', 'remote', 'remote.agentPresets', 'commandUi',
@@ -45,8 +47,10 @@ const PANEL_COMPONENTS = {
 /** Register DeepSeekHarness capability navigation in the official Harness sidebar. */
 export function apply(ctx: ClientContext): void {
   ctx.effect(() => ctx.locale.register(NS, { zh, en, ja, es, fr, de, ru, pt }), 'deepseek-harness-product: dictionaries')
-  ctx.plugin(Experts)
-  ctx.plugin(Skills)
+  const t = ctx.locale.bind(NS)
+  const EmployeeAccess = ({ children }: PropsWithChildren) => createElement(EmployeeContent, { t }, children)
+  ctx.plugin(Experts, { PageAccess: EmployeeAccess })
+  ctx.plugin(Skills, { PageAccess: EmployeeAccess })
   const carrier = (globalThis as { dshDesktop?: { protocolVersion?: number; updates?: Pick<DesktopUpdateBridge, 'open'> } }).dshDesktop
   const updates = carrier?.protocolVersion === 1 ? carrier.updates : undefined
   const employeeSignIn = createEmployeeSignInActions(ctx)
@@ -57,7 +61,6 @@ export function apply(ctx: ClientContext): void {
     name: 'settings.launcher', locale: NS,
     inject: () => ({ ...employeeSignIn, ...updates === undefined ? {} : { openSoftwareUpdate: () => updates.open() } }),
   }, DeepSeekHarnessSettingsMenu))
-  const t = ctx.locale.bind(NS)
   const actions = createHarnessActions(ctx)
   const libraryOpeners = new Map<SessionId, () => void>()
   ctx.effect(() => () => { libraryOpeners.clear() }, 'product-library: input openers')
@@ -99,16 +102,13 @@ export function apply(ctx: ClientContext): void {
     const Component = PANEL_COMPONENTS[panel.labelKey]
     const ChildIcon = createCapabilityChildIcon(panel.icon)
     ctx.slots.inject('main', () => ctx.slots.register({
-      name: 'main', key: panel.id, locale: NS, inject: () => ({ openEmployeeSignIn: employeeSignIn.openEmployeeSignIn,
+      name: 'main', key: panel.id, locale: NS, inject: () => ({
         ...(panel.labelKey === 'library' ? {
-          startLibraryCreation: (kind: 'document' | 'presentation' | 'spreadsheet' | 'html') => {
-            const prompt = { document: 'libraryPromptDocument', presentation: 'libraryPromptPresentation', spreadsheet: 'libraryPromptSpreadsheet', html: 'libraryPromptHtml' } as const
-            ctx.uiWorkspace.startSession(undefined, { prompt: t(prompt[kind]), whenDraftExists: 'append' })
-          },
+          startLibraryCreation: () => { ctx.uiWorkspace.startSession(undefined, { prompt: t('libraryPrompt'), whenDraftExists: 'append' }) },
           openLibrarySource: (sessionId: string) => { ctx.uiWorkspace.openSession(sessionId as SessionId) },
         } : {}),
       }),
-    }, Component))
+    }, props => createElement(EmployeeAccess, null, createElement(Component, props))))
     ctx.slots.inject('sidebar.panellist', () => ctx.slots.register({
       name: 'sidebar.panellist', id: panel.id, order: -37 + index, locale: NS,
       label: () => t(panel.labelKey),
