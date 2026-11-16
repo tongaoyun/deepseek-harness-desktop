@@ -6,7 +6,7 @@ import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve, sep } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { _electron, type ElectronApplication, type Page } from 'playwright'
+import { _electron, type ElectronApplication } from 'playwright'
 import { expect, it, onTestFinished } from 'vitest'
 import { z } from 'zod'
 import { watchConsole } from './scaffold.ts'
@@ -20,7 +20,7 @@ import { contentIndex } from '../../../packages/deepseek-harness-product/product
 import { startMockLlmServer } from '@deepseek-ai/dsh-llm-mock-server'
 import { loadOptionalPatches } from '@deepseek-ai/dsh-app-boot'
 import { closeElectronAcceptance } from '../../product-desktop/scripts/close-electron.mjs'
-import { dialogWithButton, prepareNativeProductUpdate, type NativeProductUpdateQualification } from '../../product-desktop/tests/native-product-update.mjs'
+import { dialogWithButton, openEmployeeMenu, prepareNativeProductUpdate, type NativeProductUpdateQualification } from '../../product-desktop/tests/native-product-update.mjs'
 
 const screenshots = join(REPO_ROOT, '.artifacts/deepseek-harness-catalog')
 
@@ -35,11 +35,6 @@ async function fixtureRequestBody(request: IncomingMessage): Promise<Record<stri
   if (typeof value !== 'object' || value === null || Array.isArray(value)) throw new Error('Expected JSON object')
   return value as Record<string, unknown>
 }
-
-async function openEmployeeMenu(page: Page): Promise<void> {
-  await page.locator('button[data-collapsed][aria-haspopup="menu"]').click()
-}
-
 
 interface DesktopSmokeBridge {
   extensions: { invoke(namespace: string, method: string, payload?: object): Promise<unknown> }

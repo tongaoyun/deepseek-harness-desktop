@@ -3,6 +3,11 @@ import type { ElectronApplication, Page } from 'playwright'
 /** Explicit restart authorization, with or without active tasks. */
 export const restartConfirmation: RegExp
 
+/** Open the product account menu without depending on the employee's display name.
+ * @param page Product desktop page.
+ */
+export function openEmployeeMenu(page: Page): Promise<void>
+
 interface UpdateDialogWindow {
   isClosed(): boolean
   url(): string

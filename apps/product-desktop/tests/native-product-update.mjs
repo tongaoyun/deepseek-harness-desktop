@@ -30,6 +30,13 @@ const describeWindowsProcess = ({ pid, parent, started, image }) => ({ pid, pare
 /** Explicit restart authorization, with or without active tasks. */
 export const restartConfirmation = /^(Install and Restart|安装并重启|Stop tasks and update|停止任务并更新)$/
 
+/** Open the product account menu without depending on the employee's display name.
+ * @param {import('playwright').Page} page Product desktop page.
+ */
+export async function openEmployeeMenu(page) {
+  await page.locator('button[data-collapsed][aria-haspopup="menu"]').click()
+}
+
 async function descendants(parent) {
   if (windows) {
     return windowsProcessDescendants(await windowsProcessSnapshot(), parent)
@@ -244,7 +251,7 @@ app.whenReady().then(() => writeFileSync(${JSON.stringify(directory)} + '/boot-'
       await page.locator(`[data-row-key="session:${session}"]`).click()
       await expect.poll(() => composer.textContent()).toBe(draft)
       console.log('Native product update: downloading the prepared next version')
-      await page.getByRole('button', { name: /^(More menu|更多菜单)$/, exact: true }).click()
+      await openEmployeeMenu(page)
       await page.getByRole('menuitem', { name: /^(Check for updates|检查更新)$/, exact: true }).click()
       const install = await dialogWithButton(application, restartConfirmation)
       assert.ok(requests.includes(payloadPath), 'Product update action must download the next version through its configured provider before restart confirmation')
@@ -254,7 +261,7 @@ app.whenReady().then(() => writeFileSync(${JSON.stringify(directory)} + '/boot-'
       assert.equal(await application.evaluate(({ app }) => app.getVersion()), initialVersion)
       await expect.poll(() => composer.textContent()).toBe(draft)
       console.log('Native product update: cancelled restart retained the old version and draft')
-      await page.getByRole('button', { name: /^(More menu|更多菜单)$/, exact: true }).click()
+      await openEmployeeMenu(page)
       await expect.poll(() => application.windows().length).toBe(1)
       await page.getByRole('menuitem', { name: /^(Check for updates|检查更新)$/, exact: true }).click()
       const ready = await dialogWithButton(application, restartConfirmation)
