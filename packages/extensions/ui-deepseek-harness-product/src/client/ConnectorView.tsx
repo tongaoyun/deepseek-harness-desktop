@@ -223,6 +223,8 @@ function ConnectorDeviceConfiguration({ product, onClose, onSaved, t }: {
   const close = useEditorCloseGuard(dirty, () => saving.current, onClose)
   const timeoutField = useRef<HTMLInputElement>(null)
   const preserveReadFocus = useResultFocus(close.editorProps.ref, timeoutField)
+  const feedback = useRef<HTMLDivElement>(null)
+  const preserveFeedbackFocus = useResultFocus(feedback, timeoutField)
   const lifecycle = useRef(new AbortController())
   const configurationRead = useRef<AbortSignal>()
   const invoke = async (method: string, input: unknown, signal: AbortSignal): Promise<unknown> => {
@@ -240,6 +242,7 @@ function ConnectorDeviceConfiguration({ product, onClose, onSaved, t }: {
         { id: product.id, version: product.version }, signal))
       if (value.id !== product.id || value.version !== product.version) throw new Error('Connector configuration identity does not match')
       preserveReadFocus()
+      preserveFeedbackFocus()
       setConfiguration(value); setTimeout(value.timeoutSeconds)
       setError(undefined)
     } catch (error) { if (!signal.aborted) { preserveReadFocus(); setError({ failure: error, fallback: 'loadFailed' }) } }
@@ -285,9 +288,9 @@ function ConnectorDeviceConfiguration({ product, onClose, onSaved, t }: {
       {!close.confirming && <><div className={css.feedbackResult}>
         <span aria-hidden="true">{t('libraryWait')}</span>
         {close.blocked && pending && <p role="status" className={css.catalogStatus}>{t('libraryWait')}</p>}
-      </div><div className={css.feedbackResult}>
+      </div><div ref={feedback} className={css.feedbackResult}>
         <span aria-hidden="true">{t('connectorDiscoveryFailed')}</span>
-        {error && <p className={css.catalogError} role="alert">{typeof error === 'string' ? t(error)
+        {error && <p className={css.catalogError} role="alert" tabIndex={0}>{typeof error === 'string' ? t(error)
           : productErrorMessage(error.failure, t, error.fallback)}</p>}
       </div></>}
       {close.confirming ? <><Button ref={close.keepEditingRef} variant="ghost" onClick={close.keepEditing}>{t('libraryKeepEditing')}</Button>

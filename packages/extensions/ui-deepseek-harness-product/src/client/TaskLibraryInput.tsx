@@ -6,7 +6,7 @@ import { LIBRARY_ATTACHMENT_LIMITS, type LibraryEntry } from '@deepseek-harness/
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { productApi } from './product-api.ts'
 import { NS, type DeepSeekHarnessProductKey } from '../locales.ts'
-import { LibraryBrowser } from './LibraryBrowser.tsx'
+import { LibraryFilePicker } from './LibraryFilePicker.tsx'
 import { productErrorMessage, type ProductFailureReport } from './product-errors.ts'
 import type { EmployeeSignInActions } from './employee-sign-in.ts'
 import { ProductLoading } from './ProductLoading.tsx'
@@ -19,7 +19,6 @@ import css from '../DeepSeekHarnessProduct.module.css'
 export function TaskLibraryInput({
   sessionId,
   t,
-  renderFactorySlot,
   subscribeOpen,
   attachLibraryFiles,
   openEmployeeSignIn,
@@ -124,6 +123,7 @@ export function TaskLibraryInput({
     try {
       await attachLibraryFiles(sessionId, [...selected.values()], controller.signal)
       if (!controller.signal.aborted) {
+        pickerRequested.current = false
         setOpen(false)
         setSelected(new Map())
         setError(undefined)
@@ -144,10 +144,11 @@ export function TaskLibraryInput({
       title={t('libraryChooseFiles')}
       closeLabel={t('close')}
       onClose={close}
-      className={`${css.detailModal} ${css.libraryPicker}`}
+      className={`${css.detailModal} ${css.libraryAttachmentPicker}`}
       contentClassName={css.detailModalContent as string}
       footer={
-        <div className={`${css.libraryMutationFooter} ${css.libraryAttachmentFooter}`}>
+        <div className={css.libraryAttachmentFooter}>
+          <span>{t('librarySelectionCount').replace('{count}', String(selected.size))}</span>
           <div className={css.feedbackResult}>
             <span aria-hidden="true">{t('libraryAttachFailed')}</span>
             {error !== undefined && <p role="alert" tabIndex={0} className={css.catalogError}>{typeof error === 'string' ? t(error)
@@ -165,7 +166,7 @@ export function TaskLibraryInput({
                 void attach()
               }}
             >
-              {t('libraryAttach').replace('{count}', String(selected.size))}
+              {t('libraryAttach')}
             </Button>
           </div>
         </div>
@@ -181,10 +182,10 @@ export function TaskLibraryInput({
           </Button>
         </div>
       )}
-      {authenticated === true && <LibraryBrowser
+      {authenticated === true && <LibraryFilePicker
         t={t}
         selected={selected}
-        renderFactorySlot={renderFactorySlot}
+        navigationLocked={pending}
         onSelect={(entry) => {
           if (operation.current) return
           const next = new Map(selected)

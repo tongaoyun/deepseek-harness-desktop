@@ -10,9 +10,9 @@ import { zh } from '../src/locales.ts'
 import { ProductError } from '@deepseek-harness/product/errors'
 
 const t = makeTranslate(zh, commonZh)
-const library = { id: '11111111-1111-4111-8111-111111111111', name: '资料库', description: '', scope: 'PERSONAL' as const,
+const library = { id: '11111111-1111-4111-8111-111111111111', name: '资料库', scope: 'PERSONAL' as const,
   ownerId: 'alice', companyId: 'company', role: 'OWNER' as const, canManage: true, version: 1, createdAt: '2026-11-13T01:00:00Z', updatedAt: '2026-11-13T01:00:00Z' }
-const first = { selectionId: '22222222-2222-4222-8222-222222222222', name: '第一份.md', sizeBytes: 12 }
+const first = { selectionId: '22222222-2222-4222-8222-222222222222', name: '第一份.md', kind: 'FILE' as const, sizeBytes: 12 }
 const second = { ...first, selectionId: '33333333-3333-4333-8333-333333333333', name: '第二份.md' }
 afterEach(() => { cleanup(); vi.unstubAllGlobals() })
 function fixture(strict = false) {
@@ -48,7 +48,7 @@ it.each(['PERSONAL', 'TEAM'] as const)('uploads to the current %s folder without
     onClose={f.closed} onCommitted={f.committed} />)
   const dialog = screen.getByRole('dialog', { name: zh.libraryUpload })
   expect(screen.queryByRole('dialog', { name: zh.libraryUploadDestination })).toBeNull()
-  expect(screen.getByText('资料库 / 项目模板')).toBeDefined()
+  expect(screen.queryByText('资料库 / 项目模板')).toBeNull()
   let fail = true
   f.read.mockImplementation(async (method) => {
     if (method === 'library.files.upload.select') return [first]
@@ -301,4 +301,139 @@ it('retains an upload failure through additional selection failure and recovery 
   expect(writes).toHaveLength(3)
   expect(writes[1]).toEqual(writes[0])
   expect(writes[2]?.[1]).toMatchObject({ selectionId: second.selectionId })
+})
+
+it('accepts native dropped files once while keeping the drop area and selection controls mounted', async () => {
+  const f = fixture(), selected = Promise.withResolvers<unknown>()
+  const file = new File(['sample'], '拖拽资料.md')
+  vi.stubGlobal('__DSH_HOST_PATHS__', { pathFor: () => '/tmp/拖拽资料.md' })
+  f.read.mockImplementation(async method => method === 'library.files.upload.select' ? selected.promise : true)
+  const area = screen.getByRole('group', { name: zh.libraryDropFiles })
+  const choose = screen.getByRole('button', { name: zh.libraryChooseLocalFiles })
+  const folder = screen.getByRole('button', { name: zh.libraryChooseLocalFolder })
+  const transfer = { files: [file], types: ['Files'], dropEffect: '' }
+  fireEvent.dragOver(area, { dataTransfer: transfer })
+  expect(area.getAttribute('data-dragging')).toBe('true')
+  fireEvent.drop(area, { dataTransfer: transfer }); fireEvent.drop(area, { dataTransfer: transfer })
+  expect(f.read.mock.calls.filter(([method]) => method === 'library.files.upload.select'))
+    .toEqual([['library.files.upload.select', { paths: ['/tmp/拖拽资料.md'] }]])
+  await act(async () => { selected.resolve([first]) })
+  expect(screen.getByRole('group', { name: zh.libraryDropFiles })).toBe(area)
+  expect(screen.getByRole('button', { name: zh.libraryChooseLocalFiles })).toBe(choose)
+  expect(screen.getByRole('button', { name: zh.libraryChooseLocalFolder })).toBe(folder)
+  expect(f.read.mock.calls.some(([method]) => method === 'library.files.upload')).toBe(false)
+})
+it('preserves selected folder hierarchy and reuses created folders and upload keys after failure', async () => {
+  const f = fixture()
+  const rootId = '44444444-4444-4444-8444-444444444444', childId = '55555555-5555-4555-8555-555555555555'
+  let attempts = 0
+  f.read.mockImplementation(async (method, payload) => {
+    if (method === 'library.files.upload.select') return [first, second].map(file => ({ ...file, folders: ['项目资料', '参考'] }))
+    if (method === 'library.folders.create') {
+      const input = payload as { name: string; parentId: string | null }
+      return { id: input.parentId ? childId : rootId, libraryId: library.id, parentId: input.parentId, name: input.name,
+        kind: 'FOLDER', sha256: null, mediaType: null, sizeBytes: 0, version: 1,
+        createdAt: library.createdAt, updatedAt: library.updatedAt }
+    }
+    if (method === 'library.files.upload' && ++attempts === 2) throw new Error('upload offline')
+    return true
+  })
+  fireEvent.click(screen.getByRole('button', { name: zh.libraryChooseLocalFolder }))
+  await screen.findByText(/项目资料\/参考\/第一份.md/)
+  expect(f.read).toHaveBeenCalledWith('library.files.upload.select', { mode: 'folder' })
+  const upload = screen.getByRole('button', { name: zh.libraryUpload })
+  fireEvent.click(upload)
+  await screen.findByRole('alert')
+  expect(screen.queryByText(/第一份.md/)).toBeNull()
+  expect(f.read.mock.calls.filter(([method]) => method === 'library.folders.create')).toHaveLength(2)
+  fireEvent.click(upload)
+  await waitFor(() => { expect(f.committed).toHaveBeenCalledOnce() })
+  expect(f.read.mock.calls.filter(([method]) => method === 'library.folders.create')).toHaveLength(2)
+  const writes = f.read.mock.calls.filter(([method]) => method === 'library.files.upload')
+  expect(writes).toHaveLength(3)
+  expect(writes.every(([, input]) => (input as { parentId: string }).parentId === childId)).toBe(true)
+  expect(writes[2]).toEqual(writes[1])
+})
+
+it('uploads the selected root and empty subfolders, retaining folder keys through an unknown creation result', async () => {
+  const f = fixture()
+  const rootId = '44444444-4444-4444-8444-444444444444', emptyId = '55555555-5555-4555-8555-555555555555'
+  const root = { selectionId: '66666666-6666-4666-8666-666666666666', kind: 'FOLDER', name: '整个项目', sizeBytes: 0 }
+  const empty = { ...root, selectionId: '77777777-7777-4777-8777-777777777777', name: '空目录', folders: [root.name] }
+  let creations = 0
+  f.read.mockImplementation(async (method, payload) => {
+    if (method === 'library.files.upload.select') return [root, empty, { ...first, folders: [root.name] }]
+    if (method === 'library.folders.create') {
+      const input = payload as { name: string; parentId: string | null }
+      if (++creations === 2) throw new Error('creation result unknown')
+      return { id: input.parentId ? emptyId : rootId, libraryId: library.id, parentId: input.parentId, name: input.name,
+        kind: 'FOLDER', sha256: null, mediaType: null, sizeBytes: 0, version: 1,
+        createdAt: library.createdAt, updatedAt: library.updatedAt }
+    }
+    return true
+  })
+  fireEvent.click(screen.getByRole('button', { name: zh.libraryChooseLocalFolder }))
+  await screen.findByText('整个项目/空目录')
+  const dialog = screen.getByRole('dialog', { name: zh.libraryUpload })
+  const upload = screen.getByRole('button', { name: zh.libraryUpload })
+  upload.focus(); fireEvent.click(upload)
+  const error = await screen.findByRole('alert')
+  expect(f.committed).not.toHaveBeenCalled()
+  expect(f.read.mock.calls.filter(([method]) => method === 'library.files.upload')).toHaveLength(0)
+  const remaining = screen.getByText('整个项目/空目录')
+  expect(document.activeElement).toBe(upload)
+  fireEvent.click(upload); fireEvent.click(upload)
+  await waitFor(() => { expect(f.committed).toHaveBeenCalledOnce() })
+  expect(screen.getByRole('dialog', { name: zh.libraryUpload })).toBe(dialog)
+  expect(error.isConnected).toBe(true)
+  expect(remaining.isConnected).toBe(false)
+  expect(document.activeElement).toBe(upload)
+  const folders = f.read.mock.calls.filter(([method]) => method === 'library.folders.create')
+  expect(folders).toHaveLength(3)
+  expect(folders[2]).toEqual(folders[1])
+  expect(folders[0]?.[1]).toMatchObject({ name: root.name, parentId: null })
+  expect(folders[1]?.[1]).toMatchObject({ name: empty.name, parentId: rootId })
+  expect(f.read.mock.calls.filter(([method]) => method === 'library.files.upload')).toEqual([
+    ['library.files.upload', expect.objectContaining({ selectionId: first.selectionId, parentId: rootId })],
+  ])
+})
+
+it('removes a selected folder with its descendants while retaining a similarly named sibling and its focus', async () => {
+  const f = fixture()
+  const root = { selectionId: '66666666-6666-4666-8666-666666666666', kind: 'FOLDER', name: '项目', sizeBytes: 0 }
+  f.read.mockImplementation(async method => method === 'library.files.upload.select'
+    ? [root, { ...first, folders: [root.name, '子目录'] }, { ...second, folders: ['项目备份'] }] : true)
+  const choose = screen.getByRole('button', { name: zh.libraryChooseLocalFolder })
+  fireEvent.click(choose)
+  await screen.findByText('项目')
+  const sibling = screen.getByText(/项目备份\/第二份.md/)
+  choose.focus()
+  fireEvent.click(screen.getByRole('button', { name: `${zh.remove}: 项目` }))
+  expect(screen.queryByText(/第一份.md/)).toBeNull()
+  expect(screen.getByText(/项目备份\/第二份.md/)).toBe(sibling)
+  expect(document.activeElement).toBe(choose)
+  await waitFor(() => { expect(f.read.mock.calls.filter(([method]) => method === 'library.files.upload.discard')).toEqual([
+    ['library.files.upload.discard', { selectionId: root.selectionId }],
+    ['library.files.upload.discard', { selectionId: first.selectionId }],
+  ]) })
+})
+
+it('rejects a repeated selection without replacing pending rows or retaining duplicate native handles', async () => {
+  const f = fixture(), duplicate = { ...first, selectionId: '77777777-7777-4777-8777-777777777777' }
+  let selections = 0
+  f.read.mockImplementation(async method => method === 'library.files.upload.select'
+    ? ++selections === 1 ? [first] : [duplicate] : true)
+  const choose = screen.getByRole('button', { name: zh.libraryChooseLocalFiles })
+  fireEvent.click(choose)
+  const row = await screen.findByText(/第一份.md/)
+  choose.focus(); fireEvent.click(choose)
+  expect((await screen.findByRole('alert')).textContent).toContain(zh.librarySelectionConflict)
+  expect(screen.getByText(/第一份.md/)).toBe(row)
+  expect(document.activeElement).toBe(choose)
+  await waitFor(() => { expect(f.read.mock.calls).toContainEqual(['library.files.upload.discard', { selectionId: duplicate.selectionId }]) })
+  fireEvent.click(screen.getByRole('button', { name: zh.libraryUpload }))
+  await waitFor(() => { expect(f.committed).toHaveBeenCalledOnce() })
+  expect(f.read.mock.calls.filter(([method]) => method === 'library.files.upload')).toEqual([
+    ['library.files.upload', expect.objectContaining({ selectionId: first.selectionId })],
+  ])
 })

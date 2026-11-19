@@ -24,6 +24,7 @@ const owned = new Set(['UPSTREAM_COMMIT', 'UPSTREAM_TAG', 'UPSTREAM_REPOSITORY',
   'apps/web/tests/deepseek-harness-control-focus.e2e.ts',
   'apps/web/tests/deepseek-harness-expert-retry.e2e.ts',
   'apps/web/tests/deepseek-harness-skill-pagination.e2e.ts',
+  'apps/web/tests/product-support.ts',
   'apps/web/tests/fixtures/clawhub-catalog.mjs',
   'apps/web/tests/expected/deepseek-harness-skill-pagination.expected.md'])
 

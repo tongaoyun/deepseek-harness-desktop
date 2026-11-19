@@ -30,10 +30,11 @@ export function useLibraryRemovalFocus<T extends HTMLElement = HTMLButtonElement
 export function LibraryReadFeedback(props: {
   error?: string | null
   busy: boolean
+  locked?: boolean
   retryLabel: string
   retryRef: React.Ref<HTMLButtonElement>
   focusTarget(): HTMLElement | null | undefined
-  onRetry(): void
+  onRetry: (() => void) | undefined
 }) {
   const messageId = React.useId()
   const errorFocus = useLibraryRemovalFocus<HTMLDivElement>(props.focusTarget)
@@ -43,9 +44,9 @@ export function LibraryReadFeedback(props: {
         <p id={messageId} role="alert">{props.error}</p>
       </div>}
     </div>
-    {props.error && <Button ref={props.retryRef} aria-disabled={props.busy} aria-busy={props.busy}
-      className={props.busy ? 'product-control-pending' : undefined}
-      onClick={() => { if (!props.busy) props.onRetry() }}>{props.retryLabel}</Button>}
+    {props.error && props.onRetry && <Button ref={props.retryRef} aria-disabled={props.busy || (props.locked ?? false)} aria-busy={props.busy}
+      className={props.busy || props.locked ? 'product-control-pending' : undefined}
+      onClick={() => { if (!props.busy && !props.locked) props.onRetry?.() }}>{props.retryLabel}</Button>}
   </div>
 }
 
@@ -161,6 +162,7 @@ export function LibraryCard(props: {
   description: string
   enabled: boolean
   disabled?: boolean
+  locked?: boolean
   pending?: boolean
   enabledLabel: string
   disabledLabel: string
@@ -185,25 +187,25 @@ export function LibraryCard(props: {
         {props.actions}
         {props.moreItems.map((item) => (
           <button key={item.id} type="button"
-            className={['aag-card-action', item.danger ? 'aag-card-action-danger' : '', item.pending && !item.disabled ? 'product-control-pending' : ''].filter(Boolean).join(' ')}
-            disabled={item.disabled || item.pending} aria-busy={item.pending} title={item.label} aria-label={item.label}
-            onClick={() => item.onSelect()}>
+            className={['aag-card-action', item.danger ? 'aag-card-action-danger' : '', (props.locked || item.pending) && !item.disabled ? 'product-control-pending' : ''].filter(Boolean).join(' ')}
+            disabled={item.disabled} aria-disabled={item.disabled || props.locked || item.pending || false} aria-busy={item.pending || false} title={item.label} aria-label={item.label}
+            onClick={() => { if (!props.locked && !item.disabled && !item.pending) item.onSelect() }}>
             {item.icon}<span className="aag-card-action-text">{item.shortLabel ?? item.label}</span>
           </button>
         ))}
-        <div className="aag-switch" aria-busy={props.pending} onClick={(event) => {
+        <div className="aag-switch" aria-disabled={props.disabled || props.locked || props.pending || false} aria-busy={props.pending || false} onClick={(event) => {
           if (event && typeof event.stopPropagation === 'function') event.stopPropagation()
         }}>
           <PrimitiveSwitch
             checked={props.enabled}
-            disabled={props.disabled || props.pending}
-            className={props.pending && !props.disabled ? 'product-control-pending' : undefined}
+            disabled={props.disabled}
             label={`${props.name}：${props.enabled ? props.enabledLabel : props.disabledLabel}`}
             title={props.enabled ? props.enabledLabel : props.disabledLabel}
-            onChange={() => props.toggle()}
+            onChange={() => { if (!props.disabled && !props.locked && !props.pending) props.toggle() }}
           />
-          <span className="aag-switch-state">
-            {props.enabled ? props.enabledLabel : props.disabledLabel}
+          <span className="aag-switch-state aag-editor-action-label">
+            <span aria-hidden={!props.enabled}>{props.enabledLabel}</span>
+            <span aria-hidden={props.enabled}>{props.disabledLabel}</span>
           </span>
         </div>
       </div>

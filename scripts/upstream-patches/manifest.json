@@ -1,9 +1,9 @@
 {
-  "baseline": "38a6a5c965aa99ab525161efb7cc5cf1fe62fced",
+  "baseline": "9c2670d3bce5275e0d1610272958121af87787bb",
   "patches": [
     {
-      "id": "release-v0.2.2-rc.3-integration",
-      "purpose": "基于官方 DeepSeek Harness v0.2.2-rc.3 保留企业产品的公开扩展点、构建和交付集成；原生默认能力由上游提供，产品业务由独立产品包维护。",
+      "id": "release-v0.2.2-rc.5-integration",
+      "purpose": "基于官方 DeepSeek Harness v0.2.2-rc.5 保留企业产品的公开扩展点、构建和交付集成；原生默认能力由上游提供，产品业务由独立产品包维护。",
       "tests": [
         "scripts/upstream-boundaries.spec.ts",
         "scripts/verify-upstream.mjs",
@@ -154,6 +154,26 @@
           "after": "c128125005903d10eb788c101d2902bd3d72222522d3a3d3326f5155f94ac588"
         },
         {
+          "path": "README.i18n.yaml",
+          "before": "700422df48df27704707a6832b7ba7234f1f44c42494ceffb3b8ee2210f989af",
+          "after": "5ec5ca77ba184574efe85cb394e35a0f9de32ed57d49ef36537763d849d11b32"
+        },
+        {
+          "path": "README.md",
+          "before": "0f5516be2acde776f05572cbc8c3093c90549afe04ce118e11157d073d5d15f4",
+          "after": "e0789e1687240793044d5197000128b999af7679017b8407b0b3e44af632c924"
+        },
+        {
+          "path": "README.zh.md",
+          "before": "8f19db1b217e8ef30cf413b07056cc791048bc2ba2ec51ba104e383dcfb43c61",
+          "after": "b4a6e46d7d4782333feaac3601f02a73a2fa4f5ef3cfe08e8aaf25e6aa70d138"
+        },
+        {
+          "path": "THIRD_PARTY_NOTICES.md",
+          "before": "4bd8832885ca31daf3e480fb950b9e849446438c0089b05fab67d6c2673fa2ef",
+          "after": "c7c6ec84a1988ab9b3d87096cd4c6e5017cc090534d48565baf950c58ae4a9bb"
+        },
+        {
           "path": "apps/cli/src/dump-config.ts",
           "before": "02ec1ea1d0c16aec28353c16ef59961a7351bd8a4b56b2a291e536120f08bff9",
           "after": "719e9926eeba745783dbf0cb058b4aed06113fd37c39095c7c32bb84b8b8ee65"
@@ -169,16 +189,6 @@
           "after": "edd2350ad3fa29d918cdb3af96cbcf99387b6337cf0751b07c96905c68c66d95"
         },
         {
-          "path": "apps/desktop/electron-builder.config.d.mts",
-          "before": "6fc1ac7fa08a38ae3a302f4676649db67269b7e027bfc14eee76a9cbc7335369",
-          "after": "236fc8c19fe0c1eac21c0cb886a31e2be5a4d1a5da6cfd48b5e35111507eadfa"
-        },
-        {
-          "path": "apps/desktop/installer/strings.nsh",
-          "before": null,
-          "after": "6b106a7d5fe409559e08081808b085f0e8d7000284cb73d84db0a0f6f6501864"
-        },
-        {
           "path": "apps/desktop/README.md",
           "before": "c41689830fc6d7c243bde20185a50a6dd6ff5f32db531ba364441e63dea65534",
           "after": "412b2663393339ba1085aa2c90e4a3075475564792826d4ecad1630586af5049"
@@ -187,6 +197,16 @@
           "path": "apps/desktop/README.zh.md",
           "before": "b3fa9096b3c5f6205fdc8fe4f01dfea58e89f4de1fd3cc4067c8c64b6bc9da51",
           "after": "b63d81b032f7715461c8ea618a2eb65d9bfccb5643939f4c073fc3a77191264b"
+        },
+        {
+          "path": "apps/desktop/electron-builder.config.d.mts",
+          "before": "6fc1ac7fa08a38ae3a302f4676649db67269b7e027bfc14eee76a9cbc7335369",
+          "after": "236fc8c19fe0c1eac21c0cb886a31e2be5a4d1a5da6cfd48b5e35111507eadfa"
+        },
+        {
+          "path": "apps/desktop/installer/strings.nsh",
+          "before": null,
+          "after": "6b106a7d5fe409559e08081808b085f0e8d7000284cb73d84db0a0f6f6501864"
         },
         {
           "path": "apps/desktop/scripts/desktop-assembly.d.mts",
@@ -406,17 +426,17 @@
         {
           "path": "apps/web/tsconfig.json",
           "before": "8f4ddabeddf75b63bfc7dc329273b15e8f583b91e4520cacaf2f0c4b173cd077",
-          "after": "57c7d463d70306001fba5e625768f87a64ebcaf9cffe6b7f841e766f80199b35"
+          "after": "46bc0cb94ae6b55d5a5a60570070246349a06cdbdab373cb0bbf2b2b442738dc"
         },
         {
           "path": "docs/config-catalog.md",
-          "before": "8e210a09fc8d221016b92559935d9d0c96071a2492307e1491d5e154bad4e30a",
-          "after": "0c847656a8f434f7d276e9653aa0660cc1609eb7d6298c5ba91b6d0143981418"
+          "before": "f139d221c7d353ed616c775d4b7b5d25cc93a38ddcd591b9cea630a253cee655",
+          "after": "20a8f87c31046e65b7d634fc69441404c76d03e9b879fb3516bf8ff0d758a558"
         },
         {
           "path": "docs/config-catalog.zh.md",
-          "before": "902f75b4d0d175b2231707f8a035027a3bb7d7a98d015278fbe08c7cebceb99b",
-          "after": "e5ae4bb6305c771c60433f904e68768b5974934e109802b09fc6693885730a45"
+          "before": "c6da8cd304e0d38df2e133997847f09be64e76c12ee3479a1afc9c304c81788a",
+          "after": "eab2ab5163d48a9f138ea0cdfa15e1b0f73b2ec5a47075e7968f9f2fd7a8e6a8"
         },
         {
           "path": "docs/development.i18n.yaml",
@@ -494,16 +514,6 @@
           "after": "2598faf046d96d82c9b92d26db28bcdbd975f95a7ec59fd1812596263470cb05"
         },
         {
-          "path": "docs/subsystems/core.md",
-          "before": "6d13ab30d5a86e560cadfdf488dfbb302be90676680b205b49d5497c197375f1",
-          "after": "f322553d6efe6fbaf4c6de0fec41f1157ee6370097fec46f1cbb0f166e0519f6"
-        },
-        {
-          "path": "docs/subsystems/core.zh.md",
-          "before": "de4fa16d1d3f5ab022a0924ecc59447a0d8d0136b892c8621a10dc7a605ec4da",
-          "after": "988aa4640aff54deface5046174550ba0bb0c1cf4567962aeaa9b0c17a629ab0"
-        },
-        {
           "path": "docs/subsystems/README.i18n.yaml",
           "before": "5c3158c9c7c064a9ef9a6340e58abbf7f4d0314ed56f8c31f9364abda2a0cc80",
           "after": "a64b1947776dae98401a9bdd7e23dda5aefc1a1069530d58f068e8eabd82deeb"
@@ -517,6 +527,16 @@
           "path": "docs/subsystems/README.zh.md",
           "before": "f8f25ada8a0c4438092a6344c8b0ab84e2231453e9dbeb9ae86367d75b2ad7de",
           "after": "07f39a8545a34a19298ad2a69ecb757e1ad8340deab227f71279f9f91ff741c6"
+        },
+        {
+          "path": "docs/subsystems/core.md",
+          "before": "6d13ab30d5a86e560cadfdf488dfbb302be90676680b205b49d5497c197375f1",
+          "after": "f322553d6efe6fbaf4c6de0fec41f1157ee6370097fec46f1cbb0f166e0519f6"
+        },
+        {
+          "path": "docs/subsystems/core.zh.md",
+          "before": "de4fa16d1d3f5ab022a0924ecc59447a0d8d0136b892c8621a10dc7a605ec4da",
+          "after": "988aa4640aff54deface5046174550ba0bb0c1cf4567962aeaa9b0c17a629ab0"
         },
         {
           "path": "docs/subsystems/skills.i18n.yaml",
@@ -550,8 +570,8 @@
         },
         {
           "path": "package.json",
-          "before": "23d0b7ff113a11437900ab0a3c55fcd86f6d62027f4ff3e1aeb5ae08bee8db9c",
-          "after": "48f81da2135795d74b6cbfd5d1b118996104df8ce63f09f58b8436055497621d"
+          "before": "1d36929c6e7613f31ba4c108483683d49b65f0c399a5c1dadb0ad08af68ccc42",
+          "after": "82d4b7973066e194ad83ce95b2a58d0811d069c62631185f2dbed67c9e4fdc11"
         },
         {
           "path": "packages/api/gateway/src/client/index.ts",
@@ -562,11 +582,6 @@
           "path": "packages/api/gateway/tests/gateway.client.spec.ts",
           "before": "81f7b2489dab9d750ceec588ddf514bae08481fca2cf5e063572612476b941c9",
           "after": "22fae289dc2ddd9126d5daa826769f7473b4b35b333b904f051cf075b41c0615"
-        },
-        {
-          "path": "packages/api/remotes/package.json",
-          "before": "2961359e069ed3496a1f6a21b69983b10dfe09f246b68337d2f57c5bc833019c",
-          "after": "73609ce4f1890d9513248affabac3e185ae77111733a1ceaf5ffad14da57d4e3"
         },
         {
           "path": "packages/api/remotes/README.i18n.yaml",
@@ -582,6 +597,11 @@
           "path": "packages/api/remotes/README.zh.md",
           "before": "b8015d9d40b2ef540bb7e62c5dde52cbe97dbfb35fb2b150e3a0740fb8dcc6f4",
           "after": "4f27e669459233e5ab5e7a443a99f6abd75181ffa72ac3b9917f33564e8a1d95"
+        },
+        {
+          "path": "packages/api/remotes/package.json",
+          "before": "f594ba6aaab606ca5a3a8803316c878c0b0692d3a7fb177dca49b670faa5ee71",
+          "after": "ad920f0cdd565c3a53ab9336fd23087fb80ffd1af22c837f6a0d863262b2d1b4"
         },
         {
           "path": "packages/api/remotes/src/remote-events.ts",
@@ -864,11 +884,6 @@
           "after": "d5e2f9cd333579687b9f2596fe21e2a554a6ce67b587b1a3abb835e25eb138dd"
         },
         {
-          "path": "packages/client/ui-settings-general/src/client/index.ts",
-          "before": "28ccc2a7a8227b5feb9bd8e67c3e573a6a85d9e4f3941cf07ccd851b3db1aaf5",
-          "after": "cb89be1fdd7a028af4b13a4d6690be6d9ce6c0dbf445d6d322038bd96d60b337"
-        },
-        {
           "path": "packages/client/ui-settings-general/src/client/SettingsRoot.tsx",
           "before": "1ac64bf90078d632f97bbfccd3aa6b9aba49435558b8b17dd77491cfacbbafb5",
           "after": "82dae104110dfead24200f888284bc8cb85f32bc75e1b0fe0dc5ef688668988f"
@@ -877,6 +892,11 @@
           "path": "packages/client/ui-settings-general/src/client/SettingsSectionView.tsx",
           "before": null,
           "after": "e69e4f6409ba4edb7ebf40cf90b0f3919e69ab92d724cbb0ed8e3fc51e91a70d"
+        },
+        {
+          "path": "packages/client/ui-settings-general/src/client/index.ts",
+          "before": "28ccc2a7a8227b5feb9bd8e67c3e573a6a85d9e4f3941cf07ccd851b3db1aaf5",
+          "after": "cb89be1fdd7a028af4b13a4d6690be6d9ce6c0dbf445d6d322038bd96d60b337"
         },
         {
           "path": "packages/client/ui-settings-general/src/client/shell-contract.ts",
@@ -959,14 +979,14 @@
           "after": "700789a5388a8c9a12b2515907f0a409c3ba7e40d2672daed80e71b8e43f62ac"
         },
         {
-          "path": "packages/client/ui-sidebar-documentpreview/src/client/excel/excel.tsx",
-          "before": "2e93b34beeb6a194d3ce719c9396197a5e9f70a6c7b46b69567974e45907906d",
-          "after": "10fdccd1dda091c8834613ac4fcdb8a671f1cb59cd1de06510ff1dfebe7ab7cc"
-        },
-        {
           "path": "packages/client/ui-sidebar-documentpreview/src/client/excel/LazyExcelBody.tsx",
           "before": "5ddd0d15063725fce40ffa7e8e4ed7346aa83da9b19df434f7ddb766c2de6255",
           "after": "5094c05dcdc0257fcdafa494ec8564c177c1fe929134cdd4afe37130c633f5e3"
+        },
+        {
+          "path": "packages/client/ui-sidebar-documentpreview/src/client/excel/excel.tsx",
+          "before": "2e93b34beeb6a194d3ce719c9396197a5e9f70a6c7b46b69567974e45907906d",
+          "after": "10fdccd1dda091c8834613ac4fcdb8a671f1cb59cd1de06510ff1dfebe7ab7cc"
         },
         {
           "path": "packages/client/ui-sidebar-documentpreview/src/client/excel/xlsx.ts",
@@ -1029,16 +1049,6 @@
           "after": "e2c7d7eee6c27d60c123036b7ba4caa3bb695838fbf78014b4467a474c0a2a83"
         },
         {
-          "path": "packages/client/ui-sidebar/src/client/contract/slots.ts",
-          "before": "1820bab870ea6254ccaf0b3ca52c427c3acb88ff66400795a9dcdb64c3c91b5c",
-          "after": "352f224f8b7edd9593dc97e90b7783cc5f9fddc3a06859a6352c514655c7099f"
-        },
-        {
-          "path": "packages/client/ui-sidebar/src/client/index.ts",
-          "before": "b086e7485c61a3cf995fad32b38df1fee70f2e178a89e751908a75a0cb1671a7",
-          "after": "a19032a99f1de965d6a6ff75b1f474428784481aee7864f653d65a814f677551"
-        },
-        {
           "path": "packages/client/ui-sidebar/src/client/PanelIcon.tsx",
           "before": "3624d445da4652043f54c4973740ea638d9ccf310297fc3775e412dae1f5cfa1",
           "after": "407c001acc15f30c0bc1f92dab42c6f7b893c64e569f8a4ddde86c65ce16666b"
@@ -1047,6 +1057,16 @@
           "path": "packages/client/ui-sidebar/src/client/SidebarRoot.tsx",
           "before": "99afedce21a93471b94f6bd205e5072bac14bb4d228755e4ae1220bd78f5adff",
           "after": "33409263e9d9a5e9b73fe125d4ada0af1f89a19c126f57dcfad4e9dd1a4a176c"
+        },
+        {
+          "path": "packages/client/ui-sidebar/src/client/contract/slots.ts",
+          "before": "1820bab870ea6254ccaf0b3ca52c427c3acb88ff66400795a9dcdb64c3c91b5c",
+          "after": "352f224f8b7edd9593dc97e90b7783cc5f9fddc3a06859a6352c514655c7099f"
+        },
+        {
+          "path": "packages/client/ui-sidebar/src/client/index.ts",
+          "before": "b086e7485c61a3cf995fad32b38df1fee70f2e178a89e751908a75a0cb1671a7",
+          "after": "a19032a99f1de965d6a6ff75b1f474428784481aee7864f653d65a814f677551"
         },
         {
           "path": "packages/client/ui-sidebar/tests/apply.client.spec.tsx",
@@ -1064,11 +1084,6 @@
           "after": "5e9099c37169762b34c17a73efc6bc815ff47946f75013eaf6b0d18e2bc845f0"
         },
         {
-          "path": "packages/client/ui-skill/package.json",
-          "before": "ad68551252b2dc97dad65ed01899dce2542f10f5b4f04729038fef74d997d277",
-          "after": "a7cea5d63b5d87c8e68313c276812de65ecc116c727e5b31dd9e73c9d94c8683"
-        },
-        {
           "path": "packages/client/ui-skill/README.i18n.yaml",
           "before": "98d9d7199aa736575c85e1c54684d97de61eba8a421f95d5d14125dda6ceee2e",
           "after": "a73386c33442e0ecebf9eff0669c0f699164823cb6a5eefb8b3c352e7be93a45"
@@ -1082,6 +1097,11 @@
           "path": "packages/client/ui-skill/README.zh.md",
           "before": "f59b5104fe1b74fd98e97553901c7e7d03f2228b877ed84be4120fdd5a1389a7",
           "after": "2c09253f0cbb289fa7fde3b16d0957735b845d350346e72b08a20afa79a4bfc3"
+        },
+        {
+          "path": "packages/client/ui-skill/package.json",
+          "before": "b6265bbe27500dc304a97f0cd2a84894e2caa79f3e7303420e9a1a3a97cb5ab4",
+          "after": "9909b3490d49ccb6b81900df5b1bbb381d61dea6f9c8febd37d6555394fd6948"
         },
         {
           "path": "packages/client/ui-skill/src/client/index.ts",
@@ -1124,6 +1144,11 @@
           "after": "4bb291d8d1c8b72a2c5080f7f3114ccc660594d0252fa59f43df6815a24ad585"
         },
         {
+          "path": "packages/experimental/deepseek-chat-import/src/client/mount.ts",
+          "before": "d670a58c69e78777bef10dd4010e40706c3fbafda2e574d08755bb7d4562e068",
+          "after": "861c926f9ad9e2cda2738f65fe8b9cf58db6df2b85c887d51809635894777c77"
+        },
+        {
           "path": "packages/experimental/webworker-runtime/tests/compile/transform-corpus-check.ts",
           "before": "8317dbf288511a2d6dcfc6d34a6ffbfc3adb951d133b3afbb3a6f149c45a94e8",
           "after": "004200582112fa4b296266c02b6ee2d4803fae62aa59be7dea2feeaa911c4b61"
@@ -1150,8 +1175,8 @@
         },
         {
           "path": "packages/extensions/tool-cordis/src/api-catalog.ts",
-          "before": "0c35ae766c4ac0108efc22ec0bb1b9e7ccd1b455044b49a28be79db45bc220a0",
-          "after": "e279fd9b0d00d2574499975cf5418d1fb502fb96cbc2b4c67bf793f95923f091"
+          "before": "ccb944166821cda40f8f3be36c7845378e0ca9fb83d11a4eed61f7620d6ccc2e",
+          "after": "d1803208ee53230cb5652be49405c524d2eae88b88604c8b8902d9169d909bf1"
         },
         {
           "path": "packages/mcp/mcp-client/src/index.ts",
@@ -1224,11 +1249,6 @@
           "after": "873bf42ab20fac8ae384228bdb1d8003b32860a7547df3be96e2e331357bd675"
         },
         {
-          "path": "packages/skill/skill-filesystem/package.json",
-          "before": "ab1f9c484fd30b2229cc0080d011a665e383e75746ae781119acdb304e03a487",
-          "after": "a41cebde248f8e54080bfa706f8775b5281053b02364f2b9513f510a9398f1cc"
-        },
-        {
           "path": "packages/skill/skill-filesystem/README.i18n.yaml",
           "before": "6ddb2c95118b84e8f1d18bd8161f03fa483971ac0f9099ecffa55bf509965990",
           "after": "c263473aa2aee5e0d36de6b14351ac19585a20f29f679753874a1c152e24c099"
@@ -1244,6 +1264,11 @@
           "after": "440a07c38779eec8327e7354d2e09a60c44c5525539789302eb263b9dcb52d35"
         },
         {
+          "path": "packages/skill/skill-filesystem/package.json",
+          "before": "2c13d3961026246676f1f0ad719f905cf4fdba988b473b36606c01c1f1a6efef",
+          "after": "3ad76c0a8ac35778caf6990ea19a7ca04adbe04d2f78748ec80c438dd4ae8e6c"
+        },
+        {
           "path": "packages/skill/skill-filesystem/src/document.ts",
           "before": null,
           "after": "9d7f336e2f0932d7fc46273bc012e14057025cf6d9b30d16e499f3cc20b743c0"
@@ -1252,11 +1277,6 @@
           "path": "packages/skill/skill-filesystem/src/index.ts",
           "before": "fec9bf70095a01fd7eb61e5a7aa77480490a17e663224ecaeb84852cb025207f",
           "after": "c5095262e45f7d6059011abb4d7eecba5c6425d185a5dccdf062cf620b7a1459"
-        },
-        {
-          "path": "packages/skill/skill/package.json",
-          "before": "83b734753ef1908b7c7fe29d542d9fa3ae0db42701315e5791b4525ad5057d8b",
-          "after": "5981d38ec4e21bc66dd103f473d17892750322199434db5a62a18952f4ad8285"
         },
         {
           "path": "packages/skill/skill/README.i18n.yaml",
@@ -1272,6 +1292,11 @@
           "path": "packages/skill/skill/README.zh.md",
           "before": "2084074530a2c5e7dbb31742468f14a22723fe2d87cbca408acdb68d93d14b53",
           "after": "1007cbb35ad3a60f6677dfa6d0cdb100d5bae34b514e4125d8cb3cfcb2f342b9"
+        },
+        {
+          "path": "packages/skill/skill/package.json",
+          "before": "564b69d20f236cb19ee3e6b13d4d666e877aeae0a88b401831bc475c72f4d443",
+          "after": "d3791a6167f25508bc2f22764dd5465299c7090d7a89ed6759b10850214c72c0"
         },
         {
           "path": "packages/skill/skill/src/index.ts",
@@ -1297,21 +1322,6 @@
           "path": "pnpm-lock.yaml",
           "before": "c24a38565023f08480f3832a554a676ad7479d36c0868063c85ad66ba6d3e68a",
           "after": "6e4c3e9e3fa1ab7cddbf9ad183a702156b11f822a07309f3123874e1a76c5221"
-        },
-        {
-          "path": "README.i18n.yaml",
-          "before": "700422df48df27704707a6832b7ba7234f1f44c42494ceffb3b8ee2210f989af",
-          "after": "5ec5ca77ba184574efe85cb394e35a0f9de32ed57d49ef36537763d849d11b32"
-        },
-        {
-          "path": "README.md",
-          "before": "0f5516be2acde776f05572cbc8c3093c90549afe04ce118e11157d073d5d15f4",
-          "after": "e0789e1687240793044d5197000128b999af7679017b8407b0b3e44af632c924"
-        },
-        {
-          "path": "README.zh.md",
-          "before": "8f19db1b217e8ef30cf413b07056cc791048bc2ba2ec51ba104e383dcfb43c61",
-          "after": "b4a6e46d7d4782333feaac3601f02a73a2fa4f5ef3cfe08e8aaf25e6aa70d138"
         },
         {
           "path": "scripts/build.spec.ts",
@@ -1484,11 +1494,6 @@
           "after": "da242db66ef2305c31f4d1322edf9aabe37b7ba375de80c827a338a92a2e2023"
         },
         {
-          "path": "THIRD_PARTY_NOTICES.md",
-          "before": "4bd8832885ca31daf3e480fb950b9e849446438c0089b05fab67d6c2673fa2ef",
-          "after": "c7c6ec84a1988ab9b3d87096cd4c6e5017cc090534d48565baf950c58ae4a9bb"
-        },
-        {
           "path": "tsconfig.base.json",
           "before": "9d4ba53d7ecc28ff95070a37d4d6597ec1eec735d86de7fe0b9b7ed0628904c6",
           "after": "290ad112ac5bcea51290fd3e4b09663a8f50a630ce1bf83a1927c3871b632fec"
@@ -1501,20 +1506,15 @@
         {
           "path": "tsconfig.host.json",
           "before": "a470d57c955c26c7fe094823d5e6afbc9defb9713b4027412d2a3e2fd25b49d7",
-          "after": "46189d35057e89c51a551823384bbae2b29a48dee907e7dfead3271d2b4fa078"
+          "after": "bb600dfd302d4f16d0ba49e72dc3ba2fd15055878601a96448df255729645e65"
         },
         {
           "path": "vitest.config.ts",
           "before": "a62554d9aa2a5aefe92773922938cddbdbd8c6632537df8685cf1f17c130c75f",
           "after": "d8502dd1b1f2d36c2b64e86d8385c9e456efffaf4ca7d1213b5565ab8ee123f6"
-        },
-        {
-          "path": "packages/experimental/deepseek-chat-import/src/client/mount.ts",
-          "before": "d670a58c69e78777bef10dd4010e40706c3fbafda2e574d08755bb7d4562e068",
-          "after": "861c926f9ad9e2cda2738f65fe8b9cf58db6df2b85c887d51809635894777c77"
         }
       ],
-      "diff": "release-v0.2.2-rc.3-integration.patch"
+      "diff": "release-v0.2.2-rc.5-integration.patch"
     },
     {
       "id": "explicit-builtin-compiler-faces",
@@ -1580,14 +1580,14 @@
           "after": "c57380e63c707a0605db4395278662caa3c94c1f3d42ede7ab7152b6ee6dba2c"
         },
         {
-          "path": "apps/desktop/package.json",
-          "before": "c4452f725e19d45757a7e553eed11a0171e3faba321a7b92828fb998d8dd5cad",
-          "after": "fd4db04181a074ba8c7dcde946ac6b472da07c1cfe176fb8c295399c97701cda"
-        },
-        {
           "path": "apps/desktop/README.i18n.yaml",
           "before": "bf132d5a442445505ff6d8f5a8a6a8cfbc490bbbb3c1d3f95b7186a513b8087e",
           "after": "78b5d26d9e48ff16b77aa2d8d960824b16ca6e4131a5c8f99d62cf40849e15a8"
+        },
+        {
+          "path": "apps/desktop/package.json",
+          "before": "b554a801dfcfa374df4cbfa4c7992e42ffbe4cc23da0060b3732a421da0425ae",
+          "after": "3557e76565e644794c84217ec482827dcf6d438a61950f2ae1f4d9a2c4ca19ff"
         },
         {
           "path": "apps/desktop/src/host-process.ts",
@@ -1669,8 +1669,8 @@
       "files": [
         {
           "path": "packages/typert/generator/package.json",
-          "before": "402de2163ab3870f22b089b6dd23c1ee3ece8fb1de30ab98d6b12981501a0856",
-          "after": "2a7fe667036315e7abe62aa252d2fbe9b2ed571f7e9a05b398527e4c4b22d337"
+          "before": "0e7d039e8a5e4d4c8219183f9f0d82ba4ab7da1d82119ba63d79ca8af6c2134e",
+          "after": "7835e804f65090f0643f61b45d2af095f748651bce75fbb6156bc21d68d486cf"
         },
         {
           "path": "packages/typert/generator/tsdown.config.ts",

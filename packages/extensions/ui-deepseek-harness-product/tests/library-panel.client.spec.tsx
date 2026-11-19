@@ -10,7 +10,7 @@ import { zh } from '../src/locales.ts'
 const t = makeTranslate(zh, commonZh)
 const alice = { authenticated: true, employeeId: 'alice' }
 const bob = { authenticated: true, employeeId: 'bob' }
-const library = { id: '11111111-1111-4111-8111-111111111111', name: 'alice 资料', description: '', scope: 'PERSONAL',
+const library = { id: '11111111-1111-4111-8111-111111111111', name: 'alice 资料', scope: 'PERSONAL',
   ownerId: 'alice', companyId: 'company', role: 'OWNER', canManage: true, version: 1,
   createdAt: '2026-11-13T01:00:00Z', updatedAt: '2026-11-13T01:00:00Z' }
 afterEach(() => { cleanup(); vi.unstubAllGlobals() })

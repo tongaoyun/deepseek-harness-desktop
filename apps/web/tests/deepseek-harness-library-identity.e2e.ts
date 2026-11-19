@@ -46,13 +46,13 @@ it('keeps library identity retry and renewal stable and disposes old employee ed
     }
     if (method === 'library.files.list') return { data: [], pageIndex: 1, pageSize: 20, totalCount: 0, totalPages: 0 }
     if (method === 'library.personal.ensure' || method === 'library.get') return {
-      id: '11111111-1111-4111-8111-111111111111', name: `${employeeId} library`, description: 'Private files',
+      id: '11111111-1111-4111-8111-111111111111', name: `${employeeId} library`,
       scope: 'PERSONAL', ownerId: employeeId, companyId: 'company', role: 'OWNER', canManage: true,
       version: 1, createdAt: now, updatedAt: now }
     if (method === 'library.entries.list') { listReads++; return { data: [], pageIndex: 1, pageSize: 20, totalCount: 0, totalPages: 0 } }
     if (method === 'library.list') {
       listReads++
-      return { data: [{ id: '11111111-1111-4111-8111-111111111111', name: `${employeeId} library`, description: 'Private files',
+      return { data: [{ id: '11111111-1111-4111-8111-111111111111', name: `${employeeId} library`,
         scope: 'PERSONAL', ownerId: employeeId, companyId: 'company', role: 'OWNER', canManage: true,
         version: 1, createdAt: now, updatedAt: now }], pageIndex: 1, pageSize: 20, totalCount: 1, totalPages: 1 }
     }
@@ -190,7 +190,7 @@ it('keeps searched folder navigation and shrinking pagination stable in the real
   page.setDefaultTimeout(10_000)
   const tripwire = watchConsole(page)
   const now = '2026-11-13T01:00:00Z'
-  const library = { id: '11111111-1111-4111-8111-111111111111', name: 'Audit library', description: '',
+  const library = { id: '11111111-1111-4111-8111-111111111111', name: 'Audit library',
     scope: 'PERSONAL', ownerId: 'alice', companyId: 'company', role: 'OWNER', canManage: true,
     version: 1, createdAt: now, updatedAt: now }
   const parent: LibraryEntry = { id: '22222222-2222-4222-8222-222222222222', libraryId: library.id,
@@ -199,7 +199,7 @@ it('keeps searched folder navigation and shrinking pagination stable in the real
   const nested = { ...parent, id: '33333333-3333-4333-8333-333333333333', name: 'Nested match', parentId: parent.id }
   const file = { ...parent, id: '44444444-4444-4444-8444-444444444444', name: 'Old tail file.md', kind: 'FILE',
     sha256: 'a'.repeat(64), mediaType: 'text/markdown', sizeBytes: 12 }
-  let ancestryReads = 0, correcting = false, tail = false, removed = false
+  let ancestryReads = 0, correcting = false, tail = false, removed = false, failTail = false
   const ancestry = Promise.withResolvers<LibraryEntry>(), correction = Promise.withResolvers<undefined>()
   onTestFinished(() => { ancestry.resolve(parent); correction.resolve(undefined) })
   await page.exposeFunction('__libraryBrowseInvoke', async (method: string, payload?: {
@@ -210,7 +210,7 @@ it('keeps searched folder navigation and shrinking pagination stable in the real
     if (method === 'auth.getSession') return { authenticated: true, employeeId: 'alice', displayName: 'alice' }
     if (method === 'library.files.list') return { data: [], pageIndex: 1, pageSize: 20, totalCount: 0, totalPages: 0 }
     if (method === 'library.list') return { data: [library], pageIndex: 1, pageSize: 20, totalCount: 1, totalPages: 1 }
-    if (method === 'library.get') return library
+    if (method === 'library.personal.ensure' || method === 'library.get') return library
     if (method === 'library.entries.get') {
       if (++ancestryReads === 1) return { fixtureFailure: productFailure(new ProductError('EXTERNAL_SERVICE_ERROR', 'Folder read failed', true)) }
       return ancestry.promise
@@ -218,6 +218,10 @@ it('keeps searched folder navigation and shrinking pagination stable in the real
     if (method === 'library.entries.list') {
       const pageIndex = payload?.page ?? 1
       if (tail) {
+        if (pageIndex === 2 && failTail) {
+          failTail = false
+          return { fixtureFailure: productFailure(new ProductError('EXTERNAL_SERVICE_ERROR', 'Tail page unavailable', true)) }
+        }
         if (removed && pageIndex === 1) { correcting = true; await correction.promise }
         const data = removed && pageIndex === 2 ? [] : [removed ? { ...file, id: parent.id, name: 'Remaining file.md' } : file]
         return { data, pageIndex, pageSize: 20, totalCount: removed ? 20 : 21, totalPages: removed ? 1 : 2 }
@@ -240,10 +244,10 @@ it('keeps searched folder navigation and shrinking pagination stable in the real
   await page.goto(scaffold.authenticatedUrl)
   await page.getByRole('button', { name: 'Add files or run commands', exact: true }).click()
   await page.getByRole('option', { name: /Choose library files/ }).click()
-  await page.getByRole('button', { name: library.name, exact: true }).click()
+  await page.getByRole('tab', { name: 'My files', exact: true }).click()
   const search = page.getByRole('searchbox', { name: 'Search names', exact: true })
   await search.fill(nested.name)
-  const row = page.getByRole('button', { name: `${nested.name} Folder`, exact: true })
+  const row = page.getByRole('button', { name: nested.name, exact: true })
   const rowNode = await row.elementHandle(), searchNode = await search.elementHandle()
   await row.click()
   const alert = page.getByRole('alert')
@@ -278,35 +282,35 @@ it('keeps searched folder navigation and shrinking pagination stable in the real
   }
   await page.setViewportSize({ width: 1440, height: 900 })
   ancestry.resolve(parent)
-  await page.getByRole('button', { name: `${file.name} 1 KB`, exact: true }).waitFor()
+  await page.getByRole('button', { name: file.name, exact: true }).waitFor()
   expect(await search.evaluate((node, previous) => node === previous, searchNode)).toBe(true)
   expect(await search.inputValue()).toBe('')
   await page.getByRole('button', { name: parent.name, exact: true }).waitFor()
-  await page.getByRole('button', { name: library.name, exact: true }).click()
+  await page.getByRole('button', { name: 'My files', exact: true }).click()
   tail = true
-  const refresh = page.getByRole('button', { name: 'Refresh', exact: true })
-  await expect.poll(() => refresh.getAttribute('aria-busy')).toBe('false')
-  await refresh.click()
+  await search.fill('file')
   await page.getByText('1 / 2', { exact: true }).waitFor()
-  await expect.poll(() => refresh.getAttribute('aria-busy')).toBe('false')
+  failTail = true
   await page.getByRole('button', { name: 'Next', exact: true }).click()
   await page.getByText('2 / 2', { exact: true }).waitFor()
-  await expect.poll(() => refresh.getAttribute('aria-busy')).toBe('false')
-  const tailRow = page.getByRole('button', { name: `${file.name} 1 KB`, exact: true })
-  const tailNode = await tailRow.elementHandle(), refreshNode = await refresh.elementHandle(), refreshBounds = await refresh.boundingBox()
+  await alert.waitFor()
+  const retry = page.getByRole('button', { name: 'Retry', exact: true })
+  await expect.poll(() => retry.getAttribute('aria-busy')).toBe('false')
+  const tailRow = page.getByRole('button', { name: file.name, exact: true })
+  const tailNode = await tailRow.elementHandle(), retryNode = await retry.elementHandle(), retryBounds = await retry.boundingBox()
   removed = true
-  await refresh.click()
+  await retry.click()
   await expect.poll(() => correcting).toBe(true)
   expect(await tailRow.evaluate((node, previous) => node === previous, tailNode)).toBe(true)
   expect(await page.getByText('No files yet', { exact: true }).filter({ visible: true }).count()).toBe(0)
-  expect(await refresh.evaluate((node, previous) => node === previous && node === document.activeElement, refreshNode)).toBe(true)
-  expect(await refresh.boundingBox()).toEqual(refreshBounds)
-  expect(await refresh.getAttribute('aria-busy')).toBe('true')
+  expect(await retry.evaluate((node, previous) => node === previous && node === document.activeElement, retryNode)).toBe(true)
+  expect(await retry.boundingBox()).toEqual(retryBounds)
+  expect(await retry.getAttribute('aria-busy')).toBe('true')
   correction.resolve(undefined)
-  await page.getByRole('button', { name: 'Remaining file.md 1 KB', exact: true }).waitFor()
-  await expect.poll(() => refresh.getAttribute('aria-busy')).toBe('false')
+  await page.getByRole('button', { name: 'Remaining file.md', exact: true }).waitFor()
+  await retry.waitFor({ state: 'detached' })
   expect(await page.getByRole('button', { name: 'Previous', exact: true }).isVisible()).toBe(false)
-  expect(await refresh.evaluate(node => node === document.activeElement)).toBe(true)
+  expect(await search.evaluate(node => node === document.activeElement)).toBe(true)
   expect(tripwire.pageErrors).toEqual([])
   expect(tripwire.warnings).toEqual([])
 })

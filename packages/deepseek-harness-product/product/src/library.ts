@@ -4,12 +4,13 @@ const id = z.uuid()
 const timestamp = z.iso.datetime({ offset: true })
 /** Limits for one library-file selection admitted into the native composer. */
 export const LIBRARY_ATTACHMENT_LIMITS = { files: 20, bytes: 100 * 1024 * 1024 } as const
+/** Bounds for a complete native upload selection, independent of conversation attachments. */
+export const LIBRARY_UPLOAD_LIMITS = { files: 1000, folders: 100, depth: 16, bytes: 100 * 1024 * 1024 } as const
 /** Authorized library metadata returned by the server. */
 export const LibrarySchema = z
   .object({
     id,
     name: z.string().min(1).max(180),
-    description: z.string().max(1000),
     scope: z.enum(['PERSONAL', 'TEAM']),
     ownerId: z.string().min(1),
     companyId: z.string().min(1),
@@ -60,9 +61,16 @@ export const LibraryPageSchema = z.object({
 export const LibraryEntryPageSchema = LibraryPageSchema.extend({ data: z.array(LibraryEntrySchema).readonly() })
 /** A validated entry page. */
 export type LibraryEntryPage = z.infer<typeof LibraryEntryPageSchema>
-/** Main-owned handle for a file selected with the native picker. */
+const folderSegment = z.string().min(1).max(180).refine(name => name.trim().length > 0
+  && name.trim() !== '.' && name.trim() !== '..' && !/[\\/\x00-\x1f\x7f-\x9f]/u.test(name))
+/** Issued upload handle, including empty directories and paths below the chosen destination. */
 export const LibrarySelectionSchema = z
-  .object({ selectionId: id, name: z.string().min(1), sizeBytes: z.number().int().positive() })
+  .object({ selectionId: id, name: folderSegment,
+    folders: z.array(folderSegment).max(LIBRARY_UPLOAD_LIMITS.depth).readonly().optional() })
+  .and(z.discriminatedUnion('kind', [
+    z.object({ kind: z.literal('FILE'), sizeBytes: z.number().int().positive() }),
+    z.object({ kind: z.literal('FOLDER'), sizeBytes: z.literal(0) }),
+  ]))
   .readonly()
 /** Selected upload metadata without exposing a local path. */
 export type LibrarySelection = z.infer<typeof LibrarySelectionSchema>

@@ -2,10 +2,36 @@
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, expect, it, vi } from 'vitest'
 import { ResourceActionsMenu } from '../src/client/ResourceActionsMenu.tsx'
+import { LibraryFileActions } from '../src/client/LibraryFileList.tsx'
 import { zh } from '../src/locales.ts'
 
 const t = (key: keyof typeof zh) => zh[key]
 afterEach(cleanup)
+
+it('keeps library file actions closed after a pending operation settles', () => {
+  const file = { entry: { id: 'file', libraryId: 'library', parentId: null, name: '资料.md', kind: 'FILE' as const,
+    sha256: 'a'.repeat(64), mediaType: 'text/markdown', sizeBytes: 1, version: 1,
+    createdAt: '2026-11-17T01:00:00Z', updatedAt: '2026-11-17T01:00:00Z' },
+  libraryName: '我的资料', canManage: true, lastAccessedAt: null }
+  const props = { file, t, onEdit: vi.fn(), pending: false }
+  const view = render(<LibraryFileActions {...props} />)
+  const trigger = screen.getByRole('button', { name: `${zh.resourceActions} · ${file.entry.name}` })
+  trigger.focus(); fireEvent.click(trigger)
+  expect(screen.getByRole('menu')).toBeTruthy()
+  view.rerender(<LibraryFileActions {...props} pending />)
+  expect(screen.queryByRole('menu')).toBeNull()
+  expect(document.activeElement).toBe(trigger)
+  expect(trigger.hasAttribute('disabled')).toBe(false)
+  fireEvent.click(trigger)
+  expect(props.onEdit).not.toHaveBeenCalled()
+  view.rerender(<LibraryFileActions {...props} />)
+  expect(screen.queryByRole('menu')).toBeNull()
+  expect(trigger.getAttribute('aria-expanded')).toBe('false')
+  expect(screen.getByRole('button', { name: `${zh.resourceActions} · ${file.entry.name}` })).toBe(trigger)
+  fireEvent.click(trigger)
+  fireEvent.click(screen.getByRole('menuitem', { name: zh.libraryRename }))
+  expect(props.onEdit).toHaveBeenCalledExactlyOnceWith('rename')
+})
 
 it.each(['pending', 'permission'] as const)('closes connector actions after %s changes and requires reopening', (reason) => {
   const resource = { canEdit: true, canSubmit: true, canDelete: true, version: '1.0.0' }

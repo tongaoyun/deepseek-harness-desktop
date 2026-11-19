@@ -3573,13 +3573,14 @@ index cda15bafaffaf75b07ffc86ccce6a21dc5fa4c31..bbe3b6edc808b2a8554f032dd6f997d7
  interface WindowControlBox extends Omit<RegionRect, 'draggable'> {
    /** Sample points where the browser hit test reaches this control or its content. */
 diff --git a/apps/web/tsconfig.json b/apps/web/tsconfig.json
-index 9f07455f453200d423bf1b2215505c58619c15cb..e1ced59762b7865c3512ef07d0f85210f94b167a 100644
+index 9f07455f453200d423bf1b2215505c58619c15cb..6105f9e0112d8855abc55742b57b9d0bda76df2b 100644
 --- a/apps/web/tsconfig.json
 +++ b/apps/web/tsconfig.json
-@@ -23,6 +23,13 @@
+@@ -23,6 +23,14 @@
    // this client-registered project must not also hold them (one program
    // cannot see both sides of the cordis Context merges).
    "exclude": [
++    "tests/product-support.ts",
 +    "tests/deepseek-harness-control-focus.e2e.ts",
 +    "tests/deepseek-harness-catalog.e2e.ts",
 +    "tests/deepseek-harness-desktop.e2e.ts",
@@ -3591,7 +3592,7 @@ index 9f07455f453200d423bf1b2215505c58619c15cb..e1ced59762b7865c3512ef07d0f85210
      "tests/sidebar-drawer.e2e.ts",
      "tests/creation-recommendations.e2e.ts",
 diff --git a/docs/config-catalog.md b/docs/config-catalog.md
-index e691d06b8a3eedc8bf4403cf320a7320eab0bd5f..f0eeaf35aeb32df7116c431d435d46e0b19c38de 100644
+index da7c10b10b284a36fe34a804fc7ca81d1fedeefa..24aa9682a8c57384cc9e57f6883f944fff59f75a 100644
 --- a/docs/config-catalog.md
 +++ b/docs/config-catalog.md
 @@ -158,7 +158,7 @@ export type Config = PresetDefinition
@@ -3621,7 +3622,7 @@ index e691d06b8a3eedc8bf4403cf320a7320eab0bd5f..f0eeaf35aeb32df7116c431d435d46e0
  
  ```ts config-catalog
  /** Skill registry configuration. */
-@@ -5068,6 +5068,62 @@ export interface Config {
+@@ -5071,6 +5071,62 @@ export interface Config {
  ```
  <!-- END GENERATED config-catalog:@deepseek-ai/dsh-workspace-changes -->
  
@@ -3684,7 +3685,7 @@ index e691d06b8a3eedc8bf4403cf320a7320eab0bd5f..f0eeaf35aeb32df7116c431d435d46e0
  ## Loadable plugins with no config
  
  These load from a `cordis.yml` entry with no `config:` block; they declare no configuration API.
-@@ -5193,6 +5249,8 @@ These load from a `cordis.yml` entry with no `config:` block; they declare no co
+@@ -5196,6 +5252,8 @@ These load from a `cordis.yml` entry with no `config:` block; they declare no co
  | `@deepseek-ai/dsh-user-questions` | — | [`packages/interaction/user-questions/src/index.ts`](../packages/interaction/user-questions/src/index.ts) |
  | `@deepseek-ai/dsh-webhook` | `agents` · `agentDefaultModel` · `agentPresets` · `permissionPresets` · `sessionTitle` · `workspaceRegistry` | [`packages/experimental/webhook/src/index.ts`](../packages/experimental/webhook/src/index.ts) |
  | `@deepseek-ai/dsh-workspace` | `storageDomain` · `sessionPersistence` | [`packages/workspace/workspace/src/index.ts`](../packages/workspace/workspace/src/index.ts) |
@@ -3693,7 +3694,7 @@ index e691d06b8a3eedc8bf4403cf320a7320eab0bd5f..f0eeaf35aeb32df7116c431d435d46e0
  <!-- END GENERATED config-catalog:no-config -->
  
  ## Seam packages (not directly loadable)
-@@ -5303,4 +5361,6 @@ Imported as libraries by other packages; a `cordis.yml` cannot load them.
+@@ -5306,4 +5364,6 @@ Imported as libraries by other packages; a `cordis.yml` cannot load them.
  | `@deepseek-ai/dsh-util-values` | — | [`packages/util/values/src/index.ts`](../packages/util/values/src/index.ts) |
  | `@deepseek-ai/dsh-util-workspace-path` | — | [`packages/util/workspace-path/src/index.ts`](../packages/util/workspace-path/src/index.ts) |
  | `@deepseek-ai/dsh-win32-process` | — | [`packages/subprocess/win32-process/src/index.ts`](../packages/subprocess/win32-process/src/index.ts) |
@@ -3701,7 +3702,7 @@ index e691d06b8a3eedc8bf4403cf320a7320eab0bd5f..f0eeaf35aeb32df7116c431d435d46e0
 +| `@deepseek-harness/product-desktop` | — | [`packages/deepseek-harness-product/desktop/src/index.ts`](../packages/deepseek-harness-product/desktop/src/index.ts) |
  <!-- END GENERATED config-catalog:library -->
 diff --git a/docs/config-catalog.zh.md b/docs/config-catalog.zh.md
-index 2f7d8eb29f0408e5bedaa15f0a2cd7679219b1e5..7d01ceb1b5a0e1fbce8a72f8f9d5caa0948b09f4 100644
+index c526b1a821da6599db33bda042547dacd846b569..b0af2b72c652073fd086fc67264594656b8c246c 100644
 --- a/docs/config-catalog.zh.md
 +++ b/docs/config-catalog.zh.md
 @@ -160,7 +160,7 @@ export type Config = PresetDefinition
@@ -3731,7 +3732,7 @@ index 2f7d8eb29f0408e5bedaa15f0a2cd7679219b1e5..7d01ceb1b5a0e1fbce8a72f8f9d5caa0
  
  ```ts config-catalog
  /** Skill registry configuration. */
-@@ -5070,6 +5070,62 @@ export interface Config {
+@@ -5073,6 +5073,62 @@ export interface Config {
  ```
  <!-- END GENERATED config-catalog:@deepseek-ai/dsh-workspace-changes -->
  
@@ -3794,7 +3795,7 @@ index 2f7d8eb29f0408e5bedaa15f0a2cd7679219b1e5..7d01ceb1b5a0e1fbce8a72f8f9d5caa0
  ## 无配置的可加载插件
  
  这些插件通过 `cordis.yml` 中不含 `config:` 块的条目加载；它们未声明任何配置接口。
-@@ -5195,6 +5251,8 @@ export interface Config {
+@@ -5198,6 +5254,8 @@ export interface Config {
  | `@deepseek-ai/dsh-user-questions` | — | [`packages/interaction/user-questions/src/index.ts`](../packages/interaction/user-questions/src/index.ts) |
  | `@deepseek-ai/dsh-webhook` | `agents` · `agentDefaultModel` · `agentPresets` · `permissionPresets` · `sessionTitle` · `workspaceRegistry` | [`packages/experimental/webhook/src/index.ts`](../packages/experimental/webhook/src/index.ts) |
  | `@deepseek-ai/dsh-workspace` | `storageDomain` · `sessionPersistence` | [`packages/workspace/workspace/src/index.ts`](../packages/workspace/workspace/src/index.ts) |
@@ -3803,7 +3804,7 @@ index 2f7d8eb29f0408e5bedaa15f0a2cd7679219b1e5..7d01ceb1b5a0e1fbce8a72f8f9d5caa0
  <!-- END GENERATED config-catalog:no-config -->
  
  ## Seam 包（不可直接加载）
-@@ -5305,4 +5363,6 @@ export interface Config {
+@@ -5308,4 +5366,6 @@ export interface Config {
  | `@deepseek-ai/dsh-util-values` | — | [`packages/util/values/src/index.ts`](../packages/util/values/src/index.ts) |
  | `@deepseek-ai/dsh-util-workspace-path` | — | [`packages/util/workspace-path/src/index.ts`](../packages/util/workspace-path/src/index.ts) |
  | `@deepseek-ai/dsh-win32-process` | — | [`packages/subprocess/win32-process/src/index.ts`](../packages/subprocess/win32-process/src/index.ts) |
@@ -4779,7 +4780,7 @@ index 0000000000000000000000000000000000000000..9ebc9146c956d184429a3fd6a8ee3d76
 +2. 向 Content Factory 传入选定的 `text` 或其译文，不要重复执行 Chat 的显示处理。
 +3. 重新构建扩展，使用每种支持的模型格式验证流式与完成后的渲染、翻译和未翻译视图。
 diff --git a/package.json b/package.json
-index da5d4c03681ce3a0d1d89b182c7f394eb5f8b0ef..5ea1090ceac85b34c269c61c63713d09efba7c0f 100644
+index d5c9d2c44985d4b5eb7cf76ee533c57a4e90cd7b..0358ae1d9aeab87703ad12e5deb43b83eab2a205 100644
 --- a/package.json
 +++ b/package.json
 @@ -18,6 +18,9 @@
@@ -4898,7 +4899,7 @@ index 5bef7cb29c1d0406ab9ffcbe957ac8f4fc94e2e0..bbf65732d3baa37714d96d9dc49278a0
  <a id="model-experience"></a>
  ## 模型体验
 diff --git a/packages/api/remotes/package.json b/packages/api/remotes/package.json
-index 26ef8e6ed4fd849749004ce0acb15ea013e2b4f2..71a840ad6a6471ad117c797e573636316043b769 100644
+index c3dd93fc3971101a9a93565f9fe71f5837c60337..05e99560b09acf61a260c212262302c25bbada9b 100644
 --- a/packages/api/remotes/package.json
 +++ b/packages/api/remotes/package.json
 @@ -102,6 +102,7 @@
@@ -9502,7 +9503,7 @@ index 6594d3807d185a7b07d63aa51c5a841a5fa6dd85..50bad812918f8bd5d8e1dca776396501
  <a id="dev-note"></a>
  ### 开发备注
 diff --git a/packages/client/ui-skill/package.json b/packages/client/ui-skill/package.json
-index ac2d2a08544c193fc27c528320ed7aaaec3894b8..99c3ba876993db8a6564d4cd63f24d3cd1242105 100644
+index c9d1d924e964dc96ef0c8396f2bee6aa4f25c6d7..313c592c9f4e2361b756ed8273b43d2ba384f5c5 100644
 --- a/packages/client/ui-skill/package.json
 +++ b/packages/client/ui-skill/package.json
 @@ -69,7 +69,8 @@
@@ -10687,7 +10688,7 @@ index 8905ad07b129c399ba959cc48089ea5822ce8edf..03b0ecbb52fe5f61bc754ddb17c2ac8a
  
    it('includes the current referenced type closure for the Sessions service', () => {
 diff --git a/packages/extensions/tool-cordis/src/api-catalog.ts b/packages/extensions/tool-cordis/src/api-catalog.ts
-index a61db08033c7f707b7340b5778dfd0b1b8c8759c..2e578275402a18da90d1c8265d8416ea0684c9bd 100644
+index 919025faa0af37f937c92d34d345dfc443eae296..a2cae6fc21b68d011173813e4149238e3a58eb40 100644
 --- a/packages/extensions/tool-cordis/src/api-catalog.ts
 +++ b/packages/extensions/tool-cordis/src/api-catalog.ts
 @@ -209,6 +209,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
@@ -11346,7 +11347,7 @@ index 622db953d0aa4ea1ac2c37bf02b7ebbbea4f98d6..245c2816fc5e37059c591e1ac6b2233f
  
  目录与正文具有独立的生命周期：发现阶段把 frontmatter 解析进目录条目，每次加载都会重新读取当前文件，因此编辑 skill 正文无需版本化或缓存失效。
 diff --git a/packages/skill/skill-filesystem/package.json b/packages/skill/skill-filesystem/package.json
-index cbec9163a589c99e92e78b8f88a58351db7053dd..d084ee1d6b5e05a2de78c30afff757e41a1a5893 100644
+index 86fad2b641fd347a96d6da87026e6e96d4cbb077..16f1632b301da47d12caaed1345a0975df995948 100644
 --- a/packages/skill/skill-filesystem/package.json
 +++ b/packages/skill/skill-filesystem/package.json
 @@ -20,11 +20,16 @@
@@ -11721,7 +11722,7 @@ index 8c1094455817f601450e2e2341984de24618b1e9..024866d407c1e2831e954e884df2644b
  
  <a id="dev-note"></a>
 diff --git a/packages/skill/skill/package.json b/packages/skill/skill/package.json
-index 2256868fa1b3698530d11d7cce6a45b6c09b857b..32169df004bdc4c0242d59292b551451684befaf 100644
+index 2c44f3f2eb0d18f74aa175783d4e6b3e8abc0be0..5b29b37137d921e39c20a36e25d6f0e84b924d5a 100644
 --- a/packages/skill/skill/package.json
 +++ b/packages/skill/skill/package.json
 @@ -20,11 +20,16 @@
@@ -14771,10 +14772,10 @@ index f515961530cb98d56db1fb691bb07a2965c43c64..a62690d80747e36958b9de54ddd381e0
      { "path": "./packages/experimental/client-ui-creation-recommendations" },
      { "path": "./packages/experimental/client-ui-plugin-recommendations" },
 diff --git a/tsconfig.host.json b/tsconfig.host.json
-index 31c80a81844168c266a9f464ee790edcca71bbc2..5d6bfb21b4b289cc943f0861c3e3298ea580ab57 100644
+index 31c80a81844168c266a9f464ee790edcca71bbc2..9340e5936d4b27bbd3b698938aaa4df42cd56710 100644
 --- a/tsconfig.host.json
 +++ b/tsconfig.host.json
-@@ -18,10 +18,38 @@
+@@ -18,10 +18,39 @@
      "apps/web/tests/additional-locales.e2e.ts",
      "apps/web/tests/rich-text-quotes.e2e.ts",
      "apps/web/tests/hover-input.e2e.ts",
@@ -14806,6 +14807,7 @@ index 31c80a81844168c266a9f464ee790edcca71bbc2..5d6bfb21b4b289cc943f0861c3e3298e
 +    "apps/web/tests/deepseek-harness-library-home.e2e.ts",
 +    "apps/web/tests/deepseek-harness-control-focus.e2e.ts",
 +    "apps/web/tests/deepseek-harness-expert-retry.e2e.ts",
++    "apps/web/tests/product-support.ts",
 +    "apps/web/tests/deepseek-harness-skill-pagination.e2e.ts",
      "apps/web/tests/collapse-timing.e2e.ts",
      "apps/web/tests/notice-wake-tail.e2e.ts",
@@ -14814,7 +14816,7 @@ index 31c80a81844168c266a9f464ee790edcca71bbc2..5d6bfb21b4b289cc943f0861c3e3298e
      "apps/web/tests/chat-flow-layout.e2e.ts",
      "apps/web/product-isolation.ts",
      "apps/web/katex-fonts.ts",
-@@ -34,15 +62,12 @@
+@@ -34,15 +63,12 @@
      "apps/web/tests/shortcuts-fixed.e2e.ts",
      "apps/web/tests/default-product-isolation.e2e.ts",
      "apps/web/tests/diff-context.e2e.ts",
@@ -14830,7 +14832,7 @@ index 31c80a81844168c266a9f464ee790edcca71bbc2..5d6bfb21b4b289cc943f0861c3e3298e
      "apps/web/tests/voice-setup.e2e.ts",
      "apps/web/tests/voice-download.e2e.ts",
      "apps/web/tests/prefix-proxy.ts",
-@@ -66,8 +91,6 @@
+@@ -66,8 +92,6 @@
      "apps/web/tests/subagent-fork-schedule.snapshot.ts",
      "apps/web/tests/live-interactions.e2e.ts",
      "apps/web/tests/question-composer.e2e.ts",
@@ -14839,7 +14841,7 @@ index 31c80a81844168c266a9f464ee790edcca71bbc2..5d6bfb21b4b289cc943f0861c3e3298e
      "apps/web/tests/approval-composer.e2e.ts",
      "apps/web/tests/plan-control-row.e2e.ts",
      "apps/web/tests/plan-review.e2e.ts",
-@@ -116,7 +139,6 @@
+@@ -116,7 +140,6 @@
      "apps/web/tests/plugin-install-github.e2e.ts",
      "apps/web/tests/plugin-install-silent-failure.e2e.ts",
      "apps/web/tests/client-plugin-live.e2e.ts",
@@ -14847,7 +14849,7 @@ index 31c80a81844168c266a9f464ee790edcca71bbc2..5d6bfb21b4b289cc943f0861c3e3298e
      "apps/web/tests/draft-initialization.e2e.ts",
      "apps/web/tests/settings-chrome.e2e.ts",
      "apps/web/tests/session-log-upload.e2e.ts",
-@@ -128,7 +150,6 @@
+@@ -128,7 +151,6 @@
      "apps/web/tests/settings-import.e2e.ts",
      "apps/web/tests/models-settings.e2e.ts",
      "apps/web/tests/deepseek-messages-settings.e2e.ts",
@@ -14855,7 +14857,7 @@ index 31c80a81844168c266a9f464ee790edcca71bbc2..5d6bfb21b4b289cc943f0861c3e3298e
      "apps/web/tests/deepseek-messages-chat.e2e.ts",
      "apps/web/tests/models-settings-recovery.e2e.ts",
      "apps/web/tests/onboarding-deepseek-config.e2e.ts",
-@@ -155,9 +176,7 @@
+@@ -155,9 +177,7 @@
      "apps/web/tests/blank-writer-reuse.e2e.ts",
      "apps/web/tests/blank-preset-reuse.e2e.ts",
      "apps/web/tests/stats-paged-history.e2e.ts",
@@ -14865,7 +14867,7 @@ index 31c80a81844168c266a9f464ee790edcca71bbc2..5d6bfb21b4b289cc943f0861c3e3298e
      "apps/web/tests/sidebar-title-hover-scroll.e2e.ts",
      "apps/web/tests/rail-search-expand.e2e.ts",
      "apps/web/tests/conversation-column-overflow.e2e.ts",
-@@ -167,8 +186,6 @@
+@@ -167,8 +187,6 @@
      "apps/web/tests/official-subagent-bundle.e2e.ts",
      "apps/web/tests/present.e2e.ts",
      "apps/web/tests/present-svg.e2e.ts",
@@ -14874,7 +14876,7 @@ index 31c80a81844168c266a9f464ee790edcca71bbc2..5d6bfb21b4b289cc943f0861c3e3298e
      "apps/web/tests/composer-draft-scroll.e2e.ts",
      "apps/web/tests/composer-focus.e2e.ts",
      "apps/web/tests/composer-placeholder.e2e.ts",
-@@ -182,7 +199,6 @@
+@@ -182,7 +200,6 @@
      "apps/web/tests/fork-mid-turn.e2e.ts",
      "apps/web/tests/message-feedback.e2e.ts",
      "apps/web/tests/markdown-images.e2e.ts",
@@ -14882,7 +14884,7 @@ index 31c80a81844168c266a9f464ee790edcca71bbc2..5d6bfb21b4b289cc943f0861c3e3298e
      "apps/web/tests/markdown-file-links.e2e.ts",
      "apps/web/tests/user-text-secret-mask.e2e.ts",
      "apps/web/tests/reference-composer.e2e.ts",
-@@ -193,7 +209,6 @@
+@@ -193,7 +210,6 @@
      "apps/web/tests/markdown-inline-code-links.e2e.ts",
      "apps/web/tests/clickable-links-gallery.e2e.ts",
      "apps/web/tests/queue-actions.e2e.ts",
@@ -14890,7 +14892,7 @@ index 31c80a81844168c266a9f464ee790edcca71bbc2..5d6bfb21b4b289cc943f0861c3e3298e
      "apps/web/tests/idle-submission-handoff.e2e.ts",
      "apps/web/tests/queue-image.e2e.ts",
      "apps/web/tests/skill-invocation-policy.e2e.ts",
-@@ -232,7 +247,6 @@
+@@ -232,7 +248,6 @@
      "apps/web/tests/turn-tail-actions.e2e.ts",
      "apps/web/tests/goal-multi-turn-actions.e2e.ts",
      "apps/web/tests/agent-team-panel.e2e.ts",
@@ -14898,7 +14900,7 @@ index 31c80a81844168c266a9f464ee790edcca71bbc2..5d6bfb21b4b289cc943f0861c3e3298e
      "apps/web/tests/sidebar-right.e2e.ts",
      "apps/web/tests/sidebar-terminal.e2e.ts",
      "apps/web/tests/chat-scroll-fixture.ts",
-@@ -240,7 +254,6 @@
+@@ -240,7 +255,6 @@
      "apps/web/tests/chat-long-interactions.e2e.ts",
      "apps/web/tests/chat-continuous-conversation.e2e.ts",
      "apps/web/tests/composer-tab-geometry.e2e.ts",
@@ -14906,7 +14908,7 @@ index 31c80a81844168c266a9f464ee790edcca71bbc2..5d6bfb21b4b289cc943f0861c3e3298e
      "apps/web/tests/composer-shortcuts.e2e.ts",
      "apps/web/tests/window-drag-coverage.e2e.ts",
      "apps/web/tests/window-drag-inheritance.e2e.ts",
-@@ -268,6 +281,9 @@
+@@ -268,6 +282,9 @@
    // suffixes are mutually exclusive, so each aggregate excludes the other's
    // and the package test glob above needs no per-file entry.
    "exclude": [
@@ -14916,7 +14918,7 @@ index 31c80a81844168c266a9f464ee790edcca71bbc2..5d6bfb21b4b289cc943f0861c3e3298e
      "apps/desktop/tests/keyboard.spec.ts",
      "packages/client/*/src/**",
      "benchmarks/**/*.client.ts",
-@@ -283,11 +299,29 @@
+@@ -283,11 +300,29 @@
      "scripts/client-bundle-purity.spec.ts"
    ],
    "references": [
@@ -14951,7 +14953,7 @@ index 31c80a81844168c266a9f464ee790edcca71bbc2..5d6bfb21b4b289cc943f0861c3e3298e
      { "path": "./packages/experimental/client-ui-cot-translation/tsconfig.host.json" },
      { "path": "./packages/experimental/cot-translation-bundle" },
      { "path": "./packages/experimental/session-search" },
-@@ -325,7 +359,6 @@
+@@ -325,7 +360,6 @@
      { "path": "./packages/experimental/computer-use-cua-driver-mcp" },
      { "path": "./packages/experimental/computer-use-cua-driver-native" },
      { "path": "./packages/experimental/cua/tsconfig.host.json" },
@@ -14959,7 +14961,7 @@ index 31c80a81844168c266a9f464ee790edcca71bbc2..5d6bfb21b4b289cc943f0861c3e3298e
      { "path": "./packages/experimental/cua-macos" },
      { "path": "./packages/client/ui-sidebar-documentpreview/tsconfig.host.json" },
      { "path": "./packages/client/ui-sidebar-browser/tsconfig.host.json" },
-@@ -348,7 +381,6 @@
+@@ -348,7 +382,6 @@
      { "path": "./packages/util/brand" },
      { "path": "./packages/util/error" },
      { "path": "./packages/util/package-manifest" },
@@ -14967,7 +14969,7 @@ index 31c80a81844168c266a9f464ee790edcca71bbc2..5d6bfb21b4b289cc943f0861c3e3298e
      { "path": "./packages/util/plugin-market-index" },
      { "path": "./packages/util/http-proxy" },
      { "path": "./packages/util/launch-environment" },
-@@ -357,7 +389,6 @@
+@@ -357,7 +390,6 @@
      { "path": "./packages/util/ripgrep" },
      { "path": "./packages/util/home-paths" },
      { "path": "./packages/client/ui-plugin-manager/tsconfig.host.json" },
@@ -14975,7 +14977,7 @@ index 31c80a81844168c266a9f464ee790edcca71bbc2..5d6bfb21b4b289cc943f0861c3e3298e
      { "path": "./packages/util/time" },
      { "path": "./packages/util/timeout" },
      { "path": "./packages/util/crypto" },
-@@ -365,7 +396,6 @@
+@@ -365,7 +397,6 @@
      { "path": "./packages/util/chunked-list" },
      { "path": "./packages/util/values" },
      { "path": "./packages/util/workspace-path" },
@@ -14983,7 +14985,7 @@ index 31c80a81844168c266a9f464ee790edcca71bbc2..5d6bfb21b4b289cc943f0861c3e3298e
      { "path": "./packages/util/code-language" },
      { "path": "./packages/util/output-retention" },
      { "path": "./packages/util/atomic-write" },
-@@ -420,11 +450,6 @@
+@@ -420,11 +451,6 @@
      { "path": "./packages/session/working-directory" },
      { "path": "./packages/experimental/worktree" },
      { "path": "./packages/experimental/tool-worktree" },
@@ -14995,7 +14997,7 @@ index 31c80a81844168c266a9f464ee790edcca71bbc2..5d6bfb21b4b289cc943f0861c3e3298e
      { "path": "./packages/session/tool-working-directory" },
      { "path": "./packages/session/session-title-llm" },
      { "path": "./packages/session/session-title-first-prompt-llm" },
-@@ -456,7 +481,6 @@
+@@ -456,7 +482,6 @@
      { "path": "./packages/experimental/auto-review" },
      { "path": "./packages/experimental/claude-code-mods" },
      { "path": "./packages/core/tools" },
@@ -15003,7 +15005,7 @@ index 31c80a81844168c266a9f464ee790edcca71bbc2..5d6bfb21b4b289cc943f0861c3e3298e
      { "path": "./packages/core/tool-executor-ptc" },
      { "path": "./packages/core/agent-tool-presentation" },
      { "path": "./packages/skill/skill" },
-@@ -501,7 +525,6 @@
+@@ -501,7 +526,6 @@
      { "path": "./packages/sandbox/sandbox-windows-acl" },
      { "path": "./packages/shell/bash-sandbox" },
      { "path": "./packages/shell/tool-bash" },
@@ -15011,7 +15013,7 @@ index 31c80a81844168c266a9f464ee790edcca71bbc2..5d6bfb21b4b289cc943f0861c3e3298e
      { "path": "./packages/deliverables/tool-present" },
      { "path": "./packages/deliverables/workspace-changes" },
      { "path": "./packages/fs/fs" },
-@@ -527,7 +550,6 @@
+@@ -527,7 +551,6 @@
      { "path": "./packages/spill/spill-policy" },
      { "path": "./packages/guard/timeout-policy" },
      { "path": "./packages/test-support/agent-loop-testkit" },
@@ -15019,7 +15021,7 @@ index 31c80a81844168c266a9f464ee790edcca71bbc2..5d6bfb21b4b289cc943f0861c3e3298e
      { "path": "./packages/acp/acp" },
      { "path": "./packages/bundle/acp-app" },
      { "path": "./packages/bundle/base" },
-@@ -535,7 +557,6 @@
+@@ -535,7 +558,6 @@
      { "path": "./packages/bundle/sdk-app" },
      { "path": "./packages/bundle/sdk-minimal" },
      { "path": "./packages/bundle/web-app" },
@@ -15027,7 +15029,7 @@ index 31c80a81844168c266a9f464ee790edcca71bbc2..5d6bfb21b4b289cc943f0861c3e3298e
      { "path": "./packages/boot/app-boot" },
      { "path": "./packages/boot/cmdline" },
      { "path": "./packages/sdk/server" },
-@@ -554,8 +575,6 @@
+@@ -554,8 +576,6 @@
      { "path": "./packages/subagent/subagent-acp" },
      { "path": "./packages/subagent/subagent-claude-code" },
      { "path": "./packages/subagent/subagent-codex" },

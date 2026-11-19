@@ -987,7 +987,8 @@ function ExpertCardsSettings(props: PropsLocale<'agency'> & {
     return signal && AbortSignal.any([signal, props.cache.catalog.signal])
   }
   const saving = React.useRef(false)
-  const [isSaving, setIsSaving] = React.useState(false)
+  const [savingAction, setSavingAction] = React.useState<{ kind: 'toggle' | 'delete'; slug: string } | { kind: 'bulk' } | null>(null)
+  const isSaving = savingAction !== null
   const directoryArea = React.useRef<HTMLElement>(null)
   const preserveActionFocus = useLibraryActionFocus(isSaving, props.active === false ? '' : props.source,
     directoryArea, () => searchField.current?.querySelector('input'))
@@ -1050,7 +1051,7 @@ function ExpertCardsSettings(props: PropsLocale<'agency'> & {
     const signal = requestSignal()
     if (!signal || signal.aborted) return
     saving.current = true
-    setIsSaving(true)
+    setSavingAction({ kind: 'delete', slug })
     void props.remote.deleteCustomExpert(slug, reviewed.revision, signal)
       .then(result => {
         signal?.throwIfAborted()
@@ -1063,7 +1064,7 @@ function ExpertCardsSettings(props: PropsLocale<'agency'> & {
       }).catch((cause: unknown) => {
         if (signal?.aborted) return
         setDeleteError({ failure: cause })
-      }).finally(() => { saving.current = false; setIsSaving(false) })
+      }).finally(() => { saving.current = false; setSavingAction(null) })
   }
 
   React.useEffect(() => {
@@ -1106,7 +1107,7 @@ function ExpertCardsSettings(props: PropsLocale<'agency'> & {
     if (!signal || signal.aborted) return
     preserveActionFocus()
     saving.current = true
-    setIsSaving(true)
+    setSavingAction({ kind: 'toggle', slug })
     setState({ ...current, enabled: next })
     void writeEnabled(props.remote, props.cache, next, current.revision, signal)
       .then((current) => {
@@ -1129,7 +1130,7 @@ function ExpertCardsSettings(props: PropsLocale<'agency'> & {
       })
       .finally(() => {
         saving.current = false
-        setIsSaving(false)
+        setSavingAction(null)
       })
   }
 
@@ -1261,12 +1262,13 @@ function ExpertCardsSettings(props: PropsLocale<'agency'> & {
             expert.company ? React.createElement('span', { className: 'aag-custom-badge' }, props.t('settings.source.company')) : expert.custom ? React.createElement('span', { className: 'aag-custom-badge' }, props.t('custom.source')) : null
           ),
           description: displayDescription(expert, props.getActive()),
-          enabled: isEnabled, disabled: expert.conflict === true, pending: isSaving,
+          enabled: isEnabled, disabled: expert.conflict === true, locked: isSaving,
+          pending: savingAction?.kind === 'toggle' && savingAction.slug === expert.slug,
           enabledLabel: props.t('settings.enabled'), disabledLabel: props.t('settings.disabled'),
           toggle: () => toggle(expert.slug),
           moreItems: [
-            { id: 'edit', label: props.t(expert.custom ? 'custom.edit' : 'custom.copy'), shortLabel: props.t(expert.custom ? 'card.edit' : 'card.copy'), icon: React.createElement(expert.custom ? EditIcon : Copy, { size: 16, strokeWidth: 1.7, 'aria-hidden': true }), disabled: state === null, pending: isSaving, onSelect: () => openEditor(expert) },
-            ...(expert.custom && 'dshDesktop' in globalThis ? [{ id: 'submit-company', label: props.t('custom.submitCompany'), shortLabel: props.t('card.submit'), disabled: state === null, pending: isSaving, onSelect: () => {
+            { id: 'edit', label: props.t(expert.custom ? 'custom.edit' : 'custom.copy'), shortLabel: props.t(expert.custom ? 'card.edit' : 'card.copy'), icon: React.createElement(expert.custom ? EditIcon : Copy, { size: 16, strokeWidth: 1.7, 'aria-hidden': true }), disabled: state === null, onSelect: () => openEditor(expert) },
+            ...(expert.custom && 'dshDesktop' in globalThis ? [{ id: 'submit-company', label: props.t('custom.submitCompany'), shortLabel: props.t('card.submit'), disabled: state === null, onSelect: () => {
               document.dispatchEvent(new CustomEvent('dsh:company-content-submit', { cancelable: true, detail: {
                 kind: 'expert', name: expert.name, prepare: async (signal: AbortSignal) => {
                   signal.throwIfAborted()
@@ -1277,7 +1279,7 @@ function ExpertCardsSettings(props: PropsLocale<'agency'> & {
                 },
               } }))
             } }] : []),
-            ...(expert.custom ? [{ id: 'delete', label: props.t('custom.delete'), shortLabel: props.t('card.delete'), icon: React.createElement(TrashIcon, { size: 16, strokeWidth: 1.7, 'aria-hidden': true }), danger: true, disabled: state === null, pending: isSaving, onSelect: () => {
+            ...(expert.custom ? [{ id: 'delete', label: props.t('custom.delete'), shortLabel: props.t('card.delete'), icon: React.createElement(TrashIcon, { size: 16, strokeWidth: 1.7, 'aria-hidden': true }), danger: true, disabled: state === null, pending: savingAction?.kind === 'delete' && savingAction.slug === expert.slug, onSelect: () => {
               if (state === null) return
               setDeleting({ expert, revision: state.revision }); setDeleteError(null)
             } }] : []),
@@ -1293,13 +1295,13 @@ function ExpertCardsSettings(props: PropsLocale<'agency'> & {
       if (saving.current) return
       const signal = requestSignal()
       if (!signal || signal.aborted) return
-      saving.current = true; setIsSaving(true)
+      saving.current = true; setSavingAction({ kind: 'bulk' })
       void commitBulk(props.remote, bulk.targets, bulk.enabled, signal).then(value => {
         signal?.throwIfAborted()
         const current = props.cache.catalog.acceptEnabled(value); setState(current); setBulkError(null); setBulk(null)
       })
         .catch((cause: unknown) => { if (!signal?.aborted) setBulkError({ failure: cause }) })
-        .finally(() => { saving.current = false; setIsSaving(false) })
+        .finally(() => { saving.current = false; setSavingAction(null) })
     } }),
     editor === null ? null : React.createElement(CustomExpertEditor, {
       ...editor, remote: props.remote, t: props.t, locale: props.getActive(),

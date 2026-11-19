@@ -973,7 +973,8 @@ it('keeps AI expert creation available throughout an expert toggle', async () =>
   observer.observe(create, { attributes: true, childList: true, subtree: true })
   try {
     fireEvent.click(screen.getByRole('switch'))
-    expect(screen.getByRole('switch')).toHaveProperty('disabled', true)
+    expect(screen.getByRole('switch')).toHaveProperty('disabled', false)
+    expect(screen.getByRole('switch').parentElement?.getAttribute('aria-disabled')).toBe('true')
     expect(create).toHaveProperty('disabled', false)
     fireEvent.click(create)
     expect(startSession).toHaveBeenCalledOnce()

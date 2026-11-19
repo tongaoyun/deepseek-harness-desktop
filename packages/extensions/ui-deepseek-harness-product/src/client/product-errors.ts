@@ -46,6 +46,7 @@ const messageKeys: Readonly<Record<string, DeepSeekHarnessProductKey>> = {
   LIBRARY_PREVIEW_SOURCE_CHANGED: 'libraryConflict',
   LIBRARY_NOT_EMPTY: 'libraryNotEmpty',
   LIBRARY_FILE_INVALID: 'libraryFileInvalid',
+  LIBRARY_SELECTION_CONFLICT: 'librarySelectionConflict',
 }
 
 /** Format recognized public failures without displaying remote exception text.

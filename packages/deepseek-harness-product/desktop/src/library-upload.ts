@@ -1,20 +1,23 @@
 /** Native picker and declared-result snapshots remain owned by the authenticated employee. */
 import { createHash, randomUUID } from 'node:crypto'
 import { constants } from 'node:fs'
-import { lstat, open } from 'node:fs/promises'
-import { basename } from 'node:path'
+import { lstat, open, readdir } from 'node:fs/promises'
+import { basename, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { z } from 'zod'
-import { LibraryEntrySchema, type LibraryEntry } from '@deepseek-harness/product/library'
+import { LIBRARY_UPLOAD_LIMITS, LibraryEntrySchema, LibrarySelectionSchema, type LibraryEntry } from '@deepseek-harness/product/library'
 import type { DeepSeekHarnessApiClient } from '@deepseek-harness/product'
 import { ProductError } from '@deepseek-harness/product/errors'
 interface Selection {
+  readonly kind: 'FILE' | 'FOLDER'
   readonly name: string
   readonly sizeBytes: number
+  readonly folders?: readonly string[]
   readonly employee: string
   readonly sourceSessionId?: string
   readonly source:
     | { readonly path: string; readonly mtimeMs: number; readonly ctimeMs: number; readonly dev: number; readonly ino: number }
     | { readonly bytes: Uint8Array }
+    | { readonly directory: true }
   touchedAt: number
   pending: boolean
   fingerprint?: string
@@ -28,13 +31,13 @@ const archive = z
     index: z.number().int().nonnegative(),
   })
   .strict()
-/** Only issued selection IDs cross into the renderer; bytes and paths remain in main. */
+/** Main owns file snapshots; native dropped paths are validated before issuing employee-owned handles. */
 export class LibraryUploads {
   private readonly selections = new Map<string, Selection>()
   private picking = false
   constructor(
     private readonly getEmployee: () => string | undefined,
-    private readonly pick: (signal: AbortSignal) => Promise<readonly string[] | undefined>,
+    private readonly pick: (signal: AbortSignal, mode?: 'files' | 'folder') => Promise<readonly string[] | undefined>,
     private readonly maxBytes: number,
     private readonly lifetimeMs: number,
     private readonly readArchive?: (
@@ -96,6 +99,7 @@ export class LibraryUploads {
           if (bytes.byteLength < 1 || bytes.byteLength > limit || bytes.toString('base64') !== result.dataBase64)
             throw new Error('Invalid native file snapshot')
           prepared.push({
+            kind: 'FILE',
             name: basename(result.name),
             sizeBytes: bytes.byteLength,
             employee,
@@ -105,34 +109,61 @@ export class LibraryUploads {
             touchedAt: Date.now(),
           })
         } else {
-          z.object({}).strict().parse(input)
-          const paths = await this.pick(signal)
+          const selection = z.union([
+            z.object({ mode: z.enum(['files', 'folder']).optional() }).strict(),
+            z.object({ paths: z.array(z.string().min(1).refine(isAbsolute)).min(1).max(LIBRARY_UPLOAD_LIMITS.files) }).strict(),
+          ]).parse(input)
+          const paths = 'paths' in selection ? selection.paths : await this.pick(signal, selection.mode)
           check()
           if (paths === undefined) return []
-          if (paths.length > 20) throw new Error('Too many selected files')
-          for (const path of paths) {
+          if (paths.length > LIBRARY_UPLOAD_LIMITS.files) throw new ProductError('LIBRARY_FILE_INVALID', 'Too many selected files', false)
+          let directories = 0, files = 0
+          const collect = async (path: string, folders: readonly string[] = []): Promise<void> => {
+            check()
             const info = await lstat(path)
             check()
-            if (!info.isFile() || info.size < 1 || info.size > limit)
+            if (info.isDirectory()) {
+              if (++directories > LIBRARY_UPLOAD_LIMITS.folders || folders.length >= LIBRARY_UPLOAD_LIMITS.depth)
+                throw new ProductError('LIBRARY_FILE_INVALID', 'Folder exceeds upload policy', false)
+              prepared.push({ kind: 'FOLDER', name: basename(path), sizeBytes: 0, employee,
+                ...(folders.length ? { folders } : {}), source: { directory: true }, pending: false, touchedAt: Date.now() })
+              const next = [...folders, basename(path)]
+              for (const name of (await readdir(path)).sort()) await collect(join(path, name), next)
+              return
+            }
+            if (!info.isFile() || info.size < 1 || info.size > limit || ++files > LIBRARY_UPLOAD_LIMITS.files)
               throw new ProductError('LIBRARY_FILE_INVALID', 'File exceeds upload policy', false)
             prepared.push({
-              name: basename(path),
-              sizeBytes: info.size,
-              employee,
+              kind: 'FILE', name: basename(path), sizeBytes: info.size, employee,
+              ...(folders.length ? { folders } : {}),
               source: { path, mtimeMs: info.mtimeMs, ctimeMs: info.ctimeMs, dev: info.dev, ino: info.ino },
-              pending: false,
-              touchedAt: Date.now(),
+              pending: false, touchedAt: Date.now(),
             })
           }
+          const roots = [...new Set(paths.map(path => resolve(path)))].filter((path, _index, all) => !all.some((root) => {
+            if (root === path) return false
+            const child = relative(root, path)
+            return child !== '..' && !child.startsWith(`..${sep}`) && !isAbsolute(child)
+          }))
+          for (const path of roots) await collect(path)
         }
         check()
+        const names = new Set<string>()
+        for (const selection of prepared) {
+          LibrarySelectionSchema.parse({ ...selection, selectionId: randomUUID() })
+          const path = JSON.stringify([...selection.folders ?? [], selection.name].map(name => name.trim()))
+          if (names.has(path)) throw new ProductError('LIBRARY_SELECTION_CONFLICT', 'Selected paths have the same destination', false)
+          names.add(path)
+        }
         const total = [...this.selections.values(), ...prepared].reduce((size, item) => size + item.sizeBytes, 0)
-        if (this.selections.size + prepared.length > 40 || total > Math.min(this.maxBytes * 2, 100 * 1024 * 1024))
+        if (this.selections.size + prepared.length > LIBRARY_UPLOAD_LIMITS.files + LIBRARY_UPLOAD_LIMITS.folders
+          || total > Math.min(this.maxBytes * 2, LIBRARY_UPLOAD_LIMITS.bytes))
           throw new ProductError('LIBRARY_FILE_INVALID', 'Selection exceeds upload policy', false)
         return prepared.map((selection) => {
           const selectionId = randomUUID()
           this.selections.set(selectionId, selection)
-          return { selectionId, name: selection.name, sizeBytes: selection.sizeBytes }
+          return { selectionId, kind: selection.kind, name: selection.name, sizeBytes: selection.sizeBytes,
+            ...(selection.folders ? { folders: selection.folders } : {}) }
         })
       } finally {
         this.picking = false
@@ -150,6 +181,7 @@ export class LibraryUploads {
       return true
     }
     if (method !== 'library.files.upload') throw new Error('Unsupported upload operation')
+    if ('directory' in selection.source) throw new ProductError('LIBRARY_FILE_INVALID', 'Directories use folder creation', false)
     const value = z
       .object({
         selectionId: z.uuid(),

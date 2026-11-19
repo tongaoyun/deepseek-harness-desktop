@@ -59,7 +59,7 @@ async function boot(invoke: (method: string, payload?: unknown) => Promise<unkno
 /** Finish native first-session autofocus before exercising a product dialog over the resident composer. */
 async function waitForInitialComposer(page: Page): Promise<void> {
   await expect.poll(() => page.locator('[data-composer-input][contenteditable="true"]').evaluateAll(nodes =>
-    nodes.some(node => node === document.activeElement))).toBe(true)
+    nodes.some(node => node === document.activeElement)), { timeout: 10_000 }).toBe(true)
 }
 
 it.each(['REQUIRED', 'EXPIRED', 'AUTHORIZED'] as const)(
@@ -504,7 +504,7 @@ it.each((['light', 'dark'] as const).flatMap(theme => (['connectors', 'library']
     let writes = 0, authenticated = false
     const page = await boot(async (method) => {
       if (method === 'connectors.list') return []
-      if (method === 'library.list') return { data: [], pageIndex: 1, pageSize: 20, totalCount: 0, totalPages: 0 }
+      if (method === 'library.list' || method === 'library.files.list') return { data: [], pageIndex: 1, pageSize: 20, totalCount: 0, totalPages: 0 }
       if (method === 'auth.ensureDingTalk') {
         const attempt = ++writes
         if (attempt === 1) await initial.promise
@@ -586,6 +586,339 @@ it.each((['light', 'dark'] as const).flatMap(theme => (['connectors', 'library']
     expect(await page.locator('body').textContent()).not.toContain('Private sign-in diagnostic')
   },
 )
+
+it.each([{ theme: 'light', width: 1440 }, { theme: 'dark', width: 390 }] as const)(
+  'keeps member mutation progress local without changing adjacent tabs ($theme, $width)', async ({ theme, width }) => {
+    const now = '2026-11-18T01:00:00Z'
+    let library = { id: '11111111-1111-4111-8111-111111111111', name: 'Shared review files', scope: 'TEAM',
+      ownerId: 'employee-fixture', companyId: 'company', role: 'OWNER', canManage: true, version: 1, createdAt: now, updatedAt: now }
+    const owner = { subjectType: 'EMPLOYEE', subjectId: library.ownerId, name: 'Control reviewer', role: 'OWNER' }
+    let member = { subjectType: 'EMPLOYEE', subjectId: 'bob', name: 'Bob', role: 'VIEWER' }, removed = false
+    const others = Array.from({ length: 10 }, (_, index) => ({ ...member, subjectId: `other-${index}`, name: `Other reviewer ${index}` }))
+    const listing = (data: readonly unknown[]) => ({
+      data, pageIndex: 1, pageSize: 20, totalCount: data.length, totalPages: data.length ? 1 : 0,
+    })
+    let writes = 0, waiting: Promise<unknown> | undefined
+    const gates: ReturnType<typeof Promise.withResolvers<unknown>>[] = []
+    onTestFinished(() => { gates.forEach((gate) => { gate.resolve(library) }) })
+    const page = await boot(async (method) => {
+      if (method === 'library.get' || method === 'library.personal.ensure') return library
+      if (method === 'library.list') return listing([library])
+      if (method === 'library.files.list' || method === 'library.entries.list') return listing([])
+      if (method === 'library.members.list') return listing([owner, ...removed ? [] : [member], ...others])
+      if (method === 'library.memberOptions.employees') return listing([member, ...others].map(row => ({ id: row.subjectId, name: row.name })))
+      if (method === 'library.members.save' || method === 'library.members.remove') { writes++; return waiting }
+      throw new Error(`Unexpected member mutation method: ${method}`)
+    })
+    await waitForInitialComposer(page)
+    await page.getByRole('button', { name: 'Libraries', exact: true }).click()
+    await page.getByRole('navigation', { name: 'Library navigation', exact: true })
+      .getByRole('button', { name: library.name, exact: true }).click()
+    await page.getByRole('button', { name: 'Members', exact: true }).click()
+    const dialog = page.getByRole('dialog', { name: 'Manage members', exact: true })
+    const search = dialog.getByRole('searchbox', { name: 'Search members', exact: true })
+    const employee = dialog.getByRole('tab', { name: 'Employee', exact: true })
+    const department = dialog.getByRole('tab', { name: 'Department', exact: true })
+    const invite = dialog.getByRole('button', { name: 'Add members', exact: true })
+    const access = dialog.getByRole('button', { name: 'Access: Bob', exact: true })
+    const remove = dialog.getByRole('button', { name: 'Remove: Bob', exact: true })
+    await page.emulateMedia({ colorScheme: theme }); await page.setViewportSize({ width, height: 900 })
+    await expect.poll(() => access.getAttribute('aria-disabled')).toBe('false')
+    await search.focus(); await search.fill('o')
+    await search.evaluate((node) => { if (node instanceof HTMLInputElement) node.setSelectionRange(0, 1, 'backward') })
+    await expect.poll(() => access.getAttribute('aria-disabled')).toBe('false')
+    const searchNode = await search.elementHandle(), employeeNode = await employee.elementHandle()
+    const inviteNode = await invite.elementHandle()
+    const screenshots = join(REPO_ROOT, '.artifacts/deepseek-harness-control-focus')
+    await mkdir(screenshots, { recursive: true })
+    for (const action of ['access', 'invite', 'remove'] as const) {
+      await dialog.getByRole('button', { name: 'Bob', exact: true }).click()
+      const trigger = action === 'access' ? access : action === 'invite' ? invite : remove
+      const triggerNode = await trigger.elementHandle()
+      for (const outcome of ['failure', 'success'] as const) {
+        const gate = Promise.withResolvers<unknown>(); gates.push(gate); waiting = gate.promise
+        await trigger.focus()
+        await dialog.evaluate(async (node) => {
+          await Promise.allSettled(node.getAnimations({ subtree: true }).map(animation => animation.finished))
+        })
+        const bounds = await Promise.all([dialog.boundingBox(), employee.boundingBox(), invite.boundingBox(), trigger.boundingBox()])
+        const styles = await employee.evaluate(node => [getComputedStyle(node).opacity, getComputedStyle(node).color])
+        const beforeWrites = writes
+        const candidateList = dialog.getByRole('group', { name: 'Choose a member', exact: true })
+        await candidateList.evaluate((node) => { node.scrollTop = 70 })
+        const scrollTop = await candidateList.evaluate(node => node.scrollTop)
+        await trigger.press('Enter')
+        if (action === 'access') await page.getByRole('menuitem', { name: 'Can edit', exact: true }).click()
+        await expect.poll(() => writes).toBe(beforeWrites + 1)
+        if (outcome === 'failure') await page.screenshot({ path: join(screenshots, `member-${action}-${theme}-${width}.png`) })
+        expect(await trigger.getAttribute('aria-busy')).toBe('true')
+        await trigger.press('Enter')
+        if (action !== 'invite') {
+          const ring = await trigger.evaluate((node) => {
+            const roster = node.closest('ul')?.parentElement
+            if (!roster) throw new Error('Missing member roster')
+            const box = node.getBoundingClientRect(), clip = roster.getBoundingClientRect(), style = getComputedStyle(node)
+            const outset = Math.max(0, parseFloat(style.outlineWidth) + parseFloat(style.outlineOffset))
+            return { left: box.left - outset - clip.left, right: clip.left + roster.clientWidth - box.right - outset }
+          })
+          expect(ring.left).toBeGreaterThanOrEqual(0)
+          expect(ring.right).toBeGreaterThanOrEqual(0)
+        }
+        for (const neighbor of [invite, access, remove].filter(button => button !== trigger)) {
+          expect(await neighbor.getAttribute('aria-busy')).not.toBe('true')
+          expect(await neighbor.getAttribute('aria-disabled')).toBe('true')
+          await neighbor.dispatchEvent('click')
+        }
+        expect(await employee.evaluate(node => node instanceof HTMLButtonElement && node.disabled)).toBe(false)
+        expect(await employee.evaluate(node => [getComputedStyle(node).opacity, getComputedStyle(node).color])).toEqual(styles)
+        await department.dispatchEvent('click'); await employee.dispatchEvent('keydown', { key: 'ArrowRight' })
+        expect(await employee.getAttribute('aria-selected')).toBe('true')
+        expect(await page.getByRole('menu').count()).toBe(0)
+        expect(writes).toBe(beforeWrites + 1)
+        expect(await trigger.evaluate((node, original) => node === original && node === document.activeElement, triggerNode)).toBe(true)
+        expect(await employee.evaluate((node, original) => node === original, employeeNode)).toBe(true)
+        expect(await invite.evaluate((node, original) => node === original, inviteNode)).toBe(true)
+        expect(await search.evaluate((node, original) => node === original, searchNode)).toBe(true)
+        expect(await search.evaluate(node => node instanceof HTMLInputElement
+          ? [node.value, node.selectionStart, node.selectionEnd, node.selectionDirection] : [])).toEqual(['o', 0, 1, 'backward'])
+        expect(await candidateList.evaluate(node => node.scrollTop)).toBe(scrollTop)
+        expect(await Promise.all([dialog.boundingBox(), employee.boundingBox(), invite.boundingBox(), trigger.boundingBox()]))
+          .toEqual(bounds)
+        expect(await dialog.evaluate(node => node.scrollWidth <= node.clientWidth)).toBe(true)
+        if (outcome === 'failure') {
+          gate.resolve({ fixtureFailure: { code: 'EXTERNAL_SERVICE_ERROR', message: 'Member change unavailable', retryable: true, resources: [] } })
+          await dialog.getByRole('alert').waitFor()
+          expect(await trigger.getAttribute('aria-busy')).toBe('false')
+        } else {
+          library = { ...library, version: library.version + 1 }
+          if (action === 'remove') removed = true
+          if (action === 'access') member = { ...member, role: 'EDITOR' }
+          gate.resolve(library)
+          await dialog.getByRole('alert').waitFor({ state: 'hidden' })
+          await expect.poll(() => invite.getAttribute('aria-disabled')).toBe('true')
+        }
+      }
+      if (action === 'remove') await expect.poll(() => search.evaluate(node => node === document.activeElement)).toBe(true)
+      else {
+        await expect.poll(() => access.getAttribute('aria-disabled')).toBe('false')
+        expect(await trigger.evaluate(node => node === document.activeElement)).toBe(true)
+      }
+    }
+    await dialog.getByRole('button', { name: 'Close', exact: true }).last().click()
+  },
+)
+
+it('retries the selected library folder path and retains destination controls through repeated failures', async () => {
+  const now = '2026-11-18T01:00:00Z'
+  const library = { id: '11111111-1111-4111-8111-111111111111', name: 'Destination library', scope: 'PERSONAL',
+    ownerId: 'employee-fixture', companyId: 'company', role: 'OWNER', canManage: true, version: 1, createdAt: now, updatedAt: now }
+  const parent = { id: '22222222-2222-4222-8222-222222222222', libraryId: library.id, parentId: null,
+    name: 'Actual parent', kind: 'FOLDER', sha256: null, mediaType: null, sizeBytes: 0, version: 1, createdAt: now, updatedAt: now }
+  const nested = { ...parent, id: '33333333-3333-4333-8333-333333333333', parentId: parent.id, name: 'Nested target' }
+  const listing = (data: readonly unknown[]) => ({
+    data, pageIndex: 1, pageSize: 20, totalCount: data.length, totalPages: data.length ? 1 : 0,
+  })
+  const failure = { fixtureFailure: { code: 'EXTERNAL_SERVICE_ERROR', message: 'Folder path unavailable', retryable: true, resources: [] } }
+  let attempts = 0, lists = 0, waiting: Promise<unknown> | undefined
+  const gates: ReturnType<typeof Promise.withResolvers<unknown>>[] = []
+  onTestFinished(() => { gates.forEach((gate) => { gate.resolve(parent) }) })
+  const page = await boot(async (method, payload) => {
+    if (method === 'library.personal.ensure' || method === 'library.get') return library
+    if (method === 'library.list') return listing([])
+    if (method === 'library.files.list') return listing([])
+    if (method === 'library.entries.list') {
+      lists++
+      const input = payload as { parentId: string | null; query?: string }
+      return listing(input.query ? [nested] : input.parentId === nested.id ? [] : [parent])
+    }
+    if (method === 'library.entries.get') return ++attempts === 1 ? failure : waiting
+    throw new Error(`Unexpected destination path method: ${method}`)
+  })
+  await waitForInitialComposer(page)
+  await page.getByRole('button', { name: 'Libraries', exact: true }).click()
+  const opener = page.getByRole('button', { name: 'Upload files', exact: true })
+  const screenshots = join(REPO_ROOT, '.artifacts/deepseek-harness-control-focus')
+  await mkdir(screenshots, { recursive: true })
+  for (const scene of [{ theme: 'light', width: 1440 }, { theme: 'dark', width: 390 }] as const) {
+    attempts = 0
+    await opener.click()
+    const dialog = page.getByRole('dialog', { name: 'Choose upload destination', exact: true })
+    const search = dialog.getByRole('searchbox', { name: 'Search names', exact: true })
+    await dialog.getByRole('button', { name: /Actual parent/ }).waitFor()
+    await page.emulateMedia({ colorScheme: scene.theme }); await page.setViewportSize({ width: scene.width, height: 900 })
+    await search.focus()
+    await search.fill(nested.name)
+    await search.evaluate((node) => { if (node instanceof HTMLInputElement) node.setSelectionRange(1, 6, 'backward') })
+    const row = dialog.getByRole('button', { name: /Nested target/ })
+    await row.click()
+    const alert = dialog.getByRole('alert'), retry = dialog.getByRole('button', { name: 'Retry', exact: true })
+    await alert.waitFor()
+    const searchNode = await search.elementHandle(), rowNode = await row.elementHandle(), alertNode = await alert.elementHandle()
+    const retryNode = await retry.elementHandle(), reads = lists
+    await dialog.evaluate(async (node) => {
+      await Promise.allSettled(node.getAnimations({ subtree: true }).map(animation => animation.finished))
+    })
+    const geometry = () => Promise.all([dialog.boundingBox(), search.boundingBox(), row.boundingBox(), retry.boundingBox()])
+    const selection = () => search.evaluate(node => node instanceof HTMLInputElement
+      ? [node.value, node.selectionStart, node.selectionEnd, node.selectionDirection] : [])
+    const bounds = await geometry()
+    for (const outcome of ['failure', 'success'] as const) {
+      const gate = Promise.withResolvers<unknown>(); gates.push(gate); waiting = gate.promise
+      await retry.focus(); await retry.press('Enter'); await retry.press('Enter')
+      await expect.poll(() => attempts).toBe(outcome === 'failure' ? 2 : 3)
+      expect(lists).toBe(reads)
+      expect(await retry.getAttribute('aria-busy')).toBe('true')
+      expect(await retry.evaluate((node, original) => node === original && node === document.activeElement, retryNode)).toBe(true)
+      expect(await alert.evaluate((node, original) => node === original, alertNode)).toBe(true)
+      expect(await row.evaluate((node, original) => node === original, rowNode)).toBe(true)
+      expect(await search.evaluate((node, original) => node === original, searchNode)).toBe(true)
+      expect(await selection()).toEqual([nested.name, 1, 6, 'backward'])
+      expect(await geometry()).toEqual(bounds)
+      expect(await dialog.evaluate(node => node.scrollWidth <= node.clientWidth)).toBe(true)
+      if (outcome === 'failure') {
+        await page.screenshot({ path: join(screenshots, `library-path-retry-${scene.theme}-${scene.width}.png`) })
+        gate.resolve(failure)
+        await expect.poll(() => retry.getAttribute('aria-busy')).toBe('false')
+        expect(await geometry()).toEqual(bounds)
+        expect(await selection()).toEqual([nested.name, 1, 6, 'backward'])
+      } else gate.resolve(parent)
+    }
+    await dialog.getByRole('button', { name: parent.name, exact: true }).waitFor()
+    await dialog.getByRole('button', { name: nested.name, exact: true }).waitFor()
+    await expect.poll(() => search.evaluate(node => node === document.activeElement)).toBe(true)
+    expect(await search.inputValue()).toBe('')
+    expect(await search.evaluate((node, original) => node === original, searchNode)).toBe(true)
+    expect(await alert.count()).toBe(0)
+    await dialog.getByRole('button', { name: 'Cancel', exact: true }).click()
+    await expect.poll(() => opener.evaluate(node => node === document.activeElement)).toBe(true)
+  }
+})
+
+it('retains skill import drag highlighting across child controls and clears it after failed and successful drops', async () => {
+  const page = await boot(async (method) => { throw new Error(`Unexpected skill import method: ${method}`) })
+  await waitForInitialComposer(page)
+  await page.getByRole('button', { name: 'Skills', exact: true }).click()
+  await page.getByRole('tab', { name: 'Mine', exact: true }).click()
+  const opener = page.getByRole('button', { name: 'Import skill', exact: true })
+  await opener.click()
+  const dialog = page.getByRole('dialog', { name: 'Import skill', exact: true })
+  const zone = dialog.locator('.dssm-dropzone'), choose = dialog.getByRole('button', { name: 'Choose file', exact: true })
+  const originalZone = await zone.elementHandle(), originalChoose = await choose.elementHandle()
+  const screenshots = join(REPO_ROOT, '.artifacts/deepseek-harness-control-focus')
+  await mkdir(screenshots, { recursive: true })
+  for (const scene of [{ theme: 'light', width: 1440 }, { theme: 'dark', width: 390 }] as const) {
+    await page.emulateMedia({ colorScheme: scene.theme }); await page.setViewportSize({ width: scene.width, height: 900 })
+    await choose.focus()
+    await dialog.evaluate(async (node) => {
+      await Promise.allSettled(node.getAnimations({ subtree: true }).map(animation => animation.finished))
+    })
+    const bounds = await zone.boundingBox(), buttonBounds = await choose.boundingBox()
+    await zone.evaluate((node) => {
+      const caption = node.querySelector('.dssm-dropzone-title'), [folder, file] = node.querySelectorAll('button')
+      if (!caption || !folder || !file) throw new Error('Missing skill import choices')
+      const transfer = new DataTransfer(); transfer.items.add(new File(['content'], 'SKILL.md'))
+      caption.dispatchEvent(new DragEvent('dragover', { bubbles: true, cancelable: true, dataTransfer: transfer }))
+      caption.dispatchEvent(new DragEvent('dragleave', { bubbles: true, relatedTarget: folder, dataTransfer: transfer }))
+    })
+    expect(await zone.evaluate(node => node.classList.contains('dssm-dropzone-active'))).toBe(true)
+    await zone.evaluate(async (node) => { await Promise.allSettled(node.getAnimations().map(animation => animation.finished)) })
+    const activeBackground = await zone.evaluate(node => getComputedStyle(node).backgroundColor)
+    await zone.evaluate((node) => {
+      const [folder, file] = node.querySelectorAll('button')
+      if (!folder || !file) throw new Error('Missing skill import choices')
+      folder.dispatchEvent(new DragEvent('dragleave', { bubbles: true, relatedTarget: file }))
+    })
+    expect(await zone.evaluate(node => node.classList.contains('dssm-dropzone-active'))).toBe(true)
+    expect(await zone.evaluate(node => getComputedStyle(node).backgroundColor)).toBe(activeBackground)
+    expect(await zone.boundingBox()).toEqual(bounds)
+    expect(await choose.boundingBox()).toEqual(buttonBounds)
+    expect(await zone.evaluate((node, original) => node === original, originalZone)).toBe(true)
+    expect(await choose.evaluate((node, original) => node === original && node === document.activeElement, originalChoose)).toBe(true)
+    await page.screenshot({ path: join(screenshots, `skill-import-drag-${scene.theme}-${scene.width}.png`) })
+    await zone.evaluate((node) => { node.dispatchEvent(new DragEvent('dragleave', { bubbles: true, relatedTarget: document.body })) })
+    expect(await zone.evaluate(node => node.classList.contains('dssm-dropzone-active'))).toBe(false)
+    for (const name of ['invalid.txt', 'SKILL.md']) {
+      await zone.evaluate((node, name) => {
+        const transfer = new DataTransfer(); transfer.items.add(new File(['---\nname: drag-review\ndescription: Import fixture.\n---\nKeep {{literal}}.'], name))
+        node.dispatchEvent(new DragEvent('dragover', { bubbles: true, cancelable: true, dataTransfer: transfer }))
+        node.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: transfer }))
+      }, name)
+      expect(await zone.evaluate(node => node.classList.contains('dssm-dropzone-active'))).toBe(false)
+      if (name === 'invalid.txt') await dialog.getByRole('alert').waitFor()
+      else {
+        await dialog.getByRole('button', { name: 'Remove selection', exact: true }).waitFor()
+        expect(await dialog.getByRole('alert').count()).toBe(0)
+      }
+      expect(await choose.evaluate((node, original) => node === original && node === document.activeElement, originalChoose)).toBe(true)
+      expect(await dialog.evaluate(node => node.scrollWidth <= node.clientWidth)).toBe(true)
+    }
+    await dialog.getByRole('button', { name: 'Remove selection', exact: true }).click()
+  }
+  await dialog.getByRole('button', { name: 'Cancel', exact: true }).click()
+  await expect.poll(() => opener.evaluate(node => node === document.activeElement)).toBe(true)
+})
+
+it('retains skill search ranges and equal statistics columns while switching source tabs', async () => {
+  const page = await boot(async (method) => { throw new Error(`Unexpected skill search method: ${method}`) })
+  await waitForInitialComposer(page)
+  await page.getByRole('button', { name: 'Skills', exact: true }).click()
+  const search = page.locator('.dssm-search input')
+  const summary = page.locator('.dssm-summary')
+  const originalSearch = await search.elementHandle(), originalSummary = await summary.elementHandle()
+  const market = page.getByRole('tab', { name: 'Marketplace', exact: true })
+  const mine = page.getByRole('tab', { name: 'Mine', exact: true })
+  const screenshots = join(REPO_ROOT, '.artifacts/deepseek-harness-control-focus')
+  await mkdir(screenshots, { recursive: true })
+  for (const theme of ['light', 'dark'] as const) {
+    await page.emulateMedia({ colorScheme: theme })
+    for (const width of [1440, 390]) {
+      await page.setViewportSize({ width, height: 900 })
+      await page.waitForFunction(narrow => !!document.querySelector('[data-sidebar-drawer]') === narrow, width < 600)
+      if (await page.locator('[data-sidebar-drawer]:not([data-sidebar-collapsed])').count()) {
+        await page.getByRole('button', { name: 'Collapse sidebar', exact: true }).click()
+      }
+      await market.click()
+      await search.focus()
+      await search.fill('Company review')
+      await search.evaluate((node) => { if (node instanceof HTMLInputElement) node.setSelectionRange(1, 7, 'backward') })
+      await mine.click()
+      await search.focus()
+      await search.fill('Personal reference')
+      await search.evaluate((node) => { if (node instanceof HTMLInputElement) node.setSelectionRange(2, 9, 'forward') })
+      await market.click()
+      expect(await market.evaluate(node => node === document.activeElement)).toBe(true)
+      await search.focus()
+      expect(await search.evaluate(node => node instanceof HTMLInputElement
+        ? [node.value, node.selectionStart, node.selectionEnd, node.selectionDirection] : []))
+        .toEqual(['Company review', 1, 7, 'backward'])
+      await mine.click()
+      expect(await mine.evaluate(node => node === document.activeElement)).toBe(true)
+      await search.focus()
+      expect(await search.evaluate(node => node instanceof HTMLInputElement
+        ? [node.value, node.selectionStart, node.selectionEnd, node.selectionDirection] : []))
+        .toEqual(['Personal reference', 2, 9, 'forward'])
+      await mine.focus()
+      await mine.press('ArrowLeft')
+      expect(await market.evaluate(node => node === document.activeElement)).toBe(true)
+      await search.focus()
+      expect(await search.evaluate(node => node instanceof HTMLInputElement
+        ? [node.value, node.selectionStart, node.selectionEnd, node.selectionDirection] : []))
+        .toEqual(['Company review', 1, 7, 'backward'])
+      expect(await search.evaluate((node, previous) => node === previous, originalSearch)).toBe(true)
+      expect(await summary.evaluate((node, previous) => node === previous, originalSummary)).toBe(true)
+      const columns = await summary.locator('.dssm-stat').evaluateAll(nodes => nodes.map((node) => {
+        const rect = node.getBoundingClientRect()
+        return { width: rect.width, y: rect.y, align: getComputedStyle(node).textAlign }
+      }))
+      expect(columns).toHaveLength(3)
+      expect(Math.max(...columns.map(column => column.width)) - Math.min(...columns.map(column => column.width))).toBeLessThan(1)
+      expect(Math.max(...columns.map(column => column.y)) - Math.min(...columns.map(column => column.y))).toBeLessThan(1)
+      expect(columns.every(column => column.align === 'center')).toBe(true)
+      expect(await summary.evaluate(node => node.scrollWidth <= node.clientWidth)).toBe(true)
+      await page.screenshot({ path: join(screenshots, `skill-source-selection-${theme}-${width}.png`) })
+    }
+  }
+})
 
 it.each(['light', 'dark'] as const)('retains skill reader focus through the native clipboard fallback (%s)', async (theme) => {
   const text = 'Keep the exact fallback instructions.\n'.repeat(40)
@@ -795,6 +1128,215 @@ async function capture(page: Page, name: string, region: Locator, focused: Locat
     }
   }
 }
+
+it.each((['rename', 'delete'] as const).flatMap(kind =>
+  ([{ theme: 'light', width: 1440 }, { theme: 'dark', width: 390 }] as const).map(scene => ({ kind, ...scene }))))(
+  'keeps library conflict read progress separate from $kind writes ($theme, $width)', async ({ kind, theme, width }) => {
+    const now = '2026-11-18T01:00:00Z'
+    const library = { id: '11111111-1111-4111-8111-111111111111', name: 'Conflict review files', scope: 'TEAM',
+      ownerId: 'employee-fixture', companyId: 'company', role: 'OWNER', canManage: true, version: 1, createdAt: now, updatedAt: now }
+    let entry = { id: '22222222-2222-4222-8222-222222222222', libraryId: library.id, parentId: null,
+      name: '中文资料.md', kind: 'FILE', sha256: 'a'.repeat(64), mediaType: 'text/markdown', sizeBytes: 12,
+      version: 1, createdAt: now, updatedAt: now }
+    const listing = (data: readonly unknown[]) => ({ data, pageIndex: 1, pageSize: 20,
+      totalCount: data.length, totalPages: data.length ? 1 : 0 })
+    const write = Promise.withResolvers<undefined>(), failedRead = Promise.withResolvers<undefined>()
+    const recoveredRead = Promise.withResolvers<undefined>(), saved = Promise.withResolvers<undefined>()
+    onTestFinished(() => {
+      write.resolve(undefined); failedRead.resolve(undefined); recoveredRead.resolve(undefined); saved.resolve(undefined)
+    })
+    let writes = 0, reads = 0
+    const writeMethod = kind === 'rename' ? 'library.entries.update' : 'library.entries.delete'
+    const page = await boot(async (method, payload) => {
+      if (method === 'library.list') return listing([])
+      if (method === 'library.files.list') return listing(writes > 1 && kind === 'delete' ? [] : [{ entry,
+        libraryName: library.name, canManage: true, lastAccessedAt: now, sourceKind: 'UPLOAD', sourceSessionId: null }])
+      if (method === writeMethod) {
+        writes++
+        if (writes === 1) {
+          await write.promise
+          return { fixtureFailure: { code: 'LIBRARY_CONFLICT', message: 'Changed elsewhere', retryable: true, resources: [] } }
+        }
+        expect(payload).toMatchObject({ version: 3, ...kind === 'rename' ? { name: '保留的草稿.md' } : {} })
+        await saved.promise
+        entry = { ...entry, name: '保留的草稿.md', version: 4 }
+        return kind === 'rename' ? entry : true
+      }
+      if (method === 'library.get') {
+        reads++
+        if (reads === 1) {
+          await failedRead.promise
+          return { fixtureFailure: { code: 'SERVER_ERROR', message: 'Metadata unavailable', retryable: true, resources: [] } }
+        }
+        await recoveredRead.promise
+        return { ...library, version: 3 }
+      }
+      if (method === 'library.entries.get') return { ...entry, name: '其他人改的名称.md', version: 3 }
+      throw new Error(`Unexpected conflict progress method: ${method}`)
+    })
+    await expect.poll(() => page.getByRole('button', { name: 'Choose workspace', exact: true }).textContent()).toBe('Default workspace')
+    await page.locator('[data-composer-input][contenteditable="true"]').waitFor()
+    await page.getByRole('button', { name: 'Libraries', exact: true }).click()
+    await page.getByRole('button', { name: `More actions · ${entry.name}`, exact: true }).click()
+    await page.getByRole('menuitem', { name: kind === 'rename' ? 'Rename' : 'Delete', exact: true }).click()
+    const dialog = page.getByRole('dialog', { name: kind === 'rename' ? 'Rename' : 'Delete', exact: true })
+    await page.emulateMedia({ colorScheme: theme }); await page.setViewportSize({ width, height: 900 })
+    const input = dialog.getByRole('textbox')
+    if (kind === 'rename') {
+      await input.fill('保留的草稿.md')
+      await input.evaluate((node) => { if (node instanceof HTMLInputElement) node.setSelectionRange(1, 4) })
+    }
+    const action = dialog.getByRole('button', { name: kind === 'rename' ? 'Save' : 'Delete', exact: true })
+    const originalAction = await action.elementHandle(), originalInput = kind === 'rename' ? await input.elementHandle() : null
+    await action.press('Enter'); await action.press(' ')
+    await expect.poll(() => writes).toBe(1)
+    expect(await action.getAttribute('aria-busy')).toBe('true')
+    write.resolve(undefined)
+    const reread = dialog.getByRole('button', { name: 'Read latest version', exact: true })
+    await reread.waitFor()
+    const notice = dialog.getByRole('alert'), originalNotice = await notice.elementHandle()
+    const originalReread = await reread.elementHandle()
+    const bounds = [await action.boundingBox(), await reread.boundingBox()]
+    const styles = await action.evaluate(node => [getComputedStyle(node).opacity, getComputedStyle(node).backgroundColor])
+    const scroll = await dialog.evaluate(node => [node.scrollTop, node.scrollLeft])
+    await reread.press('Enter'); await reread.press(' '); await action.dispatchEvent('click')
+    await expect.poll(() => reads).toBe(1)
+    expect(await reread.getAttribute('aria-busy')).toBe('true')
+    expect(await action.getAttribute('aria-busy')).toBe('false')
+    expect(await action.getAttribute('aria-disabled')).toBe('true')
+    expect(writes).toBe(1)
+    failedRead.resolve(undefined)
+    await expect.poll(() => reread.getAttribute('aria-busy')).toBe('false')
+    expect(await notice.evaluate((node, previous) => node === previous, originalNotice)).toBe(true)
+    expect(await reread.evaluate((node, previous) => node === previous && node === document.activeElement, originalReread)).toBe(true)
+    expect([await action.boundingBox(), await reread.boundingBox()]).toEqual(bounds)
+    await reread.press('Enter'); await reread.press(' ')
+    await expect.poll(() => reads).toBe(2)
+    expect(await action.getAttribute('aria-busy')).toBe('false')
+    expect(await action.evaluate((node, previous) => node === previous
+      && !(node instanceof HTMLButtonElement && node.disabled), originalAction)).toBe(true)
+    expect(await action.evaluate(node => [getComputedStyle(node).opacity, getComputedStyle(node).backgroundColor])).toEqual(styles)
+    expect([await action.boundingBox(), await reread.boundingBox()]).toEqual(bounds)
+    expect(await dialog.evaluate(node => [node.scrollTop, node.scrollLeft])).toEqual(scroll)
+    expect(await dialog.evaluate(node => node.scrollWidth <= node.clientWidth)).toBe(true)
+    const cancel = dialog.getByRole('button', { name: 'Cancel', exact: true })
+    if (theme === 'dark') await cancel.focus()
+    const screenshots = join(REPO_ROOT, '.artifacts/deepseek-harness-control-focus')
+    await mkdir(screenshots, { recursive: true })
+    await page.screenshot({ path: join(screenshots, `library-conflict-${kind}-${theme}-${width}.png`) })
+    recoveredRead.resolve(undefined)
+    await reread.waitFor({ state: 'detached' })
+    const target = theme === 'dark' ? cancel : kind === 'rename' ? input : action
+    await expect.poll(() => target.evaluate(node => node === document.activeElement)).toBe(true)
+    if (kind === 'rename') expect(await input.evaluate((node, previous) => node === previous && node instanceof HTMLInputElement
+      && node.value === '保留的草稿.md' && node.selectionStart === 1 && node.selectionEnd === 4, originalInput)).toBe(true)
+    await action.press('Enter'); await action.press(' ')
+    await expect.poll(() => writes).toBe(2)
+    saved.resolve(undefined)
+    await dialog.waitFor({ state: 'hidden' })
+    expect(reads).toBe(2)
+    expect(writes).toBe(2)
+  },
+)
+
+it.each([{ theme: 'light', width: 1440 }, { theme: 'dark', width: 390 }] as const)(
+  'keeps library picker rows fixed through long errors and recovery ($theme, $width)', async ({ theme, width }) => {
+    const now = '2026-11-18T01:00:00Z'
+    const libraryId = '11111111-1111-4111-8111-111111111111'
+    const files = Array.from({ length: 20 }, (_, index) => ({
+      entry: { id: `22222222-2222-4222-8222-${String(index).padStart(12, '0')}`, libraryId, parentId: null,
+        name: `Review file ${index}.md`, kind: 'FILE', sha256: 'a'.repeat(64), mediaType: 'text/markdown', sizeBytes: 12,
+        version: 1, createdAt: now, updatedAt: now },
+      libraryName: 'Review references', canManage: true, lastAccessedAt: now, sourceKind: 'UPLOAD', sourceSessionId: null,
+    }))
+    const failure = Promise.withResolvers<undefined>(), retryFailure = Promise.withResolvers<undefined>()
+    const recovery = Promise.withResolvers<undefined>()
+    onTestFinished(() => { failure.resolve(undefined); retryFailure.resolve(undefined); recovery.resolve(undefined) })
+    let reads = 0
+    const page = await boot(async (method) => {
+      if (method !== 'library.files.list') throw new Error(`Unexpected picker feedback method: ${method}`)
+      const attempt = ++reads
+      if (attempt === 2 || attempt === 3) {
+        await (attempt === 2 ? failure.promise : retryFailure.promise)
+        return { fixtureFailure: { code: attempt === 2 ? 'METHOD_NOT_ALLOWED' : 'SERVER_ERROR',
+          message: 'Fixture metadata unavailable', retryable: true, resources: [] } }
+      }
+      if (attempt === 4) await recovery.promise
+      if (attempt > 4) throw new Error('Duplicate picker read')
+      return { data: files, pageIndex: 1, pageSize: 20, totalCount: 20, totalPages: 1 }
+    }, undefined, async (_home, scaffold) => {
+      await seedSession(scaffold,
+        await readFile(join(REPO_ROOT, 'snapshots/web/present-after-closing-reply/session.v4.jsonl'), 'utf8'),
+        `library-picker-feedback-${theme}`)
+    })
+    await page.locator('[role="treeitem"]').first().click()
+    await page.locator('[role="treeitem"]').nth(1).click()
+    await page.getByText('REPORT_READY', { exact: true }).waitFor()
+    const composer = page.locator('[data-composer-input][contenteditable="true"]')
+    await waitForInitialComposer(page)
+    await composer.fill('Keep this conversation draft.')
+    const originalComposer = await composer.elementHandle()
+    await page.getByRole('button', { name: 'Add files or run commands', exact: true }).click()
+    await page.getByRole('option', { name: /Choose library files/ }).click()
+    const dialog = page.getByRole('dialog', { name: 'Choose library files', exact: true })
+    await dialog.getByRole('checkbox', { name: files[0]!.entry.name, exact: true }).check()
+    await page.emulateMedia({ colorScheme: theme }); await page.setViewportSize({ width, height: 900 })
+    const search = dialog.getByRole('searchbox', { name: 'Search names', exact: true })
+    const table = dialog.getByRole('tabpanel'), row = dialog.getByRole('button', { name: files[0]!.entry.name, exact: true })
+    const originalRow = await row.elementHandle(), originalSearch = await search.elementHandle()
+    await search.fill('Review')
+    await search.evaluate((node) => { if (node instanceof HTMLInputElement) node.setSelectionRange(1, 4) })
+    await expect.poll(() => reads).toBe(2)
+    const bounds = [await table.boundingBox(), await search.boundingBox()]
+    const scroll = await table.evaluate((node) => { node.scrollTop = 120; return node.scrollTop })
+    failure.resolve(undefined)
+    const notice = dialog.getByRole('alert'), retry = dialog.getByRole('button', { name: 'Retry', exact: true })
+    await retry.waitFor()
+    const originalNotice = await notice.elementHandle(), originalRetry = await retry.elementHandle()
+    const screenshots = join(REPO_ROOT, '.artifacts/deepseek-harness-control-focus')
+    await mkdir(screenshots, { recursive: true })
+    await page.screenshot({ path: join(screenshots, `library-picker-long-error-${theme}-${width}.png`) })
+    expect([await table.boundingBox(), await search.boundingBox()]).toEqual(bounds)
+    if (width === 390) {
+      await notice.focus()
+      expect(await notice.evaluate(node => node === document.activeElement && node.scrollHeight > node.clientHeight)).toBe(true)
+      await notice.press('End')
+      await expect.poll(() => notice.evaluate(node => node.scrollTop > 0)).toBe(true)
+    }
+    await retry.press('Enter'); await retry.press(' ')
+    await expect.poll(() => reads).toBe(3)
+    expect(await retry.evaluate((node, original) => node === original && node === document.activeElement, originalRetry)).toBe(true)
+    expect(await notice.evaluate((node, original) => node === original, originalNotice)).toBe(true)
+    retryFailure.resolve(undefined)
+    await expect.poll(() => retry.getAttribute('aria-busy')).toBe('false')
+    expect([await table.boundingBox(), await search.boundingBox()]).toEqual(bounds)
+    await retry.press('Enter'); await retry.press(' ')
+    await expect.poll(() => reads).toBe(4)
+    const target = theme === 'dark' ? notice : search
+    await target.focus()
+    recovery.resolve(undefined)
+    await notice.waitFor({ state: 'detached' })
+    expect(await search.evaluate((node, original) => node === original && node === document.activeElement
+      && node instanceof HTMLInputElement && node.value === 'Review' && node.selectionStart === 1 && node.selectionEnd === 4,
+    originalSearch)).toBe(true)
+    expect(await row.evaluate((node, original) => node === original, originalRow)).toBe(true)
+    expect([await table.boundingBox(), await search.boundingBox()]).toEqual(bounds)
+    expect(await table.evaluate(node => node.scrollTop)).toBe(scroll)
+    expect(await dialog.getByRole('checkbox', { name: files[0]!.entry.name, exact: true }).isChecked()).toBe(true)
+    expect(await dialog.evaluate(node => node.scrollWidth <= node.clientWidth)).toBe(true)
+    if (width === 390) {
+      await page.setViewportSize({ width, height: 560 })
+      expect(await controlIsUnclipped(search)).toBe(true)
+      expect(await controlIsUnclipped(dialog.getByRole('button', { name: 'Cancel', exact: true }))).toBe(true)
+      expect(await controlIsUnclipped(dialog.getByRole('button', { name: 'Confirm', exact: true }))).toBe(true)
+    }
+    await page.screenshot({ path: join(screenshots, `library-picker-recovered-${theme}-${width}.png`) })
+    await dialog.getByRole('button', { name: 'Cancel', exact: true }).click()
+    expect(await composer.evaluate((node, original) => node === original && node.textContent === 'Keep this conversation draft.',
+      originalComposer)).toBe(true)
+    expect(reads).toBe(4)
+  },
+)
 
 it.each(['count', 'bytes'] as const)('keeps library selection %s limits actionable without moving controls or losing focus', async (limit) => {
   const now = '2026-11-13T01:00:00Z'
@@ -1743,13 +2285,13 @@ it.each((['create', 'edit', 'device'] as const).flatMap(surface => [1440, 390].m
     await action.press('Enter')
     await expect.poll(() => requests.length).toBe(1)
     await page.keyboard.press('Escape')
-    await dialog.getByRole('status').filter({ hasText: 'Wait for the current operation to finish before closing.' }).waitFor()
+    await dialog.getByRole('status').filter({ hasText: 'Wait for the current operation to finish.' }).waitFor()
     const blockedImages = join(REPO_ROOT, '.artifacts/deepseek-harness-control-focus')
     await mkdir(blockedImages, { recursive: true })
     await page.screenshot({ path: join(blockedImages, `connector-${surface}-${width}-blocked.png`), animations: 'disabled' })
     expect(await geometry()).toEqual(initialGeometry)
     expect(await scrollState()).toEqual(initialScroll)
-    await footer.getByRole('status').filter({ hasText: 'Wait for the current operation to finish before closing.' }).waitFor()
+    await footer.getByRole('status').filter({ hasText: 'Wait for the current operation to finish.' }).waitFor()
     expect(await action.evaluate((node, original) => node === original && node === document.activeElement, originalAction)).toBe(true)
     await close.click()
     expect(await close.evaluate((node, original) => node === original && node === document.activeElement, originalClose)).toBe(true)
@@ -1946,7 +2488,7 @@ it.each([
       const attempt = ++attempts
       if (attempt === 2) await failed.promise
       if (attempt === 3) { await succeeded.promise; return surface === 'download' ? true : [{
-        selectionId: '33333333-3333-4333-8333-333333333333', name: 'Selected template.md', sizeBytes: 12,
+        selectionId: '33333333-3333-4333-8333-333333333333', name: 'Selected template.md', kind: 'FILE' as const, sizeBytes: 12,
       }] }
       return { fixtureFailure: { code: 'EXTERNAL_SERVICE_ERROR', message: 'File operation unavailable', retryable: true, resources: [] } }
     }
@@ -2216,13 +2758,13 @@ it.each(['success', 'failure'] as const)('preserves newer library folder feedbac
 })
 
 it.each(['Expert kits', 'Skills', 'Connectors', 'Libraries'] as const)(
-  'opens one shared expiration prompt over %s without replacing its page', async (panel) => {
+  'clears expired employee content behind one shared authorization prompt for %s', async (panel) => {
     let authenticated = true, writes = 0
     const authorization = Promise.withResolvers<undefined>()
     onTestFinished(() => { authorization.resolve(undefined) })
     const page = await boot(async (method) => {
       if (method === 'connectors.list') return []
-      if (method === 'library.list') return { data: [], pageIndex: 1, pageSize: 20, totalCount: 0, totalPages: 0 }
+      if (method === 'library.list' || method === 'library.files.list') return { data: [], pageIndex: 1, pageSize: 20, totalCount: 0, totalPages: 0 }
       if (method === 'auth.ensureDingTalk') {
         writes++
         await authorization.promise
@@ -2265,7 +2807,8 @@ it.each(['Expert kits', 'Skills', 'Connectors', 'Libraries'] as const)(
     await dialog.waitFor({ state: 'hidden' })
     await expire()
     expect(await dialog.count()).toBe(0)
-    expect(await heading.evaluate((node, previous) => node === previous, originalHeading)).toBe(true)
+    expect(await originalHeading!.evaluate(node => node.isConnected)).toBe(false)
+    expect(await heading.count()).toBe(0)
     const employee = page.getByRole('button', { name: 'Not signed in', exact: true })
     await employee.click()
     await page.getByRole('menuitem', { name: 'Sign in with DingTalk', exact: true }).click()
@@ -2276,12 +2819,198 @@ it.each(['Expert kits', 'Skills', 'Connectors', 'Libraries'] as const)(
     expect(writes).toBe(1)
     authorization.resolve(undefined)
     await dialog.waitFor({ state: 'hidden' })
-    await expect.poll(() => heading.evaluate((node, previous) => node === previous, originalHeading)).toBe(true)
+    await expect.poll(() => heading.evaluate((node, previous) => node !== previous, originalHeading)).toBe(true)
     expect(await page.getByRole('alert').count()).toBe(0)
     authenticated = false
     await expire()
     await dialog.waitFor()
     expect(await dialog.count()).toBe(1)
     expect(writes).toBe(1)
+  },
+)
+
+
+it.each([{ theme: 'light', width: 1440 }, { theme: 'dark', width: 390 }] as const)(
+  'keeps member read errors keyboard-readable through retry and recovery ($theme, $width)', async ({ theme, width }) => {
+    const now = '2026-11-18T01:00:00Z'
+    const library = { id: '11111111-1111-4111-8111-111111111111', name: 'Member error library', scope: 'TEAM',
+      ownerId: 'employee-fixture', companyId: 'company', role: 'OWNER', canManage: true, version: 1, createdAt: now, updatedAt: now }
+    const owner = { subjectType: 'EMPLOYEE', subjectId: library.ownerId, name: 'Control reviewer', role: 'OWNER' }
+    const members = Array.from({ length: 12 }, (_, index) => ({ ...owner, subjectId: `reviewer-${index}`, name: `Other reviewer ${index}`, role: 'VIEWER' }))
+    const listing = (data: readonly unknown[]) => ({ data, pageIndex: 1, pageSize: 20, totalCount: data.length, totalPages: 1 })
+    const response = Promise.withResolvers<undefined>()
+    onTestFinished(() => { response.resolve(undefined) })
+    let reads = 0, fail = false, recovering = false
+    const failure = { fixtureFailure: { code: 'METHOD_NOT_ALLOWED', message: 'Private diagnostic', retryable: true, resources: [] } }
+    const page = await boot(async (method) => {
+      if (method === 'library.get' || method === 'library.personal.ensure') return library
+      if (method === 'library.list') return listing([library])
+      if (method === 'library.files.list' || method === 'library.entries.list') return listing([])
+      if (method === 'library.members.list') {
+        reads++
+        if (recovering) await response.promise
+        if (fail) return failure
+        return listing([owner, ...members])
+      }
+      if (method === 'library.memberOptions.employees') return listing(members.map(row => ({ id: row.subjectId, name: row.name })))
+      throw new Error(`Unexpected member feedback method: ${method}`)
+    }, undefined, async (_home, scaffold) => {
+      await seedSession(scaffold, await readFile(join(REPO_ROOT,
+        'snapshots/web/present-after-closing-reply/session.v4.jsonl'), 'utf8'), `member-feedback-${theme}`)
+    })
+    await page.locator('[role="treeitem"]').first().click()
+    await page.locator('[role="treeitem"]').nth(1).click()
+    await page.getByText('REPORT_READY', { exact: true }).waitFor()
+    await waitForInitialComposer(page)
+    await page.getByRole('button', { name: 'Libraries', exact: true }).click()
+    await page.getByRole('navigation', { name: 'Library navigation', exact: true })
+      .getByRole('button', { name: library.name, exact: true }).click()
+    await page.getByRole('button', { name: 'Members', exact: true }).click()
+    const dialog = page.getByRole('dialog', { name: 'Manage members', exact: true })
+    const search = dialog.getByRole('searchbox', { name: 'Search members', exact: true })
+    const candidate = dialog.getByRole('button', { name: members[0]!.name, exact: true })
+    await expect.poll(() => candidate.getAttribute('aria-disabled')).toBe('false')
+    await page.emulateMedia({ colorScheme: theme }); await page.setViewportSize({ width, height: 900 })
+    await dialog.evaluate(async (node) => {
+      await Promise.allSettled(node.getAnimations({ subtree: true }).map(animation => animation.finished))
+    })
+    const searchNode = await search.elementHandle(), candidateNode = await candidate.elementHandle()
+    const list = dialog.getByRole('group', { name: 'Choose a member', exact: true })
+    await list.evaluate((node) => { node.scrollTop = 80 })
+    const scroll = await list.evaluate(node => node.scrollTop)
+    const bounds = await Promise.all([dialog.boundingBox(), search.boundingBox(), list.boundingBox()])
+    fail = true
+    await search.fill('Other')
+    await search.evaluate((node) => { if (node instanceof HTMLInputElement) node.setSelectionRange(1, 4, 'backward') })
+    const alert = dialog.getByRole('alert'), retry = dialog.getByRole('button', { name: 'Retry', exact: true })
+    await alert.waitFor()
+    const screenshots = join(REPO_ROOT, '.artifacts/deepseek-harness-control-focus')
+    await mkdir(screenshots, { recursive: true })
+    await page.screenshot({ path: join(screenshots, `member-read-error-${theme}-${width}.png`) })
+    expect(await Promise.all([dialog.boundingBox(), search.boundingBox(), list.boundingBox()])).toEqual(bounds)
+    await retry.focus()
+    await page.keyboard.press('Shift+Tab')
+    expect(await alert.evaluate(node => node === document.activeElement)).toBe(true)
+    if (width === 390) {
+      expect(await alert.evaluate(node => node.scrollHeight > node.clientHeight)).toBe(true)
+      await page.keyboard.press('End')
+      await expect.poll(() => alert.evaluate(node => node.scrollHeight - node.clientHeight - node.scrollTop)).toBeLessThanOrEqual(1)
+    }
+    expect(await alert.evaluate(node => node.scrollWidth <= node.clientWidth)).toBe(true)
+    const alertNode = await alert.elementHandle(), retryNode = await retry.elementHandle()
+    await retry.press('Enter')
+    await expect.poll(() => reads).toBe(3)
+    await expect.poll(() => retry.getAttribute('aria-disabled')).toBe('false')
+    expect(await alert.evaluate((node, previous) => node === previous, alertNode)).toBe(true)
+    expect(await retry.evaluate((node, previous) => node === previous && node === document.activeElement, retryNode)).toBe(true)
+    fail = false; recovering = true
+    await retry.press('Enter')
+    await expect.poll(() => reads).toBe(4)
+    await retry.press('Enter')
+    expect(reads).toBe(4)
+    await alert.focus()
+    const pendingBounds = await Promise.all([dialog.boundingBox(), search.boundingBox(), list.boundingBox()])
+    const viewport = dialog.locator('[class*="detailModalContent"] > div:last-child')
+    const viewportScroll = await viewport.evaluate(node => node.scrollTop)
+    response.resolve(undefined)
+    await alert.waitFor({ state: 'detached' })
+    await expect.poll(() => search.evaluate(node => node === document.activeElement)).toBe(true)
+    expect(await search.evaluate((node, previous) => node === previous && node instanceof HTMLInputElement
+      && node.value === 'Other' && node.selectionStart === 1 && node.selectionEnd === 4 && node.selectionDirection === 'backward', searchNode)).toBe(true)
+    expect(await candidate.evaluate((node, previous) => node === previous, candidateNode)).toBe(true)
+    expect(await list.evaluate(node => node.scrollTop)).toBe(scroll)
+    expect(await Promise.all([dialog.boundingBox(), search.boundingBox(), list.boundingBox()])).toEqual(pendingBounds)
+    expect(await viewport.evaluate(node => node.scrollTop)).toBe(viewportScroll)
+    expect(await dialog.evaluate(node => node.scrollWidth <= node.clientWidth)).toBe(true)
+    await page.screenshot({ path: join(screenshots, `member-read-recovered-${theme}-${width}.png`) })
+    if (width === 390) {
+      await page.setViewportSize({ width, height: 560 })
+      fail = true
+      await search.fill('Other reviewer')
+      await alert.waitFor()
+      await expect.poll(() => retry.getAttribute('aria-disabled')).toBe('false')
+      await retry.focus()
+      await page.keyboard.press('Shift+Tab')
+      expect(await alert.evaluate(node => node === document.activeElement)).toBe(true)
+      await page.keyboard.press('End')
+      await expect.poll(() => alert.evaluate(node => node.scrollHeight - node.clientHeight - node.scrollTop)).toBeLessThanOrEqual(1)
+      // Native scroll offsets round fractional dialog bounds to CSS pixels.
+      expect(await alert.evaluate((node) => {
+        const viewport = node.closest('[class*="detailModalContent"]')?.lastElementChild
+        if (!viewport) throw new Error('Missing member dialog scrollport')
+        const bounds = node.getBoundingClientRect(), clip = viewport.getBoundingClientRect()
+        return bounds.top >= clip.top - 1 && bounds.bottom <= clip.bottom + 1
+          && bounds.left >= clip.left && bounds.right <= clip.right
+      })).toBe(true)
+      expect(await controlIsUnclipped(retry)).toBe(true)
+      expect(await controlIsUnclipped(dialog.getByRole('button', { name: 'Close', exact: true }).last())).toBe(true)
+      expect(await dialog.evaluate(node => node.scrollWidth <= node.clientWidth)).toBe(true)
+      await page.screenshot({ path: join(screenshots, 'member-read-error-dark-short.png') })
+    }
+  },
+)
+
+it.each((['edit', 'device'] as const).flatMap(surface => (['error', 'close'] as const).map(focus => ({ surface, focus }))))(
+  'recovers connector $surface read feedback focus without moving $focus focus', async ({ surface, focus }) => {
+    const recovered = Promise.withResolvers<undefined>()
+    onTestFinished(() => { recovered.resolve(undefined) })
+    const entry = { id: 'read-feedback', version: '1.0.0', name: 'Read feedback connector',
+      visibility: surface === 'device' ? 'COMPANY' : 'PERSONAL', reviewStatus: surface === 'device' ? 'PUBLISHED' : 'DRAFT',
+      canConfigure: true, canEdit: true, authMode: 'none', tools: [] }
+    const draft = { id: entry.id, version: entry.version, name: entry.name, kind: 'connector', summary: 'Retain the error reader.', category: 'other', transport: 'stdio',
+      command: 'node', arguments: ['fixture.js'], headers: {}, environment: {}, timeoutSeconds: 60 }
+    const method = surface === 'edit' ? 'extensions.connector.read' : 'extensions.connector.configuration.read'
+    let reads = 0
+    const page = await boot(async (requested) => {
+      if (requested === 'connectors.list') return [entry]
+      if (requested !== method) throw new Error(`Unexpected connector feedback method: ${requested}`)
+      if (++reads === 1) return { fixtureFailure: { code: 'ORGANIZATION_SYNC_EXPIRED', message: 'Organization unavailable', retryable: true, resources: [] } }
+      await recovered.promise
+      return surface === 'edit' ? { draft, configured: true, savePending: false }
+        : { id: entry.id, version: entry.version, transport: 'stdio', command: 'node', arguments: ['fixture.js'],
+          headers: [], environment: [], configured: false, timeoutSeconds: 60 }
+    })
+    await waitForInitialComposer(page)
+    await page.getByRole('button', { name: 'Connectors', exact: true }).click()
+    if (surface === 'edit') {
+      await page.getByRole('tab', { name: 'Mine', exact: true }).click()
+      await page.getByRole('button', { name: 'More actions', exact: true }).click()
+      await page.getByRole('menuitem', { name: 'Modify', exact: true }).click()
+    } else {
+      await page.getByRole('button', { name: entry.name, exact: true }).click()
+      await page.getByRole('button', { name: 'Configure this device', exact: true }).click()
+    }
+    await page.emulateMedia({ colorScheme: surface === 'device' ? 'dark' : 'light' })
+    await page.setViewportSize({ width: surface === 'device' ? 390 : 1440, height: surface === 'device' ? 560 : 900 })
+    const dialog = page.getByRole('dialog', { name: surface === 'edit' ? 'Edit connector' : 'Configure this device', exact: true })
+    const alert = dialog.getByRole('alert'), retry = dialog.getByRole('button', { name: 'Retry', exact: true })
+    await alert.waitFor()
+    await dialog.evaluate(async (node) => {
+      await Promise.allSettled(node.getAnimations({ subtree: true }).map(animation => animation.finished))
+    })
+    const retryNode = await retry.elementHandle(), alertNode = await alert.elementHandle()
+    const bounds = await retry.boundingBox()
+    await retry.press('Enter'); await retry.press(' ')
+    await expect.poll(() => reads).toBe(2)
+    expect(await alert.evaluate((node, original) => node === original, alertNode)).toBe(true)
+    expect(await retry.boundingBox()).toEqual(bounds)
+    expect(await retry.evaluate((node, original) => node === original && node === document.activeElement, retryNode)).toBe(true)
+    const close = dialog.getByRole('button', { name: 'Close', exact: true })
+    const target = focus === 'error' ? alert : close
+    if (focus === 'error') await retry.press('Tab')
+    else await close.focus()
+    expect(await target.evaluate(node => node === document.activeElement)).toBe(true)
+    const screenshots = join(REPO_ROOT, '.artifacts/deepseek-harness-control-focus')
+    await mkdir(screenshots, { recursive: true })
+    await page.screenshot({ path: join(screenshots, `connector-${surface}-read-${focus}-pending.png`) })
+    recovered.resolve(undefined)
+    await alert.waitFor({ state: 'detached' })
+    const field = dialog.getByLabel(surface === 'edit' ? 'Server type' : 'Timeout', { exact: true })
+    await field.waitFor()
+    expect(await (focus === 'error' ? field : close).evaluate(node => node === document.activeElement)).toBe(true)
+    expect(await controlIsUnclipped(close)).toBe(true)
+    expect(await dialog.evaluate(node => node.scrollWidth <= node.clientWidth)).toBe(true)
+    expect(reads).toBe(2)
+    await page.screenshot({ path: join(screenshots, `connector-${surface}-read-${focus}-recovered.png`) })
   },
 )

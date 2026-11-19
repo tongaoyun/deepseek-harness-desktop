@@ -1,10 +1,11 @@
 import { createHash } from 'node:crypto'
-import { mkdtemp, writeFile, symlink, rm, stat, utimes } from 'node:fs/promises'
+import { mkdtemp, mkdir, writeFile, symlink, rm, stat, utimes } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { basename, join } from 'node:path'
 import { expect, it, vi, onTestFinished } from 'vitest'
 import { DeepSeekHarnessApiClient } from '@deepseek-harness/product'
 import { LibraryUploads } from '../src/library-upload.ts'
+import { LIBRARY_UPLOAD_LIMITS, LibrarySelectionSchema } from '@deepseek-harness/product/library'
 const libraryId = '11111111-1111-4111-8111-111111111111'
 const entryId = '22222222-2222-4222-8222-222222222222'
 const timestamp = '2026-11-13T01:00:00Z'
@@ -123,4 +124,67 @@ it('takes conversation origin only from the validated main-owned deliverable sel
   await uploads.invoke('library.files.upload', input, api, 'employee', signal)
   expect(origin).toBe('native-source')
   expect(readArchive).toHaveBeenCalledWith({ sessionId: 'native-source', seq: 4, index: 0, maxBytes: 1024 }, signal)
+})
+
+it('registers dropped folders and native folder selections with their complete relative hierarchy', async () => {
+  const f = await fixture()
+  const nested = join(f.directory, '参考资料')
+  await mkdir(nested)
+  await mkdir(join(nested, '空文件夹'))
+  await writeFile(join(nested, '中文模板.bin'), new Uint8Array([0, 255, 1]))
+  f.picker.mockResolvedValueOnce([f.directory])
+  const selected = await f.invoke('library.files.upload.select', { mode: 'folder' })
+  expect(f.picker).toHaveBeenLastCalledWith(expect.any(AbortSignal), 'folder')
+  expect(selected).toEqual(expect.arrayContaining([
+    expect.objectContaining({ kind: 'FOLDER', name: basename(f.directory), sizeBytes: 0 }),
+    expect.objectContaining({ kind: 'FOLDER', name: '空文件夹', folders: [basename(f.directory), '参考资料'] }),
+    expect.objectContaining({ name: '中文资料.md', folders: [basename(f.directory)] }),
+    expect.objectContaining({ name: '中文模板.bin', sizeBytes: 3, folders: [basename(f.directory), '参考资料'] }),
+  ]))
+  const calls = f.picker.mock.calls.length
+  await expect(f.invoke('library.files.upload.select', { paths: [join(nested, '中文模板.bin')] }))
+    .resolves.toEqual([expect.objectContaining({ name: '中文模板.bin', sizeBytes: 3 })])
+  expect(f.picker).toHaveBeenCalledTimes(calls)
+})
+it('accepts empty folders and rejects symlinks and oversized trees without publishing partial selections', async () => {
+  const f = await fixture(), empty = join(f.directory, 'empty')
+  await mkdir(empty)
+  const [directory] = LibrarySelectionSchema.array().parse(await f.invoke('library.files.upload.select', { paths: [empty] }))
+  expect(directory).toMatchObject({ kind: 'FOLDER', name: 'empty', sizeBytes: 0 })
+  await expect(f.invoke('library.files.upload', { selectionId: directory!.selectionId, libraryId, parentId: null, key }))
+    .rejects.toMatchObject({ code: 'LIBRARY_FILE_INVALID' })
+  await f.invoke('library.files.upload.discard', { selectionId: directory!.selectionId })
+  const link = join(empty, 'link.md')
+  await symlink(f.path, link)
+  await expect(f.invoke('library.files.upload.select', { paths: [empty] })).rejects.toMatchObject({ code: 'LIBRARY_FILE_INVALID' })
+  await rm(link)
+  for (let i = 0; i <= LIBRARY_UPLOAD_LIMITS.files; i++) await writeFile(join(empty, `${i}.md`), 'x')
+  await expect(f.invoke('library.files.upload.select', { paths: [empty] })).rejects.toMatchObject({ code: 'LIBRARY_FILE_INVALID' })
+  await expect(f.invoke('library.files.upload.select', { paths: ['relative.md'] })).rejects.toThrow()
+  await expect(f.invoke('library.files.upload.select', { paths: [f.path] }))
+    .resolves.toEqual([expect.objectContaining({ name: '中文资料.md' })])
+})
+
+it('selects more than twenty files and deduplicates overlapping folder roots without flattening them', async () => {
+  const f = await fixture(), root = join(f.directory, '完整目录'), nested = join(root, '子目录')
+  await mkdir(nested, { recursive: true })
+  for (let i = 0; i < 25; i++) await writeFile(join(nested, `${i}.md`), 'x')
+  const selected = LibrarySelectionSchema.array().parse(await f.invoke('library.files.upload.select', {
+    paths: [nested, root, join(nested, '0.md'), root],
+  }))
+  expect(selected.filter(item => item.kind === 'FILE')).toHaveLength(25)
+  expect(selected.filter(item => item.kind === 'FOLDER')).toHaveLength(2)
+  expect(selected.filter(item => item.kind === 'FILE').every(item => JSON.stringify(item.folders) === JSON.stringify(['完整目录', '子目录']))).toBe(true)
+  expect(f.picker).not.toHaveBeenCalled()
+})
+
+it('rejects distinct folder roots with the same destination name before issuing handles', async () => {
+  const f = await fixture(), first = join(f.directory, 'a', '同名项目'), second = join(f.directory, 'b', '同名项目')
+  await mkdir(first, { recursive: true }); await mkdir(second, { recursive: true })
+  await writeFile(join(first, '甲.md'), 'a'); await writeFile(join(second, '乙.md'), 'b')
+  await expect(f.invoke('library.files.upload.select', { paths: [first, second] }))
+    .rejects.toMatchObject({ code: 'LIBRARY_SELECTION_CONFLICT' })
+  expect(f.upload).not.toHaveBeenCalled()
+  await expect(f.invoke('library.files.upload.select', { paths: [first] }))
+    .resolves.toEqual([expect.objectContaining({ kind: 'FOLDER', name: '同名项目' }), expect.objectContaining({ name: '甲.md' })])
 })

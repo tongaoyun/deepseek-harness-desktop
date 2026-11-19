@@ -9,7 +9,8 @@ import { builtinCapabilityPatches } from '../../../packages/deepseek-harness-pro
 import type AgencyAgentsRemote from '../../../packages/deepseek-harness-product/experts/lib/remote.js'
 import type { AgencyPersonaSource } from '../../../packages/deepseek-harness-product/experts/lib/index.js'
 import { launchWebScaffold, watchConsole } from './scaffold.ts'
-import { controlIsUnclipped, newEnglishPage, REPO_ROOT } from './support.ts'
+import { controlIsUnclipped, REPO_ROOT } from './support.ts'
+import { newEmployeePage } from './product-support.ts'
 
 type ExpertLibrary = {
   catalog: (signal?: AbortSignal) => ReturnType<AgencyAgentsRemote['getCatalog']>
@@ -52,7 +53,7 @@ it.each(['expert', 'team'] as const)('keeps the %s directory still when an opera
   }, true, catalog.revision)
   const browser = await chromium.launch()
   onTestFinished(() => browser.close())
-  const page = await newEnglishPage(browser)
+  const page = await newEmployeePage(browser)
   page.setDefaultTimeout(10_000)
   const tripwire = watchConsole(page)
   await page.goto(scaffold.authenticatedUrl)
@@ -174,7 +175,7 @@ it.each((['menu', 'panel'] as const).flatMap(surface => (['success', 'failure'] 
     const snapshot = teams.snapshot.bind(teams)
     const browser = await chromium.launch()
     onTestFinished(() => browser.close())
-    const page = await newEnglishPage(browser)
+    const page = await newEmployeePage(browser)
     page.setDefaultTimeout(10_000)
     const tripwire = watchConsole(page)
     onTestFinished(() => { expect(tripwire.pageErrors).toEqual([]) })
@@ -312,7 +313,7 @@ it.each(['retained', 'filtered', 'reconciled', 'elsewhere'] as const)('preserves
   onTestFinished(() => { gates.forEach((gate) => { gate.resolve(undefined) }); delayed.mockRestore() })
   const browser = await chromium.launch()
   onTestFinished(() => browser.close())
-  const page = await newEnglishPage(browser)
+  const page = await newEmployeePage(browser)
   page.setDefaultTimeout(10_000)
   const tripwire = watchConsole(page)
   onTestFinished(() => { expect(tripwire.pageErrors).toEqual([]) })
@@ -431,7 +432,7 @@ it('keeps long expert prompt previews inside the viewport without rebuilding the
   await library.saveCustom({ name, description: 'Long prompt preview fixture', division: 'specialized', prompt }, false, (await library.catalog()).revision)
   const browser = await chromium.launch()
   onTestFinished(() => browser.close())
-  const page = await newEnglishPage(browser)
+  const page = await newEmployeePage(browser)
   page.setDefaultTimeout(10_000)
   const tripwire = watchConsole(page)
   onTestFinished(() => { expect(tripwire.pageErrors).toEqual([]) })
@@ -505,7 +506,7 @@ it.each((['prompt', 'editor'] as const).flatMap(surface => (['removed', 'moved',
   onTestFinished(() => { response.resolve(undefined); read.mockRestore() })
   const browser = await chromium.launch()
   onTestFinished(() => browser.close())
-  const page = await newEnglishPage(browser)
+  const page = await newEmployeePage(browser)
   page.setDefaultTimeout(10_000)
   const tripwire = watchConsole(page)
   onTestFinished(() => { expect(tripwire.pageErrors).toEqual([]) })
@@ -602,7 +603,7 @@ it.each([
     }, true, catalog.revision)
     const browser = await chromium.launch()
     onTestFinished(() => browser.close())
-    const page = await newEnglishPage(browser)
+    const page = await newEmployeePage(browser)
     page.setDefaultTimeout(10_000)
     const tripwire = watchConsole(page)
     await page.goto(scaffold.authenticatedUrl)
@@ -795,7 +796,7 @@ it.each((['expert-removed', 'expert-disabled', 'expert-category', 'team-removed'
     const isTeam = surface.startsWith('team-')
     const browser = await chromium.launch()
     onTestFinished(() => browser.close())
-    const page = await newEnglishPage(browser)
+    const page = await newEmployeePage(browser)
     page.setDefaultTimeout(10_000)
     const tripwire = watchConsole(page)
     await page.goto(scaffold.authenticatedUrl)
@@ -893,7 +894,7 @@ it.each((['removed', 'disabled'] as const).flatMap(change => [false, true].map(e
     }, false, catalog.revision)
     const browser = await chromium.launch()
     onTestFinished(() => browser.close())
-    const page = await newEnglishPage(browser)
+    const page = await newEmployeePage(browser)
     page.setDefaultTimeout(10_000)
     const tripwire = watchConsole(page)
     await page.goto(scaffold.authenticatedUrl)
@@ -998,7 +999,7 @@ it.each((['expert', 'team-card', 'team-details'] as const).flatMap(surface => [f
     onTestFinished(() => { pending.resolve(undefined); expertWrite.mockRestore(); teamWrite.mockRestore() })
     const browser = await chromium.launch()
     onTestFinished(() => browser.close())
-    const page = await newEnglishPage(browser)
+    const page = await newEmployeePage(browser)
     page.setDefaultTimeout(10_000)
     const tripwire = watchConsole(page)
     await page.goto(scaffold.authenticatedUrl)
@@ -1093,7 +1094,7 @@ it.each((['expert', 'team'] as const).flatMap(kind => [false, true].map(elsewher
     onTestFinished(() => { pending.resolve(undefined); expertWrite.mockRestore(); teamWrite.mockRestore() })
     const browser = await chromium.launch()
     onTestFinished(() => browser.close())
-    const page = await newEnglishPage(browser)
+    const page = await newEmployeePage(browser)
     const tripwire = watchConsole(page)
     await page.goto(scaffold.authenticatedUrl)
     await page.getByRole('button', { name: 'Expert kits', exact: true }).click()
@@ -1179,7 +1180,7 @@ it.each((['expert-directory', 'team-directory', 'team-detail'] as const)
     }, true, catalog.revision)
     const browser = await chromium.launch()
     onTestFinished(() => browser.close())
-    const page = await newEnglishPage(browser)
+    const page = await newEmployeePage(browser)
     page.setDefaultTimeout(10_000)
     const tripwire = watchConsole(page)
     await page.goto(scaffold.authenticatedUrl)
@@ -1280,7 +1281,7 @@ it.each((['zip', 'directory', 'attachments', 'import-zip', 'import-directory'] a
   let reads = 0
   const browser = await chromium.launch()
   onTestFinished(() => browser.close())
-  const page = await newEnglishPage(browser)
+  const page = await newEmployeePage(browser)
   page.setDefaultTimeout(10_000)
   const tripwire = watchConsole(page)
   await page.exposeFunction('__readExpertFile', async () => {
@@ -1418,7 +1419,7 @@ it.each(['expert-delete', 'team-delete', 'team-enable', 'team-enable-filtered', 
   onTestFinished(() => { gates.forEach((gate) => { gate.resolve(undefined) }); write.mockRestore() })
   const browser = await chromium.launch()
   onTestFinished(() => browser.close())
-  const page = await newEnglishPage(browser)
+  const page = await newEmployeePage(browser)
   page.setDefaultTimeout(10_000)
   const tripwire = watchConsole(page)
   onTestFinished(() => { expect(tripwire.pageErrors).toEqual([]) })
@@ -1578,7 +1579,7 @@ it.each(['expert-save', 'team-save', 'expert-delete', 'team-delete'] as const)(
     onTestFinished(() => { gates.forEach((gate) => { gate.resolve(undefined) }); delay.mockRestore() })
     const browser = await chromium.launch()
     onTestFinished(() => browser.close())
-    const page = await newEnglishPage(browser)
+    const page = await newEmployeePage(browser)
     page.setDefaultTimeout(10_000)
     const tripwire = watchConsole(page)
     const screenshots = join(REPO_ROOT, '.artifacts/deepseek-harness-expert-retry')
@@ -1699,7 +1700,7 @@ it('keeps editor focus at the current avatar, attachment, member and example act
   }, false, catalog.revision)
   const browser = await chromium.launch()
   onTestFinished(() => browser.close())
-  const page = await newEnglishPage(browser)
+  const page = await newEmployeePage(browser)
   page.setDefaultTimeout(10_000)
   const tripwire = watchConsole(page)
   const screenshots = join(REPO_ROOT, '.artifacts/deepseek-harness-expert-retry')
@@ -1847,7 +1848,7 @@ it('keeps expert selection focus and feedback stable through a real Settings con
   onTestFinished(() => { gates.forEach((gate) => { gate.resolve(undefined) }); delay.mockRestore() })
   const browser = await chromium.launch()
   onTestFinished(() => browser.close())
-  const page = await newEnglishPage(browser)
+  const page = await newEmployeePage(browser)
   page.setDefaultTimeout(10_000)
   const tripwire = watchConsole(page)
   const screenshots = join(REPO_ROOT, '.artifacts/deepseek-harness-expert-retry')
@@ -1953,7 +1954,7 @@ it('returns focus to the same expert and team searches after clearing market and
     division: 'specialized', prompt: 'Review the references.' }, false, initial.revision)
   const browser = await chromium.launch()
   onTestFinished(() => browser.close())
-  const page = await newEnglishPage(browser)
+  const page = await newEmployeePage(browser)
   page.setDefaultTimeout(10_000)
   const tripwire = watchConsole(page)
   const screenshots = join(REPO_ROOT, '.artifacts/deepseek-harness-expert-retry')
@@ -2033,7 +2034,7 @@ it.each(['expert', 'team'] as const)('keeps the first %s picker failure distinct
   onTestFinished(() => { gates.forEach((gate) => { gate.resolve(undefined) }); delay.mockRestore() })
   const browser = await chromium.launch()
   onTestFinished(() => browser.close())
-  const page = await newEnglishPage(browser)
+  const page = await newEmployeePage(browser)
   page.setDefaultTimeout(10_000)
   await page.setViewportSize({ width: 390, height: 560 })
   const tripwire = watchConsole(page)
@@ -2117,7 +2118,7 @@ it.each((['expert', 'team'] as const).flatMap(surface => [1440, 390].map(width =
     }
     const browser = await chromium.launch()
     onTestFinished(() => browser.close())
-    const page = await newEnglishPage(browser)
+    const page = await newEmployeePage(browser)
     page.setDefaultTimeout(10_000)
     await page.setViewportSize({ width, height: width === 390 ? 560 : 900 })
     const tripwire = watchConsole(page)
@@ -2245,7 +2246,7 @@ it.each(['expert', 'team', 'picker', 'team-picker'] as const)('keeps %s read ret
   }
   const browser = await chromium.launch()
   onTestFinished(() => browser.close())
-  const page = await newEnglishPage(browser)
+  const page = await newEmployeePage(browser)
   page.setDefaultTimeout(10_000)
   const tripwire = watchConsole(page)
   const screenshots = join(REPO_ROOT, '.artifacts/deepseek-harness-expert-retry')
@@ -2413,3 +2414,231 @@ it.each(['expert', 'team', 'picker', 'team-picker'] as const)('keeps %s read ret
   }
   expect(tripwire.pageErrors).toEqual([])
 })
+
+it.each((['expert', 'team'] as const).flatMap(surface => [1440, 390].map(width => ({ surface, width }))))(
+  'keeps $surface card progress local and focus stable at $width', async ({ surface, width }) => {
+    const root = await mkdtemp(join(tmpdir(), 'card-progress-'))
+    onTestFinished(() => rm(root, { recursive: true, force: true }))
+    const companyRoot = join(root, 'employee', 'company', 'experts')
+    await mkdir(companyRoot, { recursive: true })
+    vi.stubEnv('DSH_COMPANY_EXPERTS_ROOT', companyRoot)
+    onTestFinished(() => { vi.unstubAllEnvs() })
+    const overlay = join(root, 'experts.patch.yml')
+    await writeFile(overlay, JSON.stringify(builtinCapabilityPatches()))
+    const scaffold = await launchWebScaffold({ firstUse: true, profile: { packages: [] },
+      extraInstallAnchors: [join(REPO_ROOT, 'packages/deepseek-harness-product/desktop/package.json')],
+      extraOverlayPath: [overlay, join(REPO_ROOT, 'packages/extensions/ui-deepseek-harness-product/cordis.patch.yml'),
+        join(REPO_ROOT, 'apps/web/tests/pin-browse-picker.overlay.yml')],
+    })
+    onTestFinished(() => scaffold.close())
+    const library = scaffold.ctx.get('agencyAgentsLibrary') as ExpertLibrary
+    const teams = scaffold.ctx.get('agencyAgentsTeams') as TeamLibrary
+    let catalog = await library.catalog()
+    for (const name of ['Stable reviewer', 'Second reviewer']) catalog = await library.saveCustom({ name,
+      description: 'Read-only browser fixture', division: 'specialized', prompt: 'Keep {{literal}}.' }, true, catalog.revision)
+    let snapshot = await teams.snapshot()
+    for (const name of ['Stable team', 'Second team']) snapshot = await teams.save({ name,
+      description: 'Read-only browser fixture', tags: [], goal: 'Review the task', constraints: 'Do not write',
+      deliveryRequirements: 'Return findings', examples: ['Review the task'], coordinatorMode: 'template',
+      coordinatorTemplateId: 'general', coordinatorTemplateVersion: 1, coordinatorPrompt: '',
+      members: catalog.experts.map(item => ({ expertSlug: item.slug, duty: 'Review', instructions: 'Read references.' })),
+    }, true, snapshot.revision)
+    const browser = await chromium.launch()
+    onTestFinished(async ({ task }) => {
+      try {
+        if (task.result?.state === 'fail') {
+          const path = join(REPO_ROOT, '.artifacts/deepseek-harness-expert-retry')
+          await mkdir(path, { recursive: true })
+          await page.screenshot({ path: join(path, `card-${surface}-${width}-failure.png`) })
+          await writeFile(join(path, `card-${surface}-${width}-failure.txt`), await page.locator('body').ariaSnapshot())
+        }
+      } finally { await browser.close() }
+    })
+    const page = await newEmployeePage(browser)
+    page.setDefaultTimeout(10_000)
+    await page.setViewportSize({ width: 1440, height: 900 })
+    await page.emulateMedia({ colorScheme: width === 390 ? 'dark' : 'light' })
+    const tripwire = watchConsole(page)
+    onTestFinished(() => { expect(tripwire.pageErrors).toEqual([]) })
+    await page.goto(scaffold.authenticatedUrl)
+    await expect.poll(() => page.locator('[data-composer-input][contenteditable="true"]').evaluateAll(nodes =>
+      nodes.some(node => node === document.activeElement))).toBe(true)
+    await page.getByRole('button', { name: 'Expert kits', exact: true }).click()
+    await page.getByRole('tab', { name: 'Mine', exact: true }).click()
+    if (surface === 'team') await page.getByRole('tab', { name: 'Expert teams', exact: true }).click()
+    await page.setViewportSize({ width, height: width === 390 ? 560 : 900 })
+    await page.evaluate(async () => { await Promise.allSettled(document.getAnimations().map(animation => animation.finished)) })
+    const area = page.locator(surface === 'team' ? '#aag-team-source-panel' : '#aag-expert-source-panel')
+    const search = area.getByRole('textbox', { name: surface === 'team' ? 'Search teams' : 'Search', exact: true })
+    await search.fill(surface === 'team' ? 'team' : 'reviewer')
+    await search.evaluate((node) => { if (node instanceof HTMLInputElement) node.setSelectionRange(1, 3) })
+    const cards = area.locator('.aag-expert-card')
+    await expect.poll(() => cards.count()).toBe(2)
+    const toggle = cards.first().getByRole('switch'), neighbor = cards.nth(1).getByRole('switch')
+    const edit = cards.nth(1).getByRole('button', { name: surface === 'team' ? 'Edit team' : 'Edit expert', exact: true })
+    await toggle.scrollIntoViewIfNeeded()
+    const scrollport = page.locator('.product-capability-page').filter({ has: area })
+    const scroll = await scrollport.evaluate(node => node.scrollTop)
+    if (width === 390) expect(scroll).toBeGreaterThan(0)
+    const original = await toggle.elementHandle(), originalNeighbor = await neighbor.elementHandle()
+    const originalSearch = await search.elementHandle()
+    const geometry = () => Promise.all([cards.first().boundingBox(), cards.nth(1).boundingBox(),
+      edit.boundingBox(), neighbor.boundingBox(), toggle.boundingBox()])
+    const bounds = await geometry()
+    const style = () => edit.evaluate(node => [getComputedStyle(node).opacity,
+      getComputedStyle(node).color, getComputedStyle(node).backgroundColor])
+    const appearance = await style()
+    const gates = [Promise.withResolvers<undefined>(), Promise.withResolvers<undefined>()]
+    onTestFinished(() => { gates.forEach((gate) => { gate.resolve(undefined) }) })
+    const expertWrite = library.setEnabled.bind(library), teamWrite = teams.setEnabled.bind(teams)
+    let writes = 0
+    const write = surface === 'team' ? vi.spyOn(teams, 'setEnabled').mockImplementation(async (...args) => {
+      const attempt = writes++; await gates[attempt]!.promise
+      if (!attempt) throw new Error('Settings temporarily unavailable')
+      return teamWrite(...args)
+    }) : vi.spyOn(library, 'setEnabled').mockImplementation(async (...args) => {
+      const attempt = writes++; await gates[attempt]!.promise
+      if (!attempt) throw new Error('Settings temporarily unavailable')
+      return expertWrite(...args)
+    })
+    onTestFinished(() => { write.mockRestore() })
+    for (const attempt of [0, 1]) {
+      await toggle.press('Enter')
+      await expect.poll(() => writes).toBe(attempt + 1)
+      expect(await toggle.evaluate((node, previous) => node === previous && node === document.activeElement, original)).toBe(true)
+      expect(await toggle.evaluate(node => node instanceof HTMLButtonElement && node.disabled)).toBe(false)
+      expect(await toggle.locator('..').getAttribute('aria-busy')).toBe('true')
+      expect(await neighbor.locator('..').getAttribute('aria-busy')).toBe('false')
+      expect(await edit.getAttribute('aria-busy')).not.toBe('true')
+      expect(await edit.evaluate(node => node instanceof HTMLButtonElement && node.disabled)).toBe(false)
+      expect(await geometry()).toEqual(bounds)
+      expect(await style()).toEqual(appearance)
+      await page.keyboard.press('Enter'); await page.keyboard.press(' ')
+      await neighbor.dispatchEvent('click'); await edit.dispatchEvent('click')
+      expect(writes).toBe(attempt + 1)
+      expect(await page.locator('.aag-host-modal').count()).toBe(0)
+      if (attempt) {
+        expect(await area.getByRole('alert').count()).toBe(1)
+        await search.evaluate((node) => { if (node instanceof HTMLInputElement) node.focus({ preventScroll: true }) })
+      }
+      const screenshots = join(REPO_ROOT, '.artifacts/deepseek-harness-expert-retry')
+      await mkdir(screenshots, { recursive: true })
+      await page.screenshot({ path: join(screenshots, `card-${surface}-${width}-pending-${attempt}.png`), animations: 'disabled' })
+      gates[attempt]!.resolve(undefined)
+      await expect.poll(() => toggle.locator('..').getAttribute('aria-busy')).toBe('false')
+      if (!attempt) await area.getByRole('alert').waitFor()
+      else await area.getByRole('alert').waitFor({ state: 'hidden' })
+      expect(await (attempt ? search : toggle).evaluate(node => node === document.activeElement)).toBe(true)
+      expect(await toggle.evaluate((node, previous) => node === previous, original)).toBe(true)
+      expect(await neighbor.evaluate((node, previous) => node === previous, originalNeighbor)).toBe(true)
+      expect(await search.evaluate((node, previous) => node === previous && node instanceof HTMLInputElement
+        && [node.value, node.selectionStart, node.selectionEnd], originalSearch)).toEqual([surface === 'team' ? 'team' : 'reviewer', 1, 3])
+      expect(await geometry()).toEqual(bounds)
+      expect(await scrollport.evaluate(node => node.scrollTop)).toBe(scroll)
+      expect(await controlIsUnclipped(toggle)).toBe(true)
+    }
+    expect(writes).toBe(2)
+  },
+)
+
+
+it.each([{ theme: 'light', width: 1440, height: 900 }, { theme: 'dark', width: 390, height: 560 }] as const)(
+  'keeps team detail feedback fixed and keyboard-readable through failure and recovery ($theme, $width)', async ({ theme, width, height }) => {
+    const root = await mkdtemp(join(tmpdir(), 'team-detail-feedback-'))
+    onTestFinished(() => rm(root, { recursive: true, force: true }))
+    const companyRoot = join(root, 'employee', 'company', 'experts')
+    await mkdir(companyRoot, { recursive: true })
+    vi.stubEnv('DSH_COMPANY_EXPERTS_ROOT', companyRoot)
+    onTestFinished(() => { vi.unstubAllEnvs() })
+    const overlay = join(root, 'experts.patch.yml')
+    await writeFile(overlay, JSON.stringify(builtinCapabilityPatches()))
+    const scaffold = await launchWebScaffold({ firstUse: true, profile: { packages: [] },
+      extraInstallAnchors: [join(REPO_ROOT, 'packages/deepseek-harness-product/desktop/package.json')],
+      extraOverlayPath: [overlay, join(REPO_ROOT, 'packages/extensions/ui-deepseek-harness-product/cordis.patch.yml'),
+        join(REPO_ROOT, 'apps/web/tests/pin-browse-picker.overlay.yml')],
+    })
+    onTestFinished(() => scaffold.close())
+    const library = scaffold.ctx.get('agencyAgentsLibrary') as ExpertLibrary
+    const teams = scaffold.ctx.get('agencyAgentsTeams') as TeamLibrary
+    let catalog = await library.catalog()
+    for (const name of ['Detail reviewer', 'Reference reviewer']) catalog = await library.saveCustom({ name,
+      description: 'Feedback browser fixture', division: 'specialized', prompt: 'Review references.' }, true, catalog.revision)
+    await teams.save({ name: 'Stable detail team', description: 'Retain the detail reading position.',
+      tags: [], goal: 'Review the task', constraints: 'Do not write', deliveryRequirements: 'Return findings',
+      examples: ['Review the task'], coordinatorMode: 'template', coordinatorTemplateId: 'general',
+      coordinatorTemplateVersion: 1, coordinatorPrompt: '',
+      members: catalog.experts.map(item => ({ expertSlug: item.slug, duty: 'Review', instructions: 'Read references.' })),
+    }, false, catalog.revision)
+    const longMessage = 'The selected team could not be enabled. Read the current configuration and retry. '.repeat(12)
+    const mutation = Promise.withResolvers<undefined>(), recovery = Promise.withResolvers<undefined>()
+    const enable = vi.spyOn(teams, 'setEnabled').mockImplementation(async () => { await mutation.promise; throw new Error(longMessage) })
+    onTestFinished(() => { mutation.resolve(undefined); recovery.resolve(undefined); enable.mockRestore() })
+    const browser = await chromium.launch()
+    onTestFinished(() => browser.close())
+    const page = await newEmployeePage(browser)
+    page.setDefaultTimeout(10_000)
+    const tripwire = watchConsole(page)
+    onTestFinished(() => { expect(tripwire.pageErrors).toEqual([]) })
+    await page.goto(scaffold.authenticatedUrl)
+    await expect.poll(() => page.getByRole('button', { name: 'Choose workspace', exact: true }).textContent()).toBe('Default workspace')
+    await page.getByRole('button', { name: 'Expert kits', exact: true }).click()
+    await page.getByRole('tab', { name: 'Mine', exact: true }).click()
+    await page.getByRole('tab', { name: 'Expert teams', exact: true }).click()
+    const area = page.locator('#aag-team-source-panel')
+    const search = area.getByRole('textbox', { name: 'Search teams', exact: true })
+    await search.fill('Stable detail')
+    await area.getByRole('button', { name: 'View details', exact: true }).click()
+    const dialog = page.getByRole('dialog', { name: 'Stable detail team details', exact: true })
+    const action = dialog.getByRole('button', { name: 'Use team', exact: true })
+    const body = dialog.locator('.agt-dialog.agt-detail')
+    const title = dialog.getByRole('heading', { name: 'Stable detail team', exact: true })
+    await page.emulateMedia({ colorScheme: theme }); await page.setViewportSize({ width, height })
+    await dialog.evaluate(async (node) => {
+      await Promise.allSettled(node.getAnimations({ subtree: true }).map(animation => animation.finished))
+    })
+    await action.press('Enter')
+    await expect.poll(() => enable.mock.calls.length).toBe(1)
+    const actionNode = await action.elementHandle(), bodyNode = await body.elementHandle()
+    const bounds = await Promise.all([dialog.boundingBox(), body.boundingBox()])
+    await body.evaluate((node) => { node.scrollTop = 80 })
+    const scroll = await body.evaluate(node => node.scrollTop)
+    mutation.resolve(undefined)
+    const alert = dialog.getByRole('alert')
+    await expect.poll(() => alert.textContent()).toBe(longMessage)
+    const screenshots = join(REPO_ROOT, '.artifacts/deepseek-harness-expert-retry')
+    await mkdir(screenshots, { recursive: true })
+    await page.screenshot({ path: join(screenshots, `team-detail-long-error-${theme}-${width}.png`) })
+    expect(await Promise.all([dialog.boundingBox(), body.boundingBox()])).toEqual(bounds)
+    expect(await body.evaluate((node, previous) => node === previous && node.scrollTop, bodyNode)).toBe(scroll)
+    expect(await action.evaluate((node, previous) => node === previous && node === document.activeElement, actionNode)).toBe(true)
+    const retry = dialog.getByRole('button', { name: 'Refresh and retry', exact: true })
+    await retry.focus(); await page.keyboard.press('Shift+Tab')
+    const errorRegion = dialog.getByRole('region', { name: longMessage, exact: true })
+    expect(await errorRegion.evaluate(node => node === document.activeElement)).toBe(true)
+    expect(await errorRegion.evaluate(node => node.scrollHeight > node.clientHeight && node.scrollWidth <= node.clientWidth)).toBe(true)
+    await errorRegion.press('End')
+    await expect.poll(() => errorRegion.evaluate(node => node.scrollTop)).toBeGreaterThan(0)
+    const snapshot = teams.snapshot.bind(teams)
+    const reread = vi.spyOn(teams, 'snapshot').mockImplementation(async (...args) => { await recovery.promise; return snapshot(...args) })
+    onTestFinished(() => { reread.mockRestore() })
+    await retry.press('Enter')
+    await expect.poll(() => retry.getAttribute('aria-busy')).toBe('true')
+    const retryNode = await retry.elementHandle(), alertNode = await alert.elementHandle()
+    await retry.press('Enter')
+    expect(reread.mock.calls).toHaveLength(1)
+    expect(enable.mock.calls).toHaveLength(1)
+    expect(await alert.evaluate((node, previous) => node === previous, alertNode)).toBe(true)
+    expect(await retry.evaluate((node, previous) => node === previous && node === document.activeElement, retryNode)).toBe(true)
+    await errorRegion.focus()
+    const readingBounds = await Promise.all([dialog.boundingBox(), body.boundingBox()])
+    recovery.resolve(undefined)
+    await alert.waitFor({ state: 'detached' })
+    expect(await title.evaluate(node => node === document.activeElement)).toBe(true)
+    expect(await Promise.all([dialog.boundingBox(), body.boundingBox()])).toEqual(readingBounds)
+    expect(await body.evaluate((node, previous) => node === previous && node.scrollTop, bodyNode)).toBe(scroll)
+    expect(await action.evaluate((node, previous) => node === previous, actionNode)).toBe(true)
+    expect(enable.mock.calls).toHaveLength(1)
+    expect(await controlIsUnclipped(dialog.getByRole('button', { name: 'Close', exact: true }))).toBe(true)
+    await page.screenshot({ path: join(screenshots, `team-detail-recovered-${theme}-${width}.png`) })
+  },
+)

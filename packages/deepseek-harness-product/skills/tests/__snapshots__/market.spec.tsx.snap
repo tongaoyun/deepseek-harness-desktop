@@ -327,7 +327,7 @@ exports[`reports import failures and retains the selection for repair ('zh', par
 exports[`retains a switch failure while retrying once and clears it after the catalog confirms success 1`] = `
 {
   "busy": "true",
-  "disabled": true,
+  "disabled": false,
   "error": "操作失败：仅本机所有者可管理技能",
 }
 `;

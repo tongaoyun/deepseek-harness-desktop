@@ -247,3 +247,33 @@ it.each(['edit', 'providers'] as const)('ignores an abandoned %s read without bl
   expect(screen.queryByRole('alert')).toBeNull()
   expect(cancel).toHaveBeenCalledWith('product', invoke.mock.calls.find(call => call[1] === method)?.[3])
 })
+
+it.each((['edit', 'device'] as const).flatMap(mode => (['error', 'close'] as const).map(focus => ({ mode, focus }))))(
+  'recovers removed $mode footer feedback focus after a read retry without taking $focus focus', async ({ mode, focus }) => {
+    const response = Promise.withResolvers<unknown>()
+    const method = mode === 'edit' ? 'extensions.connector.read' : 'extensions.connector.configuration.read'
+    let reads = 0
+    vi.stubGlobal('dshDesktop', { extensions: { invoke: async (_namespace: string, name: string) => {
+      if (name !== method) return { ok: true, result: [] }
+      if (++reads === 1) return { ok: false, failure: { code: 'ORGANIZATION_SYNC_EXPIRED', message: 'Organization unavailable', retryable: true, resources: [] } }
+      return { ok: true, result: await response.promise }
+    }, cancel: vi.fn() } })
+    const product = localDetail(items([{ ...editing, name: 'Company MCP', authMode: 'none', canConfigure: true,
+      status: 'needs-configuration', visibility: 'COMPANY', tools: [] }])[0]!)
+    const view = mode === 'device' ? render(<ConnectorDetail product={product} onCatalogChanged={async () => {}} t={t} />)
+      : render(<ConnectorEditor editing={editing} onClose={vi.fn()} onSaved={vi.fn()} t={t} />)
+    onTestFinished(() => { view.unmount(); response.resolve([]) })
+    if (mode === 'device') fireEvent.click(screen.getByRole('button', { name: zh.configureDevice }))
+    const alert = await screen.findByRole('alert'), retry = screen.getByRole('button', { name: zh.retry })
+    fireEvent.click(retry); fireEvent.click(retry)
+    expect(reads).toBe(2)
+    const close = screen.getByRole('button', { name: zh.close })
+    const target = focus === 'error' ? alert : close
+    target.focus()
+    expect(document.activeElement).toBe(target)
+    await act(async () => { response.resolve(mode === 'edit' ? { draft, configured: true, savePending: false } : template) })
+    expect(screen.queryByRole('alert')).toBeNull()
+    expect(document.activeElement).toBe(focus === 'close' ? close : screen.getByLabelText(mode === 'edit' ? zh.mcpServerType : zh.connectorTimeout))
+    expect(screen.getByRole('button', { name: zh.close })).toBe(close)
+  },
+)

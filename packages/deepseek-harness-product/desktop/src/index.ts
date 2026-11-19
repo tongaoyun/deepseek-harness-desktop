@@ -136,9 +136,9 @@ export function createExtension(context: ExtensionContext): ProductDesktopExtens
     void companyContentCleanup.catch(() => { /* The closing caller reports failure; future initialization remains blocked. */ })
     return closing
   }
-  const libraryUploads = new LibraryUploads(() => productBridge.getSession().employeeId, async (signal) => {
+  const libraryUploads = new LibraryUploads(() => productBridge.getSession().employeeId, async (signal, mode) => {
     const window = context.getWindow()
-    const options: import('electron').OpenDialogOptions = { properties: ['openFile', 'multiSelections'] }
+    const options: import('electron').OpenDialogOptions = { properties: mode === 'folder' ? ['openDirectory'] : ['openFile', 'multiSelections'] }
     const selected = await waitForNativeDialog(() => window
       ? dialog.showOpenDialog(window, options) : dialog.showOpenDialog(options), signal)
     return selected.canceled ? undefined : selected.filePaths

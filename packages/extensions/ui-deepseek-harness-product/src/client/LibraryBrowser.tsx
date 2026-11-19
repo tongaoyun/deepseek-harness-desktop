@@ -1,4 +1,4 @@
-/** One directory browser shared by the library page and native attachment picker. */
+/** Directory navigation and destination selection for library mutations. */
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import {
   Button,
@@ -19,7 +19,7 @@ import css from '../DeepSeekHarnessProduct.module.css'
 import { readLibraryTrail, useLibraryRequests } from './library-data.ts'
 import { useResultFocus } from './useResultFocus.ts'
 import { productErrorMessage } from './product-errors.ts'
-import { ProductLoading } from './ProductLoading.tsx'
+import { LibraryLoading } from './LibraryLoading.tsx'
 import { LibraryMutation } from './LibraryMutation.tsx'
 import { LibraryPreview } from './LibraryPreview.tsx'
 import type { PropsRenderFactories } from '@deepseek-ai/dsh-client-ui-slots'
@@ -33,14 +33,12 @@ export interface LibraryLocation {
   readonly parentName?: string
 }
 /** Confirmed rows remain mounted while a request refreshes them.
- * @param props Optional file selection and native preview factory.
+ * @param props Destination navigation and native preview factory.
  * @returns Paginated libraries, folders and immutable files.
  */
 export function LibraryBrowser({
   t,
   renderFactorySlot,
-  selected,
-  onSelect,
   onLocation,
   foldersOnly = false,
   allowFolderCreation = true,
@@ -48,8 +46,6 @@ export function LibraryBrowser({
   navigationLocked = false,
 }: PropsRenderFactories & {
   readonly t: LibraryText
-  readonly selected?: ReadonlyMap<string, LibraryEntry>
-  readonly onSelect?: (entry: LibraryEntry) => void
   readonly foldersOnly?: boolean
   readonly allowFolderCreation?: boolean
   readonly rootLibrary?: Library
@@ -76,12 +72,12 @@ export function LibraryBrowser({
   const [revision, setRevision] = useState(0)
   const [pending, setPending] = useState(true)
   const activeRead = useRef<AbortController>()
-  const [error, setError] = useState<unknown>()
+  const [error, setError] = useState<{ readonly failure: unknown; readonly folder?: LibraryEntry }>()
   const errorRevision = useRef(0)
   const pageCorrection = useRef<{ key: string; feedbackRevision: number }>()
-  const reportError = useCallback((failure?: unknown) => {
+  const reportError = useCallback((failure?: unknown, folder?: LibraryEntry) => {
     errorRevision.current++
-    setError(failure)
+    setError(failure === undefined ? undefined : { failure, ...(folder ? { folder } : {}) })
   }, [])
   const [editor, setEditor] = useState<{
     kind: 'folder' | 'rename' | 'delete' | 'deleteLibrary' | 'move' | 'editLibrary'
@@ -103,11 +99,14 @@ export function LibraryBrowser({
   const [openingId, setOpeningId] = useState<string>()
   const operationPending = openingId !== undefined
   useEffect(
-    () => () => {
-      operation.current?.abort()
-      operation.current = undefined
+    () => {
+      if (navigationLocked) setOpeningId(undefined)
+      return () => {
+        operation.current?.abort()
+        operation.current = undefined
+      }
     },
-    [],
+    [navigationLocked],
   )
   const refresh = () => {
     if (navigationLocked || operation.current || activeRead.current) return
@@ -156,15 +155,19 @@ export function LibraryBrowser({
             setLibraryPages(result.totalPages)
           })
           : Promise.all([
-            request('library.get', { libraryId: location.library.id }, controller.signal),
+            request('library.get', { libraryId: location.library.id }, controller.signal).then((value) => {
+              const library = LibrarySchema.parse(value)
+              controller.signal.throwIfAborted()
+              capture()
+              setLocation(current => (current?.library.id === library.id ? { ...current, library } : current))
+            }),
             request(
               'library.entries.list',
               { libraryId: location.library.id, parentId: location.parentId, page, size: 20, query, view: foldersOnly ? 'folders' : view },
               controller.signal,
             ),
-          ]).then(([meta, value]) => {
-            const library = LibrarySchema.parse(meta),
-              result = LibraryEntryPageSchema.parse(value)
+          ]).then(([, value]) => {
+            const result = LibraryEntryPageSchema.parse(value)
             controller.signal.throwIfAborted()
             if (page > Math.max(1, result.totalPages)) {
               correctingPage = true
@@ -174,7 +177,6 @@ export function LibraryBrowser({
               return
             }
             capture()
-            setLocation(current => (current?.library.id === library.id ? { ...current, library } : current))
             setEntries(result.data)
             setPages(result.totalPages)
           })
@@ -202,15 +204,16 @@ export function LibraryBrowser({
     revision, capture, reportError])
   const navigate = (next: LibraryLocation | undefined, breadcrumbs: readonly LibraryEntry[] = []) => {
     if (navigationLocked || operation.current) return
-    const target = next ?? (rootLibrary ? { library: rootLibrary, parentId: null } : undefined)
-    if (target?.library.id === location?.library.id && target?.parentId === location?.parentId
-      && page === 1 && entryQuery === '' && view === 'folder') return
+    const target = next ?? (rootLibrary ? {
+      library: location?.library.id === rootLibrary.id ? location.library : rootLibrary, parentId: null,
+    } : undefined)
+    const sameDirectory = target?.library.id === location?.library.id && target?.parentId === location?.parentId
+    if (sameDirectory && page === 1 && entryQuery === '' && view === 'folder') return
     capture()
     const parentName = breadcrumbs.at(-1)?.name
     setLocation(target && { ...target, ...(parentName ? { parentName } : {}) })
     setTrail(breadcrumbs)
-    setEntries(undefined)
-    reportError()
+    if (!sameDirectory) { setEntries(undefined); reportError() }
     setPage(1)
     setEntryQuery('')
     setView('folder')
@@ -233,7 +236,7 @@ export function LibraryBrowser({
     } catch (failure) {
       if (!controller.signal.aborted) {
         capture()
-        reportError(failure)
+        reportError(failure, entry)
       }
     } finally {
       if (operation.current === currentOperation) operation.current = undefined
@@ -311,6 +314,7 @@ export function LibraryBrowser({
           ref={search}
           className={css.librarySearch as string}
           type="search"
+          maxLength={180}
           value={query}
           readOnly={navigationLocked}
           aria-label={t('librarySearch')}
@@ -336,9 +340,9 @@ export function LibraryBrowser({
                     variant={view === value ? 'outline' : 'ghost'}
                     size="sm"
                     aria-pressed={view === value}
-                    aria-disabled={operationPending}
+                    aria-disabled={navigationLocked || operationPending}
                     onClick={() => {
-                      if (!operation.current) {
+                      if (!navigationLocked && !operation.current) {
                         setView(value)
                         setPage(1)
                       }
@@ -349,7 +353,7 @@ export function LibraryBrowser({
                 ))}
               </div>
             )}
-            {!onSelect && allowFolderCreation && location.library.canManage && (
+            {allowFolderCreation && location.library.canManage && (
               <>
                 <Button
                   variant="outline"
@@ -381,16 +385,18 @@ export function LibraryBrowser({
           <div className={css.feedbackResult}>
             <span aria-hidden="true">{t('libraryLoadFailed')}</span>
             <div role="region" aria-label={t('libraryLoadFailed')} tabIndex={0} className={css.catalogError}>
-              <p role="alert">{productErrorMessage(error, t, 'libraryLoadFailed')}</p>
+              <p role="alert">{productErrorMessage(error.failure, t, 'libraryLoadFailed')}</p>
             </div>
           </div>
           <Button
             variant="outline"
             size="sm"
             aria-disabled={pending || navigationLocked || operationPending}
-            aria-busy={pending}
+            aria-busy={pending || operationPending}
             onClick={() => {
-              if (!pending) refresh()
+              if (pending || navigationLocked || operation.current) return
+              if (error.folder) void openFolder(error.folder)
+              else refresh()
             }}
           >
             {t('retry')}
@@ -398,7 +404,7 @@ export function LibraryBrowser({
         </>}
       </div>
       <div className={css.libraryRows} aria-busy={pending}>
-        {displayed === undefined && error === undefined && <ProductLoading label={t('loading')} />}
+        {displayed === undefined && error === undefined && <LibraryLoading label={t('loading')} />}
         {location === undefined
           ? libraries?.map(library => (
             <article key={library.id} className={css.libraryRow}>
@@ -412,7 +418,6 @@ export function LibraryBrowser({
                 }}
               >
                 <strong>{library.name}</strong>
-                <span>{library.description}</span>
               </Button>
               <span>
                 {t(
@@ -421,7 +426,7 @@ export function LibraryBrowser({
                     : 'libraryShared',
                 )}
               </span>
-              {!onSelect && !foldersOnly && library.scope === 'TEAM' && library.role === 'OWNER' && (
+              {!foldersOnly && library.scope === 'TEAM' && library.role === 'OWNER' && (
                 <>
                   <Button
                     variant="ghost"
@@ -463,54 +468,40 @@ export function LibraryBrowser({
                 <strong>{entry.name}</strong>
                 <span>{entry.kind === 'FILE' ? `${Math.ceil(entry.sizeBytes / 1024)} KB` : t('libraryFolder')}</span>
               </Button>
-              {entry.kind === 'FILE' && onSelect ? (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  aria-pressed={selected?.has(entry.id) === true}
-                  onClick={() => {
-                    onSelect(entry)
-                  }}
-                >
-                  {t(selected?.has(entry.id) ? 'librarySelected' : 'libraryChoose')}
-                </Button>
-              ) : (
-                !onSelect &&
-                  !foldersOnly && (
-                  <>
-                    {location.library.canManage && (
-                      <>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => {
-                            setEditor({ kind: 'rename', entry })
-                          }}
-                        >
-                          {t('libraryRename')}
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => {
-                            setEditor({ kind: 'move', entry })
-                          }}
-                        >
-                          {t('libraryMove')}
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => {
-                            setEditor({ kind: 'delete', entry })
-                          }}
-                        >
-                          {t('deleteResource')}
-                        </Button>
-                      </>
-                    )}
-                  </>
-                )
+              {!foldersOnly && (
+                <>
+                  {location.library.canManage && (
+                    <>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => {
+                          setEditor({ kind: 'rename', entry })
+                        }}
+                      >
+                        {t('libraryRename')}
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => {
+                          setEditor({ kind: 'move', entry })
+                        }}
+                      >
+                        {t('libraryMove')}
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => {
+                          setEditor({ kind: 'delete', entry })
+                        }}
+                      >
+                        {t('deleteResource')}
+                      </Button>
+                    </>
+                  )}
+                </>
               )}
             </article>
           ))}

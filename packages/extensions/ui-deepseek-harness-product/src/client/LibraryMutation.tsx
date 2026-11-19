@@ -1,7 +1,8 @@
 /** Native modal forms keep draft nodes mounted through discard confirmation. */
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { Button, Modal } from '@deepseek-ai/dsh-client-ui-primitives'
-import { LibrarySchema, type LibraryEntry } from '@deepseek-harness/product/library'
+import { LibraryEntrySchema, LibrarySchema, type Library, type LibraryEntry } from '@deepseek-harness/product/library'
+import { ProductError, productFailure } from '@deepseek-harness/product/errors'
 import { randomUUID } from '@deepseek-ai/dsh-util-crypto'
 import { LibraryBrowser, type LibraryLocation, type LibraryText } from './LibraryBrowser.tsx'
 import { useEditorCloseGuard } from './useEditorCloseGuard.ts'
@@ -16,7 +17,7 @@ import css from '../DeepSeekHarnessProduct.module.css'
 export function LibraryMutation({
   kind,
   location: initialLocation,
-  entry,
+  entry: initialEntry,
   t,
   onClose,
   onCommitted,
@@ -30,25 +31,19 @@ export function LibraryMutation({
 }): ReactNode {
   const request = useLibraryRequests()
   const [personalRoot, setPersonalRoot] = useState<LibraryLocation>()
-  const [folderLocation, setFolderLocation] = useState<LibraryLocation>()
-  const location = folderLocation ?? initialLocation ?? personalRoot
+  const [checkedEntry, setCheckedEntry] = useState<LibraryEntry>()
+  const [checkedLibrary, setCheckedLibrary] = useState<Library>()
+  const entry = checkedEntry ?? initialEntry
+  const sourceLocation = initialLocation ?? personalRoot
+  const location = checkedLibrary && sourceLocation ? { ...sourceLocation, library: checkedLibrary } : sourceLocation
   const nameInput = useRef<HTMLInputElement>(null)
+  const saveButton = useRef<HTMLButtonElement>(null)
   const rootFeedback = useRef<HTMLDivElement>(null)
-  const captureRootResult = useResultFocus(rootFeedback, nameInput)
+  const captureRootResult = useResultFocus(rootFeedback, kind === 'delete' || kind === 'deleteLibrary' ? saveButton : nameInput)
   const [rootPending, setRootPending] = useState(kind === 'folder' && !initialLocation)
   const [rootError, setRootError] = useState<unknown>()
   const [rootRevision, setRootRevision] = useState(0)
   const rootRead = useRef(false)
-  const [choosingLocation, setChoosingLocation] = useState(false)
-  const locationButton = useRef<HTMLButtonElement>(null)
-  const locationPicker = useRef<HTMLDivElement>(null)
-  const locationFocusArea = useRef<HTMLElement | null>(null)
-  const captureLocationClose = useResultFocus(locationFocusArea, locationButton)
-  const closeLocation = () => {
-    locationFocusArea.current = locationPicker.current?.closest<HTMLElement>('[role="dialog"]') ?? null
-    captureLocationClose()
-    setChoosingLocation(false)
-  }
   useEffect(() => {
     if (kind !== 'folder' || initialLocation) return
     const controller = new AbortController()
@@ -68,10 +63,12 @@ export function LibraryMutation({
     return () => { controller.abort() }
   }, [request, kind, initialLocation, rootRevision, captureRootResult])
   const [name, setName] = useState(entry?.name ?? (kind === 'editLibrary' ? location?.library.name : '') ?? '')
-  const [description, setDescription] = useState(kind === 'editLibrary' ? (location?.library.description ?? '') : '')
   const [destination, setDestination] = useState<LibraryLocation>()
-  const [pending, setPending] = useState(false)
+  const [operation, setOperation] = useState<'save' | 'reread'>()
+  const pending = operation !== undefined
   const [error, setError] = useState<unknown>()
+  const [conflict, setConflict] = useState(false)
+  const [errorFallback, setErrorFallback] = useState<'saveFailed' | 'libraryLoadFailed'>('saveFailed')
   const lifetime = useRef(new AbortController())
   useEffect(
     () => {
@@ -83,17 +80,13 @@ export function LibraryMutation({
   )
   const writing = useRef(false)
   const operationKey = useRef<{ fingerprint: string; key: string }>()
-  const initialName = entry?.name ?? (kind === 'editLibrary' ? location?.library.name : '') ?? ''
-  const initialDescription = kind === 'editLibrary' ? (location?.library.description ?? '') : ''
+  const initialName = initialEntry?.name ?? (kind === 'editLibrary' ? initialLocation?.library.name : '') ?? ''
   const deleted = kind === 'delete' || kind === 'deleteLibrary'
   const guard = useEditorCloseGuard(
-    !deleted && kind !== 'move' && (name !== initialName || description !== initialDescription),
+    !deleted && kind !== 'move' && kind !== 'createLibrary' && name !== initialName,
     () => writing.current,
     onClose,
   )
-  const captureLocationOpen = useResultFocus(guard.editorProps.ref, () => {
-    locationPicker.current?.querySelector<HTMLInputElement>('input')?.focus({ preventScroll: true })
-  })
   const canSave = kind === 'move'
     ? entry !== undefined && destination !== undefined && destination.library.id === entry.libraryId
       && destination.library.canManage && destination.parentId !== entry.parentId && destination.parentId !== entry.id
@@ -111,18 +104,17 @@ export function LibraryMutation({
   )
   const save = async () => {
     const signal = lifetime.current.signal
-    if (guard.confirming || choosingLocation || writing.current || !canSave) return
+    if (guard.confirming || writing.current || conflict || !canSave) return
     const invoke = (method: string, payload: unknown) => request(method, payload, signal)
     guard.clearBlocked()
     writing.current = true
-    setPending(true)
+    setOperation('save')
     try {
       signal.throwIfAborted()
       const savedName = name.trim()
       const fingerprint = JSON.stringify([
         kind,
         savedName,
-        description,
         entry?.id,
         kind === 'move' ? destination?.parentId : location?.parentId,
         location?.library.id,
@@ -131,13 +123,12 @@ export function LibraryMutation({
       const key = operationKey.current.key
       let committedLocation = location
       if (kind === 'createLibrary') {
-        const library = LibrarySchema.parse(await invoke('library.create', { name: savedName, description, key }))
+        const library = LibrarySchema.parse(await invoke('library.create', { name: savedName, key }))
         committedLocation = { library, parentId: null }
       } else if (kind === 'editLibrary' && location) {
         const library = LibrarySchema.parse(await invoke('library.update', {
           libraryId: location.library.id,
           name: savedName,
-          description,
           version: location.library.version,
         }))
         committedLocation = { ...location, library }
@@ -168,10 +159,33 @@ export function LibraryMutation({
       signal.throwIfAborted()
       onCommitted(committedLocation)
     } catch (failure) {
-      if (!signal.aborted) setError(failure)
+      if (!signal.aborted) {
+        setError(failure); setErrorFallback('saveFailed')
+        if (productFailure(failure).code === 'LIBRARY_CONFLICT') setConflict(true)
+      }
     } finally {
       writing.current = false
-      if (!signal.aborted) setPending(false)
+      if (!signal.aborted) setOperation(undefined)
+    }
+  }
+  const reread = async () => {
+    const signal = lifetime.current.signal
+    const libraryId = entry?.libraryId ?? location?.library.id
+    if (!libraryId || !conflict || writing.current || guard.confirming) return
+    writing.current = true; setOperation('reread'); guard.clearBlocked()
+    try {
+      const library = LibrarySchema.parse(await request('library.get', { libraryId }, signal))
+      signal.throwIfAborted()
+      if (!library.canManage || (!entry && library.role !== 'OWNER'))
+        throw new ProductError('LIBRARY_MANAGEMENT_FORBIDDEN', 'Library management unavailable', false)
+      const latest = entry ? LibraryEntrySchema.parse(await request('library.entries.get', { libraryId, entryId: entry.id }, signal)) : undefined
+      signal.throwIfAborted()
+      captureRootResult(); setCheckedEntry(latest); setCheckedLibrary(library); setConflict(false); setError(undefined)
+    } catch (failure) {
+      if (!signal.aborted) { setError(failure); setErrorFallback('libraryLoadFailed') }
+    } finally {
+      writing.current = false
+      if (!signal.aborted) setOperation(undefined)
     }
   }
   const changeLocation = useCallback((value: LibraryLocation | undefined) => {
@@ -180,25 +194,18 @@ export function LibraryMutation({
   return (
     <Modal
       open
-      title={choosingLocation ? t('libraryFolderDestination') : title}
+      title={title}
       closeLabel={t('close')}
-      onClose={choosingLocation ? closeLocation : guard.requestClose}
-      className={`${css.detailModal} ${choosingLocation || kind === 'move' ? css.libraryPicker : css.libraryDialog}`}
+      onClose={guard.requestClose}
+      className={`${css.detailModal} ${css.libraryModal} ${kind === 'move' ? css.libraryPicker : css.libraryDialog}`}
       contentClassName={css.detailModalContent as string}
       footer={
-        choosingLocation ? <div className={css.libraryPickerActions}>
-          <Button variant="outline" onClick={closeLocation}>{t('cancel')}</Button>
-          <Button variant="primary" aria-disabled={!destination?.library.canManage} onClick={() => {
-            if (!destination?.library.canManage) return
-            setFolderLocation(destination)
-            closeLocation()
-          }}>{t('libraryChoose')}</Button>
-        </div> : <div className={css.libraryMutationFooter} hidden={guard.confirming}>
+        <div className={css.libraryMutationFooter} hidden={guard.confirming}>
           <div ref={rootFeedback} className={css.libraryMutationFeedback}>
             <div className={css.feedbackResult}>
               <span aria-hidden="true">{t('saveFailed')}</span>
               {(error !== undefined || rootError !== undefined) && <p role="alert" tabIndex={0} className={css.catalogError}>
-                {productErrorMessage(error ?? rootError, t, error !== undefined ? 'saveFailed' : 'libraryLoadFailed')}
+                {productErrorMessage(error ?? rootError, t, error !== undefined ? errorFallback : 'libraryLoadFailed')}
               </p>}
             </div>
             {guard.blocked && pending && <div role="region" aria-label={t('libraryWait')} tabIndex={0} className={css.libraryWaitStatus}>
@@ -209,15 +216,18 @@ export function LibraryMutation({
               rootRead.current = true
               setRootRevision(value => value + 1)
             }}>{t('retry')}</Button>}
+            {conflict && <Button variant="outline" size="sm" aria-disabled={pending} aria-busy={operation === 'reread'}
+              onClick={() => { void reread() }}>{t('libraryReread')}</Button>}
           </div>
           <div className={css.detailActions}>
             <Button variant="outline" aria-disabled={pending} onClick={guard.requestClose}>
               {t('cancel')}
             </Button>
             <Button
+              ref={saveButton}
               variant="primary"
-              aria-disabled={pending || !canSave}
-              aria-busy={pending}
+              aria-disabled={pending || conflict || !canSave}
+              aria-busy={operation === 'save'}
               onClick={() => {
                 void save()
               }}
@@ -228,7 +238,7 @@ export function LibraryMutation({
         </div>
       }
     >
-      <div {...guard.editorProps} hidden={guard.confirming || choosingLocation}>
+      <div {...guard.editorProps} hidden={guard.confirming}>
         {deleted ? (
           <p>
             {t(kind === 'deleteLibrary' ? 'libraryDeleteLibraryConfirm' : 'libraryDeleteConfirm').replace(
@@ -260,37 +270,11 @@ export function LibraryMutation({
                 readOnly={pending}
               />
             </label>
-            {kind === 'folder' && <div className={css.libraryFolderLocation}>
-              <span>{t('librarySaveLocation')}</span>
-              <span>{location?.library.name ?? t('libraryPersonal')}{location?.parentName && ` / ${location.parentName}`}</span>
-              <Button ref={locationButton} variant="ghost" size="sm" aria-disabled={pending || !location} onClick={() => {
-                if (pending || !location) return
-                setDestination(undefined)
-                captureLocationOpen()
-                setChoosingLocation(true)
-              }}>{t('libraryChangeLocation')}</Button>
-            </div>}
             {kind === 'createLibrary' && <p>{t('libraryTeamPrivate')}</p>}
-            {(kind === 'editLibrary' || kind === 'createLibrary') && (
-              <label className={css.libraryField}>
-                {t('libraryDescription')}
-                <textarea
-                  value={description}
-                  maxLength={1000}
-                  onChange={(event) => {
-                    setDescription(event.target.value)
-                  }}
-                  readOnly={pending}
-                />
-              </label>
-            )}
+
           </>
         )}
       </div>
-      {choosingLocation && <div ref={locationPicker}>
-        <LibraryBrowser t={t} foldersOnly onLocation={changeLocation} allowFolderCreation={false}
-          renderFactorySlot={(_name, _props, options) => options?.fallback ?? null} />
-      </div>}
       {guard.confirming && (
         <div>
           <p>{t('libraryDiscardConfirm')}</p>

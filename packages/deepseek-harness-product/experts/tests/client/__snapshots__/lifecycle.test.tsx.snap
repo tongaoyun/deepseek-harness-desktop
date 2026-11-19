@@ -28,7 +28,7 @@ exports[`retains a focused expert card and its avatar when a preceding expert le
 {
   "avatarPreserved": true,
   "cardPreserved": true,
-  "focusedExpert": "合规审查合规检查其他市场查看复制已停用",
+  "focusedExpert": "合规审查合规检查其他市场查看复制已启用已停用",
 }
 `;
 
@@ -36,7 +36,7 @@ exports[`retains a focused expert card and its avatar when a preceding expert le
 {
   "avatarPreserved": true,
   "cardPreserved": true,
-  "focusedExpert": "合规审查合规检查其他市场查看复制已停用",
+  "focusedExpert": "合规审查合规检查其他市场查看复制已启用已停用",
 }
 `;
 

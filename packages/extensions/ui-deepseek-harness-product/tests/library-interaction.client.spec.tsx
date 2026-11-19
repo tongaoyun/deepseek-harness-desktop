@@ -8,11 +8,12 @@ import type { LibraryEntry } from '@deepseek-harness/product/library'
 import { ProductError } from '@deepseek-harness/product/errors'
 import { SessionId } from '@deepseek-ai/dsh-session/types'
 import { LibraryBrowser } from '../src/client/LibraryBrowser.tsx'
+import { LibraryFilePicker } from '../src/client/LibraryFilePicker.tsx'
 import { LibraryPreview } from '../src/client/LibraryPreview.tsx'
 import { LibraryMutation } from '../src/client/LibraryMutation.tsx'
 import { TaskLibraryInput } from '../src/client/TaskLibraryInput.tsx'
 import { zh } from '../src/locales.ts'
-const library = { id: '11111111-1111-4111-8111-111111111111', name: '项目资料', description: '团队文件', scope: 'TEAM' as const,
+const library = { id: '11111111-1111-4111-8111-111111111111', name: '项目资料', scope: 'TEAM' as const,
   ownerId: 'employee', companyId: 'company', role: 'OWNER' as const, canManage: true, version: 1, createdAt: '2026-11-13T01:00:00Z', updatedAt: '2026-11-13T01:00:00Z' }
 const file = { id: '22222222-2222-4222-8222-222222222222', libraryId: library.id, parentId: null, name: '中文资料.md', kind: 'FILE' as const,
   sha256: 'a'.repeat(64), mediaType: 'text/markdown', sizeBytes: 12, version: 1, createdAt: library.createdAt, updatedAt: library.updatedAt }
@@ -23,6 +24,7 @@ function fixture() {
   const read = vi.fn(async (method: string, _payload?: unknown): Promise<unknown> => {
     if (method === 'auth.getSession') return { authenticated: true, employeeId: 'employee' }
     if (method === 'library.get') return library
+    if (method === 'library.files.list') return { data: [], pageIndex: 1, pageSize: 20, totalCount: 0, totalPages: 0 }
     if (method === 'library.list') return { data: [library], pageIndex: 1, pageSize: 20, totalCount: 1, totalPages: 1 }
     if (method === 'library.entries.list') return { data: [file], pageIndex: 1, pageSize: 20, totalCount: 1, totalPages: 1 }
     return true
@@ -30,6 +32,113 @@ function fixture() {
   vi.stubGlobal('dshDesktop', { extensions: { invoke: async (_namespace: string, method: string, payload?: unknown) => ({ ok: true, result: await read(method, payload) }), cancel: vi.fn(), subscribe: () => () => {} } })
   return read
 }
+it.each(['rename', 'editLibrary', 'delete', 'deleteLibrary'] as const)('recovers a conflicting %s with an explicit read before another write, retaining its draft and controls', async (kind) => {
+  const read = fixture(), committed = vi.fn()
+  const entryMutation = kind === 'rename' || kind === 'delete'
+  const method = kind === 'rename' ? 'library.entries.update' : kind === 'editLibrary' ? 'library.update'
+    : kind === 'delete' ? 'library.entries.delete' : 'library.delete'
+  const recovery = Promise.withResolvers<unknown>()
+  let failRead = true, writes = 0
+  read.mockImplementation(async (operation) => {
+    if (operation === method) {
+      if (++writes === 1) throw new ProductError('LIBRARY_CONFLICT', 'Changed elsewhere', true)
+      return entryMutation ? { ...file, version: 4 } : { ...library, version: 4 }
+    }
+    if (operation === 'library.get') {
+      if (failRead) throw new Error('Metadata read unavailable')
+      return entryMutation ? library : recovery.promise
+    }
+    if (operation === 'library.entries.get') return recovery.promise
+    throw new Error(`Unexpected conflict method: ${operation}`)
+  })
+  render(<LibraryMutation kind={kind} {...(entryMutation ? { entry: file } : { location: { library, parentId: null } })}
+    t={t} onClose={vi.fn()} onCommitted={committed} />)
+  const draft = kind === 'rename' || kind === 'editLibrary' ? screen.getByRole<HTMLInputElement>('textbox') : undefined
+  if (draft) { fireEvent.change(draft, { target: { value: '我保留的草稿' } }); draft.setSelectionRange(1, 4) }
+  const save = screen.getByRole('button', { name: kind === 'delete' || kind === 'deleteLibrary' ? zh.deleteResource : zh.saveResource })
+  save.focus(); fireEvent.click(save)
+  const alert = await screen.findByRole('alert')
+  const reread = screen.getByRole('button', { name: zh.libraryReread })
+  fireEvent.click(save)
+  expect(writes).toBe(1)
+  reread.focus(); fireEvent.click(reread)
+  expect({ readBusy: reread.getAttribute('aria-busy'), saveBusy: save.getAttribute('aria-busy'),
+    saveLocked: save.getAttribute('aria-disabled') }).toMatchInlineSnapshot(`
+    {
+      "readBusy": "true",
+      "saveBusy": "false",
+      "saveLocked": "true",
+    }
+  `)
+  await waitFor(() => { expect(alert.textContent).toBe(zh.libraryLoadFailed) })
+  expect(document.activeElement).toBe(reread)
+  failRead = false; fireEvent.click(reread); fireEvent.click(reread)
+  expect(screen.getByRole('alert')).toBe(alert)
+  expect(screen.getByRole('button', { name: zh.libraryReread })).toBe(reread)
+  expect(document.activeElement).toBe(reread)
+  expect(reread.getAttribute('aria-busy')).toBe('true')
+  expect(save.getAttribute('aria-busy')).toBe('false')
+  expect(writes).toBe(1)
+  const parentId = '33333333-3333-4333-8333-333333333333'
+  await act(async () => { recovery.resolve(entryMutation ? { ...file, name: '其他人修改的名称.md', parentId, version: 3 } : { ...library, version: 3 }) })
+  if (draft) {
+    expect(screen.getByRole('textbox')).toBe(draft)
+    expect(draft.value).toBe('我保留的草稿')
+    expect([draft.selectionStart, draft.selectionEnd]).toEqual([1, 4])
+    expect(document.activeElement).toBe(draft)
+  } else expect(document.activeElement).toBe(save)
+  expect(screen.getByRole('button', { name: save.textContent })).toBe(save)
+  fireEvent.click(save)
+  await waitFor(() => { expect(committed).toHaveBeenCalledOnce() })
+  expect(read.mock.calls.filter(([operation]) => operation === method).at(-1)?.[1]).toMatchObject({ version: 3,
+    ...(kind === 'rename' ? { parentId, name: '我保留的草稿' } : kind === 'editLibrary' ? { name: '我保留的草稿' } : {}) })
+  expect(writes).toBe(2)
+})
+it('blocks conflicting writes when management permission is revoked during revalidation', async () => {
+  const read = fixture(), committed = vi.fn()
+  read.mockImplementation(async (method) => {
+    if (method === 'library.entries.update') throw new ProductError('LIBRARY_CONFLICT', 'Changed elsewhere', true)
+    if (method === 'library.get') return { ...library, role: 'VIEWER', canManage: false }
+    throw new Error(`Unexpected revoked operation: ${method}`)
+  })
+  render(<LibraryMutation kind="rename" entry={file} t={t} onClose={vi.fn()} onCommitted={committed} />)
+  const draft = screen.getByRole<HTMLInputElement>('textbox')
+  fireEvent.change(draft, { target: { value: '权限撤销时保留草稿' } })
+  const save = screen.getByRole('button', { name: zh.saveResource })
+  fireEvent.click(save)
+  fireEvent.click(await screen.findByRole('button', { name: zh.libraryReread }))
+  await waitFor(() => { expect(screen.getByRole('alert').textContent).toContain('LIBRARY_MANAGEMENT_FORBIDDEN') })
+  fireEvent.click(save)
+  expect(read.mock.calls.filter(([method]) => method === 'library.entries.update')).toHaveLength(1)
+  expect(read.mock.calls.some(([method]) => method === 'library.entries.get')).toBe(false)
+  expect(screen.getByRole('textbox')).toBe(draft)
+  expect(draft.value).toBe('权限撤销时保留草稿')
+  expect(committed).not.toHaveBeenCalled()
+})
+it('keeps directory picker loading static and retains retry focus through recovery', async () => {
+  const read = fixture(), loading = Promise.withResolvers<unknown>()
+  const original = read.getMockImplementation()!
+  let listing = loading.promise
+  read.mockImplementation((method, payload) => method === 'library.entries.list' ? listing : original(method, payload))
+  render(<LibraryBrowser t={t} rootLibrary={library} renderFactorySlot={renderFactorySlot} />)
+  const search = screen.getByRole('searchbox')
+  expect(screen.getByRole('status', { name: zh.loading }).querySelector('svg')).toBeNull()
+  expect(screen.queryByText(zh.libraryEmpty)).toBeNull()
+  await act(async () => { loading.reject(new Error('offline')) })
+  const alert = await screen.findByRole('alert'), retry = screen.getByRole('button', { name: zh.retry })
+  const recovery = Promise.withResolvers<unknown>()
+  listing = recovery.promise
+  retry.focus(); fireEvent.click(retry)
+  expect(screen.getByRole('searchbox')).toBe(search)
+  expect(screen.getByRole('alert')).toBe(alert)
+  expect(screen.queryByRole('status', { name: zh.loading })).toBeNull()
+  expect(document.activeElement).toBe(retry)
+  await act(async () => { recovery.resolve({ data: [file], pageIndex: 1, pageSize: 20, totalCount: 1, totalPages: 1 }) })
+  await screen.findByRole('button', { name: /中文资料.md/ })
+  expect(screen.queryByRole('alert')).toBeNull()
+  expect(screen.getByRole('searchbox')).toBe(search)
+  expect(document.activeElement).toBe(search)
+})
 it.each([
   ['libraries', 'error'], ['libraries', 'search'], ['files', 'error'], ['files', 'search'],
 ] as const)('retains %s rows, selection and valid %s focus through failure and retry', async (source, focus) => {
@@ -369,8 +478,14 @@ it('rebuilds the actual ancestry when opening a folder from global search result
   expect(screen.getByRole('button', { name: /搜索命中目录/ })).toBe(row)
   expect(document.activeElement).toBe(row)
   const error = await screen.findByRole('alert')
-  fireEvent.click(row); fireEvent.click(row)
+  const retry = screen.getByRole('button', { name: zh.retry })
+  const listings = read.mock.calls.filter(([method]) => method === 'library.entries.list').length
+  retry.focus(); fireEvent.click(retry); fireEvent.click(retry)
   expect(read.mock.calls.filter(([method]) => method === 'library.entries.get')).toHaveLength(2)
+  expect(read.mock.calls.filter(([method]) => method === 'library.entries.list')).toHaveLength(listings)
+  expect(screen.getByRole('button', { name: zh.retry })).toBe(retry)
+  expect(retry.getAttribute('aria-busy')).toBe('true')
+  expect(document.activeElement).toBe(retry)
   expect(screen.getByRole('alert')).toBe(error)
   expect(search.value).toBe(nested.name)
   await act(async () => { ancestry.resolve(parent) })
@@ -378,19 +493,24 @@ it('rebuilds the actual ancestry when opening a folder from global search result
   const breadcrumb = screen.getByRole('button', { name: parent.name })
   expect(screen.getByRole('searchbox')).toBe(search)
   expect(search.value).toBe('')
+  expect(document.activeElement).toBe(search)
   fireEvent.click(breadcrumb)
   await waitFor(() => { expect(read.mock.calls.at(-1)).toEqual(['library.entries.list', {
     libraryId: library.id, parentId: parent.id, page: 1, size: 20, query: '', view: 'folder',
   }]) })
 })
-it('ignores a late folder ancestry response after the search changes', async () => {
+it('ignores a late folder ancestry retry after the search changes', async () => {
   const read = fixture(), ancestry = Promise.withResolvers<unknown>()
+  let attempts = 0
   const parent = { ...file, id: '33333333-3333-4333-8333-333333333333', name: '父目录', kind: 'FOLDER' as const,
     sha256: null, mediaType: null, sizeBytes: 0 }
   const nested = { ...parent, id: '44444444-4444-4444-8444-444444444444', parentId: parent.id, name: '旧搜索目录' }
   read.mockImplementation(async (method, payload) => {
     if (method === 'library.get') return library
-    if (method === 'library.entries.get') return ancestry.promise
+    if (method === 'library.entries.get') {
+      if (++attempts === 1) throw new Error('Folder path unavailable')
+      return ancestry.promise
+    }
     if (method === 'library.entries.list') {
       const { query } = payload as { query: string }
       const data = query === nested.name ? [nested] : [file]
@@ -403,6 +523,9 @@ it('ignores a late folder ancestry response after the search changes', async () 
   const search = screen.getByRole<HTMLInputElement>('searchbox')
   fireEvent.change(search, { target: { value: nested.name } })
   fireEvent.click(await screen.findByRole('button', { name: /旧搜索目录/ }))
+  const retry = await screen.findByRole('button', { name: zh.retry })
+  fireEvent.click(retry)
+  await waitFor(() => { expect(attempts).toBe(2) })
   fireEvent.change(search, { target: { value: '中文资料' } })
   const row = await screen.findByRole('button', { name: /中文资料.md/ })
   await act(async () => { ancestry.resolve(parent) })
@@ -470,8 +593,9 @@ it('cancels attachment admission, and a late result cannot close a newly opened 
   render(<TaskLibraryInput openEmployeeSignIn={vi.fn()} focusInput={vi.fn()} sessionId={SessionId('session-a')} t={t} renderFactorySlot={renderFactorySlot} subscribeOpen={subscribeOpen} attachLibraryFiles={attachLibraryFiles} />)
   await act(async () => { await Promise.resolve() })
   act(() =>{  open() })
+  fireEvent.click(screen.getByRole('tab', { name: zh.libraryShared }))
   fireEvent.click(await screen.findByRole('button', { name: /项目资料/ }))
-  fireEvent.click(await screen.findByRole('button', { name: zh.libraryChoose }))
+  fireEvent.click(await screen.findByRole('checkbox', { name: file.name }))
   const dialog = screen.getByRole('dialog')
   fireEvent.click(within(dialog).getByRole('button', { name: zh.libraryAttach.replace('{count}', '1') }))
   fireEvent.click(within(dialog).getByRole('button', { name: zh.cancel }))
@@ -483,7 +607,7 @@ it('cancels attachment admission, and a late result cannot close a newly opened 
   expect(screen.getByRole('dialog')).toBe(next)
 })
 it('keeps a failed attachment admission and its file selection stable through retry', async () => {
-  fixture()
+  const read = fixture()
   let open!: () => void
   const subscribeOpen = (value: () => void) => { open = value; return () => {} }
   const gate = Promise.withResolvers<undefined>()
@@ -493,8 +617,9 @@ it('keeps a failed attachment admission and its file selection stable through re
     t={t} renderFactorySlot={renderFactorySlot} subscribeOpen={subscribeOpen} attachLibraryFiles={attach} />)
   await act(async () => { await Promise.resolve() })
   act(() => { open() })
+  fireEvent.click(screen.getByRole('tab', { name: zh.libraryShared }))
   fireEvent.click(await screen.findByRole('button', { name: /项目资料/ }))
-  fireEvent.click(await screen.findByRole('button', { name: zh.libraryChoose }))
+  fireEvent.click(await screen.findByRole('checkbox', { name: file.name }))
   const save = screen.getByRole('button', { name: zh.libraryAttach.replace('{count}', '1') })
   const row = screen.getByRole('button', { name: /中文资料.md/ }), search = screen.getByRole('searchbox')
   save.focus(); fireEvent.click(save)
@@ -508,6 +633,19 @@ it('keeps a failed attachment admission and its file selection stable through re
   expect(screen.getByRole('searchbox')).toBe(search)
   expect(screen.getByRole('alert')).toBe(error)
   expect(document.activeElement).toBe(save)
+  const selected = screen.getByRole<HTMLInputElement>('checkbox', { name: file.name })
+  expect(selected.disabled).toBe(true)
+  expect((search as HTMLInputElement).readOnly).toBe(true)
+  expect(row.getAttribute('aria-disabled')).toBe('true')
+  const recent = screen.getByRole('tab', { name: zh.libraryRecent })
+  expect(recent.closest('[aria-disabled]')?.getAttribute('aria-disabled')).toBe('true')
+  const reads = read.mock.calls.length
+  fireEvent.click(recent)
+  fireEvent.change(search, { target: { value: '另一个目录' } })
+  fireEvent.click(selected)
+  expect(read.mock.calls.length).toBe(reads)
+  expect((search as HTMLInputElement).value).toBe('')
+  expect(selected.checked).toBe(true)
   await act(async () => { gate.resolve(undefined) })
   expect(screen.queryByRole('dialog')).toBeNull()
 })
@@ -618,7 +756,6 @@ it.each((['success', 'failure'] as const).flatMap(outcome => [false, true].map(c
     retry.focus(); fireEvent.click(retry)
     await waitFor(() => { expect(screen.queryByRole('alert')).toBeNull() })
     expect(document.activeElement).toBe(search)
-    fireEvent.click(row)
     await screen.findByRole('button', { name: /中文资料.md/ })
     expect(ancestry).toBe(2)
     expect(screen.getByRole('button', { name: parent.name })).toBeTruthy()
@@ -653,6 +790,34 @@ it('saves a metadata draft after effect reactivation and keeps its node and sele
   expect(close).not.toHaveBeenCalled()
 })
 
+it('reports confirmed read-only permissions while retained directory rows fail and retry', async () => {
+  const read = fixture(), onLocation = vi.fn()
+  render(<LibraryBrowser rootLibrary={library} t={t} onLocation={onLocation} renderFactorySlot={renderFactorySlot} />)
+  const row = await screen.findByRole('button', { name: /中文资料.md/ })
+  const search = screen.getByRole<HTMLInputElement>('searchbox')
+  const original = read.getMockImplementation()!
+  let result = Promise.withResolvers<unknown>()
+  read.mockImplementation((method, payload) => method === 'library.get' ? Promise.resolve({ ...library, role: 'VIEWER', canManage: false })
+    : method === 'library.entries.list' ? result.promise : original(method, payload))
+  const upload = screen.getByRole('button', { name: zh.libraryUpload })
+  upload.focus(); fireEvent.click(screen.getByRole('button', { name: zh.refresh }))
+  await waitFor(() => { expect(screen.queryByRole('button', { name: zh.libraryUpload })).toBeNull() })
+  expect(onLocation).toHaveBeenLastCalledWith({ library: { ...library, role: 'VIEWER', canManage: false }, parentId: null })
+  expect(screen.getByRole('button', { name: /中文资料.md/ })).toBe(row)
+  expect(document.activeElement).toBe(search)
+  await act(async () => { result.reject(new Error('directory offline')) })
+  const alert = await screen.findByRole('alert'), retry = screen.getByRole('button', { name: zh.retry })
+  result = Promise.withResolvers<unknown>()
+  retry.focus(); fireEvent.click(retry); fireEvent.click(retry)
+  expect(screen.getByRole('alert')).toBe(alert)
+  expect(document.activeElement).toBe(retry)
+  await act(async () => { result.resolve({ data: [file], pageIndex: 1, pageSize: 20, totalCount: 1, totalPages: 1 }) })
+  await waitFor(() => { expect(screen.queryByRole('alert')).toBeNull() })
+  expect(screen.getByRole('button', { name: /中文资料.md/ })).toBe(row)
+  expect(screen.queryByRole('button', { name: zh.libraryUpload })).toBeNull()
+  expect(document.activeElement).toBe(search)
+})
+
 it.each([true, false])('offers nested folder creation in a destination picker only with management permission (%s)', async (canManage) => {
   const read = fixture()
   const original = read.getMockImplementation()!
@@ -674,6 +839,82 @@ it.each([true, false])('offers nested folder creation in a destination picker on
   expect(document.activeElement).toBe(trigger)
 })
 
+it('retains locked attachment controls and ignores selection and view changes until admission settles', async () => {
+  const read = fixture(), select = vi.fn(), original = read.getMockImplementation()!
+  read.mockImplementation(async (method, payload) => method === 'library.files.list'
+    ? { data: [{ entry: file, libraryName: library.name, canManage: true, lastAccessedAt: file.updatedAt, sourceKind: 'UPLOAD', sourceSessionId: null }],
+      pageIndex: 1, pageSize: 20, totalCount: 1, totalPages: 1 } : original(method, payload))
+  const props = { t, onSelect: select, selected: new Map([[file.id, file]]), navigationLocked: false }
+  const surface = render(<LibraryFilePicker {...props} />)
+  const row = await screen.findByRole('button', { name: file.name })
+  const selected = screen.getByRole<HTMLInputElement>('checkbox', { name: file.name })
+  const search = screen.getByRole<HTMLInputElement>('searchbox')
+  const mine = screen.getByRole('tab', { name: zh.libraryPersonal })
+  await waitFor(() => { expect(screen.getByRole('tabpanel').getAttribute('aria-busy')).toBe('false') })
+  search.focus(); fireEvent.change(search, { target: { value: '中文' } }); search.setSelectionRange(0, 1)
+  await waitFor(() => { expect(screen.getByRole('tabpanel').getAttribute('aria-busy')).toBe('false') })
+  surface.rerender(<LibraryFilePicker {...props} navigationLocked />)
+  expect(screen.getByRole('checkbox', { name: file.name })).toBe(selected)
+  expect(search.readOnly).toBe(true)
+  expect(selected.disabled).toBe(true)
+  expect(mine.closest('[aria-disabled]')?.getAttribute('aria-disabled')).toBe('true')
+  const count = read.mock.calls.length
+  fireEvent.click(selected); fireEvent.click(mine)
+  expect(select).not.toHaveBeenCalled()
+  expect(read.mock.calls.length).toBe(count)
+  expect(search.value).toBe('中文')
+  expect([search.selectionStart, search.selectionEnd]).toEqual([0, 1])
+  expect(document.activeElement).toBe(search)
+  surface.rerender(<LibraryFilePicker {...props} />)
+  expect(screen.getByRole('button', { name: file.name })).toBe(row)
+  expect(screen.getByRole('searchbox')).toBe(search)
+  expect(selected.disabled).toBe(false)
+  expect(search.readOnly).toBe(false)
+  fireEvent.click(selected)
+  expect(select).toHaveBeenCalledExactlyOnceWith(file)
+})
+
+it('cancels an unfinished folder opener when attachment admission locks the directory', async () => {
+  const read = fixture(), parentRead = Promise.withResolvers<unknown>()
+  const parent = { ...file, id: '33333333-3333-4333-8333-333333333333', name: '父目录', kind: 'FOLDER',
+    sha256: null, mediaType: null, sizeBytes: 0 }
+  const folder = { ...parent, id: '44444444-4444-4444-8444-444444444444', name: '搜索命中的资料子目录', parentId: parent.id }
+  const original = read.getMockImplementation()!
+  read.mockImplementation(async (method, payload) => {
+    if (method === 'library.entries.list') {
+      const data = (payload as { query: string }).query ? [file, folder] : [file]
+      return { data, pageIndex: 1, pageSize: 20, totalCount: data.length, totalPages: 1 }
+    }
+    if (method === 'library.entries.get') return parentRead.promise
+    return original(method, payload)
+  })
+  const props = { t, onSelect: vi.fn(), selected: new Map([[file.id, file]]), navigationLocked: false }
+  const surface = render(<LibraryFilePicker {...props} />)
+  fireEvent.click(screen.getByRole('tab', { name: zh.libraryShared }))
+  fireEvent.click(await screen.findByRole('button', { name: library.name }))
+  await screen.findByRole('button', { name: /中文资料.md/ })
+  const search = screen.getByRole<HTMLInputElement>('searchbox')
+  fireEvent.change(search, { target: { value: '资料' } })
+  const target = await screen.findByRole('button', { name: /搜索命中的资料子目录/ })
+  const row = screen.getByRole('button', { name: /中文资料.md/ })
+  await waitFor(() => { expect(screen.getByRole('tabpanel').getAttribute('aria-busy')).toBe('false') })
+  target.focus(); fireEvent.click(target)
+  expect(target.getAttribute('aria-busy')).toBe('true')
+  const payload = read.mock.calls.find(([method]) => method === 'library.entries.get')?.[1]
+  expect(payload).toMatchObject({ libraryId: library.id, entryId: parent.id })
+  surface.rerender(<LibraryFilePicker {...props} navigationLocked />)
+  expect(target.getAttribute('aria-busy')).not.toBe('true')
+  const count = read.mock.calls.length
+  await act(async () => { parentRead.resolve(parent) })
+  expect(read.mock.calls.length).toBe(count)
+  expect(screen.getByRole('button', { name: /中文资料.md/ })).toBe(row)
+  expect(screen.getByRole('searchbox')).toBe(search)
+  expect(document.activeElement).toBe(target)
+  expect(screen.queryByRole('alert')).toBeNull()
+  surface.rerender(<LibraryFilePicker {...props} />)
+  expect(screen.getByRole('button', { name: /中文资料.md/ })).toBe(row)
+})
+
 it('blocks folder creation in a locked destination picker', async () => {
   const read = fixture()
   render(<LibraryBrowser foldersOnly navigationLocked rootLibrary={library} t={t} renderFactorySlot={renderFactorySlot} />)
@@ -681,5 +922,92 @@ it('blocks folder creation in a locked destination picker', async () => {
   expect(trigger.getAttribute('aria-disabled')).toBe('true')
   fireEvent.click(trigger)
   expect(screen.queryByRole('dialog')).toBeNull()
+  expect(read.mock.calls.some(([method]) => method === 'library.folders.create')).toBe(false)
+})
+
+
+it.each(['close', 'cancel', 'escape'] as const)('dismisses a shared space draft directly with %s', (action) => {
+  const read = fixture(), close = vi.fn(), committed = vi.fn()
+  render(<LibraryMutation kind="createLibrary" t={t} onClose={close} onCommitted={committed} />)
+  const dialog = screen.getByRole('dialog', { name: zh.libraryNewTeam })
+  expect(within(dialog).getAllByRole('textbox')).toHaveLength(1)
+  const input = within(dialog).getByRole('textbox', { name: zh.libraryName })
+  fireEvent.change(input, { target: { value: '未保存的共享空间' } })
+  if (action === 'escape') fireEvent.keyDown(input, { key: 'Escape' })
+  else fireEvent.click(within(dialog).getByRole('button', { name: action === 'close' ? commonZh.close : zh.cancel }))
+  expect(close).toHaveBeenCalledOnce()
+  expect(screen.queryByText(zh.libraryDiscardConfirm)).toBeNull()
+  expect(read).not.toHaveBeenCalled()
+  expect(committed).not.toHaveBeenCalled()
+})
+
+it('retains shared space writes and retry identity while blocking close until they settle', async () => {
+  const read = fixture(), close = vi.fn(), committed = vi.fn()
+  let result = Promise.withResolvers<unknown>()
+  read.mockImplementation(() => result.promise)
+  render(<LibraryMutation kind="createLibrary" t={t} onClose={close} onCommitted={committed} />)
+  const dialog = screen.getByRole('dialog', { name: zh.libraryNewTeam })
+  expect(within(dialog).getAllByRole('textbox')).toHaveLength(1)
+  const input = within(dialog).getByRole('textbox', { name: zh.libraryName })
+  const save = within(dialog).getByRole('button', { name: zh.saveResource })
+  fireEvent.change(input, { target: { value: '共享验收' } })
+  fireEvent.click(save); fireEvent.click(save)
+  fireEvent.click(within(dialog).getByRole('button', { name: commonZh.close }))
+  expect(read).toHaveBeenCalledOnce()
+  expect(read.mock.calls[0]![1]).toMatchObject({ name: '共享验收' })
+  expect(read.mock.calls[0]![1]).toHaveProperty('key', expect.any(String))
+  expect(close).not.toHaveBeenCalled()
+  await act(async () => { result.reject(new Error('offline')) })
+  await screen.findByRole('alert')
+  expect(within(dialog).getByRole('textbox', { name: zh.libraryName })).toBe(input)
+  result = Promise.withResolvers<unknown>()
+  fireEvent.click(save)
+  expect(read).toHaveBeenCalledTimes(2)
+  expect(read.mock.calls[1]).toEqual(read.mock.calls[0])
+  fireEvent.keyDown(input, { key: 'Escape' })
+  expect(close).not.toHaveBeenCalled()
+  await act(async () => { result.resolve({ ...library, name: '共享验收' }) })
+  expect(committed).toHaveBeenCalledWith({ library: { ...library, name: '共享验收' }, parentId: null })
+  expect(close).not.toHaveBeenCalled()
+})
+
+it.each([true, false])('keeps confirmed root metadata and rows when clearing a query through its breadcrumb (%s)', async (foldersOnly) => {
+  const read = fixture(), onLocation = vi.fn()
+  const latest = { ...library, name: '当前共享资料', role: 'VIEWER', canManage: false }
+  const entry = foldersOnly ? { ...file, kind: 'FOLDER', sha256: null, mediaType: null, sizeBytes: 0 } : file
+  const entries = { data: [entry], pageIndex: 1, pageSize: 20, totalCount: 1, totalPages: 1 }
+  read.mockImplementation(async method => method === 'library.get' ? latest : entries)
+  render(<LibraryBrowser rootLibrary={library} foldersOnly={foldersOnly} onLocation={onLocation}
+    t={t} renderFactorySlot={renderFactorySlot} />)
+  const row = await screen.findByRole('button', { name: /中文资料.md/ })
+  const search = screen.getByRole<HTMLInputElement>('searchbox')
+  await act(async () => { fireEvent.change(search, { target: { value: '资料' } }) })
+  const root = screen.getByRole('button', { name: zh.library })
+  const metadata = Promise.withResolvers<unknown>()
+  let listing = Promise.withResolvers<unknown>()
+  read.mockImplementation(async method => method === 'library.get' ? metadata.promise : listing.promise)
+  root.focus(); fireEvent.click(root)
+  expect(screen.queryByRole('button', { name: zh.libraryNewFolder })).toBeNull()
+  expect(screen.queryByRole('button', { name: zh.libraryUpload })).toBeNull()
+  expect(screen.getByRole('button', { name: latest.name })).toBeTruthy()
+  expect(screen.getByRole('button', { name: /中文资料.md/ })).toBe(row)
+  expect(screen.getByRole('searchbox')).toBe(search)
+  expect(search.value).toBe('')
+  expect(document.activeElement).toBe(root)
+  expect(screen.queryByRole('status', { name: zh.loading })).toBeNull()
+  await act(async () => { metadata.resolve(latest); listing.reject(new Error('Root unavailable')) })
+  const alert = await screen.findByRole('alert'), retry = screen.getByRole('button', { name: zh.retry })
+  expect(screen.getByRole('button', { name: /中文资料.md/ })).toBe(row)
+  listing = Promise.withResolvers<unknown>()
+  const reads = read.mock.calls.filter(([method]) => method === 'library.get').length
+  retry.focus(); fireEvent.click(retry); fireEvent.click(retry)
+  await waitFor(() => { expect(read.mock.calls.filter(([method]) => method === 'library.get')).toHaveLength(reads + 1) })
+  expect(screen.getByRole('alert')).toBe(alert)
+  expect(document.activeElement).toBe(retry)
+  await act(async () => { listing.resolve(entries) })
+  await waitFor(() => { expect(screen.queryByRole('alert')).toBeNull() })
+  expect(screen.getByRole('button', { name: /中文资料.md/ })).toBe(row)
+  expect(onLocation).toHaveBeenLastCalledWith({ library: latest, parentId: null })
+  expect(document.activeElement).toBe(search)
   expect(read.mock.calls.some(([method]) => method === 'library.folders.create')).toBe(false)
 })

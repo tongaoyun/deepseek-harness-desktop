@@ -59,10 +59,9 @@ export function TeamDetails(props: {
     const [focusedExample, setFocusedExample] = React.useState<string | null>(null);
     const exampleFocus = useLibraryRemovalFocus(() => title.current);
     return (<TeamDialog title={tx("{0}详情", [props.team.name])} close={props.close} className="agt-detail"
-      footer={props.error ? <><p className="aag-error agt-detail-error" role="alert">{props.error}</p>
-        {props.onRefresh && <Button ref={retry} aria-disabled={props.busy || props.refreshing || false} aria-busy={props.refreshing}
-          className={`agt-detail-retry${props.busy || props.refreshing ? ' product-control-pending' : ''}`}
-          onClick={() => { if (!props.busy && !props.refreshing) props.onRefresh?.() }}>{props.refreshLabel ?? tx("刷新重试")}</Button>}</> : undefined}>
+      footer={props.onRefresh || props.error ? <LibraryReadFeedback error={props.error} busy={props.refreshing ?? false}
+        locked={props.busy ?? false} retryLabel={props.refreshLabel ?? tx("刷新重试")} retryRef={retry}
+        focusTarget={() => title.current} onRetry={props.onRefresh} /> : undefined}>
       <header className="agt-detail-head">
         <TeamAvatars team={props.team} experts={props.experts} large/>
         <div>
@@ -351,10 +350,10 @@ export function TeamsPanel(props: {
                   <TeamAvatars team={team} experts={experts}/>
                 </div>} metadata={tx("{0} 位专家", [team.members.length])} description={(enabled || !teamHasPinnedMembers(team)) && issue
                     ? `${team.description} ${tx(issue)}`
-                    : team.description} enabled={enabled} pending={busy} enabledLabel={tx("已启用")} disabledLabel={tx("已停用")} toggle={() => void change(team, 'enable')} moreItems={[
-                    ...(team.company ? [{ id: 'copy', label: tx("复制并自定义"), shortLabel: tx("复制"), pending: busy, onSelect: () => copy(team) }] : [
-                      { id: 'edit', label: tx("编辑专家团"), shortLabel: tx("编辑"), icon: <IconCopy size={16} />, pending: busy, onSelect: () => edit(team) },
-                      ...('dshDesktop' in globalThis ? [{ id: 'submit', label: tx("提交发布"), shortLabel: tx("提交"), pending: busy, onSelect: () => {
+                    : team.description} enabled={enabled} locked={busy} pending={busy && pending.teamId === team.id && pending.action === 'enable'} enabledLabel={tx("已启用")} disabledLabel={tx("已停用")} toggle={() => void change(team, 'enable')} moreItems={[
+                    ...(team.company ? [{ id: 'copy', label: tx("复制并自定义"), shortLabel: tx("复制"), onSelect: () => copy(team) }] : [
+                      { id: 'edit', label: tx("编辑专家团"), shortLabel: tx("编辑"), icon: <IconCopy size={16} />, onSelect: () => edit(team) },
+                      ...('dshDesktop' in globalThis ? [{ id: 'submit', label: tx("提交发布"), shortLabel: tx("提交"), onSelect: () => {
                         document.dispatchEvent(new CustomEvent('dsh:company-content-submit', { cancelable: true, detail: {
                           name: team.name, prepare: async (signal: AbortSignal) => {
                             signal.throwIfAborted();
@@ -363,7 +362,7 @@ export function TeamsPanel(props: {
                           },
                         } }));
                       } }] : []),
-                      { id: 'delete', label: tx("删除专家团"), shortLabel: tx("删除"), icon: <IconTrash size={16} />, danger: true, pending: busy, onSelect: () => void change(team, 'delete') },
+                      { id: 'delete', label: tx("删除专家团"), shortLabel: tx("删除"), icon: <IconTrash size={16} />, danger: true, pending: busy && pending.teamId === team.id && pending.action === 'delete', onSelect: () => void change(team, 'delete') },
                     ]),
                 ]} actions={<>
                   <button type="button" className="aag-card-action" title={tx("查看详情")} aria-label={tx("查看详情")} aria-haspopup="dialog" onClick={() => setDetailsId(team.id)}>

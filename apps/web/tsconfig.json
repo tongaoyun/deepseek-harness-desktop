@@ -23,6 +23,7 @@
   // this client-registered project must not also hold them (one program
   // cannot see both sides of the cordis Context merges).
   "exclude": [
+    "tests/product-support.ts",
     "tests/deepseek-harness-control-focus.e2e.ts",
     "tests/deepseek-harness-catalog.e2e.ts",
     "tests/deepseek-harness-desktop.e2e.ts",

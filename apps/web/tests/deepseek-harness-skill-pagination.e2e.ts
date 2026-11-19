@@ -9,7 +9,8 @@ import type { SkillsManager } from '../../../packages/deepseek-harness-product/s
 import { RemoteError } from '@deepseek-ai/dsh-typert-protocol'
 import { builtinCapabilityPatches } from '../../../packages/deepseek-harness-product/desktop/src/builtin-capabilities.ts'
 import { captureStableAria, compareOrRefreshGolden, launchWebScaffold, watchConsole, webSnapshotMode } from './scaffold.ts'
-import { controlIsUnclipped, newEnglishPage, REPO_ROOT } from './support.ts'
+import { controlIsUnclipped, REPO_ROOT } from './support.ts'
+import { newEmployeePage } from './product-support.ts'
 
 async function bootSkillFocus() {
   const root = await mkdtemp(join(tmpdir(), 'skill-read-focus-'))
@@ -25,7 +26,7 @@ async function bootSkillFocus() {
   const skills = scaffold.ctx.get('skillsManager') as SkillsManager
   const browser = await chromium.launch()
   onTestFinished(() => browser.close())
-  const page = await newEnglishPage(browser)
+  const page = await newEmployeePage(browser)
   page.setDefaultTimeout(10_000)
   const tripwire = watchConsole(page)
   onTestFinished(() => { expect(tripwire.pageErrors).toEqual([]) })
@@ -1152,7 +1153,7 @@ it.each([
   onTestFinished(() => { response.resolve(undefined); workspaces.mockRestore(); repositories.mockRestore() })
   const browser = await chromium.launch()
   onTestFinished(() => browser.close())
-  const page = await newEnglishPage(browser)
+  const page = await newEmployeePage(browser)
   const tripwire = watchConsole(page)
   page.setDefaultTimeout(10_000)
   await page.goto(scaffold.authenticatedUrl)
@@ -1225,7 +1226,7 @@ it.each((['import', 'repository'] as const).flatMap(action => [1440, 390].map(wi
   onTestFinished(() => { gates.forEach((gate) => { gate.resolve(undefined) }); delay.mockRestore() })
   const browser = await chromium.launch()
   onTestFinished(() => browser.close())
-  const page = await newEnglishPage(browser)
+  const page = await newEmployeePage(browser)
   page.setDefaultTimeout(10_000)
   const tripwire = watchConsole(page)
   const screenshots = join(REPO_ROOT, '.artifacts/deepseek-harness-skill-pagination')
@@ -1383,7 +1384,7 @@ it.each(['clawhub', 'skillsh'] as const)('keeps %s search controls stable throug
   onTestFinished(() => { pending.resolve(undefined); read.mockRestore(); ranking.mockRestore() })
   const browser = await chromium.launch()
   onTestFinished(() => browser.close())
-  const page = await newEnglishPage(browser)
+  const page = await newEmployeePage(browser)
   page.setDefaultTimeout(10_000)
   const tripwire = watchConsole(page)
   const screenshots = join(REPO_ROOT, '.artifacts/deepseek-harness-skill-pagination')
@@ -1502,7 +1503,7 @@ it('retains ClawHub pagination and detail focus across loading, overlap, retry a
   onTestFinished(() => scaffold.close())
   const browser = await chromium.launch()
   onTestFinished(() => browser.close())
-  const page = await newEnglishPage(browser)
+  const page = await newEmployeePage(browser)
   page.setDefaultTimeout(10_000)
   const tripwire = watchConsole(page)
   const screenshots = join(REPO_ROOT, '.artifacts/deepseek-harness-skill-pagination')
@@ -1682,3 +1683,102 @@ it.each(['listWorkspaces', 'readWorkspace'] as const)('retains project rows, vie
   await refresh.focus()
   await captureSkillFocus(page, `project-refresh-${method}`, area, refresh)
 })
+
+it.each((['market', 'source', 'skill'] as const).flatMap(target => [1440, 390].map(width => ({ target, width }))))(
+  'retains the $target skill switch focus and local progress at $width', async ({ target, width }) => {
+    const { root, scaffold, skills, page } = await bootSkillFocus()
+    const item = { name: 'focus-alpha', declaredName: 'focus-alpha', description: 'Read-only skill fixture', kind: 'directory' as const,
+      path: join(root, 'focus-alpha'), modelInvocable: true, userInvocable: true, invocationPolicyValid: true, hasFrontmatter: true,
+      loadable: true, diagnostics: [], managerEnabled: true, managerOverride: null,
+      effectiveModelInvocable: true, effectiveUserInvocable: true }
+    const neighborItem = { ...item, name: 'focus-beta', declaredName: 'focus-beta', path: join(root, 'focus-beta') }
+    const source = { key: target === 'market' ? 'company' : 'dsh', path: root, label: 'DSH', rank: 0,
+      mutable: target !== 'market', native: true, toggleable: true, exists: true, truncated: false, enabled: true,
+      skills: [item, neighborItem], categories: [] }
+    const state = { roots: [source], writeDestinations: [], projects: [],
+      summary: { total: 2, enabled: 2, disabled: 0, issues: 0 }, trash: [], warnings: [] }
+    const gates = [Promise.withResolvers<undefined>(), Promise.withResolvers<undefined>(), Promise.withResolvers<undefined>()]
+    let writes = 0
+    const directory = vi.spyOn(skills, 'readState').mockImplementation(async () => {
+      if (writes === 2) await gates[2]!.promise
+      return state
+    })
+    const wait = async () => {
+      const attempt = writes++
+      await gates[attempt]!.promise
+      if (!attempt) throw new Error('Settings temporarily unavailable')
+    }
+    const write = target === 'skill' ? vi.spyOn(skills, 'setSkillEnabled').mockImplementation(async () => {
+      await wait(); item.managerEnabled = false
+      return { root: source.key, name: item.name, enabled: false }
+    }) : vi.spyOn(skills, 'setSourceEnabled').mockImplementation(async () => {
+      await wait(); source.enabled = false
+      return { root: source.key, enabled: false }
+    })
+    onTestFinished(() => { gates.forEach((gate) => { gate.resolve(undefined) }); directory.mockRestore(); write.mockRestore() })
+    await page.goto(scaffold.authenticatedUrl)
+    await expect.poll(() => page.getByRole('button', { name: 'Choose workspace', exact: true }).textContent()).toBe('Default workspace')
+    await page.locator('[data-composer-input][contenteditable="true"]').waitFor()
+    await page.getByRole('button', { name: 'Skills', exact: true }).click()
+    if (target !== 'market') {
+      await page.getByRole('tab', { name: 'Mine', exact: true }).click()
+      await page.getByRole('button', { name: /DSH/, expanded: false }).click()
+    }
+    const area = page.locator('.dssm-section')
+    const search = area.getByRole('textbox', { name: 'Search', exact: true })
+    await search.fill('focus')
+    await search.evaluate((node) => { if (node instanceof HTMLInputElement) node.setSelectionRange(1, 3) })
+    await page.setViewportSize({ width, height: width === 390 ? 560 : 900 })
+    await page.emulateMedia({ colorScheme: width === 390 ? 'dark' : 'light' })
+    await page.evaluate(async () => { await Promise.allSettled(document.getAnimations().map(animation => animation.finished)) })
+    const toggle = area.getByRole('switch', { name: target === 'market' ? 'Use marketplace skills'
+      : target === 'source' ? 'Toggle source DSH skills' : 'Toggle skill focus-alpha', exact: true })
+    const neighbor = area.getByRole('switch', { name: 'Toggle skill focus-beta', exact: true })
+    await toggle.scrollIntoViewIfNeeded()
+    const node = await toggle.elementHandle(), neighborNode = await neighbor.elementHandle(), searchNode = await search.elementHandle()
+    const geometry = () => Promise.all([toggle.boundingBox(), neighbor.boundingBox()])
+    const feedback = area.locator('.dssm-directory-feedback')
+    const feedbackNode = await feedback.elementHandle(), feedbackBounds = await feedback.boundingBox()
+    const bounds = await geometry()
+    const scrollport = page.locator('.product-capability-page').filter({ has: area })
+    const scroll = await scrollport.evaluate(node => node.scrollTop)
+    const neighborStyle = () => neighbor.evaluate(node => [getComputedStyle(node).opacity, getComputedStyle(node).backgroundColor])
+    const appearance = await neighborStyle()
+    for (const attempt of [0, 1]) {
+      await toggle.press('Enter')
+      await expect.poll(() => writes).toBe(attempt + 1)
+      expect(await toggle.evaluate((element, previous) => element === previous && element === document.activeElement, node)).toBe(true)
+      expect(await toggle.evaluate(node => node instanceof HTMLButtonElement && node.disabled)).toBe(false)
+      expect(await toggle.locator('..').getAttribute('aria-busy')).toBe('true')
+      expect(await neighbor.locator('..').getAttribute('aria-busy')).toBe('false')
+      expect(await neighborStyle()).toEqual(appearance)
+      expect(await geometry()).toEqual(bounds)
+      await page.keyboard.press('Enter'); await page.keyboard.press(' '); await neighbor.dispatchEvent('click')
+      expect(writes).toBe(attempt + 1)
+      if (attempt) {
+        await area.locator('.dssm-feedback').waitFor()
+        await search.evaluate((node) => { if (node instanceof HTMLInputElement) node.focus({ preventScroll: true }) })
+      }
+      const screenshots = join(REPO_ROOT, '.artifacts/deepseek-harness-skill-pagination')
+      await mkdir(screenshots, { recursive: true })
+      await page.screenshot({ path: join(screenshots, `switch-${target}-${width}-pending-${attempt}.png`), animations: 'disabled' })
+      gates[attempt]!.resolve(undefined)
+      if (attempt) {
+        await expect.poll(() => directory.mock.calls.length).toBeGreaterThan(2)
+        expect(await toggle.locator('..').getAttribute('aria-busy')).toBe('true')
+        gates[2]!.resolve(undefined)
+      }
+      await expect.poll(() => toggle.locator('..').getAttribute('aria-busy')).toBe('false')
+      expect(await (attempt ? search : toggle).evaluate(node => node === document.activeElement)).toBe(true)
+      expect(await toggle.evaluate((element, previous) => element === previous, node)).toBe(true)
+      expect(await neighbor.evaluate((element, previous) => element === previous, neighborNode)).toBe(true)
+      expect(await search.evaluate((element, previous) => element === previous && element instanceof HTMLInputElement
+        && [element.value, element.selectionStart, element.selectionEnd], searchNode)).toEqual(['focus', 1, 3])
+      expect(await scrollport.evaluate(node => node.scrollTop)).toBe(scroll)
+      expect(await geometry()).toEqual(bounds)
+      expect(await feedback.evaluate((element, previous) => element === previous, feedbackNode)).toBe(true)
+      expect(await feedback.boundingBox()).toEqual(feedbackBounds)
+    }
+    expect(writes).toBe(2)
+  },
+)

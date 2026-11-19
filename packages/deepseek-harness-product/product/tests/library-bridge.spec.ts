@@ -66,7 +66,7 @@ it('routes global files through the authenticated metadata bridge without a nati
 })
 
 it('prepares only the authenticated personal root and rejects shared or non-manageable replies', async () => {
-  const personal = { id: libraryId, name: '我的资料', description: '', scope: 'PERSONAL', ownerId: 'employee',
+  const personal = { id: libraryId, name: '我的资料', scope: 'PERSONAL', ownerId: 'employee',
     companyId: 'company', role: 'OWNER', canManage: true, version: 1, createdAt: timestamp, updatedAt: timestamp }
   await expect(fixture(personal)('library.personal.ensure', {})).resolves.toEqual(personal)
   await expect(fixture(personal)('library.personal.ensure', { ownerId: 'other' })).rejects.toThrow()
@@ -77,10 +77,10 @@ it('prepares only the authenticated personal root and rejects shared or non-mana
 })
 
 it('creates private teams and validates member mutation versions and transferred ownership', async () => {
-  const team = { id: libraryId, name: '设计团队', description: '', scope: 'TEAM', ownerId: 'alice', companyId: 'company',
+  const team = { id: libraryId, name: '设计团队', scope: 'TEAM', ownerId: 'alice', companyId: 'company',
     role: 'OWNER', canManage: true, version: 1, createdAt: timestamp, updatedAt: timestamp }
-  await expect(fixture(team)('library.create', { name: team.name, description: '', key: 'create-team-key-0001' })).resolves.toEqual(team)
-  await expect(fixture(team)('library.create', { name: team.name, description: '', scope: 'COMPANY', key: 'create-team-key-0001' })).rejects.toThrow()
+  await expect(fixture(team)('library.create', { name: team.name, key: 'create-team-key-0001' })).resolves.toEqual(team)
+  await expect(fixture(team)('library.create', { name: team.name, scope: 'COMPANY', key: 'create-team-key-0001' })).rejects.toThrow()
   const command = { libraryId, subjectType: 'EMPLOYEE', subjectId: 'bob', role: 'VIEWER', version: 1 }
   await expect(fixture({ ...team, version: 2 })('library.members.save', command)).resolves.toMatchObject({ version: 2 })
   await expect(fixture(team)('library.members.save', command)).rejects.toMatchObject({ code: 'INVALID_SERVER_RESPONSE' })

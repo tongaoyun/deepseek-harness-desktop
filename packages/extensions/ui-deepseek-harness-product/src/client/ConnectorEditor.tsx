@@ -69,6 +69,8 @@ export function ConnectorEditor({ onClose, onSaved, editing, t }: {
   const close = useEditorCloseGuard(values !== baseline.current, () => saving.current, onClose)
   const transportField = useRef<HTMLSelectElement>(null)
   const preserveReadFocus = useResultFocus(close.editorProps.ref, transportField)
+  const feedback = useRef<HTMLDivElement>(null)
+  const preserveFeedbackFocus = useResultFocus(feedback, transportField)
   const clipboardInputs = useRef<readonly unknown[]>([])
   useLayoutEffect(() => {
     clipboardInputs.current = [draft, headers, environment, command, timeout, json, mode, pending, close.confirming]
@@ -94,6 +96,7 @@ export function ConnectorEditor({ onClose, onSaved, editing, t }: {
       const result = ConnectorEditorSnapshotSchema.parse(value)
       if (result.draft.id !== editing.id) throw new Error('Connector editing identity does not match')
       preserveReadFocus()
+      preserveFeedbackFocus()
       savedConfiguration.current = result.configured ? result.draft : undefined
       applyJson(result.draft, true)
       if (result.savePending) setError('connectorSavePending')
@@ -261,9 +264,9 @@ export function ConnectorEditor({ onClose, onSaved, editing, t }: {
       {!close.confirming && <><div className={css.feedbackResult}>
         <span aria-hidden="true">{t('libraryWait')}</span>
         {close.blocked && pending && <p role="status" className={css.catalogStatus}>{t('libraryWait')}</p>}
-      </div><div className={css.feedbackResult}>
+      </div><div ref={feedback} className={css.feedbackResult}>
         <span aria-hidden="true">{t('connectorDiscoveryFailed')}</span>
-        {error && <p role="alert" className={css.catalogError}>{typeof error === 'string' ? t(error)
+        {error && <p role="alert" tabIndex={0} className={css.catalogError}>{typeof error === 'string' ? t(error)
           : productErrorMessage(error.failure, t, error.fallback)}</p>}
       </div></>}
       {close.confirming ? <><Button ref={close.keepEditingRef} variant="ghost" onClick={close.keepEditing}>{t('libraryKeepEditing')}</Button>

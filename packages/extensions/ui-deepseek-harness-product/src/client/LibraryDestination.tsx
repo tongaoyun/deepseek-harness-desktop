@@ -22,9 +22,10 @@ export function LibraryDestination(props: PropsRenderFactories & {
   const changeLocation = useCallback((value: LibraryLocation | undefined) => { setLocation(value) }, [])
   if (props.kind === 'folder') return <LibraryMutation kind="folder" t={props.t}
     {...(props.initialLocation ? { location: props.initialLocation } : {})} onClose={props.onClose} onCommitted={props.onCommitted} />
-  if (destination) return <LibraryUpload location={destination} t={props.t} onClose={props.onClose} onCommitted={props.onCommitted} />
+  if (destination) return <LibraryUpload location={destination} t={props.t} onClose={props.onClose}
+    onCommitted={() => { props.onCommitted(destination) }} />
   return <Modal open title={props.t('libraryUploadDestination')} closeLabel={props.t('close')}
-    onClose={props.onClose} className={`${css.detailModal} ${css.libraryPicker}`}
+    onClose={props.onClose} className={`${css.detailModal} ${css.libraryModal} ${css.libraryPicker}`}
     contentClassName={css.detailModalContent as string} footer={<div className={css.libraryPickerActions}>
       <Button variant="outline" onClick={props.onClose}>{props.t('cancel')}</Button>
       <Button variant="primary" aria-disabled={!location?.library.canManage} onClick={() => {

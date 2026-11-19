@@ -36,8 +36,7 @@ export const TEAM_CSS = `
 .aag-host-modal.agt-detail .agt-detail-content{flex:1;min-height:0;overflow:hidden}
 .aag-host-modal.agt-detail .agt-detail-content>div:last-child{flex:1;min-height:0;overflow:hidden}
 .agt-dialog.agt-detail{flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain}
-.agt-detail-error{flex:1;min-width:0;overflow-wrap:anywhere}
-.agt-detail-retry{flex:none;white-space:nowrap}
+.aag-host-modal.agt-detail .aag-directory-feedback{flex:1;min-width:0}
 .agt-detail-head{display:flex;align-items:center;gap:16px}
 .agt-name-line{display:flex;align-items:center;flex-wrap:wrap;gap:8px 10px}
 .agt-name-line h2{margin:0}

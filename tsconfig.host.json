@@ -46,6 +46,7 @@
     "apps/web/tests/deepseek-harness-library-home.e2e.ts",
     "apps/web/tests/deepseek-harness-control-focus.e2e.ts",
     "apps/web/tests/deepseek-harness-expert-retry.e2e.ts",
+    "apps/web/tests/product-support.ts",
     "apps/web/tests/deepseek-harness-skill-pagination.e2e.ts",
     "apps/web/tests/collapse-timing.e2e.ts",
     "apps/web/tests/notice-wake-tail.e2e.ts",

@@ -240,7 +240,7 @@ it('routes the signed-out composer library action through shared login without q
   act(() => { f.changeSession({ authenticated: true, employeeId: 'alice', displayName: '员工甲' }) })
   act(() => { open() })
   await screen.findByRole('dialog', { name: zh.libraryChooseFiles })
-  await waitFor(() => { expect(f.resources).toHaveBeenCalledWith('library.list') })
+  await waitFor(() => { expect(f.resources).toHaveBeenCalledWith('library.files.list') })
   expect(signIn).toHaveBeenCalledOnce()
 })
 

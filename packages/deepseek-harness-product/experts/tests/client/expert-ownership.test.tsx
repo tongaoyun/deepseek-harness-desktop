@@ -45,7 +45,7 @@ async function fixture() {
   const view = render(<AgencySettingsPanel {...props} />)
   await act(async () => { await cache.catalog.refresh(true) })
   fireEvent.click(screen.getByRole('tab', { name: en['custom.source'] }))
-  return { cache, getCatalog, remove, save, changeLanguage: () => {
+  return { remote, cache, getCatalog, remove, save, changeLanguage: () => {
     language = language === 'en' ? 'zh' : 'en'
     view.rerender(<AgencySettingsPanel {...props} />)
   } }
@@ -207,3 +207,47 @@ it.each((['save', 'delete'] as const).flatMap(operation => [false, true].map(els
       selection: [search.selectionStart, search.selectionEnd], errors: screen.queryAllByRole('alert').length }).toMatchSnapshot()
   },
 )
+
+it('keeps expert toggle progress local and retains controls through failure and retry', async () => {
+  const value = await fixture()
+  const second = { ...expert, slug: 'second-reviewer', name: 'Second reviewer', nameEn: 'Second reviewer' }
+  const catalog = { ...original, experts: [expert, second] }
+  value.getCatalog.mockResolvedValue({ ok: true, value: catalog })
+  act(() => { value.cache.catalog.accept(catalog) })
+  const response = Promise.withResolvers<Awaited<ReturnType<typeof value.remote.setEnabled>>>()
+  const retried = Promise.withResolvers<Awaited<ReturnType<typeof value.remote.setEnabled>>>()
+  const write = vi.fn<typeof value.remote.setEnabled>().mockReturnValueOnce(response.promise).mockReturnValueOnce(retried.promise)
+  value.remote.setEnabled = write
+  onTestFinished(() => {
+    response.resolve({ ok: true, value: { enabled: [], revision: 1 } })
+    retried.resolve({ ok: true, value: { enabled: [], revision: 1 } })
+  })
+  const search = screen.getByRole<HTMLInputElement>('textbox', { name: en['settings.search'] })
+  fireEvent.change(search, { target: { value: 'review' } })
+  search.setSelectionRange(1, 4)
+  const [toggle, neighbor] = screen.getAllByRole<HTMLButtonElement>('switch')
+  const edit = within(neighbor.closest('article')!).getByRole<HTMLButtonElement>('button', { name: en['custom.edit'] })
+  toggle.focus(); fireEvent.click(toggle)
+  expect(write).toHaveBeenCalledOnce()
+  expect(toggle.disabled).toBe(false)
+  expect(toggle.parentElement?.getAttribute('aria-busy')).toBe('true')
+  expect(neighbor.parentElement?.getAttribute('aria-busy')).toBe('false')
+  expect(neighbor.disabled).toBe(false)
+  expect(edit.disabled).toBe(false)
+  expect(edit.getAttribute('aria-disabled')).toBe('true')
+  expect(edit.getAttribute('aria-busy')).not.toBe('true')
+  fireEvent.click(toggle); fireEvent.click(neighbor); fireEvent.click(edit)
+  expect(write).toHaveBeenCalledOnce()
+  expect(screen.queryByRole('dialog')).toBeNull()
+  await act(async () => { response.reject(new Error('Settings offline')) })
+  expect(screen.getByRole('alert').textContent).toContain('Settings offline')
+  expect(document.activeElement).toBe(toggle)
+  fireEvent.click(toggle)
+  expect(write).toHaveBeenCalledTimes(2)
+  expect(screen.getByRole('alert').textContent).toContain('Settings offline')
+  await act(async () => { retried.resolve({ ok: true, value: { enabled: [expert.slug], revision: 2 } }) })
+  expect(screen.queryByRole('alert')).toBeNull()
+  expect(document.activeElement).toBe(toggle)
+  expect(screen.getAllByRole('switch')).toEqual([toggle, neighbor])
+  expect([search.value, search.selectionStart, search.selectionEnd]).toEqual(['review', 1, 4])
+})

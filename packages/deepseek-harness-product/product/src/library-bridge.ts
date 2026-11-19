@@ -46,7 +46,6 @@ const paging = {
 }
 const write = {
   name,
-  description: z.string().max(1000),
 }
 const key = z.string().regex(/^[A-Za-z0-9._~-]{16,128}$/u)
 /** Dispatch one allowlisted library metadata request.
@@ -124,7 +123,7 @@ export async function invokeLibrary(
   if (method === 'library.create') {
     const { key: requestKey, ...body } = z.object({ ...write, key }).strict().parse(input)
     const result = LibrarySchema.parse(await api.request('/api/v1/libraries', json(body, 'POST', requestKey)))
-    reply(result.scope === 'TEAM' && result.role === 'OWNER' && result.canManage && result.name === body.name && result.description === body.description)
+    reply(result.scope === 'TEAM' && result.role === 'OWNER' && result.canManage && result.name === body.name)
     return result
   }
   if (method === 'library.memberOptions.employees') {
@@ -169,8 +168,7 @@ export async function invokeLibrary(
     reply(
       result.id === libraryId &&
         result.version === body.version + 1 &&
-        result.name === body.name &&
-        result.description === body.description,
+        result.name === body.name,
     )
     return result
   }

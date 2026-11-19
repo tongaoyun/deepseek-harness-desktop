@@ -29,7 +29,8 @@ export function LibraryArchive({
   const [open, setOpen] = useState(false)
   const [selection, setSelection] = useState<LibrarySelection>()
   const [location, setLocation] = useState<LibraryLocation>()
-  const [pending, setPending] = useState(false)
+  const [progress, setProgress] = useState<'prepare' | 'save'>()
+  const pending = progress !== undefined
   const [error, setError] = useState<DeepSeekHarnessProductKey | ProductFailureReport>()
   const operation = useRef<AbortController>()
   const writing = useRef(false)
@@ -50,7 +51,7 @@ export function LibraryArchive({
         console.warn('Library archive cleanup failed', failure)
       })
     owned.current = undefined
-    setPending(false)
+    setProgress(undefined)
     setOpen(false)
     setSelection(undefined)
     setLocation(undefined)
@@ -103,11 +104,11 @@ export function LibraryArchive({
     if (operation.current || !available || nativePending) return
     const controller = new AbortController()
     operation.current = controller
-    setPending(true)
+    setProgress('prepare')
     setOpen(true)
     try {
       const query = new URL(actionUrl, document.baseURI).searchParams
-      const [file] = z.tuple([LibrarySelectionSchema]).parse(
+      const [file] = z.tuple([LibrarySelectionSchema.refine(value => value.kind === 'FILE')]).parse(
         await request(
           'library.files.archive.select',
           {
@@ -129,7 +130,7 @@ export function LibraryArchive({
     } finally {
       if (operation.current === controller) {
         operation.current = undefined
-        if (!controller.signal.aborted) setPending(false)
+        if (!controller.signal.aborted) setProgress(undefined)
       }
     }
   }
@@ -144,7 +145,7 @@ export function LibraryArchive({
     const controller = new AbortController()
     operation.current = controller
     writing.current = true
-    setPending(true)
+    setProgress('save')
     try {
       await request(
         'library.files.upload',
@@ -163,7 +164,7 @@ export function LibraryArchive({
       owned.current = undefined
       operation.current = undefined
       writing.current = false
-      setPending(false)
+      setProgress(undefined)
       close()
     } catch (failure) {
       if (!controller.signal.aborted) setError({ failure, fallback: 'saveFailed' })
@@ -171,7 +172,7 @@ export function LibraryArchive({
       if (operation.current === controller) {
         operation.current = undefined
         writing.current = false
-        if (!controller.signal.aborted) setPending(false)
+        if (!controller.signal.aborted) setProgress(undefined)
       }
     }
   }
@@ -196,7 +197,7 @@ export function LibraryArchive({
           title={t('libraryArchive')}
           closeLabel={t('close')}
           onClose={close}
-          className={`${css.detailModal} ${css.libraryPicker}`}
+          className={`${css.detailModal} ${css.libraryModal} ${css.libraryPicker}`}
           contentClassName={css.detailModalContent as string}
           footer={
             <div className={css.libraryMutationFooter}>
@@ -212,7 +213,7 @@ export function LibraryArchive({
                 <Button
                   variant="primary"
                   aria-disabled={pending || !selection || !location?.library.canManage}
-                  aria-busy={pending}
+                  aria-busy={progress === 'save'}
                   onClick={() => {
                     void save()
                   }}
@@ -228,7 +229,7 @@ export function LibraryArchive({
             <LibraryBrowser t={t} foldersOnly navigationLocked={pending} renderFactorySlot={renderFactorySlot} onLocation={onLocation} />
           )}
           {!selection && (
-            <div>
+            <div aria-busy={progress === 'prepare'}>
               <Button
                 ref={retry}
                 className={css.libraryPrepareRetry}
@@ -236,6 +237,7 @@ export function LibraryArchive({
                 aria-hidden={error === undefined}
                 disabled={error === undefined}
                 aria-disabled={pending || error === undefined}
+                aria-busy={progress === 'prepare'}
                 onClick={() => {
                   void prepare()
                 }}

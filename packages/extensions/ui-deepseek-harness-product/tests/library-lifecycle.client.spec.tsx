@@ -12,9 +12,9 @@ import { en, zh } from '../src/locales.ts'
 
 const t = makeTranslate(zh, commonZh)
 const renderFactorySlot = () => null
-const library = { id: '11111111-1111-4111-8111-111111111111', name: '目标资料库', description: '', scope: 'PERSONAL',
+const library = { id: '11111111-1111-4111-8111-111111111111', name: '目标资料库', scope: 'PERSONAL',
   ownerId: 'alice', companyId: 'company', role: 'OWNER', canManage: true, version: 1, createdAt: '2026-11-13T01:00:00Z', updatedAt: '2026-11-13T01:00:00Z' }
-const selection = { selectionId: '22222222-2222-4222-8222-222222222222', name: '交付资料.md', sizeBytes: 12 }
+const selection = { selectionId: '22222222-2222-4222-8222-222222222222', name: '交付资料.md', kind: 'FILE' as const, sizeBytes: 12 }
 const alice = { authenticated: true, employeeId: 'alice' }
 const bob = { authenticated: true, employeeId: 'bob' }
 afterEach(() => { cleanup(); vi.unstubAllGlobals() })
@@ -27,7 +27,7 @@ function fixture(initial: Promise<unknown> = Promise.resolve(alice)) {
     if (method === 'library.files.archive.select') return [selection]
     if (method === 'library.list') return { data: [library], pageIndex: 1, pageSize: 20, totalCount: 1, totalPages: 1 }
     if (method === 'library.personal.ensure' || method === 'library.get') return library
-    if (method === 'library.entries.list') return { data: [], pageIndex: 1, pageSize: 20, totalCount: 0, totalPages: 0 }
+    if (method === 'library.files.list' || method === 'library.entries.list') return { data: [], pageIndex: 1, pageSize: 20, totalCount: 0, totalPages: 0 }
     return true
   })
   read.mockImplementationOnce(() => initial)
@@ -56,6 +56,7 @@ it('cancels archive preparation and releases a late selection without closing a 
   f.read.mockImplementationOnce(() => prepared.promise)
   const trigger = screen.getByRole('button', { name: zh.libraryArchive })
   trigger.focus(); fireEvent.click(trigger)
+  expect(screen.getByRole('button', { name: zh.saveResource }).getAttribute('aria-busy')).toBe('false')
   fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: zh.cancel }))
   expect(screen.queryByRole('dialog')).toBeNull()
   expect(document.activeElement).toBe(trigger)
@@ -102,6 +103,39 @@ it('clears the attachment picker on an identity event before the initial read se
   expect(screen.getByRole('dialog')).toBe(dialog)
 })
 
+it('does not request sign-in after a completed attachment picker loses its employee session', async () => {
+  const f = fixture(), attach = vi.fn(async () => {}), signIn = vi.fn(), focusInput = vi.fn()
+  let open!: () => void
+  const file = LibraryEntrySchema.parse({
+    id: selection.selectionId, libraryId: library.id, parentId: null, name: selection.name, kind: 'FILE',
+    sha256: 'a'.repeat(64), mediaType: 'text/markdown', sizeBytes: 12, version: 1,
+    createdAt: library.createdAt, updatedAt: library.updatedAt,
+  })
+  render(<TaskLibraryInput openEmployeeSignIn={signIn} focusInput={focusInput} sessionId={SessionId('session')} t={t}
+    renderFactorySlot={renderFactorySlot} subscribeOpen={(callback) => { open = callback; return () => {} }} attachLibraryFiles={attach} />)
+  await act(async () => { await Promise.resolve() })
+  const original = f.read.getMockImplementation()!
+  f.read.mockImplementation(async (method, payload) => method === 'library.entries.list'
+    ? { data: [file], pageIndex: 1, pageSize: 20, totalCount: 1, totalPages: 1 } : original(method, payload))
+  act(() => { open() })
+  fireEvent.click(screen.getByRole('tab', { name: zh.libraryPersonal }))
+  await screen.findByRole('checkbox', { name: file.name })
+  fireEvent.click(screen.getByRole('checkbox', { name: file.name }))
+  const submit = screen.getByRole('button', { name: zh.libraryAttach.replace('{count}', '1') })
+  attach.mockRejectedValueOnce(new Error('File admission unavailable'))
+  fireEvent.click(submit)
+  await screen.findByRole('alert')
+  expect(screen.getByRole('button', { name: zh.libraryAttach.replace('{count}', '1') })).toBe(submit)
+  fireEvent.click(submit)
+  await waitFor(() => { expect(screen.queryByRole('dialog')).toBeNull() })
+  expect(attach).toHaveBeenCalledTimes(2)
+  await act(async () => { f.change({ authenticated: false, employeeId: '' }) })
+  expect(signIn).not.toHaveBeenCalled()
+  expect(screen.queryByRole('dialog')).toBeNull()
+  act(() => { open() })
+  expect(signIn).toHaveBeenCalledExactlyOnceWith(focusInput)
+})
+
 it.each(['count', 'bytes'] as const)('explains the attachment %s limit and recovers without replacing the picker', async (limit) => {
   const f = fixture(), attach = vi.fn(async () => {})
   let open!: () => void
@@ -126,17 +160,18 @@ it.each(['count', 'bytes'] as const)('explains the attachment %s limit and recov
     return original(method, payload)
   })
   act(() => { open() })
-  fireEvent.click(await screen.findByRole('button', { name: library.name }))
-  const choose = (index: number) => within(screen.getByText(files[index]!.name).closest('article')!).getByRole('button', { name: zh.libraryChoose })
-  await screen.findByText(files[0]!.name)
+  fireEvent.click(screen.getByRole('tab', { name: zh.libraryPersonal }))
+  const choose = (index: number) => screen.getByRole<HTMLInputElement>('checkbox', { name: files[index]!.name })
+  await screen.findByRole('checkbox', { name: files[0]!.name })
   const chosen = files.length - 1
-  for (let index = 0; index < chosen; index++) fireEvent.click(choose(index))
+  const firstPageChoices = screen.getAllByRole('checkbox')
+  for (let index = 0; index < chosen; index++) fireEvent.click(firstPageChoices[index]!)
   const dialog = screen.getByRole('dialog'), search = screen.getByRole<HTMLInputElement>('searchbox')
   fireEvent.change(search, { target: { value: '资料' } })
   await waitFor(() => { expect(screen.getByRole('region', { name: zh.library }).querySelector('[aria-busy="true"]')).toBeNull() })
   if (limit === 'count') {
     fireEvent.click(screen.getByRole('button', { name: zh.libraryNext }))
-    await screen.findByText(files[chosen]!.name)
+    await screen.findByRole('checkbox', { name: files[chosen]!.name })
   }
   search.setSelectionRange(0, 1)
   const toggle = choose(chosen), add = screen.getByRole('button', { name: zh.libraryAttach.replace('{count}', String(chosen)) })
@@ -145,7 +180,7 @@ it.each(['count', 'bytes'] as const)('explains the attachment %s limit and recov
   const message = limit === 'count' ? '每次最多选择 20 个文件' : '所选文件总大小不能超过 100 MB'
   const english = limit === 'count' ? 'Select up to 20 files at a time.' : 'Selected files must total 100 MB or less.'
   expect(notice.textContent).toBe(message)
-  expect(toggle.getAttribute('aria-pressed')).toBe('false')
+  expect(toggle.checked).toBe(false)
   expect(document.activeElement).toBe(toggle)
   fireEvent.click(toggle)
   expect(screen.getByRole('alert')).toBe(notice)
@@ -160,15 +195,15 @@ it.each(['count', 'bytes'] as const)('explains the attachment %s limit and recov
   expect(attach).not.toHaveBeenCalled()
   if (limit === 'count') {
     fireEvent.click(screen.getByRole('button', { name: en.libraryPrevious }))
-    await screen.findByText(files[0]!.name)
+    await screen.findByRole('checkbox', { name: files[0]!.name })
   }
-  fireEvent.click(within(screen.getByText(files[0]!.name).closest('article')!).getByRole('button', { name: en.librarySelected }))
+  fireEvent.click(screen.getByRole('checkbox', { name: files[0]!.name }))
   expect(screen.queryByRole('alert')).toBeNull()
   if (limit === 'count') {
     fireEvent.click(screen.getByRole('button', { name: en.libraryNext }))
-    await screen.findByText(files[chosen]!.name)
+    await screen.findByRole('checkbox', { name: files[chosen]!.name })
   }
-  fireEvent.click(within(screen.getByText(files[chosen]!.name).closest('article')!).getByRole('button', { name: en.libraryChoose }))
+  fireEvent.click(screen.getByRole('checkbox', { name: files[chosen]!.name }))
   expect(screen.getByRole('button', { name: en.libraryAttach.replace('{count}', String(chosen)) })).toBe(add)
   attach.mockRejectedValueOnce(new Error('admission unavailable'))
   add.focus(); fireEvent.click(add)
@@ -192,6 +227,7 @@ it('locks archive writes until their result and preserves them across same-emplo
   await waitFor(() => { expect(screen.getByRole('region', { name: zh.library }).querySelector('[aria-busy="true"]')).toBeNull() })
   f.read.mockImplementationOnce(() => saved.promise)
   save.focus(); fireEvent.click(save); fireEvent.click(save)
+  expect(save.getAttribute('aria-busy')).toBe('true')
   const dialog = screen.getByRole('dialog')
   const search = screen.getByRole<HTMLInputElement>('searchbox')
   const reads = f.read.mock.calls.length
@@ -224,6 +260,16 @@ it.each([false, true])('keeps archive retry focus without stealing active focus 
   expect(document.activeElement).toBe(retry)
   expect(screen.getByRole('alert')).toBe(alert)
   expect(screen.getByRole('button', { name: zh.retry })).toBe(retry)
+  expect({ retryBusy: retry.getAttribute('aria-busy'),
+    saveBusy: screen.getByRole('button', { name: zh.saveResource }).getAttribute('aria-busy'),
+    saveLocked: screen.getByRole('button', { name: zh.saveResource }).getAttribute('aria-disabled'),
+  }).toMatchInlineSnapshot(`
+    {
+      "retryBusy": "true",
+      "saveBusy": "false",
+      "saveLocked": "true",
+    }
+  `)
   expect(f.read.mock.calls.filter(([method]) => method === 'library.files.archive.select')).toHaveLength(2)
   const close = screen.getByRole('button', { name: zh.close })
   if (elsewhere) close.focus()

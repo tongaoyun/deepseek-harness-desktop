@@ -5,17 +5,24 @@ import type { PropsRenderFactories, FactoryLocalComponentPropsOf } from '@deepse
 import type { TreeEntry, TreeDirectoryState } from '@deepseek-ai/dsh-client-ui-sidebar-files/client'
 import { LibraryEntryPageSchema, LibraryPageSchema, type Library, type LibraryEntry } from '@deepseek-harness/product/library'
 import type { LibraryLocation, LibraryText } from './LibraryBrowser.tsx'
-import type { LibraryItem } from './LibraryFileList.tsx'
+import { LibraryFileActions, type LibraryItem } from './LibraryFileList.tsx'
 import { useLibraryRequests } from './library-data.ts'
 import { productErrorMessage } from './product-errors.ts'
 import { useResultFocus } from './useResultFocus.ts'
+import { LibraryCreateMenu } from './LibraryCreateMenu.tsx'
+import type { LibraryDragProps } from './useLibraryDrag.ts'
 import css from '../DeepSeekHarnessProduct.module.css'
 
 type View = 'recent' | 'mine'
 type Control = { readonly label: string; readonly busy: boolean; readonly run: () => void }
-interface NavigationEntry extends TreeEntry { readonly control?: Control }
+interface NavigationEntry extends TreeEntry {
+  readonly actions?: { readonly t: LibraryText; readonly file: LibraryItem; readonly run: (kind: 'rename' | 'move' | 'delete') => void }
+  readonly control?: Control
+  readonly create?: { readonly t: LibraryText; readonly label: string; readonly run: (kind: 'upload' | 'folder') => void }
+}
 type Level = {
   readonly data?: readonly LibraryEntry[]
+  readonly revision?: number
   readonly page: number
   readonly pages: number
   readonly attempt: number
@@ -26,14 +33,18 @@ type Level = {
 
 function TreeAccessory({ entry }: FactoryLocalComponentPropsOf<'sidebar.files.tree', 'accessory'>): ReactNode {
   // These entries and their local accessory are supplied together by LibraryTree.
-  const { control } = entry as NavigationEntry
-  if (!control) return null
-  return <Button variant="ghost" size="sm" aria-disabled={control.busy} aria-busy={control.busy}
-    onClick={control.run}>{control.label}</Button>
+  const { control, create, actions } = entry as NavigationEntry
+  return <>{control && <Button variant="ghost" size="sm" aria-disabled={control.busy} aria-busy={control.busy}
+    onClick={control.run}>{control.label}</Button>}
+  {actions && <div className={css.libraryTreeActions}><LibraryFileActions file={actions.file} t={actions.t}
+    pending={false} onEdit={actions.run} /></div>}
+  {create && <LibraryCreateMenu t={create.t} label={create.label} onCreate={create.run} />}</>
 }
 const TREE_OPTIONS = { slots: { accessory: TreeAccessory }, fallback: null }
 
-function LibraryTree({ library, selected, trail, revision, t, renderFactorySlot, onNavigate, onOpen }: PropsRenderFactories & {
+function LibraryTree({
+  library, selected, trail, revision, t, renderFactorySlot, onNavigate, onOpen, onCreate, onEdit, dragProps,
+}: PropsRenderFactories & {
   readonly library: Library
   readonly selected?: LibraryLocation
   readonly trail: readonly LibraryEntry[]
@@ -41,12 +52,17 @@ function LibraryTree({ library, selected, trail, revision, t, renderFactorySlot,
   readonly t: LibraryText
   readonly onNavigate: (location: LibraryLocation, trail: readonly LibraryEntry[]) => void
   readonly onOpen: (file: LibraryItem) => void
+  readonly onEdit?: (file: LibraryItem, kind: 'rename' | 'move' | 'delete') => void
+  readonly onCreate: (kind: 'upload' | 'folder', location: LibraryLocation) => void
+  readonly dragProps?: LibraryDragProps
 }): ReactNode {
   const request = useLibraryRequests()
   const [levels, setLevels] = useState<Readonly<Record<string, Level>>>(() => ({
     [library.id]: { page: 0, pages: 0, attempt: 1, through: 1, pending: true },
   }))
   const cache = useRef(levels)
+  const currentRevision = useRef(revision)
+  currentRevision.current = revision
   const [expanded, setExpanded] = useState<readonly string[]>([])
   const active = useRef(new Map<string, AbortController>())
   const area = useRef<HTMLDivElement>(null)
@@ -57,6 +73,7 @@ function LibraryTree({ library, selected, trail, revision, t, renderFactorySlot,
   })
   const load = useCallback((path: string, page = 1, through = page) => {
     if (active.current.has(path)) return
+    const requestedRevision = currentRevision.current
     const controller = new AbortController()
     active.current.set(path, controller)
     setLevels((current) => {
@@ -92,7 +109,7 @@ function LibraryTree({ library, selected, trail, revision, t, renderFactorySlot,
         const data = page === 1 ? result.data : [...(current[path]?.data ?? []), ...result.data]
         const next = { ...current, [path]: {
           data: [...new Map(data.map(entry => [entry.id, entry])).values()],
-          page: result.pageIndex, pages: result.totalPages, attempt: page, through, pending: false,
+          revision: requestedRevision, page: result.pageIndex, pages: result.totalPages, attempt: page, through, pending: false,
         } }
         cache.current = next
         return next
@@ -127,7 +144,8 @@ function LibraryTree({ library, selected, trail, revision, t, renderFactorySlot,
     for (const folderId of trailKey ? trailKey.split('/') : []) {
       path += `/${folderId}`
       paths.push(path)
-      if (!cache.current[path]?.data && !cache.current[path]?.error) load(path)
+      if ((!cache.current[path]?.data || cache.current[path]?.revision !== currentRevision.current) && !cache.current[path]?.error)
+        load(path, 1, Math.max(1, cache.current[path]?.page ?? 1))
     }
     if (paths.length) setExpanded(current => [...new Set([...current, ...paths])])
   }, [library.id, trailKey, load])
@@ -143,9 +161,8 @@ function LibraryTree({ library, selected, trail, revision, t, renderFactorySlot,
   const collect = (path: string, ancestors: readonly LibraryEntry[]) => {
     const state = levels[path]
     directories[path] = {
-      ...(!state?.data && state?.pending ? { loading: true } : {}),
       ...(state?.error !== undefined ? { failure: productErrorMessage(state.error, t, 'libraryLoadFailed') } : {}),
-      ...(state?.data?.length === 0 ? { omitted: 'unmatched' } : {}),
+      ...(!state?.data?.length ? { omitted: 'unmatched' } : {}),
     }
     const known = state?.data ?? []
     const parentId = path === library.id ? null : path.slice(path.lastIndexOf('/') + 1)
@@ -157,7 +174,12 @@ function LibraryTree({ library, selected, trail, revision, t, renderFactorySlot,
       const nextTrail = entry.kind === 'FOLDER' ? [...ancestors, entry] : ancestors
       records.set(key, { entry, trail: nextTrail })
       const control = entry.kind === 'FOLDER' && expanded.includes(key) ? controlFor(key) : undefined
-      entries.push({ path: key, name: entry.name, meta: { kind: entry.kind === 'FOLDER' ? 'directory' : 'file' }, ...(control ? { control } : {}) })
+      entries.push({ path: key, name: entry.name, meta: { kind: entry.kind === 'FOLDER' ? 'directory' : 'file' }, ...(control ? { control } : {}),
+        ...(entry.kind === 'FOLDER' && library.canManage && onEdit ? { actions: { t,
+          file: { entry, libraryName: library.name, canManage: true, lastAccessedAt: null },
+          run: (kind: 'rename' | 'move' | 'delete') => { onEdit({ entry, libraryName: library.name, canManage: true, lastAccessedAt: null }, kind) } } } : {}),
+        ...(entry.kind === 'FOLDER' && library.canManage ? { create: { t, label: `${t('libraryNew')}: ${entry.name}`,
+          run: (kind: 'upload' | 'folder') => { onCreate(kind, { library, parentId: entry.id, parentName: entry.name }) } } } : {}) })
       if (entry.kind === 'FOLDER' && expanded.includes(key)) collect(key, nextTrail)
     }
   }
@@ -167,14 +189,20 @@ function LibraryTree({ library, selected, trail, revision, t, renderFactorySlot,
     {renderFactorySlot('sidebar.files.tree', { root: library.id, entries, expanded, directories,
       rowTriggerProps: (entry) => {
         const record = records.get(entry.path)
-        return { tabIndex: 0, 'aria-current': record?.entry.kind === 'FOLDER' && selected?.parentId === record.entry.id ? 'page' : undefined }
+        const item = record && { entry: record.entry, libraryName: library.name, canManage: library.canManage, lastAccessedAt: null }
+        return { ...(item ? dragProps?.(item.entry.kind === 'FOLDER'
+          ? { library, parentId: item.entry.id, parentName: item.entry.name } : undefined, item,
+        record.trail.map(folder => folder.id)) : {}),
+        tabIndex: 0, 'aria-current': record?.entry.kind === 'FOLDER' && selected?.parentId === record.entry.id ? 'page' : undefined,
+        ...(levels[entry.path]?.pending ? { 'aria-busy': true } : {}) }
       },
       onToggle: (entry, expand) => {
         const record = records.get(entry.path)
         if (!record) return
         const enter = expand || selected?.parentId !== record.entry.id
         setExpanded(current => enter ? [...new Set([...current, entry.path])] : current.filter(path => path !== entry.path))
-        if (enter && !levels[entry.path]?.data) load(entry.path)
+        if (enter && (!levels[entry.path]?.data || levels[entry.path]?.revision !== revision))
+          load(entry.path, 1, Math.max(1, levels[entry.path]?.page ?? 1))
         if (enter) onNavigate({ library, parentId: record.entry.id, parentName: record.entry.name }, record.trail)
       },
       onOpen: (entry) => {
@@ -204,7 +232,7 @@ function TeamActions({ library, t, onMembers, onEdit }: {
     if (id === 'members') onMembers?.(library)
     if (library.role === 'OWNER' && id === 'edit') onEdit?.(library, 'editLibrary')
     if (library.role === 'OWNER' && id === 'delete') onEdit?.(library, 'deleteLibrary')
-  }} anchor={<Button ref={trigger} variant="ghost" size="sm"
+  }} anchor={<Button ref={trigger} variant="ghost" size="sm" className={css.libraryNavAction}
     aria-label={`${t('libraryTeamActions')}: ${library.name}`}
     aria-haspopup="menu" aria-expanded={open} onClick={() => { setOpen(!open) }}><IconEllipsisOutlineRegular size={16} /></Button>} />
 }
@@ -215,19 +243,24 @@ const NO_TRAIL: readonly LibraryEntry[] = []
  * @returns Personal and shared navigation with server-paginated, lazily expanded native file trees.
  */
 export function LibrarySidebar({
-  t, view, location, trail = NO_TRAIL, revision, renderFactorySlot, onView, onNavigate, onOpen,
-  onCreateFolder, onUpload, onGenerate, onCreateTeam, onMembers, onEditTeam,
+  t, view, location, confirmedLibrary, trail = NO_TRAIL, revision, renderFactorySlot, onView, onNavigate, onOpen,
+  onCreateFolder, onUpload, onGenerate, onCreateTeam, onMembers, onEditTeam, onEdit,
+  dragProps,
 }: PropsRenderFactories & {
   readonly t: LibraryText
   readonly view: View
   readonly location?: LibraryLocation
+  /** Metadata confirmed outside the currently selected directory, including recent-file actions. */
+  readonly confirmedLibrary?: Library
   readonly trail?: readonly LibraryEntry[]
   readonly revision: number
   readonly onView: (view: View) => void
   readonly onNavigate: (location: LibraryLocation, trail: readonly LibraryEntry[]) => void
   readonly onOpen: (file: LibraryItem) => void
-  readonly onCreateFolder: () => void
-  readonly onUpload: () => void
+  readonly onEdit?: (file: LibraryItem, kind: 'rename' | 'move' | 'delete') => void
+  readonly onCreateFolder: (location?: LibraryLocation | 'personal') => void
+  readonly onUpload: (location?: LibraryLocation | 'personal') => void
+  readonly dragProps?: LibraryDragProps
   readonly onCreateTeam?: () => void
   readonly onMembers?: (library: Library) => void
   readonly onEditTeam?: (library: Library, kind: 'editLibrary' | 'deleteLibrary') => void
@@ -236,6 +269,12 @@ export function LibrarySidebar({
   const request = useLibraryRequests()
   const navigation = useRef<HTMLElement>(null)
   const [libraries, setLibraries] = useState<readonly Library[]>()
+  const librarySnapshot = useRef(libraries)
+  librarySnapshot.current = libraries
+  const projectedLibrary = useRef<Library>()
+  const projectedConfirmation = useRef<Library>()
+  const confirmedMetadata = useRef(new Map<string, Library>())
+  const confirmed = location?.library
   const [page, setPage] = useState(1)
   const [pages, setPages] = useState(0)
   const [pending, setPending] = useState(true)
@@ -244,9 +283,14 @@ export function LibrarySidebar({
   const active = useRef<AbortController>()
   const [newOpen, setNewOpen] = useState(false)
   const newTrigger = useRef<HTMLButtonElement>(null)
-  const [open, setOpen] = useState<ReadonlySet<string>>(new Set())
   const capture = useResultFocus(navigation, newTrigger)
+  const createAt = (kind: 'upload' | 'folder', target: LibraryLocation | 'personal') => {
+    if (kind === 'folder') onCreateFolder(target)
+    else onUpload(target)
+  }
   useEffect(() => {
+    const baseline = new Map(librarySnapshot.current?.map(library => [library.id, library]))
+    const metadataBaseline = new Map(confirmedMetadata.current)
     const controller = new AbortController()
     active.current = controller
     setPending(true)
@@ -265,33 +309,62 @@ export function LibrarySidebar({
     void read().then((result) => {
       controller.signal.throwIfAborted()
       capture()
-      setLibraries([...new Map(result.data.map(library => [library.id, library])).values()])
+      setLibraries((current) => {
+        const confirmed = new Map(current?.map(library => [library.id, library]))
+        return [...new Map(result.data.map((library) => {
+          const previous = confirmed.get(library.id)
+          const changed = previous !== baseline.get(library.id)
+          const current = previous && (previous.version > library.version
+            || previous.version === library.version && changed) ? previous : library
+          const metadata = confirmedMetadata.current.get(library.id)
+          const latest = metadata && (metadata.version > current.version || metadata.version === current.version
+            && metadata !== metadataBaseline.get(library.id)) ? metadata : current
+          return [library.id, latest] as const
+        })).values()]
+      })
       setPages(result.totalPages); setError(undefined)
     }).catch((failure: unknown) => { if (!controller.signal.aborted) setError(failure) })
       .finally(() => { if (active.current === controller) active.current = undefined; if (!controller.signal.aborted) setPending(false) })
     return () => { controller.abort(); if (active.current === controller) active.current = undefined }
   }, [request, page, retry, revision, capture])
+  useEffect(() => {
+    // Effective employee access can change without a resource version increment.
+    const updates = [confirmed !== projectedLibrary.current ? confirmed : undefined,
+      confirmedLibrary !== projectedConfirmation.current ? confirmedLibrary : undefined]
+    projectedLibrary.current = confirmed
+    projectedConfirmation.current = confirmedLibrary
+    if (!updates.some(library => library !== undefined)) return
+    for (const library of updates) {
+      if (library && (confirmedMetadata.current.get(library.id)?.version ?? 0) <= library.version)
+        confirmedMetadata.current.set(library.id, library)
+    }
+    capture()
+    setLibraries((current) => {
+      const next = current?.map(library => updates.reduce<Library>((latest, update) =>
+        update?.id === latest.id && update.version >= latest.version ? update : latest, library))
+      return next?.some((library, index) => library !== current?.[index]) ? next : current
+    })
+  }, [confirmed, confirmedLibrary, capture])
   const draw = (library: Library) => {
     const selected = view === 'mine' && location?.library.id === library.id
-    const expanded = open.has(library.id)
     return <div key={library.id} data-library-branch className={css.libraryNavBranch}>
-      <div className={css.libraryTeamRow}><Button variant="ghost" data-library-root aria-current={selected && location.parentId === null ? 'page' : undefined}
-        aria-expanded={expanded} onClick={() => {
-          setOpen((current) => {
-            const next = new Set(current)
-            if (expanded && selected && location.parentId === null) next.delete(library.id)
-            else next.add(library.id)
-            return next
-          })
-          if (!expanded || !selected || location.parentId !== null) onNavigate({ library, parentId: null }, [])
-        }}><IconFolderCloseRegular size={16} /><span>{library.name}</span></Button>
-      <TeamActions library={library} t={t} {...(onMembers ? { onMembers } : {})} {...(onEditTeam ? { onEdit: onEditTeam } : {})} /></div>
-      {expanded && <LibraryTree library={library} revision={revision} t={t} renderFactorySlot={renderFactorySlot}
-        {...(selected ? { selected: location } : {})} trail={selected ? trail : NO_TRAIL} onNavigate={onNavigate} onOpen={onOpen} />}
+      <div className={css.libraryTeamRow}>
+        <Button variant="ghost" data-library-root aria-current={selected && location.parentId === null ? 'page' : undefined}
+          {...dragProps?.({ library, parentId: null })} onClick={() => { onNavigate({ library, parentId: null }, []) }}>
+          <IconFolderCloseRegular size={16} /><span>{library.name}</span></Button>
+        {library.canManage && <LibraryCreateMenu t={t} label={`${t('libraryNew')}: ${library.name}`}
+          onCreate={(kind) => { createAt(kind, { library, parentId: null }) }} />}
+        <TeamActions library={library} t={t} {...(onMembers ? { onMembers } : {})} {...(onEditTeam ? { onEdit: onEditTeam } : {})} /></div>
+      <LibraryTree library={library} revision={revision} t={t} renderFactorySlot={renderFactorySlot}
+        {...(selected ? { selected: location } : {})} trail={selected ? trail : NO_TRAIL} onNavigate={onNavigate} onOpen={onOpen}
+        onCreate={createAt} {...(onEdit ? { onEdit } : {})} {...(dragProps ? { dragProps } : {})} />
     </div>
   }
-  const available = location?.library.scope === 'PERSONAL' && libraries && !libraries.some(library => library.id === location.library.id)
-    ? [...libraries, location.library] : libraries
+  const incoming = [confirmed !== projectedLibrary.current ? confirmed : undefined,
+    confirmedLibrary !== projectedConfirmation.current ? confirmedLibrary : undefined]
+  const available = libraries?.map(library => incoming.reduce<Library>((latest, update) =>
+    update?.id === latest.id && update.version >= latest.version ? update : latest, library))
+  if (confirmed?.scope === 'PERSONAL' && available && !available.some(library => library.id === confirmed.id)) available.push(confirmed)
   const personal = available?.filter(library => library.scope === 'PERSONAL') ?? []
   const shared = available?.filter(library => library.scope !== 'PERSONAL') ?? []
   return <nav ref={navigation} className={css.libraryNavigation} aria-label={t('libraryNavigation')}>
@@ -312,18 +385,20 @@ export function LibrarySidebar({
     </div>
     <div className={css.libraryNavGroup}>
       <Button variant="ghost" data-library-root aria-current={view === 'mine' && (!location || location.library.scope === 'PERSONAL') && !location?.parentId ? 'page' : undefined}
+        {...(personal[0] ? dragProps?.({ library: personal[0], parentId: null }) : {})}
         onClick={() => { onView('mine') }}>{t('libraryPersonal')}</Button>
-      <Tooltip portal label={t('libraryNewFolder')}><Button variant="ghost" size="sm" aria-label={t('libraryNewFolder')}
-        onClick={onCreateFolder}><IconPlusOutlineRegular size={16} /></Button></Tooltip>
+      <LibraryCreateMenu t={t} label={`${t('libraryNew')}: ${t('libraryPersonal')}`}
+        onCreate={(kind) => { createAt(kind, personal[0] ? { library: personal[0], parentId: null } : 'personal') }} />
     </div>
     {personal.map(library => <LibraryTree key={library.id} library={library} revision={revision} t={t} renderFactorySlot={renderFactorySlot}
       {...(view === 'mine' && location?.library.id === library.id ? { selected: location } : {})}
-      trail={view === 'mine' && location?.library.id === library.id ? trail : NO_TRAIL} onNavigate={onNavigate} onOpen={onOpen} />)}
+      trail={view === 'mine' && location?.library.id === library.id ? trail : NO_TRAIL} onNavigate={onNavigate} onOpen={onOpen}
+      onCreate={createAt} {...(onEdit ? { onEdit } : {})} {...(dragProps ? { dragProps } : {})} />)}
     <div className={css.libraryNavGroup}><h2>{t('libraryShared')}</h2>
-      {onCreateTeam && <Tooltip portal label={t('libraryNewTeam')}><Button variant="ghost" size="sm" aria-label={t('libraryNewTeam')} onClick={onCreateTeam}><IconPlusOutlineRegular size={16} /></Button></Tooltip>}
+      {onCreateTeam && <Tooltip portal label={t('libraryNewTeam')}><Button variant="ghost" size="sm" aria-label={t('libraryNewTeam')} className={css.libraryAddAction} onClick={onCreateTeam}><IconPlusOutlineRegular size={16} /></Button></Tooltip>}
     </div>
     {shared.map(draw)}
-    {libraries !== undefined && !shared.length && !pending && error === undefined && <p className={css.libraryNavNote}>{t('librarySharedEmpty')}</p>}
+    {libraries !== undefined && !shared.length && <p className={css.libraryNavNote}>{t('librarySharedEmpty')}</p>}
     {libraries === undefined && pending && <p className={css.libraryNavNote}>{t('loading')}</p>}
     {error !== undefined && <div className={css.libraryNavFailure}><p role="alert">{productErrorMessage(error, t, 'libraryLoadFailed')}</p>
       <Button variant="ghost" size="sm" aria-disabled={pending} aria-busy={pending} onClick={() => { if (!active.current) setRetry(value => value + 1) }}>{t('retry')}</Button></div>}

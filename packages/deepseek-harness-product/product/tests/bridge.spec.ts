@@ -91,7 +91,7 @@ describe('DeepSeekHarnessProductBridge', () => {
   })
 
   it('prepares a personal root through the public bridge and validates manual team creation', async () => {
-    const library = { id: '11111111-1111-4111-8111-111111111111', name: '我的资料', description: '', scope: 'PERSONAL',
+    const library = { id: '11111111-1111-4111-8111-111111111111', name: '我的资料', scope: 'PERSONAL',
       ownerId: 'employee-1', companyId: 'company', role: 'OWNER', canManage: true, version: 1,
       createdAt: '2026-11-14T01:00:00Z', updatedAt: '2026-11-14T01:00:00Z' }
     const fetch = vi.fn(async (input: Parameters<typeof globalThis.fetch>[0], init?: RequestInit) => {
