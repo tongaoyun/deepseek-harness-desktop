@@ -164,11 +164,12 @@ describe('DeepSeekHarness Electron workflows', () => {
   it('downloads packages from the internal registry with job-local storage', () => {
     for (const name of ['electron-ci.yml', 'github-desktop-sync.yml']) {
       const source = readFileSync(resolve(import.meta.dirname, '..', '.gitea', 'workflows', name), 'utf8')
-      expect(source).toContain('https://registry.npmjs.org/')
+      expect(source).toMatch(/\/\.gitea\/actions\/yunxiao-npm@[a-f0-9]{40}/)
+      expect(source).toContain('secrets.YUNXIAO_NPM_TOKEN')
       expect(source).not.toContain('registry.npmjs.org')
       expect(source).not.toContain('/data/ci-cache/')
       expect(source).toContain('store-dir /tmp/ci-pnpm-store')
-      expect(source).toContain('pnpm config set registry https://registry.npmjs.org/')
+      expect(source).toContain('packages.aliyun.com')
       expect(source).toContain('pnpm install --frozen-lockfile')
       expect(workflow(name).env?.pnpm_config_verify_deps_before_run).toBe('false')
     }
