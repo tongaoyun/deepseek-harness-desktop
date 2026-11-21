@@ -4,13 +4,12 @@ name: 桌面持续集成
 env:
   # Frozen installation is explicit; restoring portable tarball URLs must not trigger another install.
   pnpm_config_verify_deps_before_run: 'false'
-  NPM_CONFIG_REGISTRY: http://192.168.2.9:8082/repository/npm-proxy/
+  NPM_CONFIG_REGISTRY: https://registry.npmjs.org/
   NPM_CONFIG_REPLACE_REGISTRY_HOST: always
   NPM_CONFIG_CACHE: /tmp/ci-npm-cache
-  COREPACK_NPM_REGISTRY: http://192.168.2.9:8082/repository/npm-proxy
-  MVNW_REPOURL: http://192.168.2.9:8082/repository/maven-public
-  PIP_INDEX_URL: http://192.168.2.9:8082/repository/pypi-proxy/simple/
-  PIP_TRUSTED_HOST: 192.168.2.9
+  COREPACK_NPM_REGISTRY: https://registry.npmjs.org
+  MVNW_REPOURL: https://repo.maven.apache.org/maven2
+  PIP_INDEX_URL: https://mirrors.aliyun.com/pypi/simple/
   PIP_NO_CACHE_DIR: 'true'
   UV_NO_CACHE: 'true'
 
@@ -61,15 +60,15 @@ jobs:
           export NO_PROXY="${NO_PROXY:-${no_proxy:-localhost,127.0.0.1,::1}},192.168.2.9"
           export no_proxy="$NO_PROXY"
           npm install -g pnpm@11.28.5 --no-audit --fund=false \
-            --registry=http://192.168.2.9:8082/repository/npm-proxy/
+            --registry=https://registry.npmjs.org/
           pnpm config set store-dir /tmp/ci-pnpm-store
-          pnpm config set registry http://192.168.2.9:8082/repository/npm-proxy/
+          pnpm config set registry https://registry.npmjs.org/
           # This pinned package is distributed as a CDN tarball, outside the npm registry.
-          sed -i 's#https://cdn.sheetjs.com/#http://192.168.2.9:8082/repository/sheetjs-proxy/#g' \
+          sed -i 's#https://cdn.sheetjs.com/#https://cdn.sheetjs.com/#g' \
             packages/client/ui-sidebar-documentpreview/package.json pnpm-lock.yaml
-          pnpm install --frozen-lockfile --registry=http://192.168.2.9:8082/repository/npm-proxy/
+          pnpm install --frozen-lockfile --registry=https://registry.npmjs.org/
           # Source-boundary verification must see the reviewed, portable dependency URLs.
-          sed -i 's#http://192.168.2.9:8082/repository/sheetjs-proxy/#https://cdn.sheetjs.com/#g' \
+          sed -i 's#https://cdn.sheetjs.com/#https://cdn.sheetjs.com/#g' \
             packages/client/ui-sidebar-documentpreview/package.json pnpm-lock.yaml
       - name: Verify upstream and product contracts
         run: |
