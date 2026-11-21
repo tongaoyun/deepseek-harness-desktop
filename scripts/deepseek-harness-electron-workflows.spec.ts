@@ -164,11 +164,11 @@ describe('DeepSeekHarness Electron workflows', () => {
   it('downloads packages from the internal registry with job-local storage', () => {
     for (const name of ['electron-ci.yml', 'github-desktop-sync.yml']) {
       const source = readFileSync(resolve(import.meta.dirname, '..', '.gitea', 'workflows', name), 'utf8')
-      expect(source).toContain('http://192.168.2.9:8082/repository/npm-proxy/')
+      expect(source).toContain('https://registry.npmjs.org/')
       expect(source).not.toContain('registry.npmjs.org')
       expect(source).not.toContain('/data/ci-cache/')
       expect(source).toContain('store-dir /tmp/ci-pnpm-store')
-      expect(source).toContain('pnpm config set registry http://192.168.2.9:8082/repository/npm-proxy/')
+      expect(source).toContain('pnpm config set registry https://registry.npmjs.org/')
       expect(source).toContain('pnpm install --frozen-lockfile')
       expect(workflow(name).env?.pnpm_config_verify_deps_before_run).toBe('false')
     }
