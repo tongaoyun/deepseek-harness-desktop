@@ -20,7 +20,7 @@ jobs:
     runs-on: ci-node
     timeout-minutes: 20
     container:
-      image: ci-node:1.0.0
+      image: ci-node:1.0.1
     steps:
       - name: Checkout retention code
         uses: http://192.168.2.67:30330/instudio/checkout@v4
