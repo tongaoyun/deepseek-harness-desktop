@@ -1778,6 +1778,27 @@
         }
       ],
       "diff": "composer-context-references.patch"
+    },
+    {
+      "id": "remove-gitlab-publishing",
+      "purpose": "Remove the unused GitLab SDK publishing workflow and its GitLab-only checks.",
+      "tests": [
+        "scripts/ci-workflow.spec.ts",
+        "scripts/verify-upstream.mjs"
+      ],
+      "files": [
+        {
+          "path": ".gitlab-ci.yml",
+          "before": "b2091d25bf31984859aab6724210d35cb15f65e5421c5f223de2a7592ba449e4",
+          "after": null
+        },
+        {
+          "path": "scripts/ci-workflow.spec.ts",
+          "before": "66ae37ee39cac734e3329e530ddddf90d6e4c63a9cf29a8f9f7711bc593658bf",
+          "after": "138be7736c0bcc0298d4c773c3501638620ab2c79e09aebf7c90da62f7f98472"
+        }
+      ],
+      "diff": "remove-gitlab-publishing.patch"
     }
   ]
 }
